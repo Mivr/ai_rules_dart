@@ -618,45 +618,117 @@ Future<void> _waitForAppReady(
 /// not the framework's own `ext.flutter.*`. A hot restart reopens it.
 ///
 /// Both are waited for. The binding is what the handlers run against, and the
-/// named extension is what answers the call; on web those arrive in that order
-/// with app code in between, on native they are already there together.
+/// named extension is what answers the call. The agent's own extensions are
+/// registered before `main()` on every platform (the engine's pre-main
+/// registrant hook natively, the synthetic entrypoint's first statement on
+/// web), so they are always up before the binding is. That order is what lets
+/// a missing agent extension be told from a slow one: once the binding is up
+/// without it, it is not coming, and the caller hears so within seconds
+/// instead of after the whole of [VmServiceClient.serviceExtensionTimeout] —
+/// which is as long as a screenshot's caller waits for the whole capture.
 Future<void> _waitForExtension(
   VmServiceClient client,
   String extensionMethod, {
   required bool waitForBinding,
 }) async {
-  for (final String rpc in {
-    extensionMethod,
-    if (waitForBinding) _bindingExtension,
-  }) {
-    // Two different failures, kept apart. `false` is the app answering that it
-    // has not registered the extension. A throw is the question not getting
-    // through — the seed read this waits on propagates one now rather than
-    // reporting a timeout — and saying "the app never brought it up" on the
-    // strength of an RPC that failed names the wrong cause. Both become a
-    // [CommandFailure], which is the one way this surface says no.
-    try {
-      if (await client.waitForServiceExtension(rpc)) continue;
-      throw CommandFailure.failed(
-        '$rpc is not registered. The app never brought it up — if '
-        'the run is --start-paused, resume it from a debugger first.',
-      );
-    } on RPCError catch (e) {
-      throw CommandFailure.failed(
-        'could not tell whether $rpc is registered: '
-        '${e.details ?? e.message}',
-      );
-    } on TimeoutException catch (e) {
-      // The read that answers this question expiring, which is not the same as
-      // the app never registering — that one comes back as `false` above. A
-      // socket that has gone quiet without closing is what gets here.
-      throw CommandFailure.failed(
-        'could not tell whether $rpc is registered: the VM service '
-        'did not answer within ${e.duration?.inSeconds}s',
-      );
+  if (waitForBinding && extensionMethod.startsWith(_agentExtensionPrefix)) {
+    Duration upTo(Duration d) =>
+        client.serviceExtensionTimeout < d ? client.serviceExtensionTimeout : d;
+    if (!await _isRegistered(
+      client,
+      extensionMethod,
+      timeout: upTo(_agentBeforeBindingGrace),
+    )) {
+      // Not there yet, which is one of two things. An app still starting has
+      // nothing registered, the binding included, and the agent arrives ahead
+      // of it — so wait for the binding, then look again. An app whose binding
+      // is already up without the agent has none, and never will.
+      await _requireRegistered(client, _bindingExtension);
+      if (!await _isRegistered(
+        client,
+        extensionMethod,
+        timeout: upTo(_agentAfterBindingGrace),
+      )) {
+        throw CommandFailure.failed(
+          "$extensionMethod is not registered, and will not be: the app's "
+          'Flutter binding is up ($_bindingExtension), and the agent registers '
+          'its extensions before main() runs, so this build of the app does '
+          'not carry the agent. It needs a -c dbg build whose kernel runs the '
+          'generated plugin registrant.',
+        );
+      }
     }
+  } else {
+    await _requireRegistered(client, extensionMethod);
+  }
+  if (waitForBinding) await _requireRegistered(client, _bindingExtension);
+}
+
+/// [_isRegistered], with `false` as the refusal it is for a caller that needs
+/// [rpc] to answer.
+Future<void> _requireRegistered(VmServiceClient client, String rpc) async {
+  if (await _isRegistered(client, rpc)) return;
+  throw CommandFailure.failed(
+    '$rpc is not registered. The app never brought it up — if '
+    'the run is --start-paused, resume it from a debugger first.',
+  );
+}
+
+/// Whether the app registers [rpc] within [timeout] (by default the client's
+/// own readiness bound).
+///
+/// Two different failures, kept apart. `false` is the app answering that it
+/// has not registered the extension. A throw is the question not getting
+/// through — the seed read this waits on propagates one now rather than
+/// reporting a timeout — and saying "the app never brought it up" on the
+/// strength of an RPC that failed names the wrong cause. A throw becomes a
+/// [CommandFailure], which is the one way this surface says no.
+Future<bool> _isRegistered(
+  VmServiceClient client,
+  String rpc, {
+  Duration? timeout,
+}) async {
+  try {
+    return await client.waitForServiceExtension(rpc, timeout: timeout);
+  } on RPCError catch (e) {
+    throw CommandFailure.failed(
+      'could not tell whether $rpc is registered: '
+      '${e.details ?? e.message}',
+    );
+  } on TimeoutException catch (e) {
+    // The read that answers this question expiring, which is not the same as
+    // the app never registering — that one comes back as `false` above. A
+    // socket that has gone quiet without closing is what gets here.
+    throw CommandFailure.failed(
+      'could not tell whether $rpc is registered: the VM service '
+      'did not answer within ${e.duration?.inSeconds}s',
+    );
   }
 }
+
+/// The names the agent's own extensions share.
+const _agentExtensionPrefix = 'ext.rules_flutter.';
+
+/// How long the first look for an agent extension waits before the binding is
+/// asked about.
+///
+/// Normally nothing is spent: a running app has the agent registered already,
+/// and a starting one registers it before the binding, so the binding wait
+/// that follows a miss sees it arrive. What this has to cover is the read
+/// itself, which on a slow link can take a moment.
+const Duration _agentBeforeBindingGrace = Duration(seconds: 5);
+
+/// How long the second look waits, once the binding is known to be up.
+///
+/// By then the app has answered, and on the isolate it answered for the agent
+/// is either registered or never will be. The wait covers a hot restart landing
+/// between the two reads, whose new isolate registers the agent again before
+/// `main()`.
+///
+/// The two together are what an app without the agent costs a caller, far
+/// below any client's bound on a screenshot, which waits on this through
+/// `app.settle` before it captures.
+const Duration _agentAfterBindingGrace = Duration(seconds: 2);
 
 /// Dispatch [extensionMethod] with [args], bounded by [bound].
 Future<Map<String, dynamic>?> _dispatchCall(
