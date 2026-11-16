@@ -267,6 +267,71 @@ void main() {
       );
     });
 
+    // The agent registers before `main()`, the binding inside `runApp`, so a
+    // binding with no agent beside it is an app built without the agent. The
+    // wait for it used to run the whole 30s readiness bound, which is also
+    // the bound a screenshot's caller gives the entire capture: `app.settle`
+    // ran past it, and a working app read as one that never showed a window.
+    group('an app whose binding is up without the agent', () {
+      test('is refused at once, naming the missing agent', () async {
+        final fake = FakeVmService(
+          isolates: [IsolateRef(id: 'iso-1', name: 'main', number: '1')],
+        )..extensionRPCs = ['ext.flutter.reassemble'];
+        final client = VmServiceClient(connector: (_) async => fake)
+          ..serviceExtensionTimeout = const Duration(minutes: 1);
+        await client.connect(Uri.parse('http://127.0.0.1:8181/'));
+
+        final cr = CommandRunner();
+        setUpAgentCommands(cr, (_) => sessionFor(client));
+        final watch = Stopwatch()..start();
+        final String error = await refusalFrom(
+          cr
+              .run('app.settle', {'appId': 'app'})
+              .timeout(const Duration(seconds: 20)),
+        );
+
+        expect(
+          watch.elapsed,
+          lessThan(const Duration(seconds: 10)),
+          reason:
+              'the readiness bound is a minute here; spending it is the bug',
+        );
+        expect(error, contains('ext.rules_flutter.settle is not registered'));
+        expect(error, contains('does not carry the agent'));
+        expect(
+          fake.extensionCalls
+              .map((c) => c.method)
+              .where((m) => m.startsWith('ext.rules_flutter.')),
+          isEmpty,
+        );
+      });
+
+      test('still waits out the binding itself', () async {
+        // Nothing registered yet: the startup window, not a missing agent.
+        final fake = FakeVmService(
+          isolates: [IsolateRef(id: 'iso-1', name: 'main', number: '1')],
+        );
+        final client = VmServiceClient(connector: (_) async => fake);
+        await client.connect(Uri.parse('http://127.0.0.1:8181/'));
+
+        final cr = CommandRunner();
+        setUpAgentCommands(cr, (_) => sessionFor(client));
+        final Future<Map<String, dynamic>> running = cr.run('app.getText', {
+          'appId': 'app',
+          'key': 'k',
+        });
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        fake.emitServiceExtensionAdded('iso-1', 'ext.rules_flutter.getText');
+        fake.emitServiceExtensionAdded('iso-1', 'ext.flutter.reassemble');
+
+        await running.timeout(const Duration(seconds: 5));
+        expect(
+          fake.extensionCalls.map((c) => c.method),
+          contains('ext.rules_flutter.getText'),
+        );
+      });
+    });
+
     // An app that refuses answers `ServiceExtensionResponse.error`, which
     // crosses the VM service as a JSON-RPC error and reaches the client as a
     // throw. Left to escape, it reads as a *transport* fault rather than as
