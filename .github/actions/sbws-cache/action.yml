@@ -1,0 +1,86 @@
+name: sb-ws remote cache
+description: >-
+  Connects Bazel to the sb-ws NativeLink build cache (cache only, no remote execution) through a Cloudflare Access tunnel, and appends the remote cache flags to ~/.bazelrc. Does nothing when `enabled` is not 'true', when no token is available (fork PRs), on Windows, or when the cache does not answer, so a job never fails or slows down because of it. Runs given the write token (main-only `sbws-cache-write` environment) upload results; every other run only reads.
+inputs:
+  enabled:
+    description: "'true' to use the cache. Pass the same condition the job uses for its disk cache."
+    required: true
+  read-id:
+    description: Access service token id, read-only endpoint (secrets.SBWS_CACHE_READ_ID).
+    default: ""
+  read-secret:
+    description: Access service token secret, read-only endpoint (secrets.SBWS_CACHE_READ_SECRET).
+    default: ""
+  write-id:
+    description: Access service token id, write endpoint (environment secret SBWS_CACHE_WRITE_ID).
+    default: ""
+  write-secret:
+    description: Access service token secret, write endpoint (environment secret SBWS_CACHE_WRITE_SECRET).
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Connect to the sb-ws remote cache
+      if: inputs.enabled == 'true' && runner.os != 'Windows' && (inputs.write-id != '' || inputs.read-id != '')
+      shell: bash
+      env:
+        SBWS_READ_ID: ${{ inputs.read-id }}
+        SBWS_READ_SECRET: ${{ inputs.read-secret }}
+        SBWS_WRITE_ID: ${{ inputs.write-id }}
+        SBWS_WRITE_SECRET: ${{ inputs.write-secret }}
+      run: |
+        # GitHub runs this with `bash -e`; nothing here may fail the job, so errors are handled by hand.
+        set +e -u
+        version=2026.11.0
+        dir="${RUNNER_TEMP}/sbws-cache"; mkdir -p "$dir"; bin="$dir/cloudflared"
+        case "$(uname -s)-$(uname -m)" in
+          Linux-x86_64) asset=cloudflared-linux-amd64; sum=51f7c68b57ed7269164075d7e789efce5b59355982f06392deeb037d982a51fd ;;
+          Darwin-arm64) asset=cloudflared-darwin-arm64.tgz; sum=8c2f90277ef06a6080bb40b964d33f09f1188102f8798f2e344174b6cf41accf ;;
+          Darwin-x86_64) asset=cloudflared-darwin-amd64.tgz; sum=8a59d51120cebbe902f0a8d6e1b7a7fd4f9a5bb4dcb3e0f05872483e75e7db6b ;;
+          *) echo "::notice::sb-ws cache: no cloudflared for $(uname -sm); skipped"; exit 0 ;;
+        esac
+        if ! curl -fsSL --retry 3 -o "$dir/$asset" "https://github.com/cloudflare/cloudflared/releases/download/${version}/${asset}"; then
+          echo "::warning::sb-ws cache: cloudflared download failed; building without it"; exit 0
+        fi
+        got=$(shasum -a 256 "$dir/$asset" | cut -d' ' -f1)
+        if [ "$got" != "$sum" ]; then
+          echo "::warning::sb-ws cache: cloudflared checksum mismatch ($got); building without it"; exit 0
+        fi
+        case "$asset" in *.tgz) tar -xzf "$dir/$asset" -C "$dir" ;; *) mv "$dir/$asset" "$bin" ;; esac
+        chmod +x "$bin"
+        if [ -n "$SBWS_WRITE_ID" ]; then
+          host=rbe-ci-write.simple-business-platform.com; id=$SBWS_WRITE_ID; secret=$SBWS_WRITE_SECRET; upload=true
+        else
+          host=rbe-ci.simple-business-platform.com; id=$SBWS_READ_ID; secret=$SBWS_READ_SECRET; upload=false
+        fi
+        port=9092
+        nohup "$bin" access tcp --hostname "$host" --url "127.0.0.1:${port}" \
+          --service-token-id "$id" --service-token-secret "$secret" >"$dir/tunnel.log" 2>&1 </dev/null &
+        pid=$!
+        # End-to-end probe: Capabilities for instance "rules" must answer grpc-status 0.
+        printf '\x00\x00\x00\x00\x07\x0a\x05rules' > "$dir/caps.bin"
+        ok=
+        for _ in $(seq 1 20); do
+          status=$(curl -s --max-time 10 --http2-prior-knowledge -X POST \
+            -H 'content-type: application/grpc' -H 'te: trailers' --data-binary "@$dir/caps.bin" \
+            -D - -o /dev/null "http://127.0.0.1:${port}/build.bazel.remote.execution.v2.Capabilities/GetCapabilities" \
+            | tr -d '\r' | sed -n 's/^grpc-status: *//p') || true
+          if [ "$status" = 0 ]; then ok=1; break; fi
+          sleep 1
+        done
+        if [ -z "$ok" ]; then
+          echo "::warning::sb-ws cache: $host did not answer; building without it"
+          sed 's/^/  /' "$dir/tunnel.log" | tail -n 5
+          kill "$pid" 2>/dev/null || true
+          exit 0
+        fi
+        cat >> ~/.bazelrc <<RC
+        # sb-ws remote cache ($host), added by .github/actions/sbws-cache
+        build --remote_cache=grpc://127.0.0.1:${port}
+        build --remote_instance_name=rules
+        build --remote_cache_compression
+        build --remote_timeout=60s
+        build --remote_download_outputs=all
+        build --remote_upload_local_results=${upload}
+        RC
+        echo "sb-ws cache: connected to $host (upload=${upload})"
