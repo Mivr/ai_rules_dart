@@ -10,13 +10,13 @@ on:
   # A `schedule` run never restores or saves any Bazel cache (see the
   # `schedule` branches on every cache input below), so this is the cold,
   # uncached run: every test job re-executes instead of replaying the disk
-  # cache. Tag runs (release dispatches) run the same cold shape minus the
-  # disk/external restore (see below); branch and PR pushes stay cached.
+  # cache. Tag runs (release dispatches), branch and PR pushes stay cached,
+  # the sb-ws remote cache included; `uncached` dispatches run cold too.
   schedule:
     - cron: "0 9 * * *"
   # Allows you to run this workflow manually from the Actions tab. The release
-  # gate (release.yaml) dispatches it on a tag with `uncached: true` when no
-  # passing nightly run exists.
+  # gate (release.yaml) dispatches it on a tag, with caches, when no passing
+  # nightly run exists. Pass `uncached: true` for a cold run.
   workflow_dispatch:
     inputs:
       uncached:
@@ -78,14 +78,14 @@ jobs:
   # `expected-failure` only and never in a positive sweep; e2e/hello_world
   # and e2e/codegen also run in `hermetic-strict` under the H1 flag set.
   # No e2e workspace is left without a job.
-  # A tag run (release dispatch) runs every job, matrix entry and step below,
-  # uncached: no job skips work on a tag run that the nightly `schedule` run does.
+  # A tag run (release dispatch) runs every job, matrix entry and step below
+  # (with caches): no job skips work on a tag run that the nightly run does.
   test:
     name: test (${{ matrix.os }}, shard ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
     environment: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached && 'sbws-cache-write' || '' }}
     # A hung folder fails fast instead of burning the runner for hours.
-    # Healthy shards finish well inside this; cold tag and nightly runs
+    # Healthy shards finish well inside this; cold nightly and `uncached` runs
     # need the headroom. GitHub caps jobs at 6 h.
     timeout-minutes: 120
     strategy:
@@ -213,15 +213,15 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-cache: true
-          # Branch and PR pushes restore and save every cache below. Tag
-          # runs (`github.ref_type == 'tag'`), `schedule` runs and
+          # Branch, PR and tag runs restore every cache below (main pushes
+          # save). `schedule` runs and
           # `uncached` dispatches restore neither the Bazel disk cache nor
           # the external cache and save nothing, so every test really
           # executes instead of replaying the disk cache. The
           # content-addressed repository cache and the bazelisk cache still
           # restore (every fetch is sha256-pinned).
-          disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && matrix.cache || false }}
-          external-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && matrix.cache || false }}
+          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           repository-cache: ${{ github.event_name != 'schedule' && (github.ref_type == 'tag' || !inputs.uncached) }}
           # Only main saves: a branch restores main's keys, and the gate's ci/
           # candidate saves duplicated them (7 GB on 2026-11-04), evicting main's
@@ -264,12 +264,12 @@ jobs:
             build --experimental_disk_cache_gc_max_size=4G
             build --experimental_disk_cache_gc_max_age=7d
             build --experimental_disk_cache_gc_idle_delay=5m
-      # Remote build cache on the sb-ws cluster (cache only). Off whenever the
-      # disk cache is off, so nightly, tag and uncached runs stay cold. Only
-      # pushes to main (the sbws-cache-write environment) upload results.
+      # Remote build cache on the sb-ws cluster (cache only). Off on the nightly
+      # schedule and on `uncached` dispatches, which stay cold. Only pushes to
+      # main (the sbws-cache-write environment) upload results.
       - uses: ./.github/actions/sbws-cache
         with:
-          enabled: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          enabled: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           read-id: ${{ secrets.SBWS_CACHE_READ_ID }}
           read-secret: ${{ secrets.SBWS_CACHE_READ_SECRET }}
           write-id: ${{ secrets.SBWS_CACHE_WRITE_ID }}
@@ -614,8 +614,8 @@ jobs:
           bazelisk-cache: true
           # Same cache policy as the `test` job; the disk cache has its own
           # key per shard.
-          disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && format('floor-linux-{0}', matrix.shard) || false }}
-          external-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && format('floor-linux-{0}', matrix.shard) || false }}
+          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           repository-cache: ${{ github.event_name != 'schedule' && (github.ref_type == 'tag' || !inputs.uncached) }}
           cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
           cache-version: "3"
@@ -630,12 +630,12 @@ jobs:
             build --experimental_disk_cache_gc_max_size=4G
             build --experimental_disk_cache_gc_max_age=7d
             build --experimental_disk_cache_gc_idle_delay=5m
-      # Remote build cache on the sb-ws cluster (cache only). Off whenever the
-      # disk cache is off, so nightly, tag and uncached runs stay cold. Only
-      # pushes to main (the sbws-cache-write environment) upload results.
+      # Remote build cache on the sb-ws cluster (cache only). Off on the nightly
+      # schedule and on `uncached` dispatches, which stay cold. Only pushes to
+      # main (the sbws-cache-write environment) upload results.
       - uses: ./.github/actions/sbws-cache
         with:
-          enabled: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          enabled: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           read-id: ${{ secrets.SBWS_CACHE_READ_ID }}
           read-secret: ${{ secrets.SBWS_CACHE_READ_SECRET }}
           write-id: ${{ secrets.SBWS_CACHE_WRITE_ID }}
@@ -729,6 +729,7 @@ jobs:
     # (control ctl/config.py DEFERRED_JOBS); a red nightly becomes a queue item.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
+    environment: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached && 'sbws-cache-write' || '' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -760,6 +761,16 @@ jobs:
             startup --host_jvm_args=-Xmx2g
             build --local_resources=cpu=1
             build --local_resources=memory=HOST_RAM*.15
+      # Remote build cache on the sb-ws cluster (cache only). Off on the nightly
+      # schedule and on `uncached` dispatches, which stay cold. Only pushes to
+      # main (the sbws-cache-write environment) upload results.
+      - uses: ./.github/actions/sbws-cache
+        with:
+          enabled: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          read-id: ${{ secrets.SBWS_CACHE_READ_ID }}
+          read-secret: ${{ secrets.SBWS_CACHE_READ_SECRET }}
+          write-id: ${{ secrets.SBWS_CACHE_WRITE_ID }}
+          write-secret: ${{ secrets.SBWS_CACHE_WRITE_SECRET }}
       - name: Configure Bazel version
         working-directory: e2e/hello_world
         run: |
@@ -2000,8 +2011,8 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && 'flake-sweep-linux' || false }}
-          external-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && 'flake-sweep-linux' || false }}
+          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           cache-save: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
           cache-version: "3"
@@ -2009,12 +2020,12 @@ jobs:
             common --announce_rc
             common --color=yes
             common --enable_bzlmod=true
-      # Remote build cache on the sb-ws cluster (cache only). Off whenever the
-      # disk cache is off, so nightly, tag and uncached runs stay cold. Only
-      # pushes to main (the sbws-cache-write environment) upload results.
+      # Remote build cache on the sb-ws cluster (cache only). Off on the nightly
+      # schedule and on `uncached` dispatches, which stay cold. Only pushes to
+      # main (the sbws-cache-write environment) upload results.
       - uses: ./.github/actions/sbws-cache
         with:
-          enabled: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          enabled: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           read-id: ${{ secrets.SBWS_CACHE_READ_ID }}
           read-secret: ${{ secrets.SBWS_CACHE_READ_SECRET }}
           write-id: ${{ secrets.SBWS_CACHE_WRITE_ID }}
@@ -2094,22 +2105,21 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-cache: true
-          # The same cache policy as the `test` shards: tag pushes, `schedule`
-          # runs and `uncached` dispatches restore no disk cache and save
-          # nothing.
-          disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && 'strict' || false }}
+          # The same cache policy as the `test` shards: `schedule` runs and
+          # `uncached` dispatches restore no disk cache and save nothing.
+          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && 'strict' || false }}
           repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
           bazelrc: |
             common --announce_rc
             common --color=yes
             test --test_output=errors
-      # Remote build cache on the sb-ws cluster (cache only). Off whenever the
-      # disk cache is off, so nightly, tag and uncached runs stay cold. Only
-      # pushes to main (the sbws-cache-write environment) upload results.
+      # Remote build cache on the sb-ws cluster (cache only). Off on the nightly
+      # schedule and on `uncached` dispatches, which stay cold. Only pushes to
+      # main (the sbws-cache-write environment) upload results.
       - uses: ./.github/actions/sbws-cache
         with:
-          enabled: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          enabled: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           read-id: ${{ secrets.SBWS_CACHE_READ_ID }}
           read-secret: ${{ secrets.SBWS_CACHE_READ_SECRET }}
           write-id: ${{ secrets.SBWS_CACHE_WRITE_ID }}
@@ -2124,6 +2134,7 @@ jobs:
   # regression never blocks a merge or a release.
   last_rc:
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached && 'sbws-cache-write' || '' }}
     timeout-minutes: 120
     continue-on-error: true
     env:
@@ -2143,6 +2154,16 @@ jobs:
             common --announce_rc
             common --color=yes
             test --test_output=errors
+      # Remote build cache on the sb-ws cluster (cache only). Off on the nightly
+      # schedule and on `uncached` dispatches, which stay cold. Only pushes to
+      # main (the sbws-cache-write environment) upload results.
+      - uses: ./.github/actions/sbws-cache
+        with:
+          enabled: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          read-id: ${{ secrets.SBWS_CACHE_READ_ID }}
+          read-secret: ${{ secrets.SBWS_CACHE_READ_SECRET }}
+          write-id: ${{ secrets.SBWS_CACHE_WRITE_ID }}
+          write-secret: ${{ secrets.SBWS_CACHE_WRITE_SECRET }}
       - name: Bazel version
         run: bazel version
       - name: Test on the last release candidate
@@ -2152,6 +2173,7 @@ jobs:
   # it is complete, then fail on any difference from the committed files.
   mod-tidy:
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached && 'sbws-cache-write' || '' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -2166,6 +2188,16 @@ jobs:
           bazelrc: |
             common --announce_rc
             common --color=yes
+      # Remote build cache on the sb-ws cluster (cache only). Off on the nightly
+      # schedule and on `uncached` dispatches, which stay cold. Only pushes to
+      # main (the sbws-cache-write environment) upload results.
+      - uses: ./.github/actions/sbws-cache
+        with:
+          enabled: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          read-id: ${{ secrets.SBWS_CACHE_READ_ID }}
+          read-secret: ${{ secrets.SBWS_CACHE_READ_SECRET }}
+          write-id: ${{ secrets.SBWS_CACHE_WRITE_ID }}
+          write-secret: ${{ secrets.SBWS_CACHE_WRITE_SECRET }}
       - name: Tidy MODULE.bazel
         run: bazel mod tidy --lockfile_mode=refresh
       - name: Refresh the lockfile
