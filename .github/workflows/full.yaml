@@ -333,8 +333,17 @@ jobs:
           # ~/.bazelrc; they inherit these two through env_inherit instead.
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+      # Since a8952a6c builds profile, release and two debug APKs of the example,
+      # the hosted runner has been shut down mid-build on every run, with no
+      # build error first. Each configuration keeps its own idle persistent
+      # workers (desugar, dexing, resource and kernel JVMs) resident, so bound
+      # each kind to one instance; the sampler below logs memory as it goes.
+      - name: Bound persistent workers
+        run: echo "build --worker_max_instances=1" >> ~/.bazelrc
       - name: bazel test //... (shard workspaces)
         run: |
+          (while sleep 60; do free -m | awk 'NR==2 {print "memory: " $3 " of " $2 " MB used"}'; done) &
+          trap "kill $!" EXIT
           failed=""
           for ws in $WORKSPACES; do
             echo "::group::e2e/$ws"
