@@ -184,9 +184,20 @@ def _ios_framework_import_test_impl(ctx):
     action_mnemonics = [a.mnemonic for a in actions]
     asserts.true(env, "CppModuleMap" in action_mnemonics)
     if ctx.attr.expect_linked:
-        asserts.true(env, "SolibSymlink" in action_mnemonics)
-        solib_actions = [a for a in actions if a.mnemonic == "SolibSymlink"]
-        asserts.true(env, any([f.basename == "App" for f in solib_actions[0].inputs.to_list()]))
+        # A linked dynamic library is staged under `_solib_*`. The action is
+        # matched by that output, not by mnemonic: native `cc_common` (Bazel 9)
+        # calls it `SolibSymlink`, the Starlark one (Bazel 10) `Symlink`.
+        solib_inputs = [
+            f.basename
+            for a in actions
+            if any([o.short_path.startswith("_solib_") for o in a.outputs.to_list()])
+            for f in a.inputs.to_list()
+        ]
+        asserts.true(
+            env,
+            "App" in solib_inputs,
+            "Expected an action staging App under _solib_*, got inputs %s; mnemonics %s" % (solib_inputs, action_mnemonics),
+        )
 
     return analysistest.end(env)
 
