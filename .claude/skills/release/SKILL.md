@@ -24,12 +24,36 @@ upstream `bazelbuild/bazel-central-registry`. A pushed `vX.Y.Z` tag triggers a r
 (`.github/workflows/release.yaml`), which opens a **draft** BCR PR; marking that PR
 "ready for review" triggers BCR auto-approval.
 
+## Continuous delivery (the default path)
+
+Releases cut themselves. `.github/workflows/auto-release.yaml` runs after every CI
+or Full run on `main`. When both have a passing push (or nightly) run on the same
+commit, no existing `v*.*.*` tag contains it, and a commit since the latest published
+release carries a `Changelog:` entry other than `skip`, it picks the version and calls
+"Tag a Release" (`tag.yaml`) with that commit:
+
+- the version bumps the newest tag: a `feat` or breaking (`!`) commit bumps the minor
+  while the major is 0 (the major from 1.0 on), anything else the patch
+  (`tools/changelog/next_version.dart`, unit-tested; it looks at rules_dart's tags only,
+  so a rules_dart_proto release still aligns to the number rules_dart took);
+- Full runs on every push to `main`, one at a time, newest commit wins, so a commit
+  Full skipped ships with the next one it passes;
+- the release gate finds both proofs already on the commit, so the release takes the
+  build/attest/publish jobs only (about 10 minutes), not a new CI and Full run.
+
+So the normal job is: land commits with correct `Changelog:` trailers and keep `main`
+green. Use the phases below only to choose a version by hand (a different bump, or
+re-releasing), to release a commit the automation skipped, or to drive what comes
+after the GitHub Release.
+
 ## Version policy
 
 - `rules_dart` and `rules_dart_proto` are **version-aligned**: same number. Target =
   the next version **greater than the max latest tag across both**. Default bump =
-  **patch** (`+0.0.1`); use **minor** (`+0.1.0`) for a significant feature. **Confirm
-  the exact number with the user before tagging.**
+  **patch** (`+0.0.1`); use **minor** (`+0.1.0`) for a significant feature. When you
+  tag by hand, **confirm the exact number with the user before tagging.** Automatic
+  releases take it from the commit types instead (see Continuous delivery), which the
+  user chose on 2026-11-16.
 - `rules_flutter` is on its **own** track (it started at `v0.0.1`, while rules_dart is at
   0.6.x). Its target = its own latest tag + patch by default; minor if its unreleased
   commits carry a significant feature. Confirm it with the user alongside `TARGET`.

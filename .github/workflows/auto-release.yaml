@@ -1,0 +1,104 @@
+# Continuous delivery: releases each commit on main that CI and Full both
+# passed on, when it carries a `Changelog:` entry no release has shipped yet.
+#
+# Every completed CI or Full run on main starts this workflow. It releases the
+# run's commit only when both workflows have a passing push or nightly run on
+# it, no existing `v*.*.*` tag already contains it, and next_version finds an
+# entry other than `skip` since the latest published release. The version
+# comes from the commits: a `feat` or breaking (`!`) commit bumps the minor
+# while the major is 0, anything else the patch (tools/changelog/next_version.dart).
+# It then calls tag.yaml with that version and commit, which tags it and calls
+# release.yaml; the release gate finds both proofs on the commit and passes at
+# once. Full runs on every push to main, newest commit wins, so a commit Full
+# skipped is released with the next one it passes.
+#
+# A version by hand (a different bump, a re-release) is still "Tag a Release"
+# dispatched on main.
+name: Auto release
+on:
+  workflow_run:
+    workflows: [CI, "Full matrix"]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  # One decision at a time, never cancelled. The second of CI and Full to
+  # finish on a commit waits here, then finds it tagged and releases nothing.
+  group: auto-release
+  cancel-in-progress: false
+jobs:
+  decide:
+    name: Decide whether to release
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          # Every tag and the history between them, for next_version.
+          fetch-depth: 0
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: CI and Full both passed on the commit
+        id: proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          proven=true
+          for wf in ci.yaml full.yaml; do
+            n=$(gh run list --repo "$REPO" --workflow "$wf" --commit "$SHA" --limit 50 --json event,headBranch,conclusion \
+              --jq '[.[] | select(.conclusion == "success" and (.event == "schedule" or (.event == "push" and .headBranch == "main")))] | length')
+            echo "$wf: $n passing push or nightly run(s) on $SHA"
+            [ "$n" -gt 0 ] || proven=false
+          done
+          latest=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n 1)
+          if [ -n "$latest" ] && git merge-base --is-ancestor "$SHA" "$latest"; then
+            echo "$SHA is already in $latest"
+            proven=false
+          fi
+          echo "proven=$proven" >> "$GITHUB_OUTPUT"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        if: steps.proof.outputs.proven == 'true'
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          cache-save: false
+      - name: Next version
+        id: version
+        if: steps.proof.outputs.proven == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          since=$(gh release view --repo "$REPO" --json tagName --jq .tagName)
+          echo "9.3.0" > tools/.bazelversion
+          version=$(cd tools && bazel run //changelog:next_version -- --since "$since" --to "$SHA")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Release $SHA as: ${version:-nothing to release} (latest release $since)"
+  release:
+    name: Tag and release
+    needs: decide
+    if: needs.decide.outputs.version != ''
+    uses: ./.github/workflows/tag.yaml
+    with:
+      version: ${{ needs.decide.outputs.version }}
+      sha: ${{ needs.decide.outputs.sha }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      actions: write
