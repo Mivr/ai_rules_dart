@@ -24,7 +24,7 @@ forward.
 | `rules_kotlin` | 2.1.10 | `@rules_kotlin//kotlin:android.bzl` for `kt_android_library`, loaded by `flutter_android_app`. |
 | `rules_java` | 9.0.0 | `@rules_java//java:java_import.bzl`, `@rules_java//java/common:java_info.bzl` (`JavaInfo`) and the Java toolchain rules. |
 | `rules_jvm_external` | 6.8 | `@rules_jvm_external//:extensions.bzl` with `maven.install`/`maven.artifact`, `use_starlark_android_rules` and `aar_import_bzl_label`. |
-| `ai_rules_dart` (repo `rules_dart`) | 0.28.0 | `@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `dart_codegen(package_name = ...)`, `@rules_dart//dart/pub:pub_scc.bzl` and `dart_analysis_config(baseline = ...)`; the `Mivr/ai_rules_dart` release (a BCR entry is pending). |
+| `ai_rules_dart` (repo `rules_dart`) | 0.28.3 | `@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `dart_codegen(package_name = ...)`, `@rules_dart//dart/pub:pub_scc.bzl` and `dart_analysis_config(baseline = ...)`; the `Mivr/ai_rules_dart` release (a BCR entry is pending). |
 | `rules_go` | 0.59.0 | `@rules_go//go/config:pure` and the Bazel 9 `CcInfo` import in `go/private/rules/cross.bzl`; 0.50.0 through 0.58.3 fail to load on Bazel 9. |
 | `llvm` | 0.8.17 | `@llvm//extensions:llvm_toolchain_minimal.bzl` and the `llvm-toolchain-minimal-<os>-<cpu>` repos, on the opt-in xtool Darwin SDK path and for this repository's own hermetic tests. |
 
@@ -41,17 +41,17 @@ requirements:
 
 | Lifted module | Our floor | Resolved | Lifted by | Because |
 |---|---|---|---|---|
-| `bazel_skylib` | 1.8.0 | 1.9.2 | `ai_rules_dart` 0.28.0 | Its own `bazel_dep` asks for 1.9.2. `llvm` 0.8.17 asks for 1.9.0, which is lower. |
-| `package_metadata` | 0.0.5 | 0.0.13 | `ai_rules_dart` 0.28.0 | Its own `bazel_dep` asks for 0.0.13. |
-| `rules_cc` | 0.2.20 | 0.2.26 | `ai_rules_dart` 0.28.0 | Its own `bazel_dep` asks for 0.2.26. `llvm` 0.8.17 asks for 0.2.22, which is lower. |
-| `apple_support` | 2.2.0 | 2.9.1 | `rules_cc` 0.2.26 | `rules_cc` 0.2.25 and newer add a regular `bazel_dep` on `apple_support`; 0.2.26 asks for 2.9.1. `rules_cc` reaches that version through `ai_rules_dart` 0.28.0. |
+| `bazel_skylib` | 1.8.0 | 1.9.2 | `ai_rules_dart` 0.28.3 | Its own `bazel_dep` asks for 1.9.2. `llvm` 0.8.17 asks for 1.9.0, which is lower. |
+| `package_metadata` | 0.0.5 | 0.0.13 | `ai_rules_dart` 0.28.3 | Its own `bazel_dep` asks for 0.0.13. |
+| `rules_cc` | 0.2.20 | 0.2.26 | `ai_rules_dart` 0.28.3 | Its own `bazel_dep` asks for 0.2.26. `llvm` 0.8.17 asks for 0.2.22, which is lower. |
+| `apple_support` | 2.2.0 | 2.9.1 | `rules_cc` 0.2.26 | `rules_cc` 0.2.25 and newer add a regular `bazel_dep` on `apple_support`; 0.2.26 asks for 2.9.1. `rules_cc` reaches that version through `ai_rules_dart` 0.28.3. |
 | `rules_java` | 9.0.0 | 9.3.0 | `rules_android` 0.8.0 | Its own `bazel_dep` asks for 9.3.0. |
 | `rules_jvm_external` | 6.8 | 6.9 | `rules_android` 0.8.0 | Its own `bazel_dep` asks for 6.9. |
-| `rules_go` | 0.59.0 | 0.64.2 | `ai_rules_dart` 0.28.0 | Its own `bazel_dep` asks for 0.64.2. `llvm` 0.8.17 asks for 0.62.0, which is lower. |
+| `rules_go` | 0.59.0 | 0.64.2 | `ai_rules_dart` 0.28.3 | Its own `bazel_dep` asks for 0.64.2. `llvm` 0.8.17 asks for 0.62.0, which is lower. |
 
 Every other floor resolves at its declared version in that graph: `platforms`
 1.1.0, `rules_apple` 4.5.3, `rules_swift` 3.5.0, `rules_android` 0.8.0,
-`rules_kotlin` 2.1.10, `ai_rules_dart` 0.28.0 and `llvm` 0.8.17.
+`rules_kotlin` 2.1.10, `ai_rules_dart` 0.28.3 and `llvm` 0.8.17.
 
 The lift table is asserted, not just documented: `e2e/min_versions` declares
 every floor, pins the floors that can bind, and its
@@ -90,9 +90,9 @@ leak into a consumer graph:
 | `rules_go` | 0.64.2 |
 | `llvm` | 0.8.19 |
 
-`platforms` 1.1.0, `rules_android` 0.8.0 and `ai_rules_dart` 0.28.0 are
+`platforms` 1.1.0, `rules_android` 0.8.0 and `ai_rules_dart` 0.28.3 are
 already current at their floor, so they need no override. The git override of
-`ai_rules_dart` at its 0.28.0 commit supplies the version the source
+`ai_rules_dart` at its 0.28.3 commit supplies the version the source
 `MODULE.bazel` intentionally leaves out.
 
 ## The version-floor trade-off
@@ -119,14 +119,14 @@ which may be *older and heavier* than the current release's:
   (0.50.0 through 0.58.3 fail to load: `go/private/rules/cross.bzl` uses the
   native `CcInfo` symbol Bazel 9 removed; the `rules_cc` import landed in
   0.59.0). In practice `rules_android` already imposes the same floor, and
-  the floor never binds anyway: `ai_rules_dart` 0.28.0 requires 0.64.2, so
+  the floor never binds anyway: `ai_rules_dart` 0.28.3 requires 0.64.2, so
   every graph selects that (`bazel mod explain rules_go` — verified even in
   the workspaces that declare only the 0.59.0 minimum). The floor is a
   Bazel 9 load minimum, not a tested configuration.
 - `rules_swift` and `apple_support` now have real floors (3.5.0 at
   compatibility level 3, and 2.2.0). They do **not** float below those
   versions: a consumer that declares nothing gets at least the floor, and
-  only another module's higher request lifts them. `ai_rules_dart` 0.28.0
+  only another module's higher request lifts them. `ai_rules_dart` 0.28.3
   lifts `apple_support` to 2.9.1 through `rules_cc` 0.2.26; that is the
   transitive lift table above, not a floating default.
 

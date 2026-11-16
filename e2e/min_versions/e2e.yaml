@@ -8,16 +8,16 @@ commands:
   - name: pre-0.24.0 rules_dart fails on pub_scc.bzl
     replace_in_files:
       - path: MODULE.bazel
-        from: version = "0.28.0", repo_name = "rules_dart"
+        from: version = "0.28.3", repo_name = "rules_dart"
         to: version = "0.21.0", repo_name = "rules_dart"
       - path: MODULE.bazel
-        from: https://github.com/Mivr/ai_rules_dart/releases/download/v0.28.0/rules_dart-v0.28.0.tar.gz
+        from: https://github.com/Mivr/ai_rules_dart/releases/download/v0.28.3/rules_dart-v0.28.3.tar.gz
         to: https://github.com/Mivr/ai_rules_dart/releases/download/v0.21.0/rules_dart-v0.21.0.tar.gz
       - path: MODULE.bazel
-        from: a08c694e218db8b725d368075f539478d79fd7a394a622312732c0368838c72c
+        from: 75165afd286a20b381334761f271413b7a9839a843f1266190157d7ef526b7a1
         to: 2c8796f98b39667be2b258b860e86c8b99ab7837aeec280180221c777ac69a9f
       - path: MODULE.bazel
-        from: rules_dart-0.28.0
+        from: rules_dart-0.28.3
         to: rules_dart-0.21.0
     run: bazel query @deps//...
     expect:

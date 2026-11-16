@@ -17,7 +17,7 @@ load("@rules_dart//dart:defs.bzl", "dart_test")
 # - `extensions.bzl`: its closure loads `@rules_dart//dart/pub:pub_scan.bzl`,
 #   `@rules_dart//dart/pub:pub_archive_scan.bzl` and
 #   `@rules_dart//dart/pub:pub_scanner_sdk.bzl`, which have no `bzl_library`
-#   at the pinned rules_dart v0.28.0. (`version.bzl` and `pub_scc_verify.bzl`
+#   at the pinned rules_dart v0.28.3. (`version.bzl` and `pub_scc_verify.bzl`
 #   have targets, with restricted visibility.)
 #
 # `flutter/tests/bzl_library_guard` derives the expected extracts from the

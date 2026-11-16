@@ -3,7 +3,7 @@
 module(name = "rules_flutter_min_versions")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.28.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
 bazel_dep(name = "rules_android", version = "0.8.0")
 bazel_dep(name = "rules_android_ndk", version = "0.1.5")
 
@@ -17,7 +17,7 @@ bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
 # never at the release this repository compiles. The comments in the root
 # MODULE.bazel name the symbol that sets each floor; this workspace is the
 # proof that the set builds together. Some of these floors are lifted by
-# another module's own requirement (ai_rules_dart 0.28.0 asks for newer
+# another module's own requirement (ai_rules_dart 0.28.3 asks for newer
 # rules_cc, bazel_skylib, package_metadata and rules_go; rules_android 0.8.0
 # asks for newer rules_java and rules_jvm_external, and the newer rules_cc
 # asks for newer apple_support). Those modules stay at the floor here and MVS
@@ -41,9 +41,9 @@ local_path_override(
 
 archive_override(
     module_name = "ai_rules_dart",
-    sha256 = "a08c694e218db8b725d368075f539478d79fd7a394a622312732c0368838c72c",
-    strip_prefix = "rules_dart-0.28.0",
-    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/v0.28.0/rules_dart-v0.28.0.tar.gz"],
+    sha256 = "75165afd286a20b381334761f271413b7a9839a843f1266190157d7ef526b7a1",
+    strip_prefix = "rules_dart-0.28.3",
+    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/v0.28.3/rules_dart-v0.28.3.tar.gz"],
 )
 
 # Hermetic host C++ toolchain: CI images and bare hosts may have no
@@ -51,7 +51,7 @@ archive_override(
 # block as e2e/integration_android). llvm's floor is 0.8.17 (the xtool SDK
 # and the prebuilt-toolchain repos this workspace registers); llvm itself
 # asks for rules_cc 0.2.22, bazel_skylib 1.9.0 and rules_go 0.62.0, which
-# ai_rules_dart 0.28.0 lifts further.
+# ai_rules_dart 0.28.3 lifts further.
 bazel_dep(name = "llvm", version = "0.8.17", dev_dependency = True)
 
 register_toolchains(
@@ -73,7 +73,7 @@ register_toolchains(
 # llvm, rules_android and platforms are the remaining floors no other module
 # asks to raise.
 #
-# The lifted floors are deliberately NOT overridden here: ai_rules_dart 0.28.0
+# The lifted floors are deliberately NOT overridden here: ai_rules_dart 0.28.3
 # asks for newer rules_cc, bazel_skylib, package_metadata and rules_go;
 # rules_android 0.8.0 asks for rules_java 9.3.0 and rules_jvm_external 6.9;
 # rules_cc 0.2.26 asks for apple_support 2.9.1. Forcing those below their

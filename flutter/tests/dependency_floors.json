@@ -77,9 +77,9 @@
     "symbol": "`@rules_jvm_external//:extensions.bzl` with `maven.install`/`maven.artifact`, `use_starlark_android_rules` and `aar_import_bzl_label`"
   },
   "ai_rules_dart": {
-    "floor": "0.28.0",
-    "current": "0.28.0",
-    "resolved": "0.28.0",
+    "floor": "0.28.3",
+    "current": "0.28.3",
+    "resolved": "0.28.3",
     "lifted_by": [],
     "symbol": "`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `@rules_dart//dart/pub:pub_scc.bzl`, `dart_analysis_config(baseline = ...)` and `dart_codegen(package_name = ...)`"
   },

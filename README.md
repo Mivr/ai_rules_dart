@@ -111,16 +111,16 @@ Two extensions cover the rest. A root-registered custom release (an older stable
 
 #### Overriding `rules_dart`
 
-`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, and `dart_codegen(package_name = ...)`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.28.0, released on GitHub under that module name with `repo_name = "rules_dart"`, so a root module that overrides only `ai_rules_flutter` fails fast with a version error instead of a missing-symbol error at load. The block above gives the latest released, CI-tested pair: `ai_rules_flutter` 0.20.0 with `ai_rules_dart` 0.18.0. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
+`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, and `dart_codegen(package_name = ...)`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.28.3, released on GitHub under that module name with `repo_name = "rules_dart"`, so a root module that overrides only `ai_rules_flutter` fails fast with a version error instead of a missing-symbol error at load. The block above gives the latest released, CI-tested pair: `ai_rules_flutter` 0.20.0 with `ai_rules_dart` 0.18.0. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
 
 To live at the heads instead of these releases (local development against a checkout of each repository's `main`), replace the two `archive_override` blocks with overrides onto your clones. Because Bzlmod ignores module overrides in non-root modules, the overrides go in your root `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "ai_rules_dart", version = "0.28.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
 
 git_override(
     module_name = "ai_rules_dart",
-    commit = "b7fe746fb25c868296cc90353bacf4a7a0a57075",
+    commit = "e7163aab8f9171f54693cd1b99feb7d3cee9602d",
     remote = "https://github.com/Mivr/ai_rules_dart.git",
 )
 ```
@@ -557,7 +557,7 @@ What a plain consumer's module graph pulls in, by feature. Floors are what `rule
 
 | Feature | Modules | Notes |
 |---|---|---|
-| Every app | `ai_rules_dart` 0.28.0 (repo_name `rules_dart`; the `Mivr` fork release, taken via `archive_override` above), `bazel_skylib`, `platforms`, `package_metadata` | Dart compilation, hooks, codegen. |
+| Every app | `ai_rules_dart` 0.28.3 (repo_name `rules_dart`; the `Mivr` fork release, taken via `archive_override` above), `bazel_skylib`, `platforms`, `package_metadata` | Dart compilation, hooks, codegen. |
 | iOS / macOS bundles | `rules_apple` ≥ 4.5.3, `rules_swift`, `apple_support`, `rules_cc` | 4.5.3 is the proven floor: `e2e/min_versions` pins it exactly and builds both Apple legs. `rules_swift`/`apple_support` float to the graph's maxima (4.5.3 accepts Swift at compatibility level 3). |
 | Android APK | `rules_android` 0.8.0, `rules_kotlin`, `rules_java`, `rules_jvm_external` 7.1, `rules_go` ≥ 0.59.0 | 0.8.0 is the floor: the signing overlay reads `rules_android`'s `apk_signing_method` flag, which exists only in 0.8.0+. The pinned `go_sdk.download` (Go 1.26.2, checksummed) in `rules_flutter`'s `MODULE.bazel` applies to every consumer without its own `go_sdk` block — it sorts before `rules_android`'s bundled unpinned 1.22.4 whatever order the root lists the modules in, while a root `go_sdk` block still wins; plain consumers fetch no Go SDK until a Go toolchain resolves. The `.bazelrc` Java settings above are required, and the build host needs `unzip` and `python3` for the AAR extractors. |
 | xtool Darwin backend (opt-in) | `llvm` 0.8.19, exec-host toolchain archive only | Needs only `flutter.darwin_sdk(url = ..., sha256 = ...)` or `flutter.darwin_sdk(path = ...)` in the root module — no other `MODULE.bazel` lines. Plain consumers fetch no LLVM archive and register no LLVM toolchain (see `docs/dependencies.md`). |

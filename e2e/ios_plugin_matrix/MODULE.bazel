@@ -3,7 +3,7 @@
 module(name = "rules_flutter_ios_plugin_matrix")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.28.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "apple_support", version = "2.9.1")
 bazel_dep(name = "rules_apple", version = "5.2.0")
@@ -19,7 +19,7 @@ local_path_override(
 
 git_override(
     module_name = "ai_rules_dart",
-    commit = "b7fe746fb25c868296cc90353bacf4a7a0a57075",
+    commit = "e7163aab8f9171f54693cd1b99feb7d3cee9602d",
     remote = "https://github.com/Mivr/ai_rules_dart.git",
 )
 

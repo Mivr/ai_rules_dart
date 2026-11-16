@@ -60,7 +60,7 @@ load a private file.
 
 ### rules_dart boundary
 
-The Dart side comes from `ai_rules_dart` 0.28.0, which this module names
+The Dart side comes from `ai_rules_dart` 0.28.3, which this module names
 `rules_dart` (`MODULE.bazel:129`). `flutter/private/flutter_library.bzl:3-4`
 loads `DartInfo`, `DartCodeAssetInfo` and the constructors `dart_info`,
 `dart_package_identity`, `dart_analyzable_info_with_package` and friends from
@@ -351,7 +351,7 @@ runner that the host requires.
 
 ### The rule set's own dependency
 
-The Dart toolchain comes from `ai_rules_dart` 0.28.0 (`MODULE.bazel:129`).
+The Dart toolchain comes from `ai_rules_dart` 0.28.3 (`MODULE.bazel:129`).
 `flutter/private/rules_dart_floor.bzl` refuses an older resolved release, and
 the floor is `RULES_DART_FLOOR` in that file.
 
