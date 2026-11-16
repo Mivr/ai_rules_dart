@@ -82,6 +82,25 @@ void main(List<String> args) {
     expect(_problems(_oldFull, ci), isNotEmpty);
   });
 
+  test('only a nightly skips macOS, and only after a main push run passed', () {
+    final String job = full.substring(
+      full.indexOf('\n  test-macos:\n'),
+      full.indexOf('\n    steps:', full.indexOf('\n  test-macos:\n')),
+    );
+    expect(job, contains('    needs: dedupe\n'));
+    expect(
+      job,
+      contains("    if: needs.dedupe.outputs.skip-macos != 'true'\n"),
+    );
+    final String dedupe = full.substring(
+      full.indexOf('\n  dedupe:\n'),
+      full.indexOf('\n  test-macos:\n'),
+    );
+    expect(dedupe, contains(r'if [ "$EVENT" = schedule ]'));
+    expect(dedupe, contains('--event push --status success'));
+    expect(dedupe, contains('select(.headBranch == "main")'));
+  });
+
   test('a dropped folder without a reason is rejected', () {
     final String noReason = full.replaceFirst(
       RegExp(r'^\s*# - e2e/web_app:.*\n', multiLine: true),

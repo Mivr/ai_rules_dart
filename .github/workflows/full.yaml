@@ -195,8 +195,39 @@ jobs:
   # Each folder's log is streamed under a `===== <folder> =====` header the
   # moment that folder finishes (not after all waves), and uploaded as an
   # artifact `if: always()`, so a killed job still leaves its evidence.
+  # The nightly's macOS job duplicates a main-push run of this workflow when
+  # one has already passed on the same commit (Full runs on every push to
+  # main), and the account has only 5 macOS runners. The nightly then skips
+  # its macOS job; its Linux jobs still run cold. It skips only after a push
+  # run *passed*, so a nightly that skipped never stands in for macOS proof the
+  # push run did not give (the release gate and auto-release.yaml accept both).
+  dedupe:
+    name: macOS already proven on this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      skip-macos: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          skip=false
+          if [ "$EVENT" = schedule ]; then
+            n=$(gh run list --repo "$REPO" --workflow full.yaml --commit "$SHA" --event push --status success --limit 20 \
+              --json headBranch --jq '[.[] | select(.headBranch == "main")] | length' || echo 0)
+            if [ "$n" -gt 0 ]; then skip=true; fi
+          fi
+          echo "skip=$skip" | tee -a "$GITHUB_OUTPUT"
   test-macos:
     name: test-macos (shard ${{ matrix.shard }})
+    needs: dedupe
+    if: needs.dedupe.outputs.skip-macos != 'true'
     runs-on: macos-latest
     # Cold nightly and `uncached` runs need the headroom. GitHub caps jobs at
     # 6 h.
