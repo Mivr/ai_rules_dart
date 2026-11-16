@@ -21,11 +21,14 @@ permissions:
 jobs:
   # Releases reuse proof instead of replaying tests. A tag push starts no CI or
   # Full run. For each of ci.yaml and full.yaml, release_gate.sh takes the first
-  # of: a successful nightly `schedule` run on the tagged commit (reused as it
-  # is), or the newest `workflow_dispatch` run on the tag, which the gate
-  # dispatches when none exists yet. Dispatched runs run every job with the
-  # caches a pull request gets; only the
-  # nightly and `uncached` dispatches run cold. The gate judges each run's current status on every poll, and it
+  # of: a successful run on the tagged commit that is a nightly `schedule`, a
+  # push to main (Full runs on every push to main) or a `workflow_dispatch` on
+  # the tag, reused as it is; a nightly or main-push run on that commit still
+  # in progress, waited for; or a `workflow_dispatch` on the tag, which the
+  # gate dispatches when none exists yet. Dispatched runs run every job with
+  # the caches a pull request gets; only the nightly and `uncached` dispatches
+  # run cold. A release auto-release.yaml starts finds both proofs already
+  # there. The gate judges each run's current status on every poll, and it
   # fails closed: a failed or cancelled run, a dispatched run that never appears,
   # or no passing run within the deadline blocks the release.
   gate:
@@ -44,8 +47,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag_name || github.ref_name }}
-          SHA: ${{ github.sha }}
-        run: bash .github/workflows/release_gate.sh "$TAG" "$SHA"
+        # The tagged commit, from the tag: when auto-release.yaml calls this
+        # through tag.yaml, github.sha is main's head, not the tagged commit.
+        run: bash .github/workflows/release_gate.sh "$TAG" "$(gh api "repos/$REPO/commits/$TAG" --jq .sha)"
   release:
     needs: gate
     # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
@@ -59,8 +63,9 @@ jobs:
       # the checkout before cutting the archive. A cold `bazel test //...` here
       # timed out small tests on v0.11.0 even though the same commit was green,
       # so testing again buys no coverage and only reintroduces cold-runner
-      # flakes.
-      bazel_test_command: bazel build //...
+      # flakes. Loading and analysing every target (`--nobuild`) checks that
+      # the checkout resolves without the ~8 minute cold build.
+      bazel_test_command: bazel build --nobuild //...
       # No setup-bazel caches: a tag ref's caches are never restored by any
       # later run; they only evict main's under the 10 GB repository limit.
       mount_bazel_caches: false

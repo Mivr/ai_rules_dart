@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # Release gate for a tag. Each of ci.yaml and full.yaml must pass on the tagged
 # commit, found in this order:
-#   a. a successful `schedule` (nightly) run on that sha, reused as it is;
-#   b. otherwise the newest `workflow_dispatch` run on the tag and sha. When
+#   a. a successful run on that sha that is a nightly (`schedule`), a push to
+#      main (push CI, and Full, which runs on every push to main), or a
+#      `workflow_dispatch` on the tag. It is reused as it is: the commit is
+#      the same, and a push run on main covers what a dispatch would (ci.yaml's
+#      deferred macOS jobs are a subset of full.yaml's macOS legs);
+#   b. otherwise, while a nightly or main-push run on that sha is still in
+#      progress, the gate waits for it instead of starting a second one;
+#   c. otherwise the newest `workflow_dispatch` run on the tag and sha. When
 #      there is none, the workflow is dispatched on the tag, which runs every
 #      job with caches (only the nightly and `uncached` dispatches run cold).
 # Every poll judges the run's current status, so a rerun of failed jobs can
@@ -36,9 +42,19 @@ list_runs() {
     --json databaseId,createdAt,status,conclusion,event,headBranch,headSha,url
 }
 
-# nightly_url <runs>: URL of the newest successful schedule run on the sha.
-nightly_url() {
-  jq -r --arg sha "$sha" '[.[] | select(.event == "schedule" and .headSha == $sha and .conclusion == "success")] | sort_by(.createdAt) | last | .url // empty' <<<"$1"
+# A run that proves the sha: a nightly, a push to main, or a dispatch on the tag
+# (reported bare or as a full ref).
+proving='.headSha == $sha and (.event == "schedule" or (.event == "push" and .headBranch == "main") or (.event == "workflow_dispatch" and (.headBranch == $tag or .headBranch == ("refs/tags/" + $tag))))'
+
+# proof <runs>: "<event> <url>" of the newest successful proving run, or empty.
+proof() {
+  jq -r --arg sha "$sha" --arg tag "$tag" "[.[] | select($proving and .conclusion == \"success\")] | sort_by(.createdAt) | last | if . == null then empty else \"\\(.event) \\(.url)\" end" <<<"$1"
+}
+
+# main_in_progress <runs>: URL of a nightly or main-push run on the sha that has
+# not completed yet, or empty.
+main_in_progress() {
+  jq -r --arg sha "$sha" '[.[] | select(.headSha == $sha and .status != "completed" and (.event == "schedule" or (.event == "push" and .headBranch == "main")))] | sort_by(.createdAt) | last | .url // empty' <<<"$1"
 }
 
 # dispatch_run <runs>: the newest workflow_dispatch run on the tag and sha. The
@@ -66,10 +82,21 @@ while true; do
       waiting="$waiting $wf"
       continue
     fi
-    nightly="$(nightly_url "$runs")"
-    if [ -n "$nightly" ]; then
-      echo "release_gate: $wf: reusing nightly run $nightly"
+    found="$(proof "$runs")"
+    if [ -n "$found" ]; then
+      case "${found%% *}" in
+        schedule) kind="nightly" ;;
+        push) kind="main push" ;;
+        *) kind="dispatched" ;;
+      esac
+      echo "release_gate: $wf: reusing $kind run ${found#* }"
       passed[i]=1
+      continue
+    fi
+    busy="$(main_in_progress "$runs")"
+    if [ -n "$busy" ]; then
+      echo "release_gate: $wf: waiting for run $busy on this commit"
+      waiting="$waiting $wf"
       continue
     fi
     run="$(dispatch_run "$runs")"
