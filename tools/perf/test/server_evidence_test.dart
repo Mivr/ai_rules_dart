@@ -287,6 +287,57 @@ void _testReportHeapKey() {
   }
 }
 
+/// Every logged command leaves the log unsorted; the log is counted, then
+/// deleted.
+void _testUnsortedLogCountedAndDeleted() {
+  final f = _Fixture();
+  try {
+    final logged = <List<String>>[];
+    final logs = <File>[];
+    final measurements = ScaleMeasurer(
+      workspaceRoot: f.dir.path,
+      tempRoot: '${f.dir.path}/tmp',
+      profileDir: '${f.dir.path}/profiles',
+      procReader: _ScriptedReader([
+        {_pid: _server(7)},
+      ]),
+      bazelRunner: (ws, base, args) {
+        final flag = args.where(
+          (a) => a.startsWith('--execution_log_json_file='),
+        );
+        if (flag.isNotEmpty) {
+          logged.add(args);
+          final log = File(flag.single.split('=').last);
+          logs.add(log);
+          log.writeAsStringSync(
+            '{"commandArgs": ["tool", "a{b}"]}\n'
+            '{"commandArgs": ["tool", "\u00e9xyz"]}\n',
+          );
+        }
+        return _fakeBazel((_) => _result(0))(ws, base, args);
+      },
+      evidenceSources: f.sources(),
+    ).call(32);
+    final clean = measurements['dart-app-clean']!;
+    _check(clean.error == null, 'clean flow passed: ${clean.error}');
+    _check(clean.actionCount == 2, 'two spawns: ${clean.actionCount}');
+    _check(
+      clean.maxCommandLineBytes == 11,
+      'largest command line in UTF-8 bytes: ${clean.maxCommandLineBytes}',
+    );
+    _check(logged.isNotEmpty, 'the clean build wrote a log');
+    for (final args in logged) {
+      _check(
+        args.contains('--noexecution_log_sort'),
+        'log left unsorted: $args',
+      );
+    }
+    _check(logs.every((l) => !l.existsSync()), 'logs deleted once read');
+  } finally {
+    f.delete();
+  }
+}
+
 void main() {
   _testCommandFailureFirst();
   _testVanishedServerEvidence();
@@ -294,5 +345,6 @@ void main() {
   _testUnreadableSourcesAreNamed();
   _testHeapParsing();
   _testReportHeapKey();
+  _testUnsortedLogCountedAndDeleted();
   stdout.writeln('Server evidence tests passed.');
 }

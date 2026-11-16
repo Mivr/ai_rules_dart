@@ -1,6 +1,7 @@
 /// Unit tests for execution log parsing, spawn filtering and chain ordering.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:perf/spawn_log.dart';
@@ -255,6 +256,36 @@ void _testLinkLogStats() {
   );
 }
 
+void _testStreamedLogObjects() {
+  const logText =
+      '{\n  "commandArgs": ["a{", "b\\"}", "\u00e9\u{1F600}"],\n'
+      '  "inputs": [{"path": "x/{y}.dart"}]\n}\n'
+      '{"commandArgs": ["c"], "env": {"k": "v\\\\"}}\n'
+      '{not json}\n'
+      '{"commandArgs": ["d}{"]}';
+  final dir = Directory.systemTemp.createTempSync('rd_spawn_log_stream_');
+  try {
+    final file = File('${dir.path}/exec.json')..writeAsStringSync(logText);
+    final expected = [
+      for (final s in extractConcatenatedJsonObjects(logText))
+        if (s != '{not json}') jsonEncode(jsonDecode(s)),
+    ];
+    _check(expected.length == 3, 'string scanner sees 3 valid objects');
+    for (var chunk = 1; chunk <= logText.length + 1; chunk++) {
+      final got = [
+        for (final o in readExecutionLogObjects(file, chunkBytes: chunk))
+          jsonEncode(o),
+      ];
+      _check(
+        got.join('\n') == expected.join('\n'),
+        'chunk $chunk reads the objects the string scanner reads: $got',
+      );
+    }
+  } finally {
+    dir.deleteSync(recursive: true);
+  }
+}
+
 void main() {
   _testLinkLogStats();
   _testConcatenatedJsonParsingAndWorkers();
@@ -262,5 +293,6 @@ void main() {
   _testOrderingTreeArtifactsAndBlockedRefusal();
   _testCycleAndBlockedInputRefusal();
   _testLeafTestVerifySetSelection();
+  _testStreamedLogObjects();
   stdout.writeln('All spawn_log tests passed.');
 }
