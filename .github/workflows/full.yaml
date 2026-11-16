@@ -2,10 +2,12 @@
 name: Full matrix
 # Pre-release coverage: the complete per-folder macOS matrix that push CI
 # (ci.yaml) no longer runs. Linux and Windows keep full coverage on every
-# push, so they are not repeated here. A release passes on a nightly run of
-# this workflow on the tagged commit, or on a dispatch of it on the tag (see
-# release.yaml).
-# Triggers: the nightly schedule and manual dispatch (the release gate
+# push, so they are not repeated here. A release passes on a main push or
+# nightly run of this workflow on the tagged commit, or on a dispatch of it on
+# the tag (see release.yaml); auto-release.yaml releases each main commit that
+# both this and ci.yaml pass on.
+# Triggers: every push to main (one run at a time, newest commit wins: see
+# `concurrency`), the nightly schedule and manual dispatch (the release gate
 # dispatches it on a tag, with caches).
 # `schedule` runs and `uncached` dispatches are UNCACHED (see the cache inputs below): no
 # Bazel disk cache and no external cache is restored and nothing is saved, so
@@ -14,14 +16,17 @@ name: Full matrix
 # fetch is sha256-pinned). Branch pushes never trigger this workflow; pass
 # `uncached: true` to a manual dispatch for a cold run. A tag run (release dispatch)
 # runs every job, matrix entry and step below, with caches: no job skips work on
-# a tag run that the nightly `schedule` run does. It has no 7-minute target, but its
-# macOS jobs run one at a time (`max-parallel: 1`) so a concurrent push run's
-# macOS smoke job keeps a slot.
+# a tag run that the nightly `schedule` run does. It has no 7-minute target. Its
+# macOS shards run two at a time (`max-parallel: 2`): push CI runs no macOS job
+# any more (mac-smoke is deferred to the nightly and dispatches), and one at a
+# time made the shards wait on each other (53 + 37 min on the v0.28.3 tag).
 # One job is not macOS: `flake-sweep-nightly` runs every test in the root
 # workspace ten times on Linux, the cases in random order, to catch a test
 # that fails only now and then or only in some order. It is not push coverage
 # repeated, so it lives here, on the nightly schedule and tag pushes only.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       uncached:
@@ -32,8 +37,12 @@ on:
   schedule:
     - cron: "0 10 * * *"
 concurrency:
-  group: concurrency-group::${{ github.workflow }}::${{ github.ref_name }}${{ github.ref_name == 'main' && format('::{0}', github.run_id) || ''}}
-  # Tag runs (release dispatches) are never cancelled.
+  # Pushes to main share one group: the running Full finishes, at most one
+  # newer push waits, and a later push replaces the waiting one, so main is
+  # proven continuously without a backlog. Other runs on main (nightly,
+  # dispatches) get their own run-id suffix.
+  group: concurrency-group::${{ github.workflow }}::${{ github.event_name == 'push' && 'main-push' || format('{0}{1}', github.ref_name, github.ref_name == 'main' && format('::{0}', github.run_id) || '') }}
+  # Tag runs (release dispatches) and runs on main are never cancelled.
   cancel-in-progress: ${{ github.ref_type != 'tag' && github.ref_name != 'main' }}
 jobs:
   # The same Linux coverage job as ci.yaml's `coverage`, repeated here so the
@@ -160,7 +169,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 2
       matrix:
         include:
           - shard: 1
@@ -385,11 +394,12 @@ jobs:
   # p95 is over half of its timeout (its `size`, or its `timeout` where it
   # states one), and on an unsharded test whose p95 is over 120 s, which
   # needs a `shard_count`. Exit code 4 (no test ran) fails the sweep. It runs
-  # on the nightly schedule, and on tag pushes like every other job here,
-  # never on a pull request; its cache inputs follow `test-macos`', so those
-  # runs restore no disk or external cache.
+  # on the nightly schedule, on pushes to main (release proof for
+  # auto-release.yaml) and on tag runs like every other job here, never on a
+  # pull request; its cache inputs follow `test-macos`', so nightly runs
+  # restore no disk or external cache.
   flake-sweep-nightly:
-    if: github.event_name == 'schedule' || github.ref_type == 'tag'
+    if: github.event_name == 'schedule' || github.event_name == 'push' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
     # A cold build of the root workspace plus ten runs of every test, with
     # headroom for a slow night. GitHub caps jobs at 6 h.
