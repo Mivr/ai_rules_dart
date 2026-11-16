@@ -27,6 +27,11 @@ for a debug `flutter_kernel_target` (no asset bundle) whose closure holds the
 registrant twin of the SDK `flutter` module: the entry module then compiles the
 agent, the native agent and the registrant under their constant URIs, and the
 link swaps the twin in for the plain module (`swap_flutter_registrant_twin`).
+The entry module also compiles a generated `registrant_lookup.dart` that imports
+`package:flutter/src/dart_plugin_registrant.dart`, the library the engine reads
+the registrant's URI from before `main()`. Nothing else imports it, and the link
+keeps only the kernels the entry's imports reach, so without that import the
+engine finds no registrant and the app runs with no plugins and no debug agent.
 Every other compile is whole-program, among them any define (attribute or
 global), AOT, profile, web, a closure with no twin, and `flutter_application`
 that is not a plain debug build (see below).
