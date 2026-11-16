@@ -250,5 +250,56 @@ want_exit 1
 want_output "did not appear"
 finish_case
 
+start_case main_push_runs_reused
+fixture "$D/ci.yaml.json" "$(mkrun 31 push main "$sha" completed success)"
+fixture "$D/full.yaml.json" "$(mkrun 32 push main "$sha" completed success)"
+run_gate
+want_exit 0
+want_dispatches 0
+want_output "release_gate: ci.yaml: reusing main push run https://github.com/example/repo/actions/runs/31"
+want_output "release_gate: full.yaml: reusing main push run https://github.com/example/repo/actions/runs/32"
+finish_case
+
+start_case main_push_in_progress_is_waited_for
+fixture "$D/ci.yaml.json" "$(mkrun 31 push main "$sha" completed success)"
+fixture "$D/full.yaml.json" "$(mkrun 32 push main "$sha" in_progress "")"
+fixture "$D/full.yaml.at2.json" "$(mkrun 32 push main "$sha" completed success)"
+run_gate
+want_exit 0
+want_dispatches 0
+want_output "release_gate: full.yaml: waiting for run https://github.com/example/repo/actions/runs/32 on this commit"
+finish_case
+
+start_case push_on_another_branch_does_not_count
+fixture "$D/ci.yaml.json" "$(mkrun 31 push ci/candidate "$sha" completed success)"
+fixture "$D/full.yaml.json" "$(mkrun 32 push main "$sha" completed success)"
+fixture "$D/ci.yaml.dispatched.json" "$dispatch_pass"
+run_gate
+want_exit 0
+want_dispatches 1
+want_dispatch "run ci.yaml --repo example/repo --ref $tag"
+want_no_dispatch_for full.yaml
+finish_case
+
+start_case failed_main_push_falls_back_to_a_dispatch
+fixture "$D/ci.yaml.json" "$(mkrun 31 push main "$sha" completed failure)"
+fixture "$D/full.yaml.json" "$(mkrun 32 push main "$sha" completed success)"
+fixture "$D/ci.yaml.dispatched.json" "$dispatch_pass"
+run_gate
+want_exit 0
+want_dispatches 1
+want_dispatch "run ci.yaml --repo example/repo --ref $tag"
+finish_case
+
+start_case main_push_on_other_sha_does_not_count
+fixture "$D/ci.yaml.json" "$(mkrun 31 push main "$other" completed success)"
+fixture "$D/full.yaml.json" "$(mkrun 32 push main "$other" in_progress "")"
+fixture "$D/ci.yaml.dispatched.json" "$dispatch_pass"
+fixture "$D/full.yaml.dispatched.json" "$dispatch_pass"
+run_gate
+want_exit 0
+want_dispatches 2
+finish_case
+
 echo "release_gate_test: $PASS passed, $FAILS failed"
 [ "$FAILS" -eq 0 ]
