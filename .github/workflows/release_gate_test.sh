@@ -154,8 +154,8 @@ fixture "$D/full.yaml.dispatched.json" "$dispatch_pass"
 run_gate
 want_exit 0
 want_dispatches 2
-want_dispatch "run ci.yaml --repo example/repo --ref $tag -f uncached=true"
-want_dispatch "run full.yaml --repo example/repo --ref $tag -f uncached=true"
+want_dispatch "run ci.yaml --repo example/repo --ref $tag"
+want_dispatch "run full.yaml --repo example/repo --ref $tag"
 finish_case
 
 start_case dispatch_fails
@@ -213,7 +213,7 @@ fixture "$D/ci.yaml.dispatched.json" "$dispatch_pass"
 run_gate
 want_exit 0
 want_dispatches 1
-want_dispatch "run ci.yaml --repo example/repo --ref $tag -f uncached=true"
+want_dispatch "run ci.yaml --repo example/repo --ref $tag"
 want_no_dispatch_for full.yaml
 finish_case
 
@@ -223,7 +223,7 @@ fixture "$D/full.yaml.dispatched.json" "$dispatch_pass"
 run_gate
 want_exit 0
 want_dispatches 1
-want_dispatch "run full.yaml --repo example/repo --ref $tag -f uncached=true"
+want_dispatch "run full.yaml --repo example/repo --ref $tag"
 want_no_dispatch_for ci.yaml
 want_output "release_gate: ci.yaml: reusing nightly run"
 finish_case

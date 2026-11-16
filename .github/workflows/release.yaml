@@ -23,9 +23,9 @@ jobs:
   # Full run. For each of ci.yaml and full.yaml, release_gate.sh takes the first
   # of: a successful nightly `schedule` run on the tagged commit (reused as it
   # is), or the newest `workflow_dispatch` run on the tag, which the gate
-  # dispatches with `uncached: true` when none exists yet. Dispatched runs run
-  # every job uncached, so a green gate means every test executed on the tagged
-  # commit. The gate judges each run's current status on every poll, and it
+  # dispatches when none exists yet. Dispatched runs run every job with the
+  # caches a pull request gets (the sb-ws remote cache included); only the
+  # nightly and `uncached` dispatches run cold. The gate judges each run's current status on every poll, and it
   # fails closed: a failed or cancelled run, a dispatched run that never appears,
   # or no passing run within the deadline blocks the release.
   gate-tag-matrix:

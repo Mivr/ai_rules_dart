@@ -3,8 +3,8 @@
 # commit, found in this order:
 #   a. a successful `schedule` (nightly) run on that sha, reused as it is;
 #   b. otherwise the newest `workflow_dispatch` run on the tag and sha. When
-#      there is none, the workflow is dispatched on the tag with
-#      `uncached=true`, which runs every job uncached.
+#      there is none, the workflow is dispatched on the tag, which runs every
+#      job with caches (only the nightly and `uncached` dispatches run cold).
 # Every poll judges the run's current status, so a rerun of failed jobs can
 # turn a failed run into a pass. Exits 0 only when both workflows passed.
 #
@@ -75,8 +75,8 @@ while true; do
     run="$(dispatch_run "$runs")"
     if [ -z "$run" ]; then
       if [ -z "${dispatched_at[i]}" ]; then
-        gh workflow run "$wf" --repo "$REPO" --ref "$tag" -f uncached=true
-        echo "release_gate: $wf: dispatched uncached run on $tag ($sha)"
+        gh workflow run "$wf" --repo "$REPO" --ref "$tag"
+        echo "release_gate: $wf: dispatched run on $tag ($sha)"
         dispatched_at[i]="$(date +%s)"
       elif [ "$(date +%s)" -ge $(( dispatched_at[i] + appear_seconds )) ]; then
         echo "release_gate: $wf: the dispatched run did not appear within ${appear_seconds}s"
