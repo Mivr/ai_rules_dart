@@ -96,7 +96,7 @@ def own_dep_labels(name, deps, labels):
     """The labels of one package's own dependencies.
 
     Args:
-      name: The package.
+      name: The name of the package whose dependencies these are.
       deps: Its dependency names, as planned.
       labels: The scope's name-to-label map.
 

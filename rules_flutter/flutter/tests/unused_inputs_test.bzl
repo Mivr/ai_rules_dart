@@ -191,30 +191,38 @@ def _entry_extra_inputs_test_impl(ctx):
     )
     return unittest.end(env)
 
-def _extra_inputs_input_source_test_impl(ctx):
-    """`extra_inputs` are forwarded as `--input-source`, apart from the module's own sources."""
+def _declared_sources_test_impl(ctx):
+    """The compile is told every source the action gives it, and no other.
+
+    The module compiler reads only the files its request declares
+    (`--input-source`), so a source the action takes as an input but does not
+    declare would be missing for the compile, and the library that needs it
+    would silently be left out of the module. That holds for the module's own
+    source, for an extra input, and for the staged copies, which are the paths
+    the compile reads through the staging root.
+    """
     env = unittest.begin(ctx)
     added = []
     runs = []
     extra = _fake_file("flutter/tests/unused_inputs_fixture/b/lib/other.dart")
     _compile(added, runs, extra_inputs = depset([extra]))
     asserts.equals(env, 1, len(runs), "registers one DartKernel action")
-    own = [a for a in added if type(a) == "tuple" and a[0] == "--input-source"]
+    declared = {a[1].path: True for a in added if type(a) == "tuple" and a[0] == "--input-source"}
+    for batch in [a for a in added if type(a) == "struct" and a.before_each == "--input-source"]:
+        for f in batch.values:
+            declared[f.path] = True
+    inputs = [f.path for f in runs[0]["inputs"].to_list()]
+    sources = [p for p in inputs if p.endswith(".dart")]
+    staged = [p for p in sources if ".stage/" in p]
+    asserts.true(env, len(staged) > 0, "the sources are staged, got inputs %s" % inputs)
     asserts.equals(
         env,
-        [("--input-source", "flutter/tests/unused_inputs_fixture/a/lib/adopt.dart")],
-        [(k, v.path) for (k, v) in own],
-        "the own source keeps its --input-source pair",
+        sorted(sources),
+        sorted(declared.keys()),
+        "every source among the action's inputs is declared to the compile, and nothing else is",
     )
-    extras = [a for a in added if type(a) == "struct" and a.before_each == "--input-source"]
-    asserts.equals(env, 1, len(extras), "extra_inputs adds one before_each --input-source batch")
-    if len(extras) == 1:
-        asserts.equals(
-            env,
-            [extra.path],
-            [f.path for f in extras[0].values],
-            "extra_inputs are each preceded by --input-source",
-        )
+    for path in ["flutter/tests/unused_inputs_fixture/a/lib/adopt.dart", extra.path]:
+        asserts.true(env, path in declared, "%s is declared" % path)
     return unittest.end(env)
 
 def _default_no_list_test_impl(ctx):
@@ -270,7 +278,7 @@ def _stage_all_test_impl(ctx):
 
 _library_unused_inputs_test = unittest.make(_library_unused_inputs_test_impl)
 _entry_extra_inputs_test = unittest.make(_entry_extra_inputs_test_impl)
-_extra_inputs_input_source_test = unittest.make(_extra_inputs_input_source_test_impl)
+_declared_sources_test = unittest.make(_declared_sources_test_impl)
 _default_no_list_test = unittest.make(_default_no_list_test_impl)
 _stage_all_test = unittest.make(_stage_all_test_impl)
 
@@ -284,7 +292,7 @@ def unused_inputs_test_suite(name):
         name,
         _library_unused_inputs_test,
         _entry_extra_inputs_test,
-        _extra_inputs_input_source_test,
+        _declared_sources_test,
         _default_no_list_test,
         _stage_all_test,
     )
