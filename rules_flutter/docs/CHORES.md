@@ -22,6 +22,11 @@ The latest tag is the current stable release.
 **Files**:
 
 - `flutter/private/versions.bzl` — `FLUTTER_VERSIONS` and `ARTIFACT_CHECKSUMS` dicts
+- The Dart SDK the release carries: read `dart-sdk/version` in the release's own
+  Dart SDK archive (`dart-sdk-linux-x64.zip`), not from a table. That Dart
+  version needs rows in `rules_dart`'s `dart/private/versions.bzl` and
+  `dart/private/module_compiler_versions.bzl` (see its `docs/CHORES.md`); a Flutter
+  release whose Dart SDK has no module compiler cannot compile debug modules
 - `MODULE.bazel` — `flutter_version` in `flutter.toolchain()` call
 - All `e2e/*/MODULE.bazel` — `flutter_version` in `flutter.toolchain()` calls
 - `e2e/_overlay_tests/*/MODULE.bazel` — same call, one directory deeper, so a

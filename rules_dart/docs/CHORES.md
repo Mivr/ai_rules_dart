@@ -12,6 +12,12 @@ file at runtime — keep file lists current as the repo evolves.
 **Files**:
 
 - `dart/private/versions.bzl` — add new version entry to `TOOL_VERSIONS`, `CROSS_GEN_SNAPSHOT_VERSIONS`, and `CROSS_DARTAOTRUNTIME_VERSIONS`
+- `dart/private/module_compiler_versions.bzl` — add the version's row to
+  `MODULE_COMPILER_SOURCES` (the checksum of the SDK tag's source archive, the
+  tag's commit, the language version of the five SDK packages). A version listed
+  in `versions.bzl` without a row has no module compiler, and
+  `//dart/tests:module_compiler_pin_test` fails until it has one or is named
+  there as an exception
 - `MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/hello_world/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/library_deps/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
@@ -42,12 +48,24 @@ file at runtime — keep file lists current as the repo evolves.
 
 1. Run `dart run tool/fetch_sdk_hashes.dart {version}` and `bazel run //dart/private/tools:update_cross_sdk_versions -- {version}` to get SHA-256 hashes
 2. Add the new version entries to `dart/private/versions.bzl`
-3. Update `dart_version` in all MODULE.bazel files listed above
-4. Update version references in `README.md`
-5. Update `dart/tests/versions_test.bzl` (asserted version key)
-6. Regenerate lock files: `dart run tool/refresh_locks.dart`
-7. Run `bazel test //dart/tests/...` to verify unit tests pass
-8. Pick one e2e workspace and run `bazel build //...` to smoke-test
+3. Pin the module compiler's sources for the version: download
+   `https://github.com/dart-lang/sdk/archive/refs/tags/{version}.tar.gz` and
+   `sha256sum` it; the commit is
+   `git ls-remote https://github.com/dart-lang/sdk 'refs/tags/{version}^{}'`
+   (it equals the `revision` file of the SDK's own archive); the language
+   versions are the `sdk:` lower bounds, as `major.minor`, in
+   `pkg/{_fe_analyzer_shared,build_integration,front_end,kernel,vm}/pubspec.yaml`
+   of that archive. Then run `bazel test //dart/private/tools:module_compiler_test
+   //dart/private/tools:worker_protocol_test //dart/tests:modular_chain_test
+   //dart/tests:module_compiler_pin_test //dart/tests/defines_fixture:all` with the
+   version selected in `MODULE.bazel`. If the front end's API moved, the tool
+   does not compile, and that is a change to `module_compiler.dart`, not to the row
+4. Update `dart_version` in all MODULE.bazel files listed above
+5. Update version references in `README.md`
+6. Update `dart/tests/versions_test.bzl` (asserted version key)
+7. Regenerate lock files: `dart run tool/refresh_locks.dart`
+8. Run `bazel test //dart/tests/...` to verify unit tests pass
+9. Pick one e2e workspace and run `bazel build //...` to smoke-test
 
 **Verification**: `bazel test //dart/tests/...` passes; at least one e2e workspace builds.
 
