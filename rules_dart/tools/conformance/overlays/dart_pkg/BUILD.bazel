@@ -1,0 +1,53 @@
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_library", "dart_test")
+
+exports_files(["pubspec.lock"])
+
+dart_library(
+    name = "petitparser",
+    package_name = "petitparser",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "@pub_deps//:collection",
+        "@pub_deps//:meta",
+    ],
+)
+
+dart_binary(
+    name = "generate_sequence",
+    main = "bin/generate_sequence.dart",
+)
+
+dart_binary(
+    name = "calc",
+    main = "example/calc.dart",
+    deps = [":petitparser"],
+)
+
+[
+    dart_test(
+        name = test[len("test/"):-len(".dart")],
+        size = "small",
+        srcs = glob(
+            ["test/utils/*.dart", "test/generated/*.dart"],
+            exclude = [test],
+        ) + ["example/calc.dart"],
+        main = test,
+        deps = [
+            ":petitparser",
+            "@pub_deps//:meta",
+            "@pub_deps//:test",
+        ],
+    )
+    for test in glob(["test/**/*_test.dart"])
+]
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@pub_deps//:lints"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)

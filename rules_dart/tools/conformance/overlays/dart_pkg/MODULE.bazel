@@ -1,0 +1,16 @@
+module(name = "conformance_dart_pkg")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+dart.toolchain(dart_version = "3.13.5")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")
+
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "pub_deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(pub, "pub_deps")

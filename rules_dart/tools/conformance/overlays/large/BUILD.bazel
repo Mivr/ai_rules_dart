@@ -1,0 +1,123 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_font_family", "flutter_library", "flutter_test")
+load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
+load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
+
+exports_files(["pubspec.lock"])
+
+DEPS = ["@deps//:" + d for d in [
+    "app_links",
+    "carousel_slider",
+    "clock",
+    "collection",
+    "connectivity_plus",
+    "cupertino_icons",
+    "drift",
+    "drift_sqlite_async",
+    "dynamic_color",
+    "equatable",
+    "extended_image",
+    "fl_chart",
+    "flex_color_scheme",
+    "flutter",
+    "flutter_local_notifications",
+    "flutter_localizations",
+    "flutter_riverpod",
+    "flutter_secure_storage",
+    "flutter_secure_storage_darwin",
+    "flutter_staggered_grid_view",
+    "flutter_svg",
+    "flutter_timezone",
+    "flutter_typeahead",
+    "flutter_widget_from_html_core",
+    "flutter_zxing",
+    "font_awesome_flutter",
+    "freezed_annotation",
+    "health_bridge",
+    "http",
+    "image_picker",
+    "intl",
+    "json_annotation",
+    "logging",
+    "markdown",
+    "material_ui",
+    "multi_select_flutter",
+    "package_info_plus",
+    "path",
+    "path_provider",
+    "powersync",
+    "riverpod_annotation",
+    "shared_preferences",
+    "state_notifier",
+    "stream_transform",
+    "table_calendar",
+    "timezone",
+    "url_launcher",
+    "version",
+    "video_player",
+]] + ["@rules_flutter//flutter:material_icons"]
+
+TEST_DEPS = ["@deps//:" + d for d in [
+    "connectivity_plus_platform_interface",
+    "fake_async",
+    "flutter_test",
+    "image",
+    "mockito",
+    "network_image_mock",
+    "plugin_platform_interface",
+    "shared_preferences_platform_interface",
+    "url_launcher_platform_interface",
+    "xml",
+]]
+
+ASSETS = glob(
+    ["assets/animations/*", "assets/images/*", "assets/images/muscles/*", "assets/images/muscles/main/*", "assets/images/muscles/secondary/*", "assets/icons/*"],
+    exclude_directories = 1,
+)
+
+flutter_font_family(
+    name = "roboto_condensed",
+    family = "RobotoCondensed",
+    fonts = [{"asset": "assets/fonts/RobotoCondensed-VariableFont_wght.ttf"}],
+)
+
+flutter_library(
+    name = "wger",
+    package_name = "wger",
+    srcs = glob(["lib/**/*.dart"]) + ["//lib/l10n/generated:l10n"],
+    assets = ASSETS,
+    fonts = [":roboto_condensed"],
+    deps = DEPS,
+)
+
+flutter_web_app(
+    name = "web",
+    package_name = "wger",
+    app_name = "wger",
+    compiler = "dart2js",
+    deps = [":wger"],
+)
+
+[
+    flutter_test(
+        name = test[len("test/"):-len(".dart")],
+        package_name = "wger",
+        size = "medium",
+        srcs = glob(["test/**/*.dart"], exclude = ["test/**/*_test.dart"]),
+        main = test,
+        deps = [":wger"] + DEPS + TEST_DEPS,
+    )
+    for test in glob(["test/**/*_test.dart"])
+]
+
+flutter_application(
+    name = "app",
+    package_name = "wger",
+    main = "lib/main.dart",
+    deps = [":wger"],
+)
+
+flutter_linux_app(
+    name = "linux",
+    application = ":app",
+    gtk_app_id = "de.wger.flutter",
+)

@@ -1,0 +1,93 @@
+load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_font_family", "flutter_library", "flutter_test")
+load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
+load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
+
+exports_files(["pubspec.lock"])
+
+DEPS = [
+    "@deps//:cupertino_icons",
+    "@deps//:flutter",
+    "@deps//:flutter_localizations",
+    "@deps//:intl",
+    "@deps//:path_provider",
+    "@deps//:shared_preferences",
+    "@deps//:url_launcher",
+    "@rules_flutter//flutter:material_icons",
+]
+
+# Declared in pubspec.yaml and imported by no Dart file: the app carries them
+# as plugins, the library does not.
+PLUGINS = [
+    "@deps//:firebase_core",
+    "@deps//:firebase_messaging",
+]
+
+DEFINES = [
+    "FLAVOR=prod",
+    "API_URL=https://api.example.invalid",
+    "RETRIES=5",
+]
+
+flutter_font_family(
+    name = "app_sans",
+    family = "AppSans",
+    fonts = [
+        {"asset": "assets/fonts/AppSans-Regular.ttf"},
+        {
+            "asset": "assets/fonts/AppSans-Bold.ttf",
+            "weight": 700,
+        },
+    ],
+)
+
+flutter_library(
+    name = "lib",
+    package_name = "flavors_defines",
+    srcs = glob(["lib/**/*.dart"]),
+    assets = glob(["assets/images/**"]),
+    fonts = [":app_sans"],
+    deps = DEPS,
+)
+
+flutter_web_app(
+    name = "web",
+    package_name = "flavors_defines",
+    app_name = "flavors_defines",
+    compiler = "dart2js",
+    defines = DEFINES,
+    deps = [":lib"] + PLUGINS,
+)
+
+flutter_application(
+    name = "app",
+    package_name = "flavors_defines",
+    defines = DEFINES,
+    flavor = "dev",
+    main = "lib/main.dart",
+    deps = [":lib"] + PLUGINS,
+)
+
+flutter_android_app(
+    name = "apk",
+    package_name = "dev.rdf.flavors_defines.dev",
+    application = ":app",
+)
+
+flutter_test(
+    name = "widget_test",
+    package_name = "flavors_defines",
+    main = "test/widget_test.dart",
+    deps = [
+        ":lib",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:shared_preferences",
+    ],
+)
+
+flutter_linux_app(
+    name = "linux",
+    application = ":app",
+    gtk_app_id = "dev.rdf.flavors_defines",
+)
