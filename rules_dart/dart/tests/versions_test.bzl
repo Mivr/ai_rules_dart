@@ -3,14 +3,21 @@ See https://bazel.build/rules/testing#testing-starlark-utilities
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart/private:versions.bzl", "TOOL_VERSIONS")
+load("//dart/private:versions.bzl", "TOOL_VERSIONS", "semver_gt")
 load(":small_suite.bzl", "small_unittest_suite")
 
 visibility(["//dart/..."])
 
-def _smoke_test_impl(ctx):
+def _newest_version_first_test_impl(ctx):
     env = unittest.begin(ctx)
-    asserts.equals(env, "3.13.5", TOOL_VERSIONS.keys()[0])
+    versions = TOOL_VERSIONS.keys()
+    asserts.true(env, len(versions) > 0, "TOOL_VERSIONS lists no SDK")
+    for i in range(len(versions) - 1):
+        asserts.true(
+            env,
+            semver_gt(versions[i], versions[i + 1]),
+            "%s is listed before %s: list the newest version first" % (versions[i], versions[i + 1]),
+        )
     return unittest.end(env)
 
 # The per-platform checksum coverage that used to live here — a hand-listed set
@@ -19,7 +26,7 @@ def _smoke_test_impl(ctx):
 # `PLATFORMS` rather than one version against a literal count. A bare count
 # cannot catch a *wrong* key, and it broke on every platform change.
 
-_t0_test = unittest.make(_smoke_test_impl)
+_t0_test = unittest.make(_newest_version_first_test_impl)
 
 def versions_test_suite(name):
     small_unittest_suite(name, _t0_test)

@@ -26,7 +26,6 @@ local_path_override(
 )
 
 flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
-flutter.toolchain(flutter_version = "3.47.7")
 
 # Deliberately missing: the fetch must fail with
 # "configured darwin.artifactbundle path '/nonexistent/darwin.artifactbundle'

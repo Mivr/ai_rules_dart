@@ -363,7 +363,7 @@ def toolchains_test_suite(name):
     """
     _resolve_cross_probe(
         name = name + "_unsupported_pair_fixture",
-        dart_version = "3.13.5",
+        dart_version = TOOL_VERSIONS.keys()[0],
         exec_platform = "linux-x64",
         target_platform = "macos-arm64",
         tags = ["manual"],
@@ -389,7 +389,7 @@ def toolchains_test_suite(name):
     )
     _resolve_cross_probe(
         name = name + "_unpinned_dartaotruntime_fixture",
-        dart_version = "3.13.5",
+        dart_version = TOOL_VERSIONS.keys()[0],
         empty_dartaotruntime_versions = True,
         exec_platform = "linux-x64",
         target_platform = "linux-arm64",

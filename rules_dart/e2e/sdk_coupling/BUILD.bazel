@@ -73,13 +73,19 @@ dart_format(
 )
 
 # 3. Target test running on `target_dart` while all build tools ran on
-# `exec_dart`.
+# `exec_dart`. The test reads its expected version from the `target_dart` SDK.
 dart_test(
     name = "sdk_coupling_test",
     size = "small",
+    args = ["$(rlocationpath @target_dart_toolchains//sdk/default:dart)"],
+    data = [
+        "@target_dart_toolchains//sdk/default:compile_files",
+        "@target_dart_toolchains//sdk/default:dart",
+    ],
     main = "test/sdk_coupling_test.dart",
     deps = [
         ":message_lib",
         "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
     ],
 )

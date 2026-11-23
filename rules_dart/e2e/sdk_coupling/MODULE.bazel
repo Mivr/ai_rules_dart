@@ -10,11 +10,13 @@ local_path_override(
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 
 # Register two Dart SDK toolchains:
-# - `exec_dart` (3.13.5) for `//dart:exec_tools_toolchain_type`
-# - `target_dart` (3.13.5) for `//dart:toolchain_type`
-# Both are 3.13.5, the only version the rules list at this commit, so this
-# workspace proves that the two registrations stay separate, not that their
-# versions differ.
+# - `exec_dart` for `//dart:exec_tools_toolchain_type`
+# - `target_dart` for `//dart:toolchain_type`
+# They are the same version, and have to be: a tool snapshot the exec SDK builds
+# does not load in another SDK's runtime (`Wrong full snapshot version`), so a
+# target on another SDK cannot run it. This workspace proves that the two
+# registrations stay separate, not that their versions differ. Name a listed
+# version; the rules' default is the natural one.
 # Every internal kernel tool (`copy_tree`, `analyzer_summary`,
 # `analyze_runner`, `format_runner`, `fix_runner`, `kernel_link`)
 # must compile with `exec_dart` so it matches the VM that executes it, while

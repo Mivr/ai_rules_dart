@@ -15,9 +15,22 @@ load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
 
+# The newest listed release: the one a test that needs "a listed version" uses.
+_LATEST = FLUTTER_VERSIONS.keys()[0]
+
+def _release_triple(version):
+    return [int(part) for part in version.split(".")]
+
 def _latest_version_first_test_impl(ctx):
     env = unittest.begin(ctx)
-    asserts.equals(env, "3.47.7", FLUTTER_VERSIONS.keys()[0])
+    versions = FLUTTER_VERSIONS.keys()
+    asserts.true(env, len(versions) > 0, "FLUTTER_VERSIONS lists no release")
+    for i in range(len(versions) - 1):
+        asserts.true(
+            env,
+            _release_triple(versions[i]) > _release_triple(versions[i + 1]),
+            "%s is listed before %s: list the newest version first" % (versions[i], versions[i + 1]),
+        )
     return unittest.end(env)
 
 def _engine_revision_format_test_impl(ctx):
@@ -162,8 +175,8 @@ def _artifact_sha256_returns_recorded_value_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(
         env,
-        ARTIFACT_CHECKSUMS["3.47.7"]["linux-x64/artifacts.zip"],
-        flutter_artifact_sha256("3.47.7", "linux-x64/artifacts.zip"),
+        ARTIFACT_CHECKSUMS[_LATEST]["linux-x64/artifacts.zip"],
+        flutter_artifact_sha256(_LATEST, "linux-x64/artifacts.zip"),
     )
     return unittest.end(env)
 
@@ -240,8 +253,8 @@ def _merge_empty_tags_test_impl(ctx):
     asserts.equals(env, FLUTTER_VERSIONS.keys(), merged.versions.keys())
     asserts.equals(env, {}, merged.source_urls)
     asserts.equals(env, {}, merged.engine_base_urls)
-    asserts.equals(env, "", custom_source_url("3.47.7", merged.source_urls))
-    asserts.equals(env, "", custom_engine_base_url("3.47.7", merged.engine_base_urls))
+    asserts.equals(env, "", custom_source_url(_LATEST, merged.source_urls))
+    asserts.equals(env, "", custom_engine_base_url(_LATEST, merged.engine_base_urls))
     return unittest.end(env)
 
 def _merge_custom_version_test_impl(ctx):
@@ -265,7 +278,6 @@ def _merge_custom_version_test_impl(ctx):
 
     # The stock tables are untouched by the merge.
     asserts.true(env, "3.47.70" not in FLUTTER_VERSIONS)
-    asserts.equals(env, "3.47.7", FLUTTER_VERSIONS.keys()[-1])
     return unittest.end(env)
 
 def _merge_custom_urls_test_impl(ctx):
@@ -368,7 +380,7 @@ def versions_test_suite(name):
     """
     _artifact_checksum_probe(
         name = name + "_missing_artifact_probe",
-        flutter_version = "3.47.7",
+        flutter_version = _LATEST,
         artifact_path = "missing/artifact.zip",
         tags = ["manual"],
     )
@@ -376,9 +388,9 @@ def versions_test_suite(name):
         name = name + "_missing_artifact_fails",
         target_under_test = ":" + name + "_missing_artifact_probe",
         expected_substrings = [
-            "No sha256 recorded for missing/artifact.zip in Flutter 3.47.7",
+            "No sha256 recorded for missing/artifact.zip in Flutter " + _LATEST,
             "missing/artifact.zip",
-            "3.47.7",
+            _LATEST,
         ],
     )
 
@@ -425,7 +437,7 @@ def versions_test_suite(name):
 
     _merge_probe(
         name = name + "_merge_duplicate_probe",
-        version = "3.47.7",
+        version = _LATEST,
         tags = ["manual"],
     )
     _expect_failure_test(
