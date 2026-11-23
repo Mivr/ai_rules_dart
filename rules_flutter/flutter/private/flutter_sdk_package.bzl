@@ -78,7 +78,7 @@ flutter_library(
         exclude = ["lib/**/*.dart"],
         allow_empty = True,
     ),
-    shaders = glob(["lib/src/material/shaders/*.frag"]),
+    data = glob(["pubspec.yaml", "LICENSE"], allow_empty = True),
 {deps}    package_name = "{name}",
     language_version = "{language_version}",
     visibility = ["//visibility:public"],
@@ -100,6 +100,7 @@ dart_library(
         exclude = ["lib/**/*.dart"],
         allow_empty = True,
     ),
+    data = glob(["pubspec.yaml", "LICENSE"], allow_empty = True),
 {deps}    package_name = "{name}",
     language_version = "{language_version}",
     visibility = ["//visibility:public"],
@@ -126,6 +127,11 @@ def copy_sdk_package_from_source(repository_ctx, package_name):
             package_name,
         ))
     repository_ctx.file("pubspec.yaml", repository_ctx.read(pubspec_src), executable = False)
+
+    # The licence an app's `NOTICES` collects (only `flutter` ships one).
+    license_src = source_root.get_child("packages/{}/LICENSE".format(package_name))
+    if license_src.exists:
+        repository_ctx.file("LICENSE", repository_ctx.read(license_src), executable = False)
     lib_src = source_root.get_child("packages/{}/lib".format(package_name))
     if not lib_src.exists:
         fail("{}: the Flutter {} source has no packages/{}/lib".format(
@@ -167,6 +173,14 @@ def _flutter_sdk_package_impl(repository_ctx):
             "pubspec.yaml",
             "the {} package pubspec".format(package_name),
         )
+        if sdk_root.get_child(pkg_rel + "/LICENSE").exists:
+            link_local_file(
+                repository_ctx,
+                sdk_root,
+                pkg_rel + "/LICENSE",
+                "LICENSE",
+                "the {} package licence".format(package_name),
+            )
     else:
         # The package comes out of the version's one shared extraction (see
         # `flutter_sdk_source_repo`), staged as repo-owned copies so the spoke

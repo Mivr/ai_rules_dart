@@ -1,7 +1,7 @@
 """Analysis tests for trimmed SDK action inputs and test runfiles.
 
 Asserts that `flutter_test` runfiles and Flutter build actions (`FlutterAotElf`,
-`FlutterAotMacho`, `FlutterAssetBundle`, `FlutterDart2Wasm`, `FlutterDart2JS`)
+`FlutterAotMacho`, `FlutterAssets`, `FlutterDart2Wasm`, `FlutterDart2JS`)
 stage only the SDK files their executables actually open, rather than the full
 bundled `dart-sdk/` and `patched-sdk/` trees.
 """
@@ -10,14 +10,11 @@ load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("@rules_dart//dart:analyze.bzl", "dart_analyze")
 load("@rules_dart//dart:defs.bzl", "dart_binary")
 load("@rules_dart//dart:toolchain.bzl", "DartSdkInfo")
-load("@rules_dart//dart:utils.bzl", "dart_info_no_package")
 load("//flutter:defs.bzl", "flutter_library", "flutter_plugin", "flutter_test")
 load("//flutter:toolchain.bzl", "flutter_font_subset_toolchain")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 load("//flutter/private:flutter_aot_target.bzl", "flutter_aot_target")
 load("//flutter/private:flutter_application.bzl", "flutter_application")
-load("//flutter/private:flutter_asset_bundle.bzl", "flutter_asset_bundle")
-load("//flutter/private:flutter_info.bzl", "flutter_info", "flutter_pub_channels")
 load("//flutter/private:flutter_kernel_target.bzl", "flutter_kernel_target")
 load("//flutter/private:flutter_web_application.bzl", "flutter_web_bundle")
 load(":kernel_target_modular_test.bzl", "assert_kernel_target_dbg_modular")
@@ -77,14 +74,6 @@ def _flutter_test_runfiles_test_impl(ctx):
         runfile_paths,
         ["/dart-sdk/", "/patched-sdk/"],
         "flutter_test runfiles",
-    )
-
-    asset_action = _find_action(env, ["FlutterAssetBundle"])
-    _assert_no_path_contains(
-        env,
-        _input_paths(asset_action),
-        ["/dart-sdk/", "/patched-sdk/"],
-        "flutter_test FlutterAssetBundle",
     )
 
     # By default (`modular_kernel = True`), `flutter_test` compiles its entry module
@@ -168,7 +157,7 @@ def _dart_extra_defines_ignored_test_impl(ctx):
     return analysistest.end(env)
 
 def _application_opt_inputs_test_impl(ctx):
-    """In `-c opt`, AOT takes no SDK tree and asset bundling takes only the VM."""
+    """In `-c opt`, AOT takes no SDK tree."""
     env = analysistest.begin(ctx)
 
     aot_action = _find_action(env, ["FlutterAotElf", "FlutterAotMacho"])
@@ -180,83 +169,38 @@ def _application_opt_inputs_test_impl(ctx):
         ["/dart-sdk/", "/patched-sdk/"],
         "AOT action",
     )
+    return analysistest.end(env)
 
-    asset_action = _find_action(env, ["FlutterAssetBundle"])
-    asset_paths = _input_paths(asset_action)
-    _assert_no_path_contains(
+def _application_opt_bundle_inputs_test_impl(ctx):
+    """In `-c opt` the bundle shakes icons, so it reads the app's kernel and the shaking tools."""
+    env = analysistest.begin(ctx)
+    _assert_some_path_contains(
         env,
-        asset_paths,
-        ["/dart-sdk/", "/patched-sdk/", "const_finder", "font-subset", ".dill"],
-        "fontless release FlutterAssetBundle",
+        _input_paths(_find_action(env, ["FlutterAssets"])),
+        [".dill", "const_finder", "font-subset"],
+        "release FlutterAssets",
     )
     return analysistest.end(env)
 
-def _application_opt_fonts_inputs_test_impl(ctx):
-    """In `-c opt` with fonts, const finder runs on the kernel and asset bundling stages font-subset and code points."""
+def _application_dbg_bundle_inputs_test_impl(ctx):
+    """In `-c dbg` the bundle never reads the app's kernel, so a Dart edit does not rerun it."""
     env = analysistest.begin(ctx)
-    cf_action = _find_action(env, ["FlutterConstFinder"])
-    _assert_some_path_contains(
-        env,
-        _input_paths(cf_action),
-        ["const_finder.dart.snapshot", "/dart-sdk/bin/dart", ".dill"],
-        "font-bearing release FlutterConstFinder",
-    )
-    asset_action = _find_action(env, ["FlutterAssetBundle"])
-    asset_paths = _input_paths(asset_action)
-    _assert_some_path_contains(
-        env,
-        asset_paths,
-        ["font-subset", ".icon_code_points.json"],
-        "font-bearing release FlutterAssetBundle",
-    )
-    _assert_no_path_contains(env, asset_paths, [
-        "const_finder.dart.snapshot",
-        "/dart-sdk/bin/dart",
-        ".dill",
-        "/patched-sdk/",
-        "/dart-sdk/lib/",
-        "/dart-sdk/bin/snapshots/",
-        "/dart-sdk/bin/utils/",
-    ], "font-bearing release FlutterAssetBundle")
-    return analysistest.end(env)
-
-def _application_dbg_inputs_test_impl(ctx):
-    """In `-c dbg`, icon tree shaking is off so const finder does not run and asset bundling needs no Dart VM."""
-    env = analysistest.begin(ctx)
-    asset_action = _find_action(env, ["FlutterAssetBundle"])
     _assert_no_path_contains(
         env,
-        _input_paths(asset_action),
-        ["/dart-sdk/", "/patched-sdk/", "const_finder", "font-subset", ".icon_code_points.json"],
-        "debug FlutterAssetBundle",
+        _input_paths(_find_action(env, ["FlutterAssets"])),
+        [".dill", "const_finder", "font-subset"],
+        "debug FlutterAssets",
     )
-    cf_actions = [a for a in analysistest.target_actions(env) if a.mnemonic == "FlutterConstFinder"]
-    asserts.equals(env, [], cf_actions, "debug FlutterConstFinder must not be registered")
     return analysistest.end(env)
 
 def _application_no_tree_shake_icons_test_impl(ctx):
-    """When `tree_shake_icons = False`, no const finder runs and asset bundle takes no font tools."""
+    """When `tree_shake_icons = False`, the bundle reads neither the kernel nor the font tools."""
     env = analysistest.begin(ctx)
-    asset_action = _find_action(env, ["FlutterAssetBundle"])
     _assert_no_path_contains(
         env,
-        _input_paths(asset_action),
-        ["/dart-sdk/", "/patched-sdk/", "const_finder", "font-subset", ".icon_code_points.json"],
-        "tree_shake_icons=False FlutterAssetBundle",
-    )
-    cf_actions = [a for a in analysistest.target_actions(env) if a.mnemonic == "FlutterConstFinder"]
-    asserts.equals(env, [], cf_actions, "tree_shake_icons=False FlutterConstFinder must not be registered")
-    return analysistest.end(env)
-
-def _asset_bundle_inputs_test_impl(ctx):
-    """Standalone `flutter_asset_bundle` never runs icon tree shaking or `dart`."""
-    env = analysistest.begin(ctx)
-    asset_action = _find_action(env, ["FlutterAssetBundle"])
-    _assert_no_path_contains(
-        env,
-        _input_paths(asset_action),
-        ["/dart-sdk/", "/patched-sdk/"],
-        "standalone FlutterAssetBundle",
+        _input_paths(_find_action(env, ["FlutterAssets"])),
+        [".dill", "const_finder", "font-subset"],
+        "tree_shake_icons=False FlutterAssets",
     )
     return analysistest.end(env)
 
@@ -438,19 +382,6 @@ def _web_inputs_test_impl(ctx):
             "analysis_server",
         ],
         "FlutterDart2JS",
-    )
-
-    template_action = _find_action(env, ["FlutterWebTemplate"])
-    template_paths = _input_paths(template_action)
-    _assert_some_path_contains(
-        env,
-        template_paths,
-        [
-            "dart-sdk/bin/dart",
-            "dart-sdk/bin/dartvm",
-            "web_template.dill",
-        ],
-        "FlutterWebTemplate",
     )
     return analysistest.end(env)
 
@@ -799,42 +730,28 @@ def _reverse_toolchain_flutter_test_impl(ctx):
     return analysistest.end(env)
 
 def _reverse_toolchain_application_opt_fonts_test_impl(ctx):
-    """When `@rules_dart`'s SDK resolves first, `const_finder` (icon tree-shaking) uses Flutter's `dart-sdk/`."""
+    """When `@rules_dart`'s SDK resolves first, icon tree-shaking still uses Flutter's `dart-sdk/`."""
     env = analysistest.begin(ctx)
-    cf_action = _find_action(env, ["FlutterConstFinder"])
+    asset_paths = _input_paths(_find_action(env, ["FlutterAssets"]))
     _assert_some_path_contains(
         env,
-        _input_paths(cf_action),
-        ["const_finder.dart.snapshot", "/dart-sdk/bin/dart", ".dill"],
-        "reverse-toolchain font-bearing release FlutterConstFinder",
+        asset_paths,
+        ["const_finder", "font-subset", "/dart-sdk/bin/dart"],
+        "reverse-toolchain release FlutterAssets",
     )
     _assert_no_path_contains(
         env,
-        _input_paths(cf_action),
+        asset_paths,
         ["synthetic_dart_sdk/"],
-        "reverse-toolchain font-bearing release FlutterConstFinder",
-    )
-    asset_action = _find_action(env, ["FlutterAssetBundle"])
-    asset_paths = _input_paths(asset_action)
-    _assert_some_path_contains(
-        env,
-        asset_paths,
-        ["font-subset", ".icon_code_points.json"],
-        "reverse-toolchain font-bearing release FlutterAssetBundle",
-    )
-    _assert_no_path_contains(
-        env,
-        asset_paths,
-        ["synthetic_dart_sdk/", "const_finder.dart.snapshot", ".dill"],
-        "reverse-toolchain font-bearing release FlutterAssetBundle",
+        "reverse-toolchain release FlutterAssets",
     )
     return analysistest.end(env)
 
 def _reverse_toolchain_web_test_impl(ctx):
-    """When `@rules_dart`'s SDK resolves first, `dart2wasm`, `dart2js`, and `web_template` use Flutter's `dart-sdk/`."""
+    """When `@rules_dart`'s SDK resolves first, `dart2wasm` and `dart2js` use Flutter's `dart-sdk/`."""
     env = analysistest.begin(ctx)
 
-    for mnemonic in ["FlutterDart2Wasm", "FlutterDart2JS", "FlutterWebTemplate"]:
+    for mnemonic in ["FlutterDart2Wasm", "FlutterDart2JS"]:
         action = _find_action(env, [mnemonic])
         paths = _input_paths(action)
         _assert_some_path_contains(
@@ -868,51 +785,18 @@ _generated_tool_file = rule(
     },
 )
 
-def _bare_pub_fonts_dep_impl(ctx):
-    font_file = ctx.actions.declare_file(ctx.label.name + "_CustomIcons.otf")
-    ctx.actions.write(output = font_file, content = "")
-    contribution = struct(
-        package_name = "",
-        family = "CustomIcons",
-        fonts = (struct(
-            asset_path = "fonts/CustomIcons.otf",
-            weight = None,
-            style = None,
-        ),),
-        files = (font_file,),
-    )
-    return [
-        DefaultInfo(files = depset([font_file])),
-        dart_info_no_package(),
-        flutter_info(pub_channels = flutter_pub_channels(pub_fonts = [contribution])),
-    ]
-
-_bare_pub_fonts_dep = rule(
-    implementation = _bare_pub_fonts_dep_impl,
-)
-
 def _exec_font_subset_toolchain_test_impl(ctx):
     """App rules resolve `const_finder` and `font_subset` in `exec` config from their own toolchain, independent of `deps`."""
     env = analysistest.begin(ctx)
-    cf_action = _find_action(env, ["FlutterConstFinder"])
-    cf_paths = _input_paths(cf_action)
-    _assert_some_path_contains(
-        env,
-        cf_paths,
-        ["exec_const_finder.dart.snapshot"],
-        "exec-configured font_subset_toolchain FlutterConstFinder",
-    )
-    for p in [p for p in cf_paths if p.endswith("exec_const_finder.dart.snapshot")]:
-        asserts.true(env, "-exec-" in p, "expected const_finder tool %r in exec cfg" % p)
-
-    asset_action = _find_action(env, ["FlutterAssetBundle"])
-    asset_paths = _input_paths(asset_action)
+    asset_paths = _input_paths(_find_action(env, ["FlutterAssets", "FlutterWebBundle"]))
     _assert_some_path_contains(
         env,
         asset_paths,
-        ["exec_font_subset"],
-        "exec-configured font_subset_toolchain FlutterAssetBundle",
+        ["exec_const_finder.dart.snapshot", "exec_font_subset"],
+        "exec-configured font_subset_toolchain bundle",
     )
+    for p in [p for p in asset_paths if p.endswith("exec_const_finder.dart.snapshot")]:
+        asserts.true(env, "-exec-" in p, "expected const_finder tool %r in exec cfg" % p)
     for p in [p for p in asset_paths if p.endswith("exec_font_subset")]:
         asserts.true(env, "-exec-" in p, "expected font-subset tool %r in exec cfg" % p)
     return analysistest.end(env)
@@ -966,13 +850,12 @@ _DBG = {"//command_line_option:compilation_mode": "dbg", str(Label("//flutter:pr
 _FASTBUILD = {"//command_line_option:compilation_mode": "fastbuild", str(Label("//flutter:profile")): False}
 
 _application_opt_inputs_test = analysistest.make(_application_opt_inputs_test_impl, config_settings = _OPT)
-_application_opt_fonts_inputs_test = analysistest.make(_application_opt_fonts_inputs_test_impl, config_settings = _OPT)
-_application_dbg_inputs_test = analysistest.make(_application_dbg_inputs_test_impl, config_settings = _DBG)
+_application_opt_bundle_inputs_test = analysistest.make(_application_opt_bundle_inputs_test_impl, config_settings = _OPT)
+_application_dbg_bundle_inputs_test = analysistest.make(_application_dbg_bundle_inputs_test_impl, config_settings = _DBG)
 _application_no_tree_shake_icons_test = analysistest.make(
     _application_no_tree_shake_icons_test_impl,
     config_settings = _OPT,
 )
-_asset_bundle_inputs_test = analysistest.make(_asset_bundle_inputs_test_impl)
 _aot_target_inputs_test = analysistest.make(_aot_target_inputs_test_impl, config_settings = _OPT)
 _aot_target_dbg_inputs_test = analysistest.make(_aot_target_dbg_inputs_test_impl, config_settings = _DBG)
 _kernel_target_opt_test = analysistest.make(_kernel_target_release_aot_test_impl, config_settings = _OPT)
@@ -1071,22 +954,16 @@ def _setup_fixtures():
         toolchain = ":_empty_font_subset_tc",
         toolchain_type = "//flutter/private:font_subset_toolchain_type",
     )
-    _bare_pub_fonts_dep(
-        name = "_inputs_bare_pub_fonts_dep",
-        tags = ["manual"],
-    )
     flutter_application(
         name = "_inputs_application_bare_fonts",
         package_name = _PACKAGE,
         main = _MAIN,
-        deps = [":_inputs_bare_pub_fonts_dep"],
         tags = ["manual"],
     )
     flutter_web_bundle(
         name = "_inputs_web_bundle_bare_fonts",
         package_name = _PACKAGE,
         main = _MAIN,
-        deps = [":_inputs_bare_pub_fonts_dep"],
         tags = ["manual"],
     )
     flutter_test(
@@ -1114,7 +991,6 @@ def _setup_fixtures():
     flutter_library(
         name = "_inputs_flutter_library_fonts",
         srcs = [_MAIN],
-        fonts_json = '[{"family": "TestFont", "fonts": []}]',
         tags = ["manual"],
     )
     existing_flutter_library_fonts = native.existing_rule("_inputs_flutter_library_fonts")
@@ -1135,7 +1011,6 @@ def _setup_fixtures():
     flutter_plugin(
         name = "_inputs_flutter_plugin_fonts",
         srcs = [_MAIN],
-        fonts_json = '[{"family": "TestFont", "fonts": []}]',
         tags = ["manual"],
     )
     existing_flutter_plugin_fonts = native.existing_rule("_inputs_flutter_plugin_fonts")
@@ -1161,19 +1036,13 @@ def _setup_fixtures():
         name = "_inputs_application_with_fonts",
         package_name = _PACKAGE,
         main = _MAIN,
-        deps = ["//flutter:material_icons"],
         tags = ["manual"],
     )
     flutter_application(
         name = "_inputs_application_with_fonts_no_tree_shake",
         package_name = _PACKAGE,
         main = _MAIN,
-        deps = ["//flutter:material_icons"],
         tree_shake_icons = False,
-        tags = ["manual"],
-    )
-    flutter_asset_bundle(
-        name = "_inputs_asset_bundle",
         tags = ["manual"],
     )
     flutter_aot_target(
@@ -1273,23 +1142,19 @@ def action_inputs_test_suite(name):
         target_under_test = ":_inputs_application",
         target_compatible_with = HOST_COMPATIBLE,
     )
-    _application_opt_fonts_inputs_test(
-        name = name + "_application_opt_fonts",
+    _application_opt_bundle_inputs_test(
+        name = name + "_application_opt_bundle",
         target_under_test = ":_inputs_application_with_fonts",
         target_compatible_with = HOST_COMPATIBLE,
     )
-    _application_dbg_inputs_test(
-        name = name + "_application_dbg",
+    _application_dbg_bundle_inputs_test(
+        name = name + "_application_dbg_bundle",
         target_under_test = ":_inputs_application_with_fonts",
     )
     _application_no_tree_shake_icons_test(
         name = name + "_application_no_tree_shake",
         target_under_test = ":_inputs_application_with_fonts_no_tree_shake",
         target_compatible_with = HOST_COMPATIBLE,
-    )
-    _asset_bundle_inputs_test(
-        name = name + "_asset_bundle",
-        target_under_test = ":_inputs_asset_bundle",
     )
     _aot_target_inputs_test(
         name = name + "_aot_target",
@@ -1390,10 +1255,9 @@ def action_inputs_test_suite(name):
             ":" + name + "_kernel_target_comma_defines_fallback",
             ":" + name + "_kernel_target_dart_extra_defines_ignored",
             ":" + name + "_application_opt",
-            ":" + name + "_application_opt_fonts",
-            ":" + name + "_application_dbg",
+            ":" + name + "_application_opt_bundle",
+            ":" + name + "_application_dbg_bundle",
             ":" + name + "_application_no_tree_shake",
-            ":" + name + "_asset_bundle",
             ":" + name + "_aot_target",
             ":" + name + "_aot_target_dbg",
             ":" + name + "_kernel_target_opt",

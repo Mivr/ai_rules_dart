@@ -1,0 +1,12 @@
+# The project of `:custom_boot`: what `flutter build web` reads here, its
+# `web/index.html` and `web/flutter_bootstrap.js`. Resolved by the workspace's
+# root pubspec; this one only names the project.
+name: custom_boot
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  uses-material-design: true

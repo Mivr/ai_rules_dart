@@ -71,7 +71,6 @@ copy_file(
 _APP_DEPS = [
     "//packages/add_plugin",
     "@deps//:flutter",
-    "@rules_flutter//flutter:material_icons",
 ]
 
 # The workspace's lint ruleset, bundled with the pub package whose YAML its
@@ -108,12 +107,14 @@ flutter_library(
 flutter_application(
     name = "app_flutter",
     package_name = "macos_example",
-    # A first-party asset, so the dev loop's asset reload has something real to
-    # deliver. asset_reload_e2e_test edits assets/message.txt while the app
-    # runs and asserts the change reaches the UI.
-    assets = glob(["assets/**"]),
     main = "lib/main.dart",
     native_deps = [":sub"],
+    pub_packages = "@deps//packages",
+    # A first-party asset, named in pubspec.yaml, so the dev loop's asset
+    # reload has something real to deliver. asset_reload_e2e_test edits
+    # assets/message.txt while the app runs and asserts the change reaches the
+    # UI. Every app here shares the pubspec, so each lists the file.
+    pubspec_srcs = glob(["assets/**"]),
     deps = _APP_DEPS,
 )
 
@@ -126,6 +127,8 @@ flutter_application(
     package_name = "macos_example",
     srcs = ["test_driver/banner.dart"],
     main = "test_driver/app.dart",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = glob(["assets/**"]),
     deps = ["@deps//:flutter"],
 )
 

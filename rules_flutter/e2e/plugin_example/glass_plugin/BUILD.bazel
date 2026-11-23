@@ -3,10 +3,11 @@ load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
 load("@rules_flutter//flutter:macos.bzl", "flutter_apple_plugin_library")
 
 # A plugin written in the workspace that ships fragment shaders, the shape of
-# a Liquid Glass UI kit: `pkg_shaders` is its pubspec's `flutter: shaders:`,
-# and `platforms`, `plugin_class` and `android_package` its `flutter: plugin:
-# platforms:`. The app in //glass_app draws with both shaders and calls the
-# native side.
+# a Liquid Glass UI kit: its pubspec's `flutter: shaders:` names them, and
+# `platforms`, `plugin_class` and `android_package` repeat its `flutter:
+# plugin: platforms:`. `data` carries the pubspec and the shaders with the
+# file they include. The app in //glass_app draws with both shaders and calls
+# the native side.
 flutter_plugin(
     name = "glass_plugin",
     package_name = "glass_plugin",
@@ -17,18 +18,13 @@ flutter_plugin(
         "@platforms//os:ios": [":glass_plugin_apple_ios"],
         "//conditions:default": [],
     }),
-    pkg_shaders = {
-        "shaders/invert.frag": "shaders/invert.frag",
-        "shaders/tint.frag": "shaders/tint.frag",
-    },
+    data = glob(["shaders/**"]) + ["pubspec.yaml"],
     platforms = [
         "android",
         "ios",
         "macos",
     ],
     plugin_class = "GlassPlugin",
-    # invert.frag includes premultiplied.glsl.
-    shader_includes = glob(["shaders/*.glsl"]),
     visibility = ["//visibility:public"],
     deps = ["@deps//:flutter"],
 )

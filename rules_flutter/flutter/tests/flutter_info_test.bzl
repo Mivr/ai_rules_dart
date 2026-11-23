@@ -3,8 +3,7 @@
 `contributing_library` stands in for `flutter_library` / `flutter_plugin`: a
 rule that contributes on several channels at once and reaches `FlutterInfo`
 only through the constructor. `single_channel_library` stands in for
-`flutter_native_asset` / `flutter_data_asset` / `flutter_material_icons`, which
-contribute on exactly one channel and forward nothing.
+`flutter_native_asset` / `flutter_data_asset`, which contribute on exactly one channel and forward nothing.
 
 The claim under test: a caller gets every dependency's contribution on every
 channel without naming any field, so adding a field to `FlutterInfo` cannot
@@ -20,7 +19,7 @@ load("@rules_dart//dart:defs.bzl", "dart_library")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "dart_info", "dart_info_no_package", "dart_package_identity")
 load("//flutter:providers.bzl", "FlutterInfo")
-load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps", "flutter_asset_channels", "flutter_info", "flutter_pub_channels")
+load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps", "flutter_asset_channels", "flutter_info", "flutter_native_channels")
 
 visibility(["//flutter/tests/..."])
 
@@ -35,11 +34,11 @@ def _contributing_library_impl(ctx):
                 for n in ctx.attr.plugin_names
             ],
             asset_channels = flutter_asset_channels(
-                asset_dirs = ctx.files.assets,
+                apple_privacy_manifests = ctx.files.assets,
             ),
-            pub_channels = flutter_pub_channels(
-                pub_assets = [
-                    struct(package_name = ctx.attr.pkg, asset_path = "a", file = None),
+            native_channels = flutter_native_channels(
+                binding_contracts = [
+                    struct(library = ctx.attr.pkg, contract = None),
                 ],
             ),
         ),
@@ -61,17 +60,17 @@ def _single_channel_library_impl(ctx):
         DefaultInfo(files = depset()),
         dart_info_no_package(),
         # Tuples, not lists: these structs live in a depset, whose elements
-        # must be immutable. The real `pub_fonts` contributions are built the
-        # same way.
-        flutter_info(pub_channels = flutter_pub_channels(pub_fonts = [
-            struct(package_name = "", family = ctx.attr.family, fonts = (), files = ()),
+        # must be immutable. The real `native_lib_sources` contributions are
+        # built the same way.
+        flutter_info(native_channels = flutter_native_channels(native_lib_sources = [
+            struct(library = ctx.attr.library, sources = ()),
         ])),
     ]
 
 single_channel_library = rule(
     implementation = _single_channel_library_impl,
-    attrs = {"family": attr.string(mandatory = True)},
-    doc = "A one-channel producer that forwards nothing, like `flutter_material_icons`.",
+    attrs = {"library": attr.string(mandatory = True)},
+    doc = "A one-channel producer that forwards nothing, like `flutter_native_asset`.",
 )
 
 def _field(structs, name):
@@ -87,19 +86,19 @@ def _forwards_every_channel_test_impl(ctx):
     # The channels this target contributes on carry its own value *and* the
     # dependency's. A merge that took only `direct` would pass an
     # own-contribution check and still drop every dependency.
-    assets = _short_paths(info.asset_dirs)
+    assets = _short_paths(info.apple_privacy_manifests)
     asserts.true(
         env,
         [p for p in assets if p.endswith("_own.png")] != [],
-        "own asset missing from asset_dirs: %s" % assets,
+        "own file missing from apple_privacy_manifests: %s" % assets,
     )
     asserts.true(
         env,
         [p for p in assets if p.endswith("_dep.png")] != [],
-        "dependency's asset missing from asset_dirs: %s" % assets,
+        "dependency's file missing from apple_privacy_manifests: %s" % assets,
     )
     asserts.equals(env, ["dep_plugin", "own_plugin"], sorted([p.name for p in info.plugins]))
-    asserts.equals(env, ["dep_pkg", "own_pkg"], _field(info.pub_assets, "package_name"))
+    asserts.equals(env, ["dep_pkg", "own_pkg"], _field(info.binding_contracts, "library"))
 
     # A channel neither target contributes on is still a real, empty depset —
     # consumers read it unguarded.
@@ -113,11 +112,11 @@ def _forwards_unknown_channel_test_impl(ctx):
     env = analysistest.begin(ctx)
     info = analysistest.target_under_test(env)[FlutterInfo]
 
-    # `contributing_library` passes nothing for `pub_fonts`; its dependency
+    # `contributing_library` passes nothing for `native_lib_sources`; its dependency
     # contributes one. Because
     # forwarding is the constructor's job, the value survives a caller that has
     # never heard of the channel.
-    asserts.equals(env, ["MaterialIcons"], _field(info.pub_fonts, "family"))
+    asserts.equals(env, ["icons_lib"], _field(info.native_lib_sources, "library"))
 
     return analysistest.end(env)
 
@@ -142,12 +141,12 @@ def _single_channel_test_impl(ctx):
     env = analysistest.begin(ctx)
     info = analysistest.target_under_test(env)[FlutterInfo]
 
-    asserts.equals(env, ["MaterialIcons"], _field(info.pub_fonts, "family"))
+    asserts.equals(env, ["icons_lib"], _field(info.native_lib_sources, "library"))
 
     # Every other channel is empty rather than absent. `flutter_application`
     # reads them all off every dep, so a missing one is an analysis error and an
     # empty one is the honest "contributes nothing here".
-    asserts.equals(env, [], info.asset_dirs.to_list())
+    asserts.equals(env, [], info.binding_contracts.to_list())
     asserts.equals(env, [], info.plugins)
     asserts.equals(env, [], info.native_assets.to_list())
     asserts.equals(env, [], info.apple_privacy_manifests.to_list())
@@ -290,7 +289,7 @@ def flutter_info_test_suite(name):
 
     single_channel_library(
         name = name + "_icons",
-        family = "MaterialIcons",
+        library = "icons_lib",
         tags = ["manual"],
     )
     single_channel_test(

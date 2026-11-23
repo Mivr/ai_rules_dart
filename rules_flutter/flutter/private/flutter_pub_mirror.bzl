@@ -33,7 +33,7 @@ differ only by case are never merged; on a case-insensitive host a
 case-only difference can neither hide an escape nor loop the walk.
 """
 
-load(":flutter_pub_assets.bzl", "is_asset_variant_dir")
+load(":asset_variant.bzl", "is_asset_variant_dir")
 load(":flutter_pub_walk.bzl", "PUB_WALK_BOUND", "scoped_tree_bound_error")
 
 visibility(["//flutter/..."])
@@ -802,7 +802,8 @@ def link_spoke_contents(ctx, src, asset_block, platform_dirs, scope):
         platform_dirs: The plugin platform directories to mirror.
         scope: The fetch's link scope.
     """
-    for entry in ["hook/build.dart", "hook/link.dart"]:
+    # The licence an app's `NOTICES` collects, read at the package root.
+    for entry in ["hook/build.dart", "hook/link.dart", "LICENSE", "NOTICES"]:
         link_scoped_file_entry(ctx, src, entry, scope)
     link_scoped_file_entry(ctx, src, "lib", scope, False)
     variant_cache = {}

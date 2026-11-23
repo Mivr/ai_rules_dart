@@ -29,9 +29,7 @@ load(
     "//flutter/private:common.bzl",
     "COPY_TO_DIRECTORY_TOOLCHAINS",
     "FLUTTER_DEPS_DOC",
-    "flutter_web_shader_aspect",
     "merge_dart_defines",
-    "resolve_exec_dart_vm",
     "resolve_flutter_sdk_info",
 )
 load(
@@ -41,7 +39,6 @@ load(
 load(
     "//flutter/private:flutter_integration_test_common.bzl",
     "COMMON_INTEGRATION_TEST_ATTRS",
-    "integration_test_assets",
     "integration_test_env",
     "integration_test_plugins",
     "integration_test_providers",
@@ -58,10 +55,9 @@ load(
     "INDEX_HTML_TEMPLATE",
     "JS_BUILD",
     "MANIFEST_JSON_TEMPLATE",
-    "VERSION_JSON_TEMPLATE",
-    "build_config_js",
     "wasm_build",
 )
+load("//flutter/private:flutter_bundle.bzl", write_web_bundle = "flutter_web_bundle")
 load("//flutter/private:flutter_kernel_module.bzl", "flutter_kernel_module_aspect")
 load(
     "//flutter/private:flutter_web_compile.bzl",
@@ -292,15 +288,14 @@ def _web_integration_test_compile(ctx, setup, entrypoint):
     )
 
 def _web_integration_test_template_files(ctx, setup):
-    """Writes the four web template inputs the substitution tool reads.
+    """Writes the harness's `web/` files: the page, its bootstrap and its manifest.
 
     Args:
         ctx: The rule context of the rule implementation that calls this helper.
         setup: The `_web_integration_test_setup` struct.
 
     Returns:
-        A struct with `index_template`, `bootstrap_template`, `manifest_json`
-        and `version_json`.
+        A struct with `index_template`, `bootstrap_template` and `manifest_json`.
     """
     safe_title = escape_html(ctx.label.name)
     index_template = ctx.actions.declare_file(ctx.label.name + "_index_template.html")
@@ -312,187 +307,11 @@ def _web_integration_test_template_files(ctx, setup):
     manifest_json = ctx.actions.declare_file(ctx.label.name + "_manifest.json")
     ctx.actions.write(manifest_json, MANIFEST_JSON_TEMPLATE.format(name = safe_title))
 
-    version_json = ctx.actions.declare_file(ctx.label.name + "_version.json")
-    ctx.actions.write(version_json, VERSION_JSON_TEMPLATE.format(app_name = setup.package_name))
     return struct(
         bootstrap_template = bootstrap_template,
         index_template = index_template,
         manifest_json = manifest_json,
-        version_json = version_json,
     )
-
-def _web_integration_test_templates(ctx, setup, builds, inputs):
-    """Runs the web template substitution tool over the written inputs.
-
-    Args:
-        ctx: The rule context of the rule implementation that calls this helper.
-        setup: The `_web_integration_test_setup` struct.
-        builds: The compiler build records.
-        inputs: The `_web_integration_test_template_files` struct.
-
-    Returns:
-        A struct with the generated template files and the SDK files to copy.
-    """
-    flutter_js_file = None
-    renderer_files = []
-    for f in _web_sdk_file_list(ctx):
-        if f.path.endswith("/flutter_js/flutter.js"):
-            flutter_js_file = f
-        if "/web-sdk/canvaskit/" in f.path:
-            renderer_files.append(f)
-
-    index_html = ctx.actions.declare_file(ctx.label.name + "_index.html")
-    bootstrap_js = ctx.actions.declare_file(ctx.label.name + "_flutter_bootstrap.js")
-
-    build_config = build_config_js(setup.sdk.engine_revision, builds)
-    shared_builtins = {
-        "flutter_build_config": {"value": build_config},
-        "flutter_service_worker_version": {"value": "null"},
-    }
-    template_inputs = [inputs.index_template, inputs.bootstrap_template]
-    if flutter_js_file:
-        shared_builtins["flutter_js"] = {"file": flutter_js_file.path}
-        template_inputs.append(flutter_js_file)
-
-    index_builtins = dict(shared_builtins)
-    index_builtins["flutter_bootstrap_js"] = {"from_output": 0}
-
-    template_config = {
-        "web_defines": {},
-        "keep_placeholders": [],
-        "files": [
-            {
-                "template": inputs.bootstrap_template.path,
-                "output": bootstrap_js.path,
-                "label": "flutter_bootstrap.js",
-                "base_href": "",
-                "static_assets_url": None,
-                "dev_loop_guard": False,
-                "manages_service_worker": False,
-                "check_constructs": True,
-                "builtins": shared_builtins,
-            },
-            {
-                "template": inputs.index_template.path,
-                "output": index_html.path,
-                "label": "index.html",
-                "base_href": "/",
-                "static_assets_url": "/",
-                "dev_loop_guard": False,
-                "manages_service_worker": False,
-                "check_constructs": True,
-                "builtins": index_builtins,
-            },
-        ],
-    }
-    template_config_file = ctx.actions.declare_file(ctx.label.name + "_web_template_config.json")
-    ctx.actions.write(template_config_file, json.encode(template_config))
-
-    ctx.actions.run(
-        executable = setup.sdk.dart,
-        arguments = [
-            ctx.executable._web_template_tool.path,
-            "--config",
-            template_config_file.path,
-        ],
-        inputs = depset(
-            direct = template_inputs + [template_config_file, ctx.executable._web_template_tool],
-            transitive = [setup.sdk.dart_vm_files],
-        ),
-        outputs = [index_html, bootstrap_js],
-        mnemonic = "FlutterWebTemplate",
-        progress_message = "Substituting web templates for %s" % ctx.label,
-        toolchain = None,
-    )
-    return struct(
-        bootstrap_js = bootstrap_js,
-        flutter_js_file = flutter_js_file,
-        index_html = index_html,
-        manifest_json = inputs.manifest_json,
-        renderer_files = renderer_files,
-        version_json = inputs.version_json,
-    )
-
-def _web_integration_test_bundle(ctx, setup, compile, assets, templates):
-    """Assembles the web bundle directory the runner serves.
-
-    Args:
-        ctx: The rule context of the rule implementation that calls this helper.
-        setup: The `_web_integration_test_setup` struct.
-        compile: The `_web_integration_test_compile` struct.
-        assets: The `flutter_assets` directory.
-        templates: The `_web_integration_test_templates` struct.
-
-    Returns:
-        The declared web bundle directory.
-    """
-    output_dir = ctx.actions.declare_directory(ctx.label.name + "_web")
-    copies = list(compile.copies)
-    copies.extend([
-        {"src": templates.index_html.path, "dst": "index.html"},
-        {"src": templates.bootstrap_js.path, "dst": "flutter_bootstrap.js"},
-        {"src": templates.manifest_json.path, "dst": "manifest.json"},
-        {"src": templates.version_json.path, "dst": "version.json"},
-    ])
-    engine_inputs = []
-    if templates.flutter_js_file:
-        copies.append({"src": templates.flutter_js_file.path, "dst": "flutter.js"})
-        engine_inputs.append(templates.flutter_js_file)
-    for f in templates.renderer_files:
-        idx = f.path.find("/web-sdk/canvaskit/")
-        if idx >= 0:
-            rel = "canvaskit/" + f.path[idx + len("/web-sdk/canvaskit/"):]
-            copies.append({"src": f.path, "dst": rel})
-            engine_inputs.append(f)
-
-    copy_dirs = [{"src": assets.path, "dst": "assets"}]
-    for d in compile.dart2js_dirs:
-        copy_dirs.append({
-            "src": d.path,
-            "dst": ".",
-            "exclude": ["*.deps", "*.info.json"],
-        })
-
-    bundle_config = {
-        "output_dir": output_dir.path,
-        "copies": copies,
-        "copy_dirs": copy_dirs,
-        "extracts": [],
-    }
-    bundle_config_file = ctx.actions.declare_file(ctx.label.name + "_web_bundle_config.json")
-    ctx.actions.write(bundle_config_file, json.encode(bundle_config))
-
-    exec_dart, dart_vm_files = resolve_exec_dart_vm(ctx, setup.sdk)
-    all_bundle_inputs = (
-        compile.outputs +
-        compile.dart2js_dirs +
-        engine_inputs +
-        [
-            assets,
-            templates.index_html,
-            templates.bootstrap_js,
-            templates.manifest_json,
-            templates.version_json,
-            bundle_config_file,
-        ]
-    )
-    ctx.actions.run(
-        executable = exec_dart,
-        arguments = [
-            ctx.executable._bundle_tool.path,
-            "--config",
-            bundle_config_file.path,
-        ],
-        inputs = depset(
-            direct = all_bundle_inputs + [ctx.executable._bundle_tool],
-            transitive = [dart_vm_files],
-        ),
-        outputs = [output_dir],
-        mnemonic = "FlutterWebBundle",
-        progress_message = "Bundling Flutter web integration test %s" % ctx.label,
-        toolchain = "@rules_dart//dart:exec_tools_toolchain_type",
-    )
-    return output_dir
 
 def _web_integration_test_run(ctx, setup, output_dir):
     """Wires the runner executable, environment and runfiles for the web bundle.
@@ -550,24 +369,36 @@ def _flutter_integration_test_impl(ctx):
     setup = _web_integration_test_setup(ctx)
     entrypoint = _web_integration_test_bootstrap(ctx, setup)
     compile = _web_integration_test_compile(ctx, setup, entrypoint)
-    assets = integration_test_assets(
+    # The harness's own page, bootstrap and manifest are the project's `web/`
+    # files; the Flutter tool's own web code writes the directory around the
+    # compiled program from them and the pubspec, as `flutter build web` does.
+    template_files = _web_integration_test_template_files(ctx, setup)
+    output_dir = ctx.actions.declare_directory(ctx.label.name + "_web")
+    write_web_bundle(
         ctx,
         setup.sdk,
-        "web",
-        None,
-        setup.is_debug,
-        None,
+        output_dir,
+        mode = "debug" if setup.is_debug else "release",
+        web_build = compile.outputs + compile.dart2js_dirs,
+        web_sdk_files = _web_sdk_file_list(ctx),
+        renderer = compile.builds[-1]["renderer"],
+        wasm = ctx.attr.compiler == "dart2wasm",
+        pwa_strategy = "none",
+        # The browser runs offline: the renderer comes from the bundle.
+        use_local_canvaskit = True,
+        extra_project_files = {
+            "web/flutter_bootstrap.js": template_files.bootstrap_template,
+            "web/index.html": template_files.index_template,
+            "web/manifest.json": template_files.manifest_json,
+        },
     )
-    template_files = _web_integration_test_template_files(ctx, setup)
-    templates = _web_integration_test_templates(ctx, setup, compile.builds, template_files)
-    output_dir = _web_integration_test_bundle(ctx, setup, compile, assets, templates)
     return _web_integration_test_run(ctx, setup, output_dir)
 
 _INTEGRATION_TEST_ATTRS = dict(COMMON_INTEGRATION_TEST_ATTRS)
 _INTEGRATION_TEST_ATTRS["deps"] = attr.label_list(
     doc = FLUTTER_DEPS_DOC,
     providers = [DartInfo],
-    aspects = [flutter_web_shader_aspect, flutter_kernel_module_aspect, LAYERING_CHECK_ASPECT],
+    aspects = [flutter_kernel_module_aspect, LAYERING_CHECK_ASPECT],
 )
 _INTEGRATION_TEST_ATTRS["compiler"] = attr.string(
     doc = "Web compiler: 'dart2js' (default) or 'dart2wasm'.",
@@ -678,6 +509,11 @@ _flutter_integration_test = rule(
         ),
         config_common.toolchain_type(
             "@rules_flutter//flutter/private:font_subset_toolchain_type",
+            mandatory = False,
+        ),
+        # The Material icons, and the fallback font a local CanvasKit bundles.
+        config_common.toolchain_type(
+            "@rules_flutter//flutter/private:material_icons_toolchain_type",
             mandatory = False,
         ),
     ] + COPY_TO_DIRECTORY_TOOLCHAINS + MODULAR_KERNEL_TOOLCHAINS,

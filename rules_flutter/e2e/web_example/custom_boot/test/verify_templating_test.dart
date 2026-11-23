@@ -52,8 +52,9 @@ void main() {
   }
   if (!index.contains('<div id="tpl">{{vueThing}}</div>')) {
     fail(
-      'keep_placeholders did not survive into index.html — a page that '
-      'hands {{...}} to a client-side engine needs it shipped as written',
+      'a placeholder no web define names did not survive into index.html — '
+      'a page that hands {{...}} to a client-side engine needs it shipped as '
+      'written',
     );
   }
   if (!index.contains('<base href="/">')) {
@@ -76,7 +77,9 @@ void main() {
   if (!bootstrap.contains('"compileTarget":"dart2wasm"')) {
     fail("the build config is not this target's:\n$bootstrap");
   }
-  if (!bootstrap.contains('serviceWorkerVersion: "rules_flutter_')) {
+  // The Flutter tool draws the version at random, as `flutter build web`
+  // does, so only its shape is fixed: a quoted, non-empty string.
+  if (!RegExp('serviceWorkerVersion: "[^"]+"').hasMatch(bootstrap)) {
     fail('{{flutter_service_worker_version}} did not reach the user bootstrap');
   }
   if (bootstrap.contains('{{')) {

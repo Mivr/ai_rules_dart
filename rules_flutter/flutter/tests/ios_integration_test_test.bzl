@@ -163,7 +163,7 @@ def _transition_settings_test_impl(ctx):
 
 def _app_kwarg_keys_test_impl(ctx):
     env = unittest.begin(ctx)
-    for key in ("srcs", "main", "app_srcs", "assets", "defines", "native_deps"):
+    for key in ("srcs", "main", "app_srcs", "pubspec", "pubspec_srcs", "pub_packages", "defines", "native_deps"):
         asserts.true(env, key in IOS_APP_KWARG_KEYS, "%r must reach flutter_application" % key)
     asserts.false(
         env,

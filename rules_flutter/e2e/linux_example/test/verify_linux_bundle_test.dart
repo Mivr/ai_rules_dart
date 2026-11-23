@@ -93,6 +93,22 @@ void main() {
     '$bundlePath/data/flutter_assets/FontManifest.json',
   );
   check('NOTICES.Z', '$bundlePath/data/flutter_assets/NOTICES.Z');
+  // What `flutter build linux` writes beside them: the Material icons the
+  // pubspec asks for, the framework's shaders, the native assets manifest and
+  // the version file.
+  check(
+    'MaterialIcons-Regular.otf',
+    '$bundlePath/data/flutter_assets/fonts/MaterialIcons-Regular.otf',
+  );
+  check(
+    'shaders/ink_sparkle.frag',
+    '$bundlePath/data/flutter_assets/shaders/ink_sparkle.frag',
+  );
+  check(
+    'NativeAssetsManifest.json',
+    '$bundlePath/data/flutter_assets/NativeAssetsManifest.json',
+  );
+  check('version.json', '$bundlePath/data/flutter_assets/version.json');
 
   // ICU data.
   check('icudtl.dat', '$bundlePath/data/icudtl.dat', nonEmpty: true);

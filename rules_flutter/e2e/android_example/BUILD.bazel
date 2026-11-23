@@ -48,9 +48,9 @@ flutter_application(
     srcs = glob(["lib/**/*.dart"]),
     main = "lib/main.dart",
     native_deps = [":add"],
+    pub_packages = "@deps//packages",
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -153,11 +153,11 @@ flutter_application(
     srcs = ["lib/release_main.dart"],
     main = "lib/release_main.dart",
     obfuscate = True,
+    pub_packages = "@deps//packages",
     split_debug_info = True,
     tree_shake_icons = True,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -167,11 +167,11 @@ flutter_application(
     srcs = ["lib/release_main.dart"],
     main = "lib/release_main.dart",
     obfuscate = False,
+    pub_packages = "@deps//packages",
     split_debug_info = False,
     tree_shake_icons = False,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -280,6 +280,9 @@ flutter_web_bundle(
     package_name = "android_example",
     srcs = glob(["lib/**/*.dart"]),
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = glob(["web/**"]),
     deps = ["@deps//:flutter"],
 )
 
@@ -532,10 +535,10 @@ flutter_application(
     srcs = glob(["lib/**/*.dart"]),
     main = "lib/main.dart",
     native_deps = [":add"],
+    pub_packages = "@deps//packages",
     track_widget_creation = True,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -545,10 +548,10 @@ flutter_application(
     srcs = glob(["lib/**/*.dart"]),
     main = "lib/main.dart",
     native_deps = [":add"],
+    pub_packages = "@deps//packages",
     track_widget_creation = False,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

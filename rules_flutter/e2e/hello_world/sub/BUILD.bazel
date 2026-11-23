@@ -4,12 +4,13 @@ flutter_application(
     name = "sub_app",
     package_name = "sub_app",
     srcs = ["lib/main.dart"],
-    assets = [
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = [
         ":gen_notice",
         "assets/notice.txt",
         "//sub/nested:extra.txt",
     ],
-    main = "lib/main.dart",
     visibility = ["//visibility:public"],
     deps = [
         "//brand",

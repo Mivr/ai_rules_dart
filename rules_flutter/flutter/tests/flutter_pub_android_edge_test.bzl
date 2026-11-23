@@ -85,10 +85,7 @@ def _library_has_no_edge_test_impl(ctx):
         language_version = "3.4",
         code_assets = [],
         has_unreplaced_hook = "",
-        fonts_json_str = "",
-        font_files = {},
-        pkg_assets = {},
-        pkg_shaders = {},
+        data_patterns = [],
     )
     asserts.false(env, "android_libs" in content, content)
     return unittest.end(env)

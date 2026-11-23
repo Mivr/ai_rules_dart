@@ -14,7 +14,6 @@ message.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load(
     "//flutter/private:flutter_pub_package.bzl",
-    "check_spoke_file_names",
     "make_flutter_library_build_content",
     "make_flutter_plugin_build_content",
 )
@@ -108,24 +107,6 @@ refused_classes_fail_closed_test = unittest.make(
     _refused_classes_fail_closed_test_impl,
 )
 
-def _dir_declaration_passes_test_impl(ctx):
-    """A trailing-slash declaration covers files; it is never emitted."""
-    env = unittest.begin(ctx)
-
-    block = struct(
-        assets = [struct(path = "assets/odd/")],
-        fonts = [],
-        shaders = [],
-    )
-    expanded = [struct(path = "assets/odd/note.txt")]
-    asserts.equals(env, None, check_spoke_file_names("p", block, expanded))
-
-    return unittest.end(env)
-
-dir_declaration_passes_test = unittest.make(
-    _dir_declaration_passes_test_impl,
-)
-
 def _ordinary_name_passes_test_impl(ctx):
     """Bazel-accepted names (including quotes) pass the fetch-time check."""
     env = unittest.begin(ctx)
@@ -157,9 +138,6 @@ def _odd_names_render_escaped_test_impl(ctx):
     env = unittest.begin(ctx)
 
     odd = ['say"hi.txt']
-    assets = {}
-    for name in odd:
-        assets[":" + name] = name
 
     library = make_flutter_library_build_content(
         name = "odd_assets",
@@ -167,10 +145,7 @@ def _odd_names_render_escaped_test_impl(ctx):
         language_version = "3.4",
         code_assets = [],
         has_unreplaced_hook = "",
-        fonts_json_str = "",
-        font_files = {},
-        pkg_assets = dict(assets),
-        pkg_shaders = {},
+        data_patterns = list(odd),
         version = "0.1.0",
     )
     plugin = make_flutter_plugin_build_content(
@@ -188,16 +163,16 @@ def _odd_names_render_escaped_test_impl(ctx):
         apple_ios_privacy_manifests = [],
         linux_src_dir = "",
         windows_src_dir = "",
-        pkg_assets = dict(assets),
+        data_patterns = list(odd),
         version = "0.1.0",
     )
 
     for name in odd:
-        want = starlark_string_literal(":" + name) + ": " + starlark_string_literal(name) + ","
+        want = starlark_string_literal(name) + ","
         asserts.true(env, want in library, want)
         asserts.true(env, want in plugin, want)
-        asserts.false(env, '":' + name + '"' in library, name)
-        asserts.false(env, '":' + name + '"' in plugin, name)
+        asserts.false(env, '"' + name + '"' in library, name)
+        asserts.false(env, '"' + name + '"' in plugin, name)
 
     return unittest.end(env)
 
@@ -282,7 +257,6 @@ def starlark_literal_test_suite(name):
         literal_round_trip_test,
         odd_name_error_names_all_three_test,
         refused_classes_fail_closed_test,
-        dir_declaration_passes_test,
         ordinary_name_passes_test,
         odd_names_render_escaped_test,
         decode_simple_escapes_test,

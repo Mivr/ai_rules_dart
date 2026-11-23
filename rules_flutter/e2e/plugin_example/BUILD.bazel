@@ -41,6 +41,7 @@ flutter_application(
     name = "plugin_app",
     package_name = "plugin_example",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "//greeting_plugin",
         "@deps//:audio_session",
@@ -49,7 +50,6 @@ flutter_application(
         "@deps//:path_provider",
         "@deps//:record_android",
         "@deps//:url_launcher",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -221,7 +221,9 @@ flutter_web_bundle(
     name = "plugin_web",
     package_name = "plugin_example",
     main = "lib/main.dart",
-    title = "Plugin Example",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = glob(["web/**"]),
     deps = [
         "//greeting_plugin",
         "@deps//:audio_session",
@@ -229,7 +231,6 @@ flutter_web_bundle(
         "@deps//:package_info_plus",
         "@deps//:path_provider",
         "@deps//:url_launcher",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

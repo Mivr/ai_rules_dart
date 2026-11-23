@@ -231,7 +231,9 @@ def write_native_assets_manifest(
         ),
     }
 
-    ctx.actions.write(output_file, json.encode_indent(manifest, indent = "  "))
+    # Compact, as the Flutter tool writes `NativeAssetsManifest.json`: the
+    # bundle carries this file as it is.
+    ctx.actions.write(output_file, json.encode(manifest))
 
 def collect_bundled_code_asset_files(native_assets):
     """Return a single depset of files that should be embedded in the bundle.

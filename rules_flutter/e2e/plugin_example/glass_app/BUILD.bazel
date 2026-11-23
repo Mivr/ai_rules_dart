@@ -20,6 +20,7 @@ flutter_application(
     name = "glass_flutter",
     package_name = "glass_app",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = _DEPS,
 )
 
@@ -49,6 +50,7 @@ flutter_android_app(
 flutter_web_app(
     name = "glass_web",
     package_name = "glass_app",
+    pub_packages = "@deps//packages",
     tags = ["manual"],
     deps = _DEPS,
 )
@@ -59,6 +61,9 @@ flutter_web_bundle(
     package_name = "glass_app",
     compiler = "dart2js",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = glob(["web/**"]),
     tags = ["manual"],
     deps = _DEPS,
 )

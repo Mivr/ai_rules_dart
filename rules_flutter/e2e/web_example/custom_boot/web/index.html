@@ -5,8 +5,9 @@
   <meta charset="UTF-8">
   <!-- Substituted from the target's web_defines. -->
   <meta name="api-url" content="{{API_URL}}">
-  <!-- Listed in keep_placeholders: a client-side template engine reads this
-       one at runtime, so the build must ship it as written. -->
+  <!-- Named by no web define: a client-side template engine reads this one
+       at runtime, so the build must ship it as written (the Flutter tool
+       warns about it and leaves it in place). -->
   <div id="tpl">{{vueThing}}</div>
   <title>Custom Boot</title>
 </head>

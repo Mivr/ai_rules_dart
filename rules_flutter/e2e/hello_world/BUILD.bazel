@@ -10,7 +10,7 @@ load(
     "FLUTTER_APK_AAPT_NO_COMPRESS_EXTENSIONS",
     "flutter_android_app",
 )
-load("@rules_flutter//flutter:defs.bzl", "flutter_aot_target", "flutter_application", "flutter_asset_bundle", "flutter_font_family", "flutter_kernel_target", "flutter_library", "flutter_prebuilt_test", "flutter_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_aot_target", "flutter_application", "flutter_kernel_target", "flutter_library", "flutter_prebuilt_test", "flutter_test")
 load(
     "@rules_flutter//flutter:ios.bzl",
     "IOS_DEFAULT_LAUNCH_STORYBOARD",
@@ -46,7 +46,6 @@ flutter_kernel_target(
         "@deps//:cupertino_icons",
         "@deps//:flutter",
         "@deps//:flutter_localized_locales",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -59,51 +58,32 @@ flutter_aot_target(
         "@deps//:cupertino_icons",
         "@deps//:flutter",
         "@deps//:flutter_localized_locales",
-        "@rules_flutter//flutter:material_icons",
     ],
-)
-
-flutter_asset_bundle(
-    name = "hello_world_assets",
 )
 
 # -- Recommended: flutter_application with local sources ----------------------
 
-# A first-party font family: the regular and bold faces of HelloSans. The
-# bytes are generated fixtures (see fonts/README.md), and the committed files
-# are the ones the iOS bundle and Android APK tests compare against.
-flutter_font_family(
-    name = "hello_sans",
-    family = "HelloSans",
-    fonts = [
-        {"asset": "fonts/HelloSans-Regular.ttf"},
-        {
-            "asset": "fonts/HelloSans-Bold.ttf",
-            "weight": 700,
-        },
-    ],
-)
+# What pubspec.yaml names: the `assets/` directory and the HelloSans font
+# family. `assets/stage_clean.txt` is the macOS rebuild fixture: the glob makes
+# a deleted file undeclared without editing this BUILD file, so
+# `verify_macos_stage_clean_test` can build, remove it, and rebuild.
+_PUBSPEC_SRCS = glob(["assets/**"]) + [
+    "fonts/HelloSans-Bold.ttf",
+    "fonts/HelloSans-Regular.ttf",
+]
 
-# `assets/stage_clean*.txt` is the macOS rebuild fixture: the glob makes a
-# deleted file undeclared without editing this BUILD file, so
-# `verify_macos_stage_clean_test` can build, remove it, and rebuild. The
-# rebuild sees no match, hence `allow_empty`.
 flutter_application(
     name = "hello_world_app",
     package_name = "hello_world",
     srcs = ["lib/common_widgets.dart"],
-    assets = glob(
-        ["assets/stage_clean*.txt"],
-        allow_empty = True,
-    ),
-    fonts = [":hello_sans"],
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = _PUBSPEC_SRCS,
     deps = [
         "@deps//:cupertino_icons",
         "@deps//:flutter",
         "@deps//:flutter_localized_locales",
         "@deps//:platform_assets",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -366,12 +346,13 @@ flutter_web_app(
     name = "hello_world_web",
     package_name = "hello_world",
     srcs = ["lib/common_widgets.dart"],
+    pub_packages = "@deps//packages",
+    pubspec_srcs = _PUBSPEC_SRCS,
     deps = [
         "@deps//:cupertino_icons",
         "@deps//:flutter",
         "@deps//:flutter_localized_locales",
         "@deps//:platform_assets",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -404,7 +385,6 @@ flutter_test(
         "@deps//:flutter_localized_locales",
         "@deps//:flutter_test",
         "@deps//:platform_assets",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -413,14 +393,18 @@ flutter_test(
 # collects. (Its `size`/`timeout` as the suite's default timeout is unit-tested
 # on `suiteTimeout` in `flutter_test_runner_test`.) The sharded twin is what proves
 # the runner declares sharding support; see the test file.
-# An Impeller-only shader, drawn in flutter_tester running Impeller.
+# An Impeller-only shader, drawn in flutter_tester running Impeller. Its
+# project is `impeller_shader/`: the root pubspec, which the web app shares,
+# cannot name a shader a web build cannot compile.
 flutter_test(
     name = "impeller_shader_test",
     package_name = "hello_world",
     size = "medium",
     enable_impeller = True,
     main = "test/impeller_shader_test.dart",
-    shaders = ["shaders/indexed.frag"],
+    pub_packages = "@deps//packages",
+    pubspec = "impeller_shader/pubspec.yaml",
+    pubspec_srcs = ["impeller_shader/shaders/indexed.frag"],
     target_compatible_with = _HOST_COMPATIBLE,
     deps = [
         "@deps//:flutter",
@@ -720,7 +704,6 @@ custom_test_kernel(
         "@deps//:flutter_localized_locales",
         "@deps//:flutter_test",
         "@deps//:platform_assets",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -801,7 +784,9 @@ flutter_prebuilt_test(
 # program. The default link is complete: `:widget_modular_prebuilt_test` runs
 # it with no `base_dill`. The `use_base_dill` twin delta-links against the
 # shared `flutter_test` base instead (the smaller per-test dill for many
-# tests sharing one SDK base) and feeds it to `base_dill`.
+# tests sharing one SDK base) and feeds it to `base_dill`. Both run over
+# `:widget_test`'s asset tree, a bundle the Flutter tool wrote for
+# flutter_tester.
 
 custom_modular_test_kernel(
     name = "widget_modular_kernel",
@@ -821,15 +806,10 @@ filegroup(
     output_group = "test_kernel",
 )
 
-flutter_asset_bundle(
-    name = "modular_suite_assets",
-    testonly = True,
-)
-
 flutter_prebuilt_test(
     name = "widget_modular_prebuilt_test",
     size = "medium",
-    assets = ":modular_suite_assets",
+    assets = ":widget_test_assets",
     dill = ":widget_modular_kernel_files",
     target_compatible_with = _HOST_COMPATIBLE,
 )
@@ -863,7 +843,7 @@ filegroup(
 flutter_prebuilt_test(
     name = "widget_modular_based_prebuilt_test",
     size = "medium",
-    assets = ":modular_suite_assets",
+    assets = ":widget_test_assets",
     base_dill = [":widget_modular_based_base_kernel_files"],
     dill = ":widget_modular_based_kernel_files",
     target_compatible_with = _HOST_COMPATIBLE,
@@ -877,7 +857,6 @@ custom_modular_app_kernel(
         "@deps//:cupertino_icons",
         "@deps//:flutter",
         "@deps//:flutter_localized_locales",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -1119,12 +1098,6 @@ build_test(
 )
 
 build_test(
-    name = "asset_bundle_build_test",
-    size = "small",
-    targets = [":hello_world_assets"],
-)
-
-build_test(
     name = "windows_bundle_build_test",
     size = "small",
     target_compatible_with = ["@platforms//os:windows"],
@@ -1139,10 +1112,10 @@ build_test(
 
 # Verifies the asset bundle structure for pub-package fonts/assets:
 # cupertino_icons (flutter.fonts), flutter_localized_locales (flutter.assets),
-# and the toolchain-backed material_icons. Asserts files land at
-# packages/<pkg>/<path>, FontManifest.json carries the prefixed family for
-# pub fonts and a bare family for material_icons (the package_name = ""
-# sentinel), and AssetManifest.bin.json references the prefixed asset path.
+# and the Material icons the pubspec's `uses-material-design` asks for.
+# Asserts files land at packages/<pkg>/<path>, FontManifest.json carries the
+# prefixed family for pub fonts and a bare MaterialIcons family, and
+# AssetManifest.bin references the prefixed asset path.
 dart_test(
     name = "verify_pub_assets_test",
     size = "small",
@@ -1155,53 +1128,19 @@ dart_test(
     ],
 )
 
-# Verifies package-relative asset keys for a subpackage app bundle:
-# `//sub:sub_app` keys its own `assets/notice.txt` relative to its package
-# directory (no `sub/` prefix): the nested `//sub/nested` file arrives as
-# `nested/extra.txt` and the genrule output as `gen_notice.txt`. The
+# Verifies project-relative asset keys for a subdirectory app bundle:
+# `//sub:sub_app` keys its own `assets/notice.txt` relative to its project
+# directory `sub/` (no `sub/` prefix): the nested `//sub/nested` file arrives
+# as `nested/extra.txt` and the genrule output as `gen_notice.txt`. The
 # first-party `//brand` dependency's asset lands at
 # `packages/brand/assets/brand.txt`. Reads the bundle's `flutter_assets/`
-# tree and AssetManifest.bin.json like `:verify_pub_assets_test` does for
-# pub assets.
+# tree and AssetManifest.bin like `:verify_pub_assets_test` does for pub
+# assets.
 dart_test(
     name = "verify_sub_assets_test",
     size = "small",
     data = ["//sub:sub_app"],
     main = "test/verify_sub_assets_test.dart",
-    target_compatible_with = _HOST_COMPATIBLE,
-    deps = [
-        "@deps//:test",
-        "@rules_dart//dart/runfiles",
-    ],
-)
-
-# A workspace-root bundle holding a nested-package file and a generated
-# file. The root strips nothing: `//brand`'s asset keeps its
-# `brand/assets/brand.txt` key and the genrule output its `root_gen.txt`
-# key — exactly today's keys. `:verify_root_keys_test` asserts the tree.
-flutter_asset_bundle(
-    name = "root_keys_bundle",
-    assets = [
-        ":root_gen_asset",
-        "//brand:assets/brand.txt",
-    ],
-)
-
-genrule(
-    name = "root_gen_asset",
-    outs = ["root_gen.txt"],
-    cmd = "echo 'root generated' > $@",
-)
-
-# Verifies the workspace-root key rule: a root target keys every same-repo
-# file, nested or generated, by its repository-relative path — the bundle
-# stays byte-identical. Reads `:root_keys_bundle`'s `flutter_assets/` tree
-# and AssetManifest.bin.json.
-dart_test(
-    name = "verify_root_keys_test",
-    size = "small",
-    data = [":root_keys_bundle"],
-    main = "test/verify_root_keys_test.dart",
     target_compatible_with = _HOST_COMPATIBLE,
     deps = [
         "@deps//:test",
@@ -1304,6 +1243,5 @@ flutter_library(
         "@deps//:cupertino_icons",
         "@deps//:flutter",
         "@deps//:flutter_localized_locales",
-        "@rules_flutter//flutter:material_icons",
     ],
 )

@@ -1,7 +1,7 @@
 """The `FlutterInfo` constructor.
 
 `FlutterInfo` is built by several rules — `flutter_library`, `flutter_plugin`,
-`flutter_native_asset`, `flutter_data_asset` and `flutter_material_icons`.
+and `flutter_native_asset`.
 Construction goes through here so no caller decides how a field merges: a rule
 that does not contribute on a channel must still forward its dependencies'
 values, and writing `depset()` instead silently drops them.
@@ -27,27 +27,19 @@ def _merge_depsets(dep_infos, direct, field):
     """Merges one plain depset channel: this target's files over its dependencies'."""
     return depset(direct = direct, transitive = [getattr(info, field) for info in dep_infos])
 
-def flutter_asset_channels(asset_dirs = [], assets = [], shader_srcs = [], apple_privacy_manifests = []):
-    """Groups what a target contributes to the bundled-asset channels.
+def flutter_asset_channels(apple_privacy_manifests = []):
+    """Groups what a target contributes to the bundled-file channels.
 
-    One of the four parameter objects `flutter_info()` takes. A caller passes
-    only the channels it contributes on; every other channel keeps its empty
-    default, and the dependencies' values on all four channels are merged in
-    without the caller naming them.
+    One of the parameter objects `flutter_info()` takes. What an app's asset
+    bundle holds is read from the pubspecs, not carried here.
 
     Args:
-      asset_dirs: Directories of Flutter assets this target ships.
-      assets: Keyed asset entries (`struct(key, file, label)`) this target lists.
-      shader_srcs: Raw shader sources (`.frag`/`.glsl`) this target ships.
       apple_privacy_manifests: `PrivacyInfo.xcprivacy` files this target ships.
 
     Returns:
-      A struct carrying the four channels above.
+      A struct carrying the channel above.
     """
     return struct(
-        asset_dirs = asset_dirs,
-        assets = assets,
-        shader_srcs = shader_srcs,
         apple_privacy_manifests = apple_privacy_manifests,
     )
 
@@ -114,38 +106,9 @@ def flutter_native_channels(
         data_assets = data_assets,
     )
 
-def flutter_pub_channels(pub_fonts = [], pub_assets = [], pub_shaders = []):
-    """Groups what a target contributes to the pub-manifest channels.
-
-    Args:
-      pub_fonts: Font contribution structs from a pub `flutter.fonts` block.
-      pub_assets: Asset contribution structs from a pub `flutter.assets` block.
-        Each carries `platforms` / `flavors` tuples (empty when unrestricted);
-        bundle aggregators filter them per target platform with
-        `pub_asset_matches_target`, flavor-first like flutter_tools.
-      pub_shaders: Shader contribution structs from a `flutter.shaders` block.
-
-    Returns:
-      A struct carrying the three channels above.
-    """
-    return struct(
-        pub_fonts = pub_fonts,
-        pub_assets = pub_assets,
-        pub_shaders = pub_shaders,
-    )
-
 def _merge_asset_channels(dep_infos, channels):
     """Merges one `flutter_asset_channels` over its dependencies' contributions."""
     return struct(
-        asset_dirs = depset(
-            direct = channels.asset_dirs,
-            transitive = [info.asset_dirs for info in dep_infos],
-        ),
-        assets = _merge_depsets(dep_infos, channels.assets, "assets"),
-        shader_srcs = depset(
-            direct = _normalize_shader_srcs(channels.shader_srcs),
-            transitive = [info.shader_srcs for info in dep_infos],
-        ),
         apple_privacy_manifests = depset(
             direct = channels.apple_privacy_manifests,
             transitive = [info.apple_privacy_manifests for info in dep_infos],
@@ -188,30 +151,6 @@ def _merge_native_channels(dep_infos, channels):
             transitive = [info.data_assets for info in dep_infos],
         ),
     )
-
-def _merge_pub_channels(dep_infos, channels):
-    """Merges one `flutter_pub_channels` over its dependencies' contributions."""
-    return struct(
-        pub_fonts = depset(
-            direct = channels.pub_fonts,
-            transitive = [info.pub_fonts for info in dep_infos],
-        ),
-        pub_assets = depset(
-            direct = channels.pub_assets,
-            transitive = [info.pub_assets for info in dep_infos],
-        ),
-        pub_shaders = depset(
-            direct = channels.pub_shaders,
-            transitive = [info.pub_shaders for info in dep_infos],
-        ),
-    )
-
-def _normalize_shader_srcs(shader_srcs):
-    """Wraps bare shader Files as `struct(file, includes)` entries."""
-    return [
-        s if hasattr(s, "file") else struct(file = s, includes = ())
-        for s in shader_srcs
-    ]
 
 def _copy_plugin_with_direct(p, direct):
     """Copies a plugin struct with an updated direct flag."""
@@ -359,14 +298,12 @@ def flutter_info(
         plugins = [],
         asset_channels = None,
         plugin_libraries = None,
-        native_channels = None,
-        pub_channels = None):
+        native_channels = None):
     """Builds a `FlutterInfo`, merging its dependencies' contributions.
 
     The caller supplies only what this target contributes itself, grouped into
     the parameter objects built by `flutter_asset_channels()`,
-    `flutter_plugin_libraries()`, `flutter_native_channels()` and
-    `flutter_pub_channels()`; everything transitive is merged here, so every
+    `flutter_plugin_libraries()` and `flutter_native_channels()`; everything transitive is merged here, so every
     dependency's contribution on every channel arrives without the caller
     naming it. Adding a field to `FlutterInfo` is therefore a change to this
     function and its group constructors, and nothing else. A group the caller
@@ -386,14 +323,12 @@ def flutter_info(
       plugins: Plugin metadata structs this target declares. Deduplicated by
         name against the dependencies' plugins, this target's first.
       asset_channels: A `flutter_asset_channels()` struct with this target's
-        `asset_dirs`, `assets`, `shader_srcs` and `apple_privacy_manifests`.
+        `apple_privacy_manifests`.
       plugin_libraries: A `flutter_plugin_libraries()` struct with this
         target's per-platform plugin libraries.
       native_channels: A `flutter_native_channels()` struct with this target's
         `native_libs`, `native_lib_sources`, `binding_contracts`,
         `native_assets` and `data_assets`.
-      pub_channels: A `flutter_pub_channels()` struct with this target's
-        `pub_fonts`, `pub_assets` and `pub_shaders`.
 
     Returns:
       A `FlutterInfo` carrying this target's channels merged with every dependency's.
@@ -404,8 +339,6 @@ def flutter_info(
         plugin_libraries = flutter_plugin_libraries()
     if native_channels == None:
         native_channels = flutter_native_channels()
-    if pub_channels == None:
-        pub_channels = flutter_pub_channels()
     dep_infos = [dep[FlutterInfo] for dep in deps if FlutterInfo in dep]
 
     dep_plugins = []
@@ -421,12 +354,8 @@ def flutter_info(
     assets = _merge_asset_channels(dep_infos, asset_channels)
     libraries = _merge_plugin_libraries(dep_infos, plugin_libraries)
     native = _merge_native_channels(dep_infos, native_channels)
-    pub = _merge_pub_channels(dep_infos, pub_channels)
 
     return FlutterInfo(
-        asset_dirs = assets.asset_dirs,
-        assets = assets.assets,
-        shader_srcs = assets.shader_srcs,
         # A list, not a depset: the structs carry a `platforms` dict, which is
         # unhashable. Order is meaningful to the registrant generators, and
         # this target's own plugins come first.
@@ -441,9 +370,6 @@ def flutter_info(
         apple_privacy_manifests = assets.apple_privacy_manifests,
         native_assets = native.native_assets,
         data_assets = native.data_assets,
-        pub_fonts = pub.pub_fonts,
-        pub_assets = pub.pub_assets,
-        pub_shaders = pub.pub_shaders,
     )
 
 # The attribute `flutter_library` and `flutter_plugin` share for a package's

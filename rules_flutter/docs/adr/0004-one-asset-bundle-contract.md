@@ -1,9 +1,18 @@
 ---
-status: accepted
+status: superseded
 unenforceable: "No registered metric counts bundle call sites for tests and apps."
 ---
 
 # 0004. Tests and apps share one asset, font and shader bundle contract
+
+> **Superseded by the asset tool (T32).** rules_flutter no longer forms asset
+> keys or compiles shaders itself. Every bundle, for tests and apps alike, is
+> written by one action that runs the Flutter release's own
+> `package:flutter_tools` code from the app's `pubspec.yaml`
+> (`flutter/private/flutter_bundle.bzl`). The goal below, one contract for tests
+> and apps, still holds; the mechanism it describes is gone, and the code it
+> cites (`asset_keys.bzl`, `flutter_build_assets`, `flutter_compile_shaders`)
+> no longer exists. See [`docs/assets.md`](../assets.md).
 
 ## Decision
 

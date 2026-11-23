@@ -1,0 +1,12 @@
+# The project of `:inline_boot`: the same package, with a `web/index.html`
+# that inlines the bootstrap. A directory of its own so that page is not
+# `:custom_boot`'s.
+name: custom_boot
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  uses-material-design: true

@@ -21,6 +21,11 @@ load("@rules_flutter//flutter:macos.bzl", "flutter_apple_plugin_library")
 
 flutter_plugin(
     name = "{PKG}",
+    # The files the asset tool reads: the pubspec, and the licence NOTICES collects.
+    data = glob(
+        ["pubspec.yaml", "LICENSE*", "NOTICES"],
+        allow_empty = True,
+    ),
     srcs = glob(
         ["lib/**/*.dart"],
         allow_empty = True,

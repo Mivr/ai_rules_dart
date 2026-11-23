@@ -27,10 +27,10 @@ FlutterAssetsToolSourcesInfo = provider(
 FlutterAssetsToolInfo = provider(
     doc = "The asset tool of one Flutter release and the source files it reads at run time.",
     fields = {
-        "snapshot": "File: the AOT snapshot, run by the release's `dartaotruntime`.",
+        "snapshot": "File: the AOT snapshot, run by `runtime`.",
+        "runtime": "File: the `dartaotruntime` of the Dart SDK bundled in the release, for the execution platform.",
         "framework_shaders": "list[File]: the framework's shaders, staged under the tool's Flutter root.",
         "service_worker": "File: the service worker template.",
-        "flutter_root": "str: the exec-root-relative directory holding `packages/flutter_tools`, which the tool's web code finds through `FLUTTER_ROOT`.",
         "unsupported_version": "str: the Flutter version, when it has no pinned sources and so no tool (the other fields are then None); else empty.",
     },
 )
@@ -123,9 +123,9 @@ def _flutter_assets_tool_impl(ctx):
         # bundles assets fails, naming the version (`flutter_assets_tool_of`).
         return [FlutterAssetsToolInfo(
             snapshot = None,
+            runtime = None,
             framework_shaders = [],
             service_worker = None,
-            flutter_root = "",
             unsupported_version = sources.unsupported_version,
         )]
     sdk = _sdk_files(ctx.file.dart, ctx.files.compile_files)
@@ -189,15 +189,13 @@ def _flutter_assets_tool_impl(ctx):
         progress_message = "Building the Flutter %s asset tool snapshot" % ctx.attr.version,
         toolchain = None,
     )
-    service_worker = sources.service_worker
-    flutter_root = service_worker.path[:-len("/packages/flutter_tools/lib/src/web/file_generators/js/flutter_service_worker.js")]
     return [
         DefaultInfo(files = depset([snapshot])),
         FlutterAssetsToolInfo(
             snapshot = snapshot,
+            runtime = sdk["dartaotruntime"],
             framework_shaders = sources.framework_shaders,
-            service_worker = service_worker,
-            flutter_root = flutter_root,
+            service_worker = sources.service_worker,
             unsupported_version = "",
         ),
     ]

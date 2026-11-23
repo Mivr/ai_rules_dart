@@ -41,6 +41,14 @@ void main() {
     return file.readAsStringSync();
   }
 
+  /// The bootstrap's own `_flutter.loader.load(...)` call: the rest of the
+  /// file is flutter.js, inlined, whose code names every setting.
+  String? loaderCall(String? bootstrap) {
+    if (bootstrap == null) return null;
+    final start = bootstrap.lastIndexOf('_flutter.loader.load(');
+    return start < 0 ? '' : bootstrap.substring(start);
+  }
+
   /// Asserts the shape of a bundle that ships the worker (`pwa = True`).
   void checkPwaBundle({required String label, required String bundlePath}) {
     final worker = read(label, '$bundlePath/flutter_service_worker.js');
@@ -68,7 +76,9 @@ void main() {
       }
     }
 
-    final bootstrap = read(label, '$bundlePath/flutter_bootstrap.js');
+    final bootstrap = loaderCall(
+      read(label, '$bundlePath/flutter_bootstrap.js'),
+    );
     if (bootstrap != null) {
       if (!bootstrap.contains('serviceWorkerSettings')) {
         fail(
@@ -98,12 +108,17 @@ void main() {
     if (!failed) print('$label: OK (teardown worker, registered via loader).');
   }
 
-  /// Asserts a `pwa = False` bundle ships and says nothing about workers.
+  /// Asserts a `pwa = False` bundle says nothing about workers: as
+  /// `flutter build web --pwa-strategy=none`, its `flutter_service_worker.js`
+  /// is empty and the loader is not asked to register one.
   void checkNoPwaBundle({required String label, required String bundlePath}) {
-    if (File('$bundlePath/flutter_service_worker.js').existsSync()) {
-      fail(label, 'pwa = False still emitted flutter_service_worker.js');
+    final worker = File('$bundlePath/flutter_service_worker.js');
+    if (worker.existsSync() && worker.lengthSync() != 0) {
+      fail(label, 'pwa = False still emitted a service worker');
     }
-    final bootstrap = read(label, '$bundlePath/flutter_bootstrap.js');
+    final bootstrap = loaderCall(
+      read(label, '$bundlePath/flutter_bootstrap.js'),
+    );
     if (bootstrap != null && bootstrap.contains('serviceWorkerSettings')) {
       fail(label, 'pwa = False still registers a service worker');
     }
@@ -115,8 +130,7 @@ void main() {
   // Tier 1 (flutter_web_app), user-provided web/index.html.
   checkPwaBundle(label: 'app_wasm', bundlePath: '$root/app_wasm_web');
 
-  // Tier 2 (flutter_web_bundle) with a generated index.html — the other path
-  // through index.html generation, and a dart2js-only bundle.
+  // Tier 2 (flutter_web_bundle), a dart2js-only bundle.
   checkPwaBundle(label: 'app_js', bundlePath: '$root/app_js_web');
 
   checkNoPwaBundle(label: 'app_no_pwa', bundlePath: '$root/app_no_pwa_web');

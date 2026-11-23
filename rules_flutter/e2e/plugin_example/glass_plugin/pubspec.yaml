@@ -1,0 +1,21 @@
+name: glass_plugin
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  # invert.frag includes premultiplied.glsl, which sits beside it.
+  shaders:
+    - shaders/invert.frag
+    - shaders/tint.frag
+  plugin:
+    platforms:
+      android:
+        package: com.example.glass_plugin
+        pluginClass: GlassPlugin
+      ios:
+        pluginClass: GlassPlugin
+      macos:
+        pluginClass: GlassPlugin

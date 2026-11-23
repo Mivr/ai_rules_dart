@@ -38,9 +38,9 @@ flutter_application(
     package_name = "multi_window_example",
     main = "lib/main.dart",
     min_os_version = "13.0",
+    pub_packages = "@deps//packages",
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -242,6 +242,5 @@ flutter_library(
     srcs = glob(["lib/**/*.dart"]),
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )

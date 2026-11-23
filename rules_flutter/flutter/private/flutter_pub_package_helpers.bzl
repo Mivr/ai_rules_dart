@@ -1,7 +1,7 @@
 """Helper functions for `flutter.pub` package and spoke generation.
 
-Extracted helpers for pubspec identity validation, asset condition merging,
-pub-asset BUILD attribute formatting, and `package:test` runner wrappers.
+Extracted helpers for pubspec identity validation, the `data` a spoke lists
+for the files its pubspec names, and `package:test` runner wrappers.
 """
 
 load(
@@ -9,246 +9,90 @@ load(
     "parse_pub_version",
     "pub_version_text",
 )
-load("//flutter/private:flutter_pubspec.bzl", "asset_flavor_error")
 load("//flutter/private:starlark_literal.bzl", "starlark_string_literal")
 
 visibility(["//flutter/..."])
 
-def _sorted_flavor_set(flavors):
-    """The deduplicated, sorted flavor names, for order-insensitive comparison."""
-    seen = {}
-    for flavor in flavors:
-        seen[flavor] = True
-    return sorted(seen.keys())
+# The package's own files an app's asset bundle reads, besides what its
+# pubspec names: the pubspec, and the licence `NOTICES` collects (the tool
+# reads `NOTICES`, else `LICENSE`, at the package root).
+_SPOKE_PACKAGE_FILES = ["pubspec.yaml", "LICENSE*", "NOTICES"]
 
-def merge_pub_asset_conditions(expanded, package_name):
-    """Merge per-file `flutter.assets` entries the way flutter_tools does.
+def _parent_and_base(path):
+    parent, _, base = path.rpartition("/")
+    return parent, base
 
-    flutter_tools keeps one entry per declaration and bundles a file when ANY
-    of its entries survives filtering, so every entry for one file merges:
-    any entry without `platforms` makes the file unconditional, otherwise the
-    file's platforms are the union of its entries' lists. Entries for one
-    file whose flavor sets differ conflict (compared as sets, so order does
-    not matter); the caller fails the fetch with the returned message.
+def _own_package_path(path, package_name):
+    """`path` relative to the package root, or None for another package's file.
+
+    The Flutter tool reads an entry spelled `packages/<name>/<rest>` from the
+    package root when that file exists, and otherwise from `lib/<rest>` of
+    package `<name>`. So `packages/<own name>/<rest>` may be either here.
+    """
+    prefix = "packages/" + package_name + "/"
+    if package_name and path.startswith(prefix):
+        return "lib/" + path[len(prefix):]
+    return None
+
+def spoke_data_patterns(asset_block, package_name = ""):
+    """The glob patterns of the files a spoke's pubspec names, for its `data`.
+
+    The Flutter tool reads these from the package root when an app bundles
+    the package's assets: an asset file and its resolution variants (same
+    name in a sibling `<N>x` directory), every file of an asset directory and
+    their variants, each font file, and each shader with the files beside it
+    that it may `#include`. An entry spelled `packages/<name>/<rest>` is read
+    from `lib/<rest>` of package `<name>` when the package root has no such
+    file: for this package's own name both places are listed; another
+    package's file is that package's to list.
 
     Args:
-        expanded: Per-file entries from
-            `expand_pub_asset_entries(...).expanded`.
-        package_name: The pub package the entries come from, for the conflict
-            message.
+        asset_block: The normalized `flutter` block (`normalize_spoke_asset_block`).
+        package_name: This package's name.
 
     Returns:
-        A `struct(platforms, flavors, conflict)`: the merged condition dicts
-        and the fetch failure naming the package, the file and both flavor
-        lists, or `""` when the entries agree. A file with one entry keeps its
-        declared order, so single-entry spokes render byte-identically.
+        The sorted, deduplicated patterns.
     """
-    by_path = {}
-    order = []
-    for entry in expanded:
-        key = ":" + entry.path
-        if key not in by_path:
-            by_path[key] = []
-            order.append(key)
-        by_path[key].append(entry)
-    platforms = {}
-    flavors = {}
-    for key in order:
-        entries = by_path[key]
-        first = entries[0]
-        for other in entries[1:]:
-            if _sorted_flavor_set(other.flavors) != _sorted_flavor_set(first.flavors):
-                return struct(
-                    platforms = {},
-                    flavors = {},
-                    conflict = asset_flavor_error(
-                        package_name,
-                        first.path,
-                        first.flavors,
-                        other.flavors,
-                    ),
-                )
-        if first.flavors:
-            flavors[key] = list(first.flavors)
-        union = {}
-        unconditional = False
-        for entry in entries:
-            if not entry.platforms:
-                unconditional = True
-                break
-            for platform in entry.platforms:
-                union[platform] = True
-        if unconditional:
-            continue
-        if len(entries) == 1:
-            platforms[key] = list(first.platforms)
-        else:
-            platforms[key] = sorted(union.keys())
-    return struct(platforms = platforms, flavors = flavors, conflict = "")
+    patterns = {p: True for p in _SPOKE_PACKAGE_FILES}
 
-def build_pkg_asset_conditions(expanded, package_name):
-    """Build the `pkg_asset_platforms` / `pkg_asset_flavors` dicts.
+    def paths(path):
+        if not path.startswith("packages/"):
+            return [path]
+        own = _own_package_path(path, package_name)
+        return [path, own] if own else []
 
-    Same keys as `pkg_assets` (`":" + path`), but only for entries that
-    actually restrict: unconditional files stay out of both dicts, so the
-    emitted attrs stay empty for packages without conditions. Entries for
-    one file merge (see `merge_pub_asset_conditions`); conflicting flavors
-    fail the spoke fetch.
+    for asset in asset_block.assets:
+        for path in paths(asset.path):
+            if path.endswith("/"):
+                patterns[path + "*"] = True
+                patterns[path + "*/*"] = True
+            else:
+                parent, base = _parent_and_base(path)
+                patterns[path] = True
+                patterns[(parent + "/" if parent else "") + "*/" + base] = True
+    for family in asset_block.fonts:
+        for font in family.fonts:
+            for path in paths(font.asset):
+                patterns[path] = True
+    for shader in asset_block.shaders:
+        for path in paths(shader.path):
+            patterns[path] = True
+            parent, _ = _parent_and_base(path)
+            for ext in ("glsl", "frag", "vert"):
+                patterns[(parent + "/**/*." if parent else "*.") + ext] = True
+    return sorted(patterns.keys())
+
+def format_spoke_data_attr(patterns):
+    """The `data` attribute of a spoke, globbing `patterns`.
 
     Args:
-        expanded: Per-file entries from
-            `expand_pub_asset_entries(...).expanded`.
-        package_name: The pub package the entries come from.
+        patterns: Patterns from `spoke_data_patterns`.
 
     Returns:
-        A `(platforms, flavors)` tuple of dicts.
+        The attribute's BUILD lines.
     """
-    merged = merge_pub_asset_conditions(expanded, package_name)
-    if merged.conflict:
-        fail(merged.conflict)
-    return (merged.platforms, merged.flavors)
-
-def _format_label_dict_literal(d, indent = "        "):
-    """Render `{":foo": "foo", ":bar": "bar"}` as a multi-line BUILD source dict."""
-    if not d:
-        return "{}"
-    keys = sorted(d.keys())
-
-    # Keys and values are asset, font and shader paths from the pubspec and
-    # the file-system walk: attacker-controlled for hosted packages. Each
-    # renders through the escaping helper, so the dict parses back exactly.
-    lines = [
-        "{indent}{k}: {v},".format(
-            indent = indent,
-            k = starlark_string_literal(k),
-            v = starlark_string_literal(d[k]),
-        )
-        for k in keys
-    ]
-    return "{\n" + "\n".join(lines) + "\n" + indent[:-4] + "}"
-
-def _format_string_list_dict_literal(d, indent = "        "):
-    """Render `{":foo": ["a", "b"]}` as a multi-line BUILD source dict."""
-    if not d:
-        return "{}"
-    lines = []
-    for k in sorted(d.keys()):
-        # Keys are walked asset paths (see above); values are flavor and
-        # platform names from the pubspec, helper-rendered for the same
-        # reason: a flavor name may hold any string the pubspec declares.
-        values = ", ".join([starlark_string_literal(v) for v in d[k]])
-        lines.append(
-            "{indent}{k}: [{values}],".format(
-                indent = indent,
-                k = starlark_string_literal(k),
-                values = values,
-            ),
-        )
-    return "{\n" + "\n".join(lines) + "\n" + indent[:-4] + "}"
-
-def format_pub_asset_attrs(
-        fonts_json_str,
-        font_files,
-        pkg_assets,
-        pkg_shaders,
-        pkg_asset_platforms = {},
-        pkg_asset_flavors = {}):
-    """Render the pub-asset attrs as BUILD source, omitting empty ones.
-
-    Args:
-        fonts_json_str: JSON-encoded font definitions.
-        font_files: Font file label map.
-        pkg_assets: Package asset label map.
-        pkg_shaders: Package shader label map.
-        pkg_asset_platforms: Platform restriction map.
-        pkg_asset_flavors: Flavor restriction map.
-
-    Returns:
-        Rendered attribute lines string.
-    """
-    parts = []
-    if fonts_json_str:
-        parts.append("    fonts_json = " + starlark_string_literal(fonts_json_str) + ",")
-    if font_files:
-        parts.append("    font_files = {},".format(_format_label_dict_literal(font_files)))
-    if pkg_assets:
-        parts.append("    pkg_assets = {},".format(_format_label_dict_literal(pkg_assets)))
-    if pkg_asset_platforms:
-        parts.append("    pkg_asset_platforms = {},".format(
-            _format_string_list_dict_literal(pkg_asset_platforms),
-        ))
-    if pkg_asset_flavors:
-        parts.append("    pkg_asset_flavors = {},".format(
-            _format_string_list_dict_literal(pkg_asset_flavors),
-        ))
-    if pkg_shaders:
-        parts.append("    pkg_shaders = {},".format(_format_label_dict_literal(pkg_shaders)))
-    return "\n".join(parts) + ("\n" if parts else "")
-
-# File extensions a shader may `#include`: the spoke links them beside a
-# top-level declared shader so its scoped include glob resolves.
-_PATH_SPOKE_SHADER_INCLUDE_EXTS = ("glsl", "frag", "vert")
-
-def scoped_shader_includes_block(shader_paths):
-    """Render `shader_includes` covering only the declared shaders' own directories.
-
-    Each non-empty dirname contributes `<dir>/**/*.glsl|frag|vert`; a
-    top-level shader contributes root `*.ext`. Sorted for determinism, so
-    `example/build/` output can never become an include through a
-    package-wide `**` glob.
-
-    Args:
-        shader_paths: Declared shader paths (the `pkg_shaders` values).
-
-    Returns:
-        The `shader_includes = glob(...)` BUILD block.
-    """
-    dirs = {}
-    for path in shader_paths:
-        dirs[path.rpartition("/")[0]] = True
-    lines = []
-    for d in sorted(dirs.keys()):
-        for ext in _PATH_SPOKE_SHADER_INCLUDE_EXTS:
-            pattern = d + "/**/*." + ext if d else "*." + ext
-
-            # `d` is a declared shader's own directory, read from the
-            # pubspec; the pattern renders through the escaping helper.
-            lines.append("        " + starlark_string_literal(pattern) + ",")
-    return "    shader_includes = glob(\n        [\n{}\n        ],\n        allow_empty = True,\n    ),".format("\n".join(lines))
-
-def format_pub_asset_attrs_with_shaders(
-        fonts_json_str,
-        font_files,
-        pkg_assets,
-        pkg_shaders,
-        pkg_asset_platforms = {},
-        pkg_asset_flavors = {}):
-    """Render the pub-asset attrs plus the scoped `shader_includes` block.
-
-    Args:
-        fonts_json_str: JSON-encoded font definitions.
-        font_files: Font file label map.
-        pkg_assets: Package asset label map.
-        pkg_shaders: Package shader label map; a non-empty map appends the
-            `shader_includes` block scoped to the declared shaders' directories.
-        pkg_asset_platforms: Platform restriction map.
-        pkg_asset_flavors: Flavor restriction map.
-
-    Returns:
-        Rendered attribute lines string, ending with the `shader_includes`
-        block when `pkg_shaders` is non-empty.
-    """
-    res = format_pub_asset_attrs(
-        fonts_json_str,
-        font_files,
-        pkg_assets,
-        pkg_shaders,
-        pkg_asset_platforms,
-        pkg_asset_flavors,
-    )
-    if pkg_shaders:
-        res += scoped_shader_includes_block(sorted(pkg_shaders.values())) + "\n"
-    return res
+    lines = ["        " + starlark_string_literal(p) + "," for p in patterns]
+    return "    data = glob(\n        [\n{}\n        ],\n        allow_empty = True,\n    ),\n".format("\n".join(lines))
 
 def parse_pubspec_identity(pubspec):
     """The `(name, version)` identity a path spoke verifies against its lock entry.

@@ -1,11 +1,11 @@
 /// Asserts package-relative asset keys for a subpackage app bundle.
 ///
-/// `//sub:sub_app` lives in Bazel package `//sub`, so its own
-/// `assets/notice.txt` must be keyed relative to that package directory (not
-/// prefixed with `sub/`): the nested `//sub/nested` package's `extra.txt`
-/// arrives as `nested/extra.txt`, and the genrule output as `gen_notice.txt`.
-/// The first-party `//brand` dependency's asset is keyed
-/// `packages/brand/assets/brand.txt` — the flutter_tools key rule.
+/// `//sub:sub_app`'s project is `sub/` (its `pubspec.yaml`), so its own
+/// `assets/notice.txt` is keyed relative to that directory (not prefixed with
+/// `sub/`): the nested `//sub/nested` package's `extra.txt` arrives as
+/// `nested/extra.txt`, and the genrule output as `gen_notice.txt`, each at the
+/// path the pubspec names. The first-party `//brand` dependency's asset is
+/// keyed `packages/brand/assets/brand.txt` — the flutter_tools key rule.
 ///
 /// Backed by data files (the bundle's `flutter_assets/` tree, copied into
 /// the test's runfiles via `data = ["//sub:sub_app"]`). Hermetic like
@@ -63,20 +63,19 @@ void main() {
     expect(_assetText(asset), equals('nested extra\n'));
   });
 
-  test('generated file is keyed by its repository-relative path', () {
+  test('generated file is keyed by the path the pubspec names', () {
     final asset = File('${bundleDir.path}/gen_notice.txt');
     expect(asset.existsSync(), isTrue);
     expect(_assetText(asset), equals('generated notice\n'));
   });
 
-  test('AssetManifest.bin.json carries both package-relative keys', () {
-    // Same decoding trick as verify_pub_assets_test.dart: the .bin.json
-    // wrapper is base64-encoded StandardMessageCodec, whose string keys
-    // appear as UTF-8 bytes inline in the binary.
-    final wrapped = jsonDecode(
-      File('${bundleDir.path}/AssetManifest.bin.json').readAsStringSync(),
-    ) as String;
-    final asString = utf8.decode(base64Decode(wrapped), allowMalformed: true);
+  test('AssetManifest.bin carries both package-relative keys', () {
+    // Same decoding trick as verify_pub_assets_test.dart: StandardMessageCodec
+    // stores string keys as UTF-8 bytes inline in the binary.
+    final asString = utf8.decode(
+      File('${bundleDir.path}/AssetManifest.bin').readAsBytesSync(),
+      allowMalformed: true,
+    );
     expect(asString, contains('assets/notice.txt'));
     expect(asString, contains('nested/extra.txt'));
     expect(asString, contains('gen_notice.txt'));

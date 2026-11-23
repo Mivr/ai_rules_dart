@@ -115,6 +115,7 @@ flutter_application(
     name = "ffi_app",
     package_name = "ffi_example",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "//add_plugin",
         "//mul_plugin",
@@ -124,7 +125,6 @@ flutter_application(
         # own hook output would.
         "@deps//:drift",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -460,6 +460,5 @@ flutter_library(
         "//mul_plugin",
         "@deps//:drift",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )

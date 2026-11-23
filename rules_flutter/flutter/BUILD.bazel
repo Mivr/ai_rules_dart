@@ -2,7 +2,6 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("//flutter:android.bzl", "flutter_android_engine")
 load("//flutter/private:build_settings.bzl", "dart_defines_flag")
-load("//flutter/private:flutter_material_icons.bzl", "flutter_material_icons")
 load("//flutter/private:flutter_pub.bzl", "flutter_pub")
 
 # This is the target rule authors should put in their "toolchains"
@@ -162,17 +161,6 @@ dart_defines_flag(
     visibility = ["//visibility:public"],
 )
 
-# Apps that use Material widgets list this in their flutter_application(
-# deps = [...]) to bundle MaterialIcons-Regular.otf into flutter_assets/.
-# Backed by the active flutter toolchain — the file ships with every
-# flutter_engine_artifacts repo, but the file label is platform-specific,
-# so a small custom rule resolves it via ctx.toolchains[...] instead of
-# requiring callers to select() on the host platform.
-flutter_material_icons(
-    name = "material_icons",
-    visibility = ["//visibility:public"],
-)
-
 # `dart pub`, run from the pinned toolchain against the current workspace, so
 # that the SDK which resolves pubspec.lock is the SDK which compiles it:
 #
@@ -232,7 +220,7 @@ bzl_library(
     deps = [
         "//flutter/private:flutter_aot_target",
         "//flutter/private:flutter_application",
-        "//flutter/private:flutter_asset_bundle",
+        "//flutter/private:flutter_bundle",
         "//flutter/private:flutter_defines_files",
         "//flutter/private:flutter_gen_l10n",
         "//flutter/private:flutter_integration_test",

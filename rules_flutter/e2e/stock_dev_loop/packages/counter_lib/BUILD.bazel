@@ -4,6 +4,7 @@ flutter_library(
     name = "counter_lib",
     package_name = "counter_lib",
     srcs = glob(["lib/**/*.dart"]),
+    data = ["pubspec.yaml"],
     visibility = ["//visibility:public"],
     deps = ["@deps//:flutter"],
 )

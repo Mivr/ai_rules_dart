@@ -7,6 +7,7 @@ flutter_application(
     package_name = "counter",
     srcs = glob(["lib/**/*.dart"]),
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "@deps//:camera",
         "@deps//:cupertino_icons",
@@ -20,7 +21,6 @@ flutter_application(
         "@deps//:shared_preferences",
         "@deps//:url_launcher",
         "@deps//:webview_flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

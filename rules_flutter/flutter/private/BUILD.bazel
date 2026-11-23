@@ -110,16 +110,6 @@ bzl_library(
 )
 
 bzl_library(
-    name = "asset_keys",
-    srcs = ["asset_keys.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":asset_uri",
-        "//flutter:providers",
-    ],
-)
-
-bzl_library(
     name = "asset_uri",
     srcs = ["asset_uri.bzl"],
     visibility = ["//visibility:public"],
@@ -166,15 +156,12 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":app_entrypoint",
-        ":asset_keys",
         ":asset_uri",
-        ":flutter_asset_bundle_action",
         ":flutter_compile",
         ":flutter_defines_files",
         ":flutter_info",
         ":flutter_kernel_module",
         ":flutter_library",
-        ":flutter_shader_compile",
         ":native_sources",
         ":plugin_registrant",
         ":validation",
@@ -442,10 +429,10 @@ bzl_library(
     srcs = ["flutter_application.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":flutter_bundle",
         ":common",
         ":flutter_aot_compile",
         ":flutter_defines_files",
-        ":flutter_font_family",
         ":flutter_info",
         ":flutter_kernel_module",
         ":flutter_native_assets",
@@ -456,29 +443,6 @@ bzl_library(
         "@bazel_skylib//lib:dicts",
         "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",
-    ],
-)
-
-bzl_library(
-    name = "flutter_asset_bundle",
-    srcs = ["flutter_asset_bundle.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":asset_keys",
-        ":common",
-        ":flutter_asset_bundle_action",
-        ":flutter_library",
-        "@rules_dart//dart:providers",
-    ],
-)
-
-bzl_library(
-    name = "flutter_asset_bundle_action",
-    srcs = ["flutter_asset_bundle_action.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":asset_uri",
-        ":asset_variant",
     ],
 )
 
@@ -580,19 +544,20 @@ bzl_library(
 )
 
 bzl_library(
-    name = "flutter_font_family",
-    srcs = ["flutter_font_family.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":asset_uri",
-        ":flutter_manifest_validate",
-    ],
-)
-
-bzl_library(
     name = "flutter_gen_l10n",
     srcs = ["flutter_gen_l10n.bzl"],
     visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_bundle",
+    srcs = ["flutter_bundle.bzl"],
+    visibility = ["//flutter:__subpackages__"],
+    deps = [
+        ":flutter_assets_tool",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
 )
 
 bzl_library(
@@ -684,6 +649,7 @@ bzl_library(
     srcs = ["flutter_integration_test_common.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":flutter_bundle",
         ":app_entrypoint",
         ":common",
         ":flutter_aot_compile",
@@ -890,9 +856,7 @@ bzl_library(
     srcs = ["flutter_library.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":asset_keys",
         ":asset_uri",
-        ":flutter_font_family",
         ":flutter_info",
         ":flutter_kernel_tools",
         "//flutter:providers",
@@ -988,16 +952,6 @@ bzl_library(
 )
 
 bzl_library(
-    name = "flutter_material_icons",
-    srcs = ["flutter_material_icons.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_info",
-        "@rules_dart//dart:utils",
-    ],
-)
-
-bzl_library(
     name = "flutter_native_asset",
     srcs = ["flutter_native_asset.bzl"],
     visibility = ["//visibility:public"],
@@ -1040,7 +994,6 @@ bzl_library(
     srcs = ["flutter_plugin.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":asset_keys",
         ":common",
         ":flutter_desktop_plugin_info",
         ":flutter_info",
@@ -1294,23 +1247,6 @@ bzl_library(
 )
 
 bzl_library(
-    name = "flutter_pub_assets",
-    srcs = ["flutter_pub_assets.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":asset_uri",
-        ":asset_variant",
-        ":flutter_pub_walk",
-    ],
-)
-
-bzl_library(
-    name = "flutter_pub_cover",
-    srcs = ["flutter_pub_cover.bzl"],
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
     name = "flutter_pub_cycle_breaks",
     srcs = ["flutter_pub_cycle_breaks.bzl"],
     visibility = ["//visibility:public"],
@@ -1333,7 +1269,6 @@ bzl_library(
     srcs = ["flutter_pub_mirror.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":flutter_pub_assets",
         ":flutter_pub_walk",
     ],
 )
@@ -1353,8 +1288,6 @@ bzl_library(
         ":flutter_pub_android_package",
         ":flutter_pub_apple",
         ":flutter_pub_apple_local",
-        ":flutter_pub_assets",
-        ":flutter_pub_cover",
         ":flutter_pub_git",
         ":flutter_pub_lock_hub",
         ":flutter_pub_maven",
@@ -1504,15 +1437,6 @@ bzl_library(
 )
 
 bzl_library(
-    name = "flutter_shader_compile",
-    srcs = ["flutter_shader_compile.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//flutter:providers",
-    ],
-)
-
-bzl_library(
     name = "flutter_sky_engine_repo",
     srcs = ["flutter_sky_engine_repo.bzl"],
     visibility = ["//visibility:public"],
@@ -1529,6 +1453,7 @@ bzl_library(
     srcs = ["flutter_test.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":flutter_bundle",
         ":app_entrypoint",
         ":common",
         ":flutter_compile",
@@ -1571,6 +1496,7 @@ bzl_library(
     srcs = ["flutter_web_application.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":flutter_bundle",
         ":app_entrypoint",
         ":common",
         ":flutter_info",
@@ -1580,9 +1506,7 @@ bzl_library(
         ":layering_check",
         ":plugin_registrant",
         ":validation",
-        ":web_service_worker",
         ":web_stubs",
-        ":web_templates",
         "//flutter:providers",
         "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",
@@ -2054,22 +1978,9 @@ bzl_library(
 )
 
 bzl_library(
-    name = "web_service_worker",
-    srcs = ["web_service_worker.bzl"],
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
     name = "web_stubs",
     srcs = ["web_stubs.bzl"],
     visibility = ["//visibility:public"],
-)
-
-bzl_library(
-    name = "web_templates",
-    srcs = ["web_templates.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [":web_service_worker"],
 )
 
 bzl_library(

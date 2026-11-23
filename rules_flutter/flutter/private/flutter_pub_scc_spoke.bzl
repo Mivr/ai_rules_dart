@@ -416,9 +416,8 @@ def _emit_scc_root_build(ctx, member_names, apple_aliases, uses_material):
     Its dependencies are the extension's: every member's planned dependency
     outside the cycle, as the hub's alias, plus `flutter` when the lock pins it.
     """
+    _ = uses_material  # @unused: the app's asset tool bundles the Material icons.
     outside_list = list(ctx.attr.deps)
-    if uses_material:
-        outside_list.append("@rules_flutter//flutter:material_icons")
 
     ctx.file("BUILD.bazel", make_scc_merged_spoke_build_content(
         repo_name = ctx.attr.repo_name,

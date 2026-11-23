@@ -143,7 +143,7 @@ def _spoke_dep_labels_routing_test_impl(ctx):
     }
     asserts.equals(
         env,
-        ["@hub//:cycle_a", "@hub//:other", "@rules_flutter//flutter:material_icons"],
+        ["@hub//:cycle_a", "@hub//:other"],
         spoke_dep_labels(["@hub//:cycle_a", "@hub//:other"], struct(uses_material_design = True)),
     )
     asserts.equals(env, ["@hub//:cycle_a"], spoke_dep_labels(["@hub//:cycle_a"], None))
@@ -300,12 +300,7 @@ def _mock_scc_member_inputs():
     """Builds mock asset, Apple, desktop, and plugin structs for 2-cycle tests."""
     return struct(
         assets = struct(
-            fonts_json_str = '[{"family": "CustomFont"}]',
-            font_files = {":font.ttf": "fonts/font.ttf"},
-            pkg_assets = {":asset.png": "assets/asset.png"},
-            pkg_shaders = {":shaders/shader.frag": "shaders/shader.frag"},
-            pkg_asset_platforms = {":asset.png": ["android", "ios"]},
-            pkg_asset_flavors = None,
+            data_patterns = ["assets/asset.png", "fonts/font.ttf", "shaders/shader.frag"],
         ),
         apple = struct(
             macos_srcs = ["macos/Classes"],
@@ -366,10 +361,8 @@ def _merged_spoke_build_2cycle_test_impl(ctx):
     asserts.true(env, member_build.startswith("load("), member_build)
     asserts.true(env, '\ndart_package_member(\n    name = "cycle_a",' in member_build, member_build)
     asserts.true(env, '\nflutter_plugin(\n    name = "_flutter_info",' in member_build, member_build)
-    asserts.true(env, "CustomFont" in member_build, member_build)
+    asserts.true(env, "fonts/font.ttf" in member_build, member_build)
     asserts.true(env, "shaders/shader.frag" in member_build, member_build)
-    asserts.true(env, "shader_includes = glob(" in member_build, member_build)
-    asserts.true(env, "pkg_asset_platforms = {" in member_build, member_build)
     asserts.true(env, "PrivacyInfo.xcprivacy" in member_build, member_build)
     asserts.true(env, "cycle_a_apple_macos" in member_build, member_build)
     asserts.true(env, "cycle_a_apple_ios_xtool" in member_build, member_build)

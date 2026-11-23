@@ -6,6 +6,7 @@ flutter_application(
     srcs = ["lib/main.dart"],
     flavor = "dev",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "//libs/flavor_assets",
         "@deps//:flutter",
@@ -18,6 +19,7 @@ flutter_application(
     srcs = ["lib/main.dart"],
     flavor = "prod",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "//libs/flavor_assets",
         "@deps//:flutter",
@@ -32,6 +34,8 @@ flutter_integration_test(
     app_srcs = ["lib/main.dart"],
     flavor = "dev",
     platform = "android",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
     deps = [
         "//libs/flavor_assets",
         "@deps//:flutter",
@@ -48,6 +52,8 @@ flutter_integration_test(
     app_srcs = ["lib/main.dart"],
     flavor = "prod",
     platform = "android",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
     deps = [
         "//libs/flavor_assets",
         "@deps//:flutter",

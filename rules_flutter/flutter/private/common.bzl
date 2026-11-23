@@ -8,11 +8,8 @@ flutter_application, flutter_android_bundle, and flutter_ios_application.
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "collect_packages", "collect_transitive_srcs", "derive_lib_root", "generate_dev_package_config", _COPY_TO_DIRECTORY_TOOLCHAINS = "COPY_TO_DIRECTORY_TOOLCHAINS")
-load("//flutter:providers.bzl", "FlutterCompiledShadersInfo", "FlutterInfo", "FlutterNativeLibraryInfo", _resolve_exec_dart = "resolve_exec_dart", _resolve_exec_dart_vm = "resolve_exec_dart_vm", _resolve_flutter_sdk_info = "resolve_flutter_sdk_info")
+load("//flutter:providers.bzl", "FlutterNativeLibraryInfo", _resolve_exec_dart = "resolve_exec_dart", _resolve_exec_dart_vm = "resolve_exec_dart_vm", _resolve_flutter_sdk_info = "resolve_flutter_sdk_info")
 load("//flutter/private:app_entrypoint.bzl", "AGENT_DIR", "APP_SCHEME", "agent_layout_path", "app_main_location", "app_scheme_location", "app_scheme_sources", "compile_kernel_package_config", "resolve_kernel_entrypoint", "stage_agent_extensions", "synthesize_app_package", "with_root")
-load("//flutter/private:asset_keys.bzl", "bundle_asset_entries", "fail_asset_key_conflict", "is_within_package", "relative_key")
-load("//flutter/private:asset_uri.bzl", "encode_asset_key")
-load("//flutter/private:flutter_asset_bundle_action.bzl", "flutter_asset_bundle_action", "make_bundle_content", "make_tree_shake")
 load(
     "//flutter/private:flutter_compile.bzl",
     "flutter_kernel_compile_action",
@@ -37,8 +34,6 @@ load(
     "flutter_closure_twins",
     "flutter_module_tools",
 )
-load("//flutter/private:flutter_library.bzl", "aggregate_pub_contributions", "build_pub_contributions", "dedupe_shader_jobs", "pub_shader_matches_target", "resolve_font_subset_tools")
-load("//flutter/private:flutter_shader_compile.bzl", "flutter_shader_compile_action", "shader_compile_tools")
 load("//flutter/private:native_sources.bzl", "native_sources_aspect")
 load("//flutter/private:plugin_registrant.bzl", "generate_dart_plugin_registrant", "generate_dev_plugin_registrants")
 load("//flutter/private:validation.bzl", _detect_target_platform = "detect_target_platform")
@@ -732,299 +727,10 @@ def flutter_compile_kernel(ctx, flutter_sdk_info, target, inputs):
         dev_app_sources = dev.app_sources,
     )
 
-def collect_sdk_shader_srcs(deps):
-    """Collect shader source files from transitive FlutterInfo deps.
-
-    These are raw .frag/.glsl files (e.g. Flutter SDK material shaders)
-    that need to be compiled per-platform before inclusion in the asset bundle.
-
-    Args:
-        deps: List of targets, some of which may provide FlutterInfo.
-
-    Returns:
-        List of shader source Files.
-    """
-    transitive_depsets = [
-        dep[FlutterInfo].shader_srcs
-        for dep in deps
-        if FlutterInfo in dep
-    ]
-    if transitive_depsets:
-        return depset(transitive = transitive_depsets).to_list()
-    return []
-
-def _shader_jobs(ctx, target_platform = None, flavor = None):
-    """Every shader this target bundles, as struct(bundle_path, file, includes).
-
-    The target's own shaders are keyed like its assets: relative to the
-    listing target's package directory, which is where
-    `FragmentProgram.fromAsset` looks for them. SDK shaders go under
-    "shaders/<basename>" (Flutter's convention), and a package's under
-    "packages/<pkg>/<path>" (bare "<path>" when it has no package name).
-    Basenames and contribution paths arrive percent-encoded
-    (`asset_uri.bzl`), so a file named `a b.frag` compiles to
-    `shaders/a%20b.frag`, the key the engine asks for. A
-    shader outside the listing target's package fails here rather than
-    guessing a key, and two shaders claiming one bundle path fail here: one
-    would otherwise overwrite the other.
-
-    Package shaders are filtered with `pub_shader_matches_target`: a
-    `flutter.shaders` entry restricted to other platforms is neither
-    compiled nor staged, matching `flutter build`. `target_platform` None
-    lists every shader, for callers that describe the workspace rather than
-    one bundle.
-
-    Args:
-        ctx: Rule context with `shaders`, `shader_includes`, `deps` and
-            `label` attributes.
-        target_platform: The bundle's platform (`android`, `ios`, ...), or
-            None to list shaders for every platform.
-        flavor: Active flavor string, or None when no flavor is selected.
-
-    Returns:
-        The deduplicated shader jobs, in first-reached order.
-    """
-    jobs = []
-    user_includes = tuple(getattr(ctx.files, "shader_includes", []))
-    for shader in ctx.files.shaders:
-        if not is_within_package(ctx.label.workspace_root, ctx.label.package, shader.short_path):
-            fail("%s: shader %s is outside the target's package; move it into a flutter_library with a package_name and depend on it instead." % (ctx.label, shader.short_path))
-        jobs.append(struct(
-            bundle_path = relative_key(ctx.label.workspace_root, ctx.label.package, shader.short_path),
-            file = shader,
-            includes = user_includes,
-        ))
-    for entry in collect_sdk_shader_srcs(ctx.attr.deps):
-        shader = entry.file if hasattr(entry, "file") else entry
-        jobs.append(struct(
-            bundle_path = "shaders/" + encode_asset_key(shader.basename),
-            file = shader,
-            includes = entry.includes if hasattr(entry, "includes") else (),
-        ))
-
-    # One flatten of the package-shader channel, through one `depset` union
-    # over the deps: a shader file reached through W thin deps costs one
-    # listing, not W. The union lists each contribution once in
-    # first-reached order, so bundles without a repeat keep today's jobs.
-    pub_shaders = [dep[FlutterInfo].pub_shaders for dep in ctx.attr.deps if FlutterInfo in dep]
-    for entry in depset(transitive = pub_shaders).to_list():
-        if not pub_shader_matches_target(entry, target_platform, flavor = flavor):
-            continue
-        prefix = "packages/{}/".format(entry.package_name) if entry.package_name else ""
-        jobs.append(struct(
-            bundle_path = prefix + entry.shader_path,
-            file = entry.file,
-            includes = entry.includes,
-        ))
-
-    # One package can reach a target along several paths; the same file at
-    # the same bundle path is one shader.
-    return dedupe_shader_jobs(ctx, jobs).values()
-
-def shader_sources(ctx, target_platform = None, flavor = None):
-    """The workspace files behind each bundled shader, for the dev tool.
-
-    `{bundle path: [workspace-relative path]}`: the shader and what it may
-    `#include`, where those are source files of this workspace. A shader from
-    another repository maps to an empty list; it is still a shader, which is
-    what the dev tool needs to know to make the app reload it.
-
-    Args:
-        ctx: Rule context with `shaders`, `shader_includes`, `deps` and
-            `label` attributes.
-        target_platform: The bundle's platform, so shaders restricted to other
-            platforms stay out just as they are not compiled; None lists
-            every shader.
-        flavor: Active flavor string, or None when no flavor is selected.
-
-    Returns:
-        The bundle-path-to-source-paths map.
-    """
-    return {
-        job.bundle_path: [
-            f.short_path
-            for f in [job.file] + list(job.includes)
-            if f.is_source and not f.short_path.startswith("../")
-        ]
-        for job in _shader_jobs(ctx, target_platform, flavor = flavor)
-    }
-
-def _collect_dep_compiled_shaders(ctx, target_platform, compiled):
-    """Fold dep `FlutterCompiledShadersInfo` entries for the platform into `compiled`.
-
-    Returns the `require_sksl` flag: when true every shader is (re)compiled
-    locally, so dep entries are skipped.
-    """
-    require_sksl = getattr(ctx.attr, "require_sksl_shaders", False)
-    if not require_sksl:
-        for dep in getattr(ctx.attr, "deps", []):
-            if type(dep) == "Target" and FlutterCompiledShadersInfo in dep:
-                for entry in dep[FlutterCompiledShadersInfo].compiled_shaders.to_list():
-                    if getattr(entry, "target_platform", None) != target_platform:
-                        continue
-                    seen = compiled.get(entry.bundle_path)
-                    if seen == None:
-                        compiled[entry.bundle_path] = entry.file
-                    elif seen != entry.file:
-                        fail("%s: two shaders are bundled at %s: %s and %s." % (
-                            ctx.label,
-                            entry.bundle_path,
-                            seen.short_path,
-                            entry.file.short_path,
-                        ))
-    return require_sksl
-
-def _compile_missing_shaders(ctx, flutter_sdk_info, target_platform, require_sksl, compiled, flavor = None):
-    """Compile each `_shader_jobs` entry missing from `compiled`, in place."""
-    tools = shader_compile_tools(
-        impellerc = flutter_sdk_info.impellerc,
-        shader_lib = flutter_sdk_info.shader_lib,
-        compile_tool = ctx.executable._shader_compile_tool,
-    )
-    for job in _shader_jobs(ctx, target_platform, flavor = flavor):
-        if job.bundle_path not in compiled:
-            # Named by the bundle path, which is unique, so no two outputs meet.
-            out_path = job.bundle_path.replace("../", "_external/")
-            output = ctx.actions.declare_file("_shaders_%s/%s/%s.iplr" % (target_platform, ctx.label.name, out_path))
-            flutter_shader_compile_action(
-                ctx = ctx,
-                job = job,
-                output = output,
-                tools = tools,
-                target_platform = target_platform,
-                is_web = target_platform == "web",
-                # What compiles a shader whose SkSL stage fails without it.
-                require_sksl = require_sksl,
-            )
-            compiled[job.bundle_path] = output
-
-def flutter_compile_shaders(ctx, flutter_sdk_info, target_platform, flavor = None):
-    """Compile every shader this target bundles for the target platform.
-
-    The shaders are the target's own (`shaders`), the SDK's (collected from
-    FlutterInfo.shader_srcs) and its packages' (FlutterInfo.pub_shaders); see
-    `_shader_jobs` for where each is bundled.
-
-    Shaders from dependencies are compiled once per platform via the shader
-    aspect on the owning target and collected from FlutterCompiledShadersInfo.
-    Any shader not supplied by deps (including the target's own `shaders` attr)
-    is compiled here. If `require_sksl_shaders` is True, all shaders are
-    compiled here with `require_sksl = True`.
-
-    Args:
-        ctx: Rule context (must have shaders attr and deps attr).
-        flutter_sdk_info: FlutterSdkInfo from the toolchain.
-        target_platform: Target platform string ("ios", "macos", "android", "linux", "windows", "web").
-        flavor: Active flavor string, or None when no flavor is selected.
-
-    Returns:
-        Dict mapping bundle destination path → compiled File. Pass to
-        extra_asset_copies in flutter_asset_bundle_action.
-    """
-    if not flutter_sdk_info or not flutter_sdk_info.impellerc:
-        return {}
-
-    compiled = {}
-    require_sksl = _collect_dep_compiled_shaders(ctx, target_platform, compiled)
-    _compile_missing_shaders(ctx, flutter_sdk_info, target_platform, require_sksl, compiled, flavor = flavor)
-    return compiled
-
-def _any_entry_is(entries, file):
-    """Whether any entry in `entries` has `.file == file`."""
-    return any([entry.file == file for entry in entries])
-
-def _any_font_is(entries, file):
-    """Whether any font entry in `entries` lists `file` among its files."""
-    return any([file in entry.files for entry in entries])
-
-def _dep_carries_claim(dep, channel, file):
-    """Whether direct `dep` carries `file` in `channel` (`pub`, `shader`, `data`)."""
-    if channel == "shader":
-        if FlutterCompiledShadersInfo not in dep:
-            return False
-        return _any_entry_is(dep[FlutterCompiledShadersInfo].compiled_shaders.to_list(), file)
-    if FlutterInfo not in dep:
-        return False
-    info = dep[FlutterInfo]
-    if channel == "pub":
-        return _any_entry_is(info.pub_assets.to_list(), file) or _any_font_is(info.pub_fonts.to_list(), file)
-    if channel == "data":
-        return _any_entry_is(info.data_assets.to_list(), file)
-    return False
-
-def _resolve_claim_origin(bundle, channel, file):
-    """Name where a conflicting extra-channel file came from.
-
-    Only runs on the failure path, after the one-flatten assembly found two
-    different files for one key. The scans below re-flatten deps, but a
-    conflicting analysis fails here, so their cost never reaches a build.
-
-    Args:
-        bundle: A `struct(label, deps)` naming the bundling target.
-        channel: Which channel claimed the file (`pub`, `shader` or `data`).
-        file: The conflicting file.
-
-    Returns:
-        A label string for the failure message.
-    """
-    if channel not in ("pub", "shader", "data"):
-        fail("check_bundle_claims: unknown channel %r for %s." % (channel, file.short_path))
-    for dep in bundle.deps:
-        if _dep_carries_claim(dep, channel, file):
-            return str(dep.label)
-    return str(bundle.label)
-
-def _claim_bundle_key(seen, bundle, key, file, channel, label):
-    """Claim one bundle key for a file, failing on a different file's claim.
-
-    The first claim wins; the same file under the same key, reached along
-    several paths or channels, stays legal and is bundled once.
-
-    Args:
-        seen: Dict of key to the winning `struct(file, channel, label)`.
-        bundle: A `struct(label, deps)` naming the bundling target.
-        key: The bundle key being claimed.
-        file: The file claiming it.
-        channel: Which channel claims it (`assets`, `pub`, `shader`, `data`).
-        label: Where the file came from, or None for extra channels (their
-            origin is resolved only when a conflict fails the build).
-    """
-    prev = seen.get(key)
-    if prev == None:
-        seen[key] = struct(file = file, channel = channel, label = label)
-        return
-    if prev.file == file:
-        return
-    first_origin = prev.label if prev.label != None else _resolve_claim_origin(bundle, prev.channel, prev.file)
-    origin = label if label != None else _resolve_claim_origin(bundle, channel, file)
-    fail_asset_key_conflict(bundle.label, key, prev.file, first_origin, file, origin)
-
-def check_bundle_claims(bundle, asset_entries, extra_claims):
-    """Fail when two different files claim one bundle key, across any channels.
-
-    The one cross-channel key check every bundle runs: the `assets` entries
-    first, then the extra claims in bundle order (compiled shaders, pub
-    files, data assets — the order the copies dict is assembled in). A key
-    claimed twice by the same file stays legal; a key claimed by two
-    different files fails in COV-1's same-channel shape, naming the key,
-    both files and where each came from.
-
-    Args:
-        bundle: A `struct(label, deps)` — the bundling target's label and
-            direct deps (deps are only read to name an origin on failure).
-        asset_entries: `struct(key, file, label)` entries in bundle order.
-        extra_claims: `struct(key, file, channel)` claims in bundle order.
-    """
-    seen = {}
-    for entry in asset_entries:
-        _claim_bundle_key(seen, bundle, entry.key, entry.file, "assets", entry.label)
-    for claim in extra_claims:
-        _claim_bundle_key(seen, bundle, claim.key, claim.file, claim.channel, None)
-
 def declare_flutter_assets_dir(ctx):
     """Declare the `flutter_assets/` tree artifact for this target.
 
-    Split out from `flutter_build_assets` so a rule can name the directory
+    Split out from `flutter_bundle` so a rule can name the directory
     before it compiles the kernel: an application bakes this path into
     `rules_flutter.build_info.assetsDir`, and the dev tool matches the app's
     reported value against the tree it watches and rebuilds. Every rule that
@@ -1038,161 +744,6 @@ def declare_flutter_assets_dir(ctx):
         The declared directory (tree artifact) File.
     """
     return ctx.actions.declare_directory(ctx.label.name + "_flutter_assets")
-
-def make_bundle_inputs(
-        target_platform,
-        compiled_shaders = {},
-        kernel_dill = None,
-        kernel_dills = [],
-        tree_shake_key = "",
-        is_debug = False,
-        data_assets = None,
-        flavor = None):
-    """One `flutter_build_assets` call's inputs: what to bundle and how its icons shake.
-
-    Args:
-        target_platform: The bundle's platform (`android`, `ios`, `macos`,
-            `linux`, `windows`, `web`, or `tester` for test bundles).
-            Required, so a new bundle call site cannot silently inherit the
-            wrong filter: pub assets carrying `platforms` / `flavors`
-            conditions bundle only where flutter_tools would bundle them.
-        compiled_shaders: Dict mapping bundle dest path → compiled shader File.
-        kernel_dill: The compiled kernel .dill File (needed for icon tree shaking).
-        kernel_dills: Optional list of compiled kernel .dill Files when a bundle
-            ships multiple programs with distinct defines (e.g. WASM + JS fallback).
-        tree_shake_key: Optional configuration fingerprint for the shipped
-            programs whose icons are tree-shaken.
-        is_debug: Whether this is a debug build (icon tree shaking is skipped in debug).
-        data_assets: Optional depset[FlutterDataAssetInfo]. Each entry is
-            placed at `flutter_assets/packages/<package>/<name>` and listed in
-            the asset manifest under that key, as flutter_tools bundles a
-            hook's data asset.
-        flavor: Active flavor string, or None when no flavor is selected.
-
-    Returns:
-        A struct with `target_platform`, `compiled_shaders`, `kernel_dill`,
-        `kernel_dills`, `tree_shake_key`, `is_debug`, `data_assets` and `flavor`.
-    """
-    return struct(
-        target_platform = target_platform,
-        compiled_shaders = compiled_shaders,
-        kernel_dill = kernel_dill,
-        kernel_dills = kernel_dills,
-        tree_shake_key = tree_shake_key,
-        is_debug = is_debug,
-        data_assets = data_assets,
-        flavor = flavor,
-    )
-
-def _own_font_targets(ctx):
-    """The rule's own `fonts` targets when its `attrs` declare `fonts`."""
-    return ctx.attr.fonts if hasattr(ctx.attr, "fonts") else []
-
-def _bundle_tree_shake(ctx, flutter_sdk_info, bundle, fonts):
-    """Resolve the `make_tree_shake` inputs for `flutter_build_assets`.
-
-    `const_finder.dart.snapshot` is a kernel snapshot built by the Flutter
-    engine's bundled Dart SDK and analyzes `kernel_dill` compiled by Flutter's
-    `frontend_server`, so it must run on `flutter_sdk_info.dart` paired with
-    `flutter_sdk_info.dart_vm_files` rather than `@rules_dart`'s exec-tools SDK.
-
-    Args:
-        ctx: Rule context (reads `label` and `tree_shake_icons`).
-        flutter_sdk_info: `FlutterSdkInfo` from the toolchain, or `None`.
-        bundle: The `make_bundle_inputs` struct that carries the compiled kernel dills.
-        fonts: Aggregated `FontManifest` family entries.
-
-    Returns:
-        A `make_tree_shake` struct.
-    """
-    const_finder, font_subset = resolve_font_subset_tools(flutter_sdk_info) if fonts else (None, None)
-    all_kernel_dills = list(bundle.kernel_dills)
-    if not all_kernel_dills and bundle.kernel_dill != None:
-        all_kernel_dills = [bundle.kernel_dill]
-    needs_tree_shake = ctx.attr.tree_shake_icons and bool(fonts) and not bundle.is_debug and bool(all_kernel_dills)
-    if needs_tree_shake and (const_finder == None or font_subset == None):
-        fail(
-            "%s: icon tree shaking is enabled (`tree_shake_icons = True`) and the target bundles fonts, " % ctx.label +
-            "but `const_finder` or `font_subset` (`font-subset`) is not available in the Flutter toolchain " +
-            "(`@rules_flutter//flutter:font_subset_toolchain_type`) for the execution platform.",
-        )
-
-    # Icon tree shaking: enabled only in non-debug mode with tree_shake_icons=True
-    # when the dependency graph actually contributes at least one font family.
-    if not needs_tree_shake:
-        return make_tree_shake()
-    return make_tree_shake(
-        dart = flutter_sdk_info.dart,
-        flutter_sdk_files = flutter_sdk_info.dart_vm_files,
-        const_finder = const_finder,
-        font_subset = font_subset,
-        kernel_dill = all_kernel_dills[0],
-        kernel_dills = all_kernel_dills,
-        tree_shake_key = bundle.tree_shake_key,
-    )
-
-def flutter_build_assets(ctx, flutter_sdk_info, output_dir, bundle):
-    """Run the shared asset bundling step.
-
-    Walks `FlutterInfo.pub_fonts` / `pub_assets` from deps to bundle
-    pub-package contributions (fonts/assets — shaders are pre-compiled by
-    `flutter_compile_shaders` and arrive via `compiled_shaders`). The rule's
-    own `fonts` attribute, when it has one, contributes its families bare
-    ahead of the deps' as the root pubspec's fonts do.
-
-    Args:
-        ctx: Rule context (must have assets, deps, license_files, tree_shake_icons attrs and _asset_bundle_tool).
-        flutter_sdk_info: FlutterSdkInfo from the toolchain.
-        output_dir: The tree artifact to bundle into, from
-            `declare_flutter_assets_dir`. Passed in rather than declared here
-            so an application can bake the path into its `build_info` before
-            the kernel compile that this action depends on.
-        bundle: This bundle's inputs, from `make_bundle_inputs`.
-
-    Returns:
-        The flutter_assets/ tree artifact File.
-    """
-    all_entries = bundle_asset_entries(ctx.label, ctx.files.assets, ctx.attr.deps)
-
-    # Walk pub-package font/asset contributions from FlutterInfo.
-    # MaterialIcons is no longer special-cased here — apps depend on
-    # `@rules_flutter//flutter:material_icons` to get it via this same path.
-    # The pub claims ride the same list as the shader and data claims below,
-    # in bundle order, for the one cross-channel key check.
-    extra_claims = [struct(key = dest, file = f, channel = "shader") for dest, f in bundle.compiled_shaders.items()]
-    fonts, pub_extra_asset_copies = aggregate_pub_contributions(
-        ctx.attr.deps,
-        bundle.target_platform,
-        extra_claims,
-        _own_font_targets(ctx),
-        flavor = getattr(bundle, "flavor", None),
-    )
-    extra_asset_copies = dict(bundle.compiled_shaders.items() + pub_extra_asset_copies.items())
-
-    # Drop each DataAsset at flutter_assets/packages/<pkg>/<name>, the key
-    # flutter_tools gives a hook's data asset and the one `rootBundle` loads
-    # it by. The bundle action keys extra_asset_copies on a destination path
-    # relative to the assets/ root. A data asset landing on another channel's
-    # key fails in the cross-channel check below, naming both files.
-    if bundle.data_assets != None:
-        for entry in bundle.data_assets.to_list():
-            dst = "packages/{pkg}/{name}".format(pkg = entry.package, name = entry.name)
-            extra_claims.append(struct(key = dst, file = entry.file, channel = "data"))
-            extra_asset_copies[dst] = entry.file
-
-    check_bundle_claims(struct(label = ctx.label, deps = ctx.attr.deps), all_entries, extra_claims)
-
-    return flutter_asset_bundle_action(
-        ctx = ctx,
-        content = make_bundle_content(
-            assets = all_entries,
-            fonts = fonts,
-            license_files = ctx.files.license_files,
-            extra_asset_copies = extra_asset_copies,
-        ),
-        shaking = _bundle_tree_shake(ctx, flutter_sdk_info, bundle, fonts),
-        output_dir = output_dir,
-    )
 
 def make_desktop_bundle_artifacts(is_debug, kernel_dill_path, aot_output_path, aot_dst, icu_data_path):
     """The app build outputs a desktop bundle copies into its directory.
@@ -1603,193 +1154,16 @@ KERNEL_COMPILE_ATTRS = {
         allow_files = [".dart"],
     ),
     "deps": attr.label_list(
-        doc = "`dart_library` or `flutter_library` dependencies. A rule that " +
-              "builds an asset bundle needs `@rules_flutter//flutter:material_icons` " +
-              "listed here to bundle `MaterialIcons-Regular.otf` into " +
-              "`flutter_assets/` for Material widgets; the rules that emit only " +
-              "a kernel or an AOT artifact have no bundle for it to reach.",
+        doc = "`dart_library` or `flutter_library` dependencies.",
         providers = [DartInfo],
     ),
     "defines": attr.string_list(doc = "Dart environment defines (-D flags)."),
 } | EXTRA_DART_DEFINES_ATTR | BUILD_MODE_ATTR
 
-def _aspect_target_platform(ctx, fixed_platform):
-    """The platform string the shader aspect compiles for."""
-    if fixed_platform != None:
-        return fixed_platform
-    is_macos = ctx.target_platform_has_constraint(
-        ctx.attr._macos_constraint[platform_common.ConstraintValueInfo],
-    )
-    is_ios = ctx.target_platform_has_constraint(
-        ctx.attr._ios_constraint[platform_common.ConstraintValueInfo],
-    )
-    is_linux = ctx.target_platform_has_constraint(
-        ctx.attr._linux_constraint[platform_common.ConstraintValueInfo],
-    )
-    is_windows = ctx.target_platform_has_constraint(
-        ctx.attr._windows_constraint[platform_common.ConstraintValueInfo],
-    )
-    is_android = ctx.target_platform_has_constraint(
-        ctx.attr._android_constraint[platform_common.ConstraintValueInfo],
-    )
-    return detect_target_platform(is_ios, is_macos, is_linux, is_windows, is_android)
-
-def _aspect_direct_jobs(ctx, shader_includes, target_platform):
-    """The uncompiled shader jobs owned directly by the aspect's target.
-
-    Package shaders carry `platforms` / `flavors` conditions from their
-    `flutter.shaders` entries, so entries for other platforms are skipped
-    here before any compile action is registered.
-
-    Args:
-        ctx: The aspect context.
-        shader_includes: The target's own `shader_includes` files.
-        target_platform: The platform this aspect compiles for.
-
-    Returns:
-        The shader jobs this target owns directly.
-    """
-    direct_jobs = []
-
-    # 1. Direct shaders from `shaders` attribute (e.g. on @flutter_sdk//:flutter or a flutter_library)
-    if hasattr(ctx.rule.files, "shaders"):
-        for shader in ctx.rule.files.shaders:
-            direct_jobs.append(struct(
-                bundle_path = "shaders/" + encode_asset_key(shader.basename),
-                file = shader,
-                includes = shader_includes,
-            ))
-
-    # 2. Direct shaders from `pkg_shaders` attribute (e.g. on flutter_library / flutter_plugin)
-    if hasattr(ctx.rule.attr, "pkg_shaders") and ctx.rule.attr.pkg_shaders:
-        pkg_name = getattr(ctx.rule.attr, "package_name", "") if hasattr(ctx.rule.attr, "package_name") else ""
-        _, _, pub_shaders = build_pub_contributions(
-            package_name = pkg_name,
-            fonts_json = "",
-            font_files_dict = {},
-            pkg_assets_dict = {},
-            pkg_shaders_dict = ctx.rule.attr.pkg_shaders,
-            shader_includes = shader_includes,
-            pkg_asset_platforms = getattr(ctx.rule.attr, "pkg_asset_platforms", {}),
-            pkg_asset_flavors = getattr(ctx.rule.attr, "pkg_asset_flavors", {}),
-        )
-        for entry in pub_shaders:
-            if not pub_shader_matches_target(entry, target_platform):
-                continue
-            direct_jobs.append(struct(
-                bundle_path = ("packages/{}/".format(entry.package_name) if entry.package_name else "") + entry.shader_path,
-                file = entry.file,
-                includes = entry.includes,
-            ))
-    return direct_jobs
-
-def _compile_aspect_direct_jobs(ctx, flutter_sdk_info, target_platform, direct_jobs):
-    """Compile the aspect target's own shaders, deduplicated by bundle path."""
-    direct_compiled = []
-    if direct_jobs and flutter_sdk_info and flutter_sdk_info.impellerc:
-        tools = shader_compile_tools(
-            impellerc = flutter_sdk_info.impellerc,
-            shader_lib = flutter_sdk_info.shader_lib,
-            compile_tool = ctx.executable._shader_compile_tool,
-        )
-        by_path = dedupe_shader_jobs(ctx, direct_jobs)
-
-        for job in by_path.values():
-            out_path = job.bundle_path.replace("../", "_external/")
-            output = ctx.actions.declare_file("_shaders_%s/%s/%s.iplr" % (target_platform, ctx.label.name, out_path))
-            flutter_shader_compile_action(
-                ctx = ctx,
-                job = job,
-                output = output,
-                tools = tools,
-                target_platform = target_platform,
-                is_web = target_platform == "web",
-                require_sksl = False,
-            )
-            direct_compiled.append(struct(
-                bundle_path = job.bundle_path,
-                file = output,
-                target_platform = target_platform,
-            ))
-    return direct_compiled
-
-def _aspect_transitive_shaders(ctx):
-    """The dep `compiled_shaders` sets propagated through the aspect."""
-    transitive = []
-    if hasattr(ctx.rule.attr, "deps"):
-        deps = ctx.rule.attr.deps
-        for dep in (deps if type(deps) == "list" else [deps]):
-            if type(dep) == "Target" and FlutterCompiledShadersInfo in dep:
-                transitive.append(dep[FlutterCompiledShadersInfo].compiled_shaders)
-    return transitive
-
-def _shader_aspect_impl(ctx, fixed_platform):
-    target_platform = _aspect_target_platform(ctx, fixed_platform)
-    shader_includes = tuple(getattr(ctx.rule.files, "shader_includes", [])) if hasattr(ctx.rule.files, "shader_includes") else ()
-    direct_jobs = _aspect_direct_jobs(ctx, shader_includes, target_platform)
-    flutter_toolchain = ctx.toolchains["@rules_flutter//flutter:toolchain_type"] if "@rules_flutter//flutter:toolchain_type" in ctx.toolchains else None
-    flutter_sdk_info = flutter_toolchain.flutter_sdk_info if flutter_toolchain else None
-    direct_compiled = _compile_aspect_direct_jobs(ctx, flutter_sdk_info, target_platform, direct_jobs)
-    transitive = _aspect_transitive_shaders(ctx)
-    return [
-        FlutterCompiledShadersInfo(
-            compiled_shaders = depset(direct = direct_compiled, transitive = transitive),
-        ),
-    ]
-
-def _tester_shader_aspect_impl(_target, ctx):
-    return _shader_aspect_impl(ctx, "tester")
-
-def _web_shader_aspect_impl(_target, ctx):
-    return _shader_aspect_impl(ctx, "web")
-
-def _app_shader_aspect_impl(_target, ctx):
-    return _shader_aspect_impl(ctx, None)
-
-_SHADER_ASPECT_BASE_ATTRS = {
-    "_shader_compile_tool": attr.label(
-        doc = "Shader compiler the aspect runs over the target's transitive shaders.",
-        default = Label("//flutter/private/tools:compile_shader"),
-        executable = True,
-        cfg = "exec",
-    ),
-}
-
-_SHADER_ASPECT_TOOLCHAINS = [
-    "@rules_flutter//flutter:toolchain_type",
-    config_common.toolchain_type("@rules_dart//dart:exec_tools_toolchain_type", mandatory = False),
-]
-
-flutter_tester_shader_aspect = aspect(
-    implementation = _tester_shader_aspect_impl,
-    attr_aspects = ["deps"],
-    attrs = _SHADER_ASPECT_BASE_ATTRS,
-    toolchains = _SHADER_ASPECT_TOOLCHAINS,
-    doc = "Compiles transitive shaders for the flutter_tester platform on the owning targets.",
-)
-
-flutter_web_shader_aspect = aspect(
-    implementation = _web_shader_aspect_impl,
-    attr_aspects = ["deps"],
-    attrs = _SHADER_ASPECT_BASE_ATTRS,
-    toolchains = _SHADER_ASPECT_TOOLCHAINS,
-    doc = "Compiles transitive shaders for the web platform on the owning targets.",
-)
-
-flutter_app_shader_aspect = aspect(
-    implementation = _app_shader_aspect_impl,
-    attr_aspects = ["deps"],
-    attrs = _SHADER_ASPECT_BASE_ATTRS | PLATFORM_CONSTRAINT_ATTRS,
-    toolchains = _SHADER_ASPECT_TOOLCHAINS,
-    doc = "Compiles transitive shaders for the target application platform on the owning targets.",
-)
-
 FLUTTER_DEPS_DOC = (
-    "`dart_library` or `flutter_library` dependencies. A rule that " +
-    "builds an asset bundle needs `@rules_flutter//flutter:material_icons` " +
-    "listed here to bundle `MaterialIcons-Regular.otf` into " +
-    "`flutter_assets/` for Material widgets; the rules that emit only " +
-    "a kernel or an AOT artifact have no bundle for it to reach."
+    "`dart_library` or `flutter_library` dependencies. What the asset " +
+    "bundle holds comes from the app's `pubspec.yaml` and the packages " +
+    "these reach, as `flutter build` bundles it."
 )
 
 # Shared attrs for all flutter application rules.
@@ -1798,17 +1172,12 @@ FLUTTER_APPLICATION_ATTRS = KERNEL_COMPILE_ATTRS | {
     "flavor": attr.string(
         default = "",
         doc = "The application flavor (e.g. 'dev', 'prod'). When set, sets the " +
-              "FLUTTER_APP_FLAVOR Dart environment define and filters pub " +
-              "assets and shaders by flavor.",
+              "FLUTTER_APP_FLAVOR Dart environment define and bundles the " +
+              "pubspec's assets for that flavor, as `flutter build --flavor` does.",
     ),
     "deps": attr.label_list(
         doc = FLUTTER_DEPS_DOC,
         providers = [DartInfo],
-        aspects = [flutter_app_shader_aspect],
-    ),
-    "assets": attr.label_list(
-        doc = "Asset files to include in the bundle.",
-        allow_files = True,
     ),
     "native_deps": attr.label_list(
         doc = "cc_library targets providing shared libraries for dart:ffi.",
@@ -1831,30 +1200,6 @@ FLUTTER_APPLICATION_ATTRS = KERNEL_COMPILE_ATTRS | {
               "Set False to compile a debug kernel without it.",
         default = True,
     ),
-    "shaders": attr.label_list(
-        doc = "Fragment shader files (.frag) to compile with impellerc. Compiled shaders are included in the asset bundle.",
-        allow_files = [".frag", ".glsl"],
-    ),
-    "shader_includes": attr.label_list(
-        doc = "Files the `shaders` may `#include`. A shader compiles in a " +
-              "sandbox holding only its declared inputs, so an include not " +
-              "listed here is not found.",
-        allow_files = True,
-    ),
-    "require_sksl_shaders": attr.bool(
-        doc = "Fail the build when a shader cannot be compiled for Skia " +
-              "(SkSL). By default such a shader is compiled for Impeller " +
-              "alone with a warning, as `flutter build` does, and fails to " +
-              "load only where the app renders with Skia. Set this for an " +
-              "app that renders with Skia. Web builds always need SkSL.",
-        default = False,
-    ),
-    "_shader_compile_tool": attr.label(
-        doc = "Shader compiler for the app's `shaders`, run before the asset bundle is assembled.",
-        default = Label("//flutter/private/tools:compile_shader"),
-        executable = True,
-        cfg = "exec",
-    ),
     "link_hook_assets": attr.string_list(
         doc = "Data assets the packages' link hooks emit, each " +
               "`package:<package>/<name>`. In a release or profile build " +
@@ -1873,25 +1218,9 @@ FLUTTER_APPLICATION_ATTRS = KERNEL_COMPILE_ATTRS | {
               "Requires all IconData instances to be const. Only applies to release builds.",
         default = True,
     ),
-    "license_files": attr.label_list(
-        doc = "License/NOTICE files to include in NOTICES.Z. Typically LICENSE files from dependencies.",
-        allow_files = True,
-    ),
     "min_os_version": attr.string(
         doc = "Minimum OS deployment target for Apple platforms (iOS/macOS). " +
               "Passed to gen_snapshot as --macho-min-os-version. " +
               "Platform-specific bundle rules set appropriate defaults.",
-    ),
-    "_asset_bundle_tool": attr.label(
-        doc = "Tool that renders the asset manifest bundled as `flutter_assets`.",
-        default = Label("//flutter/private/tools:generate_asset_manifest"),
-        executable = True,
-        cfg = "exec",
-    ),
-    "_const_finder_tool": attr.label(
-        doc = "Tool that extracts used icon code points from kernel dills.",
-        default = Label("//flutter/private/tools:const_finder"),
-        executable = True,
-        cfg = "exec",
     ),
 } | AGENT_EXTENSIONS_ATTR

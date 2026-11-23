@@ -9,13 +9,14 @@ flutter_integration_test(
     size = "large",
     srcs = ["integration_test/app_test.dart"],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     platform = "web",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = ["assets/logo.png"],
     deps = [
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

@@ -2,7 +2,7 @@ schema: mivr-e2e-spec/1
 commands:
   - name: test all targets
     run: bazel test //... --test_output=errors
-    min_tests_executed: 64
+    min_tests_executed: 61
     expect:
       exit_code: 0
   - name: release signing wrong keystore password fails in apksigner

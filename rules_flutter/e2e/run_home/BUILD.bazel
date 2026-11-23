@@ -28,7 +28,6 @@ flutter_test(
     deps = [
         "@deps//:flutter",
         "@deps//:flutter_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -73,7 +72,6 @@ flutter_integration_test(
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -88,7 +86,6 @@ flutter_integration_test(
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -96,9 +93,9 @@ flutter_application(
     name = "run_home_app",
     package_name = "run_home",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -112,9 +109,9 @@ flutter_linux_app(
 flutter_web_app(
     name = "run_home_web",
     package_name = "run_home",
+    pub_packages = "@deps//packages",
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

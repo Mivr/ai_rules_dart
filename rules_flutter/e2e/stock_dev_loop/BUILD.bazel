@@ -26,6 +26,7 @@ flutter_application(
         exclude = ["lib/l10n/app_localizations*.dart"],
     ) + [":l10n"],
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "//packages/counter_lib",
         "//packages/counter_plugin",
@@ -33,7 +34,6 @@ flutter_application(
         "@deps//:flutter_localizations",
         "@deps//:intl",
         "@deps//:path_provider",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

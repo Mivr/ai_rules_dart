@@ -18,7 +18,6 @@ flutter_application(
     min_os_version = IOS_MINIMUM_OS_VERSION,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -72,7 +71,6 @@ flutter_library(
     ],
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

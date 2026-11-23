@@ -125,6 +125,7 @@ exports_files(glob(["**"]), visibility = ["//visibility:public"])
 flutter_material_icons_toolchain(
     name = "material_icons_toolchain",
     material_icons_font = "material-fonts/MaterialIcons-Regular.otf",
+    roboto_font = "material-fonts/Roboto-Regular.ttf",
     visibility = ["//visibility:public"],
 )
 """)

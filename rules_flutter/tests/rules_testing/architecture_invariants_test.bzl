@@ -42,11 +42,6 @@ def _test_providers_impl(env, target):
     _has(env, target, DartAnalyzableInfo, "DartAnalyzableInfo", True)
     _has(env, target, DartInfo, "DartInfo", False)
 
-def _bundle_providers_impl(env, target):
-    """A `flutter_asset_bundle` publishes neither DartInfo nor FlutterInfo."""
-    _has(env, target, DartInfo, "DartInfo", False)
-    _has(env, target, FlutterInfo, "FlutterInfo", False)
-
 def _contract_impl(env, target):
     """A `deps` entry without DartInfo fails analysis naming the provider contract."""
     env.expect.that_target(target).failures().contains_predicate(
@@ -67,10 +62,8 @@ def architecture_invariants_analysis_tests(name, fixtures):
         "_lib_providers": (_library_providers_impl, "_lib", False),
         "_plugin_providers": (_plugin_providers_impl, "_plugin", False),
         "_test_providers": (_test_providers_impl, "_test", False),
-        "_bundle_providers": (_bundle_providers_impl, "_bundle", False),
         "_lib_deps_contract": (_contract_impl, "_lib_bad_dep", True),
         "_test_deps_contract": (_contract_impl, "_test_bad_dep", True),
-        "_bundle_deps_contract": (_contract_impl, "_bundle_bad_dep", True),
     }
     labels = []
     for suffix, (impl, subject, fails) in cases.items():

@@ -279,9 +279,6 @@ rules that produce `FlutterInfo`. Constructing it here means enumerating and \
 merging each field by hand, and a field left empty rather than forwarded \
 silently discards every dependency's contribution.""",
     fields = {
-        "asset_dirs": "depset[File]: Directories containing Flutter assets. Kept populated with the same files `assets` keys, for compatibility; new consumers read `assets`.",
-        "assets": "depset[struct]: Keyed Flutter assets. Each struct has: key (str — the bundle-relative key, relative to the listing target's package directory, or `packages/<package_name>/...` for a library), file (File), label (str — the target that listed the asset). Set once by the target that lists `assets`; every bundle merges these without recomputing a key.",
-        "shader_srcs": "depset[File]: Raw shader source files (.frag/.glsl) to compile per-platform.",
         "plugins": "list[struct]: Plugin metadata. Each struct has: name (str), platforms (dict of platform -> {pluginClass, dartPluginClass, package}).",
         "transitive_native_libs": "depset[File]: Shared libs from plugin native_deps, merged transitively.",
         "native_lib_sources": "depset[struct]: Per library, the first-party sources it is built from — `native_deps` entries and Native Asset libraries alike. Each struct has: library (File), sources (tuple[File]). A hot reload stats these to notice that a library went stale in an app whose reload runs no build of its own; see `native_sources.bzl`.",
@@ -292,10 +289,7 @@ silently discards every dependency's contribution.""",
         "windows_plugin_libraries": "depset[struct]: Windows plugin source bundles. Each struct has: label (Label), srcs (depset[File]), hdrs (depset[File]), include_dirs (depset[str]), package (str). The Windows runner folds these into its compile.",
         "apple_privacy_manifests": "depset[File]: Apple `PrivacyInfo.xcprivacy` files contributed by transitive plugins. Apple requires every framework to ship one since iOS 17.4 / macOS 14.4; the macOS / iOS application rules bundle them into `Contents/Resources/<pkg>/PrivacyInfo.xcprivacy` (or the iOS analog) so App Store submission's privacy aggregator picks them up.",
         "native_assets": "depset[FlutterNativeAssetInfo]: Per-target Native Assets `CodeAsset` declarations contributed by transitive `flutter_native_asset` rules.",
-        "data_assets": "depset[FlutterDataAssetInfo]: Per-package Native Assets `DataAsset` declarations contributed by transitive `flutter_data_asset` rules.",
-        "pub_fonts": "depset[struct]: Per-package font declarations from pub `flutter.fonts`. Each struct has: package_name (str — empty string sentinel for non-package contributions like the toolchain MaterialIcons target), family (str), fonts (list[struct(asset, weight, style)]), files (list[File] — the .ttf/.otf File objects matching the asset paths). Bundle aggregator prefixes family + asset paths with `packages/<pkg>/` only when package_name is non-empty.",
-        "pub_assets": "depset[struct]: Per-package asset files from pub `flutter.assets`. Each struct has: package_name (str — empty sentinel for non-package), asset_path (str — as declared in pubspec, before any prefixing), file (File), platforms (tuple[str] — the entry's `platforms`; empty is unconditional), flavors (tuple[str] — the entry's `flavors`; empty is unconditional). Bundle aggregators filter these with `pub_asset_matches_target` before placing a file at `packages/<pkg>/<asset_path>` (or bare `asset_path` for empty package_name).",
-        "pub_shaders": "depset[struct]: Per-package shader files from pub `flutter.shaders`. Same shape as pub_assets — package_name, shader_path, file, platforms, flavors — plus `includes` (tuple[File]; the files the shader may `#include`), and routed through the shader compile pipeline before bundling. A bundle filters an entry with `pub_asset_matches_target` on its target platform and flavor, so a shader restricted to other platforms is neither compiled nor staged.",
+        "data_assets": "depset[FlutterDataAssetInfo]: Per-package Native Assets `DataAsset` declarations of the closure.",
     },
 )
 
@@ -326,7 +320,7 @@ makes a rebuilt copy of it stop a hot reload rather than merely be reported.
 )
 
 FlutterDataAssetInfo = provider(
-    doc = "A single Native Assets `DataAsset` declaration captured by `flutter_data_asset`.",
+    doc = "A single Native Assets `DataAsset`: one a link hook emitted.",
     fields = {
         "asset_id": "str: The Dart asset id (e.g. `package:my_pkg/blob.bin`).",
         "package": "str: The pub package name (parsed from `asset_id`).",
@@ -385,13 +379,6 @@ ran with `--strip`, else False (False when there is no AOT output).""",
         "windows_plugin_libraries": "depset[struct]: Aggregated Windows plugin source bundles, same shape as `FlutterInfo.windows_plugin_libraries`. The Windows runner folds these into its compile.",
     },
     init = _flutter_application_info_init,
-)
-
-FlutterCompiledShadersInfo = provider(
-    doc = "Pre-compiled shaders from transitive dependencies, keyed by bundle path.",
-    fields = {
-        "compiled_shaders": "depset[struct]: Structs with `bundle_path` (str), `file` (File), and `target_platform` (str) of compiled shaders.",
-    },
 )
 
 FlutterDarwinFrameworkInfo = provider(

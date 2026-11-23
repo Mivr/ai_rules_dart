@@ -24,11 +24,10 @@ load("@rules_dart//dart:utils.bzl", "dart_info", "dart_package_identity", "deriv
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("@rules_swift//swift:swift.bzl", "SwiftInfo")
 load("//flutter:providers.bzl", "FlutterApplePluginInfo", "FlutterDataAssetInfo", "FlutterInfo", "FlutterNativeAssetInfo")
-load("//flutter/private:asset_keys.bzl", "library_asset_entries")
 load("//flutter/private:common.bzl", "collect_binding_contracts", "collect_native_libs")
 load("//flutter/private:flutter_desktop_plugin_info.bzl", "FlutterLinuxPluginInfo", "FlutterWindowsPluginInfo")
-load("//flutter/private:flutter_info.bzl", "LINK_HOOK_ATTR", "flutter_asset_channels", "flutter_info", "flutter_native_channels", "flutter_plugin_libraries", "flutter_pub_channels")
-load("//flutter/private:flutter_library.bzl", "SKY_ENGINE_ATTR", "build_pub_contributions", "check_asset_shader_conflict", "flutter_analyzable_info")
+load("//flutter/private:flutter_info.bzl", "LINK_HOOK_ATTR", "flutter_asset_channels", "flutter_info", "flutter_native_channels", "flutter_plugin_libraries")
+load("//flutter/private:flutter_library.bzl", "SKY_ENGINE_ATTR", "flutter_analyzable_info")
 load("//flutter/private:native_sources.bzl", "collect_native_source_pairs", "native_sources_aspect")
 
 visibility(["//flutter/..."])
@@ -292,21 +291,6 @@ def _extra_data_assets(ctx):
         "data_assets",
     )
 
-def _plugin_pub_contributions(ctx):
-    """Build this plugin's pub-package asset contributions (fonts/assets/shaders)."""
-    fonts, assets, shaders = build_pub_contributions(
-        ctx.attr.package_name,
-        ctx.attr.fonts_json,
-        ctx.attr.font_files,
-        ctx.attr.pkg_assets,
-        ctx.attr.pkg_shaders,
-        ctx.files.shader_includes,
-        ctx.attr.pkg_asset_platforms,
-        ctx.attr.pkg_asset_flavors,
-    )
-    check_asset_shader_conflict(ctx.label, ctx.files.assets, assets, [], shaders)
-    return (fonts, assets, shaders)
-
 def _check_plugin_resources(ctx):
     """Reject Dart sources mis-filed under `resources` instead of `srcs`."""
     for f in ctx.files.resources:
@@ -328,6 +312,7 @@ def _plugin_dart_infos(ctx, package_name, lib_root):
                 lib_root = lib_root,
                 language_version = ctx.attr.language_version,
                 version = ctx.attr.version,
+                package_files = ctx.files.data,
             ),
             deps = ctx.attr.deps,
             srcs = ctx.files.srcs,
@@ -345,8 +330,6 @@ def _plugin_flutter_info(ctx, package_name, plugin, extra):
         deps = ctx.attr.deps,
         plugins = [plugin],
         asset_channels = flutter_asset_channels(
-            asset_dirs = ctx.files.assets,
-            assets = library_asset_entries(ctx.label, package_name, ctx.files.assets),
             apple_privacy_manifests = extra.privacy,
         ),
         plugin_libraries = flutter_plugin_libraries(
@@ -361,11 +344,6 @@ def _plugin_flutter_info(ctx, package_name, plugin, extra):
             binding_contracts = extra.binding_contracts,
             native_assets = extra.native_assets,
             data_assets = extra.data_assets,
-        ),
-        pub_channels = flutter_pub_channels(
-            pub_fonts = extra.pub_fonts,
-            pub_assets = extra.pub_assets,
-            pub_shaders = extra.pub_shaders,
         ),
     )
 
@@ -417,12 +395,6 @@ def _flutter_plugin_impl(ctx):
 
     extra_apple_privacy_manifests = list(ctx.files.apple_privacy_files)
 
-    # Pub-package asset contributions (fonts/assets/shaders from the parsed
-    # flutter:-block, applicable to plugins that also ship icon fonts or
-    # bundled assets — same shape as flutter_library). asset_pkg uses the
-    # rule's `package_name` attr verbatim (empty = bare paths).
-    extra_pub_fonts, extra_pub_assets, extra_pub_shaders = _plugin_pub_contributions(ctx)
-
     # `resources` names the non-Dart remainder of `lib/`; a Dart source there
     # is a mis-filed `srcs` entry, and identical paths with identical
     # extensions would otherwise collide silently. Mirrors `dart_library`.
@@ -430,9 +402,7 @@ def _flutter_plugin_impl(ctx):
 
     # A plugin contributes on more channels than a library does, but the shape
     # is the same: name what this target adds, and let each constructor merge
-    # the dependencies. `shaders` is absent here — a plugin has no such
-    # attribute — which is a thing the caller simply does not say, rather than
-    # something the merge has to probe for.
+    # the dependencies.
     extra = struct(
         native_libs = native_libs,
         binding_contracts = binding_contracts,
@@ -444,9 +414,6 @@ def _flutter_plugin_impl(ctx):
         privacy = extra_apple_privacy_manifests,
         native_assets = extra_native_assets,
         data_assets = extra_data_assets,
-        pub_fonts = extra_pub_fonts,
-        pub_assets = extra_pub_assets,
-        pub_shaders = extra_pub_shaders,
     )
     return _plugin_dart_infos(ctx, package_name, lib_root) + [_plugin_flutter_info(ctx, package_name, plugin, extra)]
 
@@ -463,12 +430,14 @@ flutter_plugin = rule(
             doc = "Dart/Flutter library dependencies.",
             providers = [DartInfo],
         ),
-        "resources": attr.label_list(
-            doc = "Non-Dart files this package ships inside `lib/` — part of its published surface, but never compiled (a web plugin's bundled JS/wasm, templates, YAML). Anything under `lib/` is addressable as `package:<name>/<path>` whatever its extension, so these are members of the package: they ride `DartInfo.transitive_resources` and are staged wherever the whole package is staged, mirroring `dart_library`. Orthogonal to `pkg_assets`/`pkg_shaders`/`font_files`, which name flutter_assets bundle contributions. `.dart` files belong in `srcs`.",
+        "data": attr.label_list(
+            doc = "The package's own files outside `lib/`: its `pubspec.yaml`, its licence, and " +
+                  "the files its pubspec names (assets, fonts, shaders), which an app's asset " +
+                  "bundle reads as `flutter build` does. Runtime-only.",
             allow_files = True,
         ),
-        "assets": attr.label_list(
-            doc = "Asset files to include.",
+        "resources": attr.label_list(
+            doc = "Non-Dart files this package ships inside `lib/` — part of its published surface, but never compiled (a web plugin's bundled JS/wasm, templates, YAML). Anything under `lib/` is addressable as `package:<name>/<path>` whatever its extension, so these are members of the package: they ride `DartInfo.transitive_resources` and are staged wherever the whole package is staged, mirroring `dart_library`. `.dart` files belong in `srcs`.",
             allow_files = True,
         ),
         "package_name": attr.string(
@@ -573,35 +542,6 @@ flutter_plugin = rule(
         "apple_privacy_files": attr.label_list(
             doc = "`PrivacyInfo.xcprivacy` files this plugin contributes to the iOS / macOS app bundle. Apple requires every framework to ship a privacy manifest since iOS 17.4 / macOS 14.4; the App Store submission validator walks the bundle and aggregates them. Propagated through `FlutterInfo.apple_privacy_manifests` and threaded into the platform application bundle's `Resources/<pkg>/PrivacyInfo.xcprivacy` slot. Auto-detected by `flutter_pub_package` from both layouts pub plugins use (`Sources/<pkg>/PrivacyInfo.xcprivacy` and `Sources/<pkg>/Resources/PrivacyInfo.xcprivacy`).",
             allow_files = [".xcprivacy"],
-        ),
-        "fonts_json": attr.string(
-            doc = "JSON-encoded list of font-family declarations (mirrors `flutter.fonts` in pubspec.yaml). Same shape as `flutter_library.fonts_json`.",
-            default = "",
-        ),
-        "font_files": attr.label_keyed_string_dict(
-            doc = "Map of font File label -> package-relative asset path. Same shape as `flutter_library.font_files`.",
-            allow_files = True,
-        ),
-        "pkg_assets": attr.label_keyed_string_dict(
-            doc = "Map of asset File label -> package-relative path (mirrors `flutter.assets`). Same shape as `flutter_library.pkg_assets`.",
-            allow_files = True,
-        ),
-        "pkg_asset_platforms": attr.string_list_dict(
-            doc = "Per-entry `platforms` conditions, for `pkg_assets` and `pkg_shaders` alike. Same shape as `flutter_library.pkg_asset_platforms`.",
-        ),
-        "pkg_asset_flavors": attr.string_list_dict(
-            doc = "Per-entry `flavors` conditions, for `pkg_assets` and `pkg_shaders` alike. Same shape as `flutter_library.pkg_asset_flavors`.",
-        ),
-        "shader_includes": attr.label_list(
-            doc = "Files this package's `pkg_shaders` may `#include` (e.g. " +
-                  "`glob([\"shaders/**/*.glsl\"])`). A shader compiles in a " +
-                  "sandbox holding only its declared inputs, so an include " +
-                  "not listed here is not found.",
-            allow_files = True,
-        ),
-        "pkg_shaders": attr.label_keyed_string_dict(
-            doc = "Map of shader File label -> package-relative path (mirrors `flutter.shaders`). Same shape as `flutter_library.pkg_shaders`.",
-            allow_files = True,
         ),
     },
     doc = "Declares a Flutter plugin with platform metadata and optional native dependencies.",

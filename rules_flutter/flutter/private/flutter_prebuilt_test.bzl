@@ -97,8 +97,7 @@ flutter_prebuilt_test = rule(
         "assets": attr.label(
             doc = "The `flutter_assets/` tree the test resolves via " +
                   "`rootBundle`, e.g. a `flutter_test`'s `test_assets` " +
-                  "output group or a `flutter_asset_bundle` with the " +
-                  "test's shaders compiled for `flutter_tester`.",
+                  "output group.",
             mandatory = True,
             allow_single_file = True,
         ),

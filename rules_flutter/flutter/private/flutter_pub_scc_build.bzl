@@ -24,7 +24,7 @@ load(
 )
 load(
     "//flutter/private:flutter_pub_package_helpers.bzl",
-    "format_pub_asset_attrs_with_shaders",
+    "format_spoke_data_attr",
     "make_flutter_test_package_bzl_content",
 )
 load("//flutter/private:starlark_literal.bzl", "starlark_string_literal")
@@ -161,23 +161,10 @@ dart_library(
     )
 
 def _format_scc_pub_attrs(assets):
-    """Formats pub asset attributes for `_flutter_info`."""
+    """Formats the member's `data`: the files its pubspec names."""
     if not assets:
         return ""
-    platforms = (
-        assets.pkg_asset_platforms if hasattr(assets, "pkg_asset_platforms") and assets.pkg_asset_platforms else {}
-    )
-    flavors = (
-        assets.pkg_asset_flavors if hasattr(assets, "pkg_asset_flavors") and assets.pkg_asset_flavors else {}
-    )
-    return format_pub_asset_attrs_with_shaders(
-        assets.fonts_json_str,
-        assets.font_files,
-        assets.pkg_assets,
-        assets.pkg_shaders,
-        platforms,
-        flavors,
-    )
+    return format_spoke_data_attr(assets.data_patterns)
 
 def _apple_macos_privacy(apple):
     """Reads macOS privacy manifest paths from `apple`."""

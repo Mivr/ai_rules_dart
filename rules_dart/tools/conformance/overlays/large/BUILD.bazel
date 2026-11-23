@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
-load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_font_family", "flutter_gen_l10n", "flutter_library", "flutter_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_gen_l10n", "flutter_library", "flutter_test")
 load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
 load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
 
@@ -55,7 +55,7 @@ DEPS = ["@deps//:" + d for d in [
     "url_launcher",
     "version",
     "video_player",
-]] + ["@rules_flutter//flutter:material_icons"]
+]]
 
 TEST_DEPS = ["@deps//:" + d for d in [
     "connectivity_plus_platform_interface",
@@ -70,16 +70,8 @@ TEST_DEPS = ["@deps//:" + d for d in [
     "xml",
 ]]
 
-ASSETS = glob(
-    ["assets/animations/*", "assets/images/*", "assets/images/muscles/*", "assets/images/muscles/main/*", "assets/images/muscles/secondary/*", "assets/icons/*"],
-    exclude_directories = 1,
-)
-
-flutter_font_family(
-    name = "roboto_condensed",
-    family = "RobotoCondensed",
-    fonts = [{"asset": "assets/fonts/RobotoCondensed-VariableFont_wght.ttf"}],
-)
+# The files pubspec.yaml names: what the asset bundle holds.
+PUBSPEC_SRCS = glob(["assets/**"])
 
 # `generate: true` and `l10n.yaml`: the rules do not read l10n.yaml, so its
 # settings are restated here. `flutter_gen_l10n` writes its output beside its
@@ -160,16 +152,15 @@ flutter_library(
         "lib/l10n/generated/**",
         "lib/main.dart",
     ]) + [":l10n"],
-    assets = ASSETS,
-    fonts = [":roboto_condensed"],
     deps = DEPS,
 )
 
 flutter_web_app(
     name = "web",
     package_name = "wger",
-    app_name = "wger",
     compiler = "dart2js",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = PUBSPEC_SRCS,
     # `lib/main.dart` is the web app's own entry point, so the packages it
     # imports are its direct deps.
     deps = [":wger"] + ["@deps//:" + d for d in [
@@ -190,6 +181,9 @@ flutter_web_app(
         size = "medium",
         srcs = glob(["test/**/*.dart", "test_data/**/*.dart"], exclude = ["test/**/*_test.dart"]),
         main = test,
+        pub_packages = "@deps//packages",
+        pubspec = "pubspec.yaml",
+        pubspec_srcs = PUBSPEC_SRCS,
         deps = [":wger"] + DEPS + TEST_DEPS,
     )
     for test in glob(["test/**/*_test.dart"])
@@ -199,6 +193,8 @@ flutter_application(
     name = "app",
     package_name = "wger",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = PUBSPEC_SRCS,
     # `lib/main.dart` imports these packages itself, so they are direct deps.
     deps = [":wger"] + ["@deps//:" + d for d in [
         "dynamic_color",

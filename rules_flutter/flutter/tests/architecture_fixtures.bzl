@@ -5,7 +5,6 @@ The cases themselves need `rules_testing`, a dev dependency, so they live in
 under `flutter/tests` as `manual` targets, so consumers can load this package.
 """
 
-load("//flutter/private:flutter_asset_bundle.bzl", "flutter_asset_bundle")
 load("//flutter/private:flutter_library.bzl", "flutter_library")
 load("//flutter/private:flutter_plugin.bzl", "flutter_plugin")
 load("//flutter/private:flutter_test.bzl", "flutter_test")
@@ -42,7 +41,6 @@ def _declare_subjects(name):
         tags = ["manual"],
         visibility = _VISIBILITY,
     )
-    flutter_asset_bundle(name = name + "_bundle", tags = ["manual"], visibility = _VISIBILITY)
 
 def _declare_violations(name):
     """Declares one fixture per rule whose `deps` lists a target without DartInfo."""
@@ -63,7 +61,6 @@ def _declare_violations(name):
         tags = ["manual"],
         visibility = _VISIBILITY,
     )
-    flutter_asset_bundle(name = name + "_bundle_bad_dep", deps = [bad], tags = ["manual"], visibility = _VISIBILITY)
 
 def architecture_fixtures(name):
     """Declares the manual FF6 fixtures, prefixed with `name`.

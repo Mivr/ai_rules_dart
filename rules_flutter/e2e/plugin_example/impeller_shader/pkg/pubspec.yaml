@@ -1,0 +1,10 @@
+name: impeller_shader
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  shaders:
+    - shaders/indexed.frag

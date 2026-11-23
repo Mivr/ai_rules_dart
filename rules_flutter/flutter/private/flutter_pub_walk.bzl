@@ -1,10 +1,9 @@
 """Shared bounds for the `flutter pub` spoke directory walks.
 
-Every spoke-side directory walk — asset listing (`flutter_pub_assets.bzl`
-`list_files_recursive`), plugin source detection (`_has_files_under` in
-`flutter_pub_package.bzl`), and path-package linking (`_link_scoped_tree`
-there) — is a bounded Starlark `for` loop (Starlark has no `while`). All
-three share `PUB_WALK_BOUND` and fail the fetch loudly at it, naming the
+Every spoke-side directory walk — plugin source detection
+(`_has_files_under` in `flutter_pub_package.bzl`) and path-package linking
+(`_link_scoped_tree` there) — is a bounded Starlark `for` loop (Starlark has
+no `while`). Both share `PUB_WALK_BOUND` and fail the fetch loudly at it, naming the
 package, the directory, and the bound, instead of truncating or answering
 from a half-walked tree. Starlark `range` is lazy and each walk is linear
 in the directories it visits, so the high bound costs nothing until a walk

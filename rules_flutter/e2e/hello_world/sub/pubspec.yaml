@@ -1,0 +1,20 @@
+# The project of `//sub:sub_app`, an app in a subdirectory of the workspace:
+# what it names is keyed relative to this directory, and the `brand`
+# package's assets at `packages/brand/`.
+name: sub_app
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  brand:
+    path: ../brand
+flutter:
+  assets:
+    - assets/notice.txt
+    # A file of the nested `//sub/nested` Bazel package: a nested BUILD file
+    # changes nothing, it is a file of this project.
+    - nested/extra.txt
+    # The output of `:gen_notice`, at its path in the project.
+    - gen_notice.txt

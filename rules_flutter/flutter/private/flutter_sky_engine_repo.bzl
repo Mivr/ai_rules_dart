@@ -82,6 +82,8 @@ dart_library(
         ["lib/**"],
         exclude = ["lib/**/*.dart"],
     ),
+    # The engine's licences, which every app's `NOTICES` holds.
+    data = glob(["pubspec.yaml", "LICENSE"], allow_empty = True),
     visibility = ["//visibility:public"],
 )
 
@@ -253,6 +255,15 @@ def _flutter_sky_engine_repo_impl(repository_ctx):
             "sky_engine/pubspec.yaml",
             "the sky_engine analyzer package pubspec",
         )
+        # The engine licences, which NOTICES collects; a trimmed SDK may lack them.
+        if sdk_root.get_child("bin/cache/pkg/sky_engine/LICENSE").exists:
+            link_local_file(
+                repository_ctx,
+                sdk_root,
+                "bin/cache/pkg/sky_engine/LICENSE",
+                "sky_engine/LICENSE",
+                "the engine licences",
+            )
         _plant_trimmed_part_stubs(repository_ctx)
         repository_ctx.file("sky_engine/BUILD.bazel", _PACKAGE_BUILD_TEMPLATE)
         repository_ctx.file("BUILD.bazel", _ROOT_BUILD_TEMPLATE)

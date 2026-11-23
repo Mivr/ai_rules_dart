@@ -296,6 +296,7 @@ flutter_desktop_engine_toolchain = rule(
 def _flutter_material_icons_toolchain_impl(ctx):
     return [platform_common.ToolchainInfo(
         material_icons_font = ctx.file.material_icons_font,
+        roboto_font = ctx.file.roboto_font,
     )]
 
 flutter_material_icons_toolchain = rule(
@@ -305,8 +306,12 @@ flutter_material_icons_toolchain = rule(
             doc = "The `MaterialIcons-Regular.otf` font file.",
             allow_single_file = True,
         ),
+        "roboto_font": attr.label(
+            doc = "`Roboto-Regular.ttf`, which a web bundle with a local CanvasKit carries as its fallback font.",
+            allow_single_file = True,
+        ),
     },
-    doc = "Lazy sub-toolchain providing the `MaterialIcons-Regular.otf` font.",
+    doc = "Lazy sub-toolchain providing the `MaterialIcons-Regular.otf` font (and `Roboto-Regular.ttf`).",
 )
 
 def _flutter_font_subset_toolchain_impl(ctx):

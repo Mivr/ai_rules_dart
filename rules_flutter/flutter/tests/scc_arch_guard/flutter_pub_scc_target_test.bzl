@@ -12,10 +12,6 @@ load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("//flutter:providers.bzl", "FlutterInfo")
 load("//flutter/private:flutter_library.bzl", "flutter_library")
 load(
-    "//flutter/private:flutter_pub_package_helpers.bzl",
-    "format_pub_asset_attrs_with_shaders",
-)
-load(
     "//flutter/private:flutter_pub_scc_build.bzl",
     "adapt_scc_member_android_overlay_content",
     "scc_flutter_test_package_bzl_content",
@@ -39,18 +35,6 @@ _target_providers_test = unittest.make(
     _target_providers_test_impl,
     attrs = {"target": attr.label(default = _FIXTURE, providers = [DartInfo, FlutterInfo])},
 )
-
-def _shader_attrs_test_impl(ctx):
-    env = unittest.begin(ctx)
-    plain = format_pub_asset_attrs_with_shaders("", {}, {":a.txt": "a.txt"}, {})
-    asserts.equals(env, '    pkg_assets = {\n        ":a.txt": "a.txt",\n    },\n', plain)
-    shaded = format_pub_asset_attrs_with_shaders("", {}, {}, {":s/g.frag": "s/g.frag"})
-    asserts.true(env, '    pkg_shaders = {\n        ":s/g.frag": "s/g.frag",\n    },\n' in shaded, shaded)
-    asserts.true(env, '"s/**/*.frag"' in shaded, shaded)
-    asserts.true(env, shaded.endswith("allow_empty = True,\n    ),\n"), shaded)
-    return unittest.end(env)
-
-_shader_attrs_test = unittest.make(_shader_attrs_test_impl)
 
 def _scc_content_test_impl(ctx):
     env = unittest.begin(ctx)
@@ -100,6 +84,5 @@ def flutter_pub_scc_target_test_suite(name):
     small_unittest_suite(
         name,
         _target_providers_test,
-        _shader_attrs_test,
         _scc_content_test,
     )

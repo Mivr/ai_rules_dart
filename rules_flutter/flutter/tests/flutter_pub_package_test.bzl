@@ -354,10 +354,7 @@ def _spokes_state_their_resolved_version_test_impl(ctx):
         language_version = "3.4",
         code_assets = [],
         has_unreplaced_hook = "",
-        fonts_json_str = "",
-        font_files = {},
-        pkg_assets = {},
-        pkg_shaders = {},
+        data_patterns = [],
         version = "1.0.8",
     )
     asserts.true(env, '\n    version = "1.0.8",' in library, library)
@@ -385,10 +382,7 @@ def _spoke_without_a_version_states_none_test_impl(ctx):
         language_version = "3.4",
         code_assets = [],
         has_unreplaced_hook = "",
-        fonts_json_str = "",
-        font_files = {},
-        pkg_assets = {},
-        pkg_shaders = {},
+        data_patterns = [],
     )
 
     # The newline and indent matter: a bare `"version = "` also matches
@@ -501,7 +495,7 @@ def _library_spoke_carries_resources_test_impl(ctx):
 
     The two channels coexist by design: `resources` says the file is part
     of the package's `lib/` tree (staged wherever the whole package is),
-    while `pkg_assets`/`pkg_shaders` say it is bundled into flutter_assets.
+    while `data` lists the files the pubspec names for the asset bundle.
     A shader under `lib/` is legitimately both.
     """
     env = unittest.begin(ctx)
@@ -512,56 +506,15 @@ def _library_spoke_carries_resources_test_impl(ctx):
         language_version = "3.4",
         code_assets = [],
         has_unreplaced_hook = "",
-        fonts_json_str = "",
-        font_files = {},
-        pkg_assets = {},
-        pkg_shaders = {":lib/glow.frag": "lib/glow.frag"},
+        data_patterns = ["lib/glow.frag"],
     )
 
     asserts.true(env, _RESOURCES_GLOB in content, content)
-    asserts.true(env, "pkg_shaders" in content, content)
+    asserts.true(env, '"lib/glow.frag"' in content, content)
 
     return unittest.end(env)
 
 library_spoke_carries_resources_test = unittest.make(_library_spoke_carries_resources_test_impl)
-
-def _spoke_with_shaders_declares_their_includes_test_impl(ctx):
-    """A spoke with shaders lists its GLSL as what they may `#include`.
-
-    The compile runs sandboxed with only declared inputs, so a shader that
-    includes a sibling `.glsl` fails unless the spoke declares it. The globs
-    stay scoped to the declared shaders' own directories: a package-wide
-    `**` glob would also match `example/build/` output when a path package
-    is symlinked into its spoke.
-    """
-    env = unittest.begin(ctx)
-
-    def content(pkg_shaders):
-        return make_flutter_library_build_content(
-            name = "shader_pkg",
-            deps = [],
-            language_version = "3.4",
-            code_assets = [],
-            has_unreplaced_hook = "",
-            fonts_json_str = "",
-            font_files = {},
-            pkg_assets = {},
-            pkg_shaders = pkg_shaders,
-        )
-
-    with_shaders = content({":shaders/glow.frag": "shaders/glow.frag"})
-    asserts.true(env, "shader_includes = glob(" in with_shaders, with_shaders)
-    asserts.true(env, '"shaders/**/*.glsl"' in with_shaders, with_shaders)
-    asserts.true(env, '"shaders/**/*.frag"' in with_shaders, with_shaders)
-    asserts.true(env, '"shaders/**/*.vert"' in with_shaders, with_shaders)
-    asserts.false(env, '"**/*.glsl"' in with_shaders, with_shaders)
-    top_level = content({":ripple.frag": "ripple.frag"})
-    asserts.true(env, '"*.glsl"' in top_level, top_level)
-    asserts.false(env, "shader_includes" in content({}))
-
-    return unittest.end(env)
-
-spoke_with_shaders_declares_their_includes_test = unittest.make(_spoke_with_shaders_declares_their_includes_test_impl)
 
 def _overlay_substitutes_the_language_version_test_impl(ctx):
     """An overlay declares the language version by placeholder, never by value.
@@ -2451,7 +2404,6 @@ def flutter_pub_package_test_suite(name):
         plugin_spoke_carries_resources_test,
         plugin_defines_reach_the_generated_build_test,
         library_spoke_carries_resources_test,
-        spoke_with_shaders_declares_their_includes_test,
         maven_labels_known_and_unknown_test,
         maven_labels_kotlin_dsl_test,
         maven_labels_mapping_and_ignore_test,

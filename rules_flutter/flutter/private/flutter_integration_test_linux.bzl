@@ -25,7 +25,6 @@ load(
     "COPY_TO_DIRECTORY_TOOLCHAINS",
     "FLUTTER_DEPS_DOC",
     "compute_desktop_bundle_copies",
-    "flutter_app_shader_aspect",
     "make_desktop_bundle_artifacts",
     "make_desktop_bundle_libs",
     "resolve_exec_dart_vm",
@@ -311,7 +310,7 @@ _LINUX_INTEGRATION_TEST_ATTRS = dict(COMMON_INTEGRATION_TEST_ATTRS)
 _LINUX_INTEGRATION_TEST_ATTRS["deps"] = attr.label_list(
     doc = FLUTTER_DEPS_DOC,
     providers = [DartInfo],
-    aspects = [flutter_app_shader_aspect, flutter_kernel_module_aspect, LAYERING_CHECK_ASPECT],
+    aspects = [flutter_kernel_module_aspect, LAYERING_CHECK_ASPECT],
 )
 _LINUX_INTEGRATION_TEST_ATTRS["native_deps"] = attr.label_list(
     doc = "Native shared library targets (cc_library) for dart:ffi bundled into lib/.",

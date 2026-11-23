@@ -4,8 +4,8 @@
 ///   - app_wasm:         Tier 1 (flutter_web_app) with user-provided
 ///                       web/index.html and the default base_href "/".
 ///   - app_wasm_subpath: Same Tier 1 path with a non-default base_href.
-///   - app_js:           Tier 2 (flutter_web_bundle) with no index.html of its
-///                       own, so the rule's built-in template is substituted.
+///   - app_js:           Tier 2 (flutter_web_bundle) naming the same project's
+///                       web/index.html itself, with a non-default base_href.
 ///
 /// Runs as a Bazel dart_test with all three bundles as data dependencies.
 library;
@@ -78,8 +78,8 @@ void main() {
     expectedBase: '<base href="/web_example/">',
   );
 
-  // Tier 2 (flutter_web_bundle) falling back to the rule's built-in index.html
-  // template, with a non-default base_href.
+  // Tier 2 (flutter_web_bundle) over the project's web/index.html, with a
+  // non-default base_href.
   check(
     label: 'app_js',
     bundlePath: '$root/app_js_web',

@@ -12,10 +12,10 @@ flutter_application(
     package_name = "link_hooks",
     link_hook_assets = ["package:glyphs/glyphs/index.json"],
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "//glyphs",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -35,11 +35,11 @@ flutter_application(
     package_name = "link_hooks",
     link_hook_assets = ["package:glyphs/glyphs/index.json"],
     main = "lib/dynamic_main.dart",
+    pub_packages = "@deps//packages",
     tags = ["manual"],
     deps = [
         "//glyphs",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

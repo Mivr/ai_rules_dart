@@ -12,6 +12,11 @@ dependencies:
   intl: ^0.20.2
   federated_greeting:
     path: federated/federated_greeting
+  # First-party package (`//libs/cov13font`) whose pubspec declares the font
+  # family the integration test renders. Built by its hand-written
+  # flutter_library, not by the pub hub, so it is not in pubspec.lock.
+  cov13font:
+    path: libs/cov13font
 
 dev_dependencies:
   federated_greeting_alt:
@@ -21,3 +26,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   very_good_analysis: ^10.3.0
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo.png

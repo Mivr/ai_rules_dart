@@ -8,11 +8,9 @@ rules that compile Dart code, bundle assets, and run tests.
 - `flutter_application`: Compiles Dart code (kernel + AOT) and bundles assets.
     This is the primary rule — it produces a `FlutterApplicationInfo` provider
     that platform-specific packaging rules consume.
-- `flutter_library`: Collects Flutter Dart sources and assets into a reusable
-    dependency. Wire into `flutter_application` via `deps`.
-- `flutter_font_family`: Declares one font family, mirrors a pubspec
-    `flutter: fonts:` entry. List it in `flutter_application.fonts` or
-    `flutter_library.fonts`.
+- `flutter_library`: Collects Flutter Dart sources into a reusable
+    dependency. Wire into `flutter_application` via `deps`. What the app
+    bundles comes from its `pubspec.yaml`, as `flutter build` reads it.
 - `flutter_plugin`: Declares a Flutter plugin with optional Dart registration
     class and/or native shared library dependencies.
 - `dart_defines`: Dart environment defines from `.json`/`.env` files, `-D`
@@ -34,8 +32,8 @@ internally. They are exported for advanced use cases like custom pipelines.
     kernel .dill file from Dart sources.
 - `flutter_aot_target`: Runs gen_snapshot to AOT-compile a kernel .dill into
     native code (ELF .so or Mach-O dylib).
-- `flutter_asset_bundle`: Bundles Flutter assets (images, fonts, shaders)
-    into a flutter_assets/ tree artifact.
+- `flutter_pub_packages`: Every package of a pub lock, for an app's
+    `pub_packages`. A Flutter hub declares one as `@<hub>//packages`.
 
 ## Platform packaging
 
@@ -51,12 +49,12 @@ artifacts:
 
 load("//flutter/private:flutter_aot_target.bzl", _flutter_aot_target = "flutter_aot_target")
 load("//flutter/private:flutter_application.bzl", _flutter_application = "flutter_application")
-load("//flutter/private:flutter_asset_bundle.bzl", _flutter_asset_bundle = "flutter_asset_bundle")
+load("//flutter/private:flutter_bundle.bzl", _flutter_pub_packages = "flutter_pub_packages")
 load("//flutter/private:flutter_defines_files.bzl", _dart_defines = "dart_defines")
 load("//flutter/private:flutter_gen_l10n.bzl", _flutter_gen_l10n = "flutter_gen_l10n")
 load("//flutter/private:flutter_integration_test.bzl", _flutter_integration_test = "flutter_integration_test")
 load("//flutter/private:flutter_kernel_target.bzl", _flutter_kernel_target = "flutter_kernel_target")
-load("//flutter/private:flutter_library.bzl", _flutter_font_family = "flutter_font_family", _flutter_library = "flutter_library")
+load("//flutter/private:flutter_library.bzl", _flutter_library = "flutter_library")
 load("//flutter/private:flutter_native_library.bzl", _flutter_native_library = "flutter_native_library")
 load("//flutter/private:flutter_plugin.bzl", _flutter_plugin = "flutter_plugin")
 load("//flutter/private:flutter_prebuilt_test.bzl", _flutter_prebuilt_test = "flutter_prebuilt_test")
@@ -73,6 +71,10 @@ def flutter_application(name, package_name = "", defines_files = None, define_fl
     This ensures the kernel uses `package:<name>/main.dart` URIs instead of
     sandbox `file:///` URIs, which is required for hot reload incremental
     deltas to match the running application's library URIs.
+
+    `pubspec` defaults to the package's `pubspec.yaml`: it says what the
+    asset bundle holds, as it does for `flutter build`, and `pubspec_srcs`
+    lists the files it names.
 
     `defines_files` and `define_flagfiles` are a spelling of `dart_defines`:
     they become a `dart_defines` target named `<name>_dart_defines`. Two
@@ -101,6 +103,8 @@ def flutter_application(name, package_name = "", defines_files = None, define_fl
             visibility = ["//visibility:private"],
         )
         kwargs["dart_defines"] = ":" + name + "_dart_defines"
+    if "pubspec" not in kwargs and native.glob(["pubspec.yaml"], allow_empty = True):
+        kwargs["pubspec"] = "pubspec.yaml"
     _flutter_application(
         name = name,
         package_name = package_name or name,
@@ -111,8 +115,6 @@ def flutter_application(name, package_name = "", defines_files = None, define_fl
 # values, for `flutter_application.dart_defines`.
 dart_defines = _dart_defines
 
-flutter_asset_bundle = _flutter_asset_bundle
-flutter_font_family = _flutter_font_family
 flutter_gen_l10n = _flutter_gen_l10n
 flutter_integration_test = _flutter_integration_test
 flutter_kernel_target = _flutter_kernel_target
@@ -120,4 +122,5 @@ flutter_library = _flutter_library
 flutter_native_library = _flutter_native_library
 flutter_plugin = _flutter_plugin
 flutter_prebuilt_test = _flutter_prebuilt_test
+flutter_pub_packages = _flutter_pub_packages
 flutter_test = _flutter_test

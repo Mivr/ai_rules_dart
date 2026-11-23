@@ -271,12 +271,13 @@ IOS_APP_KWARG_KEYS = (
     "srcs",
     "main",
     "app_srcs",
-    "assets",
-    "shaders",
-    "shader_includes",
-    "require_sksl_shaders",
+    "pubspec",
+    "pubspec_srcs",
+    "pub_packages",
+    "asset_transformers",
+    "build_name",
+    "build_number",
     "tree_shake_icons",
-    "license_files",
     "track_widget_creation",
     "language_version",
     "defines",
@@ -492,7 +493,7 @@ def assemble_ios_integration_test(
             `ios/Runner/Info.plist`.
         platform: Target platform (always `"ios"` here).
         **kwargs: Additional attributes forwarded to the application
-            (`srcs`, `app_srcs`, `assets`, `shaders`, `defines`,
+            (`srcs`, `app_srcs`, `pubspec`, `pubspec_srcs`, `defines`,
             `native_deps`, etc.) or the test rule (`main`, `srcs`, `app_srcs`,
             `data`, `env`, `include_tags`, `exclude_tags`).
     """

@@ -1,6 +1,6 @@
 load("@android_model//:defs.bzl", "flutter_android_app")
 load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
-load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_font_family", "flutter_library", "flutter_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library", "flutter_test")
 load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
 load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
 
@@ -14,7 +14,6 @@ DEPS = [
     "@deps//:path_provider",
     "@deps//:shared_preferences",
     "@deps//:url_launcher",
-    "@rules_flutter//flutter:material_icons",
 ]
 
 # Declared in pubspec.yaml and imported by no Dart file: the app carries them
@@ -24,23 +23,14 @@ PLUGINS = [
     "@deps//:firebase_messaging",
 ]
 
+# The files pubspec.yaml names: what the asset bundle holds.
+PUBSPEC_SRCS = glob(["assets/**"])
+
 DEFINES = [
     "FLAVOR=prod",
     "API_URL=https://api.example.invalid",
     "RETRIES=5",
 ]
-
-flutter_font_family(
-    name = "app_sans",
-    family = "AppSans",
-    fonts = [
-        {"asset": "assets/fonts/AppSans-Regular.ttf"},
-        {
-            "asset": "assets/fonts/AppSans-Bold.ttf",
-            "weight": 700,
-        },
-    ],
-)
 
 # `lib/main.dart` is the entry point of `:app` and `:web`, and one source
 # belongs to one target: the library holds the rest of `lib/`.
@@ -48,17 +38,16 @@ flutter_library(
     name = "lib",
     package_name = "flavors_defines",
     srcs = glob(["lib/**/*.dart"], exclude = ["lib/main.dart"]),
-    assets = glob(["assets/images/**"]),
-    fonts = [":app_sans"],
     deps = DEPS,
 )
 
 flutter_web_app(
     name = "web",
     package_name = "flavors_defines",
-    app_name = "flavors_defines",
     compiler = "dart2js",
     defines = DEFINES,
+    pub_packages = "@deps//packages",
+    pubspec_srcs = PUBSPEC_SRCS,
     # `lib/main.dart` is the web app's own entry point, so the packages it
     # imports are its direct deps.
     deps = [":lib"] + PLUGINS + [
@@ -76,6 +65,8 @@ flutter_application(
     defines = DEFINES,
     flavor = "dev",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = PUBSPEC_SRCS,
     # `lib/main.dart` is the app's own entry point, so the packages it imports are its direct deps.
     deps = [":lib"] + PLUGINS + [
         "@deps//:flutter",
@@ -112,6 +103,9 @@ flutter_test(
     package_name = "flavors_defines",
     srcs = ["lib/main.dart"],
     main = "test/widget_test.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = PUBSPEC_SRCS,
     deps = [
         ":lib",
         "@deps//:flutter",

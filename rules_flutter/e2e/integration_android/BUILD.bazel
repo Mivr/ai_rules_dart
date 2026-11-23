@@ -55,12 +55,14 @@ flutter_integration_test(
         ":app_l10n",
     ],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     defines = ["COV13_GREETING=hello, world=ok"],
     defines_files = ["//defines:app_defines.json"],
     native_deps = [":add"],
     platform = "android",
     pub_hub_name = "deps",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = ["assets/logo.png"],
     deps = [
         "//android_greeting_plugin",
         "//libs/cov13font",
@@ -71,7 +73,6 @@ flutter_integration_test(
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:intl",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -84,7 +85,6 @@ flutter_integration_test(
         ":app_l10n",
     ],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     defines = [
         "COV13_GREETING=hello, world=ok",
         "USE_ALT_GREETING=true",
@@ -92,6 +92,9 @@ flutter_integration_test(
     native_deps = [":add"],
     platform = "android",
     pub_hub_name = "deps",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = ["assets/logo.png"],
     deps = [
         "//android_greeting_plugin",
         "//libs/cov13font",
@@ -103,7 +106,6 @@ flutter_integration_test(
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:intl",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

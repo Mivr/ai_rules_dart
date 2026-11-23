@@ -15,11 +15,11 @@ exports_files(["pubspec.lock"])
 
 flutter_application(
     name = "app_flutter",
+    pub_packages = "@deps//packages",
     package_name = "linux_example",
     main = "lib/main.dart",
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -28,13 +28,13 @@ flutter_application(
 # `:app_debug_kernel` reads it.
 flutter_application(
     name = "app_flutter_registrant",
+    pub_packages = "@deps//packages",
     package_name = "linux_example",
     main = "lib/main.dart",
     tags = ["manual"],
     deps = [
         "//dart_registration_plugin",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -176,7 +176,6 @@ flutter_library(
     deps = [
         "//defines_env",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -188,6 +187,7 @@ flutter_library(
 
 flutter_application(
     name = "app_defines_dev",
+    pub_packages = "@deps//packages",
     package_name = "linux_example",
     dart_defines = "//defines_config:dev",
     # The value holds a comma: a module takes a define whole.
@@ -198,7 +198,6 @@ flutter_application(
     deps = [
         "//defines_env",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -206,6 +205,7 @@ flutter_application(
 # :app_defines_dev.
 flutter_application(
     name = "app_defines_dev_twin",
+    pub_packages = "@deps//packages",
     package_name = "linux_example",
     dart_defines = "//defines_config:dev",
     # The value holds a comma: a module takes a define whole.
@@ -216,13 +216,13 @@ flutter_application(
     deps = [
         "//defines_env",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
 # Other settings: its own copy of every module.
 flutter_application(
     name = "app_defines_prod",
+    pub_packages = "@deps//packages",
     package_name = "linux_example",
     dart_defines = "//defines_config:prod",
     defines = ["DEFCFG_FOO=DEFCFG_FOO_PROD"],
@@ -232,7 +232,6 @@ flutter_application(
     deps = [
         "//defines_env",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -240,6 +239,7 @@ flutter_application(
 # own `dart_defines` target (`:app_defines_files_dart_defines`).
 flutter_application(
     name = "app_defines_files",
+    pub_packages = "@deps//packages",
     package_name = "linux_example",
     # The value holds a comma: a module takes a define whole.
     defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
@@ -250,7 +250,6 @@ flutter_application(
     deps = [
         "//defines_env",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

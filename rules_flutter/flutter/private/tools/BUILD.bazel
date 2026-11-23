@@ -10,13 +10,10 @@ exports_files(
     [
         "android_bundle.dart",
         "apk_overlay.dart",
-        "const_finder.dart",
-        "generate_asset_manifest.dart",
         "bundle_app.dart",
         "chmod.dart",
         "code_resources.dart",
         "xtool_bundle.dart",
-        "compile_shader.dart",
         "crc32.dart",
         "directive_guard.dart",
         "defines_files.dart",
@@ -198,15 +195,6 @@ dart_binary(
 )
 
 dart_binary(
-    name = "compile_shader",
-    compile_mode = "kernel",
-    main = "compile_shader.dart",
-    modular_kernel = False,
-    target_compatible_with = HOST_COMPATIBLE,
-    visibility = ["//flutter:__subpackages__"],
-)
-
-dart_binary(
     name = "extract_library_tags",
     compile_mode = "exe",
     main = "extract_library_tags.dart",
@@ -220,26 +208,10 @@ dart_binary(
 )
 
 dart_binary(
-    name = "const_finder",
-    compile_mode = "exe",
-    main = "const_finder.dart",
-    target_compatible_with = HOST_COMPATIBLE,
-    visibility = ["//flutter:__subpackages__"],
-)
-
-dart_binary(
     name = "defines_files",
     compile_mode = "exe",
     main = "defines_files.dart",
     modular_kernel = False,
-    target_compatible_with = HOST_COMPATIBLE,
-    visibility = ["//flutter:__subpackages__"],
-)
-
-dart_binary(
-    name = "generate_asset_manifest",
-    compile_mode = "exe",
-    main = "generate_asset_manifest.dart",
     target_compatible_with = HOST_COMPATIBLE,
     visibility = ["//flutter:__subpackages__"],
 )
@@ -388,7 +360,6 @@ dart_binary(
 _UNIT_TESTS = {
     "android_bundle_test": ("android_bundle.dart", []),
     "bundle_app_test": ("bundle_app.dart", []),
-    "compile_shader_test": ("compile_shader.dart", []),
     "copy_local_file_test": ("copy_local_file.dart", []),
     "kernel_filter_test": (
         "kernel_filter.dart",
@@ -399,7 +370,6 @@ _UNIT_TESTS = {
     "macho_payload_floor_test": ("macho_edit.dart", []),
     "macho_section_type_test": ("macho_edit.dart", []),
     "sha256_test": ("sha256.dart", []),
-    "generate_asset_manifest_test": ("generate_asset_manifest.dart", []),
     "merge_android_manifests_test": ("merge_android_manifests.dart", []),
     "merge_plists_test": ("merge_plists.dart", []),
     "strip_native_libs_test": ("strip_native_libs.dart", []),
@@ -452,7 +422,6 @@ _UNIT_TESTS = {
         "bazel_test_protocol.dart",
         ["@dev_tool_deps//:boolean_selector"],
     ),
-    "const_finder_test": ("const_finder.dart", []),
     "extract_library_tags_test": ("extract_library_tags.dart", []),
     # The run_home helper's own tests, including the Dart/shell flag
     # agreement checks against `//flutter/private:run_home.bzl`.
@@ -630,12 +599,9 @@ _TEST_ENV = {
 # pure, hermetic function check and stays `small`.
 _MEDIUM_TESTS = [
     "android_bundle_test",
-    "compile_shader_test",
-    "const_finder_test",
     "flutter_integration_test_ios_test",
     "flutter_integration_test_runner_test",
     "flutter_test_runner_test",
-    "generate_asset_manifest_test",
     "kernel_filter_test",
     "macho_edit_test",
     "macho_section_type_test",

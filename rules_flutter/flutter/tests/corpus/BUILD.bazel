@@ -12,14 +12,14 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("//flutter:android.bzl", "flutter_android_aab", "flutter_android_aar", "flutter_android_apk_overlay", "flutter_android_app", "flutter_android_bundle", "flutter_android_engine", "flutter_android_engine_jar", "flutter_android_manifest_gen", "flutter_android_manifest_merge", "flutter_android_permissions_manifest", "flutter_android_plugin_library", "flutter_android_registrant", "flutter_android_runner_lib_gen", "flutter_drive_test")
-load("//flutter:defs.bzl", "flutter_aot_target", "flutter_application", "flutter_asset_bundle", "flutter_font_family", "flutter_gen_l10n", "flutter_integration_test", "flutter_kernel_target", "flutter_library", "flutter_native_library", "flutter_plugin", "flutter_prebuilt_test", "flutter_test")
+load("//flutter:defs.bzl", "flutter_aot_target", "flutter_application", "flutter_gen_l10n", "flutter_integration_test", "flutter_kernel_target", "flutter_library", "flutter_native_library", "flutter_plugin", "flutter_prebuilt_test", "flutter_test")
 load("//flutter:dev_files.bzl", "flutter_dev_files")
 load("//flutter:ios.bzl", "flutter_apple_plugin_library", "flutter_apple_plugins_aggregator", "flutter_apple_xcframework_import", "flutter_darwin_xcframework_import", "flutter_entitlements_merge", "flutter_ios_app", "flutter_ios_engine", "flutter_ios_framework", "flutter_ios_framework_gen", "flutter_ios_info_plist_gen", "flutter_ios_native_frameworks_gen", "flutter_ios_privacy_manifests_gen", "flutter_ios_registrant_gen", "flutter_ios_runner_lib_gen", "flutter_ios_simulator_build", "flutter_ios_simulator_build_test", "flutter_ios_xcframeworks", "flutter_xtool_bundle_version", "flutter_xtool_ios_bundle", "ios_sim_debug_app")
 load("//flutter:linux.bzl", "flutter_linux_app", "flutter_linux_bundle", "flutter_linux_engine", "flutter_linux_plugin_library", "flutter_linux_registrant_gen", "flutter_linux_runner_lib_gen")
 load("//flutter:macos.bzl", "flutter_apple_plugin_objc_library", "flutter_apple_plugin_objc_settings", "flutter_macos_app", "flutter_macos_engine", "flutter_macos_framework_gen", "flutter_macos_info_plist_gen", "flutter_macos_menu_xib_gen", "flutter_macos_native_libs_gen", "flutter_macos_privacy_manifests_gen", "flutter_macos_registrant_gen", "flutter_macos_runner_lib_gen", "flutter_xtool_macos_bundle")
 load("//flutter:native_assets.bzl", "flutter_data_asset", "flutter_native_asset", "flutter_native_assets_manifest")
 load("//flutter:native_hot_patch.bzl", "flutter_native_hot_patch_aspect")
-load("//flutter:web.bzl", "flutter_web_app", "flutter_web_bundle", "flutter_web_manifest_gen")
+load("//flutter:web.bzl", "flutter_web_app", "flutter_web_bundle")
 load("//flutter:windows.bzl", "flutter_windows_app", "flutter_windows_bundle", "flutter_windows_engine", "flutter_windows_plugin_library", "flutter_windows_registrant_gen", "flutter_windows_runner_lib_gen")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 load(":aspects.bzl", "corpus_aspects")
@@ -31,15 +31,15 @@ package(default_visibility = ["//flutter/tests:__subpackages__"])
 flutter_application(
     name = "app",
     package_name = "corpus_app",
-    assets = ["data/blob.txt"],
     main = "lib/main.dart",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = ["data/blob.txt"],
 )
 
 flutter_library(
     name = "library",
     package_name = "corpus_library",
     srcs = ["lib/plugin.dart"],
-    assets = ["data/blob.txt"],
 )
 
 flutter_plugin(
@@ -54,15 +54,12 @@ flutter_native_library(
     library = ":native_shared",
 )
 
-flutter_asset_bundle(
+# A `flutter_assets/` tree for the rules that take one: the test's.
+filegroup(
     name = "assets",
-    assets = ["data/blob.txt"],
-)
-
-flutter_font_family(
-    name = "font_family",
-    family = "CorpusSans",
-    fonts = [{"asset": "data/blob.txt"}],
+    srcs = [":widget_test"],
+    output_group = "test_assets",
+    tags = ["manual"],
 )
 
 flutter_gen_l10n(
@@ -297,11 +294,6 @@ flutter_linux_app(
 )
 
 # -- Web ----------------------------------------------------------------------
-
-flutter_web_manifest_gen(
-    name = "web_manifest",
-    app_name = "Corpus",
-)
 
 flutter_web_bundle(
     name = "web_bundle",

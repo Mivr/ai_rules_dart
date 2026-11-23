@@ -614,9 +614,9 @@ class WebModuleServer implements AssetReader {
 
   /// The file served at `/flutter_bootstrap.js`, from the build's dev config.
   ///
-  /// The build substitutes this target's `bootstrap_js` template with the DDC
-  /// build config a dev run compiles under — so a page booted here runs the
-  /// same loader the bundle ships, carrying the same `web_defines`, against
+  /// The build substitutes the project's `web/flutter_bootstrap.js` with the
+  /// DDC build config a dev run compiles under — so a page booted here runs
+  /// the same loader the bundle ships, carrying the same `web_defines`, against
   /// DDC's output instead of dart2wasm's. Read per request rather than cached:
   /// a `--watch` rebuild rewrites it when the template or a define changes,
   /// and the built index.html beside it is served from disk the same way.

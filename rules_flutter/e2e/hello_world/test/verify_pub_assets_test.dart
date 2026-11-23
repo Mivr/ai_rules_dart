@@ -1,5 +1,5 @@
 /// Asserts that pub-package fonts and assets land in the bundle at
-/// `packages/<pkg>/...` and that FontManifest.json + AssetManifest.bin.json
+/// `packages/<pkg>/...` and that FontManifest.json + AssetManifest.bin
 /// reference them with the same `packages/<pkg>/` prefix.
 ///
 /// Backed by data files (the bundle's `flutter_assets/` tree, copied into
@@ -79,8 +79,9 @@ void main() {
   );
 
   test('FontManifest.json contains bare MaterialIcons family', () {
-    // material_icons target uses package_name = "" sentinel, so the family
-    // is bare "MaterialIcons" (not packages/material_icons/...). Matches
+    // The pubspec's `uses-material-design: true` bundles the framework's
+    // icon font under the bare "MaterialIcons" family at
+    // fonts/MaterialIcons-Regular.otf, as `flutter build` does. Matches
     // const_finder's expectations for IconData with no fontPackage.
     final manifest = File(
       '${bundleDir.path}/FontManifest.json',
@@ -115,25 +116,18 @@ void main() {
     );
   });
 
-  test('AssetManifest.bin.json contains a packages/<pkg>/ entry', () {
-    // The .bin.json wrapper is base64-encoded StandardMessageCodec; we
-    // verify against the keys appearing in the wrapped JSON's decoded form.
-    // A simpler check that suffices for this test: the wrapped string must
-    // contain the prefixed asset path verbatim (StandardMessageCodec
-    // serializes string keys as UTF-8 bytes inline in the binary, so
-    // base64-decoding the wrapper and searching for the path matches).
-    final wrapped = jsonDecode(
-      File(
-        '${bundleDir.path}/AssetManifest.bin.json',
-      ).readAsStringSync(),
-    ) as String;
-    final raw = base64Decode(wrapped);
+  test('AssetManifest.bin contains a packages/<pkg>/ entry', () {
+    // AssetManifest.bin is StandardMessageCodec, which serializes string keys
+    // as UTF-8 bytes inline, so the prefixed asset path appears verbatim in
+    // the decoded bytes. (Its base64 wrapper, AssetManifest.bin.json, is
+    // written for web builds only, as `flutter build` writes it.)
+    final raw = File('${bundleDir.path}/AssetManifest.bin').readAsBytesSync();
     final asString = utf8.decode(raw, allowMalformed: true);
     expect(
       asString,
       contains('packages/flutter_localized_locales/data/'),
       reason:
-          'AssetManifest.bin.json should reference at least one '
+          'AssetManifest.bin should reference at least one '
           'flutter_localized_locales asset',
     );
   });

@@ -14,7 +14,6 @@ mounts one scheme at a time.
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("//flutter:providers.bzl", "resolve_exec_dart_vm")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 load("//flutter/private:flutter_application.bzl", "flutter_application")
 load("//flutter/private:flutter_kernel_target.bzl", "flutter_kernel_target")
@@ -225,49 +224,13 @@ def _stale_bin_dir_seed_impl(ctx):
     # `seed_out` is exposed in `DefaultInfo.files`.
     stale_out = ctx.actions.declare_file("lib/web_fixture_main.dart")
     seed_out = ctx.actions.declare_file("lib/stale_probe_seed.dart")
-    cfg = ctx.actions.declare_file(ctx.label.name + "_config.json")
-    ctx.actions.write(
-        cfg,
-        json.encode({
-            "web_defines": {},
-            "keep_placeholders": [],
-            "files": [
-                {
-                    "template": stale_tmpl.path,
-                    "output": stale_out.path,
-                    "label": "stale",
-                    "base_href": "",
-                    "static_assets_url": None,
-                    "dev_loop_guard": False,
-                    "manages_service_worker": False,
-                    "check_constructs": False,
-                    "builtins": {},
-                },
-                {
-                    "template": seed_tmpl.path,
-                    "output": seed_out.path,
-                    "label": "seed",
-                    "base_href": "",
-                    "static_assets_url": None,
-                    "dev_loop_guard": False,
-                    "manages_service_worker": False,
-                    "check_constructs": False,
-                    "builtins": {},
-                },
-            ],
-        }),
-    )
-    dart_exe, dart_vm_files = resolve_exec_dart_vm(ctx)
-    ctx.actions.run(
-        executable = dart_exe,
-        arguments = [ctx.executable._web_template_tool.path, "--config", cfg.path],
-        inputs = depset(
-            direct = [stale_tmpl, seed_tmpl, cfg, ctx.executable._web_template_tool],
-            transitive = [dart_vm_files],
-        ),
+    ctx.actions.run_shell(
+        command = 'cp "$1" "$2" && cp "$3" "$4"',
+        toolchain = None,
+        arguments = [stale_tmpl.path, stale_out.path, seed_tmpl.path, seed_out.path],
+        inputs = [stale_tmpl, seed_tmpl],
         outputs = [stale_out, seed_out],
         mnemonic = "StaleBinDirSeed",
-        toolchain = "@rules_dart//dart:exec_tools_toolchain_type",
     )
     return [
         DefaultInfo(files = depset([seed_out])),
@@ -276,17 +239,6 @@ def _stale_bin_dir_seed_impl(ctx):
 
 _stale_bin_dir_seed = rule(
     implementation = _stale_bin_dir_seed_impl,
-    attrs = {
-        "_web_template_tool": attr.label(
-            default = Label("//flutter/private/tools:web_template"),
-            executable = True,
-            cfg = "exec",
-        ),
-    },
-    toolchains = [
-        "@rules_flutter//flutter:toolchain_type",
-        config_common.toolchain_type("@rules_dart//dart:exec_tools_toolchain_type", mandatory = False),
-    ],
 )
 
 def _other_cfg_transition_impl(settings, _attr):

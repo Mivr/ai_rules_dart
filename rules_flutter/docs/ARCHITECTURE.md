@@ -16,17 +16,19 @@ The public surface is the 15 `.bzl` files directly under `flutter/`: `defs.bzl`,
 `windows.bzl`, `native_assets.bzl`, `native_hot_patch.bzl` and `dev_files.bzl`.
 Consumers load these files and nothing under `flutter/private/`.
 
-A facade re-exports; it holds little logic. `flutter/defs.bzl:49-91` binds the
+A facade re-exports; it holds little logic. `flutter/defs.bzl:50-126` binds the
 private rule implementations to their public names, and `flutter/ios.bzl:68-106`
 and `flutter/macos.bzl:66-94` do the same for the platform packaging rules.
 
 ### Implementation: `flutter/private/*`
 
-The implementation is the 159 `.bzl` files directly under `flutter/private/`,
+The implementation is the 183 `.bzl` files directly under `flutter/private/`,
 plus subdirectories such as `flutter/private/gen_l10n/`. It holds rule
 implementations, aspects, repository rules and the helpers they share. The Dart
 programs those rules run live under `flutter/private/tools/`, for example
-`generate_asset_manifest.dart` and `kernel_filter.dart`.
+`kernel_filter.dart` and `merge_plists.dart`. The asset tool lives apart, in
+`flutter/private/assets_tool/`, because it is compiled against the Flutter
+release's own `package:flutter_tools` (section 3).
 
 ### Load directions
 
@@ -34,12 +36,12 @@ The rule is that facades load private files, private files load only
 `flutter/providers.bzl` from the public layer, and nothing loads a facade except
 a facade. In the tree:
 
-- Facade to private: `flutter/defs.bzl:49-59` loads eleven
+- Facade to private: `flutter/defs.bzl:50-61` loads twelve
   `flutter/private/*.bzl` files.
 - Facade to facade: `flutter/extensions.bzl:58` loads `:repositories.bzl`.
-- Private to `providers.bzl`: `flutter/private/flutter_info.bzl:20`,
-  `flutter/private/common.bzl:11` and `flutter/private/asset_keys.bzl:16` load
-  `//flutter:providers.bzl`. That file loads nothing itself, so it is a leaf.
+- Private to `providers.bzl`: `flutter/private/flutter_info.bzl:22` and
+  `flutter/private/common.bzl:11` load `//flutter:providers.bzl`. That file
+  loads nothing itself, so it is a leaf.
 - Generated BUILD text: some private files emit
   `load("@rules_flutter//flutter:defs.bzl", ...)` into the repositories they
   create, for example `flutter/private/flutter_sdk_package.bzl:54`. That text is
@@ -111,33 +113,33 @@ feature off. The Android helper app is not checked either. A rule that joins the
 
 ### `FlutterSdkInfo`: the toolchain's engine and tools
 
-`FlutterSdkInfo` is declared at `flutter/providers.bzl:3`. It describes the
+`FlutterSdkInfo` is declared at `flutter/providers.bzl:5`. It describes the
 Flutter SDK a toolchain supplies: `dart`, `dartaotruntime`, `frontend_server`,
-`flutter_tester`, `platform_kernel_dill`, `patched_sdk`, `impellerc` and the
-shader library. `flutter/toolchain.bzl:22` builds it in `flutter_toolchain`.
+`flutter_tester`, `platform_kernel_dill`, `patched_sdk`, `impellerc`, the
+shader library and `assets_tool`, the asset tool (section 3).
+`flutter/toolchain.bzl:52` builds it in `flutter_toolchain`.
 
 Some fields live on optional sub-toolchains (`gen_snapshot`, `const_finder`,
 `font_subset`, `linux_sysroot` and others). Read those through
-`resolve_flutter_sdk_info(ctx)` (`flutter/providers.bzl:171`) and declare the
+`resolve_flutter_sdk_info(ctx)` (`flutter/providers.bzl:180`) and declare the
 sub-toolchain types it needs; `FLUTTER_OPTIONAL_TOOLCHAINS`
-(`flutter/providers.bzl:59`) lists them.
+(`flutter/providers.bzl:63`) lists them.
 
 ### `FlutterInfo`: what a library contributes
 
-`FlutterInfo` is declared at `flutter/providers.bzl:254`. It carries the Flutter
-channels a target contributes to its consumers: `assets`, `shader_srcs`,
-`plugins`, the native library channels, `apple_plugin_libraries` and the others
-listed in that declaration, and the pub channels `pub_fonts`, `pub_assets` and
-`pub_shaders`.
+`FlutterInfo` is declared at `flutter/providers.bzl:270`. It carries the Flutter
+channels a target contributes to its consumers: `plugins`, the native library
+channels, `apple_plugin_libraries`, `native_assets`, `data_assets` and the
+others listed in that declaration. It carries no assets, fonts or shaders: a
+package's own files travel in its `data` (section 3).
 
-It is built in one place. `flutter/private/flutter_info.bzl:262` defines
-`flutter_info()`, and `flutter/private/flutter_info.bzl:319` is the only
+It is built in one place. `flutter/private/flutter_info.bzl:296` defines
+`flutter_info()`, and `flutter/private/flutter_info.bzl:358` is the only
 `FlutterInfo(` constructor call in the tree. `flutter_info()` takes what the
 target contributes and merges every dependency's values. The rules that call it
-are `flutter/private/flutter_library.bzl`, `flutter/private/flutter_plugin.bzl`,
-`flutter/private/flutter_material_icons.bzl` and
-`flutter/private/flutter_pub_scc_target.bzl`. A `deps` entry without
-`FlutterInfo` is skipped, not an error (`flutter/private/flutter_info.bzl:278`).
+are `flutter/private/flutter_library.bzl`, `flutter/private/flutter_plugin.bzl`
+and `flutter/private/flutter_pub_scc_target.bzl`. A `deps` entry without
+`FlutterInfo` is skipped, not an error (`flutter/private/flutter_info.bzl:342`).
 
 A new Flutter channel is therefore a change to `flutter_info()` and to the
 declaration, not to every rule.
@@ -150,108 +152,76 @@ provides it can be a Dart dependency.
 
 `DartAnalyzableInfo` (`dart/providers.bzl:86`) is the analyzer's closure for an
 executable. A `flutter_library` also provides one, built by
-`flutter_analyzable_info` (`flutter/private/flutter_library.bzl:477`). That
+`flutter_analyzable_info` (`flutter/private/flutter_library.bzl:18`). That
 closure adds `package:sky_engine`, because the analyzer resolves `dart:ui` only
 through `sky_engine`'s `lib/_embedder.yaml`
-(`flutter/private/flutter_library.bzl:471-476`). `DartInfo` itself is left
+(`flutter/private/flutter_library.bzl:10-11`). `DartInfo` itself is left
 unchanged there.
 
 ### Which provider decides what a `deps` entry may be
 
 `DartInfo` decides. The `deps` attribute of each rule that takes Dart
 dependencies is declared with `providers = [DartInfo]`:
-`flutter/private/flutter_library.bzl:645`,
+`flutter/private/flutter_library.bzl:115`,
 `flutter/private/flutter_kernel_target.bzl:31` and
-`flutter/private/common.bzl:2215-2217` (the application rule's `deps`).
+`flutter/private/common.bzl:1178-1181` (the application rule's `deps`).
 `FlutterInfo` is optional on each of those entries and contributes only when
 present. A target that provides only `FlutterInfo` is refused by Bazel as a
 `deps` entry.
 
 ## 3. Assets, fonts and shaders
 
+rules_flutter keeps no model of Flutter's asset handling. The Flutter tool's
+own code writes every bundle, and the app's `pubspec.yaml` says what it holds,
+as it does for `flutter build`. [`assets.md`](assets.md) is the user's view.
+
+### The asset tool
+
+`flutter/private/assets_tool/flutter_assets_tool.dart` is a small program that
+builds the objects `package:flutter_tools` expects (a Flutter root, a project
+directory with its package config, an `Environment`) out of the files the
+action declares, and calls the tool's own asset, licence, web bootstrap and
+gen-l10n code. It copies none of that logic.
+
+It is built per Flutter release. `flutter/private/flutter_assets_tool_repo.bzl`
+stages `packages/flutter_tools/lib/` of the release's source, the framework's
+shaders, and the hosted packages the tool imports, each pinned in
+`flutter/private/flutter_assets_tool_versions.bzl`. `flutter_assets_tool`
+(`flutter/private/flutter_assets_tool.bzl:203`) compiles it with the Dart SDK
+bundled in that release, and the toolchain carries it as
+`FlutterSdkInfo.assets_tool`.
+
 ### Where each is declared
 
-- Assets: the `assets` attribute of `flutter_library`
-  (`flutter/private/flutter_library.bzl`), which fills `FlutterInfo.assets`. Pub
-  packages declare theirs under `flutter.assets` in `pubspec.yaml`.
-  `flutter/private/flutter_pubspec.bzl` reads that block, and the generated
-  spoke passes the entries to `flutter_library` as `pkg_assets`, which fills
-  `FlutterInfo.pub_assets`.
-- Fonts: `flutter_font_family` (`flutter/defs.bzl:83`, defined in
-  `flutter/private/flutter_font_family.bzl`). Pub packages declare theirs under
-  `flutter.fonts`, and their contributions reach `FlutterInfo.pub_fonts`.
-- Shaders: the `shaders`, `shader_includes` and `require_sksl_shaders`
-  attributes of the application rule (`FLUTTER_APPLICATION_ATTRS`,
-  `flutter/private/common.bzl:2214` and `:2252-2262`). Pub packages declare
-  theirs under `flutter.shaders`; they reach `FlutterInfo.pub_shaders` as
-  `pkg_shaders`.
-- Bundling: `flutter_asset_bundle` (`flutter/defs.bzl:82`, implemented in
-  `flutter/private/flutter_asset_bundle.bzl`).
+- The app: its `pubspec.yaml` (`pubspec`) names its assets, fonts, shaders,
+  flavors, transformers, deferred components and licences, and
+  `pubspec_srcs` lists the files it names. Every bundling rule takes these
+  through `BUNDLE_ATTRS` (`flutter/private/flutter_bundle.bzl:28-66`), with
+  `pub_packages`, `asset_transformers`, `build_name` and `build_number`.
+- A package: its `data` (`flutter/private/flutter_library.bzl:119`,
+  `flutter/private/flutter_plugin.bzl:433`) holds its `pubspec.yaml`, its
+  licence and the files its pubspec names. A pub spoke writes that list from
+  the package's pubspec (`spoke_data_patterns`,
+  `flutter/private/flutter_pub_package_helpers.bzl:25`).
 
-### How asset keys and URIs are formed
+### One action per bundle
 
-A key is the bundle-relative name the engine asks for.
-`flutter/private/asset_keys.bzl` forms it once, in the target that lists the
-asset. An app asset is keyed by its path relative to the listing target's
-package directory. A dependency package's asset is keyed
-`packages/<package>/<path>` (`flutter/private/asset_keys.bzl:1-14`). The key
-then travels with the file in `FlutterInfo.assets`, so no later step computes it
-again.
+`flutter_bundle` (`flutter/private/flutter_bundle.bzl:205`) runs the tool once
+for an app's `flutter_assets/`. It is called from `flutter_application`
+(`flutter/private/flutter_application.bzl:621`), `flutter_test`
+(`flutter/private/flutter_test.bzl:291`) and the integration test rules
+(`flutter/private/flutter_integration_test_common.bzl:464`). Web uses
+`flutter_web_bundle` (`flutter/private/flutter_bundle.bzl:267`), called from
+`flutter/private/flutter_web_application.bzl:473` and
+`flutter/private/flutter_integration_test_web.bzl:377`; it also writes the web
+app around the compiled program from the project's `web/` directory.
 
-`flutter/private/asset_uri.bzl` normalizes each entry the way flutter_tools
-reads it. `normalize_asset_uri` (`flutter/private/asset_uri.bzl:337`) decodes
-percent-escapes and resolves dot segments; `encode_asset_key`
-(`flutter/private/asset_uri.bzl:424`) writes the spelling the engine requests.
-The module's header (`flutter/private/asset_uri.bzl:1-25`) names the
-flutter_tools version it mirrors.
-
-A key collision fails. `fail_asset_key_conflict`
-(`flutter/private/asset_keys.bzl:145`) reports two files that claim one key.
-
-### How shaders and their includes are compiled
-
-Shaders compile through `impellerc`. `SHADER_PLATFORM_FLAGS`
-(`flutter/private/flutter_shader_compile.bzl:16`) gives each target platform its
-runtime stages. The `tester` entry, used by `flutter test`, selects `--sksl` and
-`--runtime-stage-vulkan`.
-
-Which compile runs depends on the consumer:
-
-- A test compiles its shaders for `tester`. `flutter_tester_shader_aspect`
-  (`flutter/private/common.bzl:2181`) compiles the transitive shaders, and
-  `flutter_test` uses them (`flutter/private/flutter_test.bzl:480`).
-- An app compiles them for its own platform through the app aspect
-  (`flutter/private/common.bzl:2164`). Web has its own aspect at `:2161`.
-- `flutter_compile_shaders` (`flutter/private/common.bzl:1229`) compiles any
-  shader that dependencies do not already supply.
-
-A shader sees only the `shader_includes` it declares, because each compile runs
-in a sandbox that holds only its declared inputs
-(`flutter/private/common.bzl:2256-2260`). Two shaders that claim one bundle path
-fail (`flutter/private/common.bzl:1118-1135`, the `_shader_jobs` docstring).
-
-### Bundle assembly and `NOTICES.Z`
-
-Tests and apps use one bundle step. `flutter_build_assets`
-(`flutter/private/common.bzl:1504`) is called from `flutter_application`
-(`flutter/private/flutter_application.bzl:491`), `flutter_test`
-(`flutter/private/flutter_test.bzl:290`), the web application and the
-integration test rule. Each passes a `make_bundle_inputs` value
-(`flutter/private/common.bzl:1417`).
-
-The bundle action is `flutter_asset_bundle_action`
-(`flutter/private/flutter_asset_bundle_action.bzl:309`). It runs the Dart tool
-`//flutter/private/tools:generate_asset_manifest`
-(`flutter/private/flutter_asset_bundle.bzl:27`). That tool writes
-`AssetManifest.bin` and `FontManifest.json`
-(`flutter/private/tools/generate_asset_manifest.dart:296-299`).
-
-`NOTICES.Z` is written by `_writeNotices`
-(`flutter/private/tools/generate_asset_manifest.dart:480-497`). It concatenates
-the inline `notices` text and then each existing `license_files` entry, joined
-by `---`, and gzips the result. The `license_files` attribute is declared at
-`flutter/private/common.bzl:2294` and
-`flutter/private/flutter_asset_bundle.bzl:115`.
+The tool forms every key, compiles shaders with the release's `impellerc`, and
+writes `AssetManifest.bin`, `FontManifest.json` and `NOTICES.Z` as
+`flutter build` does. A file the pubspec names that is not an input fails the
+action, naming it. A debug build does not read the app's kernel, so a Dart
+edit does not rerun the action; release and profile read it to shake icon
+fonts (`_icon_tree_shaking`, `flutter/private/flutter_bundle.bzl:173`).
 
 ## 4. Kernel compilation and platform packaging
 
@@ -326,7 +296,7 @@ accepts only targets that provide `FlutterApplicationInfo`:
   `application` (`:287`). When set, it compiles the transitive plugins' Windows
   C++ sources into the runner. The bundle rule is `flutter_windows_bundle_rule`
   (`flutter/private/flutter_windows_application.bzl:425`).
-- Web: `flutter_web_bundle` (`flutter/private/flutter_web_application.bzl:1578`)
+- Web: `flutter_web_bundle` (`flutter/private/flutter_web_application.bzl:932`)
   does not read `FlutterApplicationInfo`. See the note above.
 
 Each platform's `*_registrant` rule generates the plugin registrant for its
@@ -337,10 +307,10 @@ platform. Platform rules add the host packaging: manifest merging
 
 ### What stays in `flutter_library` and what moves to the application
 
-`flutter_library` collects. Its doc says it "collects Flutter sources and
-assets, propagates DartInfo and FlutterInfo. Does not compile."
-(`flutter/private/flutter_library.bzl:720`). It owns the sources, the `deps`,
-the asset, font and shader declarations, and the providers.
+`flutter_library` collects. Its doc says it "Collects Flutter sources and the
+package's own files, propagates DartInfo and FlutterInfo. Does not compile."
+(`flutter/private/flutter_library.bzl:162`). It owns the sources, the `deps`,
+the package's own files (`data`), and the providers.
 
 The application rule compiles. It owns the kernel, the AOT step, the
 native-assets manifest, the asset bundle and the plugin registrant wiring.
@@ -404,7 +374,7 @@ rules_flutter takes the host `dart` from rules_dart's exec-tools toolchain,
 `@rules_dart//dart:exec_tools_toolchain_type`. `resolve_exec_dart`
 (`flutter/providers.bzl:199`) reads it, and fails rather than fall back to the
 SDK's `dart` (`flutter/providers.bzl:199-213`). Rules that run rules_flutter's
-own Dart tools use it, for example `flutter/private/flutter_shader_compile.bzl`.
+own Dart tools use it, for example `flutter/private/flutter_sdk_binary.bzl`.
 `resolve_exec_dart_vm` (`flutter/providers.bzl:226`) returns that same
 toolchain's `dart` and runtime files, for running a `.dill` tool on the exec
 platform. It also never falls back to the SDK.
@@ -419,9 +389,9 @@ A change must keep these true. Each names where the code holds it.
    application drops transitive entries that would collide with its own root
    (`flutter/private/app_entrypoint.bzl:326-340`).
 2. **No source owned by two targets.** A modular kernel fails on duplicate
-   sources (`flutter/private/flutter_kernel_module.bzl:1333`). Two assets with
-   one key fail (`flutter/private/asset_keys.bzl:145`). Two shaders with one
-   bundle path fail (`flutter/private/common.bzl:1118-1135`).
+   sources (`flutter/private/flutter_kernel_module.bzl:1333`). Asset and
+   shader keys are formed only by the Flutter tool (section 3), so no two
+   rules can disagree on one.
 3. **No target cycle in a plugin graph.** Pub packages that depend on each other
    are merged into one strongly connected component repository
    (`flutter/private/flutter_pub_scc_target.bzl:1-10`, planned by rules_dart's
@@ -449,8 +419,8 @@ These are true of the tree and are not yet fixed. Do not describe them as done.
 
 ## Related documents
 
-- [`pub-assets.md`](pub-assets.md): how a pub package's `flutter.assets` become
-  bundle keys.
+- [`assets.md`](assets.md): the asset bundle, written by the Flutter tool's
+  own code from the pubspec, and the migration from the attribute-based rules.
 - [`dependencies.md`](dependencies.md): dependency floors and the Maven lock
   file.
 - [`flutter-sdk-versions.md`](flutter-sdk-versions.md): SDK pins, version

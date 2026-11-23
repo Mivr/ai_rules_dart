@@ -4,9 +4,15 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
+# A first-party package whose pubspec names an asset. An app whose pubspec
+# depends on it bundles it at `packages/brand/assets/brand.txt`, as
+# `flutter build` does.
 flutter_library(
     name = "brand",
     package_name = "brand",
     srcs = ["lib/brand.dart"],
-    assets = ["assets/brand.txt"],
+    data = [
+        "assets/brand.txt",
+        "pubspec.yaml",
+    ],
 )

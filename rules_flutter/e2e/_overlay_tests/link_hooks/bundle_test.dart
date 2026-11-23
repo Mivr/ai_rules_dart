@@ -18,13 +18,11 @@ void main(List<String> args) {
     throw StateError('index is $names, want [heart, star]');
   }
 
-  // The `.json` is the base64 of the binary manifest; the key is stored as
-  // plain text inside it.
+  // The binary manifest (StandardMessageCodec) stores the key as plain UTF-8.
+  // `AssetManifest.bin.json`, its base64, is written for web builds only, as
+  // `flutter build` writes it.
   final manifest = utf8.decode(
-    base64.decode(
-      jsonDecode(File('$bundle/AssetManifest.bin.json').readAsStringSync())
-          as String,
-    ),
+    File('$bundle/AssetManifest.bin').readAsBytesSync(),
     allowMalformed: true,
   );
   if (!manifest.contains('packages/glyphs/glyphs/index.json')) {

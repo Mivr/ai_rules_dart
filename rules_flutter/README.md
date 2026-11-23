@@ -156,11 +156,9 @@ flutter_application(
     package_name = "my_app",
     main = "lib/main.dart",
     srcs = glob(["lib/**/*.dart"]),
-    assets = glob(["assets/**"]),
-    deps = [
-        "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
-    ],
+    pubspec_srcs = glob(["assets/**"]),
+    pub_packages = "@deps//packages",
+    deps = ["@deps//:flutter"],
 )
 
 flutter_macos_app(
@@ -170,10 +168,11 @@ flutter_macos_app(
 )
 ```
 
-`flutter_application` compiles the Dart code and bundles the assets. Each platform then has a macro, like `flutter_macos_app`, that wraps it in a runnable app. Two attributes deserve a note:
+`flutter_application` compiles the Dart code and bundles the assets. Each platform then has a macro, like `flutter_macos_app`, that wraps it in a runnable app. Three attributes deserve a note:
 
 - `package_name` must match the `name:` field in `pubspec.yaml`. Hot reload and code generation both rely on it.
-- `@rules_flutter//flutter:material_icons` bundles the Material icon font. Any app that uses Material widgets needs it in `deps`.
+- `pubspec_srcs` lists the files `pubspec.yaml` names: its assets, fonts and shaders. The pubspec says what the bundle holds, as it does for `flutter build`, including the Material icon font when it sets `uses-material-design: true`. See [Assets](#assets).
+- `pub_packages` names every package of the lock (`@<hub>//packages`), so the package config the bundle reads is the one `pub get` writes: `NOTICES` then holds the dev dependencies' licences too. Without it, a regular dependency the pubspec names that `deps` do not reach fails the build, as a stale `pub get` does.
 
 Build it, or run it with hot reload:
 
@@ -218,7 +217,6 @@ flutter_application(
         "@deps//:flutter",
         "@deps//:collection",
         "@deps//:url_launcher",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 ```
@@ -246,7 +244,7 @@ Two or more candidates that are direct (conflicting direct implementations), and
 
 ### Path dependencies
 
-A `path:` entry with `relative: true` in the lock is resolved against the lock file's own directory and linked into a `flutter_pub_path_package` spoke as a tree of symlinks, so the workspace never copies the package. The entry is accepted only when the lock's `relative` marker is true and its path is workspace-relative: any other marker (false, missing, empty) and any absolute path fail the extension evaluation naming the hub and the package. The spoke links only what its generator reads or exposes — `lib/`, the pubspec, hook scripts, declared assets, fonts, and shaders (plus each shader's own directory), and the plugin's declared platform directories — parsed from the package's own `pubspec.yaml` and mirrored one file at a time into real repository directories. `example/`, `build/`, `.dart_tool/`, dot-directories, undeclared files, and the package's own BUILD files stay unlinked (skipped subtrees are not even watched), so machine-local output such as `example/build/` or a `.plugin_symlinks` cycle can never affect the fetch; every directory in the spoke is real: each symlink is a single file, and a directory reaching the link step fails the fetch, so the generated BUILD files land in the spoke, never in the user's source tree. Every linked file and directory is watched, so adding, changing, or removing one refetches the spoke; without the watch, files added inside nested asset directories would stay invisible until something else retriggered the fetch. A source symlink resolving to the package or one of its ancestors fails the fetch naming the package and the link, and the package directory itself, any of its parent components, or any replicated symlink resolving outside the workspace's real root fails the fetch naming the package, the offending path, and its real path — host bytes can never enter the bundle. A path that escapes the workspace, or resolves to the workspace root itself, fails the extension evaluation rather than symlinking outside the workspace. The package's pubspec `name` and `version` must match the lock entry, since overlays and code assets are selected by lock name and version; a mismatch fails the fetch naming the hub, the lock key, and both values. Shader `shader_includes` cover only the declared shaders' own directories, so `example/build/` output can never become an include. A path plugin's `android/build.gradle*` is translated exactly as a hosted plugin's: `android_maven_deps` and `android_maven_ignore` from `flutter.pub` apply to it too.
+A `path:` entry with `relative: true` in the lock is resolved against the lock file's own directory and linked into a `flutter_pub_path_package` spoke as a tree of symlinks, so the workspace never copies the package. The entry is accepted only when the lock's `relative` marker is true and its path is workspace-relative: any other marker (false, missing, empty) and any absolute path fail the extension evaluation naming the hub and the package. The spoke links only what its generator reads or exposes — `lib/`, the pubspec, hook scripts, declared assets, fonts, and shaders (plus each shader's own directory), and the plugin's declared platform directories — parsed from the package's own `pubspec.yaml` and mirrored one file at a time into real repository directories. `example/`, `build/`, `.dart_tool/`, dot-directories, undeclared files, and the package's own BUILD files stay unlinked (skipped subtrees are not even watched), so machine-local output such as `example/build/` or a `.plugin_symlinks` cycle can never affect the fetch; every directory in the spoke is real: each symlink is a single file, and a directory reaching the link step fails the fetch, so the generated BUILD files land in the spoke, never in the user's source tree. Every linked file and directory is watched, so adding, changing, or removing one refetches the spoke; without the watch, files added inside nested asset directories would stay invisible until something else retriggered the fetch. A source symlink resolving to the package or one of its ancestors fails the fetch naming the package and the link, and the package directory itself, any of its parent components, or any replicated symlink resolving outside the workspace's real root fails the fetch naming the package, the offending path, and its real path — host bytes can never enter the bundle. A path that escapes the workspace, or resolves to the workspace root itself, fails the extension evaluation rather than symlinking outside the workspace. The package's pubspec `name` and `version` must match the lock entry, since overlays and code assets are selected by lock name and version; a mismatch fails the fetch naming the hub, the lock key, and both values. A shader's `#include` siblings are linked only from the declared shaders' own directories, so `example/build/` output can never become an include. A path plugin's `android/build.gradle*` is translated exactly as a hosted plugin's: `android_maven_deps` and `android_maven_ignore` from `flutter.pub` apply to it too.
 
 The lock must belong to the root module. A `relative: true` path resolves in the lock-owning module, and module-extension label attributes already resolve in the defining module while the spoke's `workspace_root` is always the root module, so a lock owned by a non-root module has no repository-local root to resolve against; resolving it in the consumer workspace would silently link the wrong directory. A path dependency locked by another module therefore fails the extension evaluation, naming the hub, the package, and the owning module — declare the `path:` dependency in the root module's own lock instead.
 
@@ -270,43 +268,9 @@ Each key and listed dependency must name a package in the lock: a key that does 
 
 Dropping an edge is safe only when the dependency is reached through a conditional import for a platform this build does not target: the Dart code that needs it is not compiled, so the missing edge removes only the Bazel repository cycle. If the build does target that platform, the break removes a library the code needs and the build fails.
 
-Assets in `<number>x` directories (`2x`, `2.5x`, `0.75x`) are resolution variants of the file one level up, app-own or from a pub package; see [Resolution-aware asset variants](docs/pub-assets.md#resolution-aware-asset-variants).
+### Assets
 
-### Platform- and flavor-conditional assets
-
-A pub package's `flutter.assets` entries may carry `platforms` and `flavors` lists, and the bundle keeps exactly what `flutter_tools` keeps (verified against Flutter 3.47.7: `asset.dart` `matchesFlavor` at line 1532 runs before `matchesPlatform` at line 1544 in `ManifestAssetBundle`, lines 1119–1128; `TargetPlatform.osName` in `build_info.dart`, line 701). Flavor is checked first: a flavor-restricted entry bundles only when a flavor is selected by `flutter_application.flavor`, and rules_flutter drops flavor-restricted entries when no flavor is selected — on every platform, `tester` included. Then platform: an empty list or the `tester` platform keeps the asset, anything else must name the target platform. So an Android build bundles `android`-listed entries but not `web`-listed ones, while a widget test bundles every platform's entries (but still no flavor-restricted ones).
-
-An entry naming a platform Flutter does not know fails the package fetch, naming the package, the asset entry, and every valid name (`android`, `ios`, `linux`, `macos`, `web`, `windows` — the `_kValidPluginPlatforms` set `flutter_manifest.dart` validates against, lines 20 and 909). A misspelled platform would otherwise bundle nowhere on every target, silently. Directory entries (a trailing-slash `path`) expand to every file underneath at fetch time, each file inheriting the entry's conditions. When several entries expand to the same file, the file bundles on the union of the entries' platforms: any entry without `platforms` makes the file unconditional, otherwise the file ships wherever any of its entries ships. Entries for one file whose `flavors` sets differ fail the package fetch, naming the package, the file and both flavor lists (equal sets in a different order agree). Packages without conditions emit no extra attributes, so their spokes are byte-identical to before.
-
-### Font families
-
-Declare a font family with `flutter_font_family`, then list it in an application's `fonts` (the root pubspec's fonts) or a library's `fonts` (a package's fonts). Each font names the file it ships, so a font and its bytes pair by asset path:
-
-```starlark
-load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_font_family")
-
-flutter_font_family(
-    name = "hello_sans",
-    family = "HelloSans",
-    fonts = [
-        {"asset": "fonts/HelloSans-Regular.ttf"},
-        {"asset": "fonts/HelloSans-Bold.ttf", "weight": 700},
-    ],
-)
-
-flutter_application(
-    name = "my_app",
-    package_name = "my_app",
-    main = "lib/main.dart",
-    fonts = [":hello_sans"],
-)
-```
-
-`family` is the name the app passes to `TextStyle(fontFamily:)`. `fonts` is a non-empty list of maps in `FontManifest.json` order; each map names `asset`, the path of a file in the calling package, and optionally `weight` (100, 200, ..., 900) and `style` (`"normal"` or `"italic"`). The `FontManifest` entry lists `weight` and `style` only when you give them. An empty family or list, an entry without `asset`, a file that is not there, and a weight or style `flutter_tools` refuses all fail analysis naming the target, the family and the path.
-
-An application's families and assets are bare — `HelloSans` and `fonts/HelloSans-Bold.ttf` — exactly as `flutter build` writes the root pubspec's. A `flutter_library`'s are prefixed with `packages/<package_name>/`, like every other package asset, so an app that depends on the library sees `packages/my_lib/HelloSans`. One family name declared twice with different font lists fails analysis, naming both declarations.
-
-`fonts_json` and `font_files` on `flutter_library` and `flutter_plugin` are deprecated and kept for one release. They now fail closed too: every declared asset must name a `font_files` entry, every entry must be named by a family, and weights and styles are checked with `flutter_tools`' own wording. Move each family to a `flutter_font_family` target and list it in `fonts`; `flutter_plugin` has no `fonts` attribute yet, so a plugin keeps `fonts_json` for this release.
+The app's `pubspec.yaml` says what its asset bundle holds, as it does for `flutter build`: assets and their resolution variants, platform- and flavor-conditioned entries, fonts, shaders, transformers and `uses-material-design`. One action per app writes the bundle with the Flutter tool's own code; list the files the pubspec names in `pubspec_srcs`. A pub package's assets reach the bundle when the app's pubspec depends on the package, as under `flutter build`. See [Assets](docs/assets.md), which also says what moves out of BUILD files.
 
 ### Android from the Gradle model
 
@@ -1509,7 +1473,7 @@ flutter_windows_bundle(
 
 ### Web
 
-Run `flutter create --platforms=web .` first so `web/` has its `index.html`, `manifest.json`, and icons. Any of those that are missing are replaced by built-in templates. Add `flutter_web_sdk` to `use_repo`.
+Run `flutter create --platforms=web .` first so `web/` has its `index.html`, `manifest.json`, and icons. Add `flutter_web_sdk` to `use_repo`.
 
 ```starlark
 load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
@@ -1518,8 +1482,9 @@ flutter_web_app(
     name = "my_app_web",
     package_name = "my_app",
     main = "lib/main.dart",
-    deps = ["@deps//:flutter", "@rules_flutter//flutter:material_icons"],
-    app_name = "My App",
+    pubspec_srcs = glob(["assets/**"]),
+    pub_packages = "@deps//packages",
+    deps = ["@deps//:flutter"],
 )
 ```
 
@@ -1530,15 +1495,14 @@ Unlike the other platforms, the web macro takes `main` and `deps` directly rathe
 | `package_name` | The Dart package name, same as `pubspec.yaml`. Required. |
 | `deps` | `dart_library` or `flutter_library` targets. Required. |
 | `main` | The entry point. Defaults to `"lib/main.dart"`. It can sit outside the package's `lib/`; list any file it imports by relative path in `srcs`. |
-| `app_name` | Used for the HTML title and manifest. Defaults to the target name. |
+| `pubspec`, `pubspec_srcs`, `pub_packages` | As on `flutter_application`. `pubspec` defaults to the package's `pubspec.yaml`, and the macro adds the files under `web/` to `pubspec_srcs`. See [Assets](docs/assets.md). |
 | `base_href` | Substituted for `$FLUTTER_BASE_HREF` in `web/index.html`. Defaults to `"/"`. `flutter_bazel run -d chrome` serves the app under it, as `flutter run` does. |
-| `extra_web_assets` | Extra files copied into the bundle root, for generated files the `web/` glob cannot see. |
-| `web_dir` | The directory the runner files are discovered in and served from at the bundle root. Defaults to `"web"`. Give each app its own, such as `"web_apps/reminders"`, to build several web apps from one package. `flutter_web_bundle` takes it too. |
+| `web_defines` | Values for `{{NAME}}` placeholders in `web/index.html` and `web/flutter_bootstrap.js`, as `flutter build web --web-define` takes them. |
 | `pwa` | Ship `flutter_service_worker.js` and register it. Defaults to `True`. The worker adds no offline caching. Like `flutter build web`, which [deprecated its caching worker](https://github.com/flutter/flutter/issues/156910), it unregisters itself and reloads its clients, which frees visitors still holding a caching worker from an older deployment. |
 
 The macro always compiles with dart2wasm and renders with skwasm. Compiler settings such as `optimization_level_wasm` and `minify_wasm` pass through to `flutter_web_bundle`. For dart2js or CanvasKit, use `flutter_web_bundle` directly.
 
-The files under `web/` are treated as templates and substituted the way `flutter build web` substitutes them, so raw `flutter create` output works unchanged: `web/index.html`, `web/flutter_bootstrap.js`, `web/manifest.json`, and `web/version.json` are each discovered when present, and everything else under `web/` is copied into the bundle root.
+The project's `web/` directory, beside its `pubspec.yaml`, is read by the Flutter tool's own code, as `flutter build web` reads it, so raw `flutter create` output works unchanged. `web/index.html` and the optional `web/flutter_bootstrap.js` are templates: `{{flutter_js}}`, `{{flutter_build_config}}`, `$FLUTTER_BASE_HREF` and the other placeholders are substituted, and an unknown placeholder is left in place with a warning. The rest of `web/` is copied into the bundle root. The page title and the manifest are what `web/index.html` and `web/manifest.json` say, and `version.json` comes from the pubspec's `version` or from `build_name` and `build_number`. One project directory holds one web app; to build another from the same package, give it a directory of its own with a `pubspec.yaml` and a `web/`, and point `flutter_web_bundle`'s `pubspec` at it.
 
 <details>
 <summary>Composable rules</summary>
@@ -1580,7 +1544,7 @@ The dev loop needs `'unsafe-inline'`. Adding `'unsafe-eval'` instead changes not
 
 A bundle served under `default-src 'self'` must also serve its own renderer, with `use_local_canvaskit = True`. Otherwise the engine's fetch of `skwasm.js` from `www.gstatic.com` is blocked and the page stays blank. Flutter's font fallback from `fonts.gstatic.com` is blocked too, which is harmless unless the app needs those glyphs.
 
-So a policy strict enough to be useful cannot live in `web/index.html` today, because the dev loop reads the same file. If you need one, compose `flutter_web_bundle` directly with a generated `index_html` for the production bundle.
+So a policy strict enough to be useful cannot live in the dev loop's `web/index.html` today, because the dev loop reads the same file. If you need one, build the production bundle with `flutter_web_bundle` from a project directory of its own, whose `pubspec.yaml` and `web/index.html` carry the policy. `e2e/web_example/custom_boot`'s `inline_boot` is built that way.
 
 ### Cross-compiling
 
@@ -1692,14 +1656,14 @@ The core rules load from `@rules_flutter//flutter:defs.bzl`.
 
 ### flutter_library
 
-Collects Dart sources and assets for a Flutter package. It does not compile anything. It carries `DartInfo` and `FlutterInfo` to whatever depends on it.
+Collects the Dart sources and the package's own files for a Flutter package. It does not compile anything. It carries `DartInfo` and `FlutterInfo` to whatever depends on it.
 
 ```starlark
 flutter_library(
     name = "my_lib",
     srcs = glob(["lib/**/*.dart"]),
     deps = ["@deps//:some_package"],
-    assets = glob(["assets/**"]),
+    data = ["pubspec.yaml"] + glob(["assets/**"]),
     package_name = "my_lib",
 )
 ```
@@ -1708,11 +1672,7 @@ flutter_library(
 |---|---|
 | `srcs` | Dart source files. Required. |
 | `deps` | `dart_library` or `flutter_library` targets. |
-| `assets` | Asset files: images, fonts, and so on. Each file must sit under the target's package directory; it is bundled at `packages/<package_name>/<path relative to that directory>`. See [Asset keys](#asset-keys). |
-| `fonts` | The package's font families, as `flutter_font_family` targets. Families and assets are bundled at `packages/<package_name>/...`, in declaration order. See [Font families](#font-families). |
-| `pkg_shaders` | The package's fragment shaders, as `{file: path}` mirroring `flutter: shaders:` in `pubspec.yaml`. Bundled at `packages/<package_name>/<path>`, where `FragmentProgram.fromAsset` looks for them. |
-| `shader_includes` | Files the `pkg_shaders` may `#include`, such as `glob(["shaders/**/*.glsl"])`. A shader compiles with only its declared inputs, so an include not listed here is not found. |
-| `shaders` | Shaders bundled at `shaders/<file name>`, as Flutter's own are. A package's own shaders go in `pkg_shaders`. |
+| `data` | The package's own files outside `lib/`: its `pubspec.yaml`, its licence, and the files its pubspec names (assets, fonts, shaders). An app whose pubspec depends on the package bundles them at `packages/<package_name>/...`, as `flutter build` does. See [Assets](docs/assets.md). |
 | `package_name` | The Dart package name. Defaults to the last component of the Bazel package path. |
 | `language_version` | The Dart language version, matching the `sdk:` constraint in `pubspec.yaml`. |
 
@@ -1726,10 +1686,11 @@ flutter_application(
     package_name = "my_app",
     main = "lib/main.dart",
     srcs = glob(["lib/**/*.dart"]),
+    pubspec_srcs = glob(["assets/**"]),
+    pub_packages = "@deps//packages",
     deps = [
         ":my_lib",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
     native_deps = [":my_native_lib"],
 )
@@ -1740,11 +1701,14 @@ flutter_application(
 | `main` | The entry point. Required. It can sit outside the package's `lib/`, as `flutter run -t` allows: `test_driver/app.dart`, say. See [Hot reload and hot restart](#hot-reload-and-hot-restart). |
 | `package_name` | The Dart package name, the same as `pubspec.yaml`'s `name:`. Required. It keys the compiled libraries under stable `package:` URIs, which hot reload matches against, and resolves `package:<self>/...` imports. |
 | `srcs` | Other Dart sources in the app package, including generated ones. List here any file a `main` outside `lib/` imports by relative path. |
-| `deps` | `dart_library` or `flutter_library` targets. Add `@rules_flutter//flutter:material_icons` to bundle the Material icon font. |
-| `assets` | Asset files for the bundle. Each file must sit under the target's package directory; it is bundled at its path relative to that directory. See [Asset keys](#asset-keys). |
-| `flavor` | The application flavor, e.g. `"dev"` or `"prod"`. Sets `FLUTTER_APP_FLAVOR` and filters pub assets and shaders by flavor. Default `""` (no flavor). |
+| `deps` | `dart_library` or `flutter_library` targets. |
+| `pubspec` | The app's `pubspec.yaml`, which says what the asset bundle holds. Its directory is the project directory. Defaults to the package's `pubspec.yaml`. See [Assets](docs/assets.md). |
+| `pubspec_srcs` | The files the pubspec names: assets, fonts, shaders, and `l10n.yaml` with the files it names. A named file that is not listed fails the build, naming it. |
+| `pub_packages` | Every package of the lock, `@<hub>//packages` (a `flutter_pub_packages` target), for the package config the bundle reads, as `pub get` writes it. |
+| `asset_transformers` | The executables run for the pubspec's asset `transformers`, each mapped to the package name the pubspec gives: `{":binary": "package"}`. |
+| `build_name`, `build_number` | `--build-name` and `--build-number`; by default the pubspec's `version`. They reach `version.json`. |
+| `flavor` | The application flavor, e.g. `"dev"` or `"prod"`. Sets `FLUTTER_APP_FLAVOR` and bundles the pubspec's assets for that flavor, as `flutter build --flavor` does. Default `""` (no flavor). |
 | `default_flavor` | Repeats the pubspec's `default-flavor`. Used as the flavor only when `flavor` is unset; an explicit `flavor` wins. rules_flutter does not check it against the pubspec. Default `""`. |
-| `fonts` | The app's font families, as `flutter_font_family` targets. Families and assets are bundled bare (`HelloSans`, `fonts/...`), in declaration order. See [Font families](#font-families). |
 | `native_deps` | Shared libraries to bundle for `dart:ffi`. |
 | `defines` | Dart environment defines, the `-D` flags. |
 | `dart_defines` | A `dart_defines` target: Dart environment defines from `.json`/`.env` files, `-D` flagfiles and values. See *Defines files and `dart_defines`* below. |
@@ -1755,17 +1719,13 @@ flutter_application(
 | `split_debug_info` | Write debug info to a separate `.symbols` file. Default `False`. |
 | `extra_gen_snapshot_options` | Extra flags for `gen_snapshot`: only the allow-list in `flutter/private/flutter_aot_compile.bzl`. Set `analyze_size = True` on the app target to get the size JSON instead of passing `--print-instructions-sizes-to`. `--no-obfuscate` fails with `obfuscate = True` and `--no-dwarf-stack-traces` fails with `split_debug_info = True`. |
 | `track_widget_creation` | Record widget creation locations for the DevTools inspector and the stock tool's hot reload. Default `True`, as in stock `flutter`; applies to debug and profile builds, never to release. |
-| `shaders` | Fragment shaders to compile with impellerc. Each file must sit under the target's package directory; it is bundled at its path relative to that directory, where `FragmentProgram.fromAsset` looks for it. See [Asset keys](#asset-keys). |
-| `shader_includes` | Files the `shaders` may `#include`. |
-| `require_sksl_shaders` | Fail the build when a shader cannot be compiled for Skia (SkSL). By default such a shader, say one that indexes a uniform array in a loop, is compiled for Impeller alone with a warning, as `flutter build` does, and fails to load only where the app renders with Skia. Web builds always need SkSL. Default `False`. |
-| `tree_shake_icons` | Keep only the icon glyphs the app uses. Default `True`. |
+| `tree_shake_icons` | Keep only the icon glyphs the app uses, in release and profile builds. Default `True`. |
 | `link_hook_assets` | The data assets packages' link hooks emit, each `package:<package>/<name>`. See [Link hooks](#link-hooks). |
-| `license_files` | License and NOTICE files to include in `NOTICES.Z`. |
 | `min_os_version` | Minimum Apple deployment target, passed to `gen_snapshot` as `--macho-min-os-version`. |
 
 **Obfuscated releases.** `obfuscate` renames Dart identifiers and forces `--strip`, so pair it with `split_debug_info` to keep the symbols for deobfuscation. `gen_snapshot` also writes an obfuscation map next to the snapshot; fetch it with `bazel build :my_app --output_groups=obfuscation_map` (or read `FlutterApplicationInfo.obfuscation_map`). For an Android build, read the `debug_info` (`.symbols`) and `obfuscation_map` output groups of the `flutter_android_bundle` (`__<name>_bundle` of a `flutter_android_app`): they hold the files of the build that ships in the APK. `extra_gen_snapshot_options` is an allow-list: only flags that read or write no file and change neither the snapshot kind, outputs, target nor debugging info. `--save-obfuscation-map` and `--save-debugging-info` fail analysis — use `obfuscate` and `split_debug_info` instead; `--print-instructions-sizes-to` fails analysis — use `analyze_size = True` instead — and `--no-strip` fails with `obfuscate`.
 
-**Application flavors.** The `flavor` attribute selects the application flavor, defining `FLUTTER_APP_FLAVOR=<flavor>` in every compile mode (read via `appFlavor` from `package:flutter/services.dart`) and filtering pub assets and shaders by flavor (unconditional entries and matching flavor entries are kept; non-matching entries are omitted). Declare one target per flavor, and let platform app targets wrap each flavor's application target:
+**Application flavors.** The `flavor` attribute selects the application flavor, defining `FLUTTER_APP_FLAVOR=<flavor>` in every compile mode (read via `appFlavor` from `package:flutter/services.dart`) and bundling the pubspec's assets as `flutter build --flavor` does (unconditional entries and matching flavor entries are kept; non-matching entries are omitted). Declare one target per flavor, and let platform app targets wrap each flavor's application target:
 
 ```starlark
 flutter_application(
@@ -1847,9 +1807,9 @@ flutter_test(
 )
 ```
 
-It takes the compile attributes of `flutter_application` (`main`, `srcs`, `deps`, `defines`, `package_name`, `language_version`, `assets`, `shaders`) plus the usual `data` and `env`. Values in `env` are literal; there is no `$(location)` expansion.
+It takes the compile attributes of `flutter_application` (`main`, `srcs`, `deps`, `defines`, `package_name`, `language_version`) and its bundle attributes (`pubspec`, `pubspec_srcs`, `pub_packages`, `asset_transformers`) plus the usual `data` and `env`. Unlike `flutter_application`, it takes `pubspec` only when you set it; without one, the test's bundle holds only what the packages of its `deps` contribute. Values in `env` are literal; there is no `$(location)` expansion.
 
-`enable_impeller = True` renders with Impeller in `flutter_tester`, as `flutter test --enable-impeller` does, instead of software Skia. A test that draws a shader SkSL cannot compile needs it, and so does a golden meant to match an Impeller device. Shaders are compiled for `flutter_tester` either way, with the SkSL and Vulkan stages `flutter test` gives them.
+`enable_impeller = True` renders with Impeller in `flutter_tester`, as `flutter test --enable-impeller` does, instead of software Skia. A test that draws a shader SkSL cannot compile needs it, and so does a golden meant to match an Impeller device. Shaders are compiled for `flutter_tester` either way, as `flutter test` compiles them.
 
 **Layering check.** A `flutter_test` is layering-checked as rules_dart's `dart_test` is: its `main`, its `srcs` and every first-party library below it may import only packages that their own direct `deps` provide (the test's own `package_name` counts as provided for its `srcs`). A test that imports a package only some dep depends on fails to build, naming the target, the file and the package; declare the target that provides the package in `deps`. The generated bootstrap is not checked. The check runs when the test builds, as a validation. It is on by default; the feature `dart_layering_check` turns it off, per package (`package(features = ["-dart_layering_check"])`) or per build (`--features=-dart_layering_check`). Every Flutter program rule is checked, and `dart_layering_check` is the one opt-out. The checked rules are: `flutter_test`, `flutter_application` (so the android, ios, linux, macos and windows rules that build one) and `flutter_web_bundle` (so `flutter_web_app`), the web, Linux, Android and iOS `flutter_integration_test` and `flutter_drive_test` with a `.dart` driver. An application or web bundle is checked the same way, over its `main`, `srcs` and the first-party libraries below; the generated web wrapper is not checked. An integration test is checked over its entry, `srcs` and `app_srcs` against its direct `deps`, and its `package_name` (default: the target name) counts as provided; a drive test checks its `.dart` driver and `srcs`. The generated bootstraps and the Android helper app are not checked, and the one application built with the feature off is the application that `flutter_integration_test` builds for iOS around its generated bootstrap, which imports packages by design. `dart:mirrors` is refused in every Flutter program and in every library below it, every other `dart:` library passes, and a library named in `--@rules_dart//dart:refused_dart_libraries` is refused in addition to it.
 
@@ -1921,7 +1881,7 @@ flutter_prebuilt_test(
 )
 ```
 
-`test_kernel` is the test `.dill`, `test_base_kernel` the base dill it links against at run time (empty for whole-program kernels), `test_assets` its `flutter_assets/` tree, and `test_library_tags` the entrypoint's `@Tags` as a `{"tags": [...]}` JSON file, for `flutter_prebuilt_test`'s `library_tags`. To build the assets tree yourself instead, use `flutter_asset_bundle` with the test's shaders and the same `deps`: dep fonts, package assets and the Material shaders land in the bundle the same way. The bundle always targets `tester`: a pub asset gated to another platform is dropped unless an entry also keeps it for `tester`, flavor-restricted entries bundle nowhere, and shaders are compiled for `flutter_tester` with the SkSL and Vulkan stages `flutter test` gives them.
+`test_kernel` is the test `.dill`, `test_base_kernel` the base dill it links against at run time (empty for whole-program kernels), `test_assets` its `flutter_assets/` tree, and `test_library_tags` the entrypoint's `@Tags` as a `{"tags": [...]}` JSON file, for `flutter_prebuilt_test`'s `library_tags`. The assets tree comes from a `flutter_test`'s `test_assets` group, bundled for the `tester` platform from the test's `pubspec` as `flutter test` bundles it; rules_flutter has no separate rule that builds one.
 
 To compile the kernel yourself, write the bootstrap with `flutter_test_bootstrap` from `@rules_flutter//flutter:utils.bzl` (merging `FLUTTER_TEST_BOOTSTRAP_ATTRS` into your rule's attrs for the golden block) and compile it as the entry point with `flutter_kernel_compile_action` (passing the bootstrap as `main`); then run the resulting dill under `flutter_prebuilt_test`. Extract the suite's `@Tags` with the public `//flutter/private/tools:extract_library_tags` tool and feed the JSON to `library_tags`, or the suite runs without its root-group tags. A kernel compiled from any other entry point does not dial the harness back and fails to connect. `e2e/hello_world/custom_test_kernel.bzl` is this pipeline as a running target, over the same suites its `flutter_test` twins run. For the modular variant — one entry-module compile against the dependency outlines plus a link, so body-only edits never recompile the whole program — use `flutter_modular_test_kernel` instead; `e2e/hello_world/custom_modular_test_kernel.bzl` is that pipeline as a running target, in both link modes. By default the link is complete (`use_base_dill = False`): every reachable module lands in the kernel and it runs under `flutter_prebuilt_test` with no `base_dill` — `:widget_modular_prebuilt_test` is that green run. With `use_base_dill = True` the kernel delta-links against the shared `flutter_test` base dill instead and the returned base dill must reach `flutter_prebuilt_test`'s `base_dill`: the delta is incomplete without it and `flutter_tester` aborts before connecting when it is missing — `:widget_modular_based_prebuilt_test` is that green run, fed from the kernel's `test_base_kernel` group.
 
@@ -1938,12 +1898,13 @@ flutter_integration_test(
     package_name = "my_app",
     main = "integration_test/app_test.dart",
     app_srcs = glob(["lib/**/*.dart"]),
-    assets = glob(["assets/**"]),
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = glob(["assets/**"]),
+    pub_packages = "@deps//packages",
     deps = [
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 ```
@@ -1965,12 +1926,13 @@ flutter_integration_test(
     package_name = "my_app",
     main = "integration_test/app_test.dart",
     app_srcs = glob(["lib/**/*.dart"]),
-    assets = glob(["assets/**"]),
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = glob(["assets/**"]),
+    pub_packages = "@deps//packages",
     deps = [
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 ```
@@ -1984,8 +1946,8 @@ The bundle id defaults to `com.example.<package path>.<name>.<label hash>` — t
 | `srcs` | Integration test Dart source files. If `main` is omitted and `srcs` has one file, that file is used as `main`. |
 | `app_srcs` | Application Dart source files compiled alongside the integration test. |
 | `deps` | `dart_library`, `flutter_library`, or `flutter_plugin` targets (`@deps//:flutter`, `@deps//:flutter_test`, `@deps//:integration_test`, or application libraries and plugins). |
-| `assets` | Asset files bundled into `flutter_assets/`, keyed as on `flutter_application`. See [Asset keys](#asset-keys). |
-| `flavor` | Application flavor (`"dev"`, `"prod"`, etc.). Sets `FLUTTER_APP_FLAVOR` and filters pub assets and shaders by flavor. Defaults to `""` (no flavor). |
+| `pubspec`, `pubspec_srcs`, `pub_packages` | The app's `pubspec.yaml`, the files it names, and every package of the lock, as on `flutter_application`; `pubspec` is not defaulted here. See [Assets](docs/assets.md). |
+| `flavor` | Application flavor (`"dev"`, `"prod"`, etc.). Sets `FLUTTER_APP_FLAVOR` and bundles the pubspec's assets for that flavor. Defaults to `""` (no flavor). |
 | `package_name` | Dart package name matching `pubspec.yaml`. |
 | `compiler` | Web compiler (`"dart2js"` or `"dart2wasm"`). Defaults to `"dart2js"`. |
 | `renderer` | Web renderer (`"canvaskit"` or `"skwasm"`). Defaults to matching `compiler`. |
@@ -2093,8 +2055,8 @@ flutter_plugin(
 | `linux_libs` | `flutter_linux_plugin_library` targets auto-wired into `flutter_linux_app` and `flutter_integration_test(platform = "linux")`. |
 | `native_deps` | Shared libraries bundled for `dart:ffi`. |
 | `native_assets` | `flutter_native_asset` targets, usually inside a `select()` on platform. |
-| `assets`, `resources` | Asset and resource files. |
-| `pkg_shaders`, `shader_includes` | The package's fragment shaders and what they `#include`, as on `flutter_library`. |
+| `data` | The package's `pubspec.yaml`, its licence, and the files its pubspec names (assets, fonts, shaders), as on `flutter_library`. |
+| `resources` | Non-Dart files the package ships inside `lib/`. |
 | `package_name`, `language_version`, `version` | The package's name, language version, and version. |
 | `link_hook` | The package's `hook/link.dart`. See [Link hooks](#link-hooks). `flutter_library` takes it too. |
 
@@ -2106,11 +2068,7 @@ A plugin may mix Objective-C and Swift in one `flutter_apple_plugin_library`. Th
 
 ### Asset keys
 
-Bundle keys follow the `flutter build` rule, keyed off the package directory of the target that lists the file. An app, test, or bundle target's own `assets` are keyed by their path relative to that directory: `assets/logo.png` listed by `//apps/sub` loads as `assets/logo.png`, not `apps/sub/assets/logo.png`. The target's own `shaders` follow the same rule: `shaders/ripple.frag` listed by `//apps/sub` loads as `shaders/ripple.frag`, which is where `FragmentProgram.fromAsset` looks for it. A `flutter_library` or `flutter_plugin` asset is keyed `packages/<package_name>/<relative path>`, so `assets/brand.txt` on a library with `package_name = "brand"` loads as `packages/brand/assets/brand.txt`. Generated files follow the same directory rule by their repository-relative path, so a genrule output `apps/foo/gen/x.json` listed by `//apps/foo` loads as `gen/x.json`. Dependency keys travel untouched into every bundle on every platform, so app, `flutter_test` (`test_assets`), and `flutter_integration_test` bundles agree.
-
-Two listings, one rule: every file in `assets` or `shaders` must sit under the listing target's package directory. A file from a nested subpackage's directory is still inside, so it keys relative to the listing directory. Only a file outside it — a sibling or parent directory, or another repository — fails the build naming the file and the target: move it into a `flutter_library` with a `package_name` and depend on it instead. Two different files keyed to the same path fail the build naming both. `pkg_assets` keeps its own `packages/<package>/<path>` keying, unchanged.
-
-Migration note: this is a behavior change. Bundles used to key `assets` by raw workspace-relative path, so a target outside the workspace root shipped `apps/sub/assets/logo.png` where `flutter build` ships `assets/logo.png`. If a lookup uses a prefixed key, drop the prefix; if it relied on reaching another package's file through `assets`, move the file into a library and use its `packages/<name>/...` key. An app, test, or bundle target at the workspace root keeps exactly its old keys, since its package directory is the root. A `flutter_library` or `flutter_plugin` at the workspace root does not: its assets take the same `packages/<package_name>/...` keys as anywhere else. The same change now applies to `shaders`: a target outside the workspace root ships its own shaders at package-relative keys, so a `FragmentProgram.fromAsset` lookup that used the prefixed path must drop the prefix.
+Keys are the Flutter tool's own, since the tool writes the bundle. An app's assets and shaders are keyed by the path its pubspec gives, relative to the pubspec's directory: `assets/logo.png` named by `apps/sub/pubspec.yaml` loads as `assets/logo.png`, and `shaders/ripple.frag` is where `FragmentProgram.fromAsset` looks for it. A package's are keyed `packages/<package>/<path>`. Every file in `pubspec_srcs` must sit under the pubspec's directory; one outside it fails analysis, naming the file and the directory. App, `flutter_test` (`test_assets`) and `flutter_integration_test` bundles key alike.
 
 ### Link hooks
 
@@ -2145,7 +2103,7 @@ These are what `flutter_application` is made of. Most apps never need them.
 |---|---|
 | `flutter_kernel_target` | Compiles Dart to a kernel `.dill` with Flutter's patched platform kernel. |
 | `flutter_aot_target` | Compiles Dart to an AOT shared library (`.so` on Linux and Android, `.dylib` on macOS) with `gen_snapshot`. |
-| `flutter_asset_bundle` | Builds the `flutter_assets/` tree: `AssetManifest.bin`, `FontManifest.json`, `NOTICES.Z`, and the asset files. It always bundles for the `tester` platform: pub-asset `platforms` and `flavors` are evaluated for `tester`, and shaders are compiled for `flutter_tester`. |
+| `flutter_pub_packages` | Every package of a pub lock, for an app's `pub_packages`. A Flutter hub declares one as `@<hub>//packages`. |
 | `flutter_native_library` | Pairs a native library with its binding contract. See [Hot reload across a native rebuild](#hot-reload-across-a-native-rebuild). |
 | `flutter_native_asset`, `flutter_data_asset` | Declare Dart Native Assets, from `@rules_flutter//flutter:native_assets.bzl`. A data asset is bundled at `flutter_assets/packages/<package>/<name>`. |
 
@@ -2329,6 +2287,7 @@ sdk = resolve_flutter_sdk_info(ctx)
 | `const_finder` | `File` or `None` | `const_finder.dart.snapshot`, for icon tree shaking (resolved via `@rules_flutter//flutter:product_tools_toolchain_type`). |
 | `font_subset` | `File` or `None` | The `font-subset` binary (resolved via `@rules_flutter//flutter:product_tools_toolchain_type`). |
 | `material_icons_font` | `File` or `None` | `MaterialIcons-Regular.otf` (resolved via `@rules_flutter//flutter:material_icons_toolchain_type`). |
+| `assets_tool` | `FlutterAssetsToolInfo` or `None` | The asset tool of this release, compiled against its `package:flutter_tools`, which writes every asset bundle. See [Assets](docs/assets.md). |
 | `impellerc` | `File` or `None` | The shader compiler. |
 | `shader_lib` | `list[File]` | Shader include files for impellerc. |
 | `target_os`, `target_arch` | `str` | The cross-compilation target, or empty for a native build. |
@@ -2339,7 +2298,6 @@ A Flutter workspace's Dart toolchain is the Dart SDK bundled with its Flutter re
 
 | Field | Type | Description |
 |---|---|---|
-| `asset_dirs` | `depset[File]` | Directories containing assets. |
 | `plugins` | `list[struct]` | Plugin metadata, each with `name`, `platforms`, and `implements`. |
 | `transitive_native_libs` | `depset[File]` | Shared libraries from plugins' `native_deps`. |
 
@@ -2804,7 +2762,7 @@ The `e2e/` directory holds working workspaces, each with its own tests:
 | `e2e/android_example` | An Android APK built three ways, with APK content checks. |
 | `e2e/linux_example` | A Linux app built three ways, with bundle checks. |
 | `e2e/windows_example` | A Windows app built three ways, with bundle checks. |
-| `e2e/web_example` | WASM and JavaScript web builds with `web_assets`. |
+| `e2e/web_example` | WASM and JavaScript web builds from the project's `web/` directory. |
 | `e2e/integration_web` | End-to-end web `flutter_integration_test` running in hermetic `chrome-headless-shell`. |
 | `e2e/integration_linux` | End-to-end Linux desktop `flutter_integration_test` with a native C++ plugin running under hermetic `Xvfb` and Mesa `llvmpipe`. |
 | `e2e/integration_android` | End-to-end Android `flutter_integration_test` with a Kotlin method-channel plugin running in a hermetic headless Android emulator with KVM. |

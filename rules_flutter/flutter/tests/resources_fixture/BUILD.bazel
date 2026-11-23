@@ -2,17 +2,13 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//flutter:defs.bzl", "flutter_library", "flutter_plugin")
 load("//flutter/tests:dart_resources_test.bzl", "dart_in_resources_fails_test", "resources_probe")
 
-# A library whose lib/ holds a Dart source, a YAML file, and a shader. The
-# shader is deliberately listed on BOTH channels: `resources` says it is part
-# of the package's lib/ tree (package:-URI addressable, staged wherever the
-# whole package is), `pkg_shaders` says it is compiled and bundled into
-# flutter_assets. The two have different destinations, so a lib/ shader is
-# legitimately both — this fixture pins that coexistence.
+# A library whose lib/ holds a Dart source, a YAML file, and a shader:
+# `resources` says they are part of the package's lib/ tree (package:-URI
+# addressable, staged wherever the whole package is).
 flutter_library(
     name = "resources_library",
     package_name = "resources_fixture",
     srcs = ["lib/fixture.dart"],
-    pkg_shaders = {"lib/glow.frag": "lib/glow.frag"},
     resources = [
         "lib/data.yaml",
         "lib/glow.frag",

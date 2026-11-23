@@ -111,11 +111,11 @@ flutter_application(
     # process cannot take it. `native_libs_reload_e2e_test.dart` drives both
     # directions off it.
     native_deps = [":native_add_lib"],
+    pub_packages = "@deps//packages",
     deps = [
         "//dep_lib",
         "//dep_part",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -351,12 +351,19 @@ flutter_web_bundle(
     compiler = "dart2js",
     main = "lib/main.dart",
     native_modules = [":demo_module"],
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    # The project's web/ files; the native module beside them is served through
+    # `native_modules`, so it is not listed here too.
+    pubspec_srcs = [
+        "web/index.html",
+        "web/manifest.json",
+    ],
     renderer = "canvaskit",
     deps = [
         "//dep_lib",
         "//dep_part",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -404,7 +411,6 @@ flutter_library(
         "//dep_lib",
         "//dep_part",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

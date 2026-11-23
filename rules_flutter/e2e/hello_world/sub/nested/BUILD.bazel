@@ -1,6 +1,7 @@
 """Nested fixture package under the sub app's directory.
 
-`//sub:sub_app` lists `:extra.txt` as one of its own assets: a nested BUILD
+`sub/pubspec.yaml` names `nested/extra.txt` as one of the app's own assets
+and `//sub:sub_app` lists `:extra.txt` in its `pubspec_srcs`: a nested BUILD
 file changes nothing, and the file is keyed `nested/extra.txt`.
 """
 

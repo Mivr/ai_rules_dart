@@ -1,0 +1,1 @@
+Keeps assets/ in the bundle when the stage_clean fixture beside it is deleted.

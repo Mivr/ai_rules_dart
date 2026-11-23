@@ -16,10 +16,13 @@ import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:args/args.dart';
+import 'package:crypto/crypto.dart' show sha256;
+import 'package:data_assets/data_assets.dart';
 import 'package:file/file.dart'
     show ForwardingDirectory, ForwardingFileSystem, ForwardingFileSystemEntity;
 import 'package:file/local.dart';
 import 'package:flutter_tools/src/artifacts.dart';
+import 'package:flutter_tools/src/asset.dart';
 import 'package:flutter_tools/src/base/common.dart';
 import 'package:flutter_tools/src/base/context.dart';
 import 'package:flutter_tools/src/base/file_system.dart' hide LocalFileSystem;
@@ -35,12 +38,20 @@ import 'package:flutter_tools/src/build_system/targets/assets.dart';
 import 'package:flutter_tools/src/build_system/targets/linux.dart';
 import 'package:flutter_tools/src/build_system/targets/localizations.dart';
 import 'package:flutter_tools/src/build_system/targets/web.dart';
+import 'package:flutter_tools/src/bundle_builder.dart';
 import 'package:flutter_tools/src/cache.dart';
+import 'package:flutter_tools/src/dart/package_map.dart';
 import 'package:flutter_tools/src/devfs.dart';
+import 'package:flutter_tools/src/device.dart' show ImpellerStatus;
 import 'package:flutter_tools/src/git.dart';
 import 'package:flutter_tools/src/isolated/native_assets/dart_hook_result.dart';
+import 'package:flutter_tools/src/isolated/native_assets/native_assets.dart'
+    show FlutterCodeAsset;
 import 'package:flutter_tools/src/project.dart';
 import 'package:flutter_tools/src/version.dart';
+import 'package:flutter_tools/src/web_template.dart';
+import 'package:flutter_tools/src/web/bootstrap.dart'
+    show generateDefaultFlutterBootstrapScript;
 import 'package:flutter_tools/src/web/compiler_config.dart';
 import 'package:flutter_tools/src/web/compile.dart';
 import 'package:package_config/package_config.dart';
@@ -65,6 +76,9 @@ ArgParser get _parser => ArgParser()
   // `<package>=<executable>`: what `dart run <package>` runs for an asset
   // transformer.
   ..addMultiOption('transformer', splitCommas: false)
+  // `<package>=<name>=<file>`: a data asset a link hook emitted, bundled at
+  // `packages/<package>/<name>` as the tool bundles a hook's data asset.
+  ..addMultiOption('data-asset', splitCommas: false)
   // A compiled web file (`main.dart.js`, its parts, `main.dart.wasm`, ...),
   // or a directory of them.
   ..addMultiOption('web-build', splitCommas: false)
@@ -75,7 +89,7 @@ ArgParser get _parser => ArgParser()
   ..addOption('package-graph', help: "pub's `.dart_tool/package_graph.json`.")
   ..addOption('flutter-version', mandatory: true)
   ..addOption('engine-revision', mandatory: true)
-  ..addOption('dart-version', mandatory: true)
+  ..addOption('dart-version', defaultsTo: 'unknown')
   ..addOption('out', mandatory: true)
   ..addOption('label', defaultsTo: 'this target')
   ..addOption('platform', defaultsTo: 'android')
@@ -94,6 +108,11 @@ ArgParser get _parser => ArgParser()
   ..addFlag('wasm')
   ..addFlag('wasm-dry-run', defaultsTo: true)
   ..addFlag('source-maps')
+  // `<name>=<value>`: `--web-define`, substituted into the web templates.
+  ..addMultiOption('web-define', splitCommas: false)
+  // Where to write the bootstrap the dev loop serves beside a DDC build.
+  ..addOption('dev-bootstrap')
+  ..addFlag('use-local-canvaskit')
   ..addFlag('verbose');
 
 Future<void> main(List<String> argv) async {
@@ -346,7 +365,19 @@ Directory _stageProject(FileSystem fs, Directory staged, ArgResults args) {
   });
   final Directory dartTool = staged.childDirectory('.dart_tool')
     ..createSync(recursive: true);
+  final String rootName = _pubspecName(fs, staged.childFile('pubspec.yaml'));
   final packages = <Package>[];
+  Package packageAt(String name, Uri rootUri, String languageVersion) =>
+      Package(
+        name,
+        rootUri,
+        packageUriRoot: rootUri.resolve('lib/'),
+        languageVersion: languageVersion.isEmpty
+            ? null
+            : LanguageVersion.parse(languageVersion),
+        relativeRoot: false,
+      );
+  final seen = <String>{};
   for (final String entry in args.multiOption('package')) {
     final List<String> parts = entry.split('=');
     if (parts.length != 3) {
@@ -354,21 +385,21 @@ Directory _stageProject(FileSystem fs, Directory staged, ArgResults args) {
         'expected <name>=<root>=<language version>, got "$entry"',
       );
     }
+    // A package reached in two configurations comes twice; the first wins.
+    if (!seen.add(parts[0])) {
+      continue;
+    }
     final String root = _abs(parts[1]);
     // The project's own package is the staged copy, so code that finds a
     // file's package by its path (dart format's language version) finds it.
-    final Uri rootUri = fs.directory(root == source ? staged.path : root).uri;
-    packages.add(
-      Package(
-        parts[0],
-        rootUri,
-        packageUriRoot: rootUri.resolve('lib/'),
-        languageVersion: parts[2].isEmpty
-            ? null
-            : LanguageVersion.parse(parts[2]),
-        relativeRoot: false,
-      ),
-    );
+    final bool own = root == source || parts[0] == rootName;
+    final Uri rootUri = fs.directory(own ? staged.path : root).uri;
+    packages.add(packageAt(parts[0], rootUri, parts[2]));
+  }
+  // As `pub get` writes it, the config lists the project's own package even
+  // when no library of it is built.
+  if (!packages.any((Package p) => p.name == rootName)) {
+    packages.add(packageAt(rootName, staged.uri, ''));
   }
   final buffer = StringBuffer();
   PackageConfig.writeString(PackageConfig(packages), buffer);
@@ -389,12 +420,17 @@ Directory _stageProject(FileSystem fs, Directory staged, ArgResults args) {
 /// config: each package's dependencies, and the project's dev dependencies.
 ///
 /// Stands in until the pub layer writes the file (then `--package-graph`
-/// passes it). A dependency missing from the config is left in, so the tool
-/// reports it the way it reports a stale `pub get`.
+/// passes it). A regular dependency of the project missing from the config
+/// is left in, so the tool reports it the way it reports a stale `pub get`.
+/// Any other missing package (a dev dependency of the project, or a package
+/// another package depends on that the lock or the target leaves out) is left
+/// out: none of its files are inputs, so there is nothing of it to bundle, and
+/// only `NOTICES` misses its licence, which `pub_packages` restores.
 String _packageGraph(FileSystem fs, Directory project, List<Package> packages) {
   List<String> names(Object? section) => section is YamlMap
       ? (section.keys.cast<String>().toList()..sort())
       : <String>[];
+  final Set<String> known = {for (final package in packages) package.name};
   final String rootName = _pubspecName(fs, project.childFile('pubspec.yaml'));
   final entries = <Map<String, Object>>[];
   for (final package in packages) {
@@ -406,9 +442,13 @@ String _packageGraph(FileSystem fs, Directory project, List<Package> packages) {
     entries.add(<String, Object>{
       'name': package.name,
       'version': '${map['version'] ?? '0.0.0'}',
-      'dependencies': names(map['dependencies']),
+      'dependencies': package.name == rootName
+          ? names(map['dependencies'])
+          : names(map['dependencies']).where(known.contains).toList(),
       if (package.name == rootName)
-        'devDependencies': names(map['dev_dependencies']),
+        'devDependencies': names(
+          map['dev_dependencies'],
+        ).where(known.contains).toList(),
     });
   }
   return jsonEncode(<String, Object>{
@@ -443,6 +483,12 @@ Map<String, String> _defines(String command, ArgResults args) {
       kStaticAssetsUrl: args.option('static-assets-url')!,
     if (args.option('pwa-strategy') != null)
       kServiceWorkerStrategy: args.option('pwa-strategy')!,
+    if (web && args.flag('use-local-canvaskit')) kUseLocalCanvasKitFlag: 'true',
+    if (web)
+      for (final MapEntry<String, String>(:key, :value) in _pairs(
+        args.multiOption('web-define'),
+      ).entries)
+        '$kWebDefinePrefix$key': value,
   };
 }
 
@@ -500,12 +546,15 @@ Future<void> _assets(Environment environment, ArgResults args) async {
     args.option('platform')!,
   );
   final buildMode = BuildMode.fromCliName(args.option('mode')!);
+  if (targetPlatform == TargetPlatform.tester) {
+    return _testerAssets(environment, args, buildMode);
+  }
   _placeAppDill(environment, args);
   final String? nativeAssets = args.option('native-assets-manifest');
   await copyAssets(
     environment,
     environment.outputDir,
-    dartHookResult: DartHooksResult.empty(),
+    dartHookResult: _hookResult(args),
     additionalContent: <String, DevFSContent>{
       // Only the Linux bundle target adds version.json (targets/linux.dart).
       if (targetPlatform
@@ -528,6 +577,75 @@ Future<void> _assets(Environment environment, ArgResults args) async {
   );
 }
 
+/// What `flutter test` writes into its `unit_test_assets/` (`_buildTestAsset`
+/// in `commands/test.dart`): unlike a platform bundle, it holds the assets of
+/// the project's dev dependencies too.
+Future<void> _testerAssets(
+  Environment environment,
+  ArgResults args,
+  BuildMode buildMode,
+) async {
+  if (args.option('native-assets-manifest') != null) {
+    throw ArgumentError('a tester bundle takes no native assets manifest');
+  }
+  final AssetBundle bundle = AssetBundleFactory.defaultInstance(
+    logger: environment.logger,
+    fileSystem: environment.fileSystem,
+    platform: environment.platform,
+  ).createBundle();
+  final int result = await bundle.build(
+    flutterHookResult: _hookResult(args).asFlutterResult,
+    manifestPath: environment.projectDir.childFile('pubspec.yaml').path,
+    packageConfigPath: findPackageConfigFileOrDefault(
+      environment.projectDir,
+    ).path,
+    flavor: environment.defines[kFlavor],
+    includeAssetsFromDevDependencies: true,
+    targetPlatform: TargetPlatform.tester,
+  );
+  if (result != 0) {
+    throwToolExit('Error: Failed to build asset bundle');
+  }
+  await writeBundle(
+    environment.outputDir,
+    bundle.entries,
+    targetPlatform: TargetPlatform.tester,
+    impellerStatus: ImpellerStatus.platformDefault,
+    processManager: environment.processManager,
+    fileSystem: environment.fileSystem,
+    artifacts: environment.artifacts,
+    logger: environment.logger,
+    projectDir: environment.projectDir,
+    buildMode: buildMode,
+  );
+}
+
+/// The link hooks' data assets, as the tool's hook runner reports them.
+DartHooksResult _hookResult(ArgResults args) {
+  final List<String> entries = args.multiOption('data-asset');
+  if (entries.isEmpty) {
+    return DartHooksResult.empty();
+  }
+  final DateTime now = DateTime.now();
+  return DartHooksResult(
+    buildStart: now,
+    buildEnd: now,
+    codeAssets: const <FlutterCodeAsset>[],
+    dataAssets: <DataAsset>[
+      for (final entry in entries)
+        if (entry.split('=') case [final package, final name, final file])
+          DataAsset(
+            file: Uri.file(_abs(file)),
+            name: name,
+            package: package,
+          )
+        else
+          throw ArgumentError('expected <package>=<name>=<file>, got "$entry"'),
+    ],
+    dependencies: const <Uri>[],
+  );
+}
+
 /// What `flutter build web` writes besides the compiled program: the
 /// release bundle (assets, `version.json`, the `web/` resources), the
 /// templated `index.html` and `flutter_bootstrap.js`, CanvasKit and
@@ -536,6 +654,13 @@ Future<void> _assets(Environment environment, ArgResults args) async {
 /// have left them.
 Future<void> _web(Environment environment, ArgResults args) async {
   final FileSystem fs = environment.fileSystem;
+  if (!environment.projectDir.childDirectory('web').existsSync()) {
+    throwToolExit(
+      '${args.option('label')}: the project has no web/ directory, so it is '
+      'not configured for the web. `flutter create --platforms=web .` writes '
+      'one; list its files in pubspec_srcs.',
+    );
+  }
   _placeAppDill(environment, args);
   for (final String path in args.multiOption('web-build').map(_abs)) {
     final FileSystemEntity entity = fs.isDirectorySync(path)
@@ -585,6 +710,75 @@ Future<void> _web(Environment environment, ArgResults args) async {
     compileConfigs,
     const NoOpAnalytics(),
   ).build(environment);
+  final String? devBootstrap = args.option('dev-bootstrap');
+  if (devBootstrap != null) {
+    _writeDevBootstrap(environment, args, fs.file(_abs(devBootstrap)));
+  }
+}
+
+/// The `flutter_bootstrap.js` that `flutter run -d chrome` serves beside its
+/// DDC build: the project's template (or the default one) substituted as the
+/// tool's web dev server substitutes it (`WebAssetServer`), with no service
+/// worker and a build config naming DDC's output.
+void _writeDevBootstrap(Environment environment, ArgResults args, File out) {
+  final FileSystem fs = environment.fileSystem;
+  final File template = environment.projectDir
+      .childDirectory('web')
+      .childFile('flutter_bootstrap.js');
+  final Directory webSdk = fs.directory(
+    environment.artifacts.getHostArtifact(HostArtifact.flutterWebSdk).path,
+  );
+  final Directory canvasKit = webSdk.childDirectory('canvaskit');
+  final wasmHashes = <String, String>{
+    if (canvasKit.existsSync())
+      for (final File file
+          in canvasKit.listSync(recursive: true).whereType<File>())
+        if (file.path.endsWith('.wasm'))
+          fs.path
+              .relative(file.path, from: canvasKit.path)
+              .replaceAll(r'\', '/'): sha256
+              .convert(file.readAsBytesSync())
+              .toString(),
+  };
+  final String? rendererName = args.option('renderer');
+  final buildConfig = <String, Object>{
+    'engineRevision': args.option('engine-revision')!,
+    'wasmHashes': wasmHashes,
+    'builds': <Object>[
+      <String, Object>{
+        'compileTarget': 'dartdevc',
+        'renderer': rendererName ?? WebRendererMode.canvaskit.name,
+        'mainJsPath': 'main.dart.js',
+      },
+    ],
+    if (args.flag('use-local-canvaskit')) 'useLocalCanvasKit': true,
+  };
+  final content =
+      WebTemplate(
+        template.existsSync()
+            ? template.readAsStringSync()
+            : generateDefaultFlutterBootstrapScript(
+                includeServiceWorkerSettings: false,
+              ),
+      ).withSubstitutions(
+        baseHref: '/',
+        serviceWorkerVersion: null,
+        buildConfig:
+            '''
+if (!window._flutter) {
+  window._flutter = {};
+}
+_flutter.buildConfig = ${jsonEncode(buildConfig)};
+''',
+        flutterJsFile: webSdk
+            .childDirectory('flutter_js')
+            .childFile('flutter.js'),
+        logger: environment.logger,
+        webDefines: _pairs(args.multiOption('web-define')),
+      );
+  out
+    ..parent.createSync(recursive: true)
+    ..writeAsStringSync(content);
 }
 
 /// `GenerateLocalizationsTarget`, as `flutter build` runs it before compiling;

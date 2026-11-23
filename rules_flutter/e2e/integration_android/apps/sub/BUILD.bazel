@@ -6,9 +6,13 @@ flutter_integration_test(
     size = "large",
     srcs = ["integration_test/sub_test.dart"],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/sub.txt"],
     platform = "android",
-    shaders = ["shaders/sub.frag"],
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = [
+        "assets/sub.txt",
+        "shaders/sub.frag",
+    ],
     deps = [
         "//libs/brand",
         "@deps//:flutter",

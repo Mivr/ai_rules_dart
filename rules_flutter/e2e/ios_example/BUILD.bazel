@@ -34,17 +34,19 @@ exports_files(["pubspec.lock"])
 flutter_application(
     name = "app_flutter",
     package_name = "ios_example",
-    # A first-party asset so the dev loop has something real to deliver here.
-    # iOS is the platform where this mattered: the runner reaches this target
-    # through a split transition, so the app's `flutter_assets` tree lives in a
-    # configuration no bare build produces. asset_reload_e2e_test edits
-    # assets/message.txt on the simulator and asserts the change arrives.
-    assets = glob(["assets/**"]),
     main = "lib/main.dart",
     min_os_version = IOS_MINIMUM_OS_VERSION,
+    pub_packages = "@deps//packages",
+    # A first-party asset, named in pubspec.yaml, so the dev loop has something
+    # real to deliver here. iOS is the platform where this mattered: the runner
+    # reaches this target through a split transition, so the app's
+    # `flutter_assets` tree lives in a configuration no bare build produces.
+    # asset_reload_e2e_test edits assets/message.txt on the simulator and
+    # asserts the change arrives. Every app here shares the pubspec, so each
+    # lists the file.
+    pubspec_srcs = glob(["assets/**"]),
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -112,9 +114,10 @@ flutter_application(
     package_name = "ios_example_second",
     main = "lib/main.dart",
     min_os_version = IOS_MINIMUM_OS_VERSION,
+    pub_packages = "@deps//packages",
+    pubspec_srcs = glob(["assets/**"]),
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -136,9 +139,10 @@ flutter_application(
     srcs = ["test_driver/banner.dart"],
     main = "test_driver/app.dart",
     min_os_version = IOS_MINIMUM_OS_VERSION,
+    pub_packages = "@deps//packages",
+    pubspec_srcs = glob(["assets/**"]),
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -230,29 +234,29 @@ flutter_ios_app(
 flutter_application(
     name = "app_flutter_release",
     package_name = "ios_example_release",
-    assets = glob(["assets/**"]),
     main = "lib/main.dart",
     min_os_version = IOS_MINIMUM_OS_VERSION,
     obfuscate = True,
+    pub_packages = "@deps//packages",
+    pubspec_srcs = glob(["assets/**"]),
     split_debug_info = True,
     tree_shake_icons = True,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
 flutter_application(
     name = "app_flutter_release_plain",
     package_name = "ios_example_release_plain",
-    assets = glob(["assets/**"]),
     main = "lib/main.dart",
     min_os_version = IOS_MINIMUM_OS_VERSION,
+    pub_packages = "@deps//packages",
+    pubspec_srcs = glob(["assets/**"]),
     split_debug_info = True,
     tree_shake_icons = True,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -691,6 +695,5 @@ flutter_library(
     srcs = glob(["lib/**/*.dart"]),
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )

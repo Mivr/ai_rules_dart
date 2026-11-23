@@ -72,11 +72,9 @@ load(
     "check_unreplaced_hooks",
     "declare_flutter_assets_dir",
     "extract_library_tags_action",
-    "flutter_build_assets",
-    "flutter_compile_shaders",
-    "flutter_tester_shader_aspect",
     "host_target_arch",
-    "make_bundle_inputs",
+)
+load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle"
 )
 load("//flutter/private:flutter_defines_files.bzl", "defines_transition")
 load(
@@ -228,27 +226,17 @@ def _flutter_test_kernel(ctx, flutter_sdk_info, sources, native_assets):
         base_dill = base_dill,
     )
 
-def _flutter_test_assets(ctx, flutter_sdk_info, kernel_dill):
-    # Build a `flutter_assets/` tree for the test. Material widgets pull
-    # `shaders/ink_sparkle.frag` at first paint, and pub-package fonts/assets
-    # (e.g. MaterialIcons) need to land in the bundle for tests that resolve
-    # them via `rootBundle`. Tests run on the host, so shaders compile against
-    # the host platform resolved above.
-    # The test runs on flutter_tester, not the host's embedder: its shaders
-    # are compiled for it, as `flutter test` compiles them (SkSL for Skia,
-    # Vulkan for Impeller).
-    compiled_shaders = flutter_compile_shaders(ctx, flutter_sdk_info, "tester")
+def _flutter_test_assets(ctx, flutter_sdk_info):
+    # The test's `flutter_assets/`, as `flutter test` builds it: what the
+    # pubspec names, for flutter_tester (its shaders compiled for it, SkSL for
+    # Skia and Vulkan for Impeller). A debug bundle never reads the kernel.
     flutter_assets = declare_flutter_assets_dir(ctx)
-    flutter_build_assets(
-        ctx = ctx,
-        flutter_sdk_info = flutter_sdk_info,
-        output_dir = flutter_assets,
-        bundle = make_bundle_inputs(
-            target_platform = "tester",
-            compiled_shaders = compiled_shaders,
-            kernel_dill = kernel_dill,
-            is_debug = True,
-        ),
+    flutter_bundle(
+        ctx,
+        flutter_sdk_info,
+        flutter_assets,
+        target_platform = "tester",
+        mode = "debug",
     )
     return flutter_assets
 
@@ -424,14 +412,14 @@ def _flutter_test_impl(ctx):
     artifacts = struct(
         kernel_dill = kernel.kernel_dill,
         base_dill = kernel.base_dill,
-        flutter_assets = _flutter_test_assets(ctx, flutter_sdk_info, kernel.kernel_dill),
+        flutter_assets = _flutter_test_assets(ctx, flutter_sdk_info),
     )
     runner = _flutter_test_run(ctx, artifacts, native_assets)
     return _flutter_test_providers(ctx, sources, artifacts, runner)
 
-# flutter_test takes the compilation attrs plus the asset-bundle attrs.
-# Material widgets implicitly require `shaders/ink_sparkle.frag` and the
-# MaterialIcons font, so a flutter_assets/ tree is built and passed to
+# flutter_test takes the compilation attrs plus the asset-bundle attrs: the
+# pubspec says what the test's flutter_assets/ tree holds (Material widgets
+# need `shaders/ink_sparkle.frag` and MaterialIcons), passed to
 # flutter_tester via `--flutter-assets-dir`. Platform-runner-specific
 # attrs (engines, plugin libs) are intentionally omitted — flutter_tester
 # is a self-contained host engine.
@@ -446,24 +434,12 @@ _TEST_ATTRS = {
         "language_version",
         "_extra_dart_defines",
         "package_name",
-        # Asset-bundle inputs. Same surface as flutter_application — most
-        # widget tests don't touch these, but Material widgets implicitly
-        # require shader and font assets to render.
-        "assets",
-        "shaders",
-        "shader_includes",
-        "require_sksl_shaders",
-        "_shader_compile_tool",
-        "license_files",
-        "tree_shake_icons",
-        "_asset_bundle_tool",
-        "_const_finder_tool",
     )
-}
+} | BUNDLE_ATTRS
 _TEST_ATTRS["deps"] = attr.label_list(
     doc = FLUTTER_DEPS_DOC,
     providers = [DartInfo],
-    aspects = [flutter_tester_shader_aspect, flutter_kernel_module_aspect, LAYERING_CHECK_ASPECT],
+    aspects = [flutter_kernel_module_aspect, LAYERING_CHECK_ASPECT],
     # The test's own `defines` are the configuration of its `deps`, so every module compiles with them and the
     # test stays modular.
     cfg = defines_transition,

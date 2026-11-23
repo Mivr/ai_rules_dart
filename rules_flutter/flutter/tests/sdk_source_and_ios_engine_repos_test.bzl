@@ -161,7 +161,7 @@ def _local_sdk_spokes_do_not_use_the_shared_extraction_test_impl(ctx):
     return unittest.end(env)
 
 def _fake_source_tree():
-    """A fake `sdk_source` directory holding `packages/flutter/{pubspec.yaml,lib/...}`."""
+    """A fake `sdk_source` directory holding `packages/flutter/{pubspec.yaml,LICENSE,lib/...}`."""
     src_file = struct(
         basename = "material.dart",
         is_dir = False,
@@ -186,14 +186,17 @@ def _fake_source_tree():
         get_child = lambda rel: by_rel[rel],
     )
     pubspec = struct(exists = True, realpath = "/src/pubspec.yaml")
+    license = struct(exists = True, realpath = "/src/LICENSE")
     root_children = {
         "packages/flutter/pubspec.yaml": pubspec,
+        "packages/flutter/LICENSE": license,
         "packages/flutter/lib": lib_dir,
     }
     return struct(
         dirname = struct(get_child = lambda rel: root_children[rel]),
         contents = {
             pubspec.realpath: "name: flutter\n",
+            license.realpath: "licence\n",
             top_file.realpath: "// widgets\n",
             src_file.realpath: "// material\n",
         },
@@ -223,7 +226,7 @@ def _downloaded_spoke_copies_files_and_stays_reproducible_test_impl(ctx):
     asserts.equals(env, [], symlinks)
     asserts.equals(
         env,
-        ["lib/src/material.dart", "lib/widgets.dart", "pubspec.yaml"],
+        ["LICENSE", "lib/src/material.dart", "lib/widgets.dart", "pubspec.yaml"],
         sorted(files.keys()),
     )
     asserts.equals(env, ("// material\n", False), files["lib/src/material.dart"])

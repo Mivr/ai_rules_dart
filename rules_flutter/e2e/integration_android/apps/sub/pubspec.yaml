@@ -1,0 +1,22 @@
+# The project of `:sub_test`, an app in a subdirectory of the workspace: its
+# assets are keyed relative to this directory, and the `brand` package's at
+# `packages/brand/`.
+name: sub
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  brand:
+    path: ../../libs/brand
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+flutter:
+  assets:
+    - assets/sub.txt
+  shaders:
+    - shaders/sub.frag

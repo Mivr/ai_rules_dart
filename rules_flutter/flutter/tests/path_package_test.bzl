@@ -63,7 +63,7 @@ load(
     "pubspec_name_refusal",
     "pubspec_version_refusal",
 )
-load("//flutter/private:flutter_pub_package_helpers.bzl", "scoped_shader_includes_block")
+load("//flutter/private:flutter_pub_package_helpers.bzl", "spoke_data_patterns")
 load("//flutter/private:flutter_pub_path.bzl", "foreign_lock_path_error", "is_absolute_lock_path", "is_relative_path_dependency", "workspace_relative_lock_path")
 load("//flutter/private:flutter_pub_semver.bzl", "parse_pub_version")
 load("//flutter/private:flutter_pubspec.bzl", "parse_flutter_plugin_block")
@@ -268,6 +268,8 @@ _SCOPED_LINKED = [
 
 _SCOPED_WATCHED = [
     "/workspace/mypkg",
+    "/workspace/mypkg/LICENSE",
+    "/workspace/mypkg/NOTICES",
     "/workspace/mypkg/assets",
     "/workspace/mypkg/assets/any.txt",
     "/workspace/mypkg/assets/dir",
@@ -1204,17 +1206,38 @@ path_spoke_platform_dirs_test = unittest.make(_path_spoke_platform_dirs_test_imp
 def _scoped_shader_includes_block_test_impl(ctx):
     """Include globs cover the declared shaders' own dirs — never `**`."""
     env = unittest.begin(ctx)
-    block = scoped_shader_includes_block(["shaders/glow.frag", "shaders/deep/ocean.vert", "ripple.frag"])
-    asserts.true(env, "shader_includes = glob(" in block, block)
-    asserts.true(env, '"shaders/**/*.glsl"' in block, block)
-    asserts.true(env, '"shaders/**/*.frag"' in block, block)
-    asserts.true(env, '"shaders/**/*.vert"' in block, block)
-    asserts.true(env, '"shaders/deep/**/*.glsl"' in block, block)
-    asserts.true(env, '"*.glsl"' in block, block)
-    asserts.false(env, '"**/*.glsl"' in block, block)
+    block = spoke_data_patterns(struct(
+        assets = [],
+        fonts = [],
+        shaders = [struct(path = p) for p in ["shaders/glow.frag", "shaders/deep/ocean.vert", "ripple.frag"]],
+    ))
+    asserts.true(env, "shaders/**/*.glsl" in block, block)
+    asserts.true(env, "shaders/**/*.frag" in block, block)
+    asserts.true(env, "shaders/**/*.vert" in block, block)
+    asserts.true(env, "shaders/deep/**/*.glsl" in block, block)
+    asserts.true(env, "*.glsl" in block, block)
+    asserts.false(env, "**/*.glsl" in block, block)
     return unittest.end(env)
 
 scoped_shader_includes_block_test = unittest.make(_scoped_shader_includes_block_test_impl)
+
+def _own_package_spelling_test_impl(ctx):
+    """`packages/<own name>/x` is also read from `lib/x`; another package's is not listed."""
+    env = unittest.begin(ctx)
+    block = spoke_data_patterns(struct(
+        assets = [struct(path = "packages/material_ui/icons/a.png"), struct(path = "packages/other/b.png")],
+        fonts = [],
+        shaders = [struct(path = "packages/material_ui/shaders/ink_sparkle.frag")],
+    ), "material_ui")
+    asserts.true(env, "lib/shaders/ink_sparkle.frag" in block, block)
+    asserts.true(env, "lib/shaders/**/*.glsl" in block, block)
+    asserts.true(env, "lib/icons/a.png" in block, block)
+    asserts.true(env, "lib/icons/*/a.png" in block, block)
+    asserts.false(env, "lib/b.png" in block, block)
+    asserts.false(env, "packages/other/b.png" in block, block)
+    return unittest.end(env)
+
+own_package_spelling_test = unittest.make(_own_package_spelling_test_impl)
 
 def _skipped_dirs_test_impl(ctx):
     """Build output, tool state, the example app, and dot-dirs never link."""
@@ -1368,6 +1391,7 @@ def path_package_test_suite(name):
         non_plugin_package_links_no_android_test,
         outside_workspace_is_refused_test,
         overlapping_entries_link_once_test,
+        own_package_spelling_test,
         padded_identity_links_test,
         path_spoke_platform_dirs_test,
         plugin_platform_dir_is_mirrored_not_symlinked_test,

@@ -20,10 +20,6 @@ load(":apple_private_headers_test.bzl", "apple_private_headers_test_suite")
 load(":apple_shared_engine_test.bzl", "apple_shared_engine_test_suite")
 load(":architecture_fixtures.bzl", "architecture_fixtures")
 load(":artifact_urls_test.bzl", "artifact_urls_test_suite")
-load(":asset_bundle_test.bzl", "asset_bundle_test_suite")
-load(":asset_keys_test.bzl", "asset_keys_test_suite")
-load(":asset_platforms_test.bzl", "asset_platforms_test_suite")
-load(":asset_uri_test.bzl", "asset_uri_test_suite")
 load(":build_info_registrant_test.bzl", "build_info_registrant_test_suite")
 load(":common_test.bzl", "common_test_suite")
 load(":compile_api_test.bzl", "compile_api_test_suite")
@@ -91,8 +87,6 @@ load(":pub_lock_sdks_test.bzl", "pub_lock_sdks_test_suite")
 load(":registrant_twin_test.bzl", "registrant_twin_test_suite")
 load(":repo_metadata_test.bzl", "repo_metadata_test_suite")
 load(":sdk_source_and_ios_engine_repos_test.bzl", "sdk_source_and_ios_engine_repos_test_suite")
-load(":shader_compile_test.bzl", "shader_compile_test_suite")
-load(":shader_keys_test.bzl", "shader_keys_test_suite")
 load(":starlark_hygiene_test.bzl", "starlark_hygiene_test_suite")
 load(":starlark_literal_test.bzl", "starlark_literal_test_suite")
 load(":swiftpm_local_defines_test.bzl", "swiftpm_local_defines_test_suite")
@@ -242,13 +236,6 @@ build_info_registrant_test_suite(name = "build_info_registrant_test")
 
 defines_files_test_suite(name = "defines_files_test")
 
-asset_bundle_test_suite(name = "asset_bundle_test")
-
-asset_keys_test_suite(name = "asset_keys_test")
-
-asset_platforms_test_suite(name = "asset_platforms_test")
-
-asset_uri_test_suite(name = "asset_uri_test")
 
 ios_test_suite(name = "ios_test")
 
@@ -377,10 +364,6 @@ apple_private_headers_test_suite(name = "apple_private_headers_test")
 apple_shared_engine_test_suite(name = "apple_shared_engine_test")
 
 pub_lock_sdks_test_suite(name = "pub_lock_sdks_test")
-
-shader_compile_test_suite(name = "shader_compile_test")
-
-shader_keys_test_suite(name = "shader_keys_test")
 
 toolchains_repo_test_suite(name = "toolchains_repo_test")
 

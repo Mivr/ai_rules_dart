@@ -1,9 +1,14 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
 load("@rules_flutter//flutter:defs.bzl", "flutter_library")
-load("@rules_flutter//flutter:web.bzl", "flutter_web_app", "flutter_web_bundle", "flutter_web_manifest_gen")
+load("@rules_flutter//flutter:web.bzl", "flutter_web_app", "flutter_web_bundle")
 
 exports_files(["pubspec.lock"])
+
+# What every target here bundles beside `web/`: the asset `pubspec.yaml` names.
+# The pubspec is the source of truth for the bundle, so every app over it lists
+# the files it names, whether or not its own code reads them.
+_PUBSPEC_SRCS = glob(["assets/**"])
 
 # =============================================================================
 # Approach 1: Tier 1 — flutter_web_app (auto-discovers web/ runner files)
@@ -13,13 +18,12 @@ exports_files(["pubspec.lock"])
 flutter_web_app(
     name = "app_wasm",
     package_name = "web_example",
-    app_name = "Web Example",
-    # A first-party asset, so the web dev loop's asset reload has something
-    # real to deliver.
-    assets = glob(["assets/**"]),
+    pub_packages = "@deps//packages",
+    # A first-party asset (named in pubspec.yaml), so the web dev loop's asset
+    # reload has something real to deliver.
+    pubspec_srcs = _PUBSPEC_SRCS,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -28,14 +32,13 @@ flutter_web_app(
 flutter_web_app(
     name = "app_wasm_subpath",
     package_name = "web_example",
-    app_name = "Web Example (subpath)",
-    # A first-party asset, so the web dev loop's asset reload has something
-    # real to deliver.
-    assets = glob(["assets/**"]),
     base_href = "/web_example/",
+    pub_packages = "@deps//packages",
+    # A first-party asset (named in pubspec.yaml), so the web dev loop's asset
+    # reload has something real to deliver.
+    pubspec_srcs = _PUBSPEC_SRCS,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -48,9 +51,10 @@ flutter_web_app(
     package_name = "web_example",
     srcs = ["test_driver/banner.dart"],
     main = "test_driver/app.dart",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = _PUBSPEC_SRCS,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -59,15 +63,11 @@ flutter_web_app(
 # JS build (dart2js + canvaskit) — legacy, wider browser support
 # =============================================================================
 
-flutter_web_manifest_gen(
-    name = "app_js_manifest",
-    app_name = "Web Example JS",
-)
-
+# The same project as the Tier 1 targets: Tier 2 names its pubspec and the
+# project's `web/` files itself, where `flutter_web_app` finds them.
 flutter_web_bundle(
     name = "app_js",
     package_name = "web_example",
-    assets = glob(["assets/**"]),
     base_href = "/web_example_js/",
     compiler = "dart2js",
     # Exercised here rather than on the unminified target: only minified
@@ -75,19 +75,12 @@ flutter_web_bundle(
     # setting reaches the command line and decides nothing.
     frequency_based_minification = False,
     main = "lib/main.dart",
-    manifest_json = ":app_js_manifest",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = _PUBSPEC_SRCS + glob(["web/**"]),
     renderer = "canvaskit",
-    title = "Web Example JS",
-    web_assets = glob(
-        ["web/**"],
-        exclude = [
-            "web/index.html",
-            "web/manifest.json",
-        ],
-    ),
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -98,43 +91,47 @@ flutter_web_bundle(
 flutter_web_app(
     name = "app_no_pwa",
     package_name = "web_example",
-    app_name = "Web Example No PWA",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = _PUBSPEC_SRCS,
     pwa = False,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
 # =============================================================================
 # Approach 5: Tier 2 with a bootstrap template carrying a web_define
 #
-# The dev loop's boot path, end to end: `templates/dev_bootstrap.js` sets a
-# global from `web_defines`, and `web_define_e2e_test.dart` reads that global
-# off the live page of a `-d chrome` run. Nothing else here proves a define
-# reaches the browser rather than only the built bundle.
+# The dev loop's boot path, end to end: `dev_boot/web/flutter_bootstrap.js`
+# sets a global from `web_defines`, and `web_define_e2e_test.dart` reads that
+# global off the live page of a `-d chrome` run. Nothing else here proves a
+# define reaches the browser rather than only the built bundle.
 #
-# In the root package because it reuses this package's `lib/main.dart` and
-# assets; a target beside `custom_boot`'s templates would have to carry copies
-# of both. dart2js + canvaskit to keep the debug compile this adds as cheap as
-# the sibling `:app_js`.
+# The project is `dev_boot/` (its pubspec, `web/` and a copy of the asset):
+# the root's `web/` feeds every Tier 1 target here, so the bootstrap cannot sit
+# there. The target stays in the root package because it reuses this
+# package's `lib/main.dart`. dart2js + canvaskit to keep the debug compile
+# this adds as cheap as the sibling `:app_js`.
 # =============================================================================
 
 flutter_web_bundle(
     name = "app_dev_boot",
     package_name = "web_example",
-    # `lib/main.dart` reads one, and an app reporting a failed asset load is a
-    # worse signal to run an assertion against than one that boots cleanly.
-    assets = glob(["assets/**"]),
-    bootstrap_js = "templates/dev_bootstrap.js",
     compiler = "dart2js",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "dev_boot/pubspec.yaml",
+    # `lib/main.dart` reads an asset, and an app reporting a failed asset load
+    # is a worse signal to run an assertion against than one that boots
+    # cleanly.
+    pubspec_srcs = glob(
+        ["dev_boot/**"],
+        exclude = ["dev_boot/pubspec.yaml"],
+    ),
     renderer = "canvaskit",
-    title = "Web Example (dev boot)",
     web_defines = {"API_URL": "https://api.example.com"},
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -225,7 +222,6 @@ flutter_library(
     srcs = glob(["lib/**/*.dart"]),
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -242,21 +238,20 @@ flutter_library(
 flutter_web_app(
     name = "app_tuned",
     package_name = "web_example",
-    app_name = "Web Example (tuned)",
-    assets = glob(["assets/**"]),
     # The size report, produced as a named output rather than deployed.
     dump_info = True,
     # Kept unminified and unstripped so the bundle can be read.
     minify_js = "false",
     minify_wasm = "false",
     strip_wasm = False,
+    pub_packages = "@deps//packages",
+    pubspec_srcs = _PUBSPEC_SRCS,
     # Serves the renderer from the app itself, which is what lets this bundle
     # run under a `script-src 'self'` policy — the CDN copy is a script the
     # page may not fetch, and the app never boots without it.
     use_local_canvaskit = True,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -270,12 +265,11 @@ build_test(
 flutter_web_app(
     name = "app_profile",
     package_name = "web_example",
-    app_name = "Web Example (profile)",
-    assets = glob(["assets/**"]),
     profile = True,
+    pub_packages = "@deps//packages",
+    pubspec_srcs = _PUBSPEC_SRCS,
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

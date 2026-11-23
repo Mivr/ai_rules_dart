@@ -5,8 +5,8 @@
 /// app only through whatever `flutter_bootstrap.js` the page actually loads.
 /// The bundle's is substituted by the build; the dev loop's must be too. A dev
 /// loop that writes its own from string literals leaves a define referenced in
-/// a `bootstrap_js` template working under `bazel build` and doing nothing at
-/// all under `flutter_bazel run -d chrome` — the bundle carries it and the page
+/// a `web/flutter_bootstrap.js` working under `bazel build` and doing nothing
+/// at all under `flutter_bazel run -d chrome` — the bundle carries it and the page
 /// never sees it. Upstream has no such split: `WebAssetServer` substitutes the
 /// user's `web/flutter_bootstrap.js` with the dev server's own build config.
 ///

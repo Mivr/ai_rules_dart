@@ -68,10 +68,14 @@ flutter_integration_test(
         ":app_l10n",
     ],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     defines = ["COV79_GREETING=hello, world=ok"],
     platform = "ios",
-    shaders = ["shaders/ink_stub.frag"],
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = [
+        "assets/logo.png",
+        "shaders/ink_stub.frag",
+    ],
     deps = [
         "//android_only_plugin",
         "//dart_registration_plugin",
@@ -83,7 +87,6 @@ flutter_integration_test(
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:intl",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -94,6 +97,9 @@ flutter_application(
     srcs = ["lib/main.dart"],
     flavor = "dev",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "flavored/pubspec.yaml",
+    pubspec_srcs = ["flavored/assets/logo.png"],
     deps = [
         "//flavor_assets",
         "//ios_greeting_plugin",
@@ -109,16 +115,17 @@ flutter_integration_test(
     size = "large",
     srcs = ["integration_test/flavor_dev_test.dart"],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     flavor = "dev",
     platform = "ios",
+    pub_packages = "@deps//packages",
+    pubspec = "flavored/pubspec.yaml",
+    pubspec_srcs = ["flavored/assets/logo.png"],
     deps = [
         "//flavor_assets",
         "//ios_greeting_plugin",
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -129,6 +136,9 @@ flutter_application(
     srcs = ["lib/main.dart"],
     flavor = "prod",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "flavored/pubspec.yaml",
+    pubspec_srcs = ["flavored/assets/logo.png"],
     deps = [
         "//flavor_assets",
         "//ios_greeting_plugin",
@@ -144,16 +154,17 @@ flutter_integration_test(
     size = "large",
     srcs = ["integration_test/flavor_prod_test.dart"],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     flavor = "prod",
     platform = "ios",
+    pub_packages = "@deps//packages",
+    pubspec = "flavored/pubspec.yaml",
+    pubspec_srcs = ["flavored/assets/logo.png"],
     deps = [
         "//flavor_assets",
         "//ios_greeting_plugin",
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -189,15 +200,19 @@ flutter_integration_test(
     size = "large",
     srcs = ["integration_test/plugin_spm_test.dart"],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     platform = "ios",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = [
+        "assets/logo.png",
+        "shaders/ink_stub.frag",
+    ],
     deps = [
         "//ios_greeting_plugin",
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:spm_bigint_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -211,15 +226,19 @@ flutter_integration_test(
     size = "large",
     srcs = ["integration_test/plugin_spm_test.dart"],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     platform = "ios",
+    pub_packages = "@deps_mapped//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = [
+        "assets/logo.png",
+        "shaders/ink_stub.frag",
+    ],
     deps = [
         "@deps_mapped//:flutter",
         "@deps_mapped//:flutter_test",
         "@deps_mapped//:integration_test",
         "@deps_mapped//:spm_bigint_plugin",
         "@mapped_greeting_plugin//:ios_greeting_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -233,15 +252,19 @@ flutter_integration_test(
     size = "large",
     srcs = ["integration_test/plugin_spm_objc_test.dart"],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     platform = "ios",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = [
+        "assets/logo.png",
+        "shaders/ink_stub.frag",
+    ],
     deps = [
         "//ios_greeting_plugin",
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:spm_objc_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -258,15 +281,19 @@ flutter_integration_test(
     size = "large",
     srcs = ["integration_test/plugin_spm_graph_test.dart"],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     platform = "ios",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = [
+        "assets/logo.png",
+        "shaders/ink_stub.frag",
+    ],
     deps = [
         "//ios_greeting_plugin",
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:spm_graph_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -286,7 +313,6 @@ flutter_integration_test(
         "@deps_pods//:flutter_test",
         "@deps_pods//:integration_test",
         "@deps_pods//:pod_bigint_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -305,7 +331,6 @@ flutter_integration_test(
         "@deps_pods_wrong//:flutter_test",
         "@deps_pods_wrong//:integration_test",
         "@deps_pods_wrong//:pod_bigint_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -319,15 +344,19 @@ flutter_integration_test(
     size = "large",
     srcs = ["integration_test/red_test.dart"],
     app_srcs = ["lib/main.dart"],
-    assets = ["assets/logo.png"],
     platform = "ios",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = [
+        "assets/logo.png",
+        "shaders/ink_stub.frag",
+    ],
     tags = ["manual"],
     deps = [
         "//ios_greeting_plugin",
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -420,7 +449,6 @@ flutter_test(
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:intl",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -436,7 +464,6 @@ flutter_test(
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -456,7 +483,6 @@ flutter_test(
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:spm_bigint_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -482,7 +508,6 @@ flutter_test(
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:spm_graph_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -498,7 +523,6 @@ flutter_library(
         "@deps_pods//:flutter_test",
         "@deps_pods//:integration_test",
         "@deps_pods//:pod_bigint_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -519,7 +543,6 @@ flutter_library(
         "@deps//:flutter_test",
         "@deps//:integration_test",
         "@deps//:spm_objc_plugin",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -539,7 +562,6 @@ flutter_library(
         "@deps//:flutter",
         "@deps//:flutter_test",
         "@deps//:integration_test",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

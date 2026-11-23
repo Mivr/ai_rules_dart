@@ -52,10 +52,10 @@ flutter_application(
     name = "ffi_plugin_app",
     package_name = "ffi_plugin_example",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "//multiply_plugin",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -299,6 +299,5 @@ flutter_library(
     deps = [
         "//multiply_plugin",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )

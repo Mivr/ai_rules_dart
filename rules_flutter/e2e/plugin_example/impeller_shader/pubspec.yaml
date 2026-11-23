@@ -1,0 +1,11 @@
+# The project of the impeller_shader apps. It depends on the `impeller_shader`
+# package in pkg/, whose pubspec names the shader the app draws with.
+name: impeller_shader_app
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  impeller_shader:
+    path: pkg

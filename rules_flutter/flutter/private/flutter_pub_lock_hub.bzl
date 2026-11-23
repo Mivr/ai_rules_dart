@@ -342,6 +342,31 @@ def read_hub_pub_packages(ctx):
     data = json.decode(ctx.read(label))
     return struct(packages = data["packages"], scc_targets = data["scc_targets"])
 
+def hub_lock_packages_build_content(packages):
+    """Renders the hub's `packages/BUILD.bazel`: every package of the lock as one target.
+
+    An app's `pub_packages` names it, so the package config its asset bundle
+    reads lists every package `pub get` would list, dev dependencies too, as
+    the licences in `NOTICES` need.
+
+    Args:
+        packages: The hub's package names.
+
+    Returns:
+        The BUILD file text.
+    """
+    deps = "".join(['        "//:%s",\n' % name for name in sorted(packages)])
+    return """\
+load("@rules_flutter//flutter:defs.bzl", "flutter_pub_packages")
+
+flutter_pub_packages(
+    name = "packages",
+    deps = [
+{deps}    ],
+    visibility = ["//visibility:public"],
+)
+""".format(deps = deps)
+
 def flutter_pub_hub_files(hub_name, packages, merged_members, swift_package_sha256, ios_native_deps):
     """Every file a Flutter hub adds to rules_dart's hub (`pub_lock_hub(files = ...)`).
 
@@ -358,6 +383,7 @@ def flutter_pub_hub_files(hub_name, packages, merged_members, swift_package_sha2
     scc_targets = {m: "@{repo}//:{m}".format(repo = merged_members[m], m = m) for m in merged_members}
     files = {
         "android/BUILD.bazel": make_flutter_pub_hub_android_build_content(sorted(packages), hub_name, scc_targets),
+        "packages/BUILD.bazel": hub_lock_packages_build_content(packages),
         "ios_native_deps.json": ios_native_deps,
         "packages.bzl": hub_packages_bzl_content(hub_name, packages),
         "pub_packages.json": hub_pub_packages_json(packages, merged_members),

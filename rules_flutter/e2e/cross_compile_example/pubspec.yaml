@@ -9,3 +9,5 @@ dependencies:
     sdk: flutter
 dev_dependencies:
   very_good_analysis: ^10.3.0
+flutter:
+  uses-material-design: true

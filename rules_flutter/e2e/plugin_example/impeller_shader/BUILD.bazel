@@ -8,11 +8,13 @@ load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app")
 # uniform array in a loop). It builds for the platforms that render with
 # Impeller, with a warning, as under `flutter build`; a web build of it fails,
 # since web compiles SkSL alone. The app draws with it and checks the pixel
-# (lib/main.dart).
+# (lib/main.dart). The app's pubspec depends on the package, which is what
+# bundles its shader.
 flutter_application(
     name = "app_flutter",
     package_name = "impeller_shader_app",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "//impeller_shader/pkg",
         "@deps//:flutter",
@@ -38,21 +40,6 @@ flutter_android_app(
     package_name = "com.example.impellershader",
     application = ":app_flutter",
     tags = ["manual"],
-)
-
-# The same shader with SkSL required: the build must fail. `manual`, and
-# checked by hand (docs/TESTING.md), since a test cannot expect a build to
-# fail.
-flutter_application(
-    name = "app_flutter_sksl_required",
-    package_name = "impeller_shader_app",
-    main = "lib/main.dart",
-    require_sksl_shaders = True,
-    tags = ["manual"],
-    deps = [
-        "//impeller_shader/pkg",
-        "@deps//:flutter",
-    ],
 )
 
 build_test(

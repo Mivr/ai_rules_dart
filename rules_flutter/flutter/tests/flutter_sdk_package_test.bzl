@@ -89,9 +89,6 @@ def _flutter_spoke_declares_its_language_version_test_impl(ctx):
     asserts.true(env, "flutter_library(" in content, content)
     asserts.true(env, 'language_version = "3.11",' in content, content)
 
-    # The shader channel is what makes this spoke a flutter_library rather
-    # than a dart_library; adding a language version must not disturb it.
-    asserts.true(env, 'shaders = glob(["lib/src/material/shaders/*.frag"])' in content, content)
     asserts.true(env, 'load("@hub//:packages.bzl", "hub_deps")' in content, content)
     asserts.true(env, 'deps = hub_deps([\n        "meta",\n    ]),' in content, content)
 

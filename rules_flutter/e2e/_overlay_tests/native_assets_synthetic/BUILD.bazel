@@ -74,7 +74,6 @@ flutter_application(
     deps = [
         ":synthetic_glue",
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 

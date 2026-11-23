@@ -33,7 +33,7 @@ load("@rules_dart//dart/pub:yaml.bzl", "pubspec_deps", "pubspec_environment_erro
 load("//flutter/private:flutter_pub_plugin_defines.bzl", "check_plugin_defines", "plugin_defines_attr")
 load("//flutter/private:flutter_pub_plugin_deps.bzl", "check_plugin_native_deps")
 load("//flutter/private:flutter_pubspec.bzl", "parse_flutter_assets_block", "parse_flutter_plugin_block")
-load(":asset_uri.bzl", "normalize_spoke_asset_block", "normalize_spoke_assets", "normalize_spoke_fonts", "normalize_spoke_shaders")
+load(":asset_uri.bzl", "normalize_spoke_asset_block")
 load(
     ":flutter_pub_android_package.bzl",
     "android_package_repo_name",
@@ -51,14 +51,6 @@ load(
     _plugin_privacy_files_arg = "plugin_privacy_files_arg",
 )
 load(":flutter_pub_apple_local.bzl", "apply_apple_native_deps")
-load(
-    ":flutter_pub_assets.bzl",
-    "check_asset_entry_problems",
-    "ctx_package_lister",
-    "expand_pub_asset_entries",
-    "pub_shader_condition_entries",
-)
-load(":flutter_pub_cover.bzl", "covering_entry", "covering_entry_lookup")
 load(":flutter_pub_git.bzl", "fetch_git_package")
 load(":flutter_pub_lock_hub.bzl", "android_plugin_libs_arg", "overlay_with_android_edge")
 load(":flutter_pub_maven.bzl", _maven_deps_attr = "maven_deps_attr", _maven_ignore_attr = "maven_ignore_attr")
@@ -71,16 +63,15 @@ load(
 )
 load(
     ":flutter_pub_package_helpers.bzl",
-    _build_pkg_asset_conditions = "build_pkg_asset_conditions",
     _check_pubspec_identity_mismatch = "check_pubspec_identity_mismatch",
     _make_flutter_test_package_bzl_content = "make_flutter_test_package_bzl_content",
     _malformed_pub_version_refusal = "malformed_pub_version_refusal",
-    _merge_pub_asset_conditions = "merge_pub_asset_conditions",
     _missing_pubspec_refusal = "missing_pubspec_refusal",
     _parse_pubspec_identity = "parse_pubspec_identity",
-    _pub_attrs = "format_pub_asset_attrs_with_shaders",
+    _pub_attrs = "format_spoke_data_attr",
     _pubspec_name_refusal = "pubspec_name_refusal",
     _pubspec_version_refusal = "pubspec_version_refusal",
+    _spoke_data_patterns = "spoke_data_patterns",
 )
 load(":flutter_pub_walk.bzl", "PUB_WALK_BOUND", "heredoc_blocks_bound_error")
 load(
@@ -91,13 +82,12 @@ load(
     _gradle_parse_android_manifest_package = "parse_android_manifest_package",
     _gradle_parse_gradle_android_namespace = "parse_gradle_android_namespace",
 )
-load(":starlark_literal.bzl", "check_spoke_file_name", "decode_starlark_escapes", "starlark_string_literal")
+load(":starlark_literal.bzl", "decode_starlark_escapes", "starlark_string_literal")
 load(":swiftpm_resolved.bzl", "pub_spoke_swiftpm_rule_attrs")
 
 visibility(["//flutter/..."])
 
 malformed_pub_version_refusal = _malformed_pub_version_refusal
-merge_pub_asset_conditions = _merge_pub_asset_conditions
 missing_pubspec_refusal = _missing_pubspec_refusal
 parse_pubspec_identity = _parse_pubspec_identity
 pubspec_name_refusal = _pubspec_name_refusal
@@ -234,73 +224,6 @@ def _detect_desktop_source_dir(ctx, package_name, platform):
         return platform
     return ""
 
-def encode_spoke_fonts(parsed_fonts):
-    """The spoke's font attrs from normalized `flutter.fonts` entries.
-
-    One loop builds both shapes `build_pub_contributions` matches by key:
-    the `fonts_json` payload carrying each font's encoded bundle key, and
-    the `font_files` label dict whose decoded labels name the files. Each
-    font arrives normalized (`struct(asset, key, weight, style)` from
-    `normalize_spoke_fonts`); a spelling flutter_tools would not bundle
-    already failed the fetch there.
-
-    Args:
-        parsed_fonts: Normalized entries from `normalize_spoke_fonts`.
-
-    Returns:
-        `struct(fonts_json_str, font_files)`: the JSON payload ("" when
-        there are no fonts) and the label-to-path dict.
-    """
-    fonts_for_json = []
-    font_files = {}
-    for entry in parsed_fonts:
-        fonts_list = []
-        for font in entry.fonts:
-            d = {"asset": font.key}
-            if font.weight != None:
-                d["weight"] = font.weight
-            if font.style != None:
-                d["style"] = font.style
-            fonts_list.append(d)
-            font_files[":" + font.asset] = font.key
-        fonts_for_json.append({"family": entry.family, "fonts": fonts_list})
-    return struct(
-        fonts_json_str = json.encode(fonts_for_json) if fonts_for_json else "",
-        font_files = font_files,
-    )
-
-def build_pkg_assets_dict(expanded):
-    """Build the `pkg_assets` dict from expanded per-file entries.
-
-    Flutter's `flutter.assets:` accepts paths and trailing-slash directory
-    prefixes. Bazel needs an explicit label per file, so each directory is
-    walked at repo-rule time and emits one entry per discovered file. The
-    label names the decoded file (`":" + path`); the value is the
-    percent-encoded bundle key, as flutter_tools keys it
-    (`asset.dart:1425-1428`).
-
-    Args:
-        expanded: List of expanded asset entries, each with `path` and `key` fields.
-
-    Returns:
-        Dict mapping `":" + path` labels to percent-encoded bundle keys.
-    """
-    return {":" + entry.path: entry.key for entry in expanded}
-
-def build_pkg_shaders_dict(parsed_shaders):
-    """Build the `pkg_shaders` dict from normalized shader entries.
-
-    Same shape as pkg_assets, no directories: decoded labels naming the
-    files, encoded bundle keys as values (`asset.dart:1425-1428`).
-
-    Args:
-        parsed_shaders: List of normalized shader entries, each with `path` and `key` fields.
-
-    Returns:
-        Dict mapping `":" + path` labels to percent-encoded bundle keys.
-    """
-    return {":" + entry.path: entry.key for entry in parsed_shaders}
-
 def _format_code_asset_attrs(code_assets, has_unreplaced_hook):
     """Render the `code_assets` / `has_unreplaced_hook` attrs for a spoke.
 
@@ -324,10 +247,8 @@ def _format_code_asset_attrs(code_assets, has_unreplaced_hook):
 # holds for every spoke whichever generator ran. A published package's
 # `lib/` is addressable as `package:<name>/<path>` whatever the extension;
 # a spoke that keeps only `*.dart` is a package with pieces missing.
-# `resources` is orthogonal to the declared-asset attrs (`pkg_assets` /
-# `pkg_shaders` / `font_files`): those name what is transformed and bundled
-# into flutter_assets, while `resources` names membership in the staged
-# package tree. A shader under `lib/` is legitimately both.
+# `resources` is orthogonal to `data`, the files outside `lib/` an app's
+# asset bundle reads; a shader under `lib/` is legitimately both.
 _RESOURCES_GLOB_BLOCK = """    resources = glob(
         ["lib/**"],
         exclude = ["lib/**/*.dart"],
@@ -359,12 +280,7 @@ def make_flutter_library_build_content(
         language_version,
         code_assets,
         has_unreplaced_hook,
-        fonts_json_str,
-        font_files,
-        pkg_assets,
-        pkg_shaders,
-        pkg_asset_platforms = {},
-        pkg_asset_flavors = {},
+        data_patterns,
         version = ""):
     """Generate BUILD content for a non-plugin Flutter spoke shipping fonts/assets/shaders.
 
@@ -381,14 +297,8 @@ def make_flutter_library_build_content(
         code_assets: `dart_code_asset` label strings replacing this
             package's build hook output.
         has_unreplaced_hook: Path of a build hook nothing replaces, or "".
-        fonts_json_str: JSON-encoded `flutter.fonts` declarations, or "".
-        font_files: Dict of font file label -> package-relative path.
-        pkg_assets: Dict of asset file label -> package-relative path.
-        pkg_shaders: Dict of shader file label -> package-relative path.
-        pkg_asset_platforms: Dict of asset label -> platform list, only for
-            restricted entries. Empty (the common case) emits no attr, so
-            unconditional spokes are byte-identical to before.
-        pkg_asset_flavors: Dict of asset label -> flavor list, same shape.
+        data_patterns: Glob patterns of the package's own files an app's
+            asset bundle reads (`spoke_data_patterns`).
         version: The resolved package version this spoke was fetched at, or
             empty. Emitted only when known, matching
             `make_dart_library_build_content`: its sole use is agreement
@@ -404,7 +314,7 @@ def make_flutter_library_build_content(
     """
     deps_block = _spoke_deps_block(deps)
 
-    pub_attrs = _pub_attrs(fonts_json_str, font_files, pkg_assets, pkg_shaders, pkg_asset_platforms, pkg_asset_flavors)
+    pub_attrs = _pub_attrs(data_patterns)
 
     return """\
 load("@rules_flutter//flutter:defs.bzl", "flutter_library")
@@ -452,12 +362,7 @@ def make_flutter_plugin_build_content(
         apple_ios_privacy_manifests,
         linux_src_dir,
         windows_src_dir,
-        fonts_json_str = "",
-        font_files = {},
-        pkg_assets = {},
-        pkg_shaders = {},
-        pkg_asset_platforms = {},
-        pkg_asset_flavors = {},
+        data_patterns = [],
         version = "",
         plugin_defines = []):
     """Generate BUILD content for a Flutter plugin spoke.
@@ -489,14 +394,8 @@ def make_flutter_plugin_build_content(
         apple_ios_privacy_manifests: `PrivacyInfo.xcprivacy` paths (iOS).
         linux_src_dir: Linux C/C++ source dir, or "".
         windows_src_dir: Windows C/C++ source dir, or "".
-        fonts_json_str: JSON-encoded `flutter.fonts` declarations, or "".
-        font_files: Dict of font file label -> package-relative path.
-        pkg_assets: Dict of asset file label -> package-relative path.
-        pkg_shaders: Dict of shader file label -> package-relative path.
-        pkg_asset_platforms: Dict of asset label -> platform list, only for
-            restricted entries. Empty (the common case) emits no attr, so
-            unconditional spokes are byte-identical to before.
-        pkg_asset_flavors: Dict of asset label -> flavor list, same shape.
+        data_patterns: Glob patterns of the package's own files an app's
+            asset bundle reads (`spoke_data_patterns`).
         version: The resolved package version this spoke was fetched at, or
             empty. Emitted only when known, matching
             `make_dart_library_build_content`: its sole use is agreement
@@ -550,7 +449,7 @@ def make_flutter_plugin_build_content(
         apple_ios_privacy_manifests,
     )
 
-    pub_attrs = _pub_attrs(fonts_json_str, font_files, pkg_assets, pkg_shaders, pkg_asset_platforms, pkg_asset_flavors)
+    pub_attrs = _pub_attrs(data_patterns)
 
     return """\
 load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
@@ -1136,74 +1035,19 @@ def _read_spoke_pubspec(ctx, data = None):
         asset_block = asset_block,
     )
 
-def check_spoke_file_names(package_name, asset_block, expanded):
-    """Fail the spoke fetch on declared or walked names no target can name.
-
-    Every refused class (see `check_spoke_file_name`) fails here, naming
-    the package, the declaring entry and the file rather than emitting a
-    spoke that cannot name them. Trailing-slash directory declarations are
-    covering entries, never emitted target names, so only the files walked
-    out of them are checked (with the declaration in the message).
-
-    Args:
-        package_name: The pub package the entries come from.
-        asset_block: The parsed `flutter` block (assets, fonts, shaders).
-        expanded: The walked asset files, each with a `path` field.
-
-    Returns:
-        None; fails the fetch on the first unemittable name.
-    """
-    for entry in asset_block.assets:
-        if not entry.path.endswith("/"):
-            check_spoke_file_name(package_name, entry.path, entry.path)
-    lookup = covering_entry_lookup(asset_block.assets)
-    for item in expanded:
-        check_spoke_file_name(package_name, covering_entry(lookup, item.path), item.path)
-    for family in asset_block.fonts:
-        for font in family.fonts:
-            check_spoke_file_name(package_name, "flutter.fonts[" + family.family + "]", font.asset)
-    for shader in asset_block.shaders:
-        check_spoke_file_name(package_name, shader.path, shader.path)
-
 def _spoke_asset_inputs(ctx, package_name, asset_block):
-    """Pre-computes the pub-asset generator inputs, used by either branch.
+    """What the spoke lists for the files its pubspec names.
 
-    Every entry is normalized through `asset_uri.bzl` first (see
-    `normalize_asset_uri`): labels name the decoded files while every dict
-    carries the encoded bundle keys flutter_tools bundles
-    (`asset.dart:1425-1428`). A spelling flutter_tools would not bundle
-    fails the fetch naming the package, its pubspec.yaml and the entry.
+    Every entry is normalized through `asset_uri.bzl` first, so the patterns
+    name the decoded files. Whether a named file exists, and how it is
+    bundled, is the Flutter tool's to say when an app bundles the package.
 
-    Returns `struct(fonts_json_str, font_files, pkg_assets,
-    pkg_asset_platforms, pkg_asset_flavors, pkg_shaders,
-    has_contributions)`.
+    Returns `struct(data_patterns, has_contributions)`.
     """
-    check_asset_entry_problems(package_name, asset_block.asset_errors)
-    assets = normalize_spoke_assets(package_name, asset_block.assets)
-    fonts = normalize_spoke_fonts(package_name, asset_block.fonts)
-    shaders = normalize_spoke_shaders(package_name, asset_block.shaders)
-    spoke_fonts = encode_spoke_fonts(fonts)
-    expansion = expand_pub_asset_entries(
-        assets,
-        ctx_package_lister(ctx, package_name),
-        package_name,
-    )
-    if expansion.error:
-        fail(expansion.error)
-    expanded = expansion.expanded
-    check_spoke_file_names(package_name, struct(assets = assets, fonts = fonts, shaders = shaders), expanded)
-    pkg_assets_dict = build_pkg_assets_dict(expanded)
-
-    # One pair of condition attrs carries asset and shader keys alike.
-    entries = pub_shader_condition_entries(expanded, shaders, asset_block.shaders)
-    pkg_asset_platforms, pkg_asset_flavors = _build_pkg_asset_conditions(entries, package_name)
+    _ = ctx  # @unused
+    normalized = normalize_spoke_asset_block(package_name, asset_block)
     return struct(
-        fonts_json_str = spoke_fonts.fonts_json_str,
-        font_files = spoke_fonts.font_files,
-        pkg_assets = pkg_assets_dict,
-        pkg_asset_platforms = pkg_asset_platforms,
-        pkg_asset_flavors = pkg_asset_flavors,
-        pkg_shaders = build_pkg_shaders_dict(shaders),
+        data_patterns = _spoke_data_patterns(normalized, package_name),
         has_contributions = bool(asset_block.fonts) or bool(asset_block.assets) or bool(asset_block.shaders),
     )
 
@@ -1261,12 +1105,7 @@ def _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hoo
         apple_ios_privacy_manifests = apple.ios_manifests,
         linux_src_dir = desktop.linux,
         windows_src_dir = desktop.windows,
-        fonts_json_str = assets.fonts_json_str,
-        font_files = assets.font_files,
-        pkg_assets = assets.pkg_assets,
-        pkg_asset_platforms = assets.pkg_asset_platforms,
-        pkg_asset_flavors = assets.pkg_asset_flavors,
-        pkg_shaders = assets.pkg_shaders,
+        data_patterns = assets.data_patterns,
         plugin_defines = ctx.attr.plugin_defines,
     )
     build_content = apply_apple_native_deps(ctx, package_name, apple, build_content)
@@ -1290,12 +1129,7 @@ def _build_library_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_ho
         version = ctx.attr.version,
         code_assets = ctx.attr.code_assets,
         has_unreplaced_hook = unreplaced_hook,
-        fonts_json_str = assets.fonts_json_str,
-        font_files = assets.font_files,
-        pkg_assets = assets.pkg_assets,
-        pkg_asset_platforms = assets.pkg_asset_platforms,
-        pkg_asset_flavors = assets.pkg_asset_flavors,
-        pkg_shaders = assets.pkg_shaders,
+        data_patterns = assets.data_patterns,
     )
     return struct(build_content = build_content, android_plugin = False)
 
@@ -1512,23 +1346,20 @@ def _verify_spoke_deps(ctx, pubspec):
     return list(ctx.attr.deps)
 
 def spoke_dep_labels(deps, asset_block):
-    """The spoke's dependency labels: its planned ones, plus the Material icons when asked for.
+    """The spoke's dependency labels: its planned ones.
 
-    If the pubspec declares `uses-material-design: true`, the spoke depends
-    on `@rules_flutter//flutter:material_icons` so the bundled font travels
-    through the deps graph like any other pub package's font. A mismatch
-    between the app and a package (the app says false, the package true)
-    cannot happen.
+    The Material icons a pubspec asks for with `uses-material-design` are
+    bundled by the app's asset tool from the Flutter root, not reached
+    through a dependency.
 
     Args:
         deps: The planned dependency labels.
-        asset_block: The parsed `flutter` asset block.
+        asset_block: The parsed `flutter` asset block (unused).
 
     Returns:
         The labels.
     """
-    if asset_block and getattr(asset_block, "uses_material_design", False):
-        return deps + ["@rules_flutter//flutter:material_icons"]
+    _ = asset_block  # @unused
     return deps
 
 def _generate_spoke(ctx, pubspec_data = None):

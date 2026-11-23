@@ -4,10 +4,10 @@
 ///
 /// `:hello_world_ios` is a `flutter_ios_app` over `:hello_world_app`, which
 /// depends on the `platform_assets` path package (unconditional `any.txt`
-/// plus per-platform entries), on `cupertino_icons` and on the toolchain
-/// `material_icons`. The test reads `hello_world_ios.ipa` through
-/// `:hello_world_ios_simulator` and asserts, each with its own message
-/// naming what it expected and what it found:
+/// plus per-platform entries) and on `cupertino_icons`, and whose pubspec
+/// asks for the Material icons (`uses-material-design`). The test reads
+/// `hello_world_ios.ipa` through `:hello_world_ios_simulator` and asserts,
+/// each with its own message naming what it expected and what it found:
 ///
 /// * the app's `Info.plist` carries `CFBundleShortVersionString` `2.3.4`
 ///   and `CFBundleVersion` `42` from `:hello_world_ios_app_version`;

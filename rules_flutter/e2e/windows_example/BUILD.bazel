@@ -20,7 +20,6 @@ flutter_application(
     main = "lib/main.dart",
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )
 
@@ -169,6 +168,5 @@ flutter_library(
     srcs = glob(["lib/**/*.dart"]),
     deps = [
         "@deps//:flutter",
-        "@rules_flutter//flutter:material_icons",
     ],
 )

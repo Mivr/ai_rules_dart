@@ -38,11 +38,8 @@ load(
     "collect_native_libs",
     "declare_flutter_assets_dir",
     "extract_library_tags_action",
-    "flutter_build_assets",
     "flutter_build_mode",
-    "flutter_compile_shaders",
     "host_target_arch",
-    "make_bundle_inputs",
     "merge_dart_defines",
     "resolve_flutter_sdk_info",
 )
@@ -50,6 +47,7 @@ load(
     "//flutter/private:flutter_aot_compile.bzl",
     "flutter_aot_elf_action",
 )
+load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle")
 load(
     "//flutter/private:flutter_compile.bzl",
     "flutter_kernel_compile_action",
@@ -447,13 +445,14 @@ def integration_test_aot(ctx, flutter_sdk_info, kernel_dill, is_debug, strip):
     return aot_output
 
 def integration_test_assets(ctx, flutter_sdk_info, target_platform, kernel_dill, is_debug, data_assets):
-    """Compiles shaders and builds the `flutter_assets/` tree.
+    """Builds the `flutter_assets/` tree from the app's pubspec.
 
     Args:
         ctx: The rule context of the rule implementation that calls this helper.
         flutter_sdk_info: The resolved Flutter SDK info.
         target_platform: The bundle's platform.
-        kernel_dill: The compiled kernel File, or None for web.
+        kernel_dill: The compiled kernel File, or None for web; read only to
+            shake icons in a release or profile build.
         is_debug: Whether the build is debug.
         data_assets: The transitive data-asset depset, or None.
 
@@ -461,20 +460,16 @@ def integration_test_assets(ctx, flutter_sdk_info, target_platform, kernel_dill,
         The declared `flutter_assets` directory.
     """
     flavor = ctx.attr.flavor if hasattr(ctx.attr, "flavor") and ctx.attr.flavor else None
-    compiled_shaders = flutter_compile_shaders(ctx, flutter_sdk_info, target_platform, flavor = flavor)
     flutter_assets = declare_flutter_assets_dir(ctx)
-    flutter_build_assets(
-        ctx = ctx,
-        flutter_sdk_info = flutter_sdk_info,
-        output_dir = flutter_assets,
-        bundle = make_bundle_inputs(
-            target_platform = target_platform,
-            compiled_shaders = compiled_shaders,
-            kernel_dill = kernel_dill,
-            is_debug = is_debug,
-            data_assets = data_assets,
-            flavor = flavor,
-        ),
+    flutter_bundle(
+        ctx,
+        flutter_sdk_info,
+        flutter_assets,
+        target_platform = target_platform,
+        mode = "debug" if is_debug else ("profile" if getattr(ctx.attr, "profile", False) else "release"),
+        flavor = flavor,
+        app_dill = None if is_debug else kernel_dill,
+        data_assets = data_assets,
     )
     return flutter_assets
 
@@ -501,20 +496,12 @@ def integration_test_native_libs(ctx, bundled_code_assets = None):
     return native_libs
 
 _WEB_RELEVANT_KEYS = (
-    "assets",
-    "shaders",
-    "shader_includes",
-    "require_sksl_shaders",
-    "_shader_compile_tool",
     "tree_shake_icons",
-    "license_files",
     "track_widget_creation",
-    "_asset_bundle_tool",
-    "_const_finder_tool",
 )
 
 # The kernel-compile and asset attributes every platform test or app rule takes.
-INTEGRATION_TEST_BUILD_ATTRS = KERNEL_COMPILE_ATTRS | {
+INTEGRATION_TEST_BUILD_ATTRS = KERNEL_COMPILE_ATTRS | BUNDLE_ATTRS | {
     k: v
     for k, v in FLUTTER_APPLICATION_ATTRS.items()
     if k in _WEB_RELEVANT_KEYS

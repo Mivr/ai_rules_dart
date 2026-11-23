@@ -1,0 +1,16 @@
+# The project of the flavored apps and their tests. It depends on
+# `flavor_assets`, whose pubspec names one asset per flavor.
+name: flavored
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  flavor_assets:
+    path: ../../libs/flavor_assets
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter

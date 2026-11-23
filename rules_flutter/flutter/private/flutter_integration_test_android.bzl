@@ -44,7 +44,6 @@ load(
     "FLUTTER_DEPS_DOC",
     "KERNEL_COMPILE_ATTRS",
     "PLATFORM_CONSTRAINT_ATTRS",
-    "flutter_app_shader_aspect",
 )
 load(
     "//flutter/private:constants.bzl",
@@ -328,7 +327,7 @@ _ANDROID_INTEGRATION_APP_ATTRS["flavor"] = attr.string(default = "", doc = "The 
 _ANDROID_INTEGRATION_APP_ATTRS["deps"] = attr.label_list(
     doc = FLUTTER_DEPS_DOC,
     providers = [DartInfo],
-    aspects = [flutter_app_shader_aspect, flutter_kernel_module_aspect],
+    aspects = [flutter_kernel_module_aspect],
 )
 _ANDROID_INTEGRATION_APP_ATTRS["native_deps"] = attr.label_list(
     doc = "Native shared library targets (cc_library) for dart:ffi bundled into lib/.",

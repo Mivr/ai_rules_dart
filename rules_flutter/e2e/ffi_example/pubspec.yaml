@@ -13,3 +13,5 @@ dependencies:
   drift: ^2.32.0
 dev_dependencies:
   very_good_analysis: ^10.3.0
+flutter:
+  uses-material-design: true

@@ -28,13 +28,6 @@
   "flutter/private/tools/code_resources.dart": {
     "dangling_library_doc_comments": 1
   },
-  "flutter/private/tools/compile_shader.dart": {
-    "process_requires_environment": 2,
-    "unintended_html_in_doc_comment": 3
-  },
-  "flutter/private/tools/const_finder.dart": {
-    "process_requires_environment": 1
-  },
   "flutter/private/tools/crc32.dart": {
     "parameter_assignments": 1
   },
@@ -108,11 +101,6 @@
     "no_wall_clock_in_actions": 4,
     "prefer_const_constructors": 1,
     "process_requires_environment": 1
-  },
-  "flutter/private/tools/generate_asset_manifest.dart": {
-    "dangling_library_doc_comments": 1,
-    "process_requires_environment": 1,
-    "unintended_html_in_doc_comment": 2
   },
   "flutter/private/tools/ios_simulator_boot.dart": {
     "avoid_dynamic_calls": 2,
@@ -253,10 +241,6 @@
     "close_sinks": 1,
     "inference_failure_on_collection_literal": 1,
     "unnecessary_async": 1
-  },
-  "flutter/private/tools/test/generate_asset_manifest_test.dart": {
-    "leading_newlines_in_multiline_strings": 6,
-    "use_raw_strings": 4
   },
   "flutter/private/tools/test/ios_simulator_boot_test.dart": {
     "async_return_with_no_await": 1,
@@ -434,15 +418,6 @@
     "implementation_imports": 1,
     "public_member_api_docs": 1
   },
-  "flutter/tests/icon_tree_shake_fixture/icon_choice_lib/lib/icon_choice.dart": {
-    "do_not_use_environment": 2,
-    "public_member_api_docs": 3
-  },
-  "flutter/tests/icon_tree_shake_fixture/icon_tree_shake_test.dart": {
-    "avoid_redundant_argument_values": 21,
-    "prefer_const_constructors": 1,
-    "use_raw_strings": 10
-  },
   "flutter/tests/icon_tree_shake_fixture/lib/foundation.dart": {
     "do_not_use_environment": 2,
     "public_member_api_docs": 3
@@ -452,10 +427,6 @@
   },
   "flutter/tests/icon_tree_shake_fixture/lib/src/widgets/icon_data.dart": {
     "public_member_api_docs": 7
-  },
-  "flutter/tests/icon_tree_shake_fixture/web_icon_plugin/lib/web_icon_plugin.dart": {
-    "avoid_classes_with_only_static_members": 1,
-    "public_member_api_docs": 3
   },
   "flutter/tests/ios_integration_dep/lib/stub.dart": {
     "public_member_api_docs": 1

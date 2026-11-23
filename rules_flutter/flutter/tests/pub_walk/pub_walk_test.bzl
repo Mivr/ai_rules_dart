@@ -1,7 +1,7 @@
 """Tests for the shared pub spoke walk bound.
 
-Every pub spoke directory walk (asset listing, plugin source detection,
-path-package linking) shares `PUB_WALK_BOUND` and fails loudly at it, and
+Every pub spoke directory walk (plugin source detection, path-package
+linking) shares `PUB_WALK_BOUND` and fails loudly at it, and
 the overlay heredoc rewrite fails loudly when blocks are left over. Each
 walk is driven here with a small bound and a fake directory listing:
 exactly the bound passes, the bound plus one fails with the message naming
@@ -9,11 +9,6 @@ the package, the directory or template, and the bound.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load(
-    "//flutter/private:flutter_pub_assets.bzl",
-    "PUB_ASSET_LIST_BOUND",
-    "list_files_recursive",
-)
 load(
     "//flutter/private:flutter_pub_package.bzl",
     "link_scoped_tree_bounded",
@@ -37,25 +32,7 @@ def _shared_bound_covers_monorepos_test_impl(ctx):
     """One bound of at least a million directories for every pub spoke walk."""
     env = unittest.begin(ctx)
     asserts.true(env, PUB_WALK_BOUND >= 1000000, "PUB_WALK_BOUND is %d" % PUB_WALK_BOUND)
-    asserts.equals(env, PUB_WALK_BOUND, PUB_ASSET_LIST_BOUND)
     return unittest.end(env)
-
-# -- asset listing ---------------------------------------------------------------------
-
-# A linear chain needing exactly 3 directory pops to drain: bound 3 passes,
-# bound 2 leaves c1/c2/c3 unvisited.
-_ASSET_PASS_TREE = {
-    "pics": [struct(name = "c1", is_dir = True)],
-    "pics/c1": [struct(name = "c2", is_dir = True)],
-    "pics/c1/c2": [struct(name = "logo.png", is_dir = False)],
-}
-
-_ASSET_FAIL_TREE = {
-    "pics": [struct(name = "c1", is_dir = True)],
-    "pics/c1": [struct(name = "c2", is_dir = True)],
-    "pics/c1/c2": [struct(name = "c3", is_dir = True)],
-    "pics/c1/c2/c3": [struct(name = "logo.png", is_dir = False)],
-}
 
 def _tree_readdir(tree):
     """A `readdir` callable over a dict tree; a missing directory reads as empty."""
@@ -64,23 +41,6 @@ def _tree_readdir(tree):
         return tree.get(directory, [])
 
     return readdir
-
-def _asset_bound_passes_at_the_bound_test_impl(ctx):
-    """A walk needing exactly the bound pops lists every file, no error."""
-    env = unittest.begin(ctx)
-    result = list_files_recursive(_tree_readdir(_ASSET_PASS_TREE), "pics", "walk_pkg", 3)
-    asserts.equals(env, "", result.error)
-    asserts.equals(env, ["pics/c1/c2/logo.png"], result.files)
-    return unittest.end(env)
-
-def _asset_bound_fails_past_the_bound_test_impl(ctx):
-    """A walk needing one pop more fails naming package, directory, bound."""
-    env = unittest.begin(ctx)
-    result = list_files_recursive(_tree_readdir(_ASSET_FAIL_TREE), "pics", "walk_pkg", 3)
-    asserts.equals(env, [], result.files)
-    for want in ["walk_pkg", "pics", "3"]:
-        asserts.true(env, want in result.error, result.error)
-    return unittest.end(env)
 
 # -- plugin source detection ------------------------------------------------------------
 #
@@ -247,8 +207,6 @@ def _heredoc_rewrite_reports_leftover_past_the_bound_test_impl(ctx):
     return unittest.end(env)
 
 _t0_test = unittest.make(_shared_bound_covers_monorepos_test_impl)
-_t1_test = unittest.make(_asset_bound_passes_at_the_bound_test_impl)
-_t2_test = unittest.make(_asset_bound_fails_past_the_bound_test_impl)
 _t3_test = unittest.make(_source_scan_finds_file_after_empty_dirs_test_impl)
 _t4_test = unittest.make(_source_scan_bound_reports_loudly_test_impl)
 _t5_test = unittest.make(_source_scan_without_match_walks_clean_test_impl)
@@ -261,8 +219,6 @@ def pub_walk_test_suite(name):
     small_unittest_suite(
         name,
         _t0_test,
-        _t1_test,
-        _t2_test,
         _t3_test,
         _t4_test,
         _t5_test,

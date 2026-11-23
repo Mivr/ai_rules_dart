@@ -137,10 +137,12 @@ void main() {
   final jsConfig = File(
     '$root/app_js_web/flutter_bootstrap.js',
   ).readAsStringSync();
+  // The build config's key, not the bare name: the inlined flutter.js reads
+  // the setting, so its code names it in every bundle.
   check(
     'app_js leaves useLocalCanvasKit unset',
-    ok: !jsConfig.contains('useLocalCanvasKit'),
-    detail: !jsConfig.contains('useLocalCanvasKit')
+    ok: !jsConfig.contains('"useLocalCanvasKit":'),
+    detail: !jsConfig.contains('"useLocalCanvasKit":')
         ? 'absent as declared'
         : 'present without the attribute being set',
   );

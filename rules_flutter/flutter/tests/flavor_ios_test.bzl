@@ -2,8 +2,8 @@
 
 `flutter_ios_app` has no `flavor` attribute: the flavor comes from its
 `application`, with one `flutter_application` and one `flutter_ios_app` per
-flavor. These tests build `dev` and `prod` applications (with flavor-gated
-assets, flavor-gated shaders, and flavor-specific plugins) and wire every iOS
+flavor. These tests build `dev` and `prod` applications (with flavor-specific
+plugins) and wire every iOS
 packaging path over each: `flutter_ios_app` on both `xtool` and `rules_apple`
 backends across device (`dbg`, `fastbuild`, `opt`, `profile`) and simulator
 (`dbg`, plus simulator AOT slices), `_ios_device_transition`, and Tier 2
@@ -141,33 +141,6 @@ def _assert_compile_defines(env, actions, flavor, mode):
         asserts.true(env, any([p.endswith("_app_%s.dill" % flavor) for p in aot_inputs]), "AOT must read %s dill: %s" % (flavor, aot_inputs))
         asserts.false(env, any([("_app_%s" % other) in p for p in aot_inputs]), "AOT must not read %s: %s" % (other, aot_inputs))
 
-def _assert_bundle_and_shaders(env, actions, prefix, flavor):
-    """Checks the single asset bundle and shader compiles in the iOS target's graph."""
-    other = _other(flavor)
-    bundles = _by_mnemonic(actions, "FlutterAssetBundle")
-    asserts.equals(env, 1, len(bundles), "expected exactly one FlutterAssetBundle")
-    paths = _input_paths(bundles[0]) if bundles else []
-    copies = json.decode(_written_content(env, actions, ".asset_bundle_config.json") or "{}").get("copies", {})
-
-    for kept_input in ["%s_%s.txt" % (prefix, flavor), "%s_any.txt" % prefix, flavor + ".frag.iplr", "any.frag.iplr"]:
-        asserts.true(env, any([p.endswith(kept_input) for p in paths]), "missing bundle input %s in %s" % (kept_input, paths))
-    for kept_key in [
-        "packages/%s/assets/%s.txt" % (_PACKAGE, flavor),
-        "packages/%s/assets/any.txt" % _PACKAGE,
-        "packages/%s/shaders/%s.frag" % (_PACKAGE, flavor),
-        "packages/%s/shaders/any.frag" % _PACKAGE,
-    ]:
-        asserts.true(env, kept_key in copies, "missing bundle key %s in %s" % (kept_key, copies.keys()))
-
-    for dropped_input in ["%s_%s.txt" % (prefix, other), other + ".frag.iplr"]:
-        asserts.false(env, any([p.endswith(dropped_input) for p in paths]), "unexpected %s in %s" % (dropped_input, paths))
-    for dropped_key in ["packages/%s/assets/%s.txt" % (_PACKAGE, other), "packages/%s/shaders/%s.frag" % (_PACKAGE, other)]:
-        asserts.false(env, dropped_key in copies, "unexpected bundle key %s in %s" % (dropped_key, copies.keys()))
-
-    shader_inputs = [f.basename for a in _by_mnemonic(actions, "FlutterShaderCompile") for f in a.inputs.to_list()]
-    asserts.true(env, (prefix + "_" + flavor + ".frag") in shader_inputs, "expected %s shader compile" % flavor)
-    asserts.false(env, (prefix + "_" + other + ".frag") in shader_inputs, "%s shader must not compile" % other)
-
 def _assert_dart_registrant(env, actions, flavor, is_dbg):
     """Checks the Dart plugin registrant (and dev registrant in debug) for `flavor`."""
     other = _other(flavor)
@@ -198,9 +171,9 @@ def _assert_swift_registrant(env, actions, flavor):
     asserts.false(env, ("FlavorIos%sPlugin" % _title(other)) in src, "unexpected %s register in %s" % (other, src))
 
 def _assert_no_own_dart_or_assets(env):
-    """Checks the iOS target under test registers no Dart, asset, or shader compile of its own."""
+    """Checks the iOS target under test registers no Dart compile or asset bundle of its own."""
     own = [a.mnemonic for a in analysistest.target_actions(env)]
-    for forbidden in ["FlutterKernelCompile", "FlutterAotMacho", "FlutterAssetBundle", "FlutterShaderCompile"]:
+    for forbidden in ["FlutterKernelCompile", "FlutterAotMacho", "FlutterAssets"]:
         asserts.false(env, forbidden in own, "iOS target must not register %s on its own: %s" % (forbidden, own))
 
 def _assert_own_flavor_files(env, tut, prefix, flavor):
@@ -234,7 +207,6 @@ def _xtool_ios_app_test_impl(ctx):
     _assert_no_own_dart_or_assets(env)
     _assert_own_flavor_files(env, tut, prefix, flavor)
     _assert_compile_defines(env, actions, flavor, mode)
-    _assert_bundle_and_shaders(env, actions, prefix, flavor)
     _assert_dart_registrant(env, actions, flavor, mode == "dbg")
     _assert_swift_registrant(env, actions, flavor)
 
@@ -260,7 +232,6 @@ def _ios_slice_test_impl(ctx):
     _assert_no_own_dart_or_assets(env)
     _assert_own_flavor_files(env, tut, ctx.attr.prefix, flavor)
     _assert_compile_defines(env, actions, flavor, mode)
-    _assert_bundle_and_shaders(env, actions, ctx.attr.prefix, flavor)
     _assert_dart_registrant(env, actions, flavor, mode == "dbg")
     return analysistest.end(env)
 
@@ -354,7 +325,6 @@ def _ios_pair_test_impl(ctx):
     for flavor, target in [("dev", pair.dev), ("prod", pair.prod)]:
         actions = _package_actions(target)
         _assert_compile_defines(env, actions, flavor, "dbg")
-        _assert_bundle_and_shaders(env, actions, ctx.attr.prefix, flavor)
         _assert_dart_registrant(env, actions, flavor, True)
         _assert_swift_registrant(env, actions, flavor)
     return analysistest.end(env)
@@ -462,26 +432,12 @@ def _declare_plugin(name, flavor):
     )
 
 def _declare_fixtures(name):
-    """Declares the flavor-restricted assets, shaders, engine, and plugins."""
-    for suffix in _FLAVORS + ["any"]:
-        write_file(name = "%s_write_%s_txt" % (name, suffix), out = "%s_%s.txt" % (name, suffix), content = [suffix + "\n"], tags = ["manual"])
-        write_file(
-            name = "%s_write_%s_frag" % (name, suffix),
-            out = "%s_%s.frag" % (name, suffix),
-            content = ["precision mediump float;", "void main() { gl_FragColor = vec4(1.0); }"],
-            tags = ["manual"],
-        )
+    """Declares the library, engine, and plugins."""
     flutter_library(
         name = name + "_fixture_lib",
         package_name = _PACKAGE,
         # Not the application's `main`: one source belongs to one target.
         srcs = ["lib/web_fixture_main.dart"],
-        pkg_assets = {":%s_%s.txt" % (name, s): "assets/%s.txt" % s for s in _FLAVORS + ["any"]},
-        pkg_shaders = {":%s_%s.frag" % (name, s): "shaders/%s.frag" % s for s in _FLAVORS + ["any"]},
-        pkg_asset_flavors = dict(
-            {":assets/%s.txt" % f: [f] for f in _FLAVORS},
-            **{":shaders/%s.frag" % f: [f] for f in _FLAVORS}
-        ),
         tags = ["manual"],
     )
     fake_xcframework(name = name + "_engine", framework_name = "Flutter", platform = "ios", tags = ["manual"])

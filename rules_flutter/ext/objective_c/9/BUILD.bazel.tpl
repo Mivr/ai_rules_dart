@@ -32,6 +32,11 @@ load("@rules_flutter//flutter:native_assets.bzl", "flutter_native_asset")
 # on `@<hub>//:objective_c` like any other pub package.
 flutter_plugin(
     name = "{PKG}",
+    # The files the asset tool reads: the pubspec, and the licence NOTICES collects.
+    data = glob(
+        ["pubspec.yaml", "LICENSE*", "NOTICES"],
+        allow_empty = True,
+    ),
     srcs = glob(
         ["lib/**/*.dart"],
         allow_empty = True,
