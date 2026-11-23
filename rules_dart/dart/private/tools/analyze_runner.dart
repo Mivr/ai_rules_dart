@@ -21,9 +21,13 @@ export 'analyze_runner_machine.dart' show parseMachineDiagnostics, unstage;
 void main(List<String> rawArgs) {
   // The project may be named by a layout manifest: built here, before
   // anything reads it, and removed once the analysis is done.
-  final ({List<String> args, String? project}) laidOut = applyLayoutArgs(
-    rawArgs,
-  );
+  final ({List<String> args, String? project}) laidOut;
+  try {
+    laidOut = applyLayoutArgs(rawArgs);
+  } on LayoutException catch (e) {
+    stderr.writeln(e.message);
+    exit(1);
+  }
   try {
     _analyze(laidOut.args);
   } finally {

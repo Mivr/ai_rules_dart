@@ -19,11 +19,12 @@ tree there from the manifest before it reads anything
 visibility(["//dart/..."])
 
 def _pkg_record(pkg):
-    return "pkg\t%s\t%s\t%s\t%s" % (
+    return "pkg\t%s\t%s\t%s\t%s\t%s" % (
         pkg.package_name,
         pkg.lib_root,
         getattr(pkg, "language_version", "") or "",
         getattr(pkg, "workspace_root", "") or "",
+        getattr(pkg, "version", "") or "",
     )
 
 def _file_record(f):
@@ -50,7 +51,8 @@ def project_layout(ctx, config, packages, files, own, name, sdk_version, all_pac
       ctx: The aspect context.
       config: The `DartAnalysisConfigInfo` to stage.
       packages: List of depsets or lists of `DartPackageInfo`, in order; the
-        config's own packages follow them. The first record of a name wins.
+        config's own packages follow them. The first record of a name wins;
+        two that state different versions fail the action.
       files: List of depsets or lists of Files to stage, in order; the
         config's files and options files follow them.
       own: List of the Files being checked.
@@ -69,8 +71,13 @@ def project_layout(ctx, config, packages, files, own, name, sdk_version, all_pac
     args.add("name\t" + name)
     args.add("sdk\t" + sdk_version)
     args.add("named\t" + ("1" if all_packages_named else "0"))
-    for pkgs in packages + [config.packages]:
+    # The runner refuses two records of one package that disagree, as
+    # `merge_package_records` did, and names where each came from.
+    args.add("origin\tthe dependencies of %s" % ctx.label)
+    for pkgs in packages:
         args.add_all(pkgs, map_each = _pkg_record)
+    args.add("origin\tthe analysis config %s" % ctx.attr._config.label)
+    args.add_all(config.packages, map_each = _pkg_record)
     staged = files + [config.files, config.options_files]
     for group in staged:
         args.add_all(group, map_each = _file_record, expand_directories = False)

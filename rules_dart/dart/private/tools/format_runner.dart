@@ -236,6 +236,9 @@ Future<int> runFormatRequest(
   } on FormatException catch (e) {
     errSink.writeln('format_runner: ${e.message}');
     return 64;
+  } on LayoutException catch (e) {
+    errSink.writeln(e.message);
+    return 1;
   }
   try {
     return await _runFormat(laidOut.args, outSink: outSink, errSink: errSink);

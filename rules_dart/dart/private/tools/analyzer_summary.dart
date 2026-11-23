@@ -210,6 +210,9 @@ Future<int> runSingleRequest(
     laidOut = applyLayoutArgs(args);
   } on FormatException catch (e) {
     return _usageError(errSink, e.message);
+  } on LayoutException catch (e) {
+    errSink.writeln(e.message);
+    return _failed;
   }
   try {
     return await _runMode(

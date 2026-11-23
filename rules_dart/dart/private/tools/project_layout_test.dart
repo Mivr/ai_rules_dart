@@ -153,4 +153,143 @@ void main() {
     expect(laidOut.project, project);
     expect(File('$project/src/lib/a.dart').existsSync(), isTrue);
   });
+
+  group('package records', () {
+    String manifest(List<String> pkgs) => [
+      'name\tt',
+      'origin\tthe dependencies of //app:app',
+      ...pkgs.take(1),
+      'origin\tthe analysis config //:analysis_config',
+      ...pkgs.skip(1),
+    ].join('\n');
+
+    test('that state different versions fail, naming both', () {
+      expect(
+        () => LayoutManifest.parse(
+          manifest([
+            'pkg\text\t../hub_a\t3.0\t\t1.0.0',
+            'pkg\text\t../hub_b\t3.0\t\t2.0.0',
+          ]),
+        ),
+        throwsA(
+          isA<LayoutException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              startsWith(
+                'Package "ext" is supplied more than once with different '
+                'versions:\n'
+                '  - 1.0.0 (../hub_a, from the dependencies of //app:app)\n'
+                '  - 2.0.0 (../hub_b, from the analysis config '
+                '//:analysis_config)\n',
+              ),
+              contains('Reconcile the lock files'),
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('that state different language versions fail', () {
+      expect(
+        () => LayoutManifest.parse(
+          manifest(['pkg\ta\tpkg/a\t3.11\t\t', 'pkg\ta\tpkg/a\t3.13\t\t']),
+        ),
+        throwsA(
+          isA<LayoutException>().having(
+            (e) => e.message,
+            'message',
+            startsWith(
+              'Package "a" is supplied more than once with different '
+              'language versions:\n'
+              '  - 3.11 (pkg/a, from the dependencies of //app:app)\n'
+              '  - 3.13 (pkg/a, from the analysis config //:analysis_config)\n',
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('that agree keep the first, even at another root', () {
+      // One package supplied by two pub hubs: unknown values agree with any.
+      final m = LayoutManifest.parse(
+        manifest([
+          'pkg\text\t../hub_a\t3.0\t\t1.0.0',
+          'pkg\text\t../hub_b\t\t\t',
+        ]),
+      );
+      expect([for (final p in m.packages) p.libRoot], ['../hub_a']);
+    });
+  });
+
+  test('a directory input keeps its own pubspec.yaml over the stub', () {
+    input('gen/pkg/pubspec.yaml', 'name: pkg\n');
+    final String x = input('gen/pkg/lib/x.dart');
+    final project = '${tmp.path}/out/t.proj';
+    layOutProject(
+      LayoutManifest.parse(
+        [
+          'name\tt',
+          'pkg\tpkg\tgen/pkg\t\t',
+          'file\t${tmp.path}/in/gen/pkg\tgen/pkg\t\t1',
+          'own\t$x\tgen/pkg/lib/x.dart',
+        ].join('\n'),
+      ),
+      project,
+    );
+    expect(
+      Link('$project/src/gen/pkg/pubspec.yaml').targetSync(),
+      '${tmp.path}/in/gen/pkg/pubspec.yaml',
+    );
+    expect(
+      read('$project/analysis_options.yaml'),
+      isNot(contains('"src/gen/pkg/pubspec.yaml"')),
+    );
+  });
+
+  group('two inputs on one staged path', () {
+    // A file listed beside the directory that also holds it: one short path.
+    String layOut(String fileContent) {
+      input('gen/pkg/lib/x.dart', '// dir\n');
+      final String file = input('copy/x.dart', fileContent);
+      final project = '${tmp.path}/out/t.proj';
+      layOutProject(
+        LayoutManifest.parse(
+          [
+            'name\tt',
+            'pkg\tpkg\tgen/pkg\t\t',
+            'file\t${tmp.path}/in/gen/pkg\tgen/pkg\t\t1',
+            'file\t$file\tgen/pkg/lib/x.dart\t\t0',
+          ].join('\n'),
+        ),
+        project,
+      );
+      return project;
+    }
+
+    test('with the same bytes stage one', () {
+      final String project = layOut('// dir\n');
+      expect(read('$project/src/gen/pkg/lib/x.dart'), '// dir\n');
+    });
+
+    test('with different bytes fail, naming the path', () {
+      expect(
+        () => layOut('// other\n'),
+        throwsA(
+          isA<LayoutException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              startsWith(
+                'Two inputs would be staged at '
+                '`${tmp.path}/out/t.proj/src/gen/pkg/lib/x.dart`:\n',
+              ),
+              contains('${tmp.path}/in/gen/pkg/lib/x.dart'),
+              contains('${tmp.path}/in/copy/x.dart'),
+            ),
+          ),
+        ),
+      );
+    });
+  });
 }
