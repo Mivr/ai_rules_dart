@@ -446,9 +446,6 @@
     "avoid_catching_errors": 3,
     "unnecessary_ignore": 1
   },
-  "flutter/tests/download_digest_guard_test.dart": {
-    "use_raw_strings": 1
-  },
   "flutter/tests/flutter_test_analyze_fixture/fake_test_api/lib/backend.dart": {
     "avoid_futureor_void": 1,
     "close_sinks": 1,

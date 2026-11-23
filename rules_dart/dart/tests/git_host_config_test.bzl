@@ -1,7 +1,8 @@
 """Unit tests for the two-phase host-git helpers in `//dart/pub`.
 
 `git_transport_fetch` and `git_materialize` are the only way fetch call
-sites may run host `git` (see `pinned_sources_guard_test.dart`). The
+sites may run host `git` (the `pub-fetch-unvalidated` repository lint checks
+that). The
 Starlark tests below drive them with a fake context that records every
 `execute` call — the arguments and the environment — and every `file`
 call, so the host-independence contract is pinned without needing a real

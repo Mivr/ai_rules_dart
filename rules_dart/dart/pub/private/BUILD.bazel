@@ -387,9 +387,7 @@ exports_files(
     ],
 )
 
-# Bare sources for `//dart/pub:pinned_sources_guard_test`, which reads every
-# Starlark file in `//dart/pub` and fails when a fetch call site stops going
-# through the shared pinned-source validation.
+# Bare sources, so that other packages can name them.
 exports_files(
     [
         "build_content.bzl",

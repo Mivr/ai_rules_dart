@@ -497,14 +497,6 @@
     "avoid_print": 1,
     "do_not_use_environment": 1
   },
-  "dart/tests/download_digest_guard_test.dart": {
-    "avoid_catches_without_on_clauses": 1,
-    "avoid_escaping_inner_quotes": 1,
-    "no_adjacent_strings_in_list": 1,
-    "prefer_final_locals": 1,
-    "type_annotate_public_apis": 1,
-    "use_raw_strings": 3
-  },
   "dart/tests/exec_package_fixture/nested_example/bin/example.dart": {
     "avoid_print": 1,
     "no_wildcard_variable_uses": 1

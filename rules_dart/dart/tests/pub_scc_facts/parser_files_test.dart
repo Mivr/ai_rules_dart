@@ -11,9 +11,8 @@ import 'package:test/test.dart';
 /// `dart/pub/private/parser_sources.bzl`). A new `load` in `yaml_parser.bzl` that is not
 /// added to the digested inputs would silently reuse facts the old parser
 /// recorded, so this test fails when the label list differs from the actual
-/// load closure. It runs unsandboxed over the live tree like
-/// `download_digest_guard_test.dart`: the workspace root comes from a
-/// runfiles-resolved anchor (this test's own source, passed as an
+/// load closure. It runs unsandboxed over the live tree: the workspace root
+/// comes from a runfiles-resolved anchor (this test's own source, passed as an
 /// `rlocationpath` argument and declared in `data`).
 void main(List<String> args) {
   group('parser files', () {
@@ -201,7 +200,7 @@ String _relative(String root, File file) {
 }
 
 /// Locates the source-tree workspace root from the runfiles anchor or the
-/// ancestor walk. Mirrors `download_digest_guard_test.dart`.
+/// ancestor walk.
 String _workspaceRoot(List<String> args) {
   if (args.isNotEmpty) {
     try {

@@ -1,15 +1,21 @@
 load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 
-# Counts production and test lines per subsystem, so the lean target can be
-# tracked. It reads the repository root's checked-in files by path, so run it
-# with `bazel run`:
+# Counts production and test lines per subsystem and lints the rules that would
+# otherwise need a test that reads the repository as text. Both read the
+# repository root's checked-in files by path, so run them with `bazel run`:
 #
 #   cd rules_dart/tools
 #   bazel run //inventory:inventory -- --ledger=/path/to/loc.jsonl
+#   bazel run //inventory:lint
+#   bazel run //inventory:lint -- --update-debt   # after a change that moves debt
 #
-# `subsystems.json` is the subsystem table.
+# `subsystems.json` is the subsystem table, `debt.json` the violations that
+# exist today; the lint fails only on a violation that is not in it.
 exports_files(
-    ["subsystems.json"],
+    [
+        "debt.json",
+        "subsystems.json",
+    ],
     visibility = ["//visibility:public"],
 )
 
@@ -26,6 +32,36 @@ dart_binary(
     visibility = ["//visibility:public"],
     deps = [":inventory_lib"],
 )
+
+dart_binary(
+    name = "lint",
+    main = "bin/lint.dart",
+    visibility = ["//visibility:public"],
+    deps = [":inventory_lib"],
+)
+
+[
+    dart_test(
+        name = name + "_test",
+        size = "small",
+        srcs = ["test/trees.dart"],
+        main = "test/" + name + "_test.dart",
+        deps = [
+            ":inventory_lib",
+            "@pub_deps//:test",
+        ],
+    )
+    for name in [
+        "debt",
+        "download",
+        "floors",
+        "lint",
+        "maven",
+        "pub_fetch",
+        "starlark",
+        "toolchain",
+    ]
+]
 
 dart_test(
     name = "subsystems_test",

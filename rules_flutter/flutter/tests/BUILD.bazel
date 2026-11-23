@@ -117,8 +117,9 @@ load(":xcframework_plist_test.bzl", "xcframework_plist_test_suite")
 load(":xtool_hub_toolchains_test.bzl", "xtool_hub_toolchains_test_suite")
 load(":xtool_static_xcframework_test.bzl", "xtool_static_xcframework_test_suite")
 
-# The dependency-floor table is read by //flutter/tests:dependency_floors_test
-# and by e2e/min_versions, which resolves the same declared floors.
+# The dependency-floor table is read by the repository lint
+# (//rules_dart/tools/inventory) and by e2e/min_versions, which resolves the
+# same declared floors.
 exports_files(["dependency_floors.json"])
 
 # The checked-in TinyKit fixtures the Apple framework-import tests and the iOS
@@ -136,79 +137,12 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-# Parser shared by the root floor guard and e2e/min_versions, so both read
-# MODULE.bazel and the table the same way.
+# The `MODULE.bazel` and floor-table reader of e2e/min_versions.
 dart_library(
     name = "dependency_floors_lib",
     package_name = "dependency_floors",
     srcs = ["lib/dependency_floors_lib.dart"],
     visibility = ["//visibility:public"],
-)
-
-# Static guards: the download guard discovers every `.bzl` under flutter/
-# and every MODULE.bazel at runtime from the workspace root (found through
-# the test's own source file in `data`, hence no-sandbox), so there is no
-# file list to maintain. The guards read files Bazel does not track as
-# their inputs; the `external` tag keeps Bazel from replaying a cached pass
-# after an untracked file changed, so each guard re-runs on every
-# invocation.
-dart_test(
-    name = "download_digest_guard_test",
-    size = "small",
-    data = ["download_digest_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :download_digest_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "download_digest_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Exec-toolchain guard: every `ctx.actions.run` / `run_shell` call under
-# flutter/ declares `toolchain =`, so auto exec groups can match the action to
-# the toolchain that supplies its executable. Same discovery mechanism as above.
-dart_test(
-    name = "exec_toolchain_guard_test",
-    size = "small",
-    data = ["exec_toolchain_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :exec_toolchain_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "exec_toolchain_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Dependency floors: every regular bazel_dep declares the checked-in minimum,
-# not the release this checkout compiles. Reads both files from data, so a
-# stale run cannot hide a declared bump.
-dart_test(
-    name = "dependency_floors_test",
-    size = "small",
-    data = [
-        "dependency_floors.json",
-        "dependency_floors_test.dart",
-        "//:MODULE.bazel",
-    ],
-    env = {
-        "FLOOR_TABLE": "$(rlocationpath :dependency_floors.json)",
-        "MODULE_BZL": "$(rlocationpath //:MODULE.bazel)",
-    },
-    main = "dependency_floors_test.dart",
-    deps = [
-        ":dependency_floors_lib",
-        "@dev_tool_deps//:test",
-    ],
 )
 
 dart_test(

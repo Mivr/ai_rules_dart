@@ -484,47 +484,6 @@ void _registerOmittedAndResolvedVersionTests(
   });
 }
 
-/// Finds the checkout by resolving this test's own runfiles symlink, which
-/// Bazel points at the real source file, then walking up to `MODULE.bazel`.
-String? _findRepoRoot() {
-  const testPath = 'tools/check_maven_pins/test/pins_test.dart';
-  final testFile = File(testPath);
-  if (!testFile.existsSync()) return null;
-  Directory dir = File(testFile.resolveSymbolicLinksSync()).parent;
-  while (true) {
-    if (File('${dir.path}/MODULE.bazel').existsSync() &&
-        Directory('${dir.path}/e2e').existsSync()) {
-      return dir.path;
-    }
-    if (dir.parent.path == dir.path) return null;
-    dir = dir.parent;
-  }
-}
-
-void _registerRepositoryTests() {
-  final String? root = _findRepoRoot();
-
-  test('the repository passes across all Android workspaces', () {
-    expect(root, isNotNull, reason: 'repository checkout not reachable');
-    final List<String> workspaces = discoverMavenWorkspaces(root!);
-    expect(
-      workspaces,
-      containsAll(<String>[
-        'e2e/android_example',
-        'e2e/android_no_go_sdk',
-        'e2e/android_sharedprefs',
-        'e2e/hello_world',
-        'e2e/integration_android',
-        'e2e/min_versions',
-        'e2e/plugin_example',
-        'e2e/pub_scc',
-      ]),
-    );
-    expect(countInstalls(root, workspaces), greaterThanOrEqualTo(16));
-    expect(checkAllWorkspaces(rootPath: root), isEmpty);
-  });
-}
-
 /// Runs the unit test suite for `tools/check_maven_pins`.
 void main() {
   late Directory tempDir;
@@ -547,5 +506,4 @@ void main() {
     _registerOmittedAndResolvedVersionTests(() => tempDir);
   });
   group('discovery', () => _registerDiscoveryTests(() => tempDir));
-  group('repository', _registerRepositoryTests);
 }

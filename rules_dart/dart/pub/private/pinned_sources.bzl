@@ -5,7 +5,8 @@ hosted tarballs and git checkouts alike, including each member of a merged
 cycle and the `pub` extension's own cycle-planning downloads — validates its
 coordinates through `pinned_source_error` before it fetches, and every git
 package is fetched through exactly the two phases below, so a new git call
-that bypasses the helpers fails the `pinned_sources_guard_test` enumeration.
+that bypasses the helpers fails the `pub-fetch-unvalidated` repository lint
+(`//inventory:lint` in `tools/`).
 
 A git source is pinned only by its full 40-hex commit SHA; anything else
 (a branch, a tag, `HEAD`, a short SHA, a SHA with a revision suffix, ...)

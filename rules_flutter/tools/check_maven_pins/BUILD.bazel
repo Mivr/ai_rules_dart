@@ -13,9 +13,6 @@ dart_binary(
     main = "check_maven_pins.dart",
 )
 
-# Carries both `external` and `tree-reader`: the test reads the checkout through
-# its runfiles symlink, outside its declared inputs, so Bazel must never replay
-# a cached result.
 dart_test(
     name = "pins_test",
     size = "small",
@@ -25,9 +22,5 @@ dart_test(
         "pins.dart",
     ],
     main = "test/pins_test.dart",
-    tags = [
-        "external",
-        "tree-reader",
-    ],
     deps = ["@dev_tool_deps//:test"],
 )
