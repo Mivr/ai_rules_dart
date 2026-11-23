@@ -900,7 +900,8 @@ def _summary_run_action(ctx, info, own_records, action, closure):
         args.add("--dep-from", f)
     for link, f in action.uncovered_dirs:
         args.add("--dep-dir", link)
-        args.add("--dep-dir-from", f)
+        # A directory: the tool links it whole, so pass its path, not its contents.
+        args.add("--dep-dir-from", f.path)
     for own_name, own_root in closure.own_roots:
         args.add("--own-root", "%s\t%s" % (own_name, own_root))
     args.add_all(info.transitive_packages, map_each = _package_record_arg, before_each = "--package-record")
