@@ -46,7 +46,9 @@ build_runner_targets(
 )
 """.format(hub = hub_name, version = build_runner_version, lines = "\n".join(lines))
 
-def pub_lock_hub_content(packages, explicit_packages, spoke_prefix, scc_targets = {}):
+_UNAVAILABLE_BZL = str(Label("//dart/pub/private:pub_unavailable.bzl"))
+
+def pub_lock_hub_content(packages, explicit_packages, spoke_prefix, scc_targets = {}, local_targets = {}, unavailable = {}):
     """Generates the hub BUILD file content, as a string.
 
     Pure so the alias layout for acyclic graphs can be pinned byte-for-byte:
@@ -61,6 +63,10 @@ def pub_lock_hub_content(packages, explicit_packages, spoke_prefix, scc_targets 
       spoke_prefix: Prefix for spoke repo names.
       scc_targets: Dict of package name to the merged repository target a
         cycle member aliases to. Empty when nothing is merged.
+      local_targets: Dict of package name to the label of a target in a
+        module that serves it (a `path` package's `dart_library`).
+      unavailable: Dict of package name to the message of a target that
+        fails when used (a package this hub cannot build).
 
     Returns:
       BUILD.bazel content as a string.
@@ -68,7 +74,17 @@ def pub_lock_hub_content(packages, explicit_packages, spoke_prefix, scc_targets 
     explicit = {pkg: True for pkg in explicit_packages}
     aliases = []
     for pkg in packages:
-        if pkg in scc_targets:
+        if pkg in unavailable:
+            aliases.append("""\
+pub_unavailable_package(
+    name = "{pkg}",
+    message = {message},
+    visibility = ["//visibility:public"],
+)""".format(pkg = pkg, message = json.encode(unavailable[pkg])))
+            continue
+        if pkg in local_targets:
+            actual = local_targets[pkg]
+        elif pkg in scc_targets:
             actual = scc_targets[pkg]
         elif pkg in explicit:
             actual = "@{pkg}//:{pkg}".format(pkg = pkg)
@@ -83,7 +99,8 @@ alias(
             pkg = pkg,
             actual = actual,
         ))
-    return "\n\n".join(aliases) + "\n"
+    header = 'load("%s", "pub_unavailable_package")\n\n' % _UNAVAILABLE_BZL if unavailable else ""
+    return header + "\n\n".join(aliases) + "\n"
 
 def hub_files_error(files):
     """Validates a hub's extra files before any is written.
@@ -113,6 +130,8 @@ def _pub_lock_hub_impl(ctx):
         ctx.attr.explicit_packages,
         spoke_prefix,
         ctx.attr.scc_targets,
+        ctx.attr.local_targets,
+        ctx.attr.unavailable,
     )
     if ctx.attr.package_graph:
         ctx.file("package_graph.json", ctx.attr.package_graph)
@@ -170,6 +189,16 @@ pub_lock_hub = repository_rule(
         "scc_targets": attr.string_dict(
             doc = "Package name to merged repository target, for packages merged over a dependency cycle. " +
                   "Each aliases to the merged target instead of a spoke. Empty when nothing is merged.",
+            default = {},
+        ),
+        "local_targets": attr.string_dict(
+            doc = "Package name to the label of a target in a module that serves it: the " +
+                  "`dart_library` of a `path` package. Each aliases to that target.",
+            default = {},
+        ),
+        "unavailable": attr.string_dict(
+            doc = "Package name to a message: the package gets a target that fails with the " +
+                  "message when used, for a lock entry this hub cannot build (an SDK package).",
             default = {},
         ),
         "files": attr.string_dict(

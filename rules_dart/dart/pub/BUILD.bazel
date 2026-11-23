@@ -21,7 +21,7 @@ bzl_library(
         "//dart/pub/private:pin_checks",
         "//dart/pub/private:pub_emit",
         "//dart/pub/private:pub_plan",
-        "//dart/pub/private:pub_resolution_warnings",
+        "//dart/pub/private:pub_sources",
         "//dart/pub/private:pub_root_pin",
         "//dart/pub/private:pub_scanner_sdk",
         "//dart/pub/private:pub_scc_entries",

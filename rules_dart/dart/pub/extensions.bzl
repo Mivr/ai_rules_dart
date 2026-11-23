@@ -5,7 +5,7 @@ load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC")
 load("//dart/pub/private:pin_checks.bzl", "lock_package_error")
 load("//dart/pub/private:pub_emit.bzl", "instantiate_pub_repos", "pub_repo_specs", "pub_scopes")
 load("//dart/pub/private:pub_plan.bzl", "plan_pub_graph", "read_pub_plans")
-load("//dart/pub/private:pub_resolution_warnings.bzl", _warn_skipped_sources = "warn_skipped_sources")
+load("//dart/pub/private:pub_sources.bzl", "check_path_build_files", "local_entry_conflict", "path_package_dir", "path_package_label", "sdk_package_message", "unknown_source_error")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
 load("//dart/pub/private:pub_scc_entries.bzl", _scc_member_entries = "scc_member_entries")
@@ -152,6 +152,10 @@ def _resolve_state():
         "isolated_hubs": {},
         "isolated_hub_packages": {},
         "isolated_git_packages": {},
+        # Per hub: name to the label of a `path` package's target, and name to
+        # the message of a hub target that fails when used (`sdk` packages).
+        "path_packages": {},
+        "unavailable": {},
     }
 
 def _resolve_hub_scope(state, lock_tag):
@@ -283,7 +287,21 @@ def _register_hosted_package(state, explicit, name, info, lock_tag, hub_name, is
     registry[name] = struct(url = existing.url, entries = existing.entries + [entry])
     return None
 
-def _register_lock_package(state, explicit, name, info, lock_tag, hub_name, isolated, skipped_by_source):
+def _register_path_package(state, name, info, lock_tag, hub_name):
+    """Registers one `path` lock entry: the hub aliases the package's own target. Returns the error, or None."""
+    resolved = path_package_dir(name, info, lock_tag.lock)
+    if resolved.error:
+        return resolved.error
+    label = path_package_label(name, lock_tag.lock, resolved.dir)
+    for other_hub, packages in state["path_packages"].items():
+        other = packages.get(name)
+        if other and other.label != label and not state["isolated_hubs"].get(hub_name) and not state["isolated_hubs"].get(other_hub):
+            return local_entry_conflict(name, "a path package at %s" % label, "a path package at %s" % other.label, lock_tag.lock)
+    state["hub_packages"][hub_name][name] = True
+    state["path_packages"].setdefault(hub_name, {})[name] = struct(label = label, dir = resolved.dir, lock = lock_tag.lock)
+    return None
+
+def _register_lock_package(state, explicit, name, info, lock_tag, hub_name, isolated):
     """Registers one lock entry by source. Returns (error, error_shape)."""
     err = _lock_entry_error(name, info, lock_tag)
     if err:
@@ -291,9 +309,14 @@ def _register_lock_package(state, explicit, name, info, lock_tag, hub_name, isol
     source = info.get("source", "unknown")
     if source == "git":
         return _register_git_package(state, name, info, lock_tag, hub_name, isolated), "git"
-    if source != "hosted":
-        skipped_by_source.setdefault(source, []).append(name)
+    if source == "path":
+        return _register_path_package(state, name, info, lock_tag, hub_name), "lock"
+    if source == "sdk":
+        state["hub_packages"][hub_name][name] = True
+        state["unavailable"].setdefault(hub_name, {})[name] = sdk_package_message(name, info, lock_tag.lock)
         return None, "lock"
+    if source != "hosted":
+        return unknown_source_error(name, info, lock_tag.lock), "lock"
     return _register_hosted_package(state, explicit, name, info, lock_tag, hub_name, isolated), "lock"
 
 def _resolve_lock_tag(state, explicit, lock_tag):
@@ -302,7 +325,6 @@ def _resolve_lock_tag(state, explicit, lock_tag):
     if err:
         return err, "hub"
 
-    skipped_by_source = {}
     for name, info in lock_tag.packages.items():
         err, shape = _register_lock_package(
             state,
@@ -312,12 +334,9 @@ def _resolve_lock_tag(state, explicit, lock_tag):
             lock_tag,
             hub_name,
             isolated,
-            skipped_by_source,
         )
         if err:
             return err, shape
-
-    _warn_skipped_sources(state, lock_tag, hub_name, skipped_by_source)
     return None, ""
 
 def _resolve_hosted_package(name, pkg, explicit, git_registry, warnings):
@@ -530,6 +549,10 @@ def resolve_pub_packages(package_tags, lock_tags):
                 return _resolve_error_git(err)
             return _resolve_error_conflict(err)
 
+    err = _path_source_conflict(state, explicit)
+    if err:
+        return _resolve_error_conflict(err)
+
     resolved, err = _resolve_hosted(state, explicit)
     if err:
         return _resolve_error_conflict(err)
@@ -551,7 +574,24 @@ def resolve_pub_packages(package_tags, lock_tags):
         aliases = aliases,
         notes = notes,
         warnings = state["warnings"],
+        path_packages = state["path_packages"],
+        unavailable = state["unavailable"],
     )
+
+def _path_source_conflict(state, explicit):
+    """Returns the error for a name that is a path package in a shared hub and hosted, git or declared elsewhere."""
+    for hub_name in sorted(state["path_packages"].keys()):
+        if state["isolated_hubs"].get(hub_name):
+            continue
+        for name, pkg in sorted(state["path_packages"][hub_name].items()):
+            here = "a path package at %s" % pkg.label
+            if name in state["registry"]:
+                return local_entry_conflict(name, here, "a hosted package", pkg.lock)
+            if name in state["git_registry"]:
+                return local_entry_conflict(name, here, "a git package", pkg.lock)
+            if name in explicit:
+                return local_entry_conflict(name, here, "declared with pub.package()", pkg.lock)
+    return None
 
 def _pub_collect_tags(ctx):
     """Collects package/lock tags across modules. Returns (package_tags, lock_tags, ignore_hooks, root_repos, plan_files)."""
@@ -641,6 +681,7 @@ def _pub_impl(ctx):
     # with its lock, else from the server's listing JSON (no archive is
     # downloaded), else from the package's archive or git checkout; the
     # repositories check them against the real pubspecs.
+    resolution = check_path_build_files(ctx, resolution)
     scopes = pub_scopes(resolution)
     if any([scope.hosted or scope.git for scope in scopes]):
         touch_scanner_runtime_label(ctx)

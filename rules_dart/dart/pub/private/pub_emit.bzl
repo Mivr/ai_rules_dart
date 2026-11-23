@@ -45,11 +45,12 @@ def pub_scopes(resolution):
       resolution: The `resolve_pub_packages` result.
 
     Returns:
-      List of `struct(prefix, hub_names, hosted, git, explicit_names,
+      List of `struct(prefix, hub_names, hosted, git, path, explicit_names,
       label_explicit)`, the shared scope first, then the isolated hubs in
-      name order. `explicit_names` are the `pub.package()` names cycle
-      planning sees; `label_explicit` are those a dependency label points at
-      the explicit repository for.
+      name order. `path` maps each `path` package of the scope's hubs to the
+      label of its own target. `explicit_names` are the `pub.package()` names
+      cycle planning sees; `label_explicit` are those a dependency label
+      points at the explicit repository for.
     """
     explicit_names = sorted(resolution.explicit.keys())
     isolated = resolution.isolated_packages
@@ -59,11 +60,17 @@ def pub_scopes(resolution):
         for hub in resolution.hub_packages.keys()
         if hub not in isolated and hub not in isolated_git
     ])
+    path_packages = getattr(resolution, "path_packages", {})
+    shared_path = {}
+    for hub in shared_hubs:
+        for name, pkg in path_packages.get(hub, {}).items():
+            shared_path.setdefault(name, pkg.label)
     scopes = [struct(
         prefix = SPOKE_PREFIX,
         hub_names = shared_hubs,
         hosted = resolution.resolved,
         git = resolution.resolved_git,
+        path = shared_path,
         explicit_names = explicit_names,
         label_explicit = explicit_names,
     )]
@@ -75,6 +82,7 @@ def pub_scopes(resolution):
             hub_names = [hub],
             hosted = hosted,
             git = git,
+            path = {name: pkg.label for name, pkg in path_packages.get(hub, {}).items()},
             explicit_names = explicit_names,
             label_explicit = [n for n in explicit_names if n not in hosted and n not in git],
         ))
@@ -85,7 +93,9 @@ def _merged_label(repo, member):
 
 def _scope_labels(scope, sccs):
     """Maps every package name a scope's repositories may depend on to its label."""
-    labels = {}
+    # A path package (a `dependency_overrides` fork that a hosted package
+    # depends on, say) is the module's own target.
+    labels = dict(scope.path)
     for name in list(scope.hosted.keys()) + list(scope.git.keys()):
         labels[name] = "@{prefix}__{name}//:{name}".format(prefix = scope.prefix, name = name)
     for name in scope.label_explicit:
@@ -200,11 +210,18 @@ def _hub_specs(specs, resolution, scopes, scope_sccs, scope_plans):
         prefix = hub_name if isolated else SPOKE_PREFIX
         scope, sccs, plans = by_prefix[prefix]
         explicit = [] if isolated else [n for n in names if n in resolution.explicit]
+        unavailable = getattr(resolution, "unavailable", {}).get(hub_name, {})
         _add(specs, hub_name, "pub_lock_hub", dict(
             hub_name = hub_name,
             spoke_prefix = prefix,
             packages = names,
             explicit_packages = explicit,
+            local_targets = {
+                name: pkg.label
+                for name, pkg in getattr(resolution, "path_packages", {}).get(hub_name, {}).items()
+                if name not in unavailable
+            },
+            unavailable = unavailable,
             scc_targets = {
                 member: _merged_label(repo, member)
                 for member, repo in sccs.members.items()

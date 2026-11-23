@@ -152,9 +152,16 @@ bzl_library(
 )
 
 bzl_library(
-    name = "pub_resolution_warnings",
-    srcs = ["pub_resolution_warnings.bzl"],
+    name = "pub_sources",
+    srcs = ["pub_sources.bzl"],
     visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_unavailable",
+    srcs = ["pub_unavailable.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["//dart:providers"],
 )
 
 bzl_library(

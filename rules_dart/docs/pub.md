@@ -239,6 +239,101 @@ becomes a silently empty hub:
   both locks' hub name and lock label, in either lock order. Locks that
   agree on URL, ref and path still deduplicate silently.
 
+# Where each package comes from
+
+`pub.from_lock()` serves every entry of a `pubspec.lock` from the place
+`dart pub get` took it from when it wrote the lock. The lock is the input:
+nothing is resolved again.
+
+| Lock entry | `dart pub get` | `pub.from_lock()` | rules_flutter's `flutter.pub` |
+|---|---|---|---|
+| `source: hosted`, any server (`description.url`) | downloads the archive the server lists | a package repository; the archive comes from the listing's `archive_url`, pinned by the lock's `sha256` | the same |
+| `hosted` on a server that needs a token | sends the token `dart pub token add` stored | the same requests, with the token from a credential helper (below) | the same |
+| `source: git` (`url`, `ref`, `path`, `resolved-ref`) | checks out `resolved-ref`; `path` is the package's directory in the repository | a package repository from the commit `resolved-ref` names, at `path`; `ref` (a branch, say) is not read | the same |
+| `source: path` inside the module | reads the directory | the module's own `dart_library` `//<dir>:<name>`; the hub aliases it (below) | a package repository linking the directory's files |
+| `source: path` outside the module, or absolute | reads the directory | fails the evaluation, naming the package and the path | the same |
+| `source: sdk` | takes the package from the Flutter SDK | the hub's target fails when used, naming the package and `flutter.pub` | the SDK's packages; `sky_engine` through the toolchain; any other name fails the evaluation |
+| any other `source` | — | fails the evaluation, naming the package and the source | the same |
+
+`dependency_overrides`, in `pubspec.yaml` or in `pubspec_overrides.yaml`, need
+nothing of their own: `dart pub get` writes the overriding package into the
+lock (`dependency: "direct overridden"`) with the override's source, and the
+rules serve it like any entry of that source. A hosted package that depends on
+an overridden package builds against the override: a path fork, a git branch
+or another version.
+
+## Path packages
+
+A path package is source in the module that owns the lock, not a download.
+Its directory (the lock's directory joined with the entry's `path`) needs a
+BUILD file with a `dart_library` named after the package, as Gazelle writes
+it:
+
+```starlark
+# forks/typed_data/BUILD.bazel
+dart_library(
+    name = "typed_data",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:collection"],
+)
+```
+
+`@pub_deps//:typed_data` is an alias of `//forks/typed_data:typed_data`, and
+every package repository that depends on `typed_data` depends on that target.
+No repository is generated for it, so an edit to the package is an ordinary
+edit to the module. A directory without a BUILD file gets a hub target that
+fails when used, saying what to add. A path outside the module (or an absolute
+one) fails the evaluation: Bazel builds only what is inside the module, so
+move the package into it (as a pub workspace member, say) or depend on it from
+a server or a git repository. See `e2e/pub_sources`.
+
+## Private servers and tokens
+
+A hosted package's server is its lock entry's `description.url`: pub.dev, or
+any server that implements the hosted pub API (with or without a path, such
+as `https://pub.example.com/repo/dart/`). Every request goes to that server;
+nothing else is configured for it.
+
+When the server needs a token, `dart pub get` sends the one
+`dart pub token add <server>` stored in the user's home. A build does not read
+the user's home. Bazel's downloader asks a
+[credential helper](https://github.com/EngFlow/credential-helper-spec) for the
+headers of every request it sends, so give the token to Bazel that way:
+
+```
+# .bazelrc.user (not checked in), or .bazelrc with a helper every developer has
+common --credential_helper=pub.example.com=%workspace%/tools/pub_credentials
+```
+
+The helper is any executable that answers `get` with the header, for example:
+
+```sh
+#!/bin/sh
+# tools/pub_credentials: the token comes from the environment of `bazel`.
+[ "$1" = get ] || exit 1
+cat > /dev/null
+printf '{"headers":{"Authorization":["Bearer %s"]}}\n' "$PUB_EXAMPLE_TOKEN"
+```
+
+Both requests planning sends (the listing and, when the server cannot answer
+for a version, the archive) and every archive a package repository fetches go
+through it. Bazel records nothing the helper prints: the token is in no
+lockfile, fact, repository attribute or log. An archive already in the
+repository cache is found by its `sha256` and needs no request at all.
+
+Without the token the server answers 401 and the evaluation (or, when the
+plan is already in `MODULE.bazel.lock`, the package's repository) fails after
+Bazel's own WARNING line with the status:
+
+```text
+pub package "t38_secret" 1.0.0: could not download the server's listing https://pub.example.com/repo/dart/api/packages/t38_secret or its archive https://pub.example.com/repo/dart/packages/t38_secret/versions/1.0.0.tar.gz (Bazel's WARNING above says why). If the server needs a token (`dart pub token add`), give it to Bazel with a credential helper for its host: `--credential_helper=pub.example.com=<helper>` in .bazelrc (see docs/pub.md, Private servers). ...
+```
+
+A server on plain `http://` works, more slowly: Bazel sends no unchecksummed
+request over plain HTTP, so planning reads each package's archive (pinned by
+the lock's `sha256`) instead of its listing.
+
 # Workspaces
 
 A Dart pub workspace is a root `pubspec.yaml` with a `workspace:` list of
@@ -287,6 +382,12 @@ directory, or the name clash. The message names only the failing member. An
 unsupported `[` / `{` entry fails without a member prefix: the message names
 the entry and the pubspec that lists it.
 
-Members are ordinary Bazel packages. A member depends on a sibling member
-through a `dart_library` label (`//a`), not through the lock, and on locked
-packages through the hub (`@pub_deps//:path`). See `e2e/pub_workspace`.
+Members are ordinary Bazel packages, and so is the root when it is a package
+itself. A member is not in the lock (pub resolves it as source), so it depends
+on a sibling member through a `dart_library` label (`//a`), not through the
+hub, and on locked packages through the hub (`@pub_deps//:path`). Each
+member's BUILD file is the same as any package's: a `dart_library` named after
+the package, with those deps. One lock is one hub: adding a dependency to one
+member (and running `dart pub get`) fetches that package's repository and
+regenerates the hub, and nothing else. See `e2e/pub_workspace`, three members
+and a root package.
