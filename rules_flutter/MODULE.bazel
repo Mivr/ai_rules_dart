@@ -122,7 +122,8 @@ bazel_dep(name = "rules_jvm_external", version = "6.8")
 # aran's BCR releases (up to 0.7.3) lack them and fail at load with a
 # missing-symbol error, so the floor points at ai_rules_dart and consumers
 # take both modules from their GitHub releases (see README.md). This repo's own
-# builds use the git_override below; e2e workspaces do the same.
+# builds use the sibling `rules_dart` directory through the
+# local_path_override below; e2e workspaces do the same.
 # ai_rules_dart 0.28.3 also brings its own higher floors for rules_cc
 # (0.2.26), bazel_skylib (1.9.2), package_metadata (0.0.13) and rules_go
 # (0.64.2); docs/dependencies.md attributes every one of those lifts.
@@ -176,10 +177,9 @@ use_repo(
     "llvm-toolchain-minimal-windows-arm64",
 )
 
-git_override(
+local_path_override(
     module_name = "ai_rules_dart",
-    commit = "e7163aab8f9171f54693cd1b99feb7d3cee9602d",
-    remote = "https://github.com/Mivr/ai_rules_dart.git",
+    path = "../rules_dart",
 )
 
 # This repo's own builds stay on the current releases: the public
