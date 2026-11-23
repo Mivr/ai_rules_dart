@@ -1,0 +1,38 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# Counts production and test lines per subsystem, so the lean target can be
+# tracked. It reads the repository root's checked-in files by path, so run it
+# with `bazel run`:
+#
+#   cd rules_dart/tools
+#   bazel run //inventory:inventory -- --ledger=/path/to/loc.jsonl
+#
+# `subsystems.json` is the subsystem table.
+exports_files(
+    ["subsystems.json"],
+    visibility = ["//visibility:public"],
+)
+
+dart_library(
+    name = "inventory_lib",
+    package_name = "inventory",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+)
+
+dart_binary(
+    name = "inventory",
+    main = "bin/inventory.dart",
+    visibility = ["//visibility:public"],
+    deps = [":inventory_lib"],
+)
+
+dart_test(
+    name = "subsystems_test",
+    size = "small",
+    main = "test/subsystems_test.dart",
+    deps = [
+        ":inventory_lib",
+        "@pub_deps//:test",
+    ],
+)

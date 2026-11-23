@@ -1,0 +1,232 @@
+{
+  "source_extensions": [
+    "dart", "bzl", "bazel", "py", "sh", "kt", "java", "swift", "m", "mm", "h", "c", "cc", "cpp"
+  ],
+  "test_paths": [
+    "**/test/**",
+    "**/tests/**",
+    "**/testdata/**",
+    "**/fixtures/**",
+    "**/e2e/**",
+    "**/*_fixture/**",
+    "**/rules_testing/**",
+    "**/*_test.dart",
+    "**/*_test.py",
+    "**/*_test.sh",
+    "**/*_test_support.dart",
+    "**/*_fixture.dart",
+    "**/test_support.dart",
+    "**/dill_test_writer.dart",
+    "**/worker_test_encode.dart",
+    "**/write_fixtures.dart"
+  ],
+  "subsystems": [
+    {
+      "name": "yaml-reader",
+      "note": "Starlark YAML reader in the Dart rules (PLAN 4.3: delete; yq replaces it)",
+      "paths": [
+        "rules_dart/dart/pub/private/yaml_*.bzl",
+        "rules_dart/dart/pub/private/parser_sources.bzl",
+        "rules_dart/dart/pub/yaml_parser.bzl",
+        "rules_dart/dart/pub/tests/yaml_*"
+      ]
+    },
+    {
+      "name": "flutter-lock-scanners",
+      "note": "Flutter's own scanners for `sdks:` in pubspec.lock and for Podfile.lock (delete with the reader)",
+      "paths": [
+        "rules_flutter/flutter/private/pub_lock_sdks.bzl",
+        "rules_flutter/flutter/private/podfile_lock*",
+        "rules_flutter/flutter/tests/podfile_lock*",
+        "rules_flutter/flutter/tests/pub_lock_sdks*"
+      ]
+    },
+    {
+      "name": "pub-archive",
+      "note": "Pub archive scanner and symlink walk (stays; its pax parsing is fixed)",
+      "paths": [
+        "rules_dart/dart/pub/private/pub_scan*",
+        "rules_dart/dart/pub/private/pub_archive_scan.bzl",
+        "rules_dart/dart/pub/private/pub_scanner_*.bzl",
+        "rules_dart/dart/pub/private/pub_symlink.bzl",
+        "rules_dart/dart/pub/pub_scan.bzl",
+        "rules_dart/dart/pub/pub_scanner.bzl",
+        "rules_dart/dart/pub/tests/pub_archive_scan_test.bzl",
+        "rules_dart/dart/pub/tests/pub_symlink_test.bzl",
+        "rules_flutter/flutter/private/flutter_pub_scan.bzl"
+      ]
+    },
+    {
+      "name": "git-packages",
+      "note": "Git package materialization (replace with about 150 lines)",
+      "paths": [
+        "rules_dart/dart/pub/private/pinned_sources.bzl",
+        "rules_dart/dart/pub/pinned_sources.bzl",
+        "rules_dart/dart/tests/git_*",
+        "rules_dart/e2e/pub_lock_git/**"
+      ]
+    },
+    {
+      "name": "app-jit",
+      "note": "App-JIT training and locking, comma patch (delete the training)",
+      "paths": [
+        "rules_dart/dart/private/tools/app_jit_*",
+        "rules_dart/dart/private/tools/jit_*",
+        "rules_dart/dart/private/tools/comma_patch*",
+        "rules_dart/dart/private/tools/runner_training_test.dart",
+        "rules_dart/dart/tests/*jit*"
+      ]
+    },
+    {
+      "name": "outline-rewriter",
+      "note": "Outline rewriter and kernel reader (replace if S3 passes)",
+      "paths": ["rules_dart/dart/private/tools/dill_*"]
+    },
+    {
+      "name": "modular-kernel",
+      "note": "Modular kernel compile, Dart and Flutter (keep; one implementation)",
+      "paths": [
+        "rules_dart/dart/private/dart_kernel.bzl",
+        "rules_dart/dart/private/kernel_*",
+        "rules_dart/dart/private/tools/kernel_*",
+        "rules_dart/dart/tests/kernel_*",
+        "rules_flutter/flutter/private/flutter_kernel_*",
+        "rules_flutter/flutter/private/tools/kernel_*",
+        "rules_flutter/flutter/private/tools/incr_fkc_*",
+        "rules_flutter/flutter/private/tools/test/incr_fkc_*",
+        "rules_flutter/flutter/private/tools/test/kernel_*",
+        "rules_flutter/tools/incr_kernel_identity/**"
+      ]
+    },
+    {
+      "name": "analyzer-summary",
+      "note": "Analyzer summary mode and the analysis runners (decided by S6)",
+      "paths": [
+        "rules_dart/dart/private/dart_analyzer_summary.bzl",
+        "rules_dart/dart/private/dart_analyze_*",
+        "rules_dart/dart/private/analyze_targets.bzl",
+        "rules_dart/dart/private/tools/analyzer_summary*",
+        "rules_dart/dart/private/tools/analyze_runner*",
+        "rules_dart/dart/private/tools/analysis_*",
+        "rules_dart/dart/private/tools/baseline_*",
+        "rules_dart/dart/guard/**",
+        "rules_dart/dart/lints/**",
+        "rules_dart/dart/tests/*analy*",
+        "rules_dart/dart/tests/*summary*"
+      ]
+    },
+    {
+      "name": "vendored-linter",
+      "note": "Vendored linter (PLAN 4.2: decided by S6)",
+      "paths": ["rules_dart/third_party/**"]
+    },
+    {
+      "name": "codegen-shims",
+      "note": "Builder shims for build_runner generators (shrink to a generic runner)",
+      "paths": [
+        "rules_dart/dart/ext/**",
+        "rules_flutter/ext/**",
+        "rules_dart/dart/private/dart_codegen.bzl",
+        "rules_dart/dart/private/dart_aggregate_codegen.bzl",
+        "rules_dart/dart/private/dart_sqlcodegen.bzl",
+        "rules_dart/dart/tests/*codegen*",
+        "rules_dart/dart/tests/*_library_direct_test.bzl",
+        "rules_dart/e2e/codegen/**",
+        "rules_dart/e2e/dual_build/**",
+        "rules_dart/e2e/ext_exemplar/**",
+        "rules_flutter/e2e/codegen/**"
+      ]
+    },
+    {
+      "name": "swiftpm-cocoapods",
+      "note": "SwiftPM and CocoaPods interpretation (delete; a reader of `swift package` JSON replaces it)",
+      "paths": [
+        "rules_flutter/flutter/private/swiftpm_*",
+        "rules_flutter/flutter/private/podspec_read*",
+        "rules_flutter/flutter/private/flutter_pub_apple*",
+        "rules_flutter/flutter/tests/swiftpm*",
+        "rules_flutter/flutter/tests/podspec*",
+        "rules_flutter/flutter/tests/*pub_apple*"
+      ]
+    },
+    {
+      "name": "apple-toolkit",
+      "note": "Apple binary toolkit (Mach-O, plist, xtool bundling) and the Linux backend",
+      "paths": [
+        "rules_flutter/flutter/private/tools/macho_*",
+        "rules_flutter/flutter/private/tools/lib/macho_*",
+        "rules_flutter/flutter/private/tools/xtool_*",
+        "rules_flutter/flutter/private/tools/code_resources.dart",
+        "rules_flutter/flutter/private/tools/plist_*",
+        "rules_flutter/flutter/private/tools/merge_plists.dart",
+        "rules_flutter/flutter/private/tools/test/macho_*",
+        "rules_flutter/flutter/private/tools/test/xtool_*",
+        "rules_flutter/flutter/private/tools/test/merge_plists_test.dart",
+        "rules_flutter/flutter/private/flutter_xtool_*",
+        "rules_flutter/flutter/private/xtool_*",
+        "rules_flutter/flutter/private/flutter_plist_merge.bzl",
+        "rules_flutter/flutter/tests/*xtool*",
+        "rules_flutter/flutter/tests/*macho*",
+        "rules_flutter/flutter/tests/*plist*"
+      ]
+    },
+    {
+      "name": "android",
+      "note": "Gradle translation, APK overlay, manifest merge and the zlib port",
+      "paths": [
+        "rules_flutter/flutter/private/gradle*",
+        "rules_flutter/flutter/private/flutter_pub_android_package.bzl",
+        "rules_flutter/flutter/private/flutter_android_apk_overlay.bzl",
+        "rules_flutter/flutter/private/flutter_android_plugin_closure.bzl",
+        "rules_flutter/flutter/private/flutter_android_manifest_merge.bzl",
+        "rules_flutter/flutter/private/tools/apk_overlay.dart",
+        "rules_flutter/flutter/private/tools/merge_android_manifests.dart",
+        "rules_flutter/flutter/private/tools/zlib_raw_*",
+        "rules_flutter/flutter/private/tools/test/apk_overlay_test.dart",
+        "rules_flutter/flutter/private/tools/test/merge_android_manifests_test.dart",
+        "rules_flutter/flutter/private/tools/test/zlib_raw_*",
+        "rules_flutter/flutter/tests/gradle*",
+        "rules_flutter/flutter/tests/*android_manifest*",
+        "rules_flutter/flutter/tests/*apk_overlay*"
+      ]
+    },
+    {
+      "name": "assets-manifest",
+      "note": "Asset bundle, font and manifest mirror of the Flutter tool (replace)",
+      "paths": [
+        "rules_flutter/flutter/private/asset_*",
+        "rules_flutter/flutter/private/flutter_asset_bundle*",
+        "rules_flutter/flutter/private/flutter_pub_assets.bzl",
+        "rules_flutter/flutter/private/flutter_font_family.bzl",
+        "rules_flutter/flutter/private/flutter_manifest_validate.bzl",
+        "rules_flutter/flutter/private/flutter_data_asset.bzl",
+        "rules_flutter/flutter/private/flutter_material_icons.bzl",
+        "rules_flutter/flutter/private/tools/generate_asset_manifest.dart",
+        "rules_flutter/flutter/private/tools/test/generate_asset_manifest_test.dart",
+        "rules_flutter/flutter/tests/*asset*",
+        "rules_flutter/flutter/tests/*font*",
+        "rules_flutter/flutter/tests/*manifest_validate*"
+      ]
+    },
+    {
+      "name": "dev-tool",
+      "note": "Re-implementation of `flutter run` (shrink to about 3k)",
+      "paths": ["rules_flutter/tools/dev_tool/**"]
+    },
+    {
+      "name": "bench-python",
+      "note": "Python bench harness of the Flutter rules (delete)",
+      "paths": ["rules_flutter/tools/perf/**"]
+    },
+    {
+      "name": "bench-dart",
+      "note": "Dart bench harness (becomes the only one)",
+      "paths": ["rules_dart/tools/perf/**"]
+    },
+    {
+      "name": "inventory-lint",
+      "note": "This tool: the inventory and the lint",
+      "paths": ["rules_dart/tools/inventory/**"]
+    }
+  ]
+}
