@@ -2349,6 +2349,11 @@ A Flutter workspace's Dart toolchain is the Dart SDK bundled with its Flutter re
 
 ## The dev tool
 
+`flutter_dev`, in `tools/flutter_dev/`, replaces the tool this section describes: Bazel builds the
+app, and the stock `flutter` tool installs, launches, reloads, restarts and debugs it, with
+DevTools and the IDE plugins as they are. See [its README](tools/flutter_dev/README.md). The
+section below stays until `flutter_bazel` is deleted.
+
 `flutter_bazel`, in `tools/dev_tool/`, is the development loop: it builds a target, installs and launches it on a device, and gives you hot reload and hot restart. It speaks the same `--machine` JSON-RPC protocol as `flutter run`, so the existing IDE plugins for VS Code and IntelliJ work with it. It also opens an HTTP channel that scripts and coding agents can use to drive the running app.
 
 ### Running an app
