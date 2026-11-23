@@ -507,6 +507,19 @@ jobs:
         if: always() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
         shell: bash
         run: .github/scripts/ci_mem_report.sh "after Corpus tests"
+      # The ban-list lint reads the checked-in sources of both modules and fails
+      # on a violation that `tools/inventory/debt.json` does not list, and on a
+      # debt entry that no longer matches. The tools' own tests, lint tests
+      # included, already run as the `tools` folder of the Test step above.
+      - name: Ban-list lint
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        working-directory: rules_dart/tools
+        run: |
+          status=0
+          bazel --max_idle_secs=60 run //inventory:lint || status=$?
+          bazel --max_idle_secs=60 shutdown || echo "::warning::bazel shutdown failed after the lint"
+          exit "$status"
       # Ship the per-folder logs even when the Test step fails or the job is
       # killed, so a dead shard still leaves its evidence for diagnosis.
       - name: Upload shard logs
