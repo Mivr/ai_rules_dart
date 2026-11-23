@@ -113,6 +113,16 @@ bzl_library(
 )
 
 bzl_library(
+    name = "yaml",
+    srcs = ["yaml.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:pubspec_data",
+        "//dart/pub/private:yq",
+    ],
+)
+
+bzl_library(
     name = "yaml_parser",
     srcs = ["yaml_parser.bzl"],
     visibility = ["//visibility:public"],
