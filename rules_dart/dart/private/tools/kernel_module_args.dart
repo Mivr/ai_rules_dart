@@ -373,6 +373,10 @@ const multiRootSchemeFlag = '--multi-root-scheme';
 /// The command-line options of one `compileModule` run.
 class ModuleOptions {
   final List<String> base = <String>[];
+
+  /// How many leading [base] arguments came from `--define-file`: the next
+  /// defines file's go after them, and every other `-D` after all of them.
+  int defineFileArgs = 0;
   final List<String> sources = <String>[];
   final List<String> inputSources = <String>[];
   final List<String> ownSourceFiles = <String>[];

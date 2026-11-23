@@ -1,7 +1,7 @@
 """Implementation of the dart_library rule."""
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
-load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
+load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "native_defines_reset")
 load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "resolve_package_identity")
 load("//dart/private:coverage_map.bzl", "forward_origins")
 load("//dart/private:dart_info.bzl", "dart_info", "dart_info_multi", "package_lib_prefix")
@@ -561,6 +561,8 @@ package named in `code_assets_for` when a prebuilt asset deliberately stands in 
 dependency's build-hook output. Listing a package there does not move the asset onto that \
 package's record: it still rides this library's own `DartPackageInfo`.""",
             providers = [DartCodeAssetInfo],
+            # Native code: configured once, whatever environment the Dart above it compiles with.
+            cfg = native_defines_reset,
         ),
         "code_assets_for": attr.string_list(
             doc = """Pub package names this library may carry `code_assets` for besides its own \

@@ -171,6 +171,10 @@ const _outputOutlineFlag = '--output-outline';
 const _ownSourceFileFlag = '--own-source-file';
 const _unusedInputsListFlag = '--unused-inputs-list';
 
+/// A file of `-DKEY=VALUE` lines (a `dart_defines` target's output) whose
+/// defines go before every other `-D`, so a `-D` of the same key wins.
+const _defineFileFlag = '--define-file';
+
 /// The file in each module directory that lists its kernels.
 const _indexName = 'index.json';
 const _noDropFlag = '--no-drop';
@@ -406,7 +410,7 @@ int? _parseModuleArgs(
 }
 
 /// Parses the argument at [i], returning the next index, or -1 when
-/// `--input-linked` was passed.
+/// `--input-linked` was passed or a defines file was refused.
 int _parseModuleArg(
   List<String> rawArgs,
   int i,
@@ -417,6 +421,13 @@ int _parseModuleArg(
   if (checkIndex != null) return checkIndex;
 
   final String arg = rawArgs[i];
+  if (arg == _defineFileFlag && i + 1 < rawArgs.length) {
+    final List<String>? defines = _defineFileArgs(rawArgs[i + 1], log);
+    if (defines == null) return -1;
+    options.base.insertAll(options.defineFileArgs, defines);
+    options.defineFileArgs += defines.length;
+    return i + 2;
+  }
   if (arg == '--source') {
     options.sources.add(rawArgs[++i]);
   } else if (arg == _inputSourceFlag) {
@@ -460,6 +471,49 @@ int _parseModuleArg(
     parseBaseArg(rawArgs, i, options);
   }
   return i + 1;
+}
+
+/// The `-D` arguments of the defines file at [path], one `-DKEY=VALUE` line
+/// each, or null after saying why in [log].
+///
+/// A value with a comma is refused: `kernel_worker` splits `-D` values at
+/// commas, and a debug (modular) compile cannot take one until the module
+/// compiler is replaced.
+List<String>? _defineFileArgs(String path, StringBuffer log) {
+  final String text;
+  try {
+    text = File(path).readAsStringSync();
+  } on FileSystemException catch (e) {
+    log.writeln(
+      'kernel_module: cannot read the defines file $path: ${e.message}',
+    );
+    return null;
+  }
+  final args = <String>[];
+  for (final String line in const LineSplitter().convert(text)) {
+    if (line.isEmpty) continue;
+    if (!line.startsWith('-D')) {
+      log.writeln(
+        "kernel_module: $path: expected a '-DKEY=VALUE' line, got '$line'.",
+      );
+      return null;
+    }
+    final String define = line.substring(2);
+    final int eq = define.indexOf('=');
+    if (eq >= 0 && define.substring(eq + 1).contains(',')) {
+      log.writeln(
+        'kernel_module: the Dart define $define in $path has a comma in its '
+        'value. A debug build compiles Dart as kernel modules, and the module '
+        'compiler cannot take a comma in a define value yet. Remove the comma '
+        'from the dart_defines target that wrote this file.',
+      );
+      return null;
+    }
+    args
+      ..add('-D')
+      ..add(define);
+  }
+  return args;
 }
 
 /// The worker input paths and their digests, or nulls when [inputs] is empty.

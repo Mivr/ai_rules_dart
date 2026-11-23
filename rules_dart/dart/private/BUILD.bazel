@@ -1,5 +1,6 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
-load("@bazel_skylib//rules:common_settings.bzl", "bool_setting")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_setting", "string_list_setting")
+load(":build_settings.bzl", "no_dart_defines")
 load(":dart_analyze_aspect.bzl", "dart_analysis_config")
 load(":dart_analyzer_summary.bzl", "analyzer_sdk_summary")
 
@@ -74,6 +75,30 @@ bool_setting(
 bool_setting(
     name = "vm_product",
     build_setting_default = True,
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# The environment of the executable whose closure is being built: its own
+# defines (a Flutter app adds its flavor), canonical order, and its defines file.
+# Written by the executable's `deps` transition and reset to the defaults on
+# every edge that leaves Dart. See `executable_defines_settings`.
+string_list_setting(
+    name = "executable_dart_defines",
+    build_setting_default = [],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+label_setting(
+    name = "executable_dart_defines_file",
+    build_setting_default = ":no_dart_defines_file",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+no_dart_defines(
+    name = "no_dart_defines_file",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )

@@ -145,3 +145,107 @@ def global_dart_defines(ctx):
     if not hasattr(ctx.attr, "_extra_dart_defines"):
         return []
     return ctx.attr._extra_dart_defines[BuildSettingInfo].value
+
+# An executable's own environment is configuration.
+#
+# A test, a kernel binary or a Flutter app with its own `defines` (a Flutter app
+# also with a flavor and a defines file) sets these two private settings on its
+# `deps` edge. Every module of its closure then compiles with that environment
+# and the executable's entry compiles with the same one, so the executable stays
+# modular; two executables with equal settings land in one configuration and
+# share every module. Both rule sets use these settings, so a reset on an edge
+# that leaves Dart (`native_defines_reset`) covers both. The global
+# `extra_dart_defines` flags are never written: modules take them after these.
+EXECUTABLE_DEFINES_SETTING = str(Label("//dart/private:executable_dart_defines"))
+EXECUTABLE_DEFINES_FILE_SETTING = str(Label("//dart/private:executable_dart_defines_file"))
+_NO_DEFINES_FILE = str(Label("//dart/private:no_dart_defines_file"))
+
+DartDefinesInfo = provider(
+    doc = "A set of Dart environment declarations, written by an action as one `-DKEY=VALUE` line each.",
+    fields = {
+        "flagfile": "The File of `-DKEY=VALUE` lines, or None for no declarations.",
+    },
+)
+
+def _no_dart_defines_impl(_ctx):
+    return [DartDefinesInfo(flagfile = None)]
+
+no_dart_defines = rule(
+    implementation = _no_dart_defines_impl,
+    doc = "No Dart environment declarations: the default of `//dart/private:executable_dart_defines_file`.",
+)
+
+def canonical_dart_defines(defines):
+    """One entry per key, the last one written winning as with `-D`, sorted by key.
+
+    Sorting makes the configuration independent of the order the defines were
+    written in, so equal environments share every module.
+
+    Args:
+      defines: `KEY` or `KEY=VALUE` strings.
+
+    Returns:
+      The sorted list.
+    """
+    by_key = {}
+    for d in defines:
+        by_key[d.partition("=")[0]] = d
+    return [by_key[k] for k in sorted(by_key.keys())]
+
+def executable_defines_settings(defines = [], defines_file = None):
+    """The settings an executable's `deps` edge writes.
+
+    Args:
+      defines: The executable's own `KEY=VALUE` defines (a Flutter app adds its
+        flavor define); canonicalized here.
+      defines_file: The Label of a target providing `DartDefinesInfo`, or None.
+
+    Returns:
+      A dict from setting label to value, for a transition to return. With no
+      arguments it holds the defaults, which Bazel drops from the configuration.
+    """
+    return {
+        EXECUTABLE_DEFINES_SETTING: canonical_dart_defines(defines),
+        EXECUTABLE_DEFINES_FILE_SETTING: str(defines_file) if defines_file != None else _NO_DEFINES_FILE,
+    }
+
+def _native_defines_reset_impl(_settings, _attr):
+    return executable_defines_settings()
+
+# The transition on every edge that leaves Dart for native code (code assets,
+# plugin libraries, native assets): back to the defaults, so native code is
+# configured once whatever environment the Dart closure above it compiles with.
+native_defines_reset = transition(
+    implementation = _native_defines_reset_impl,
+    inputs = [],
+    outputs = [EXECUTABLE_DEFINES_SETTING, EXECUTABLE_DEFINES_FILE_SETTING],
+)
+
+EXECUTABLE_DEFINES_ATTRS = {
+    "_executable_dart_defines": attr.label(
+        doc = "The private //dart/private:executable_dart_defines setting: the environment of the executable whose closure this is.",
+        default = Label("//dart/private:executable_dart_defines"),
+        providers = [BuildSettingInfo],
+    ),
+    "_executable_dart_defines_file": attr.label(
+        doc = "The private //dart/private:executable_dart_defines_file setting: the defines file of the executable whose closure this is.",
+        default = Label("//dart/private:executable_dart_defines_file"),
+        providers = [DartDefinesInfo],
+    ),
+}
+
+def executable_dart_defines(ctx):
+    """The executable environment this configuration carries.
+
+    Args:
+      ctx: A rule or aspect context carrying `EXECUTABLE_DEFINES_ATTRS`.
+
+    Returns:
+      struct(defines, flagfile): the canonical defines and the defines File (or None).
+    """
+    if not hasattr(ctx.attr, "_executable_dart_defines"):
+        return struct(defines = [], flagfile = None)
+    return struct(
+        defines = ctx.attr._executable_dart_defines[BuildSettingInfo].value,
+        flagfile = ctx.attr._executable_dart_defines_file[DartDefinesInfo].flagfile,
+    )

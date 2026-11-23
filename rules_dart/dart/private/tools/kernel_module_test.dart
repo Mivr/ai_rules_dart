@@ -580,6 +580,70 @@ void main(List<String> args) {
 
   tearDown(() => _root.deleteSync(recursive: true));
 
+  group('--define-file', () {
+    List<String> defineFileArgs(String defineFile) => [
+      '--target',
+      'vm',
+      '-D',
+      'OWN=attr',
+      '--define-file',
+      defineFile,
+      '--packages-file',
+      '${_root.path}/package_config.json',
+      '--libraries-json',
+      '${_root.path}/libraries.json',
+      '--multi-root',
+      _root.path,
+      '--multi-root-scheme',
+      'org-dartlang-root',
+      '--source',
+      _uri('pkg/lib/env.dart'),
+      '--output',
+      '${_root.path}/out/env.kmod',
+      '--excluded-output',
+      '${_root.path}/out/env.vm_excluded.txt',
+    ];
+
+    test('its defines reach the compiler before every other -D', () async {
+      _write('pkg/lib/env.dart', 'int env() => 1;\n');
+      _write('env.dart_defines', '-DFROM_FILE=file\n\n-DOWN=file\n');
+      final rec = _Recorder();
+      final log = StringBuffer();
+      final int code = await compileModule(
+        defineFileArgs('${_root.path}/env.dart_defines'),
+        rec,
+        log,
+        const [],
+      );
+      expect(code, 0, reason: log.toString());
+      // The file's `OWN` comes first, so the command line's wins.
+      expect(_valuesAfter(rec.calls.single, '-D'), [
+        'FROM_FILE=file',
+        'OWN=file',
+        'OWN=attr',
+      ]);
+      expect(rec.calls.single, isNot(contains('--define-file')));
+    });
+
+    test('a value with a comma is refused, naming the file', () async {
+      _write('pkg/lib/env.dart', 'int env() => 1;\n');
+      _write('env.dart_defines', '-DLIST=a,b\n');
+      final rec = _Recorder();
+      final log = StringBuffer();
+      final int code = await compileModule(
+        defineFileArgs('${_root.path}/env.dart_defines'),
+        rec,
+        log,
+        const [],
+      );
+      expect(code, 64);
+      expect(rec.calls, isEmpty);
+      expect(log.toString(), contains('LIST=a,b'));
+      expect(log.toString(), contains('env.dart_defines'));
+      expect(log.toString(), contains('comma'));
+    });
+  });
+
   test('a library that imports only the VM compiles every source', () async {
     _write('pkg/lib/a.dart', "import 'dart:async';\nclass A {}\n");
     _write('pkg/lib/b.dart', "import 'a.dart';\nclass B {}\n");

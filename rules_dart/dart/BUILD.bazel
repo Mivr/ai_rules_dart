@@ -283,6 +283,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":providers",
+        "//dart/private:build_settings",
         "//dart/private:common",
         "//dart/private:dart_info",
         "//dart/private:dart_info_params",

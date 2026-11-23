@@ -10,6 +10,17 @@ load(
     _DartKernelInfo = "DartKernelInfo",
 )
 load(
+    "//dart/private:build_settings.bzl",
+    _DartDefinesInfo = "DartDefinesInfo",
+    _EXECUTABLE_DEFINES_ATTRS = "EXECUTABLE_DEFINES_ATTRS",
+    _EXECUTABLE_DEFINES_FILE_SETTING = "EXECUTABLE_DEFINES_FILE_SETTING",
+    _EXECUTABLE_DEFINES_SETTING = "EXECUTABLE_DEFINES_SETTING",
+    _canonical_dart_defines = "canonical_dart_defines",
+    _executable_dart_defines = "executable_dart_defines",
+    _executable_defines_settings = "executable_defines_settings",
+    _native_defines_reset = "native_defines_reset",
+)
+load(
     "//dart/private:common.bzl",
     _KERNEL_FILESYSTEM_SCHEME = "KERNEL_FILESYSTEM_SCHEME",
     _STABLE_SCHEME = "STABLE_SCHEME",
@@ -231,6 +242,18 @@ duplicated_source = _duplicated_source
 has_cross_pkg_cycle = _has_cross_pkg_cycle
 package_of_source = _package_of_source
 global_dart_defines = _global_dart_defines
+
+# An executable's own environment as configuration: the private settings its
+# `deps` edge writes, the provider of a defines file, the reset for edges that
+# leave Dart for native code, and the helpers that read and write them.
+DartDefinesInfo = _DartDefinesInfo
+EXECUTABLE_DEFINES_ATTRS = _EXECUTABLE_DEFINES_ATTRS
+EXECUTABLE_DEFINES_SETTING = _EXECUTABLE_DEFINES_SETTING
+EXECUTABLE_DEFINES_FILE_SETTING = _EXECUTABLE_DEFINES_FILE_SETTING
+canonical_dart_defines = _canonical_dart_defines
+executable_dart_defines = _executable_dart_defines
+executable_defines_settings = _executable_defines_settings
+native_defines_reset = _native_defines_reset
 
 # Directory assembly: copy a package whose hand-written and generated files
 # straddle the source tree and `bazel-out` into one tree-artifact directory, for
