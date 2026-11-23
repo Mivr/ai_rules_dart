@@ -1,4 +1,4 @@
-"""Runs `yaml_to_json` with the real `yq` binary over fixed documents.
+"""Runs `yaml_to_json` with the real `yaml2json` binary over fixed documents.
 
 `yq_probe` writes every document of `DOCUMENTS` and `MUST_FAIL` to a file of
 its own, converts them with `//dart/pub/private:yq.bzl`, and writes the
@@ -44,6 +44,7 @@ DOCUMENTS = {
         "  dart: \">=3.0.0 <4.0.0\"\n"
     ),
     "markers.yaml": "---\nname: markers\n...\n",
+    "merge_key.yaml": "base: &b {a: 1}\nother:\n  <<: *b\n  c: 2\n",
     "scalars.yaml": (
         "float: 1.10\n" +
         "hex: 0x10\n" +
@@ -70,9 +71,10 @@ MUST_FAIL = {
     "list_root.yaml": ("- a\n- b\n", "mapping at the top level"),
     "scalar_root.yaml": ("just text\n", "mapping at the top level"),
     "second_document.yaml": ("name: a\n---\nname: b\n", "2 YAML documents"),
-    "tab_indentation.yaml": ("environment:\n\tsdk: ^3.0.0\n", "tab_indentation.yaml"),
-    "text_after_end.yaml": ("name: a\n... more\n", "text_after_end.yaml"),
-    "text_after_quote.yaml": ("name: \"a\" b\n", "text_after_quote.yaml"),
+    "tab_after_colon.yaml": ("environment:\n  sdk:\t^3.0.0\n", "line 2"),
+    "tab_indentation.yaml": ("environment:\n\tsdk: ^3.0.0\n", "line 2"),
+    "text_after_end.yaml": ("name: a\n... more\n", "line 2"),
+    "text_after_quote.yaml": ("name: \"a\" b\n", "line 1"),
 }
 
 def _yq_probe_impl(rctx):
@@ -98,5 +100,5 @@ def _yq_probe_impl(rctx):
 
 yq_probe = repository_rule(
     implementation = _yq_probe_impl,
-    doc = "Converts the fixed documents with the real `yq` and records what came out, for `yq_test.bzl`.",
+    doc = "Converts the fixed documents with the real `yaml2json` and records what came out, for `yq_test.bzl`.",
 )

@@ -1,7 +1,7 @@
 """Behavioural tests of `yaml_to_json`: documents in, expected data out.
 
 The conversion ran in the `yq_probe` repository rule (see `yq_probe.bzl`)
-with the pinned `yq` binary; these tests check what it produced.
+with the pinned `yaml2json` binary; these tests check what it produced.
 """
 
 load("@bazel_skylib//lib:partial.bzl", "partial")
@@ -43,6 +43,9 @@ _EXPECTED = {
         "sdks": {"dart": ">=3.0.0 <4.0.0"},
     },
     "markers.yaml": {"name": "markers"},
+
+    # A merge key stays a literal key, as in `package:yaml`.
+    "merge_key.yaml": {"base": {"a": "1"}, "other": {"<<": {"a": "1"}, "c": "2"}},
     "scalars.yaml": {
         "float": "1.10",
         "hex": "0x10",

@@ -18,7 +18,7 @@ facts with rules_dart, read the bytes of every `READER_SOURCE_LABELS` label in
 order and pass them to `parser_schema`.
 
 `//dart/pub:yaml.bzl` reads YAML the same way rules_dart does: `yaml_to_json`
-converts files with the pinned `yq` in one process (from a module extension
+converts files with the pinned `yaml2json` in one process (from a module extension
 or repository rule), and `lock_packages`, `pubspec_deps`,
 `pubspec_sdk_constraint` and `pubspec_environment_error` make pub's checks
 on the decoded data.

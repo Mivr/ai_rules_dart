@@ -1,8 +1,9 @@
-"""YAML files read as JSON: a pinned `yq` binary converts them, Starlark decodes.
+"""YAML files read as JSON: a pinned `yaml2json` binary converts them, Starlark decodes.
 
 `pubspec.lock`, `pubspec.yaml` and `pubspec_overrides.yaml` are YAML. Instead
-of parsing YAML in Starlark, the rules run one pinned `yq` process over every
-file a step needs and read its JSON output with `json.decode`.
+of parsing YAML in Starlark, the rules run one pinned `yaml2json --batch`
+process over every file a step needs and read its JSON output with
+`json.decode`.
 
 The binary comes from `yq_repository`, a repository rule that downloads the
 release asset for the fetch host and checks its published sha256. The `dart`
@@ -14,14 +15,17 @@ module.
 The conversion keeps booleans as JSON booleans, `null`, `~` and empty values
 as JSON null, and every other scalar as a string holding its source text, so
 `1.10` stays `"1.10"` and a digit-only checksum keeps its digits. It reports
-duplicate mapping keys, which `yq` would otherwise let through (and
-`json.decode` would resolve silently to the last one). The checks that
-`package:yaml` and `pub` make and `yq` does not are made here, naming the
-file: no duplicate keys, at most one document, and a mapping at the top level.
-An empty or comment-only file reads as an empty mapping.
+duplicate mapping keys (which `json.decode` would resolve silently to the
+last one). The checks that `package:yaml` and `pub` make and the converter
+does not are made here, naming the file: no duplicate keys, at most one
+document, and a mapping at the top level.
+An empty or comment-only file reads as an empty mapping. A merge key `<<` stays
+a literal key, as in `package:yaml`; the converter fails, naming the file and
+line, on what `package:yaml` also refuses (a tab used as indentation or after
+`:` or `-`, text after `...` or after a closing quote).
 
-Everything that decides what a file decodes to lives in this file (the `yq`
-release, its checksums, the expression and these checks), so the pub
+Everything that decides what a file decodes to lives in this file (the
+`yaml2json` release, its checksums, its flags and these checks), so the pub
 extension's facts key covers it by digesting this file's bytes.
 """
 
@@ -29,40 +33,25 @@ load("//dart/private:download.bzl", "pinned_download")
 
 visibility(["//dart/..."])
 
-YQ_VERSION = "4.54.3"
+YQ_VERSION = "1.2.0"
 
-_YQ_URL = "https://github.com/mikefarah/yq/releases/download/v{version}/{asset}"
+_YQ_URL = "https://github.com/SimpleSoftwareOrg/yaml2json/releases/download/v{version}/{asset}"
 
 # Release asset and sha256 of the raw binary for every supported fetch host.
-# The checksums are the release's published `checksums` (SHA-256 column).
+# The checksums are the release's published `checksums.txt` (sha256).
 _YQ_BINARIES = {
-    "linux-arm64": ("yq_linux_arm64", "89f69310b61b68d1245065a1241d1fc843f7a36cd6103ffd77ad987613bd1b67"),
-    "linux-x64": ("yq_linux_amd64", "129534601871538efe0ba4c5e62a34fb1d5f469bcb975c4fddeb467d82974973"),
-    "macos-arm64": ("yq_darwin_arm64", "a2aebb93b5bdcb61bb76f630e42a0ef6a3ee10842a6516cd7b9e4080786ec593"),
-    "macos-x64": ("yq_darwin_amd64", "96d5105ffd693d6845c54fbd825b2d1bbdb8619e0a2ce6af95e5654e841e0984"),
-    "windows-x64": ("yq_windows_amd64.exe", "066ea0a09a282e47588ec1e1867280ff5ede458f7183617a2d99012e4e34f18a"),
+    "linux-arm64": ("yaml2json-linux-arm64", "3990677cf94789ae2537b14967899a3f4095df10570687be56aadb16aba83497"),
+    "linux-x64": ("yaml2json-linux-x86_64", "531e6928aaecd17935a52c756e99ec432ae91245f7e3c0df3abbaa6898d572d2"),
+    "macos-arm64": ("yaml2json-macos-arm64", "987ff149c18b088b606333141a4e2f17d6a50a417e563518248abf47334c2c4c"),
+    "macos-x64": ("yaml2json-macos-x86_64", "05a336c45e0a30b588bc743173c3dee87ff7164701958c5232f230974190205f"),
+    "windows-x64": ("yaml2json-windows-x86_64.exe", "84f2b24a107728e627187e03fa11f0d2394b466b06e96b4c29d05bcbdbe5138d"),
 }
 
 # One JSON line per document of every file: the file as named on the command
 # line, the document's index in it, whether any mapping in it repeats a key,
 # and the data. Booleans and nulls keep their type; every other scalar becomes
 # a string holding its source text.
-_EXPRESSION = (
-    '(.. | select(kind == "scalar" and tag != "!!null" and tag != "!!bool")) tag = "!!str"' +
-    ' | {"file": filename, "doc": document_index,' +
-    ' "duplicate_keys": ([.. | select(kind == "map") | ((keys | length) != (keys | unique | length))] | any),' +
-    ' "data": .}'
-)
-
-_FLAGS = [
-    "--output-format=json",
-    "--indent=0",
-    # Explicit keys win over merged ones, as YAML says; no stderr warning.
-    "--yaml-fix-merge-anchor-to-spec=true",
-    # The expression language's `env()` and `load()` are switched off.
-    "--security-disable-env-ops",
-    "--security-disable-file-ops",
-]
+_FLAGS = ["--batch"]
 
 def _host_key(os):
     """Returns the `_YQ_BINARIES` key of the fetch host, failing on an unsupported one."""
@@ -84,7 +73,7 @@ def _host_key(os):
         arch_part = arch
     key = os_part + "-" + arch_part
     if key not in _YQ_BINARIES:
-        fail("reading pubspec files needs yq %s, which rules_dart pins for %s only; there is none for this fetch host (os %r, arch %r)" % (
+        fail("reading pubspec files needs yaml2json %s, which rules_dart pins for %s only; there is none for this fetch host (os %r, arch %r)" % (
             YQ_VERSION,
             ", ".join(sorted(_YQ_BINARIES.keys())),
             os.name,
@@ -93,7 +82,7 @@ def _host_key(os):
     return key
 
 def _executable_name(os):
-    return "yq.exe" if os.name.lower().startswith("windows") else "yq"
+    return "yaml2json.exe" if os.name.lower().startswith("windows") else "yaml2json"
 
 def _yq_repository_impl(rctx):
     asset, sha256 = _YQ_BINARIES[_host_key(rctx.os)]
@@ -109,11 +98,11 @@ def _yq_repository_impl(rctx):
 
 yq_repository = repository_rule(
     implementation = _yq_repository_impl,
-    doc = "Downloads the pinned `yq` binary for the fetch host, checked against its published sha256.",
+    doc = "Downloads the pinned `yaml2json` binary for the fetch host, checked against its published sha256.",
 )
 
 def _yq_path(ctx):
-    """Resolves the `yq` binary through this module's repo mapping."""
+    """Resolves the `yaml2json` binary through this module's repo mapping."""
     return ctx.path(Label("@dart_yq//:" + _executable_name(ctx.os)))
 
 def _document_error(name, docs):
@@ -129,7 +118,7 @@ def _document_error(name, docs):
     return None
 
 def yaml_to_json_or_error(ctx, paths, names = None):
-    """Converts YAML files to decoded data in one `yq` process.
+    """Converts YAML files to decoded data in one `yaml2json` process.
 
     Args:
       ctx: A module extension or repository rule context.
@@ -149,7 +138,7 @@ def yaml_to_json_or_error(ctx, paths, names = None):
     absolute = [str(ctx.path(p)) for p in paths]
     shown = names if names != None else [str(p) for p in paths]
     unique = {path: True for path in absolute}.keys()
-    result = ctx.execute([_yq_path(ctx)] + _FLAGS + [_EXPRESSION] + unique)
+    result = ctx.execute([_yq_path(ctx)] + _FLAGS + unique)
     if result.return_code != 0:
         message = result.stderr.strip() or result.stdout.strip()
         for i in range(len(absolute)):
@@ -172,7 +161,7 @@ def yaml_to_json_or_error(ctx, paths, names = None):
     return struct(data = data, error = None)
 
 def yaml_to_json(ctx, paths, names = None):
-    """Converts YAML files to their top-level mappings in one `yq` process.
+    """Converts YAML files to their top-level mappings in one `yaml2json` process.
 
     Fails naming the file on anything `yaml_to_json_or_error` reports.
 
