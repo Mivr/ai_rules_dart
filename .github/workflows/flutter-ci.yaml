@@ -17,11 +17,9 @@
 # with the same caches as a pull request (restore only, no save). Only the
 # nightly and `uncached` dispatches run cold.
 #
-# No job checks out rules_dart: every workspace below takes it as a registry
-# `bazel_dep`. Local sibling overrides live in gitignored `.bazelrc.user` files,
-# which never exist on a runner. The one committed sibling override, in
-# e2e/_overlay_tests/native_assets_synthetic, is in no shard below — adding
-# it means adding a checkout step too.
+# One checkout holds both modules: every workspace below takes `rules_dart/`,
+# the sibling directory, through a committed `local_path_override`. A
+# `.bazelrc.user` (gitignored) never exists on a runner.
 #
 # SHARDING: push CI keeps at most 2 macOS jobs (the Free plan has 5 macOS
 # slots shared with rules_dart), so macOS runs only two fast smoke jobs and
@@ -1314,6 +1312,11 @@ jobs:
       # filter) is required because `bazel test //...` builds every matched
       # target, including the non-test app, so a test-only filter wouldn't
       # stop the OOMing build action.
+      # The lockfiles are made on Linux x64 (rules_dart/docs/CHORES.md, "Lock
+      # File Refresh"): prove the root one holds on Windows, where no extension
+      # of the graph may need an entry that a Linux lockfile lacks.
+      - name: Lockfile holds on Windows
+        run: bazel mod deps --lockfile_mode=error
       - name: bazel test //... (e2e/hello_world)
         if: runner.os == 'Windows'
         working-directory: rules_flutter/e2e/hello_world

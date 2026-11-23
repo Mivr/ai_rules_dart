@@ -1,0 +1,1 @@
+{"name": "cycle_a", "versions": [{"version": "1.0.0", "archive_sha256": "c21fa0e7c583469e6cc2c7d9efb10b9196f0251eb4fd4081c4c75659bc507bf4", "pubspec": {"name": "cycle_a", "version": "1.0.0", "environment": {"sdk": ">=3.0.0 <4.0.0"}, "dependencies": {"cycle_b_evil": "^1.0.0"}}}]}

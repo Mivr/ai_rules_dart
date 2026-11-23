@@ -11,14 +11,16 @@ use_repo(dart, "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")
 
-# Green workspace: the committed MODULE.bazel.lock carries the real
-# cycle-planning facts (`spoke_a` -> [`spoke_b`], the rest no dependencies),
-# so `bazel build //:app` (after rewriting the FIXTURES_ROOT placeholder, see
-# below) passes. The spoke-mismatch check is exercised by CI
-# (.github/workflows/ci.yaml, step `pub_lock_scc_spoke_facts`), which corrupts
-# the recorded facts in place and rebuilds: each case below must then fail at
-# fetch, naming the package, instead of failing analysis with a bare target
-# cycle (or, for the fake edge, passing silently with the fake fact
+# Green workspace: `bazel build //:app` (after rewriting the FIXTURES_ROOT
+# placeholder, see below) plans `spoke_a` -> [`spoke_b`], the rest with no
+# dependencies, from the fixture registry's package listings, and records
+# those plans as the pub extension's facts in MODULE.bazel.lock. The committed
+# lock holds none of them: their keys name the registry, whose path is the
+# checkout's. The spoke-mismatch check is exercised by CI
+# (.github/workflows/dart-ci.yaml, step `pub_lock_scc_spoke_facts`), which
+# corrupts the recorded facts in place and rebuilds: each case below must then
+# fail at fetch, naming the package, instead of failing analysis with a bare
+# target cycle (or, for the fake edge, passing silently with the fake fact
 # re-recorded).
 #
 # - `spoke_a` really depends on `spoke_b`: with its fact wronged to [], planning
@@ -41,9 +43,10 @@ register_toolchains("@dart_toolchains//:all")
 # `facts` entry and its `moduleExtensions` entry from MODULE.bazel.lock,
 # delete the `MODULE.bazel.lock` inside Bazel's output base, build again)
 # builds cleanly, planning then records the real names. The fixtures live in
-# e2e/pub_lock_scc/fixtures/ (served over file://; the FIXTURES_ROOT
-# placeholder in pubspec.spoke.lock and MODULE.bazel.lock is rewritten to the
-# absolute path before building, and restored afterwards).
+# e2e/pub_lock_scc/fixtures/ (served over file://, with a package listing
+# under api/packages/ beside each archive; the FIXTURES_ROOT placeholder in
+# pubspec.spoke.lock is rewritten to the absolute path before building, and
+# restored afterwards).
 pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub", dev_dependency = True)
 pub.from_lock(
     name = "spokes",

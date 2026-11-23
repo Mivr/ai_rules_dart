@@ -1,0 +1,1 @@
+{"name": "spoke_c", "versions": [{"version": "1.0.0", "archive_sha256": "8a8c2efb4e740ec60e23b1a8faa16c91a6fd4756445fddc9d25fd178d79edad6", "pubspec": {"name": "spoke_c", "version": "1.0.0", "environment": {"sdk": ">=3.0.0 <4.0.0"}}}]}

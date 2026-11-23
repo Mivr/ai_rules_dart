@@ -821,6 +821,12 @@ jobs:
             startup --host_jvm_args=-Xmx2g
             build --local_resources=cpu=1
             build --local_resources=memory=HOST_RAM*.15
+      # The lockfiles are made on Linux x64 (docs/CHORES.md, "Lock File
+      # Refresh"). This proves the root one holds here, as the Windows `test`
+      # shard 1 does for Windows: no extension of the graph may need an entry
+      # for this system that a Linux lockfile lacks.
+      - name: Lockfile holds on macOS
+        run: bazel mod deps --lockfile_mode=error
       - name: Configure Bazel version
         working-directory: rules_dart/e2e/hello_world
         run: |
@@ -1203,40 +1209,34 @@ jobs:
       # (`dart/pub/private/pub_archive_scan.bzl`) over a local file://
       # registry plus a live git remote. The step points the hosted locks'
       # FIXTURES_ROOT placeholder at the fixtures directory and the git
-      # lock's placeholder resolved-ref at a scratch remote whose package
-      # smuggles a symlink above its root, then expects: the clean hub to
-      # stay green, the git fetch to fail on the escaping symlink, and each
+      # lock's placeholder resolved-ref at a scratch remote whose package is
+      # clean at first, then expects: the clean hub to stay green and each
       # hostile hosted hub to fail its fetch before extraction with the
       # refusal naming package, entry path, entry kind and raw target (entry
       # paths that escape the root themselves fail with the path diagnostic
-      # naming package and path instead). The fixture lock commits the clean
-      # hub's planning facts, so these runs exercise planning on the hit path
-      # while every hostile spoke still scans its own archive and refuses: no
-      # planning verdict ever reaches a spoke, so no lockfile entry can weaken
-      # the spoke scan. All locks are restored on exit.
+      # naming package and path instead). The registry serves a package
+      # listing (`fixtures/api/packages/<name>`) beside each archive, so
+      # planning never reads an archive: the extension stays green over the
+      # hostile hubs and every hostile spoke still scans its own archive and
+      # refuses. No planning verdict ever reaches a spoke, so no lockfile entry
+      # can weaken the spoke scan. All locks are restored on exit.
       - name: pub_symlink — header scan stays green on clean packages, refuses hostile entries
         working-directory: rules_dart/e2e/pub_symlink
         run: |
           trap 'git checkout -- pubspec.lock pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock pubspec.evil_path_abs.lock pubspec.evil_path_dotdot.lock' EXIT
           rm -rf /tmp/pub_symlink_evil /tmp/pub_symlink_outside.txt
           mkdir -p /tmp/pub_symlink_evil/evil_pkg/lib
-          ( cd /tmp/pub_symlink_evil && git init -q . && git config user.email t@t.t && git config user.name t && printf 'name: evil_pkg\nversion: 1.0.0\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n' > evil_pkg/pubspec.yaml && echo 'OUTSIDE-SECRET' > /tmp/pub_symlink_outside.txt && ln -s ../../outside.txt evil_pkg/lib/evil.dart && printf 'String get ok => "ok";\n' > evil_pkg/lib/ok.dart && git add -A && git commit -qm init )
+          ( cd /tmp/pub_symlink_evil && git init -q . && git config user.email t@t.t && git config user.name t && printf 'name: evil_pkg\nversion: 1.0.0\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n' > evil_pkg/pubspec.yaml && printf 'String get evil => "clean";\n' > evil_pkg/lib/evil.dart && printf 'String get ok => "ok";\n' > evil_pkg/lib/ok.dart && git add -A && git commit -qm init )
           ref=$(git -C /tmp/pub_symlink_evil rev-parse HEAD)
           sed -i "s/0000000000000000000000000000000000000000/$ref/" pubspec.lock
           fixtures="$PWD/fixtures"
           sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock pubspec.evil_path_abs.lock pubspec.evil_path_dotdot.lock
           bazel build //:ok_app
           echo "OK: clean hosted packages with an in-package symlink stay green"
-          grep -E -q 'pub\.scc\.v2\.[0-9a-f]{24}/hosted/ok_clean/' MODULE.bazel.lock
-          grep -E -q 'pub\.scc\.v2\.[0-9a-f]{24}/hosted/ok_inlink/' MODULE.bazel.lock
-          test "$(grep -c -F 'pub.scc.v1/' MODULE.bazel.lock)" = 0
-          echo "OK: planning runs on the committed facts while hostile spokes still refuse"
-          if bazel build //:app 2>/dev/null; then
-            echo "ERROR: build should have failed on the escaping symlink"
-            exit 1
-          fi
-          bazel build //:app 2>&1 | grep -F -q 'pub package "evil_pkg": symlink "lib/evil.dart" escapes the package'
-          echo "OK: expected git symlink-escape error detected"
+          grep -F -q 'pub.plan.v1/hosted/ok_clean/1.0.0/' MODULE.bazel.lock
+          grep -F -q 'pub.plan.v1/hosted/ok_inlink/1.0.0/' MODULE.bazel.lock
+          test "$(grep -c -F 'pub.scc.' MODULE.bazel.lock)" = 0
+          echo "OK: planning recorded the clean hub's facts while hostile spokes still refuse"
           if bazel build //:evil_hard_out_app 2>/dev/null; then
             echo "ERROR: build should have failed on the escaping hard-link"
             exit 1
@@ -1273,6 +1273,17 @@ jobs:
           fi
           bazel build //:evil_path_dotdot_app 2>&1 | grep -F -q 'pub package "evil_path_dotdot": entry "../outside.dart" escapes the package'
           echo "OK: expected climbing-path error detected"
+          # The git package is planned from its checkout, so a hostile one fails
+          # the whole extension: it turns hostile only now, after every hosted
+          # case above has run.
+          ( cd /tmp/pub_symlink_evil && rm evil_pkg/lib/evil.dart && echo 'OUTSIDE-SECRET' > /tmp/pub_symlink_outside.txt && ln -s ../../outside.txt evil_pkg/lib/evil.dart && git add -A && git commit -qm hostile )
+          sed -i "s/$ref/$(git -C /tmp/pub_symlink_evil rev-parse HEAD)/" pubspec.lock
+          if bazel build //:app 2>/dev/null; then
+            echo "ERROR: build should have failed on the escaping symlink"
+            exit 1
+          fi
+          bazel build //:app 2>&1 | grep -F -q 'pub package "evil_pkg": symlink "lib/evil.dart" escapes the package'
+          echo "OK: expected git symlink-escape error detected"
       # `e2e/pub_symlink/cycle` is a nested red-by-design workspace: the
       # two packages form a dependency cycle, so planning merges them — but
       # cycle_b_evil's tarball carries a hard-link entry, and the header
@@ -1333,7 +1344,7 @@ jobs:
           for name, want in (('spoke_a', []), ('spoke_d', ['spoke_c'])):
               keys = [k for k in facts if '/%s/' % name in k]
               assert len(keys) == 1, (name, keys)
-              facts[keys[0]] = want
+              facts[keys[0]]['deps'] = want
           json.dump(lock, open('MODULE.bazel.lock', 'w'), indent=2, sort_keys=True)
           open('MODULE.bazel.lock', 'a').write('\n')
           text = open('pubspec.spoke.lock').read()
