@@ -254,6 +254,7 @@ def executable_package(ctx, own_srcs):
             )
         return struct(
             record = None,
+            # lint-allow: depset-flatten terminal executable whose closure is not clean: the merge must see every record
             packages = merge_package_records(analyzable.dart_info.transitive_packages.to_list()),
             closure = None,
             analyzable = analyzable,
@@ -340,6 +341,7 @@ def executable_packages(own):
     """
     if own.packages != None:
         return own.packages
+    # lint-allow: depset-flatten terminal: only the whole-program compile and the coverage map need the record list
     return own.closure.records.to_list()
 
 def executable_package_set(own):

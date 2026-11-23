@@ -59,8 +59,6 @@
     {"rule":"depset-flatten","file":"rules_dart/dart/private/kernel_library_state.bzl","key":"edges_list = closures.edges.to_list() if need_graph else [],","count":1},
     {"rule":"depset-flatten","file":"rules_dart/dart/private/kernel_library_state.bzl","key":"for f in k.transitive_kmods.to_list():","count":1},
     {"rule":"depset-flatten","file":"rules_dart/dart/private/kernel_library_state.bzl","key":"for f in member[DefaultInfo].files.to_list()","count":1},
-    {"rule":"depset-flatten","file":"rules_dart/dart/private/kernel_library_state.bzl","key":"has_sources = bool(dep[DefaultInfo].files.to_list())","count":1},
-    {"rule":"depset-flatten","file":"rules_dart/dart/private/kernel_library_state.bzl","key":"has_upstream_cross_pkg = any([bool(k.cross_pkg_srcs.to_list()) for k in dep_kernels])","count":1},
     {"rule":"depset-flatten","file":"rules_dart/dart/private/kernel_library_state.bzl","key":"k_unseeded = getattr(k, \"unseeded_base_kmods\", depset()).to_list()","count":1},
     {"rule":"depset-flatten","file":"rules_dart/dart/private/kernel_library_state.bzl","key":"owned_list = closures.owned.to_list() if need_graph else [],","count":1},
     {"rule":"depset-flatten","file":"rules_dart/dart/private/kernel_library_state.bzl","key":"records = owned if owned and has_sources else dep[DartInfo].transitive_packages.to_list()","count":1},

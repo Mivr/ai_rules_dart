@@ -1416,6 +1416,7 @@ def _exec_entry_inputs(ctx, dep_kernels, packages, sources, closure = None, clea
     if clean != None and not _clean_entry_needs_scan(sources, clean.keys):
         return dep_closure, dep_outline_closure, depset(transitive = [k.cross_pkg_srcs for k in dep_kernels])
     if packages == None:
+        # lint-allow: depset-flatten terminal executable entry whose cross-package scan needs every record
         packages = clean.records.to_list()
     if closure == None or closure.kernels != dep_kernels:
         closure = _closure_scan(dep_kernels)
