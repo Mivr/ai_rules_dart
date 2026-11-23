@@ -1,0 +1,28 @@
+{
+  "spawns": [
+    {
+      "metrics": {
+        "systemTime": "0.5s",
+        "userTime": "3.5s"
+      },
+      "mnemonic": "Host",
+      "targetLabel": "@@tools//:h"
+    },
+    {
+      "metrics": {
+        "systemTime": "0.5s",
+        "userTime": "3.5s"
+      },
+      "mnemonic": "Host",
+      "targetLabel": "@@extra//:g"
+    },
+    {
+      "metrics": {
+        "systemTime": "0.5s",
+        "userTime": "3.5s"
+      },
+      "mnemonic": "Compile",
+      "targetLabel": "//app:t"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+load("//flutter:defs.bzl", "flutter_plugin")
+load("//flutter:native_assets.bzl", "flutter_native_asset")
+
+flutter_native_asset(
+    name = "asset",
+    asset_id = "package:modular_app_native_fixture/foo.so",
+    link_mode = "dynamic_loading_system",
+    system_uri = "libfoo.so.1",
+    tags = ["manual"],
+)
+
+flutter_plugin(
+    name = "plugin",
+    package_name = "modular_app_native_fixture",
+    srcs = ["lib/native_fixture.dart"],
+    native_assets = [":asset"],
+    platforms = [],
+    tags = ["manual"],
+    visibility = ["//flutter/tests:__subpackages__"],
+    deps = ["//flutter/tests/registrant_twin_fixture/app"],
+)

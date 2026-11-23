@@ -1,0 +1,22 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+
+# Fails when a repository that returns `repo_metadata(reproducible = True)` is
+# extracted into the output base instead of shared through the repo contents
+# cache, or holds an absolute or repository-escaping symlink:
+# `bazel run //tools/repo_contents_cache -- @@+flutter+flutter_sky_engine`.
+dart_binary(
+    name = "repo_contents_cache",
+    srcs = [
+        "bazel_fetch.dart",
+        "cache_check.dart",
+    ],
+    main = "check_repo_contents_cache.dart",
+)
+
+dart_test(
+    name = "cache_check_test",
+    size = "small",
+    srcs = ["cache_check.dart"],
+    main = "test/cache_check_test.dart",
+    deps = ["@dev_tool_deps//:test"],
+)

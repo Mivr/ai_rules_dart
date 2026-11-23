@@ -1,0 +1,13 @@
+name: bad_shape
+description: Red-path fixture path package with a malformed flutter.assets section.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+flutter:
+  # Deliberately malformed: flutter_tools requires `assets` to be a list.
+  # The spoke fetch must fail with `Expected "assets" to be a list` instead
+  # of bundling no assets with a green build.
+  assets: assets/a.png

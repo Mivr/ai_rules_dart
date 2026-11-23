@@ -1,0 +1,310 @@
+/// Verifies the macOS .app bundle produced by flutter_macos_app has the
+/// expected structure, including the native dylib and App.framework,
+/// and is correctly wired for rendering (Info.plist, symbols, linkage, assets).
+///
+/// rules_apple outputs a .zip — we extract it to a temp dir and verify.
+library;
+
+// This script's diagnostics are its product: it reports what it found in
+// the built artifact to the bazel test log, so `print` is its output
+// channel rather than a stray debugging statement.
+// ignore_for_file: avoid_print
+
+import 'dart:io';
+
+void main() {
+  final testSrcDir = Platform.environment['TEST_SRCDIR'];
+  final testWorkspace = Platform.environment['TEST_WORKSPACE'];
+  if (testSrcDir == null || testWorkspace == null) {
+    stderr.writeln('Missing TEST_SRCDIR or TEST_WORKSPACE env vars');
+    exit(1);
+  }
+
+  final zipPath = '$testSrcDir/$testWorkspace/app.zip';
+  if (!File(zipPath).existsSync()) {
+    stderr.writeln('Bundle zip not found at $zipPath');
+    exit(1);
+  }
+
+  // Extract to temp directory.
+  final tmpDir = Directory.systemTemp.createTempSync('macos_bundle_test');
+  try {
+    final result = Process.runSync('unzip', ['-q', zipPath, '-d', tmpDir.path]);
+    if (result.exitCode != 0) {
+      stderr.writeln('Failed to extract zip: ${result.stderr}');
+      exit(1);
+    }
+
+    // flutter_macos_app sets bundle_name = app_name, so the .app is named
+    // after the display name, not the Bazel target name.
+    final bundlePath = '${tmpDir.path}/Flutter App.app';
+    final runnerBinary = '$bundlePath/Contents/MacOS/Flutter App';
+    var failed = false;
+
+    void check(String description, String path) {
+      final exists =
+          FileSystemEntity.isDirectorySync(path) || File(path).existsSync();
+      if (!exists) {
+        stderr.writeln('FAIL: $description — not found: $path');
+        failed = true;
+      } else {
+        print('OK: $description');
+      }
+    }
+
+    void checkCommand(
+      String description,
+      String executable,
+      List<String> args,
+      bool Function(String stdout) validate,
+    ) {
+      final result = Process.runSync(executable, args);
+      if (result.exitCode != 0) {
+        stderr
+          ..writeln(
+            'FAIL: $description — command failed: '
+            '$executable ${args.join(' ')}',
+          )
+          ..writeln('  stderr: ${result.stderr}');
+        failed = true;
+        return;
+      }
+      final stdout = result.stdout.toString().trim();
+      if (!validate(stdout)) {
+        stderr.writeln('FAIL: $description — unexpected output: $stdout');
+        failed = true;
+      } else {
+        print('OK: $description');
+      }
+    }
+
+    // --- Structural checks (file existence) ---
+
+    check(
+      'Native dylib libadd.dylib exists',
+      '$bundlePath/Contents/Frameworks/libadd.dylib',
+    );
+    // Built at vendor/lib/libsub.dylib in its package. Loaded by file name, so
+    // it has to be flattened into Frameworks/ like every other native library.
+    check(
+      'Native dylib from a package subdirectory is at Frameworks/libsub.dylib',
+      '$bundlePath/Contents/Frameworks/libsub.dylib',
+    );
+    checkCommand(
+      'Frameworks/libsub.dylib is a Mach-O dynamic library',
+      'file',
+      ['$bundlePath/Contents/Frameworks/libsub.dylib'],
+      (stdout) => stdout.contains('Mach-O') && stdout.contains('dynamically'),
+    );
+
+    // A directory in Frameworks/ that is not a framework is a native library
+    // bundled at its package-relative path. dyld never searches it, and
+    // codesign rejects it as a bundle it cannot recognise.
+    final frameworksDir = Directory('$bundlePath/Contents/Frameworks');
+    final strayDirectories = [
+      if (frameworksDir.existsSync())
+        for (final entity in frameworksDir.listSync(followLinks: false))
+          if (entity is Directory && !entity.path.endsWith('.framework'))
+            entity.path.split('/').last,
+    ];
+    if (!frameworksDir.existsSync()) {
+      stderr.writeln('FAIL: no Frameworks/ directory at ${frameworksDir.path}');
+      failed = true;
+    } else if (strayDirectories.isEmpty) {
+      print('OK: Frameworks/ holds no directory other than frameworks');
+    } else {
+      stderr.writeln(
+        'FAIL: Frameworks/ holds non-framework directories: '
+        '${strayDirectories.join(', ')}',
+      );
+      failed = true;
+    }
+    void checkSymlink(String description, String path, String expectedTarget) {
+      final type = FileSystemEntity.typeSync(path, followLinks: false);
+      if (type != FileSystemEntityType.link) {
+        stderr.writeln(
+          'FAIL: $description — expected symlink at $path, got $type',
+        );
+        failed = true;
+        return;
+      }
+      final actualTarget = Link(path).targetSync();
+      if (actualTarget != expectedTarget) {
+        stderr.writeln(
+          'FAIL: $description — expected symlink $path -> $expectedTarget, '
+          'got $actualTarget',
+        );
+        failed = true;
+      } else {
+        print('OK: $description');
+      }
+    }
+
+    final appFw = '$bundlePath/Contents/Frameworks/App.framework';
+    check(
+      'App.framework exists',
+      appFw,
+    );
+    check(
+      'App.framework/Versions/A/App exists',
+      '$appFw/Versions/A/App',
+    );
+    check(
+      'App.framework/Versions/A/Resources/Info.plist exists',
+      '$appFw/Versions/A/Resources/Info.plist',
+    );
+    checkSymlink(
+      'App.framework/Versions/Current symlink',
+      '$appFw/Versions/Current',
+      'A',
+    );
+    checkSymlink(
+      'App.framework/App symlink',
+      '$appFw/App',
+      'Versions/Current/App',
+    );
+    checkSymlink(
+      'App.framework/Resources symlink',
+      '$appFw/Resources',
+      'Versions/Current/Resources',
+    );
+    checkCommand(
+      'App.framework Info.plist CFBundlePackageType is FMWK',
+      'plutil',
+      [
+        '-extract',
+        'CFBundlePackageType',
+        'raw',
+        '$appFw/Versions/A/Resources/Info.plist',
+      ],
+      (stdout) => stdout == 'FMWK',
+    );
+    check(
+      'FlutterMacOS.framework exists',
+      '$bundlePath/Contents/Frameworks/FlutterMacOS.framework',
+    );
+    check(
+      'Runner binary exists',
+      runnerBinary,
+    );
+    check(
+      'Info.plist exists',
+      '$bundlePath/Contents/Info.plist',
+    );
+    check(
+      'MainMenu.nib exists',
+      '$bundlePath/Contents/Resources/Base.lproj/MainMenu.nib',
+    );
+    check(
+      'flutter_assets in App.framework',
+      '$bundlePath/Contents/Frameworks/App.framework/Resources/flutter_assets',
+    );
+
+    // --- Info.plist validation ---
+
+    checkCommand(
+      'Info.plist NSMainNibFile is MainMenu',
+      'plutil',
+      ['-extract', 'NSMainNibFile', 'raw', '$bundlePath/Contents/Info.plist'],
+      (stdout) => stdout == 'MainMenu',
+    );
+
+    checkCommand(
+      'Info.plist CFBundleExecutable is Flutter App',
+      'plutil',
+      [
+        '-extract',
+        'CFBundleExecutable',
+        'raw',
+        '$bundlePath/Contents/Info.plist',
+      ],
+      (stdout) => stdout == 'Flutter App',
+    );
+
+    checkCommand(
+      'Info.plist CFBundleName is Flutter App',
+      'plutil',
+      ['-extract', 'CFBundleName', 'raw', '$bundlePath/Contents/Info.plist'],
+      (stdout) => stdout == 'Flutter App',
+    );
+
+    // --- NIB class references ---
+
+    checkCommand(
+      'MainMenu.nib references AppDelegate class',
+      'strings',
+      ['$bundlePath/Contents/Resources/Base.lproj/MainMenu.nib'],
+      (stdout) => stdout.contains('AppDelegate'),
+    );
+
+    // --- ObjC class symbols in runner binary ---
+
+    // flutter-create Swift files don't use @objc annotations, so class symbols
+    // are Swift-mangled: _OBJC_CLASS_$__TtC6Runner11AppDelegate.
+    checkCommand(
+      'Runner binary exports AppDelegate ObjC class',
+      'nm',
+      ['-gU', runnerBinary],
+      (stdout) => stdout.contains('AppDelegate'),
+    );
+
+    checkCommand(
+      'Runner binary exports MainFlutterWindow ObjC class',
+      'nm',
+      ['-gU', runnerBinary],
+      (stdout) => stdout.contains('MainFlutterWindow'),
+    );
+
+    // --- Framework linkage ---
+
+    checkCommand(
+      'Runner binary links FlutterMacOS.framework',
+      'otool',
+      ['-L', runnerBinary],
+      (stdout) => stdout.contains('FlutterMacOS.framework'),
+    );
+
+    // --- AOT dylib (App.framework/App) is valid Mach-O ---
+
+    final appFrameworkBinary =
+        '$bundlePath/Contents/Frameworks/App.framework/App';
+    check('App.framework/App binary exists', appFrameworkBinary);
+
+    checkCommand(
+      'App.framework/App is valid Mach-O',
+      'file',
+      [appFrameworkBinary],
+      (stdout) => stdout.contains('Mach-O'),
+    );
+
+    // --- flutter_assets completeness ---
+
+    final assetsPath =
+        '$bundlePath/Contents/Frameworks/App.framework/Resources/flutter_assets';
+    check('AssetManifest.bin exists', '$assetsPath/AssetManifest.bin');
+    check('FontManifest.json exists', '$assetsPath/FontManifest.json');
+    check('shaders/ directory exists', '$assetsPath/shaders');
+
+    if (failed) {
+      stderr.writeln('Bundle contents:');
+      _listRecursive(bundlePath, '');
+      exit(1);
+    }
+
+    print('All macOS bundle verification checks passed.');
+  } finally {
+    tmpDir.deleteSync(recursive: true);
+  }
+}
+
+void _listRecursive(String path, String indent) {
+  final dir = Directory(path);
+  if (!dir.existsSync()) return;
+  for (final entity in dir.listSync()) {
+    final name = entity.path.split('/').last;
+    stderr.writeln('$indent$name');
+    if (entity is Directory && !name.endsWith('.framework')) {
+      _listRecursive(entity.path, '$indent  ');
+    }
+  }
+}

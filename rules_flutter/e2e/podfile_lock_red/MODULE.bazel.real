@@ -1,0 +1,26 @@
+"""Podfile.lock red path: tab-indented lock must fail hub registration."""
+
+module(name = "rules_flutter_podfile_lock_red")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+git_override(
+    module_name = "ai_rules_dart",
+    commit = "e7163aab8f9171f54693cd1b99feb7d3cee9602d",
+    remote = "https://github.com/Mivr/ai_rules_dart.git",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.toolchain(flutter_version = "3.47.7")
+flutter.pub(
+    name = "red_deps",
+    ios_podfile_lock = "//:Podfile.lock",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "red_deps")

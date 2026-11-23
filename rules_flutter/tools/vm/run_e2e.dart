@@ -1,0 +1,251 @@
+/// Runs the rules_flutter e2e suites on a remote VM over SSH.
+///
+/// Usage:
+///   dart run tools/vm/run_e2e.dart <vm-name> [--windows] \
+///       [--folders=.,e2e/hello_world] [--keep-going]
+///
+/// Transfers the committed working tree (`git archive HEAD`) to the VM, clones
+/// the `rules_dart` sibling it depends on, extracts, then runs `bazel test
+/// //...` in each folder, mirroring `.github/workflows/ci.yaml`. Exit code 4
+/// ("no test targets") counts as a pass. Prints a per-folder PASS/FAIL summary
+/// and exits non-zero if any folder failed.
+///
+/// On Windows a short `--output_user_root` is used so deeply nested runfiles
+/// (e.g. the hermetic Python interpreter's `_socket.pyd`) stay under the
+/// 260-char MAX_PATH limit — the same fix the Windows CI job applies.
+library;
+
+import 'dart:async';
+import 'dart:io';
+
+import 'gcloud.dart';
+import 'vm_e2e.dart';
+
+/// Per-folder timeout. The first folder pays for the hermetic Flutter SDK +
+/// engine download; later folders re-fetch (separate output bases).
+const _folderTimeout = Duration(minutes: 30);
+
+/// Short Windows output root — keeps generated paths under MAX_PATH (260).
+const _winOutputRoot = 'C:/b';
+
+Future<void> main(List<String> args) async {
+  final E2eRunOptions options = parseE2eArgs(args);
+  final String vmName = options.vmName;
+  final bool isWindows = options.isWindows;
+
+  final String repoRoot = _repoRoot();
+  _warnIfDirty(repoRoot);
+
+  final String tgz = await _packageCommittedTree(repoRoot);
+
+  await _waitForToolchain(vmName, isWindows: isWindows);
+  await _transferTreeToVm(vmName, tgz, isWindows: isWindows);
+
+  // Run each folder.
+  final results = <E2eFolderResult>[];
+  for (final String folder in options.folders) {
+    stdout.writeln('\n=== $folder ===');
+    final E2eFolderResult result = await _runFolder(
+      vmName,
+      folder,
+      isWindows: isWindows,
+    );
+    results.add(result);
+    stdout.writeln(
+      '${result.pass ? "PASS" : "FAIL"} $folder (exit ${result.exitCode})',
+    );
+    if (!result.pass && !options.keepGoing) {
+      stdout.writeln('Stopping (use --keep-going to run the rest).');
+      break;
+    }
+  }
+
+  stdout.write(renderE2eSummary(results, isWindows));
+  exit(results.any((r) => !r.pass) ? 1 : 0);
+}
+
+/// Packages the committed tree into a tarball, returning its path.
+///
+/// Deliberately not `git archive`: it honours `export-ignore`, and
+/// `.gitattributes` marks `e2e/` as one so release tarballs stay small. An
+/// archive built that way arrives on the VM with every workspace this tool
+/// exists to run stripped out, and the run fails on a missing directory.
+/// `git ls-files` names the same committed tree without consulting
+/// export-ignore.
+Future<String> _packageCommittedTree(String repoRoot) async {
+  final tgz = '${Directory.systemTemp.path}/rules_flutter_src.tgz';
+  print('Packaging committed HEAD -> $tgz');
+  final listing = File('${Directory.systemTemp.path}/rules_flutter_files.txt');
+  // NUL-separated so paths with spaces survive; read as bytes because the
+  // separator is not representable in the system text encoding.
+  final ProcessResult lsFiles = Process.runSync(
+    'git',
+    ['-C', repoRoot, 'ls-files', '-z'],
+    stdoutEncoding: null,
+  );
+  if (lsFiles.exitCode != 0) {
+    throw Exception('git ls-files failed:\n${lsFiles.stderr}');
+  }
+  listing.writeAsBytesSync(lsFiles.stdout as List<int>);
+  // No path-rewriting flag: `--transform` is GNU-only and `-s` is bsd-only, so
+  // the archive stores bare repo-relative paths and the VM extracts into a
+  // directory it names itself. COPYFILE_DISABLE stops macOS bsdtar emitting
+  // AppleDouble `._name` sidecars, which would land beside real sources where
+  // Bazel's `glob(["lib/**"])` reads `._main.dart` as a Dart file.
+  _run(
+    'tar',
+    ['-C', repoRoot, '-czf', tgz, '--null', '-T', listing.path],
+    environment: {'COPYFILE_DISABLE': '1'},
+  );
+  return tgz;
+}
+
+/// Transfers the packaged tree to the VM and clones the rules_dart sibling.
+Future<void> _transferTreeToVm(
+  String vmName,
+  String tgz, {
+  required bool isWindows,
+}) async {
+  print('Transferring source tree to $vmName ...');
+  if (isWindows) {
+    await scpToVm(vmName, tgz, 'C:/rf_src.tgz', compress: true);
+    // Separate, simple commands. A compound `cmd /c "... & ... & ..."` mangles
+    // through gcloud ssh -> Windows cmd and can silently no-op.
+    await sshExec(vmName, 'rmdir /s /q C:\\rf'); // tolerate "not found"
+    await sshRun(vmName, 'mkdir C:\\rf\\rules_flutter');
+    await sshRun(vmName, 'tar -xf C:\\rf_src.tgz -C C:\\rf\\rules_flutter');
+    await sshExec(vmName, 'rmdir /s /q C:\\rules_dart');
+    await sshRun(
+      vmName,
+      'git clone --depth 1 https://github.com/aran/rules_dart.git '
+      'C:\\rules_dart',
+    );
+  } else {
+    await scpToVm(vmName, tgz, '~/rules_flutter_src.tgz', compress: true);
+    await sshRun(
+      vmName,
+      "bash -lc 'rm -rf ~/rf && mkdir -p ~/rf/rules_flutter && "
+      "tar xzf ~/rules_flutter_src.tgz -C ~/rf/rules_flutter'",
+    );
+    await sshRun(
+      vmName,
+      "bash -lc 'rm -rf ~/rules_dart && "
+      "git clone --depth 1 https://github.com/aran/rules_dart.git "
+      "~/rules_dart'",
+    );
+  }
+}
+
+/// Runs `bazel test //...` in [folder] and maps the exit code: 0 (success) and
+/// 4 (no test targets) pass; anything else fails.
+Future<E2eFolderResult> _runFolder(
+  String vmName,
+  String folder, {
+  required bool isWindows,
+}) async {
+  final String command;
+  if (isWindows) {
+    final winFolder = folder == '.'
+        ? 'C:\\rf\\rules_flutter'
+        : 'C:\\rf\\rules_flutter\\${folder.replaceAll('/', '\\')}';
+    // /v:on enables delayed expansion so !errorlevel! is bazel's real exit, not
+    // the parse-time value. --output_user_root keeps paths under MAX_PATH.
+    command =
+        'cmd /v:on /c "cd /d $winFolder && '
+        'bazel --output_user_root=$_winOutputRoot '
+        'test --test_output=errors //... & '
+        'echo RF_EXIT=!errorlevel!"';
+  } else {
+    final dir = folder == '.'
+        ? '\$HOME/rf/rules_flutter'
+        : '\$HOME/rf/rules_flutter/$folder';
+    command =
+        "bash -lc 'cd $dir && "
+        "bazel test --test_output=errors //...; echo RF_EXIT=\$?'";
+  }
+
+  final ProcessResult result;
+  try {
+    result = await sshExec(vmName, command).timeout(_folderTimeout);
+  } on TimeoutException {
+    return E2eFolderResult(folder, -2, false, 'TIMEOUT after $_folderTimeout');
+  }
+
+  final combined = '${result.stdout}\n${result.stderr}';
+  final int exitCode = _parseRfExit(result.stdout.toString());
+  final bool pass = exitCode == 0 || exitCode == 4;
+  return E2eFolderResult(folder, exitCode, pass, _tail(combined));
+}
+
+/// Waits until the VM's toolchain (bazel + C compiler) is installed.
+Future<void> _waitForToolchain(String vmName, {required bool isWindows}) async {
+  print('Verifying toolchain on $vmName ...');
+  // Generous: a fresh Windows VM may need ~15 min before SSH, then ~15 min to
+  // finish installing MSVC + bazelisk via the startup script.
+  final DateTime deadline = DateTime.now().add(const Duration(minutes: 40));
+  while (DateTime.now().isBefore(deadline)) {
+    final ProcessResult r;
+    if (isWindows) {
+      r = await sshExec(
+        vmName,
+        'cmd /c "type C:\\startup_complete.txt && where bazel"',
+      );
+      if (r.exitCode == 0 && r.stdout.toString().contains('STARTUP_COMPLETE')) {
+        return;
+      }
+    } else {
+      r = await sshExec(
+        vmName,
+        'bash -lc "command -v bazel && command -v cc"',
+      );
+      if (r.exitCode == 0) return;
+    }
+    stdout.writeln('  toolchain not ready yet; waiting ...');
+    await Future<void>.delayed(const Duration(seconds: 20));
+  }
+  throw Exception('Timed out waiting for toolchain on $vmName');
+}
+
+int _parseRfExit(String stdout) {
+  final RegExpMatch? m = RegExp(r'RF_EXIT=(-?\d+)').firstMatch(stdout);
+  return m == null ? -1 : int.parse(m.group(1)!);
+}
+
+String _tail(String s, {int lines = 60}) {
+  final List<String> all = s.split('\n');
+  return all.length <= lines ? s : all.sublist(all.length - lines).join('\n');
+}
+
+String _repoRoot() {
+  final ProcessResult r = Process.runSync('git', [
+    'rev-parse',
+    '--show-toplevel',
+  ]);
+  if (r.exitCode != 0) {
+    throw Exception('Not in a git repo: ${r.stderr}');
+  }
+  return r.stdout.toString().trim();
+}
+
+void _warnIfDirty(String repoRoot) {
+  final ProcessResult r = Process.runSync('git', [
+    '-C',
+    repoRoot,
+    'status',
+    '--porcelain',
+    '--untracked-files=no',
+  ]);
+  if (r.stdout.toString().trim().isNotEmpty) {
+    stderr.writeln(
+      'WARNING: tracked working-tree changes are NOT included — '
+      'run_e2e tests committed HEAD only. Commit first to test them.',
+    );
+  }
+}
+
+void _run(String exe, List<String> args, {Map<String, String>? environment}) {
+  final ProcessResult r = Process.runSync(exe, args, environment: environment);
+  if (r.exitCode != 0) {
+    throw Exception('$exe ${args.join(' ')} failed:\n${r.stderr}');
+  }
+}

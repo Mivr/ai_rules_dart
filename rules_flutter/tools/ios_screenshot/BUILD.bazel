@@ -1,0 +1,49 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+
+# iOS device screenshot helpers. These are `dart_binary` targets, not
+# `py_binary`: each entrypoint is a thin driver (`lib/*.dart`, `dart:io`
+# only) that resolves a host `python3` and runs its `pymobiledevice3`
+# program through it. That keeps `rules_python` and the `pip` extension out
+# of every consumer's module graph — the helpers need no Bazel-built Python
+# toolchain or wheels, only the host interpreter and an installed
+# `pymobiledevice3` (`python3 -m pip install pymobiledevice3`), a documented
+# host prerequisite like the Android SDK or Xcode. The dev tool runs these
+# from its runfiles (`//tools/dev_tool` data below), the same keys as before.
+
+dart_binary(
+    name = "screenshot",
+    srcs = glob(["lib/**/*.dart"]),
+    compile_mode = "exe",
+    main = "lib/screenshot.dart",
+    visibility = ["//tools/dev_tool:__pkg__"],
+)
+
+dart_binary(
+    name = "tunneld",
+    srcs = glob(["lib/**/*.dart"]),
+    compile_mode = "exe",
+    main = "lib/tunneld.dart",
+    visibility = ["//tools/dev_tool:__pkg__"],
+)
+
+dart_test(
+    name = "python_host_test",
+    size = "medium",
+    srcs = glob(["lib/**/*.dart"]),
+    # The `PYTHONHOME` tests drive the launchers from a child `dart` process
+    # (ambient variables cannot be set for the test's own process), so both the
+    # resolved Dart SDK executable and the launcher source travel in runfiles.
+    data = [
+        "lib/python_host.dart",
+        "@rules_dart//dart",
+    ],
+    env = {
+        "IOS_SCREENSHOT_DART_RLOCATION": "$(rlocationpath @rules_dart//dart)",
+        "IOS_SCREENSHOT_PYTHON_HOST_RLOCATION": "$(rlocationpath lib/python_host.dart)",
+    },
+    main = "test/python_host_test.dart",
+    deps = [
+        "@dev_tool_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)

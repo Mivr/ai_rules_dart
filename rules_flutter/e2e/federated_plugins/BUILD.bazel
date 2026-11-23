@@ -1,0 +1,87 @@
+"""E2e test: federated plugin resolution on Linux desktop."""
+
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+load("@rules_flutter//flutter:linux.bzl", "flutter_linux_registrant_gen")
+
+exports_files(["pubspec.lock"])
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Application 1: deps fed_sp and fed_wrapper.
+# Endorsed default fed_sp_linux wins over transitive alternative fed_alt_linux.
+flutter_application(
+    name = "app_sp_wrapper",
+    package_name = "federated_plugins",
+    srcs = ["lib/main.dart"],
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:fed_sp",
+        "@deps//:fed_wrapper",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_linux_registrant_gen(
+    name = "app_sp_wrapper_registrant",
+    application = ":app_sp_wrapper",
+)
+
+# Application 2: deps fed_sp and fed_chain.
+# Endorsed default fed_sp_linux wins over plugin-chained alternative fed_alt_linux.
+flutter_application(
+    name = "app_sp_chain",
+    package_name = "federated_plugins",
+    srcs = ["lib/main.dart"],
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:fed_chain",
+        "@deps//:fed_sp",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_linux_registrant_gen(
+    name = "app_sp_chain_registrant",
+    application = ":app_sp_chain",
+)
+
+# Application 3: deps fed_sp and fed_alt_linux directly.
+# Direct alternative fed_alt_linux wins over endorsed default fed_sp_linux.
+flutter_application(
+    name = "app_sp_alt_linux",
+    package_name = "federated_plugins",
+    srcs = ["lib/main.dart"],
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:fed_alt_linux",
+        "@deps//:fed_sp",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_linux_registrant_gen(
+    name = "app_sp_alt_linux_registrant",
+    application = ":app_sp_alt_linux",
+)
+
+# Reads the three generated registrant files and verifies each registers
+# exactly the required federated implementation.
+dart_test(
+    name = "registrants_test",
+    size = "small",
+    data = [
+        ":app_sp_alt_linux_registrant",
+        ":app_sp_chain_registrant",
+        ":app_sp_wrapper_registrant",
+    ],
+    main = "test/registrants_test.dart",
+)

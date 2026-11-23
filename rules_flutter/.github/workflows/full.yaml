@@ -1,0 +1,665 @@
+# Mivr/ai_rules_flutter workflow (moved from the frozen Mivr/rules_flutter fork on 2026-10-28).
+# Full-matrix workflow for rules_flutter ("pre-release").
+#
+# WHAT RUNS WHERE: the macOS e2e coverage that push CI (ci.yaml) does not
+# run — what only a Mac proves (Apple toolchains and SDKs, macOS and iOS
+# bundles, the iOS simulator, Xcode, CocoaPods and SwiftPM, the Apple linker,
+# darwin toolchain resolution) — plus the Android example (too heavy for push
+# CI) on Linux, plus the dev tool's own iOS simulator e2e cases
+# (`dev-tool-ios`) on a booted simulator on macOS. Linux and Windows coverage
+# otherwise lives in push CI, which also proves every Android and portable
+# target, so the macOS legs never build Android and some run only their
+# macOS-gated tests (see the matrix). Its macOS legs plus push CI's Linux jobs
+# cover everything ci.yaml's deferred macOS jobs run (hello_world's and
+# min_versions' Apple targets, plugin_example's mixed plugin, pub_scc's iOS
+# targets and the smoke spec here; codegen's --update-goldens check and
+# pub_scc's portable targets in e2e-linux-app and e2e-linux-pub-scc), so a push
+# CI run plus a Full run on the same commit prove as much as a dispatch of both.
+# Triggered on every push to main (one run at a time, newest commit wins:
+# see `concurrency`), nightly, or manually. A release reuses a passing main
+# push or nightly run of this workflow on the tagged commit, or dispatches it
+# on the tag (with caches) before publishing (see the gate job in
+# release.yaml); auto-release.yaml releases each main commit both pass on.
+#
+# WHAT IS CACHED: nightly schedule runs restore no disk cache (only the plugin
+# job re-saves its own key, on pushes and schedules). Release dispatches on a tag
+# and other manual dispatches restore the push-CI shard keys below and save
+# nothing; an `uncached` dispatch restores no disk cache. The
+# content-addressed repository cache (and the bazelisk cache)
+# always restore, since every fetch through them is sha256-pinned and they
+# never replay test results.
+# Saves are success-gated (no `always()`): a failed run must not persist its
+# half-populated cache.
+# Disk caches are the push-CI shards' keys below, restored only (except the
+# plugin job, which owns its key and re-saves it on pushes and schedules, but
+# never on tags). See ci.yaml for why saves delete the key first.
+permissions:
+  actions: write
+  contents: read
+name: Full
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      uncached:
+        description: Run every job without restoring or saving any Bazel cache
+        required: false
+        default: false
+        type: boolean
+      android_linux_sandbox:
+        description: "Dev-only: also run e2e/integration_android under linux-sandbox (its no-sandbox requirement dropped) to collect the discovery diagnostics; never gates"
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    # Nightly at 06:00 UTC.
+    - cron: "0 6 * * *"
+concurrency:
+  # Pushes to main share one group with no cancel-in-progress: the running
+  # Full finishes, at most one newer push waits, and a later push replaces the
+  # waiting one, so main is proven continuously without a backlog. Every other
+  # run on main gets its own run-id suffix, so the nightly run, a manual
+  # dispatch and a tag dispatch never cancel or queue behind each other or
+  # the pushes. Full never cancels a run in progress: every Full run may be
+  # gating a release or a merge.
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'main-push' || format('{0}{1}', github.head_ref || github.ref, github.ref == 'refs/heads/main' && format('::{0}', github.run_id) || '') }}
+  cancel-in-progress: false
+env:
+  BAZEL_REPOSITORY_CACHE_KEY_FILES: |
+    - MODULE.bazel
+    - MODULE.bazel.lock
+    - e2e/*/MODULE.bazel
+    - flutter/private/versions.bzl
+jobs:
+  # The nightly run skips both macOS jobs on a commit a main push run already
+  # passed: the macOS slots are the scarce ones, and that run proved the same
+  # SHA on the same matrix. Linux still runs nightly, and any other event
+  # (push, dispatch, tag) always runs macOS.
+  dedupe:
+    name: macOS already proven on this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      skip-macos: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          skip=false
+          if [ "$EVENT" = schedule ]; then
+            n=$(gh run list --repo "$REPO" --workflow full.yaml --commit "$SHA" --event push --status success --limit 20 \
+              --json headBranch --jq '[.[] | select(.headBranch == "main")] | length' || echo 0)
+            if [ "$n" -gt 0 ]; then skip=true; fi
+          fi
+          echo "skip=$skip" | tee -a "$GITHUB_OUTPUT"
+  e2e-macos:
+    name: E2E full (${{ matrix.workspace }}, macos-latest)
+    needs: dedupe
+    if: needs.dedupe.outputs.skip-macos != 'true'
+    runs-on: macos-latest
+    # Cold nightly and `uncached` runs rebuild every workspace from scratch; fork
+    # policy caps every job at 300 minutes on the free runners, and a cold
+    # leg takes under an hour.
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      # The 5 macOS slots are shared with rules_dart. A main push run proves the
+      # commit auto-release.yaml releases, so it takes 3 (dev-tool-ios takes a
+      # fourth); a release dispatch on a tag takes 4, the nightly 2, and any
+      # other dispatch (a branch under test) 1.
+      max-parallel: ${{ github.ref_type == 'tag' && 4 || (github.event_name == 'push' && 3 || (github.event_name == 'schedule' && 2 || 1)) }}
+      matrix:
+        include:
+          # shard names the push-CI disk keys of the same content; only the
+          # plugin job saves (its own key). `scope: apple` runs only the
+          # workspace's macOS-gated tests (`target_compatible_with` naming
+          # @platforms//os:macos): its other targets are portable, and push
+          # CI's Linux jobs test them. Every other leg tests //... minus the
+          # Android targets.
+          #
+          # Dropped from macOS (one line each: why the Linux run is enough):
+          # - dual_hub: pure Dart pub-hub resolution, no Apple target;
+          #   ci.yaml's e2e-linux-small runs its spec.
+          # - Android targets on every leg but hello_world's: Linux builds and
+          #   tests them (ci.yaml's Android and app jobs, e2e-linux-nightly
+          #   here). hello_world keeps one Android build and test on the Mac
+          #   host, which uses the darwin NDK, build-tools and JDK.
+          # - hello_world's, codegen's, min_versions' and pub_scc's portable
+          #   targets (kernel, AOT, web, flutter_test, dart_test): ci.yaml's
+          #   e2e-linux-app, e2e-linux-integration and e2e-linux-pub-scc test
+          #   them; codegen's --update-goldens check runs in e2e-linux-app.
+          #
+          # Longest leg first (cold minutes on 2026-11-13 before scoping: 52,
+          # 45, 35, 24, 21, 20, 15, 13, 11, 11, 8, 4), so the long legs never
+          # start last.
+          - workspace: plugin_example
+            shard: macos-plugin
+            cache-save: true
+            scope: all
+          # Apple scope: the macOS app, xtool bundle and stage-clean tests and
+          # the iOS simulator and device bundle tests.
+          - workspace: hello_world
+            shard: macos-a
+            cache-save: false
+            scope: apple
+          # The iOS simulator integration-test lane: `bazel test //...` runs
+          # the green suite on the simulator plus the portable Dart-side
+          # build test; the red twin and test.xml steps below run by name.
+          - workspace: integration_ios
+            scope: all
+            shard: none
+            cache-save: false
+          # The iOS simulator `flutter_drive_test` lane: a passing and a
+          # failing host driver over one simulator app, run by name below.
+          - workspace: drive_ios
+            scope: all
+            shard: none
+            cache-save: false
+          - workspace: ffi_example
+            scope: all
+            shard: none
+            cache-save: false
+          # The iOS proof lane: every target here needs macOS
+          # (`target_compatible_with = ["@platforms//os:macos"]`), so this
+          # workspace runs nowhere else.
+          - workspace: ios_example
+            scope: all
+            shard: none
+            cache-save: false
+          - workspace: ffi_plugin_example
+            scope: all
+            shard: none
+            cache-save: false
+          # Apple scope: the macOS app built from the generated runner.
+          - workspace: codegen
+            scope: apple
+            shard: none
+            cache-save: false
+          # The add-to-app xcframework lane: one plain application plus a
+          # first-party plugin, and a macOS-only test over the produced
+          # App, Flutter, registrant and plugin xcframeworks.
+          - workspace: ios_framework
+            scope: all
+            shard: none
+            cache-save: false
+          # The real-plugin fetch matrix (POD-2). The Linux fetch half runs
+          # in e2e-linux-nightly; this leg builds the plugins expected.json
+          # records as "ok", one at a time, and reports every result.
+          # build_expected.json gates image_picker_ios as "ok" (exit 0, since
+          # POD-1 builds its image_picker_ios_objc target); the other
+          # expected-ok plugins are printed and recorded without gating yet.
+          - workspace: ios_plugin_matrix
+            scope: all
+            shard: none
+            cache-save: false
+          # The version-floor fixture on macOS: both Apple legs (Apple scope).
+          # The Dart app, the resolved-graph assertion and the Linux-only
+          # Android leg run in ci.yaml's e2e-linux-integration.
+          - workspace: min_versions
+            scope: apple
+            shard: none
+            cache-save: false
+          - workspace: smoke
+            scope: all
+            shard: macos-b
+            cache-save: false
+          # pub_scc's iOS simulator bundle and plugin registrant check (Apple
+          # scope); its Android APK and Dart test run in e2e-linux-pub-scc.
+          - workspace: pub_scc
+            scope: apple
+            shard: none
+            cache-save: false
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ matrix.shard }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ matrix.shard }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      # The repository cache is shared per OS with push CI (same key files).
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ matrix['cache-save'] && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached }}
+      # Workspaces with shard `none` have no push-CI macOS content and rebuild
+      # from the repository cache; the rest restore their push shard's key.
+      - name: Restore disk cache
+        if: matrix.shard != 'none' && github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ matrix.shard }}-
+      - name: Point Bazel at the disk cache
+        if: matrix.shard != 'none' && github.event_name != 'schedule' && !inputs.uncached
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      # --test_output=errors so a failure's assertion reaches this log. Without
+      # it the output stays in a test.log on the runner and is discarded with
+      # the machine.
+      # integration_ios runs `bazel test //...` inside its e2e_runner spec below.
+      #
+      # The legs leave Android out: Linux CI builds and tests every Android
+      # target. Only hello_world adds them back, in the step after this one,
+      # for the darwin host tools an Android build on a Mac uses. A target
+      # excluded here only stops being a top-level request; anything an
+      # included target needs still builds. `--keep_going` lets a query answer
+      # when some package fails to load (exit 3); fewer exclusions only means
+      # more is built. An `apple` scope leg tests only the macOS-gated tests,
+      # and fails when the query finds none.
+      - name: bazel test (e2e/${{ matrix.workspace }}, ${{ matrix.scope }})
+        if: matrix.workspace != 'integration_ios' && matrix.workspace != 'smoke'
+        working-directory: e2e/${{ matrix.workspace }}
+        env:
+          SCOPE: ${{ matrix.scope }}
+          WORKSPACE: ${{ matrix.workspace }}
+        run: |
+          # Manual targets stay out (as `//...` leaves them out); an explicit
+          # target that is incompatible on macOS is skipped, not an error.
+          if [[ "$SCOPE" == apple ]]; then
+            query='tests(attr(target_compatible_with, "os:macos", //...)) except attr(tags, "\bmanual\b", //...)'
+          else
+            android='kind(".*android.*|aar_import", //...)'
+            query="rdeps(//..., $android) + (deps($android) intersect //...)"
+          fi
+          status=0
+          bazel query --keep_going --output=label "$query" >"$RUNNER_TEMP/targets" || status=$?
+          if [[ $status -ne 0 && $status -ne 3 ]]; then
+            echo "::error::bazel query for the $SCOPE leg's targets failed (exit $status)"
+            exit "$status"
+          fi
+          if [[ "$SCOPE" == apple ]]; then
+            if [[ ! -s "$RUNNER_TEMP/targets" ]]; then
+              echo "::error::no macOS-gated tests in e2e/$WORKSPACE"
+              exit 1
+            fi
+            echo "Testing the macOS-gated tests:"
+            cat "$RUNNER_TEMP/targets"
+            bazel test --test_output=errors --skip_incompatible_explicit_targets --target_pattern_file="$RUNNER_TEMP/targets"
+          else
+            excludes=()
+            while IFS= read -r target; do excludes+=("-$target"); done <"$RUNNER_TEMP/targets"
+            echo "Skipping ${#excludes[@]} Android targets on this macOS leg (Linux CI builds them)"
+            bazel test --test_output=errors -- //... "${excludes[@]}"
+          fi
+      # An Android build on a Mac host runs the darwin NDK, build-tools (aapt2,
+      # d8, zipalign) and JDK, which no Linux job exercises. hello_world's
+      # Android targets (the same query the legs exclude) build and test here.
+      - name: Android on a macOS host (e2e/hello_world)
+        if: matrix.workspace == 'hello_world'
+        working-directory: e2e/hello_world
+        run: |
+          query='rdeps(//..., kind(".*android.*|aar_import", //...)) except attr(tags, "\bmanual\b", //...)'
+          status=0
+          bazel query --keep_going --output=label "$query" >"$RUNNER_TEMP/android_targets" || status=$?
+          if [[ $status -ne 0 && $status -ne 3 ]]; then
+            echo "::error::bazel query for the Android targets failed (exit $status)"
+            exit "$status"
+          fi
+          if [[ ! -s "$RUNNER_TEMP/android_targets" ]]; then
+            echo "::error::no Android targets in e2e/hello_world"
+            exit 1
+          fi
+          echo "Building and testing the Android targets on the macOS host:"
+          cat "$RUNNER_TEMP/android_targets"
+          bazel test --test_output=errors --skip_incompatible_explicit_targets --target_pattern_file="$RUNNER_TEMP/android_targets"
+      # The macOS half of POD-2: build each plugin expected.json records as
+      # "ok" as the spoke's generated device library, one at a time. The step
+      # fails when image_picker_ios does not build: build_expected.json gates
+      # it as "ok", requiring exit 0, because POD-1 builds its
+      # image_picker_ios_objc target. The other expected-ok plugins are
+      # printed and recorded without gating yet, so a later item flips them
+      # in build_expected.json.
+      - name: iOS plugin build matrix (e2e/ios_plugin_matrix)
+        if: matrix.workspace == 'ios_plugin_matrix'
+        working-directory: e2e/ios_plugin_matrix
+        run: python3 run_matrix.py --mode build
+      - name: iOS plugin CocoaPods build matrix (e2e/ios_plugin_matrix)
+        if: matrix.workspace == 'ios_plugin_matrix'
+        working-directory: e2e/ios_plugin_matrix
+        run: python3 run_pods_matrix.py --mode build
+      # The simulator runtime behind `manual`: `//...` never picks up
+      # `:verify_ios_simulator_test`, so the ffi_example leg runs it by name.
+      # No `continue-on-error`: a failing simulator run fails the job.
+      - name: iOS simulator runtime (e2e/ffi_example)
+        if: matrix.workspace == 'ffi_example'
+        working-directory: e2e/ffi_example
+        run: bazel test //:verify_ios_simulator_test --test_output=errors
+      # The integration_ios spec runs on the macOS runner through
+      # //tools/e2e_runner: `bazel test //...`, the green `:app_test` JUnit
+      # proof (suite named after the entrypoint, zero failures), the red twin
+      # `:app_test_red`, the CocoaPods wrong-library probe (each asserting its
+      # failure message and failing test.xml), and the SwiftPM and CocoaPods
+      # unmapped-spoke refusals.
+      - name: Run e2e/integration_ios
+        if: matrix.workspace == 'integration_ios'
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_ios --bazel=bazel
+      # The drive_ios spec: the passing driver's test passes, the failing
+      # driver's test fails with the driver's DRIVE_RED_MUST_FAIL line.
+      - name: Run e2e/drive_ios
+        if: matrix.workspace == 'drive_ios'
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/drive_ios --bazel=bazel
+      # The smoke spec, as ci.yaml's deferred e2e-macos-toolchain job runs it:
+      # `bazel test //...` plus its red paths (the undeclared-import compile
+      # must fail on the guard refusal).
+      - name: Run e2e/smoke
+        if: matrix.workspace == 'smoke'
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/smoke --bazel=bazel
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: matrix['cache-save'] && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: matrix['cache-save'] && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  # The Android example builds on Linux but stays out of push CI: its APK +
+  # Kotlin actions would make a push job the longest one. It runs here,
+  # nightly (and on tag dispatches), as `bazel test //...` — the emulator-attached
+  # `verify_android_app_test` is `manual`-tagged and excluded, so no KVM.
+  e2e-linux-nightly:
+    name: E2E nightly (android_example, ubuntu-latest)
+    runs-on: ubuntu-latest
+    # Cold nightly and `uncached` runs rebuild the APK actions from scratch; fork
+    # policy caps every job at 300 minutes on the free runners, and a cold
+    # leg takes under an hour.
+    timeout-minutes: 300
+    env:
+      WORKSPACES: android_example
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: full-linux-android
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/free-disk
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      # The runner's preinstalled Android SDK + NDK, forwarded into
+      # repository rules with --repo_env (repository rules never see the
+      # client environment otherwise). The NDK is derived at runtime: the
+      # image ships several NDK versions side by side and only a versioned
+      # directory works — its `ndk/` parent fails inside rules_android_ndk
+      # with a `readdir()` error (see e2e/android_example/MODULE.bazel).
+      - name: Point Bazel at the runner's Android SDK and NDK
+        run: |
+          test -n "$ANDROID_HOME" || { echo "ANDROID_HOME is not set"; exit 1; }
+          ndk="$ANDROID_HOME/ndk/$(ls "$ANDROID_HOME/ndk" | sort -V | tail -1)"
+          test -d "$ndk" || { echo "no NDK under $ANDROID_HOME/ndk"; exit 1; }
+          echo "build --repo_env=ANDROID_HOME=$ANDROID_HOME" >> ~/.bazelrc
+          echo "build --repo_env=ANDROID_NDK_HOME=$ndk" >> ~/.bazelrc
+          # Tests that run a nested Bazel (verify_macos_stage_clean_test) never read
+          # ~/.bazelrc; they inherit these two through env_inherit instead.
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+      # Since a8952a6c builds profile, release and two debug APKs of the example,
+      # the build peaks above the hosted runner's 16 GB (run 43855273745: 7.5 GB
+      # in use before the build, 15 GB used when the runner was shut down mid
+      # dexing), even with one persistent worker per kind. Swap on the runner's
+      # temporary disk lets the peak spill instead of losing the runner; the
+      # sampler below logs memory and swap once a minute.
+      - name: Add swap on the temporary disk
+        run: |
+          sudo fallocate -l 16G /mnt/bazel.swap
+          sudo chmod 600 /mnt/bazel.swap
+          sudo mkswap /mnt/bazel.swap
+          sudo swapon /mnt/bazel.swap
+          free -m
+      - name: bazel test //... (shard workspaces)
+        run: |
+          (while sleep 60; do free -m | awk 'NR==2 {m = $3 " of " $2} NR==3 {print "memory: " m " MB used, swap " $3 " of " $2 " MB"}'; done) &
+          trap "kill $!" EXIT
+          failed=""
+          for ws in $WORKSPACES; do
+            echo "::group::e2e/$ws"
+            if (cd "e2e/$ws" && bazel test //... --test_output=errors); then
+              echo "PASS e2e/$ws"
+            else
+              echo "FAIL e2e/$ws"
+              failed="$failed $ws"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then
+            echo "failing workspaces:$failed"
+            exit 1
+          fi
+      - name: Corpus action graph matches the checked-in golden
+        run: |
+          bazel aquery --skip_incompatible_explicit_targets --output=jsonproto "set($(grep -vE '^\s*(#|$)' flutter/tests/corpus/golden_targets.txt))" > /tmp/flutter_corpus_aquery.json
+          bazel run //flutter/tests/corpus:actions_golden -- --check /tmp/flutter_corpus_aquery.json
+      # Cycle-break proof: e2e/pub_cycle_breaks holds one lock whose
+      # `cycle_a` and `cycle_b` path packages each declare the other, plus an
+      # app depending on both. `deps` breaks `cycle_a`'s edge to `cycle_b` via
+      # cycle_breaks; `deps_cycle` is the same lock with no cycle_breaks,
+      # which automatically merges into `deps_cycle__scc__cycle_a__cycle_b`.
+      - name: Cycle-breaks and automatic SCC spoke resolution
+        working-directory: e2e/pub_cycle_breaks
+        run: |
+          bazel cquery @deps__cycle_a//:cycle_a
+          bazel cquery @deps__cycle_b//:cycle_b
+          bazel cquery @deps//:cycle_app
+          bazel cquery @deps_cycle//:cycle_a
+          bazel cquery @deps_cycle//:cycle_b
+          bazel cquery @deps_cycle//:cycle_app
+          bazel cquery @deps_cycle__scc__cycle_a__cycle_b//:all
+      # The Linux half of POD-2: one `bazel query` per pinned real plugin in
+      # e2e/ios_plugin_matrix, compared with expected.json. No
+      # continue-on-error: a change that fixes or breaks a plugin fails the
+      # job, and a later item flips the expectation.
+      - name: iOS plugin fetch matrix (e2e/ios_plugin_matrix)
+        working-directory: e2e/ios_plugin_matrix
+        run: python3 run_matrix.py
+      - name: iOS plugin CocoaPods fetch matrix (e2e/ios_plugin_matrix)
+        working-directory: e2e/ios_plugin_matrix
+        run: python3 run_pods_matrix.py
+      - name: iOS plugin Android refusal (e2e/ios_plugin_matrix)
+        working-directory: e2e/ios_plugin_matrix
+        run: bash check_android_refusal.sh
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  # The dev tool's iOS simulator e2e cases: the simulator runtime the manager
+  # measured on macos-latest ships every device Shutdown, and the dev tool —
+  # like `flutter run` — only uses one already booted, so every iOS case fails
+  # fast without one. The job warms the e2e app targets into the shared disk
+  # cache, boots a simulator, then runs the iOS cases
+  # of the three e2e files holding them through the suite's own runner with
+  # `--require-ran=iOS`, which fails the job when no iOS test actually
+  # executed rather than letting an all-skipped run exit 0. `--name=iOS`
+  # selects only the iOS cases: run 1 ran the whole files, and beside a
+  # booted simulator two macOS cases failed there — they belong to another
+  # story, not this job. The cases bound their cold build (`app.start`, 20
+  # min) and launch (`app.started`, 10 min) separately, since one bound
+  # covering both times out a healthy cold run.
+  #
+  # Why each step is there:
+  # - setup-bazel at the same pinned SHA as the other jobs, repository cache
+  #   like them, `cache-save: false`: the cache it restores is
+  #   content-addressed (every fetch through it is sha256-pinned), while a
+  #   disk cache would replay test results. No `actions/cache`, no disk
+  #   cache, no `setup-dart` — the Dart under test comes from Bazel below.
+  # - Dropping setup-bazel's `startup --output_base=` line (macOS `sed -i ''`):
+  #   the suite runs Bazel in several workspaces (the dev tool's own build,
+  #   then the workspaces the launched apps build), and a shared output base
+  #   restarts the server under the running dev tool. ci.yaml's web-smoke job
+  #   drops the same line for the same reason.
+  # - Building `//tools/dev_tool:flutter_bazel` materializes the Bazel-fetched
+  #   Flutter SDK in the output base, so the glob takes the pinned Dart (the
+  #   one the dev tool itself runs on) onto PATH for every step after. The
+  #   export serves this step's own `dart --version` print; `$GITHUB_PATH`
+  #   serves the steps after.
+  # - `warm_ios_e2e.dart` pre-builds the e2e apps into the shared disk cache
+  #   before the timed test steps run, and shuts down each workspace's Bazel
+  #   server so no idle server consumes runner memory.
+  # - `ios_simulator_boot.dart` boots the newest available iOS runtime's
+  #   iPhone and waits for `bootstatus`, exiting non-zero when there is
+  #   nothing to boot on rather than skipping.
+  # - The suite runs from the repo root (the runner locates `tools/dev_tool`
+  #   from its own path) with no wrapper, so its exit status is the job's.
+  dev-tool-ios:
+    name: Dev tool iOS (macos-latest)
+    needs: dedupe
+    if: needs.dedupe.outputs.skip-macos != 'true'
+    runs-on: macos-latest
+    # Cold nightly and `uncached` runs fetch the Flutter SDK and build the dev tool
+    # plus the iOS apps from scratch; fork policy caps every job at 300
+    # minutes on the free runners, and the measured simulator leg took under
+    # half an hour.
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: false
+      - name: Keep one output base per workspace
+        run: sed -i '' '/^startup --output_base=/d' ~/.bazelrc
+      - name: Build the dev tool and put the pinned Dart on PATH
+        run: |
+          bazel build //tools/dev_tool:flutter_bazel
+          dart_bin="$(ls -d "$(bazel info output_base)"/external/*flutter+flutter_*/dart-sdk/bin | head -1)"
+          echo "$dart_bin" >> "$GITHUB_PATH"
+          export PATH="$dart_bin:$PATH"
+          dart --version
+      - name: Warm the iOS simulator e2e builds
+        run: dart run tools/dev_tool/tool/warm_ios_e2e.dart
+      - name: Boot an iOS simulator
+        run: dart flutter/private/tools/ios_simulator_boot.dart
+      - name: Dev tool iOS simulator e2e
+        env:
+          DEV_TOOL_E2E_LOG_DIR: ${{ runner.temp }}/dev-tool-ios-logs
+        run: dart run tools/dev_tool/tool/e2e.dart --require-ran=iOS --name=iOS test/e2e/ios_simulator_e2e_test.dart test/e2e/asset_reload_e2e_test.dart test/e2e/plugin_example_e2e_test.dart test/e2e/attach_e2e_test.dart test/e2e/start_paused_e2e_test.dart test/e2e/main_outside_lib_e2e_test.dart
+      - name: Upload dev tool iOS logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-tool-ios-logs
+          path: ${{ runner.temp }}/dev-tool-ios-logs
+          retention-days: 3
+          if-no-files-found: warn
+  # Dev-only, OFF by default (the `android_linux_sandbox` dispatch input) and
+  # not part of the merge or nightly gate: `conclusion` does not list it, and
+  # `continue-on-error` keeps a failure here from turning anything red. It runs
+  # the Android integration test with Bazel's `--modify_execution_info` dropping
+  # `no-sandbox` from the test action (the rule itself is unchanged), forced onto
+  # `linux-sandbox`, so the launcher's discovery diagnostic block lands in the
+  # full test log (`--test_output=all`).
+  e2e-android-linux-sandbox:
+    name: E2E Android under linux-sandbox (dev-only, ubuntu-latest)
+    if: github.event_name == 'workflow_dispatch' && inputs.android_linux_sandbox
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/free-disk
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: false
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: bazel test //:app_test without no-sandbox (e2e/integration_android)
+        working-directory: e2e/integration_android
+        run: bazel test //:app_test --modify_execution_info=TestRunner=-no-sandbox --strategy=TestRunner=linux-sandbox --nocache_test_results --test_output=all
+  conclusion:
+    name: Conclusion
+    needs: [dedupe, e2e-macos, e2e-linux-nightly, dev-tool-ios]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fail if any job failed
+        run: echo '${{ toJSON(needs) }}' | jq -e 'with_entries(select(.value.result != "success" and .value.result != "skipped")) | length == 0'

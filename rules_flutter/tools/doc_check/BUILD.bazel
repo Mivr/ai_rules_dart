@@ -1,0 +1,73 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+
+# Checks the Starlark documentation `starlark_doc_extract` wrote for
+# `//docs:all_doc_extracts`; `//docs:doc_check_test` runs it in `bazel test //...`.
+# `bazel run //tools/doc_check -- --emit-api FILE.binaryproto...` prints the
+# public API surface, `--emit-rule-kinds` prints each extract's rule kinds.
+
+exports_files([
+    "allowlist.txt",
+    "doc_check_docs_test.dart",
+    "shared_phrasings.txt",
+    "stardoc_output.proto",
+])
+
+_LIB = [
+    "doc_check.dart",
+    "emit.dart",
+    "failure.dart",
+    "policy.dart",
+    "rules.dart",
+    "sha256.dart",
+    "source_probe.dart",
+    "stardoc.dart",
+    "wire.dart",
+]
+
+filegroup(
+    name = "lib",
+    srcs = _LIB,
+    visibility = ["//docs:__pkg__"],
+)
+
+dart_binary(
+    name = "doc_check",
+    srcs = _LIB,
+    main = "doc_check.dart",
+    visibility = ["//visibility:public"],
+)
+
+dart_test(
+    name = "rules_test",
+    size = "small",
+    srcs = _LIB + [
+        "test/fixtures.dart",
+        "test/proto_writer.dart",
+    ],
+    data = [
+        ":allowlist.txt",
+        ":shared_phrasings.txt",
+    ],
+    env = {
+        "DOC_CHECK_ALLOWLIST_RLOCATION": "$(rlocationpath :allowlist.txt)",
+        "DOC_CHECK_SHARED_RLOCATION": "$(rlocationpath :shared_phrasings.txt)",
+    },
+    main = "test/doc_check_test.dart",
+    deps = [
+        "@dev_tool_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+dart_test(
+    name = "proto_pin_test",
+    size = "small",
+    srcs = ["sha256.dart"],
+    data = [":stardoc_output.proto"],
+    env = {"DOC_CHECK_PROTO_RLOCATION": "$(rlocationpath :stardoc_output.proto)"},
+    main = "test/proto_pin_test.dart",
+    deps = [
+        "@dev_tool_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)

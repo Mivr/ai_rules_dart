@@ -1,0 +1,18 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_font_family", "flutter_library")
+
+# The package-provided font family the Android integration test renders. The
+# bytes are the same glyphless fixture `//e2e/hello_world` uses, so the test
+# asserts on the resolved family and the bundled asset, not on glyph shapes.
+flutter_font_family(
+    name = "cov13_sans",
+    family = "Cov13Sans",
+    fonts = [{"asset": "fonts/Cov13Sans-Regular.ttf"}],
+)
+
+flutter_library(
+    name = "cov13font",
+    package_name = "cov13font",
+    srcs = ["lib/cov13font.dart"],
+    fonts = [":cov13_sans"],
+    visibility = ["//visibility:public"],
+)

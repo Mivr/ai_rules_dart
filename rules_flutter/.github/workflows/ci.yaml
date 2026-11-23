@@ -1,0 +1,1653 @@
+# CI workflow for rules_flutter (push and pull-request CI; 7-minute budget)
+#
+# Runs repo-root tests (Starlark unit tests, buildifier lint) and e2e tests
+# on every push/PR.
+#
+# WHAT RUNS WHERE: branch and pull-request pushes run every job below with
+# warm caches (one repository cache per OS from setup-bazel plus one Bazel
+# disk cache per OS per shard, restored on pushes and re-saved only by pushes
+# to main: a branch restores main's keys, and a branch save (the gate's ci/
+# candidates) would only duplicate them and evict main's under the 10 GB
+# repository cache limit). The nightly
+# schedule run executes the same jobs uncached (no disk-cache restore and no
+# save of any kind; the content-addressed repository cache still restores).
+# A release pushes no tag run. The release gate (release.yaml) reuses this
+# workflow's passing nightly run on the tagged commit when there is one.
+# Otherwise it dispatches this workflow on the tag, which runs every job below
+# with the same caches as a pull request (restore only, no save). Only the
+# nightly and `uncached` dispatches run cold.
+#
+# No job checks out rules_dart: every workspace below takes it as a registry
+# `bazel_dep`. Local sibling overrides live in gitignored `.bazelrc.user` files,
+# which never exist on a runner. The one committed sibling override, in
+# e2e/_overlay_tests/native_assets_synthetic, is in no shard below — adding
+# it means adding a checkout step too.
+#
+# SHARDING: push CI keeps at most 2 macOS jobs (the Free plan has 5 macOS
+# slots shared with rules_dart), so macOS runs only two fast smoke jobs and
+# Linux carries every workspace whose targets can build there (Apple-only
+# targets skip themselves through Bazel's own `target_compatible_with`; no
+# new tag filters). The macOS coverage runs in full.yaml instead (every push
+# to main, nightly, on release tags, or on demand), which releases wait for;
+# the two macOS jobs below run on dispatches only.
+#   e2e-macos-apple:     hello_world's Apple bundles (macOS + iOS simulator),
+#     min_versions' iOS/macOS legs against the Apple version floor, plus
+#     pub_scc's iOS simulator bundle and plugin registrant check
+#   e2e-macos-toolchain: smoke workspace (toolchain resolution, all platforms)
+#   unit-tests:          root unit tests, plus the digest-mismatch red fetch
+#     (e2e/digest_mismatch, expected to fail on Bazel's checksum error), the
+#     xtool red fetch (e2e/xtool_sdk_invalid, expected to fail on the
+#     nonexistent bundle path) and the pubspec-shape red fetches
+#     (e2e/pub_flutter_shape_red, expected to fail on the malformed
+#     `flutter.assets`/`flutter.fonts` sections and the unreadable
+#     `environment.sdk` constraints)
+#   e2e-linux-app:       hello_world, codegen
+#   e2e-linux-small:     smoke, dual_hub, ffi_example, ffi_plugin_example,
+#     web_example
+#   e2e-linux-examples:  linux_example, cross_compile_example
+#   e2e-linux-pub-scc:   pub_scc (2-cycle Android APK + 3-cycle Dart test)
+#   e2e-linux-integration: integration_web, integration_linux,
+#     federated_plugins, min_versions (Dart app, kernel and dart_test targets
+#     plus the Android leg against every declared dependency floor; the Apple
+#     legs skip themselves via target_compatible_with), android_no_go_sdk
+#     (Android leg with no go_sdk block, proving rules_flutter's pinned Go SDK
+#     is the default), and the run_home hermeticity gate
+#   e2e-linux-android:   integration_android and aar_host, the workspaces that
+#     boot the Android emulator (with KVM)
+#   web-smoke:           web_example through the installed binary
+#   repo-checks:         `bazel mod tidy` leaves the lockfile unchanged,
+#     //tools/check_e2e_coverage (every e2e module in a workflow or with a
+#     recorded reason) and //tools/repo_contents_cache (repos marked
+#     reproducible are shared through the repo contents cache)
+#   e2e-windows:         hello_world (Windows)
+# android_example runs in full.yaml (nightly) only: its APK + Kotlin actions
+# would make a push job the longest one.
+# plugin_example runs in full.yaml only: every target it can build under
+# `bazel test //...` is Apple- or Windows-only (its Linux-buildable targets
+# are `manual`-tagged, which `//...` excludes everywhere), so a Linux push
+# run would execute zero tests there. integration_web/integration_linux used
+# to run twice (matrix plus standalone job); now each runs once.
+#
+# CACHES: one repository cache per OS from setup-bazel (shared by every Bazel
+# job; downloads are content-addressed), plus one Bazel disk cache per OS per
+# shard managed below with actions/cache. setup-bazel's own disk cache never
+# re-saves an unchanged key, so a run that rebuilds actions would lose them;
+# instead each shard restores the newest entry under its prefix and, on main
+# pushes only, saves a new entry under its own run's key, then prunes the
+# shard's older entries. A restore never meets a deleted key mid-save, even
+# with several main runs in flight. Pull requests and dispatches only
+# restore. Each shard is the only writer of its prefix; the repository key
+# stays shared per OS with setup-bazel's first-finisher-wins save. Scheduled (nightly) and
+# `uncached` dispatches restore nothing and save nothing; the content-addressed
+# repository cache (and the bazelisk cache) still restore, since every fetch
+# through them is sha256-pinned and they never replay test results. Tag runs
+# (release dispatches) restore like a pull request and save nothing. Saves are
+# success-gated (no `always()`): a failed run must not persist its
+# half-populated cache over the last good one.
+permissions:
+  actions: write
+  contents: read
+name: CI
+on:
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+    branches: [main]
+  # Nightly uncached run: every job rebuilds and re-executes everything with
+  # no disk-cache restore and no save, so a green push run cannot be warm
+  # cache replay alone. The repository cache (content-addressed downloads
+  # only; it never replays test results) still restores.
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      uncached:
+        description: Run every job without restoring or saving any Bazel cache
+        required: false
+        default: false
+        type: boolean
+concurrency:
+  # Runs on main never share a group: each gets its own run-id suffix, so a
+  # push cannot cancel the nightly uncached run (or the reverse) and manual
+  # dispatches never queue behind each other. Branch pushes and PR runs still
+  # share one group per branch or PR and cancel the superseded run.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}${{ github.ref == 'refs/heads/main' && format('::{0}', github.run_id) || '' }}
+  # Tag runs (release dispatches) gate releases: never cancel them, so a newer trigger cannot
+  # leave the release gate waiting on a cancelled run. Branch and PR pushes
+  # still cancel superseded runs.
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+env:
+  BAZEL_REPOSITORY_CACHE_KEY_FILES: |
+    - MODULE.bazel
+    - MODULE.bazel.lock
+    - e2e/*/MODULE.bazel
+    - flutter/private/versions.bzl
+jobs:
+  # The macOS-specific signal Linux cannot give: building the macOS desktop
+  # bundle and the iOS simulator bundle exercises the Xcode toolchain, the
+  # Apple SDKs and the Apple bundle rules (packaging, simulator runtime).
+  e2e-macos-apple:
+    name: macOS Apple bundles (hello_world macOS + iOS)
+    # macOS is deferred (owner decision 2026-11-04): pushes and PRs skip this
+    # job, and so does the nightly, since Full (every push to main and
+    # nightly) runs the same targets on its macOS legs; only dispatched
+    # (release) runs keep it. The gate accepts it as skipped by its exact name
+    # (control ctl/config.py DEFERRED_JOBS).
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: macos-a
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      - name: bazel test Apple bundles (e2e/hello_world)
+        working-directory: e2e/hello_world
+        run: bazel test //:macos_bundle_build_test //:ios_bundle_build_test --test_output=errors
+      # A real ObjC compile against a Swift module's generated header. It
+      # cannot run on Linux, where the ObjC half does not compile.
+      - name: bazel test mixed ObjC + Swift plugin (e2e/plugin_example)
+        working-directory: e2e/plugin_example
+        run: bazel test //mixed_plugin:mixed_plugin_build_test --test_output=errors
+      # The same Apple legs against the minimum supported dependency floors:
+      # the Linux job below already proves min_versions' Dart app, kernel,
+      # dart_test and Android leg, so only the macOS-gated tests run here.
+      - name: bazel test Apple bundles (e2e/min_versions)
+        working-directory: e2e/min_versions
+        run: bazel test //:ios_build_test //:macos_build_test --test_output=errors
+      - name: bazel test pub_scc (e2e/pub_scc)
+        working-directory: e2e/pub_scc
+        run: bazel test //... --test_output=errors
+      # `bazel run <flutter_test> -- --update-goldens` on a scratch copy of
+      # e2e/codegen: a stale PNG fails the test, the update rewrites it, and
+      # the test then passes.
+      - name: Check --update-goldens rewrites a stale golden (e2e/codegen)
+        working-directory: e2e/codegen
+        run: bazel run //:update_goldens_check -- --bazel=bazel
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  # The cheapest job in CI (a dozen actions): verifies that every Flutter
+  # toolchain alias resolves, guarding the shared rule code all workspaces
+  # load, on the OS whose toolchain is the most fragile.
+  e2e-macos-toolchain:
+    name: macOS toolchain resolution (smoke)
+    # macOS is deferred (owner decision 2026-11-04): pushes and PRs skip this
+    # job, and so does the nightly, since Full (every push to main and
+    # nightly) runs the same targets on its macOS legs; only dispatched
+    # (release) runs keep it. The gate accepts it as skipped by its exact name
+    # (control ctl/config.py DEFERRED_JOBS).
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: macos-b
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      # The e2e/smoke spec runs `bazel test //...` and the cross-module
+      # undeclared-import compile negative (`//:consumer_negative` must fail on
+      # the guard refusal); //tools/e2e_runner enforces both.
+      - name: Run e2e/smoke
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/smoke --bazel=bazel
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-unit
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      # Default strategy selection must pick linux-sandbox: Bazel falls back to
+      # processwrapper-sandbox when the runner blocks user namespaces. Uncached
+      # on a scratch output base so at least one spawn really runs.
+      - name: Prove sandboxed actions run under linux-sandbox
+        run: |
+          base="${RUNNER_TEMP}/sandbox_proof_base"
+          bep="${RUNNER_TEMP}/sandbox_proof_bep.json"
+          trap 'bazel "--output_base=${base}" shutdown' EXIT
+          bazel "--output_base=${base}" test //flutter/tests/ci_linux_sandbox_guard:ci_linux_sandbox_guard_unit_test --disk_cache= --nocache_test_results "--build_event_json_file=${bep}"
+          python3 - "$bep" <<'PY'
+          import json, sys
+          counts = {}
+          for line in open(sys.argv[1]):
+              summary = json.loads(line).get("buildMetrics", {}).get("actionSummary", {})
+              for runner in summary.get("runnerCount", []):
+                  counts[runner["name"]] = counts.get(runner["name"], 0) + int(runner.get("count", 0))
+          print("runnerCount:", counts)
+          if counts.get("processwrapper-sandbox", 0) != 0:
+              sys.exit("processwrapper-sandbox spawns: %d" % counts["processwrapper-sandbox"])
+          if counts.get("linux-sandbox", 0) < 1:
+              sys.exit("no linux-sandbox spawns")
+          PY
+      - name: bazel test //... (root unit tests)
+        run: bazel test //... --test_output=errors
+      # Tree readers walk the checkout through runfiles, which Bazel cannot
+      # see, so the cached run above can replay a stale PASS. Rerun them uncached.
+      - name: bazel test //... tree readers (uncached)
+        run: bazel test //... --test_tag_filters=tree-reader --nocache_test_results --test_output=errors
+      # The updater drops rules_dart's analyzer/format aspects, so the golden
+      # is the same whether this check or the Dart corpus tests run first.
+      - name: Corpus action graph matches the checked-in golden
+        run: |
+          bazel aquery --skip_incompatible_explicit_targets --output=jsonproto "set($(grep -vE '^\s*(#|$)' flutter/tests/corpus/golden_targets.txt))" > /tmp/flutter_corpus_aquery.json
+          bazel run //flutter/tests/corpus:actions_golden -- --check /tmp/flutter_corpus_aquery.json
+      - name: bazel test //flutter/tests/corpus:...
+        run: bazel test //flutter/tests/corpus:... --test_output=errors
+      # Lint-baseline red path: //flutter/tests/lint_baseline_fixture:red is a
+      # manual flutter_library with one unbaselined avoid_print diagnostic.
+      # Testing a library with no test targets exits 4 when dart_analyze
+      # succeeds, so both 0 and 4 count as an unexpected pass; both summary
+      # and source modes must fail with the baseline verdict.
+      - name: Unbaselined lint diagnostic fails analysis
+        run: |
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          for mode in summary source; do
+            rc=0
+            if [ "$mode" = summary ]; then
+              bazel test //flutter/tests/lint_baseline_fixture:red >"$log" 2>&1 || rc=$?
+            else
+              bazel test --@rules_dart//dart:analyzer_summaries=false //flutter/tests/lint_baseline_fixture:red >"$log" 2>&1 || rc=$?
+            fi
+            if [ "$rc" -eq 0 ] || [ "$rc" -eq 4 ]; then
+              cat "$log"
+              echo "expected unbaselined lint to fail analysis in $mode mode, got exit $rc"
+              exit 1
+            fi
+            for expected in \
+              "flutter/tests/lint_baseline_fixture/lib/red.dart" \
+              "avoid_print" \
+              "observed 1, ceiling 0"; do
+              if ! grep -F -q "$expected" "$log"; then
+                cat "$log"
+                echo "expected $mode output to mention [$expected]"
+                exit 1
+              fi
+            done
+          done
+      # Digest red paths: e2e/digest_mismatch pins each failing fetch to its
+      # checksum or shape diagnostic, then proves the correct digests build.
+      - name: Run e2e/digest_mismatch
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/digest_mismatch --bazel=bazel
+      # Xtool red path: the invalid darwin.artifactbundle path must fail on the
+      # path diagnostic before any LLVM download starts.
+      - name: Run e2e/xtool_sdk_invalid
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/xtool_sdk_invalid --bazel=bazel
+      # Pubspec-shape red paths: each malformed pubspec fails on its own refusal.
+      - name: Run e2e/pub_flutter_shape_red
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/pub_flutter_shape_red --bazel=bazel
+      # Podfile.lock evaluation red path: the tab-indented fixture fails at hub
+      # evaluation on the reader's tab refusal.
+      - name: Run e2e/podfile_lock_red
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/podfile_lock_red --bazel=bazel
+      # CocoaPods unmapped pod red path: deps_pods_unmapped carries no mapping
+      # and no ignore entry for BigInt, so querying the spoke fails at fetch
+      # time. Only this portable command runs here; the macOS simulator
+      # commands of the spec run in full.yaml.
+      - name: Run e2e/integration_ios (CocoaPods unmapped pod red path)
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_ios --command="CocoaPods unmapped pod red path" --bazel=bazel
+      # Compile-soundness red path: the entrypoint imports a sibling that
+      # exists on disk but is never declared, so executing the compile must
+      # fail on the guard's refusal — never with a built dill. The target is
+      # manual so `//...` stays green; the grep pins the guard message so a
+      # frontend_server crash or a refactor that stops checking directives
+      # cannot pass as red.
+      - name: Undeclared-import compile fails on the guard refusal
+        run: |
+          if out=$(bazel build //flutter/tests:_compile_api_build_negative 2>&1); then
+            echo "$out"
+            echo "expected the undeclared-import compile to fail, but it succeeded"
+            exit 1
+          fi
+          echo "$out" | grep -F "is not a declared input"
+      # The other two compile-api negatives are `manual` too, so `bazel test
+      # //flutter/tests/...` never builds them; this step builds each one
+      # explicitly. The incremental negative imports an undeclared sibling,
+      # which the directive guard refuses before the compiler runs, so it
+      # keeps the default spawn strategy. The `package:` negative passes the
+      # guard (the URI does not escape); under the default sandbox the
+      # compiler fails earlier with `File not found`, so that build runs with
+      # `--spawn_strategy=local`: the compiler reads the file off the exec
+      # root and the post-compile read-set check refuses it. A build that
+      # succeeds fails the job, and so does a failure that does not name the
+      # refusal, so a compiler crash cannot pass as red.
+      - name: Undeclared-input compile negatives fail on the refusal
+        run: |
+          if out=$(bazel build //flutter/tests:_compile_api_build_negative_incremental 2>&1); then
+            echo "$out"
+            echo "expected the incremental undeclared-import compile to fail, but it succeeded"
+            exit 1
+          fi
+          echo "$out" | grep -F "is not a declared input"
+          if out=$(bazel build --spawn_strategy=local //flutter/tests:_compile_api_build_negative_pkg 2>&1); then
+            echo "$out"
+            echo "expected the undeclared package: read to fail, but it succeeded"
+            exit 1
+          fi
+          echo "$out" | grep -F "is not a declared input"
+      # Coverage check: every manual `_compile_api_build_negative_*` target in
+      # compile_api_test.bzl must be named by a must-fail step that greps the
+      # refusal. Deleting the step above, or dropping its grep, turns this red
+      # even while `//...` stays green.
+      - name: Check every compile-api negative is covered
+        run: bazel run //tools/check_compile_api_coverage
+      # Coverage check: every hostile fixture declared in web_test.bzl must be
+      # named by the must-fail step below, and that step must pin the guard
+      # message. Adding a spelling without a build, or dropping one from the
+      # step, turns this red even while `//...` stays green.
+      - name: Check every web-guard hostile fixture is covered
+        run: bazel run //tools/check_web_guard_coverage
+      # Web-guard hostile fixtures: each imports a file that exists on the
+      # host but is in no target's `srcs`, in a different URI spelling. They
+      # stay `manual`, so `//...` stays green; this step builds each one
+      # explicitly and requires the guard's refusal. A build that succeeds
+      # fails the job, and so does a failure that does not name the guard
+      # message, so a compiler crash cannot pass as red. Both compilers are
+      # covered: the default dart2wasm target and its dart2js twin.
+      - name: Web-guard hostile imports fail on the guard refusal
+        run: |
+          for target in \
+            //flutter/tests:_web_guard_hostile_file \
+            //flutter/tests:_web_guard_hostile_file_js \
+            //flutter/tests:_web_guard_hostile_relative \
+            //flutter/tests:_web_guard_hostile_relative_js \
+            //flutter/tests:_web_guard_hostile_app_scheme \
+            //flutter/tests:_web_guard_hostile_app_scheme_js \
+            //flutter/tests:_web_guard_hostile_double_slash \
+            //flutter/tests:_web_guard_hostile_double_slash_js \
+            //flutter/tests:_web_guard_hostile_schemeless \
+            //flutter/tests:_web_guard_hostile_schemeless_js; do
+            if out=$(bazel build "$target" 2>&1); then
+              echo "$out"
+              echo "expected $target to fail on the web guard, but it succeeded"
+              exit 1
+            fi
+            if ! echo "$out" | grep -F "is not a declared input"; then
+              echo "$out"
+              echo "expected $target to fail with the web guard refusal"
+              exit 1
+            fi
+          done
+      # Maven lock enforcement red path: changing an artifact version in the
+      # staged hello_world workspace while keeping its checked-in lock must
+      # fail fetch on rules_jvm_external's input signature check.
+      - name: Run e2e/hello_world (Maven lock red path)
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/hello_world --command="modified rules_android_maven install fails on invalid input signature" --bazel=bazel
+      # Release archive loading at min_versions floors: prove every package
+      # shipped in the release archive (including @rules_flutter//lint) loads
+      # cleanly against the declared floor graph.
+      - name: Release archive packages load against min_versions floor
+        run: |
+          archive_dir="$(mktemp -d)"
+          trap '(cd e2e/min_versions 2>/dev/null && bazel shutdown) >/dev/null 2>&1 || true; rm -rf "$archive_dir"' EXIT
+          git archive HEAD | tar -x -C "$archive_dir"
+          (cd e2e/min_versions && bazel query --override_module=ai_rules_flutter="$archive_dir" @rules_flutter//...)
+          (cd e2e/min_versions && bazel shutdown) >/dev/null 2>&1 || true
+          rm -rf "$archive_dir"
+          trap - EXIT
+      # Pre-0.24.0 red path: lowering ai_rules_dart to v0.21.0 in the staged
+      # min_versions workspace must fail on the missing pub_scc.bzl symbol.
+      - name: Run e2e/min_versions (pre-0.24.0 rules_dart red path)
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/min_versions --command="pre-0.24.0 rules_dart fails on pub_scc.bzl" --bazel=bazel
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  # Pull requests only: every root test five times, uncached, failing on any
+  # FLAKY. It ran inside unit-tests until 2026-11-16, where it added 7+ min to
+  # that job's critical path; as its own job it runs beside unit-tests. It
+  # restores the unit-tests disk cache shard (read only) so the builds replay
+  # and only the test runs execute.
+  flake-sweep:
+    name: Flake sweep (root unit tests, pull requests)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-unit
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: false
+      - name: Restore disk cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      - name: bazel test //... 5x flake sweep (root unit tests)
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/flake_sweep.log"
+          bazel test //... --flaky_test_attempts=1 --runs_per_test=5 --runs_per_test_detects_flakes --nocache_test_results --test_tag_filters=-manual --test_output=errors 2>&1 | tee "$log"
+          if grep -E '(^|[[:space:]])FLAKY([,[:space:]]|$)' "$log"; then
+            echo "::error::a test was FLAKY across 5 runs"
+            exit 1
+          fi
+  e2e-linux-app:
+    name: E2E Linux app (hello_world, codegen)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-app
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      - name: Disk report (before first workspace)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: before first workspace
+      # Each workspace's e2e.yaml passes --test_output=errors so a failure's
+      # assertion reaches this log, while //tools/e2e_runner stages the
+      # workspace in isolation, rejects Bazel exit code 4, and enforces
+      # min_tests_executed.
+      - name: Run e2e/hello_world
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/hello_world --bazel=bazel
+      # Nightly only: 10 runs of every flutter_test target in a random case
+      # order. The resolved seed is printed in each log, so a FLAKY or failing
+      # order repeats with --test_arg=--test-randomize-ordering-seed=<seed>.
+      # Only flutter_test and flutter_prebuilt_test targets take the seed
+      # argument; the rest of the workspace is covered by the run above.
+      - name: Disk report (after e2e/hello_world)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/hello_world
+      - name: bazel test flutter_test targets 10x flake sweep (e2e/hello_world, nightly)
+        if: github.event_name == 'schedule'
+        working-directory: e2e/hello_world
+        timeout-minutes: 120
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/flake_nightly.log"
+          targets=$(bazel query 'kind("flutter_(prebuilt_)?test rule", //...) except attr(tags, "manual", //...)')
+          bazel test $targets --runs_per_test=10 --runs_per_test_detects_flakes --nocache_test_results --test_arg=--test-randomize-ordering-seed=random --local_test_jobs=$((2 * $(nproc))) --test_output=errors 2>&1 | tee "$log"
+          if grep -E '(^|[[:space:]])FLAKY([,[:space:]]|$)' "$log"; then
+            echo "::error::a flutter_test target was FLAKY across 10 randomized runs"
+            exit 1
+          fi
+      - name: Run e2e/codegen
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/codegen --bazel=bazel
+      # `bazel run <flutter_test> -- --update-goldens` on a scratch copy of
+      # e2e/codegen: a stale PNG fails the test, the update rewrites it, and
+      # the test then passes.
+      - name: Check --update-goldens rewrites a stale golden (e2e/codegen)
+        working-directory: e2e/codegen
+        run: bazel run //:update_goldens_check -- --bazel=bazel
+      - name: Disk report (after e2e/codegen)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/codegen
+      # Real-compiler proof that a warm incremental worker's dill is
+      # byte-for-byte the one-shot compile's, over an edit sequence on
+      # e2e/hello_world. Fails the job on any difference. Timed so the
+      # job's 60-minute budget stays visible.
+      - name: Incremental kernel identity check
+        run: bazel run //tools/incr_kernel_identity
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  e2e-linux-small:
+    name: E2E Linux small (smoke, dual_hub, ffi_example, ffi_plugin_example, web_example)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-small
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      # Offline hermeticity proof: with MODULE.bazel.lock removed, an empty
+      # repository cache, and pub.dev + storage.googleapis.com blocked, fetching
+      # local_toolchains and local_linux-x64's dart_sdk_files (fake_sdk omits
+      # license files aliased by @local_linux-x64//...) must succeed and leave
+      # no flutter extension entry in the freshly written lockfile.
+      - name: smoke offline fetch stays lazy and reproducible
+        working-directory: e2e/smoke
+        run: |
+          empty_cache="$(mktemp -d)"
+          cfg="$(mktemp)"
+          bak="$(mktemp)"
+          cp MODULE.bazel.lock "$bak"
+          trap 'status=$?; cp "$bak" MODULE.bazel.lock; rm -rf "$empty_cache" "$cfg" "$bak"; exit $status' EXIT
+          rm MODULE.bazel.lock
+          printf 'block pub.dev\nblock storage.googleapis.com\n' > "$cfg"
+          bazel fetch @local_toolchains//... @local_linux-x64//:dart_sdk_files --lockfile_mode=update --repository_cache="$empty_cache" --downloader_config="$cfg"
+          ! grep -Fq 'flutter:extensions.bzl%flutter' MODULE.bazel.lock
+      - name: Disk report (before first workspace)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: before first workspace
+      - name: Run e2e/smoke
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/smoke --bazel=bazel
+      - name: Disk report (after e2e/smoke)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/smoke
+      - name: Run e2e/dual_hub
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/dual_hub --bazel=bazel
+      - name: Disk report (after e2e/dual_hub)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/dual_hub
+      - name: Run e2e/ffi_example
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/ffi_example --bazel=bazel
+      - name: Disk report (after e2e/ffi_example)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/ffi_example
+      - name: Run e2e/ffi_plugin_example
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/ffi_plugin_example --bazel=bazel
+      - name: Disk report (after e2e/ffi_plugin_example)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/ffi_plugin_example
+      - name: Run e2e/web_example
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/web_example --bazel=bazel
+      - name: Disk report (after e2e/web_example)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/web_example
+      # The runner builds in a temp copy, so build in the tree here for the
+      # check below to see writes through the dirlinks.
+      - name: Build e2e/dual_hub in tree
+        working-directory: e2e/dual_hub
+        run: bazel test //... --test_output=errors
+      # The build rewrites MODULE.bazel.lock; only the dirlink targets and the
+      # trees they point at must stay untouched.
+      - name: dual_hub source tree unchanged by the dirlink fetch
+        run: |
+          paths="e2e/dual_hub/hub_a/dirlink_plugin e2e/dual_hub/hub_a/shared_android e2e/dual_hub/hub_a/shared_assets"
+          if [ -n "$(git status --porcelain -- $paths)" ]; then
+            echo "dual_hub dirlink trees changed during the build:"
+            git status --porcelain -- $paths
+            exit 1
+          fi
+      # pub_hosted_escape: the staged lock fixtures point at the local archives;
+      # the ok app builds and each hostile archive is refused with its
+      # per-package diagnostic.
+      - name: Run e2e/pub_hosted_escape
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/pub_hosted_escape --bazel=bazel
+      # Lazy Android path: the Dart build must resolve the plugin's spoke
+      # without reading its Gradle build (which names an unmapped coordinate),
+      # and reaching the hub's Android aggregator must then fail closed on
+      # that coordinate. The script runs the positive build first, so it
+      # cannot pass by making the fail-closed fetch fail for another reason.
+      - name: pub_android_lazy reads Gradle only on the Android path
+        working-directory: e2e/pub_android_lazy
+        run: |
+          bazel test //:check_android_fail_closed_test
+          bash check_android_fail_closed.sh
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  e2e-linux-integration:
+    name: E2E Linux integration (web, linux, min_versions, android_no_go_sdk)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-integration
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      - name: Disk report (before first workspace)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: before first workspace
+      - name: Run e2e/integration_web
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_web --bazel=bazel
+      - name: Disk report (after e2e/integration_web)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/integration_web
+      - name: Run e2e/integration_linux
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_linux --bazel=bazel
+      - name: Disk report (after e2e/integration_linux)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/integration_linux
+      - name: Run e2e/federated_plugins
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/federated_plugins --bazel=bazel
+      - name: Run e2e/min_versions
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/min_versions --bazel=bazel
+      - name: Disk report (after e2e/min_versions)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/min_versions
+      - name: Run e2e/android_no_go_sdk
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_no_go_sdk --bazel=bazel
+      - name: Disk report (after e2e/android_no_go_sdk)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/android_no_go_sdk
+      - name: run_home hermeticity gate (RT37-flutter:02)
+        working-directory: e2e/run_home
+        run: ./run_home_test.sh
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  # The two workspaces that boot the Android emulator (with KVM). They ran in
+  # e2e-linux-integration until 2026-11-16, which made that job the longest in
+  # CI at 12-16 min warm; split, each half is about 6 min.
+  e2e-linux-android:
+    name: E2E Linux Android emulator (integration_android, aar_host)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-android
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          # Falls back to the integration shard's key, which held these
+          # workspaces before they moved here, until main saves this shard.
+          restore-keys: |
+            ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+            ff-disk-${{ runner.os }}-linux-integration-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Disk report (before first workspace)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: before first workspace
+      - name: Run e2e/integration_android
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_android --bazel=bazel
+      - name: Disk report (after e2e/integration_android)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/integration_android
+      - name: Run e2e/aar_host
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/aar_host --bazel=bazel
+      - name: Disk report (after e2e/aar_host)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/aar_host
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  # The desktop examples whose targets all build on Linux: linux_example's
+  # three Linux bundle approaches (plus its bundle-structure checks) and
+  # cross_compile_example's LLVM-built Linux bundle. android_example also
+  # builds on Linux but stays in the nightly Full run: its APK + Kotlin
+  # actions would make this the longest push job.
+  e2e-linux-examples:
+    name: E2E Linux examples (linux_example, cross_compile_example)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-examples
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      - name: Disk report (before first workspace)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: before first workspace
+      - name: Run e2e/linux_example
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/linux_example --bazel=bazel
+      - name: Disk report (after e2e/linux_example)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/linux_example
+      - name: Run e2e/cross_compile_example
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/cross_compile_example --bazel=bazel
+      - name: Disk report (after e2e/cross_compile_example)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/cross_compile_example
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  e2e-linux-pub-scc:
+    name: E2E Linux pub_scc
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-pub-scc
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      - name: Disk report (before first workspace)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: before first workspace
+      - name: Run e2e/pub_scc
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/pub_scc --bazel=bazel
+      - name: Disk report (after e2e/pub_scc)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/pub_scc
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  e2e-windows:
+    name: E2E (hello_world, windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      DISK_CACHE_DIR: D:/_bazel-disk
+      DISK_CACHE_SHARD: windows-hello
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set disk cache key
+        shell: bash
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      # See the note above for the shared repository cache. The output base
+      # setup-bazel sets (D:/_bazel) takes precedence over the Windows step's
+      # --output_user_root and is as short.
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      # PowerShell, so ~/.bazelrc is the same file setup-bazel wrote (unlike
+      # Git Bash, whose home can differ).
+      - name: Point Bazel at the disk cache
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "${{ env.DISK_CACHE_DIR }}" | Out-Null
+          Add-Content ~/.bazelrc "build --disk_cache=${{ env.DISK_CACHE_DIR }}"
+      # GitHub's windows-latest image exports ANDROID_NDK_HOME with backslashes
+      # (C:\Android\...), but rules_android_ndk's _create_symlinks() strips the
+      # NDK prefix with a forward-slash string match against ctx.path() output,
+      # so a backslashed value makes the symlink target escape the repo dir and
+      # the fetch fails. Hand it a forward-slash path, as upstream's own Windows
+      # CI does. See https://github.com/bazelbuild/rules_android_ndk/pull/108
+      - name: Normalize ANDROID_NDK_HOME to forward slashes (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ndk = $env:ANDROID_NDK_HOME ?? $env:ANDROID_NDK_ROOT
+          "ANDROID_NDK_HOME=$($ndk -replace '\\','/')" >> $env:GITHUB_ENV
+      # The Windows e2e_runner step is not done: the runner always passes its own
+      # temp-dir --output_base, which overrides the short --output_user_root
+      # below, and it has no way to carry the -no-windows-ci tag filters.
+      # On Windows, Bazel's default output root lives under a long per-user
+      # temp path; nested runfiles (e.g. the hermetic Python interpreter's
+      # _socket.pyd used by rules_android's aar_embedded_jars_extractor) then
+      # exceed the 260-char MAX_PATH limit and fail to load with
+      # "DLL load failed ... The filename or extension is too long".
+      # A short --output_user_root keeps every generated path well under MAX_PATH.
+      # (`BAZEL_OUTPUT_BASE` is not read by Bazel; the startup flag is required.)
+      # --*_tag_filters=-no-windows-ci skips targets that build fine on
+      # macOS/Linux but exceed the windows-latest runner's commit limit
+      # (RAM + its small fixed pagefile). Today that's hello_world's Android
+      # target: rules_android's resource compiler launches its JVM with
+      # -Xms3G, eagerly committing 3 GiB and OOMing. Android is still covered
+      # on the macOS and Linux runners. The build filter (not just the test
+      # filter) is required because `bazel test //...` builds every matched
+      # target, including the non-test app, so a test-only filter wouldn't
+      # stop the OOMing build action.
+      - name: bazel test //... (e2e/hello_world)
+        if: runner.os == 'Windows'
+        working-directory: e2e/hello_world
+        run: bazel --output_user_root=C:/b test //... --test_output=errors --build_tag_filters=-no-windows-ci --test_tag_filters=-no-windows-ci
+      - name: Report cache sizes
+        if: always()
+        shell: bash
+        run: du -sh D:/_bazel-disk D:/_bazel-repo C:/_bazel-disk C:/_bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  # The hooks in .pre-commit-config.yaml, over every file. Nothing else runs
+  # them for a commit made without `prek install`.
+  pre-commit:
+    name: pre-commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: j178/prek-action@v3.0.1
+        with:
+          # Keep in step with prek in multitool.lock.json
+          prek-version: 0.5.5
+  dart-tool-tests:
+    name: Dart tool tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dart-lang/setup-dart@v1
+      - name: Run dev_tool tests
+        working-directory: tools/dev_tool
+        # Exclude e2e tests (tagged @Tags(['e2e'])): they need a browser/CDP,
+        # iOS simulators, or a running macOS app — none available on this
+        # runner. Real-render coverage lives in the Bazel e2e workspaces and,
+        # for web, in the `web-smoke` job below.
+        #
+        # `runfiles` is excluded for a different reason: those tests read
+        # fixtures declared in a Bazel target's `data` and resolve them through
+        # the runfiles tree, which exists under `bazel test` and not here. They
+        # are covered by their Bazel targets, which this job does not replace.
+        run: dart test -x e2e -x runfiles
+      # `-x runfiles` for the same reason as the dev_tool step above: these
+      # tools are Bazel scripts, and two of them import packages that arrive
+      # through their `dart_test` deps rather than through this pubspec
+      # (`flutter_test_runner` imports `package:runfiles`, `kernel_filter`'s
+      # guard imports `package:rules_dart_guard`). Excluded here, covered by
+      # //flutter/private/tools:flutter_test_runner_test and
+      # //flutter/private/tools:kernel_filter_test, which the `unit-tests`
+      # job runs via `bazel test //...`.
+      - name: Run private tool tests
+        working-directory: flutter/private/tools
+        run: dart pub get && dart test -x runfiles
+  # The only place CI runs the binary users install rather than `dart run`.
+  # One `-c dbg` Chrome run, asserted down to a VM service that answers
+  # `getVersion` — `app.started` alone does not prove DWDS came up.
+  web-smoke:
+    name: Web smoke (DWDS VM service)
+    runs-on: ubuntu-latest
+    # Cold, this downloads the Flutter SDK, the engine artifacts and the web
+    # SDK, then AOT-compiles the dev tool before the run itself starts.
+    timeout-minutes: 60
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-web
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      # setup-bazel pins every workspace to one output base with a `startup`
+      # line in ~/.bazelrc. This job runs two workspaces: the root, whose
+      # bazel-bin holds the dev tool binary under test, and e2e/web_example,
+      # which that binary builds. Sharing a base, the second would restart the
+      # server and replace the execroot the running binary lives in. Drop the
+      # line so each workspace keeps Bazel's own per-workspace default.
+      - name: Keep one output base per workspace
+        run: sed -i '/^startup --output_base=/d' ~/.bazelrc
+      # The test process itself resolves this package's pubspec, and dwds
+      # requires a Dart newer than the runner's default. The tool under test
+      # runs on the hermetic Flutter toolchain either way.
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.13.0
+      - name: Install xvfb
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+      # google-chrome is preinstalled on this runner and is on PATH, which is
+      # exactly how the dev tool resolves it on Linux (host_tools.dart) — no
+      # CHROME_EXECUTABLE needed. xvfb gives that Chrome a display.
+      #
+      # Run through tool/e2e.dart rather than `dart test` directly: `dart test`
+      # exits 0 when every selected test skipped, so a skip gate would take this
+      # job green having executed nothing. The runner reads the JSON result
+      # stream and fails unless a verdict was reached, nothing failed, and at
+      # least one test ran. It supplies `--tags=e2e` and `--concurrency=1`
+      # itself and resolves tools/dev_tool from its own location.
+      - name: Web smoke
+        run: xvfb-run -a dart run tools/dev_tool/tool/e2e.dart test/e2e/web_smoke_e2e_test.dart
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  reproducibility:
+    name: Reproducibility canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: false
+      - name: Verify canary output differs across distinct output bases
+        working-directory: e2e/repro_canary
+        run: |
+          trap 'bazel --output_base="${RUNNER_TEMP}/repro_canary_a" shutdown; bazel --output_base="${RUNNER_TEMP}/repro_canary_b" shutdown' EXIT
+          bazel "--output_base=${RUNNER_TEMP}/repro_canary_a" build //:canary
+          if [ ! -s bazel-bin/canary.bin ]; then
+            echo "e2e/repro_canary: output missing or empty in run A" >&2
+            exit 1
+          fi
+          sum_a=$(sha256sum bazel-bin/canary.bin | awk '{print $1}')
+
+          bazel "--output_base=${RUNNER_TEMP}/repro_canary_b" build //:canary
+          if [ ! -s bazel-bin/canary.bin ]; then
+            echo "e2e/repro_canary: output missing or empty in run B" >&2
+            exit 1
+          fi
+          sum_b=$(sha256sum bazel-bin/canary.bin | awk '{print $1}')
+
+          if [ -z "$sum_a" ] || [ -z "$sum_b" ]; then
+            echo "e2e/repro_canary: sha256 checksum missing or empty" >&2
+            exit 1
+          fi
+
+          echo "Run A sha256: $sum_a"
+          echo "Run B sha256: $sum_b"
+
+          if [ "$sum_a" = "$sum_b" ]; then
+            echo "e2e/repro_canary: canary outputs are equal across distinct output bases ($sum_a)" >&2
+            exit 1
+          fi
+  # Repository checks that each take seconds to a minute of Bazel, run in one
+  # job so they share one runner, one setup and one Bazel server. Repository
+  # cache only (shared per OS, no disk-cache shard): this job restores what
+  # ci.yaml saves and never writes a cache, like commit-messages.yaml. The
+  # lockfile steps run first, on the clean checkout; every later step runs
+  # even when an earlier one failed, so one red check does not hide another.
+  # - Module lockfile is tidy: fails when `bazel mod tidy` would rewrite the
+  #   root module files, so a stale MODULE.bazel.lock fails the run.
+  # - E2E coverage: fails when an e2e module's MODULE.bazel is in no workflow
+  #   without a one-line reason recorded in tools/check_e2e_coverage, so
+  #   removing a workspace from every shard without saying why turns this red.
+  # - Repo contents cache: fails when a repository that returns
+  #   `repo_metadata(reproducible = True)` is extracted into every output base
+  #   instead of shared through the repo contents cache, or holds an absolute
+  #   or repo-escaping symlink. Each run of //tools/repo_contents_cache fetches
+  #   into two fresh output bases that share the repository cache and one
+  #   temporary repo contents cache.
+  repo-checks:
+    name: Repo checks (lockfile tidy, e2e coverage, repo contents cache)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: false
+      - name: bazel mod tidy --lockfile_mode=refresh
+        run: bazel mod tidy --lockfile_mode=refresh
+      - name: bazel build --nobuild --lockfile_mode=update //...
+        run: bazel build --nobuild --lockfile_mode=update //...
+      - name: bazel build --nobuild --lockfile_mode=error //...
+        run: bazel build --nobuild --lockfile_mode=error //...
+      - name: git diff --exit-code MODULE.bazel MODULE.bazel.lock
+        run: git diff --exit-code MODULE.bazel MODULE.bazel.lock
+      - name: Check every e2e module is covered or reasoned
+        if: ${{ !cancelled() }}
+        run: bazel run //tools/check_e2e_coverage
+      - name: Check rules_android_maven pins in Android workspaces
+        if: ${{ !cancelled() }}
+        run: bazel run //tools/check_maven_pins
+      - name: Host SDK, web SDK, sky_engine, dev_root, fonts, gen_l10n, a dev_tool_deps spoke, sysroot, Chrome and Linux runtime
+        if: ${{ !cancelled() }}
+        run: >
+          bazel run //tools/repo_contents_cache --
+          @@+flutter+flutter_linux-x64
+          @flutter_web_sdk
+          @flutter_sky_engine
+          @flutter_dev_root
+          @flutter_material_fonts
+          @@+flutter+flutter_font_subset_linux-x64
+          @flutter_gen_l10n
+          @@+flutter+dev_tool_deps__args
+          @@+flutter+flutter_linux_sysroot_x64
+          @flutter_chrome_headless_shell
+          @flutter_linux_headless_runtime
+      - name: A Flutter SDK spoke
+        if: ${{ !cancelled() }}
+        run: >
+          bazel run //tools/repo_contents_cache --
+          --workspace=e2e/web_example
+          @@ai_rules_flutter++flutter+deps__flutter
+      - name: Negative case, local_path repos stay real directories
+        if: ${{ !cancelled() }}
+        run: >
+          bazel run //tools/repo_contents_cache --
+          --workspace=e2e/smoke
+          --expect=real
+          @local_sky_engine
+          @local_linux-x64
+          @local_dev_root
+  # Early warning, permanently non-blocking: runs the root tests on Bazel's
+  # last release candidate so a break in the next Bazel release shows up before
+  # it ships. An upstream release-candidate regression must never block a merge
+  # or a tag-push release, so the job is deliberately absent from
+  # `conclusion.needs` and carries `continue-on-error`. The lockfile is off
+  # because no committed lock can match an unreleased Bazel. It runs in the
+  # nightly and on dispatches (release tags) only: on every push and pull
+  # request it held a runner for 7 to 17 min that nothing waited on.
+  last_rc:
+    name: Bazel last_rc (early warning)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    continue-on-error: true
+    env:
+      USE_BAZEL_VERSION: last_rc
+    steps:
+      - uses: actions/checkout@v7
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: false
+      - name: bazel test --lockfile_mode=off //... --test_output=errors
+        run: bazel test --lockfile_mode=off //... --test_output=errors
+  # Burn-in for the incompatible flags Bazel has yet to flip: runs the root
+  # tests under `--config=strict` (tools/strict.bazelrc). Non-blocking, so the
+  # job carries `continue-on-error` and is absent from `conclusion.needs`. It
+  # becomes blocking when the burn-in ends on 2026-11-14; it is added to
+  # `conclusion.needs` then. Until then it runs in the nightly and on
+  # dispatches (release tags) only: on every push and pull request it held a
+  # runner for 7 to 22 min that nothing waited on.
+  strict:
+    name: Bazel strict flags (burn-in)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: false
+      - name: bazel test --config=strict //... --test_output=errors
+        run: bazel test --config=strict //... --test_output=errors
+  conclusion:
+    name: Conclusion
+    needs: [e2e-macos-apple, e2e-macos-toolchain, unit-tests, flake-sweep, e2e-linux-app, e2e-linux-small, e2e-linux-examples, e2e-linux-pub-scc, e2e-linux-integration, e2e-linux-android, e2e-windows, repo-checks, dart-tool-tests, pre-commit, web-smoke, reproducibility]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fail if any job failed
+        run: echo '${{ toJSON(needs) }}' | jq -e 'with_entries(select(.value.result != "success" and .value.result != "skipped")) | length == 0'

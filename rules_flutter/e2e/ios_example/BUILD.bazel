@@ -1,0 +1,696 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load(
+    "@rules_flutter//flutter:ios.bzl",
+    "IOS_DEFAULT_LAUNCH_STORYBOARD",
+    "IOS_DEFAULT_MAIN_STORYBOARD",
+    "IOS_MINIMUM_OS_VERSION",
+    "flutter_apple_plugin_library",
+    "flutter_ios_app",
+    "flutter_ios_engine",
+    "flutter_ios_framework_gen",
+    "flutter_ios_info_plist_gen",
+    "flutter_ios_native_frameworks_gen",
+    "flutter_ios_registrant_gen",
+    "flutter_ios_runner_lib_gen",
+    "flutter_ios_simulator_build",
+    "flutter_ios_simulator_build_test",
+)
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load(":ios_device_opt.bzl", "ios_device_opt_bundle")
+load(":plugin_dep/plugin_ios_build.bzl", "plugin_ios_build")
+load(":simulator_mode_test.bzl", "simulator_fastbuild_refused_test")
+
+exports_files(["pubspec.lock"])
+
+# =============================================================================
+# Shared: Flutter application (Dart compilation)
+# =============================================================================
+
+flutter_application(
+    name = "app_flutter",
+    package_name = "ios_example",
+    # A first-party asset so the dev loop has something real to deliver here.
+    # iOS is the platform where this mattered: the runner reaches this target
+    # through a split transition, so the app's `flutter_assets` tree lives in a
+    # configuration no bare build produces. asset_reload_e2e_test edits
+    # assets/message.txt on the simulator and asserts the change arrives.
+    assets = glob(["assets/**"]),
+    main = "lib/main.dart",
+    min_os_version = IOS_MINIMUM_OS_VERSION,
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# =============================================================================
+# Shared iOS targets (used by approaches 2 & 3)
+# =============================================================================
+
+flutter_ios_framework_gen(
+    name = "app_framework",
+    application = ":app_flutter",
+)
+
+flutter_ios_registrant_gen(
+    name = "app_registrant",
+    application = ":app_flutter",
+)
+
+flutter_ios_engine(name = "app_engine")
+
+flutter_ios_native_frameworks_gen(
+    name = "app_native_frameworks",
+    application = ":app_flutter",
+)
+
+# Shared version for approaches 2 & 3.
+apple_bundle_version(
+    name = "app_version",
+    build_version = "1.0",
+    short_version_string = "1.0",
+    tags = ["manual"],
+    visibility = ["//extensions:__pkg__"],
+)
+
+# =============================================================================
+# Approach 1: Flutter-generated runner (flutter_ios_app)
+#
+# Recommended for most users. Requires ios/Runner/ from `flutter create`.
+# The macro auto-discovers Swift files, processes Info.plist (resolves Xcode
+# variables), and wires everything automatically.
+# =============================================================================
+
+flutter_ios_app(
+    name = "app",
+    application = ":app_flutter",
+    bundle_id = "com.rulesflutter.ios.example",
+)
+
+# A second app in the same package, built from a second application.
+#
+# Regression guard for every output the pair would otherwise share: each app's
+# runner compiles into its own Swift module, and each App.framework is written
+# under its own target's directory. Either one hardcoded would make both apps
+# write one path and fail the build with conflicting actions.
+#
+# The second `flutter_application` is what gives the guard its teeth, and costs
+# the second Dart compile it looks like it costs. Pointing both apps at one
+# application gives the two App.frameworks identical inputs, so their actions
+# are identical, and Bazel shares identical actions instead of reporting a
+# conflict — which is exactly how this defect survived here until 2026-09.
+# Differing only in `minimum_os_version` does not work either: that attribute
+# is part of the configuration, so it separates the two into different output
+# directories where nothing can collide.
+flutter_application(
+    name = "app_flutter_second",
+    package_name = "ios_example_second",
+    main = "lib/main.dart",
+    min_os_version = IOS_MINIMUM_OS_VERSION,
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_ios_app(
+    name = "app_second",
+    application = ":app_flutter_second",
+    bundle_id = "com.rulesflutter.ios.example.second",
+)
+
+# An app whose `main` sits outside the package's `lib/` -- the shape
+# `flutter run -t test_driver/app.dart` runs. It has no `package:` URI, so the
+# build and the dev loop both name it under the app scheme; hot reload and hot
+# restart of it, and of the sibling it imports by relative path, are what
+# main_outside_lib_e2e_test drives on the simulator. Its own `package_name`
+# keeps its outputs apart from `:app_flutter`'s, as `:app_flutter_second` does.
+flutter_application(
+    name = "driver_flutter",
+    package_name = "ios_example_driver",
+    srcs = ["test_driver/banner.dart"],
+    main = "test_driver/app.dart",
+    min_os_version = IOS_MINIMUM_OS_VERSION,
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_ios_app(
+    name = "driver_app",
+    application = ":driver_flutter",
+    bundle_id = "com.rulesflutter.ios.example.driver",
+)
+
+# The same app, signed for a physical device: `provisioning_profile` is the
+# only difference, so the device bundle is the identical construction rather
+# than a second one hand-assembled out of Tier-2 `_gen` rules.
+#
+# `//device` is git-ignored and absent from a fresh clone. That is fine:
+# flutter_ios_app defaults to `tags = ["manual"]`, so `bazel build //...`
+# never expands this target and therefore never loads the missing package.
+# Create it from device.example/ — see README.md "Device builds".
+flutter_ios_app(
+    name = "app_device",
+    application = ":app_flutter",
+    bundle_id = "com.rulesflutter.ios.example",
+    provisioning_profile = "//device:profile",
+)
+
+# An app that ships App Intents. The library goes to `runner_deps` so the runner
+# links it, and to rules_apple's `app_intents`, which only extracts metadata.
+# :verify_ios_app_intents_test finds the intent in the bundle's metadata.
+swift_library(
+    name = "ping_intents",
+    srcs = ["intents/PingIntent.swift"],
+    # rules_apple's `app_intents` aspect refuses a library that does not name
+    # the AppIntents SDK framework.
+    linkopts = ["-Wl,-framework,AppIntents"],
+    module_name = "PingIntents",
+    tags = ["manual"],
+)
+
+flutter_ios_app(
+    name = "app_intents",
+    app_intents = [":ping_intents"],
+    application = ":app_flutter",
+    bundle_id = "com.rulesflutter.ios.example.intents",
+    runner_deps = [":ping_intents"],
+)
+
+# An app with extensions, built in //extensions: a widget extension holding a
+# WidgetKit widget and a Control Center control, and a share extension. Each
+# extension's bundle id starts with the app's, and the app joins the App Group
+# the extensions declare by merging the same entitlements file into its own.
+# :verify_ios_extensions_test checks where each lands and what each declares.
+flutter_ios_app(
+    name = "app_extensions",
+    additional_entitlements = ["//extensions:AppGroup.entitlements"],
+    application = ":app_flutter",
+    bundle_id = "com.rulesflutter.ios.example.extensions",
+    extensions = [
+        "//extensions:share",
+        "//extensions:widgets",
+    ],
+)
+
+# The same app for a device, signed with //device's team wildcard profile. A
+# wildcard profile cannot grant an App Group, so the app and its extensions
+# leave the group out here; see README.md "App extensions".
+flutter_ios_app(
+    name = "app_extensions_device",
+    application = ":app_flutter",
+    bundle_id = "com.rulesflutter.ios.example.extensions",
+    extensions = [
+        "//extensions:share_device",
+        "//extensions:widgets_device",
+    ],
+    provisioning_profile = "//device:profile",
+)
+
+# =============================================================================
+# Release device framework (what a release engineer ships)
+#
+# A second application from the same main, assets and deps, with the release
+# flags on: `obfuscate`, `split_debug_info` and `tree_shake_icons`. It needs
+# its own `package_name` for the same reason `:app_flutter_second` does: two
+# applications in one package must not share outputs.
+#
+# The un-obfuscated twin exists so the release test's obfuscation check cannot
+# pass vacuously: the twin is built the same way except for `obfuscate`, and
+# the test asserts the class name IS present in the twin's binary.
+# =============================================================================
+
+flutter_application(
+    name = "app_flutter_release",
+    package_name = "ios_example_release",
+    assets = glob(["assets/**"]),
+    main = "lib/main.dart",
+    min_os_version = IOS_MINIMUM_OS_VERSION,
+    obfuscate = True,
+    split_debug_info = True,
+    tree_shake_icons = True,
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_application(
+    name = "app_flutter_release_plain",
+    package_name = "ios_example_release_plain",
+    assets = glob(["assets/**"]),
+    main = "lib/main.dart",
+    min_os_version = IOS_MINIMUM_OS_VERSION,
+    split_debug_info = True,
+    tree_shake_icons = True,
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_ios_framework_gen(
+    name = "app_release_framework",
+    application = ":app_flutter_release",
+)
+
+flutter_ios_framework_gen(
+    name = "app_release_plain_framework",
+    application = ":app_flutter_release_plain",
+)
+
+# The release frameworks as a physical iPhone builds them: `-c opt` for a
+# device (`arm64`), reached through the transition so the test runner itself
+# stays in the default configuration. No signing and no `ios_application`
+# are needed: the test reads `App.framework` directly. macOS-only, so a
+# Linux `bazel test //...` skips these the way it skips the tests below.
+ios_device_opt_bundle(
+    name = "app_release_device",
+    testonly = True,
+    application = ":app_flutter_release",
+    framework = ":app_release_framework",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+ios_device_opt_bundle(
+    name = "app_release_plain_device",
+    testonly = True,
+    application = ":app_flutter_release_plain",
+    framework = ":app_release_plain_framework",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# =============================================================================
+# Approach 2: Bazel-generated runner (flutter_ios_runner_lib_gen)
+#
+# For users without `flutter create` output. Uses template files from
+# rules_flutter. Only needs app_name. User manually wires ios_application.
+# =============================================================================
+
+flutter_ios_info_plist_gen(
+    name = "bazel_runner_info_plist",
+    app_name = "Flutter App",
+    module_name = "BazelRunner",
+)
+
+flutter_ios_runner_lib_gen(
+    name = "bazel_runner_lib",
+    engine = ":app_engine",
+    module_name = "BazelRunner",
+    registrant = ":app_registrant",
+)
+
+ios_application(
+    name = "app_bazel_runner",
+    bundle_id = "com.rulesflutter.ios.example.bazelrunner",
+    families = ["iphone"],
+    infoplists = [":bazel_runner_info_plist"],
+    launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+    minimum_os_version = IOS_MINIMUM_OS_VERSION,
+    tags = ["manual"],
+    version = ":app_version",
+    deps = [
+        ":app_framework",
+        # Native-asset frameworks. Declared above but easy to leave
+        # unwired: the app still builds and renders, then fails every
+        # native-asset call at runtime because dyld cannot resolve the
+        # framework-relative path the manifest records.
+        ":app_native_frameworks",
+        ":bazel_runner_lib",
+    ],
+)
+
+# =============================================================================
+# Approach 3: Custom runner (manual swift_library)
+#
+# For advanced users who want full control. User writes their own
+# AppDelegate/SceneDelegate, creates a swift_library with the registrant
+# from flutter_ios_registrant_gen, and wires into ios_application.
+# =============================================================================
+
+# Custom Info.plist with CustomRunner module name for scene delegate lookup.
+flutter_ios_info_plist_gen(
+    name = "custom_runner_info_plist",
+    app_name = "Custom Runner Example",
+    module_name = "CustomRunner",
+)
+
+swift_library(
+    name = "custom_runner_lib",
+    srcs = [
+        "custom_runner/AppDelegate.swift",
+        "custom_runner/SceneDelegate.swift",
+        ":app_registrant",
+    ],
+    data = [IOS_DEFAULT_MAIN_STORYBOARD],
+    module_name = "CustomRunner",
+    tags = ["manual"],
+    deps = [":app_engine"],
+)
+
+ios_application(
+    name = "app_custom_runner",
+    bundle_id = "com.rulesflutter.ios.example.customrunner",
+    families = ["iphone"],
+    infoplists = [":custom_runner_info_plist"],
+    launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+    minimum_os_version = IOS_MINIMUM_OS_VERSION,
+    tags = ["manual"],
+    version = ":app_version",
+    deps = [
+        ":app_framework",
+        # Native-asset frameworks. Declared above but easy to leave
+        # unwired: the app still builds and renders, then fails every
+        # native-asset call at runtime because dyld cannot resolve the
+        # framework-relative path the manifest records.
+        ":app_native_frameworks",
+        ":custom_runner_lib",
+    ],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+# A plugin's inner ObjC target must see a public header from a declared dep.
+# The build test is macOS-only; its transition builds the fixture for iOS,
+# where the Flutter framework import comes from. A Linux `bazel test //...`
+# reports the suite's targets incompatible.
+cc_library(
+    name = "plugin_dep_headers",
+    srcs = ["plugin_dep/greeting.c"],
+    hdrs = ["plugin_dep/greeting.h"],
+    target_compatible_with = ["@platforms//os:ios"],
+)
+
+flutter_apple_plugin_library(
+    name = "plugin_objc_dep_library",
+    srcs = ["plugin_dep/greeting_plugin.m"],
+    module_name = "plugin_objc_dep",
+    platform = "ios",
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = [":plugin_dep_headers"],
+)
+
+plugin_ios_build(
+    name = "plugin_objc_dep_ios_build",
+    target = ":plugin_objc_dep_library",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+build_test(
+    name = "plugin_objc_dep_headers_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":plugin_objc_dep_ios_build"],
+)
+
+# The suite named for the proof expands to the macOS-only build test. Naming
+# the build test directly would make an explicit `bazel test` on Linux fail
+# ("incompatible and explicitly requested") instead of skipping it; through
+# the suite the same command reports the target skipped.
+test_suite(
+    name = "plugin_objc_dep_headers_test",
+    tests = [":plugin_objc_dep_headers_build_test"],
+)
+
+# Plugin private headers (a same-basename umbrella and internal header, and
+# `strategies/` and `util/` subdirectories) compile for iOS device and a
+# downstream Swift consumer imports the plugin module. macOS-only, as above.
+plugin_ios_build(
+    name = "plugin_private_headers_ios_build",
+    target = "//plugin_private_headers:plugin",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+plugin_ios_build(
+    name = "plugin_private_headers_consumer_ios_build",
+    target = "//plugin_private_headers:consumer",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+build_test(
+    name = "plugin_private_headers_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [
+        ":plugin_private_headers_consumer_ios_build",
+        ":plugin_private_headers_ios_build",
+    ],
+)
+
+test_suite(
+    name = "plugin_private_headers_test",
+    tests = [":plugin_private_headers_build_test"],
+)
+
+# `@import Flutter;` and `@import TinyPluginKit;` in sandboxed `.m` compiles.
+# Each plugin is built for iOS from the macOS host, as above.
+plugin_ios_build(
+    name = "plugin_import_flutter_ios_build",
+    target = "//plugin_import_flutter:pure_objc_plugin",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+plugin_ios_build(
+    name = "plugin_import_flutter_local_ios_build",
+    target = "//plugin_import_flutter:local_objc_plugin",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+plugin_ios_build(
+    name = "plugin_import_flutter_mixed_ios_build",
+    target = "//plugin_import_flutter:mixed_plugin",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+plugin_ios_build(
+    name = "plugin_import_flutter_xcframework_ios_build",
+    target = "//plugin_import_flutter:xcframework_plugin",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# String-literal `plugin_defines` must keep their C quotes through the
+# Bourne-tokenized `objc_library` copts: `@LIBRARY_NAME` only compiles when the
+# macro expands to `"my-plugin"`. The compile runs on macOS (darwin-sandbox).
+flutter_apple_plugin_library(
+    name = "plugin_string_defines_library",
+    srcs = ["plugin_string_defines/string_defines_plugin.m"],
+    module_name = "plugin_string_defines",
+    platform = "ios",
+    plugin_defines = [
+        'LIBRARY_NAME="my-plugin"',
+        'ESCAPED_NAME=\\"from-podspec\\"',
+        'GREETING="hello world"',
+    ],
+    target_compatible_with = ["@platforms//os:ios"],
+)
+
+plugin_ios_build(
+    name = "plugin_string_defines_ios_build",
+    target = ":plugin_string_defines_library",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+build_test(
+    name = "plugin_import_flutter_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [
+        ":plugin_import_flutter_ios_build",
+        ":plugin_import_flutter_local_ios_build",
+        ":plugin_import_flutter_mixed_ios_build",
+        ":plugin_import_flutter_xcframework_ios_build",
+    ],
+)
+
+test_suite(
+    name = "plugin_import_flutter_test",
+    tests = [":plugin_import_flutter_build_test"],
+)
+
+build_test(
+    name = "plugin_string_defines_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":plugin_string_defines_ios_build"],
+)
+
+test_suite(
+    name = "plugin_string_defines_test",
+    tests = [":plugin_string_defines_build_test"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_app_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app"],
+)
+
+# Both apps in one build_test: a per-package module-name collision is an
+# analysis-time action conflict, so it fails here rather than at runtime.
+flutter_ios_simulator_build_test(
+    name = "ios_two_apps_one_package_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [
+        ":app",
+        ":app_second",
+    ],
+)
+
+simulator_fastbuild_refused_test(
+    name = "simulator_fastbuild_refused_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    target_under_test = ":app",
+)
+
+# `:app` as the tests below read it: a simulator bundle, which is always a
+# debug build.
+flutter_ios_simulator_build(
+    name = "app_simulator",
+    testonly = True,
+    targets = [":app"],
+)
+
+# Reads the Info.plist out of the built .ipa. A debug build is not `-c opt`,
+# so this bundle carries the Dart VM service keys *and* the app's own Local
+# Network Privacy keys.
+dart_test(
+    name = "verify_ios_info_plist_test",
+    size = "medium",
+    data = [":app_simulator"],
+    main = "test/verify_ios_info_plist_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# The workspace's own asset plus the manifests describing it, as the engine
+# on the simulator loads them: `verify_ios_bundle_assets_test` unzips the
+# same `app.ipa` the plist test reads and checks the asset bytes, the decoded
+# `AssetManifest.bin` keys and the `FontManifest.json` font files under the
+# app root's `flutter_assets/` (a debug app keeps none in `App.framework`).
+dart_test(
+    name = "verify_ios_bundle_assets_test",
+    size = "medium",
+    data = [
+        "assets/message.txt",
+        ":app_simulator",
+    ],
+    main = "test/verify_ios_bundle_assets_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_simulator_build(
+    name = "app_intents_simulator",
+    testonly = True,
+    targets = [":app_intents"],
+)
+
+# The extracted App Intents metadata is in the bundle and names the intent, and
+# the runner links the library that declares it.
+dart_test(
+    name = "verify_ios_app_intents_test",
+    size = "medium",
+    data = [":app_intents_simulator"],
+    main = "test/verify_ios_app_intents_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_simulator_build(
+    name = "app_extensions_simulator",
+    testonly = True,
+    targets = [":app_extensions"],
+)
+
+# Each extension is embedded in PlugIns/, names its extension point, and shares
+# the app's App Group.
+dart_test(
+    name = "verify_ios_extensions_test",
+    size = "medium",
+    data = [":app_extensions_simulator"],
+    main = "test/verify_ios_extensions_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# The app icon `flutter create` leaves in the tree, which this BUILD file
+# never mentions — `flutter_ios_app` discovers it, and the bundle has to
+# actually carry it.
+dart_test(
+    name = "verify_ios_app_icon_test",
+    size = "medium",
+    data = [":app_simulator"],
+    main = "test/verify_ios_app_icon_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# The device release framework beside the debug simulator bundle: a 64-bit
+# arm64 Mach-O for iOS (not the simulator) exporting the AOT snapshot
+# symbols, obfuscated (a class name the un-obfuscated twin keeps), with a
+# non-empty `.symbols` object file and a tree-shaken icon font. macOS-only,
+# like the checks above: it runs on the macOS leg of full.yaml.
+dart_test(
+    name = "verify_ios_release_framework_test",
+    size = "medium",
+    srcs = ["test/ios_bundle_reader.dart"],
+    data = [
+        ":app_release_device",
+        ":app_release_plain_device",
+        ":app_simulator",
+    ],
+    main = "test/verify_ios_release_framework_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_bazel_runner_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_bazel_runner"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_custom_runner_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_custom_runner"],
+)
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables: each Dart file is checked against the nearest
+# listed one above it.
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Static analysis over this example's Dart. The app rule is a bundle and
+# carries no DartInfo, so the sources are declared once more as a library for
+# the analyzer to stage.
+flutter_library(
+    name = "app_lib",
+    package_name = "ios_example",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)

@@ -1,0 +1,72 @@
+# Exclude development-only files from release archives.
+#
+# Every pattern is anchored with a leading `/`. Without one, `git archive`
+# matches the basename at any depth, so an unanchored `e2e/` also strips
+# `tools/dev_tool/test/e2e/` and the published archive fails to load.
+#
+# `/e2e/` is listed workspace by workspace rather than wholesale: the archive
+# has to keep `e2e/smoke`, which `.bcr/presubmit.yml` names as `module_path`
+# and BCR resolves inside the extracted archive. Adding an e2e workspace means
+# adding it here — the whole tree is 12MB against a 1.2MB archive, so the
+# exclusions are what keep the download small.
+/.bcr/ export-ignore
+/.claude/ export-ignore
+/.devcontainer/ export-ignore
+/.github/ export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/.pre-commit-config.yaml export-ignore
+/.typos.toml export-ignore
+/ai-docs/ export-ignore
+/dev/ export-ignore
+/tests/rules_testing/ export-ignore
+/references/ export-ignore
+/renovate.json export-ignore
+/tools/BUILD.bazel export-ignore
+/tools/changelog/ export-ignore
+/e2e/_compare/ export-ignore
+/e2e/_linux_test/ export-ignore
+/e2e/_macos_test/ export-ignore
+/e2e/_overlay_tests/ export-ignore
+/e2e/_overlay_tests/link_hooks/ export-ignore
+/e2e/_overlay_tests/native_assets_synthetic/ export-ignore
+/e2e/_playwright/ export-ignore
+/e2e/_windows_test/ export-ignore
+/e2e/package.json export-ignore
+/e2e/package-lock.json export-ignore
+/e2e/aar_host/ export-ignore
+/e2e/android_example/ export-ignore
+/e2e/android_no_go_sdk/ export-ignore
+/e2e/android_sharedprefs/ export-ignore
+/e2e/codegen/ export-ignore
+/e2e/cross_compile_example/ export-ignore
+/e2e/digest_mismatch/ export-ignore
+/e2e/drive_ios/ export-ignore
+/e2e/dual_hub/ export-ignore
+/e2e/federated_plugins/ export-ignore
+/e2e/ffi_example/ export-ignore
+/e2e/ffi_plugin_example/ export-ignore
+/e2e/hello_world/ export-ignore
+/e2e/integration_android/ export-ignore
+/e2e/integration_ios/ export-ignore
+/e2e/integration_linux/ export-ignore
+/e2e/integration_web/ export-ignore
+/e2e/ios_example/ export-ignore
+/e2e/ios_framework/ export-ignore
+/e2e/ios_plugin_matrix/ export-ignore
+/e2e/linux_example/ export-ignore
+/e2e/macos_example/ export-ignore
+/e2e/min_versions/ export-ignore
+/e2e/multi_window_example/ export-ignore
+/e2e/plugin_example/ export-ignore
+/e2e/podfile_lock_red/ export-ignore
+/e2e/pub_android_lazy/ export-ignore
+/e2e/pub_cycle_breaks/ export-ignore
+/e2e/pub_flutter_shape_red/ export-ignore
+/e2e/pub_hosted_escape/ export-ignore
+/e2e/pub_scc/ export-ignore
+/e2e/repro_canary/ export-ignore
+/e2e/run_home/ export-ignore
+/e2e/web_example/ export-ignore
+/e2e/windows_example/ export-ignore
+/e2e/xtool_sdk_invalid/ export-ignore

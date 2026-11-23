@@ -1,0 +1,24 @@
+{
+  "pathFragments": [
+    { "id": 1, "label": "bazel-out" },
+    { "id": 2, "label": "k8-fastbuild", "parentId": 1 },
+    { "id": 3, "label": "bin", "parentId": 2 },
+    { "id": 4, "label": "pkg", "parentId": 3 },
+    { "id": 5, "label": "a.out", "parentId": 4 }
+  ],
+  "artifacts": [{ "id": 1, "pathFragmentId": 5 }],
+  "targets": [{ "id": 1, "label": "//pkg:a" }],
+  "aspectDescriptors": [
+    { "id": 1, "name": "@repo//:a.bzl%aspect_a" },
+    { "id": 2, "name": "@repo//:b.bzl%aspect_b" }
+  ],
+  "actions": [
+    {
+      "targetId": 1,
+      "aspectDescriptorIds": [2, 1],
+      "mnemonic": "Symlink",
+      "primaryOutputId": 1,
+      "outputIds": [1]
+    }
+  ]
+}

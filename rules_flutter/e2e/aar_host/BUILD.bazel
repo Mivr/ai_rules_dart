@@ -1,0 +1,97 @@
+load("@rules_android//android:rules.bzl", "aar_import", "android_binary", "android_library")
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_aar")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+load("@rules_java//java:java_import.bzl", "java_import")
+
+exports_files(["pubspec.lock"])
+
+flutter_application(
+    name = "module",
+    srcs = ["lib/main.dart"],
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+flutter_android_aar(
+    name = "module_aar",
+    package_name = "com.example.module",
+    android_abi = "x86_64",
+    application = ":module",
+)
+
+filegroup(
+    name = "module_engine",
+    srcs = [":module_aar"],
+    output_group = "engine_maven",
+)
+
+aar_import(
+    name = "module_import",
+    aar = ":module_aar",
+)
+
+_ANDROIDX_EMBEDDING_DEPS = [
+    "@rules_android_maven//:androidx_annotation_annotation",
+    "@rules_android_maven//:androidx_core_core",
+    "@rules_android_maven//:androidx_exifinterface_exifinterface",
+    "@rules_android_maven//:androidx_fragment_fragment",
+    "@rules_android_maven//:androidx_lifecycle_lifecycle_common",
+    "@rules_android_maven//:androidx_lifecycle_lifecycle_runtime",
+    "@rules_android_maven//:androidx_tracing_tracing",
+    "@rules_android_maven//:androidx_window_window",
+    "@rules_android_maven//:androidx_window_window_java",
+    "@rules_android_maven//:com_getkeepsafe_relinker_relinker",
+]
+
+java_import(
+    name = "module_engine_import",
+    jars = [":module_engine"],
+    deps = _ANDROIDX_EMBEDDING_DEPS,
+)
+
+android_library(
+    name = "host_lib",
+    srcs = ["src/com/example/aarhost/MainActivity.java"],
+    manifest = "AndroidManifest.xml",
+    deps = [
+        ":module_engine_import",
+        ":module_import",
+    ] + _ANDROIDX_EMBEDDING_DEPS,
+)
+
+android_binary(
+    name = "host_app",
+    custom_package = "com.example.aarhost",
+    manifest = "AndroidManifest.xml",
+    deps = [":host_lib"],
+)
+
+dart_test(
+    name = "verify_aar_host_test",
+    size = "medium",
+    srcs = ["test/verify_aar_host_test.dart"],
+    data = [
+        ":host_app",
+        "@flutter_android_headless_runtime//:adb",
+        "@flutter_android_headless_runtime//:all_files",
+        "@flutter_android_headless_runtime//:emulator",
+    ],
+    env = {
+        "ADB_RLOCATION": "$(rlocationpath @flutter_android_headless_runtime//:adb)",
+        "EMULATOR_RLOCATION": "$(rlocationpath @flutter_android_headless_runtime//:emulator)",
+        "HOST_APK_RLOCATIONS": "$(rlocationpaths :host_app)",
+    },
+    main = "test/verify_aar_host_test.dart",
+    tags = [
+        "exclusive",
+        "local",
+        "no-sandbox",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "@rules_dart//dart/runfiles",
+    ],
+)

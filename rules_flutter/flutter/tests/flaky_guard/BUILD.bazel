@@ -1,0 +1,24 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+dart_test(
+    name = "flaky_guard_test",
+    size = "medium",
+    data = ["flaky_guard_test.dart"],
+    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :flaky_guard_test.dart)"},
+    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
+    main = "flaky_guard_test.dart",
+    tags = [
+        "external",
+        "local",
+        "no-sandbox",
+        "tree-reader",
+    ],
+    deps = [
+        "@dev_tool_deps//:test",
+    ],
+)
+
+alias(
+    name = "flaky_guard",
+    actual = ":flaky_guard_test",
+)

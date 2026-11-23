@@ -1,0 +1,25 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+# Guards root-module dart_test targets that read the checkout outside their
+# declared inputs. Such targets must declare both `external` and `tree-reader`
+# tags (#333, #336) so Bazel never replays a stale cached PASS when untracked
+# source files change.
+dart_test(
+    name = "tree_reader_guard_test",
+    size = "small",
+    data = ["tree_reader_guard_test.dart"],
+    env = {
+        "GUARD_ROOT_ANCHOR": "$(rlocationpath :tree_reader_guard_test.dart)",
+    },
+    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
+    main = "tree_reader_guard_test.dart",
+    tags = [
+        "external",
+        "local",
+        "no-sandbox",
+        "tree-reader",
+    ],
+    deps = [
+        "@dev_tool_deps//:test",
+    ],
+)

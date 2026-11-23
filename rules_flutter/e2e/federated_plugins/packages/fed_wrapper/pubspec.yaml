@@ -1,0 +1,9 @@
+name: fed_wrapper
+version: 1.0.0
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  fed_alt_linux:
+    path: ../fed_alt_linux

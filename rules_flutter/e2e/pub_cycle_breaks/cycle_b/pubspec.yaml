@@ -1,0 +1,11 @@
+name: cycle_b
+description: Cycle-break fixture package whose pubspec edge to cycle_a stays.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  cycle_a:
+    path: ../cycle_a

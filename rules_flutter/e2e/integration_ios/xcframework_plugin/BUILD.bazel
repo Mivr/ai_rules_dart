@@ -1,0 +1,32 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+load("@rules_flutter//flutter:ios.bzl", "flutter_apple_plugin_library", "flutter_apple_xcframework_import")
+
+# The checked-in TinyKit fixture, imported the same way a plugin would import
+# a binary pod or a vendored framework: one macro, no backend argument.
+flutter_apple_xcframework_import(
+    name = "tinykit",
+    framework = "@rules_flutter//flutter/tests:TinyKit.xcframework",
+)
+
+flutter_apple_plugin_library(
+    name = "xcframework_plugin_apple_ios",
+    srcs = ["ios/Classes/XcframeworkPlugin.swift"],
+    module_name = "xcframework_plugin",
+    platform = "ios",
+    visibility = ["//visibility:public"],
+    deps = [":tinykit"],
+)
+
+flutter_plugin(
+    name = "xcframework_plugin",
+    package_name = "xcframework_plugin",
+    srcs = ["lib/xcframework_plugin.dart"],
+    apple_libs = select({
+        "@platforms//os:ios": [":xcframework_plugin_apple_ios"],
+        "//conditions:default": [],
+    }),
+    platforms = ["ios"],
+    plugin_class = "XcframeworkPlugin",
+    visibility = ["//visibility:public"],
+    deps = ["@deps//:flutter"],
+)

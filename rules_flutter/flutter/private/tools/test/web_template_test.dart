@@ -1,0 +1,704 @@
+import 'dart:io';
+
+import 'package:test/test.dart';
+
+// Import the library directly.
+import '../web_template.dart';
+
+late Directory _tmp;
+
+/// Writes [content] to a scratch file and returns its path.
+String _template(String name, String content) {
+  final file = File('${_tmp.path}/$name')..parent.createSync(recursive: true);
+  file.writeAsStringSync(content);
+  return file.path;
+}
+
+/// Runs the tool over a single template, returning `(output, errors)`.
+(String, List<String>) _runOne(
+  String content, {
+  Map<String, String> webDefines = const {},
+  List<String> keepPlaceholders = const [],
+  bool devLoopGuard = false,
+  bool managesServiceWorker = true,
+  bool checkConstructs = true,
+  String? baseHref,
+  String? staticAssetsUrl,
+  Map<String, dynamic> builtins = const {},
+  String label = 'web/index.html',
+}) {
+  final errors = <String>[];
+  final Map<String, String> outputs = substituteTemplates({
+    'web_defines': webDefines,
+    'keep_placeholders': keepPlaceholders,
+    'files': [
+      {
+        'template': _template('in_${content.hashCode}.html', content),
+        'output': '${_tmp.path}/out.html',
+        'label': label,
+        'base_href': baseHref,
+        'static_assets_url': staticAssetsUrl,
+        'dev_loop_guard': devLoopGuard,
+        'manages_service_worker': managesServiceWorker,
+        'check_constructs': checkConstructs,
+        'builtins': builtins,
+      },
+    ],
+  }, errors);
+  return (outputs['${_tmp.path}/out.html'] ?? '', errors);
+}
+
+void main() {
+  setUp(() => _tmp = Directory.systemTemp.createTempSync('web_template_test'));
+  tearDown(() => _tmp.deleteSync(recursive: true));
+
+  group('dollar placeholders', () {
+    test('every occurrence of the base href is replaced', () {
+      // `flutter create` emits one in <base>, but a template may reference it
+      // again; upstream's replaceAll semantics take all of them.
+      final (String out, List<String> errors) = _runOne(
+        '<base href="\$FLUTTER_BASE_HREF">\n<p>\$FLUTTER_BASE_HREF</p>',
+        baseHref: '/myapp/',
+      );
+      expect(errors, isEmpty);
+      expect(out, '<base href="/myapp/">\n<p>/myapp/</p>');
+    });
+
+    test('the static assets url is replaced', () {
+      final (String out, List<String> errors) = _runOne(
+        '<link href="\$FLUTTER_STATIC_ASSETS_URL/icons/a.png">',
+        staticAssetsUrl: 'https://cdn.example.com',
+      );
+      expect(errors, isEmpty);
+      expect(out, '<link href="https://cdn.example.com/icons/a.png">');
+    });
+  });
+
+  group('web defines', () {
+    test('a declared variable is substituted', () {
+      final (String out, List<String> errors) = _runOne(
+        '<meta name="api" content="{{API_URL}}">',
+        webDefines: {'API_URL': 'https://api.example.com'},
+      );
+      expect(errors, isEmpty);
+      expect(out, '<meta name="api" content="https://api.example.com">');
+    });
+
+    test('an undeclared variable is an error naming file and line', () {
+      final (String out, List<String> errors) = _runOne(
+        '<html>\n<body>\n{{API_URL}}\n</body>',
+      );
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('web/index.html:3'));
+      expect(errors.single, contains('{{API_URL}}'));
+      // The message must carry both ways out, or it only says "no".
+      expect(errors.single, contains('web_defines'));
+      expect(errors.single, contains('keep_placeholders'));
+      // The placeholder survives into the returned text; the caller refuses to
+      // write anything at all when errors are present.
+      expect(out, contains('{{API_URL}}'));
+    });
+
+    test('a define no template references is an error', () {
+      final (_, List<String> errors) = _runOne(
+        '<html></html>',
+        webDefines: {'UNUSED': 'x'},
+      );
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('UNUSED'));
+      expect(errors.single, contains('no template references'));
+    });
+
+    test('a define shadowing a built-in name is an error', () {
+      final (_, List<String> errors) = _runOne(
+        '{{flutter_js}}',
+        webDefines: {'flutter_js': 'nope'},
+      );
+      expect(errors.any((e) => e.contains('name the build supplies')), isTrue);
+    });
+
+    test('a name in both web_defines and keep_placeholders is an error', () {
+      final (_, List<String> errors) = _runOne(
+        '{{BOTH}}',
+        webDefines: {'BOTH': 'x'},
+        keepPlaceholders: ['BOTH'],
+      );
+      expect(
+        errors.any((e) => e.contains('cannot be')),
+        isTrue,
+        reason: 'asking to substitute and preserve the same name is incoherent',
+      );
+    });
+  });
+
+  group('what must not be touched', () {
+    test('a spaced moustache is left alone and unreported', () {
+      // Vue, Angular and Mustache write `{{ item }}`; upstream's pattern does
+      // not match it, and neither must ours, or error-by-default would break
+      // every page using a client-side template language.
+      const html = '<div>{{ item.name }}</div>\n<div>{{#each xs}}</div>';
+      final (String out, List<String> errors) = _runOne(html);
+      expect(errors, isEmpty);
+      expect(out, html);
+    });
+
+    test('keep_placeholders ships the placeholder as written', () {
+      final (String out, List<String> errors) = _runOne(
+        '<div>{{vueThing}}</div>',
+        keepPlaceholders: ['vueThing'],
+      );
+      expect(errors, isEmpty);
+      expect(out, '<div>{{vueThing}}</div>');
+    });
+
+    test('an unused keep_placeholders entry is not an error', () {
+      // Unlike an unused define, an unused passthrough cannot change the
+      // output, so erroring would only make a shared list brittle.
+      final (_, List<String> errors) = _runOne(
+        '<html></html>',
+        keepPlaceholders: ['neverSeen'],
+      );
+      expect(errors, isEmpty);
+    });
+  });
+
+  group('built-ins', () {
+    test('a literal value and a file are both substituted', () {
+      final String jsPath = _template('flutter.js', 'console.log("loader");');
+      final (String out, List<String> errors) = _runOne(
+        '{{flutter_js}}\n{{flutter_service_worker_version}}',
+        builtins: {
+          'flutter_js': {'file': jsPath},
+          'flutter_service_worker_version': {'value': '"rules_flutter_7"'},
+        },
+      );
+      expect(errors, isEmpty);
+      expect(out, 'console.log("loader");\n"rules_flutter_7"');
+    });
+
+    test('the worker version is expressible as null when pwa is off', () {
+      // An upstream-shaped bootstrap references the built-in unconditionally;
+      // with no worker the value is the literal `null`, not a missing name.
+      final (String out, List<String> errors) = _runOne(
+        'serviceWorkerVersion: {{flutter_service_worker_version}}',
+        builtins: {
+          'flutter_service_worker_version': {'value': 'null'},
+        },
+      );
+      expect(errors, isEmpty);
+      expect(out, 'serviceWorkerVersion: null');
+    });
+
+    test('a later file inlines an earlier file\'s substituted result', () {
+      final errors = <String>[];
+      final String bootstrap = _template(
+        'boot.js',
+        '{{flutter_build_config}}\nboot();',
+      );
+      final String index = _template(
+        'index.html',
+        '<script>{{flutter_bootstrap_js}}</script>',
+      );
+      final Map<String, String> outputs = substituteTemplates({
+        'files': [
+          {
+            'template': bootstrap,
+            'output': '${_tmp.path}/boot.out.js',
+            'label': 'flutter_bootstrap.js',
+            'check_constructs': true,
+            'builtins': {
+              'flutter_build_config': {'value': '_flutter.buildConfig = {};'},
+            },
+          },
+          {
+            'template': index,
+            'output': '${_tmp.path}/index.out.html',
+            'label': 'index.html',
+            'check_constructs': true,
+            'builtins': {
+              'flutter_bootstrap_js': {'from_output': 0},
+            },
+          },
+        ],
+      }, errors);
+
+      expect(errors, isEmpty);
+      expect(
+        outputs['${_tmp.path}/boot.out.js'],
+        '_flutter.buildConfig = {};\nboot();',
+      );
+      expect(
+        outputs['${_tmp.path}/index.out.html'],
+        '<script>_flutter.buildConfig = {};\nboot();</script>',
+        reason:
+            'index.html must inline the bootstrap after it was substituted, '
+            'not the raw template',
+      );
+    });
+
+    test('one bootstrap template serves the bundle and the dev loop', () {
+      // A debug build substitutes the same `bootstrap_js` template twice: once
+      // for the bundle and once for the DDC dev loop, whose build config names
+      // a different compiler. Before this the dev loop generated a bootstrap of
+      // its own, so a user template — and any `web_defines` in it — reached
+      // `bazel build` and silently nothing at all under `-d chrome`.
+      final errors = <String>[];
+      final String template = _template(
+        'boot.js',
+        '_flutter.loader.loadEntrypoint();\n'
+            '{{flutter_build_config}}\n'
+            'window.api = "{{API_URL}}";',
+      );
+      final Map<String, String> outputs = substituteTemplates({
+        'web_defines': {'API_URL': 'https://api.example.com'},
+        'files': [
+          {
+            'template': template,
+            'output': '${_tmp.path}/boot.out.js',
+            'label': 'flutter_bootstrap.js',
+            'check_constructs': true,
+            'builtins': {
+              'flutter_build_config': {'value': 'BUNDLE_CONFIG'},
+            },
+          },
+          {
+            'template': template,
+            'output': '${_tmp.path}/dev.out.js',
+            'label': 'flutter_bootstrap.js (dev loop)',
+            'check_constructs': false,
+            'builtins': {
+              'flutter_build_config': {'value': 'DEV_CONFIG'},
+            },
+          },
+        ],
+      }, errors);
+
+      // The define reaches both outputs.
+      const define = 'window.api = "https://api.example.com";';
+      expect(outputs['${_tmp.path}/boot.out.js'], contains(define));
+      expect(outputs['${_tmp.path}/dev.out.js'], contains(define));
+
+      // Each gets its own build config, so the dev loop boots DDC's output
+      // rather than the bundle's.
+      expect(outputs['${_tmp.path}/boot.out.js'], contains('BUNDLE_CONFIG'));
+      expect(outputs['${_tmp.path}/dev.out.js'], contains('DEV_CONFIG'));
+      expect(
+        outputs['${_tmp.path}/dev.out.js'],
+        isNot(contains('BUNDLE_CONFIG')),
+      );
+
+      // And the deprecated construct in those shared bytes is one mistake, so
+      // it is reported once — reading the same template twice must not double
+      // every diagnostic it carries.
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('flutter_bootstrap.js:1:'));
+      expect(errors.single, contains('loadEntrypoint'));
+    });
+
+    test('a built-in this file is not given is an error that says so', () {
+      // The generic "supply it with web_defines" advice would be a dead end:
+      // a define named after a built-in is refused as shadowing.
+      final (_, List<String> errors) = _runOne('{{flutter_bootstrap_js}}');
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('supplied by the build'));
+      expect(errors.single, isNot(contains('web_defines')));
+    });
+  });
+
+  group('legacy service worker constructs', () {
+    test('the deprecated version constant is refused', () {
+      final (_, List<String> errors) = _runOne(
+        '  const serviceWorkerVersion = null;',
+      );
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('flutter_service_worker_version'));
+    });
+
+    test('the var spelling is refused too', () {
+      final (_, List<String> errors) = _runOne(
+        'var serviceWorkerVersion = null;',
+      );
+      expect(errors, hasLength(1));
+    });
+
+    test(
+      'a hand-rolled registration is refused when the build ships a worker',
+      () {
+        final (_, List<String> errors) = _runOne(
+          "navigator.serviceWorker.register('flutter_service_worker.js')",
+        );
+        expect(errors, hasLength(1));
+        expect(errors.single, contains('flutter.js register'));
+      },
+    );
+
+    test('but is allowed when the build ships none', () {
+      // `pwa = False` hands service worker duty to the app. Refusing the
+      // registration there would refuse the very thing the attr grants — and
+      // the remedy would tell the user to set a flag they already set.
+      final (String out, List<String> errors) = _runOne(
+        "navigator.serviceWorker.register('flutter_service_worker.js')",
+        managesServiceWorker: false,
+      );
+      expect(errors, isEmpty);
+      expect(
+        out,
+        "navigator.serviceWorker.register('flutter_service_worker.js')",
+      );
+    });
+
+    test(
+      'the deprecated version constant is allowed with no managed worker too',
+      () {
+        final (_, List<String> errors) = _runOne(
+          'const serviceWorkerVersion = null;',
+          managesServiceWorker: false,
+        );
+        expect(errors, isEmpty);
+      },
+    );
+
+    test(
+      'loadEntrypoint stays refused either way — it is not about workers',
+      () {
+        final (_, List<String> errors) = _runOne(
+          '_flutter.loader.loadEntrypoint({});',
+          managesServiceWorker: false,
+        );
+        expect(errors, hasLength(1));
+      },
+    );
+
+    test('loadEntrypoint is refused because it skips the wasm build', () {
+      final (_, List<String> errors) = _runOne(
+        '_flutter.loader.loadEntrypoint({});',
+      );
+      expect(errors, hasLength(1));
+      expect(errors.single, contains('loader.load()'));
+    });
+  });
+
+  group('dev loop guard', () {
+    test('inlining the boot path into index.html is refused', () {
+      for (final name in [
+        'flutter_js',
+        'flutter_bootstrap_js',
+        'flutter_build_config',
+      ]) {
+        final (_, List<String> errors) = _runOne(
+          '<script>{{$name}}</script>',
+          devLoopGuard: true,
+          builtins: {
+            name: {'value': 'x'},
+          },
+        );
+        expect(
+          errors,
+          hasLength(1),
+          reason: '$name must be refused under the guard',
+        );
+        expect(errors.single, contains('hot reload'));
+      }
+    });
+
+    test('the guard says nothing about a script-src index', () {
+      final (String out, List<String> errors) = _runOne(
+        '<script src="flutter_bootstrap.js" async></script>',
+        devLoopGuard: true,
+      );
+      expect(errors, isEmpty);
+      expect(out, '<script src="flutter_bootstrap.js" async></script>');
+    });
+
+    test('the same template is accepted with the guard off', () {
+      final (String out, List<String> errors) = _runOne(
+        '<script>{{flutter_bootstrap_js}}</script>',
+        builtins: {
+          'flutter_bootstrap_js': {'value': 'boot();'},
+        },
+      );
+      expect(errors, isEmpty);
+      expect(out, '<script>boot();</script>');
+    });
+  });
+
+  test(
+    'stock flutter create output passes untouched but for the base href',
+    () {
+      // The rule that matters most: `flutter create` output must build as-is.
+      const created = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="\$FLUTTER_BASE_HREF">
+  <title>example</title>
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
+''';
+      final (String out, List<String> errors) = _runOne(
+        created,
+        baseHref: '/',
+        devLoopGuard: true,
+      );
+      expect(errors, isEmpty);
+      expect(out, created.replaceAll(r'$FLUTTER_BASE_HREF', '/'));
+    },
+  );
+
+  group('dart2js stable scheme', () {
+    test(
+      'snapshot args compile the staged entry and packages under org-dartlang-app',
+      () {
+        const stageRootUri =
+            'file:///execroot/_main/bazel-out/k8-fastbuild/bin/pkg/app.dart2js_cfe.1234.stage/';
+        final List<String> args = buildDart2JsSnapshotArgs(
+          forwardArgs: [
+            '--packages=/tmp/rewritten/package_config.json',
+            '--cfe-only',
+            '-Ddart.vm.product=true',
+            '-o',
+            'out.dill',
+          ],
+          rewrittenPkgPath: '/tmp/rewritten/package_config.json',
+          stageRootUri: stageRootUri,
+          normMainDart: 'pkg/lib/main.dart',
+        );
+
+        expect(args, contains('--multi-root-scheme=org-dartlang-app'));
+        // The js frontend mounts the staging tree itself as a `file:`
+        // multi-root — never the execroot — so the compile reads only
+        // declared inputs whatever the strategy.
+        expect(args, contains('--multi-root=$stageRootUri'));
+        expect(args, contains('org-dartlang-app:///pkg/lib/main.dart'));
+        expect(args, contains('--packages=/tmp/rewritten/package_config.json'));
+        for (final a in args) {
+          expect(a, isNot(contains('sandbox')));
+        }
+        expect(
+          args.last,
+          'org-dartlang-app:///pkg/lib/main.dart',
+        );
+      },
+    );
+
+    test('stage root URIs name the staging directory', () {
+      expect(
+        stageRootUri('pkg/app.dart2js.1234.stage'),
+        startsWith('file:'),
+      );
+      expect(
+        stageRootUri('pkg/app.dart2js.1234.stage'),
+        endsWith('/pkg/app.dart2js.1234.stage/'),
+      );
+      expect(
+        stageRootUri(
+          'file:///execroot/_main/bazel-out/k8-fastbuild/bin/pkg/app.stage/',
+        ),
+        'file:///execroot/_main/bazel-out/k8-fastbuild/bin/pkg/app.stage/',
+      );
+    });
+  });
+
+  group('scrubDart2JsOutputs', () {
+    test(
+      'rewrites temp package_config.json, stage, and cwd file URIs in .deps, .map, and .info.json',
+      () {
+        final fakeCwd = Directory('${_tmp.path}/execroot/_main')
+          ..createSync(recursive: true);
+        final stageDir = Directory(
+          '${fakeCwd.path}/bazel-out/k8-fastbuild/bin/pkg/app_stage',
+        )..createSync(recursive: true);
+        final outDir = Directory(
+          '${fakeCwd.path}/bazel-out/k8-fastbuild/bin/pkg/app_dart2js_fallback',
+        )..createSync(recursive: true);
+        final tmpDir = Directory('${outDir.path}/_dart2js_tmp')
+          ..createSync(recursive: true);
+
+        const relPkgPath =
+            'bazel-out/k8-fastbuild/bin/pkg/app.package_config.json';
+        final origPkgFile = File('${fakeCwd.path}/$relPkgPath')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync('{"configVersion":2,"packages":[]}');
+        final rewrittenPkgFile = File('${tmpDir.path}/package_config.json')
+          ..writeAsStringSync('{"configVersion":2,"packages":[]}');
+        tmpDir.deleteSync(recursive: true);
+
+        final stageUri = Uri.directory(stageDir.path).toString();
+        final cwdUri = Uri.directory(fakeCwd.path).toString();
+        final rewrittenPkgUri = Uri.file(rewrittenPkgFile.path).toString();
+
+        final depsFile = File('${outDir.path}/main.dart.js.deps')
+          ..writeAsStringSync(
+            '${stageUri}pkg/lib/main.dart\n'
+            '$rewrittenPkgUri\n'
+            '${cwdUri}external/flutter_sdk/lib/core.dart\n'
+            'org-dartlang-sdk:///lib/core/core.dart\n',
+          );
+        final mapFile = File('${outDir.path}/main.dart.js.map')
+          ..writeAsStringSync(
+            '{"sources":["../../app_stage/pkg/lib/main.dart","${stageUri}pkg/lib/other.dart"]}',
+          );
+        final infoFile = File('${outDir.path}/main.dart.js.info.json')
+          ..writeAsStringSync(
+            '{"compilationMoment": "2026-04-18 12:34:56.789012", '
+            '"compilationDuration": 12345, '
+            '"toJsonDuration": 678, '
+            '"dumpInfoDuration": 90, '
+            '"uri": "${stageUri}pkg/lib/main.dart", '
+            '"rel": "bazel-out/k8-fastbuild/bin/pkg/app_stage/pkg/lib/main.dart"}',
+          );
+
+        scrubDart2JsOutputs(
+          outDir,
+          cwdPath: fakeCwd.path,
+          rootDirPath: stageDir.path,
+          tmpDirPath: tmpDir.path,
+          packagesPath: origPkgFile.path,
+          rewrittenPkgPath: rewrittenPkgFile.path,
+        );
+
+        final List<String> depsLines = depsFile
+            .readAsStringSync()
+            .split('\n')
+            .where((l) => l.isNotEmpty)
+            .toList();
+        expect(
+          depsLines,
+          equals([
+            'org-dartlang-app:///external/flutter_sdk/lib/core.dart',
+            'org-dartlang-app:///pkg/app.package_config.json',
+            'org-dartlang-app:///pkg/lib/main.dart',
+            'org-dartlang-sdk:///lib/core/core.dart',
+          ]),
+        );
+
+        final String mapContent = mapFile.readAsStringSync();
+        expect(
+          mapContent,
+          equals(
+            '{"sources":["org-dartlang-app:///pkg/lib/main.dart","org-dartlang-app:///pkg/lib/other.dart"]}',
+          ),
+        );
+
+        final String infoContent = infoFile.readAsStringSync();
+        expect(infoContent, isNot(contains('file:')));
+        expect(infoContent, isNot(contains('app_stage')));
+        expect(infoContent, isNot(contains('bazel-out')));
+        expect(
+          infoContent,
+          contains('"compilationMoment": "1970-01-01 00:00:00.000000"'),
+        );
+        expect(infoContent, contains('"compilationDuration": 0'));
+        expect(infoContent, contains('"toJsonDuration": 0'));
+        expect(infoContent, contains('"dumpInfoDuration": 0'));
+      },
+    );
+
+    test(
+      'staged app-scheme URIs normalize to their unstaged form in .deps',
+      () {
+        final fakeCwd = Directory('${_tmp.path}/execroot/_main')
+          ..createSync(recursive: true);
+        final outDir = Directory(
+          '${fakeCwd.path}/bazel-out/k8-fastbuild/bin/pkg/app_dart2js_cfe',
+        )..createSync(recursive: true);
+        final depsFile = File('${outDir.path}/app.dill.deps')
+          ..writeAsStringSync(
+            'org-dartlang-app:///flutter/tests/pkg/app.dart2js_cfe.1234.stage/flutter/tests/pkg/lib/main.dart\n'
+            'org-dartlang-app:///flutter/tests/pkg/lib/main.dart\n'
+            'org-dartlang-sdk:///lib/core/core.dart\n',
+          );
+
+        scrubDart2JsOutputs(outDir, cwdPath: fakeCwd.path);
+
+        final List<String> depsLines = depsFile
+            .readAsStringSync()
+            .split('\n')
+            .where((l) => l.isNotEmpty)
+            .toList();
+        expect(
+          depsLines,
+          equals([
+            'org-dartlang-app:///flutter/tests/pkg/lib/main.dart',
+            'org-dartlang-sdk:///lib/core/core.dart',
+          ]),
+        );
+      },
+    );
+  });
+
+  group('scrubDart2JsFile', () {
+    test(
+      'normalizes only its own depfile, leaving a concurrent sibling untouched',
+      () {
+        // The base and canvaskit icon kernels compile concurrently into the
+        // same `bin` dir, each with a private temp dir. A directory-wide scrub
+        // is a read-modify-write of the sibling's depfile with only this
+        // action's temp paths known: a scrub that read the sibling's file
+        // while raw and wrote it back after the sibling's own scrub overwrote
+        // the normalized file with a sorted-but-still-raw copy, and the
+        // declared output differed per strategy (P-web-icon-dill-paths). The
+        // `--cfe-only` path therefore scrubs exactly its own depfile.
+        final fakeCwd = Directory('${_tmp.path}/execroot/_main')
+          ..createSync(recursive: true);
+        final binDir = Directory(
+          '${fakeCwd.path}/bazel-out/k8-fastbuild/bin',
+        )..createSync(recursive: true);
+
+        const relPkgPath =
+            'bazel-out/k8-fastbuild/bin/web_app.package_config.json';
+        final origPkgFile = File('${fakeCwd.path}/$relPkgPath')
+          ..createSync(recursive: true)
+          ..writeAsStringSync('{"configVersion":2,"packages":[]}');
+
+        final ownTmp = '${_tmp.path}/rules_flutter_dart2js_cfe_own';
+        final ownPkgUri = Uri.file('$ownTmp/package_config.json').toString();
+        final siblingTmp = '${_tmp.path}/rules_flutter_dart2js_cfe_sibling';
+        final siblingPkgUri = Uri.file('$siblingTmp/package_config.json')
+            .toString();
+
+        final ownDeps =
+            File(
+              '${binDir.path}/web_app_icon_tree_shaking.dill.deps',
+            )..writeAsStringSync(
+              'org-dartlang-app:///pkg/lib/main.dart\n'
+              '$ownPkgUri\n'
+              'org-dartlang-sdk:///lib/core/core.dart\n',
+            );
+        final siblingDeps =
+            File(
+              '${binDir.path}/web_app_icon_tree_shaking_canvaskit.dill.deps',
+            )..writeAsStringSync(
+              'org-dartlang-app:///pkg/lib/main.dart\n'
+              '$siblingPkgUri\n'
+              'org-dartlang-sdk:///lib/core/core.dart\n',
+            );
+        final String siblingBefore = siblingDeps.readAsStringSync();
+
+        scrubDart2JsFile(
+          ownDeps,
+          cwdPath: fakeCwd.path,
+          tmpDirPath: ownTmp,
+          packagesPath: origPkgFile.path,
+          rewrittenPkgPath: '$ownTmp/package_config.json',
+        );
+
+        expect(
+          ownDeps.readAsStringSync().split('\n').where((l) => l.isNotEmpty),
+          equals([
+            'org-dartlang-app:///pkg/lib/main.dart',
+            'org-dartlang-app:///web_app.package_config.json',
+            'org-dartlang-sdk:///lib/core/core.dart',
+          ]),
+        );
+        // The sibling's raw depfile is byte-identical: this scrub never
+        // touched a file its action does not own.
+        expect(siblingDeps.readAsStringSync(), equals(siblingBefore));
+        expect(siblingDeps.readAsStringSync(), contains(siblingPkgUri));
+      },
+    );
+  });
+}

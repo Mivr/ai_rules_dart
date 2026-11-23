@@ -1,0 +1,22 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+# Guards the `ai_rules_dart` development pin: root MODULE.bazel and the
+# README.md development snippet must name the same post-#68 commit. Reads both
+# files from data, so the test is sandboxed and hermetic.
+dart_test(
+    name = "rules_dart_override_guard_test",
+    size = "small",
+    data = [
+        "rules_dart_override_guard_test.dart",
+        "//:MODULE.bazel",
+        "//:README.md",
+    ],
+    env = {
+        "MODULE_BZL": "$(rlocationpath //:MODULE.bazel)",
+        "README_MD": "$(rlocationpath //:README.md)",
+    },
+    main = "rules_dart_override_guard_test.dart",
+    deps = [
+        "@dev_tool_deps//:test",
+    ],
+)

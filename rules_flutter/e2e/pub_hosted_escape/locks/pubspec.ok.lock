@@ -1,0 +1,23 @@
+# Local-registry lock for the hosted-archive guard e2e: clean packages served from
+# fixtures/ over file://. The url placeholder is rewritten to the absolute
+# fixtures path by the CI step.
+# See pubspec.ok.lock for the url placeholder.
+packages:
+  ok_clean:
+    dependency: "direct main"
+    description:
+      name: ok_clean
+      sha256: "8321508ddcea038d48f2d379283a26b417dab693a7acbf4f9a0da449ef407b39"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+  ok_inlink:
+    dependency: "direct main"
+    description:
+      name: ok_inlink
+      sha256: "a19d8e5fefcfdaff118d5a6dd17a391ab523ada2a0a3f35ed915a922c5b5e060"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

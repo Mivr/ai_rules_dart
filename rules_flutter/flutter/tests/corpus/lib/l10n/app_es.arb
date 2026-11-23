@@ -1,0 +1,7 @@
+{
+  "@@locale": "es",
+  "greeting": "¡Hola, {name}!",
+  "@greeting": {
+    "placeholders": { "name": { "type": "String" } }
+  }
+}

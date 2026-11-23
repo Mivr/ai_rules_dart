@@ -1,0 +1,14 @@
+load("//flutter/tests:layering_test.bzl", "layering_integration_fixtures")
+
+# The per-package opt-out: the same violation as the parent package, switched
+# off for every target here, so no target registers a check.
+package(features = ["-dart_layering_check"])
+
+layering_integration_fixtures(
+    name = "integration",
+    optout = True,
+    deps = [
+        "//flutter/tests/layering_fixture/mid",
+        "//flutter/tests/layering_integ_fixture/flutter_test_dep",
+    ],
+)

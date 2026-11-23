@@ -1,0 +1,57 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_integration_test")
+
+flutter_application(
+    name = "app_dev",
+    package_name = "flavored",
+    srcs = ["lib/main.dart"],
+    flavor = "dev",
+    main = "lib/main.dart",
+    deps = [
+        "//libs/flavor_assets",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_application(
+    name = "app_prod",
+    package_name = "flavored",
+    srcs = ["lib/main.dart"],
+    flavor = "prod",
+    main = "lib/main.dart",
+    deps = [
+        "//libs/flavor_assets",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_integration_test(
+    name = "dev_test",
+    package_name = "flavored",
+    size = "large",
+    srcs = ["integration_test/dev_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    flavor = "dev",
+    platform = "android",
+    deps = [
+        "//libs/flavor_assets",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+    ],
+)
+
+flutter_integration_test(
+    name = "prod_test",
+    package_name = "flavored",
+    size = "large",
+    srcs = ["integration_test/prod_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    flavor = "prod",
+    platform = "android",
+    deps = [
+        "//libs/flavor_assets",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+    ],
+)

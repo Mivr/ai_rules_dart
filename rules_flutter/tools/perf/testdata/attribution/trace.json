@@ -1,0 +1,76 @@
+{
+  "traceEvents": [
+    {
+      "cat": "repository fetch",
+      "dur": 10000000,
+      "name": "fetch @rules_apple",
+      "ph": "X",
+      "tid": 1,
+      "ts": 0
+    },
+    {
+      "cat": "bazel module resolution",
+      "dur": 5000000,
+      "name": "module resolution",
+      "ph": "X",
+      "tid": 1,
+      "ts": 10000000
+    },
+    {
+      "cat": "package creation",
+      "dur": 8000000,
+      "name": "load //app",
+      "ph": "X",
+      "tid": 1,
+      "ts": 15000000
+    },
+    {
+      "cat": "Starlark user function call",
+      "dur": 3000000,
+      "name": "nested in loading",
+      "ph": "X",
+      "tid": 1,
+      "ts": 16000000
+    },
+    {
+      "cat": "sandbox setup",
+      "dur": 2000000,
+      "name": "setup",
+      "ph": "X",
+      "tid": 1,
+      "ts": 23000000
+    },
+    {
+      "cat": "configured target",
+      "dur": 35000000,
+      "name": "analyze //app",
+      "ph": "X",
+      "tid": 2,
+      "ts": 0
+    },
+    {
+      "cat": "action processing",
+      "dur": 20000000,
+      "name": "running spawn (not a part)",
+      "ph": "X",
+      "tid": 2,
+      "ts": 10000000
+    },
+    {
+      "args": {
+        "cpu": 1.0
+      },
+      "name": "CPU usage (Bazel)",
+      "ph": "C",
+      "ts": 0
+    },
+    {
+      "args": {
+        "cpu": 0.0
+      },
+      "name": "CPU usage (Bazel)",
+      "ph": "C",
+      "ts": 35000000
+    }
+  ]
+}

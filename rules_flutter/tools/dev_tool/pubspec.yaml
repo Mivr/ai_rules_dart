@@ -1,0 +1,31 @@
+name: flutter_bazel_dev_tool
+description: Dev tool for Bazel-built Flutter projects.
+version: 0.1.0
+
+environment:
+  # The SDK this repo pins, as every pubspec here states. pub derives the
+  # package's language version from it, and so does the build: its targets
+  # state none, so they are compiled, analyzed and formatted at the SDK's
+  # newest, which this matches. A lower floor misreports what the package
+  # needs — `^3.0.0` once silently disabled field promotion for every
+  # `final T? _x` here.
+  sdk: ^3.13.0
+
+dependencies:
+  args: ^2.4.0
+  dds: ^5.4.0
+  dwds: ^27.1.1
+  http_multi_server: ^3.2.1
+  logging: ^1.2.0
+  multicast_dns: ^0.3.2
+  package_config: ^2.1.0
+  path: ^1.9.0
+  pool: ^1.5.0
+  runfiles: ^0.4.3
+  shelf: ^1.4.0
+  vm_service: ^15.2.0
+  watcher: ^1.1.0
+  webkit_inspection_protocol: ^1.2.1
+
+dev_dependencies:
+  test: ^1.25.0

@@ -1,0 +1,607 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_test")
+load(
+    "@rules_flutter//flutter:defs.bzl",
+    "flutter_application",
+    "flutter_gen_l10n",
+    "flutter_integration_test",
+    "flutter_library",
+    "flutter_test",
+)
+load(
+    "@rules_flutter//flutter:ios.bzl",
+    "flutter_apple_plugins_aggregator",
+    "flutter_darwin_xcframework_import",
+    "flutter_ios_registrant_gen",
+    "flutter_ios_simulator_build_test",
+    "flutter_xtool_bundle_version",
+    "flutter_xtool_ios_bundle",
+)
+load("@rules_swift//swift:swift.bzl", "swift_library", "swift_library_group")
+
+exports_files([
+    "ios/Podfile.lock",
+    "pubspec.lock",
+])
+
+# The wrong-library stub: provides a minimal BigInt module whose APIs return
+# deliberately wrong values, so `:plugin_pod_wrong_test` fails its runtime
+# assertion and proves `ios_pod_deps` controls what `pod_bigint_plugin` links.
+swift_library(
+    name = "wrong_bigint_stub",
+    srcs = ["wrong_bigint_stub.swift"],
+    module_name = "BigInt",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# The product `deps_mapped` points at: a Bazel-built Swift library group over
+# the translated BigInt product. The mapped hub carries no pin, checksum or
+# resolved file, so the plugin's `BigInt` dependency reaches this target.
+swift_library_group(
+    name = "bigint_product",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+    deps = ["@deps__swiftpm-bigint//:BigInt"],
+)
+
+# The generated localizations `:app_test` compiles into the app and renders
+# under `Locale('es')`, so an iOS-only regression in gen-l10n output or in the
+# `output_class` / `nullable_getter` options fails the simulator run.
+flutter_gen_l10n(
+    name = "app_l10n",
+    arbs = [
+        "lib/l10n/app_en.arb",
+        "lib/l10n/app_es.arb",
+    ],
+    nullable_getter = False,
+    output_class = "Cov79Localizations",
+)
+
+flutter_integration_test(
+    name = "app_test",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = [
+        "integration_test/app_test.dart",
+        ":app_l10n",
+    ],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    defines = ["COV79_GREETING=hello, world=ok"],
+    platform = "ios",
+    shaders = ["shaders/ink_stub.frag"],
+    deps = [
+        "//android_only_plugin",
+        "//dart_registration_plugin",
+        "//ffi_plugin",
+        "//ios_greeting_plugin",
+        "//xcframework_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_localizations",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:intl",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The `dev` application of the shared `lib/` entrypoint.
+flutter_application(
+    name = "app_dev",
+    package_name = "integration_ios",
+    srcs = ["lib/main.dart"],
+    flavor = "dev",
+    main = "lib/main.dart",
+    deps = [
+        "//flavor_assets",
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+    ],
+)
+
+# Simulator proof for the `dev` flavor: `appFlavor` is `dev`, only the `dev`
+# pub asset loads. Macos-only like `:app_test` (the macro owns the constraint).
+flutter_integration_test(
+    name = "flavor_dev_test",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = ["integration_test/flavor_dev_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    flavor = "dev",
+    platform = "ios",
+    deps = [
+        "//flavor_assets",
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The `prod` application of the shared `lib/` entrypoint.
+flutter_application(
+    name = "app_prod",
+    package_name = "integration_ios",
+    srcs = ["lib/main.dart"],
+    flavor = "prod",
+    main = "lib/main.dart",
+    deps = [
+        "//flavor_assets",
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+    ],
+)
+
+# Simulator proof for the `prod` flavor: `appFlavor` is `prod`, only the `prod`
+# pub asset loads. Macos-only like `:app_test` (the macro owns the constraint).
+flutter_integration_test(
+    name = "flavor_prod_test",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = ["integration_test/flavor_prod_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    flavor = "prod",
+    platform = "ios",
+    deps = [
+        "//flavor_assets",
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The generated iOS native registrant for the app above, consumed on Linux by
+# `:plugin_registrant_filter_test`. It is also what the app itself generates
+# internally; naming it here makes the filtering assertion a portable test
+# instead of an Xcode-only one.
+flutter_ios_registrant_gen(
+    name = "app_test_registrant",
+    application = ":__app_test_app",
+)
+
+# Linux-runnable: the registrant has no import or registration call for the
+# Android-only plugin, while still registering the app's iOS plugin. A
+# filtering regression fails here before the macOS simulator leg.
+dart_test(
+    name = "plugin_registrant_filter_test",
+    size = "small",
+    args = ["$(rlocationpaths :app_test_registrant)"],
+    data = [":app_test_registrant"],
+    main = "test/plugin_registrant_filter_test.dart",
+    deps = ["@rules_dart//dart/runfiles"],
+)
+
+# The SwiftPM plugin suite: proves a pub path plugin's `Package.swift`
+# product (BigInt, from the hub's pinned `<hub>__swiftpm-bigint` spoke)
+# links into the plugin's Apple library. The native method computes
+# 2^100 with BigInt at run time, so the assertion below only passes
+# when the product made it into the link.
+flutter_integration_test(
+    name = "plugin_spm_test",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = ["integration_test/plugin_spm_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    platform = "ios",
+    deps = [
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:spm_bigint_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The mapped twin of `:plugin_spm_test`: `deps_mapped` has no resolved file
+# and no checksum table, so the plugin's BigInt product can only come from
+# `//:bigint_product` through `swift_package_product_deps`. The same Dart
+# assertion computes 2^100 at run time.
+flutter_integration_test(
+    name = "plugin_spm_mapped_test",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = ["integration_test/plugin_spm_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    platform = "ios",
+    deps = [
+        "@deps_mapped//:flutter",
+        "@deps_mapped//:flutter_test",
+        "@deps_mapped//:integration_test",
+        "@deps_mapped//:spm_bigint_plugin",
+        "@mapped_greeting_plugin//:ios_greeting_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The plugin-local target suite: proves a Swift target of the plugin's own
+# `Package.swift` builds and links the separate ObjC target it imports. The
+# native method returns a value only that ObjC target computes, so the
+# assertion below fails when the spoke globs only the primary directory.
+flutter_integration_test(
+    name = "plugin_spm_objc_test",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = ["integration_test/plugin_spm_objc_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    platform = "ios",
+    deps = [
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:spm_objc_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The transitive SwiftPM graph suite: proves a pub path plugin's
+# `Package.swift` products (swift-algorithms' Algorithms plus
+# swift-numerics' RealModule, down through its C `_NumericsShims`, from the
+# hub's pinned spokes) link into the plugin's Apple library. The native
+# method counts 2-combinations with Algorithms and evaluates `e` with
+# RealModule at run time, so the assertion below only passes when the whole
+# graph made it into the link.
+flutter_integration_test(
+    name = "plugin_spm_graph_test",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = ["integration_test/plugin_spm_graph_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    platform = "ios",
+    deps = [
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:spm_graph_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The CocoaPods plugin suite: proves a pub path plugin's CocoaPods pod
+# dependency (BigInt, mapped to @deps__swiftpm-bigint//:BigInt via
+# `ios_pod_deps`) links into the plugin's Apple library. The native
+# method computes 2^100 with BigInt at run time, so the assertion below
+# only passes when the mapped pod made it into the link.
+flutter_integration_test(
+    name = "plugin_pod_test",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = ["integration_test/plugin_pod_test.dart"],
+    platform = "ios",
+    deps = [
+        "@deps_pods//:flutter",
+        "@deps_pods//:flutter_test",
+        "@deps_pods//:integration_test",
+        "@deps_pods//:pod_bigint_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The wrong-library probe twin of `:plugin_pod_test`: `deps_pods_wrong` maps
+# BigInt to `//:wrong_bigint_stub`, so the same test compiles and links
+# cleanly on macOS and fails the runtime 2^100 assertion.
+flutter_integration_test(
+    name = "plugin_pod_wrong_test",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = ["integration_test/plugin_pod_test.dart"],
+    platform = "ios",
+    tags = ["manual"],
+    deps = [
+        "@deps_pods_wrong//:flutter",
+        "@deps_pods_wrong//:flutter_test",
+        "@deps_pods_wrong//:integration_test",
+        "@deps_pods_wrong//:pod_bigint_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# Red twin of `:app_test`: its expectation is wrong on purpose (see
+# integration_test/red_test.dart). `manual` so `bazel test //...` stays green;
+# the full-matrix workflow runs it by name and asserts the run FAILS, proving
+# the simulator harness reports assertion failures loudly.
+flutter_integration_test(
+    name = "app_test_red",
+    package_name = "integration_ios",
+    size = "large",
+    srcs = ["integration_test/red_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    platform = "ios",
+    tags = ["manual"],
+    deps = [
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_apple_plugins_aggregator(
+    name = "e2e_apple_plugins_aggregator",
+    application = ":__app_test_app",
+    platform = "ios",
+)
+
+flutter_darwin_xcframework_import(
+    name = "e2e_darwin_xcframework_import",
+    framework_name = "WrongBigInt",
+    xcframework_imports = ["lib/main.dart"],
+)
+
+flutter_xtool_bundle_version(
+    name = "e2e_xtool_bundle_version",
+    build_version = "1.0.0",
+    short_version_string = "1.0",
+)
+
+flutter_xtool_ios_bundle(
+    name = "e2e_xtool_ios_bundle",
+    app_name = "IntegrationIos",
+    bundle_id = "com.example.integrationIos",
+    executable = "lib/main.dart",
+)
+
+# Linux-runnable proof that the workspace loads and its Dart side compiles:
+# the bootstrap and the kernel application are portable, while the
+# Apple-toolchain targets (and the test targets above) skip off macOS via
+# `target_compatible_with`. `bazel test //...` runs this on every OS.
+build_test(
+    name = "ios_dart_side_build_test",
+    size = "small",
+    targets = [
+        ":__app_test_app",
+        ":__app_test_bootstrap",
+        ":__flavor_dev_test_app",
+        ":__flavor_dev_test_bootstrap",
+        ":__flavor_prod_test_app",
+        ":__flavor_prod_test_bootstrap",
+        ":app_dev",
+        ":app_prod",
+        ":__plugin_pod_test_app",
+        ":__plugin_pod_test_bootstrap",
+        ":__plugin_pod_wrong_test_app",
+        ":__plugin_pod_wrong_test_bootstrap",
+        ":__plugin_spm_graph_test_app",
+        ":__plugin_spm_graph_test_bootstrap",
+        ":__plugin_spm_mapped_test_app",
+        ":__plugin_spm_mapped_test_bootstrap",
+        ":__plugin_spm_objc_test_app",
+        ":__plugin_spm_objc_test_bootstrap",
+        ":__plugin_spm_test_app",
+        ":__plugin_spm_test_bootstrap",
+        ":e2e_apple_plugins_aggregator",
+        ":e2e_darwin_xcframework_import",
+        ":e2e_xtool_bundle_version",
+        ":e2e_xtool_ios_bundle",
+    ],
+)
+
+# Host-side lint fixtures for the macOS-only suites: a `flutter_test` owns
+# `srcs` (its package's `lib/`) plus one `main` outside it — exactly the
+# lib/main.dart + integration_test/*.dart split the simulator suites compile.
+# Tagged `manual` and never run: `bazel test //...` skips them and nothing
+# names them, because on a host the plugin channel has no native side and the
+# asset bundle is absent, so they would fail. They exist so the Linux analysis
+# test below lints the macOS-only Dart on every OS. Like the suites, they must
+# not depend on the macOS-only app.
+flutter_test(
+    name = "app_test_lint",
+    package_name = "integration_ios",
+    size = "medium",
+    srcs = [
+        "lib/main.dart",
+        ":app_l10n",
+    ],
+    main = "integration_test/app_test.dart",
+    tags = ["manual"],
+    deps = [
+        "//android_only_plugin",
+        "//dart_registration_plugin",
+        "//ffi_plugin",
+        "//ios_greeting_plugin",
+        "//xcframework_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_localizations",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:intl",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_test(
+    name = "app_test_red_lint",
+    package_name = "integration_ios",
+    size = "medium",
+    srcs = ["lib/main.dart"],
+    main = "integration_test/red_test.dart",
+    tags = ["manual"],
+    deps = [
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# Host-side lint twin of `:plugin_spm_test`: same portable split (the
+# app's `lib/main.dart` plus the test file as `main`) so the analysis
+# test below lints the SwiftPM plugin's Dart on every OS.
+flutter_test(
+    name = "plugin_spm_test_lint",
+    package_name = "integration_ios",
+    size = "medium",
+    srcs = ["lib/main.dart"],
+    main = "integration_test/plugin_spm_test.dart",
+    tags = ["manual"],
+    deps = [
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:spm_bigint_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The macOS-only Dart (lib/, integration_test/) cannot be named by
+# `bazel test //...` on Linux: the app, debug-app and test targets skip off
+# macOS via `target_compatible_with`, so the `.bazelrc` analysis aspect never
+# reaches them there. The lint fixtures above are portable and carry the same
+# sources, so this lints them on every OS; the plugin's own library target
+# covers its lib/.
+# Host-side lint twin of `:plugin_spm_graph_test`: same portable split so
+# the analysis test below lints the transitive-graph plugin's Dart on
+# every OS.
+flutter_test(
+    name = "plugin_spm_graph_test_lint",
+    package_name = "integration_ios",
+    size = "small",
+    srcs = ["lib/main.dart"],
+    main = "integration_test/plugin_spm_graph_test.dart",
+    tags = ["manual"],
+    deps = [
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:spm_graph_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# Host-side lint twin of `:plugin_pod_test`: a plain library rather than a
+# `manual` test, so the analysis test below lints the CocoaPods plugin's test
+# Dart on every OS and `bazel test //...` cannot skip it.
+flutter_library(
+    name = "plugin_pod_lint",
+    package_name = "integration_ios",
+    srcs = ["integration_test/plugin_pod_test.dart"],
+    deps = [
+        "@deps_pods//:flutter",
+        "@deps_pods//:flutter_test",
+        "@deps_pods//:integration_test",
+        "@deps_pods//:pod_bigint_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# Host-side lint twin of `:plugin_spm_objc_test`: same portable split so
+# the analysis test below lints the plugin-local target fixture's Dart on
+# every OS. A plain library rather than a `manual` test: it stages the test
+# file outside `lib/` the same way, and `bazel test //...` cannot skip it.
+flutter_library(
+    name = "plugin_spm_objc_lint",
+    package_name = "integration_ios",
+    srcs = [
+        "integration_test/plugin_spm_objc_test.dart",
+        "lib/main.dart",
+    ],
+    deps = [
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:spm_objc_plugin",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# Host-side lint twin of the two flavor tests, so the analysis test below
+# lints their Dart on every OS.
+flutter_library(
+    name = "flavor_lint",
+    package_name = "integration_ios",
+    srcs = [
+        "integration_test/flavor_dev_test.dart",
+        "integration_test/flavor_prod_test.dart",
+        "lib/main.dart",
+    ],
+    deps = [
+        "//flavor_assets",
+        "//ios_greeting_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+dart_analysis_test(
+    name = "ios_dart_analysis_test",
+    size = "small",
+    targets = [
+        ":app_test_lint",
+        ":app_test_red_lint",
+        ":flavor_lint",
+        ":plugin_pod_lint",
+        ":plugin_registrant_filter_test",
+        ":plugin_spm_graph_test_lint",
+        ":plugin_spm_objc_lint",
+        ":plugin_spm_test_lint",
+        "//android_only_plugin",
+        "//dart_registration_plugin",
+        "//ffi_plugin",
+        "//ios_greeting_plugin",
+    ],
+)
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# The SwiftPM consumer app: a bare `ios_application` embedding the
+# `//swiftpm_consumer` module (which imports the translated BigInt product),
+# so the simulator build test below compiles BigInt for the iOS simulator.
+# It is never launched; the build is the test. It carries no OS constraint
+# (the simulator platform's OS is ios, not macos); `manual` keeps Linux's
+# `bazel test //...` from building it on the host, and only the build test
+# below carries the macOS constraint (it runs on a macOS host).
+ios_application(
+    name = "swiftpm_consumer_app",
+    bundle_id = "com.example.integrationios.swiftpmconsumer",
+    families = ["iphone"],
+    infoplists = ["//swiftpm_consumer:Info.plist"],
+    minimum_os_version = "15.0",
+    tags = ["manual"],
+    deps = ["//swiftpm_consumer"],
+)
+
+# macOS-only: needs Xcode and the iOS SDK. `bazel test //...` skips it off
+# macOS via `target_compatible_with`; the integration_ios leg runs it on the
+# macOS runner, building the `Package.resolved` BigInt pin for the
+# simulator. Only this test (which runs on the macOS host) carries the macOS
+# constraint; the app and library it builds carry none.
+flutter_ios_simulator_build_test(
+    name = "swiftpm_consumer_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":swiftpm_consumer_app"],
+)

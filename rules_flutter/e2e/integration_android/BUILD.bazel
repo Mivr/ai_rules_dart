@@ -1,0 +1,119 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options")
+load("@rules_flutter//flutter:defs.bzl", "flutter_gen_l10n", "flutter_integration_test")
+
+exports_files(["pubspec.lock"])
+
+# The generated localizations `:app_test` compiles into the app and renders
+# under `Locale('es')`, so an Android-only regression in gen-l10n output or in
+# the `output_class` / `nullable_getter` options fails the emulator run.
+flutter_gen_l10n(
+    name = "app_l10n",
+    arbs = [
+        "lib/l10n/app_en.arb",
+        "lib/l10n/app_es.arb",
+    ],
+    nullable_getter = False,
+    output_class = "Cov13Localizations",
+)
+
+# Native FFI library `:app_test` loads through `dart:ffi`. The bundle's
+# platform transition compiles it with the Android NDK toolchain for the
+# emulator's x86_64 ABI, and it ships as `lib/x86_64/libadd.so` in the APK.
+cc_library(
+    name = "add_cc",
+    srcs = ["native/add.c"],
+    hdrs = ["native/add.h"],
+)
+
+cc_shared_library(
+    name = "add",
+    deps = [":add_cc"],
+)
+
+# A second library, declared as a Dart Native Asset by
+# `//native_asset_plugin` and bound with `@Native` rather than opened by path.
+cc_library(
+    name = "cov13_asset_cc",
+    srcs = ["native/asset_triple.c"],
+    hdrs = ["native/asset_triple.h"],
+)
+
+cc_shared_library(
+    name = "cov13_asset",
+    visibility = ["//native_asset_plugin:__pkg__"],
+    deps = [":cov13_asset_cc"],
+)
+
+flutter_integration_test(
+    name = "app_test",
+    package_name = "integration_android",
+    size = "large",
+    srcs = [
+        "integration_test/app_test.dart",
+        ":app_l10n",
+    ],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    defines = ["COV13_GREETING=hello, world=ok"],
+    defines_files = ["//defines:app_defines.json"],
+    native_deps = [":add"],
+    platform = "android",
+    pub_hub_name = "deps",
+    deps = [
+        "//android_greeting_plugin",
+        "//libs/cov13font",
+        "//native_asset_plugin",
+        "@deps//:federated_greeting",
+        "@deps//:flutter",
+        "@deps//:flutter_localizations",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:intl",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_integration_test(
+    name = "app_alt_test",
+    package_name = "integration_android",
+    size = "large",
+    srcs = [
+        "integration_test/app_test.dart",
+        ":app_l10n",
+    ],
+    app_srcs = ["lib/main.dart"],
+    assets = ["assets/logo.png"],
+    defines = [
+        "COV13_GREETING=hello, world=ok",
+        "USE_ALT_GREETING=true",
+    ],
+    native_deps = [":add"],
+    platform = "android",
+    pub_hub_name = "deps",
+    deps = [
+        "//android_greeting_plugin",
+        "//libs/cov13font",
+        "//native_asset_plugin",
+        "@deps//:federated_greeting",
+        "@deps//:federated_greeting_alt",
+        "@deps//:flutter",
+        "@deps//:flutter_localizations",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+        "@deps//:intl",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)

@@ -1,0 +1,472 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_apple//apple:macos.bzl", "macos_application")
+load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load(
+    "@rules_flutter//flutter:ios.bzl",
+    "IOS_DEFAULT_LAUNCH_STORYBOARD",
+    "IOS_MINIMUM_OS_VERSION",
+    "flutter_ios_engine",
+    "flutter_ios_framework_gen",
+    "flutter_ios_info_plist_gen",
+    "flutter_ios_native_frameworks_gen",
+    "flutter_ios_privacy_manifests_gen",
+    "flutter_ios_registrant_gen",
+    "flutter_ios_runner_lib_gen",
+    "flutter_ios_simulator_build_test",
+)
+load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
+load(
+    "@rules_flutter//flutter:macos.bzl",
+    "MACOS_MINIMUM_OS_VERSION",
+    "flutter_macos_engine",
+    "flutter_macos_framework_gen",
+    "flutter_macos_info_plist_gen",
+    "flutter_macos_menu_xib_gen",
+    "flutter_macos_native_libs_gen",
+    "flutter_macos_privacy_manifests_gen",
+    "flutter_macos_registrant_gen",
+    "flutter_macos_runner_lib_gen",
+)
+load("@rules_flutter//flutter:web.bzl", "flutter_web_bundle")
+load("@rules_flutter//flutter:windows.bzl", "flutter_windows_app")
+load(":debug_apk.bzl", "debug_apk")
+
+exports_files(["pubspec.lock"])
+
+flutter_application(
+    name = "plugin_app",
+    package_name = "plugin_example",
+    main = "lib/main.dart",
+    deps = [
+        "//greeting_plugin",
+        "@deps//:audio_session",
+        "@deps//:flutter",
+        "@deps//:package_info_plus",
+        "@deps//:path_provider",
+        "@deps//:record_android",
+        "@deps//:url_launcher",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# =============================================================================
+# macOS build
+# =============================================================================
+
+flutter_macos_framework_gen(
+    name = "plugin_macos_framework",
+    application = ":plugin_app",
+)
+
+flutter_macos_registrant_gen(
+    name = "plugin_macos_registrant",
+    application = ":plugin_app",
+)
+
+flutter_macos_native_libs_gen(
+    name = "plugin_macos_native_libs",
+    application = ":plugin_app",
+)
+
+flutter_macos_privacy_manifests_gen(
+    name = "plugin_macos_privacy_manifests",
+    application = ":plugin_app",
+)
+
+flutter_macos_engine(
+    name = "flutter_engine",
+)
+
+flutter_macos_info_plist_gen(
+    name = "plugin_macos_info_plist",
+    app_name = "Plugin Example",
+)
+
+flutter_macos_menu_xib_gen(
+    name = "runner_menu_xib",
+    app_name = "Plugin Example",
+)
+
+flutter_macos_runner_lib_gen(
+    name = "runner_lib",
+    application = ":plugin_app",
+    engine = ":flutter_engine",
+    registrant = ":plugin_macos_registrant",
+)
+
+apple_bundle_version(
+    name = "plugin_macos_version",
+    build_version = "1.0",
+    short_version_string = "1.0",
+    tags = ["manual"],
+)
+
+macos_application(
+    name = "plugin_macos",
+    additional_contents = {
+        ":plugin_macos_framework": "Frameworks",
+        ":plugin_macos_native_libs": "Frameworks",
+        ":plugin_macos_privacy_manifests": "Resources",
+    },
+    bundle_id = "com.example.plugin",
+    infoplists = [":plugin_macos_info_plist"],
+    minimum_os_version = MACOS_MINIMUM_OS_VERSION,
+    resources = [":runner_menu_xib"],
+    tags = ["manual"],
+    version = ":plugin_macos_version",
+    deps = [":runner_lib"],
+)
+
+# =============================================================================
+# iOS build
+# =============================================================================
+
+flutter_ios_framework_gen(
+    name = "plugin_ios_framework",
+    application = ":plugin_app",
+)
+
+flutter_ios_registrant_gen(
+    name = "plugin_ios_registrant",
+    application = ":plugin_app",
+)
+
+flutter_ios_engine(
+    name = "plugin_ios_engine",
+)
+
+flutter_ios_native_frameworks_gen(
+    name = "plugin_ios_native_frameworks",
+    application = ":plugin_app",
+)
+
+flutter_ios_privacy_manifests_gen(
+    name = "plugin_ios_privacy_manifests",
+    application = ":plugin_app",
+)
+
+flutter_ios_info_plist_gen(
+    name = "ios_runner_info_plist",
+    app_name = "Plugin Example",
+)
+
+flutter_ios_runner_lib_gen(
+    name = "ios_runner_lib",
+    application = ":plugin_app",
+    engine = ":plugin_ios_engine",
+    registrant = ":plugin_ios_registrant",
+)
+
+apple_bundle_version(
+    name = "plugin_ios_version",
+    build_version = "1.0",
+    short_version_string = "1.0",
+    tags = ["manual"],
+)
+
+_IOS_DEPS = [
+    ":ios_runner_lib",
+    ":plugin_ios_framework",
+    # Native-asset frameworks (objective_c.framework, needed by modern
+    # path_provider_foundation). Without this the manifest still records
+    # `objective_c.framework/objective_c`, but nothing embeds it, so dyld's
+    # rpath lookup falls through and every path_provider call fails at
+    # runtime while the app otherwise renders normally.
+    ":plugin_ios_native_frameworks",
+]
+
+ios_application(
+    name = "plugin_ios",
+    bundle_id = "com.example.plugin",
+    families = ["iphone"],
+    infoplists = [":ios_runner_info_plist"],
+    launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+    minimum_os_version = IOS_MINIMUM_OS_VERSION,
+    resources = [":plugin_ios_privacy_manifests"],
+    tags = ["manual"],
+    version = ":plugin_ios_version",
+    deps = _IOS_DEPS,
+)
+
+# The same app, signed for a physical device: `provisioning_profile` is the
+# only difference, so the device bundle shares every Tier-2 `_gen` target with
+# the simulator's `:plugin_ios` above rather than re-deriving them.
+#
+# `//device` is git-ignored and absent from a fresh clone. That is fine: the
+# target is tagged `manual`, so `bazel build //...` never expands it and
+# therefore never loads the missing package. Create it from device.example/.
+ios_application(
+    name = "plugin_ios_device",
+    bundle_id = "com.example.plugin",
+    families = ["iphone"],
+    infoplists = [":ios_runner_info_plist"],
+    launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+    minimum_os_version = IOS_MINIMUM_OS_VERSION,
+    provisioning_profile = "//device:profile",
+    resources = [":plugin_ios_privacy_manifests"],
+    tags = ["manual"],
+    version = ":plugin_ios_version",
+    deps = _IOS_DEPS,
+)
+
+# =============================================================================
+# Other platforms
+# =============================================================================
+
+flutter_web_bundle(
+    name = "plugin_web",
+    package_name = "plugin_example",
+    main = "lib/main.dart",
+    title = "Plugin Example",
+    deps = [
+        "//greeting_plugin",
+        "@deps//:audio_session",
+        "@deps//:flutter",
+        "@deps//:package_info_plus",
+        "@deps//:path_provider",
+        "@deps//:url_launcher",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_linux_app(
+    name = "plugin_linux",
+    application = ":plugin_app",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+flutter_windows_app(
+    name = "plugin_windows",
+    application = ":plugin_app",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+# =============================================================================
+# Android build
+#
+# `flutter_android_app` auto-wires the registrant and the hub aggregator.
+# Every plugin in pubspec.lock with a `flutter.plugin.platforms.android.package`
+# block contributes its Kotlin/Java sources via @deps//android:all_android_plugin_libs.
+# `flutter create` output under android/app/src/main/ supplies the manifest,
+# resources, and Kotlin runner.
+# =============================================================================
+
+flutter_android_app(
+    name = "plugin_android",
+    package_name = "com.example.plugin_example",
+    application = ":plugin_app",
+    proguard_specs = ["app_proguard.pro"],
+)
+
+# The same app for x86_64. Its APK must carry the x86_64 engine and no other:
+# a plugin that packaged its own (always arm64) engine would make Android
+# install this APK on an arm64 device and crash at launch.
+flutter_android_app(
+    name = "plugin_android_x64",
+    package_name = "com.example.plugin_example",
+    android_abi = "x64",
+    application = ":plugin_app",
+    proguard_specs = ["app_proguard.pro"],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+build_test(
+    name = "plugin_build_test",
+    size = "small",
+    targets = [
+        ":plugin_app",
+        "//greeting_plugin",
+    ],
+)
+
+build_test(
+    name = "macos_bundle_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":plugin_macos"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_bundle_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":plugin_ios"],
+)
+
+build_test(
+    name = "linux_bundle_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":plugin_linux"],
+)
+
+build_test(
+    name = "windows_bundle_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:windows"],
+    targets = [":plugin_windows"],
+)
+
+build_test(
+    name = "android_bundle_build_test",
+    size = "small",
+    tags = ["android"],
+    targets = [":plugin_android"],
+)
+
+# The plugin_android APK rebuilt under -c dbg, so the default-configuration
+# APK verifier can assert debug-only content (the merged debug variant
+# manifest's INTERNET permission) without building the test under -c dbg.
+debug_apk(
+    name = "plugin_android_dbg",
+    apk = ":plugin_android",
+    tags = ["android"],
+)
+
+# APK content verifier: asserts every plugin's native pieces are packaged —
+# including package:jni's libdartjni.so (jnigen plugins load it via
+# System.loadLibrary), its shared Java support classes, and that every
+# packaged .so is ELF for the declared ABI. Verifies the ambient APK
+# (release), the -c dbg APK, asserting INTERNET is present iff debug, and the
+# x64 APK, asserting it carries no ABI but x86_64.
+dart_test(
+    name = "verify_android_apk_test",
+    size = "medium",
+    data = [
+        ":plugin_android",
+        ":plugin_android_dbg",
+        ":plugin_android_x64",
+    ],
+    main = "test/verify_android_apk_test.dart",
+    tags = ["android"],
+)
+
+# Overlay BuildConfig verifier: builds the audio_session and jni overlays'
+# generated `_build_config_src` stubs (plain `write_file` outputs, so no
+# Android toolchain is needed) and checks each holds valid Java text: no
+# backslash, and `LIBRARY_PACKAGE_NAME` equal to the file's own `package`
+# line. The heredoc `cat` genrules those overlays ship regressed to
+# double-escaped output once; this pins the rewritten bytes instead.
+#
+# The spoke repos carry no apparent name in this workspace (`use_repo`
+# exports only the `deps` hub), so the targets are named by canonical
+# label — the same form the hub's own aggregator uses for them.
+dart_test(
+    name = "verify_build_config_test",
+    size = "small",
+    data = [
+        "@@ai_rules_flutter++flutter+deps__audio_session//android:_build_config_src",
+        "@@ai_rules_flutter++flutter+deps__jni//android:_build_config_src",
+    ],
+    main = "test/verify_build_config_test.dart",
+)
+
+# Runtime verifier for the Android APK. Installs on a connected emulator or
+# device, waits for RESUMED, and asserts the plugin_example_results logcat
+# line reports a real /data/user/0/... path from path_provider — proving
+# jnigen plugin registration (libdartjni.so) end to end. Tagged "manual" +
+# "exclusive" because it needs a live device; run explicitly per
+# docs/TESTING.md § Plugin verification matrix.
+dart_test(
+    name = "verify_android_app_test",
+    size = "large",
+    data = [":plugin_android"],
+    main = "test/verify_android_app_test.dart",
+    tags = [
+        "android",
+        "exclusive",
+        "manual",
+    ],
+)
+
+# `manual`, so `bazel test //...` never gives it to the analysis aspect; this
+# checks it anyway.
+dart_analysis_test(
+    name = "verify_android_app_test_analysis",
+    size = "small",
+    targets = [":verify_android_app_test"],
+)
+
+build_test(
+    name = "web_build_test",
+    size = "small",
+    targets = [":plugin_web"],
+)
+
+# Runtime verifier for the macOS bundle. Launches the .app, captures stdout,
+# and asserts the four plugin-result strings appear. Tagged "manual" +
+# "exclusive" because it requires a GUI session and exclusive control of the
+# Dock; run explicitly per docs/TESTING.md § Plugin verification matrix.
+dart_test(
+    name = "verify_macos_app_test",
+    size = "medium",
+    data = [":plugin_macos"],
+    main = "test/verify_macos_app_test.dart",
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# `manual`, so `bazel test //...` never gives it to the analysis aspect; this
+# checks it anyway.
+dart_analysis_test(
+    name = "verify_macos_app_test_analysis",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":verify_macos_app_test"],
+)
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables: each Dart file is checked against the nearest
+# listed one above it.
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Static analysis over this example's Dart. The app rule is a bundle and
+# carries no DartInfo, so the sources are declared once more as a library for
+# the analyzer to stage.
+flutter_library(
+    name = "app_lib",
+    package_name = "plugin_example",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "//greeting_plugin",
+        "@deps//:audio_session",
+        "@deps//:flutter",
+        "@deps//:package_info_plus",
+        "@deps//:path_provider",
+        "@deps//:record_android",
+        "@deps//:url_launcher",
+    ],
+)
+
+# There is deliberately no `flutter_test` target in this workspace. Under
+# `flutter_tester` no plugin registrant runs, so a widget test here could only
+# assert that every plugin is absent — `GreetingPlugin.greeting` reads back
+# 'No greeting registered', and each platform-channel call lands in `_safe` as
+# a MissingPluginException string — inverting the one property plugin_example
+# exists to prove. The rule's own bootstrap is regression-covered by
+# //e2e/hello_world:widget_test. Plugin registration is verified here against
+# real artifacts instead: the APK and runtime verifiers above, and
+# playwright/web.spec.js for web.

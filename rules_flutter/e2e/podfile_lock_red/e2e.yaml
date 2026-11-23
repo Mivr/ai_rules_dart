@@ -1,0 +1,9 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: tab-indented Podfile.lock fails at hub evaluation
+    run: bazel query @red_deps//...
+    expect:
+      non_zero: true
+      output_contains:
+        - Podfile.lock line 2
+        - an indentation tab is not part of the Podfile.lock YAML subset rules_flutter reads

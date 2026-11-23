@@ -1,0 +1,309 @@
+/// Replaces the running process when a hot restart cannot do the job.
+///
+/// A hot restart re-runs `main()` in a fresh isolate, but the *process* is the
+/// same one — and it keeps every library it has already `dlopen`ed. An app
+/// bundling loose native libraries (`native_deps`) that rebuilds one of them
+/// therefore restarts into the old machine code, silently and with a success
+/// message. The only fix is a new process.
+///
+/// So `app.restart` asks here first. A fingerprint of the launched bundle's
+/// loose native libraries is recorded at assembly; on each restart the bundle is
+/// rebuilt and re-fingerprinted, and only a difference buys a relaunch. Apps
+/// with no loose native libraries never construct one of these at all and keep
+/// the instant restart path.
+library;
+
+import 'dart:async';
+
+import 'package:flutter_bazel_dev_tool/app_log_sink.dart';
+import 'package:flutter_bazel_dev_tool/hot_reload/app_instance.dart' as hr;
+import 'package:flutter_bazel_dev_tool/hot_reload/reload_orchestrator.dart';
+import 'package:flutter_bazel_dev_tool/logging.dart';
+import 'package:flutter_bazel_dev_tool/machine_protocol.dart';
+import 'package:flutter_bazel_dev_tool/native_libs_fingerprint.dart';
+import 'package:flutter_bazel_dev_tool/native_libs_watch.dart';
+import 'package:flutter_bazel_dev_tool/relaunch_outcome.dart';
+import 'package:flutter_bazel_dev_tool/session.dart';
+import 'package:flutter_bazel_dev_tool/vm_service_client.dart';
+import 'package:flutter_bazel_dev_tool/vm_service_discovery.dart';
+
+class Relauncher {
+  /// The launch artifact, both to relaunch from and to fingerprint.
+  final String appFile;
+
+  /// Rebuilds the launch target. Injected rather than called directly so this
+  /// is testable without bazel — and because the *launch* target is what has to
+  /// be rebuilt, not the flutter_application: a platform rule reaches the
+  /// flutter_application through a transition, so building it alone writes a
+  /// different configuration's outputs and leaves the running bundle untouched.
+  final Future<bool> Function() rebuild;
+
+  /// The run's live session list — the same instance the rest of the run holds,
+  /// because [DeviceSession.relaunch] swaps each session's app instance in
+  /// place and everything else must see the replacement.
+  final List<DeviceSession> sessions;
+
+  final MachineProtocol protocol;
+
+  /// The orchestrator whose units are pointed at the replacement processes.
+  /// The same units, deliberately: rebuilding the orchestrator would leave
+  /// the pipeline pointing at the old one.
+  final ReloadOrchestrator orchestrator;
+
+  /// The app's `flutter_assets` directory, or empty when the build produced
+  /// none. Re-applied to each reconnected VM client, since a hot restart is
+  /// what re-reads it.
+  final String assetsDir;
+
+  final Logger logger;
+
+  /// The fingerprint of what the running processes actually launched with.
+  /// Advanced only after a successful relaunch, so a rebuild that fails leaves
+  /// the next restart still knowing it has stale libraries.
+  Map<String, String> _live;
+
+  /// The reload path's view of the same libraries, re-baselined here.
+  ///
+  /// It tracks the files the *dev* build writes and this class tracks the
+  /// launched bundle, but both describe one thing — the images the running
+  /// process has mapped — and a relaunch is the single event that moves it. A
+  /// watch left on the old baseline would go on withholding every reload of a
+  /// process that is already running the new library. Null for a run with no
+  /// loose native libraries, which never constructs one of these either.
+  final NativeLibsWatch? nativeLibs;
+
+  /// The libraries a native hot patch has changed in the running process, by
+  /// file name. Non-empty means the process runs code its bundle does not hold,
+  /// so a restart relaunches even when the rebuilt bundle matches the launched
+  /// one — an edit patched in and then undone is exactly that.
+  final List<String> Function()? patchedLibs;
+
+  /// Run after a relaunch the rest of the run has to hear about: the native hot
+  /// patcher re-snapshots the image the new process loaded.
+  final Future<void> Function()? afterRelaunch;
+
+  new({
+    required this.appFile,
+    required this.rebuild,
+    required this.sessions,
+    required this.protocol,
+    required this.orchestrator,
+    required this.assetsDir,
+    required this.logger,
+    required Map<String, String> liveFingerprint,
+    this.nativeLibs,
+    this.patchedLibs,
+    this.afterRelaunch,
+  }) : _live = liveFingerprint;
+
+  /// Rebuild, and relaunch if the native libraries moved.
+  ///
+  /// Answers with facts rather than a response: [RelaunchNotNeeded] leaves the
+  /// caller to run the ordinary isolate restart, and the other two are what the
+  /// restart's reply is built from. The words are the renderers' job.
+  Future<RelaunchOutcome> relaunchIfNeeded() async {
+    if (!await rebuild()) {
+      return const RelaunchBuildFailed(
+        'bazel build failed during restart; see build output.',
+      );
+    }
+    final Map<String, String> fingerprint = await nativeLibsFingerprint(
+      appFile,
+    );
+    final List<String> patched = patchedLibs?.call() ?? const [];
+    final bool bundleMoved = !fingerprintsEqual(fingerprint, _live);
+    if (!bundleMoved && patched.isEmpty) return const RelaunchNotNeeded();
+    // The bundle's own difference when it has one. Only when it has none is the
+    // patch the reason — an edit patched in and then undone — and then the
+    // patched libraries are what the reply has to name.
+    final List<String> changed = bundleMoved
+        ? changedLibs(_live, fingerprint)
+        : patched;
+    logger.info({
+      'message': 'native_libs_changed',
+      'text': 'Native libraries changed (${changed.join(', ')}); relaunching.',
+      'libs': changed,
+    });
+
+    final relaunched = <DeviceSession>[];
+    final failures = <String, String>{};
+    // Whether every relaunched app reported a first frame, i.e. can take an
+    // `app.*` command now. Reported rather than assumed: a caller that gets
+    // `ready: false` knows to wait instead of reading a `Method not found` as a
+    // broken agent surface.
+    var allReady = true;
+    for (final DeviceSession session in sessions) {
+      if (session.appInstance.vmServiceUri == null) continue;
+      // The session owns the swap: between the old process's death and the
+      // replacement's arrival it must not look like the app ended, or the run's
+      // transports (the HTTP control channel included) would be torn down under
+      // a driver that is mid-restart.
+      try {
+        await session.relaunch(() async {
+          await session.vmClient?.disconnect();
+          // Stopping closes the old instance's log stream, so the sink
+          // attached below is the only live one — the relaunched app's output
+          // never doubles up with the previous instance's.
+          await session.device.stop(session.appInstance);
+          return session.device.launch(
+            appFile,
+            onLog: appLogSinkFor(
+              protocol: protocol,
+              appId: session.appId,
+              deviceName: session.device.name,
+              multiDevice: sessions.length > 1,
+            ),
+          );
+        });
+      } on VmDiscoveryCancelled catch (e) {
+        // The run is ending: whatever this relaunch was waiting on is gone,
+        // and the next session's relaunch would fail the same way. Report this
+        // one — its message says the launch was cancelled — and stop instead
+        // of starting more launches a shutdown must then reap.
+        _recordRelaunchFailure(failures, session, e.message);
+        break;
+      } catch (e) {
+        // The old process is already gone, so this session has ended; what is
+        // left to do is say why, in the log and in the restart's reply, before
+        // the run ends with it. A device's launch failures are StateErrors
+        // whose message is the whole account; the "Bad state: " prefix is not.
+        final String reason = e is StateError ? e.message : '$e';
+        _recordRelaunchFailure(failures, session, reason);
+        continue;
+      }
+      relaunched.add(session);
+      allReady &= await _reconnect(session);
+      protocol.appStarted(session.appId);
+    }
+
+    // Point the units at the processes that came back. A session whose VM
+    // service did not return is marked disconnected, so a request naming it is
+    // told why instead of failing to apply a kernel to a closed socket.
+    orchestrator.syncLiveApps(_appInstances());
+    if (failures.isNotEmpty) {
+      // Not re-baselined: nothing running took the new libraries from this
+      // attempt that the baseline could describe as a whole.
+      return RelaunchFailed(changedLibs: changed, failures: failures);
+    }
+    _live = fingerprint;
+    await nativeLibs?.markLive();
+    await afterRelaunch?.call();
+
+    return Relaunched(
+      changedLibs: changed,
+      ready: allReady,
+      launches: {
+        for (final session in relaunched) session.appId: session.launch,
+      },
+    );
+  }
+
+  /// Report a relaunch that did not come back, in the log and the restart's
+  /// reply: the old process is already gone, so the session has ended with
+  /// the relaunch, and the reply must say why.
+  void _recordRelaunchFailure(
+    Map<String, String> failures,
+    DeviceSession session,
+    String reason,
+  ) {
+    failures[session.appId] = reason;
+    logger.severe({
+      'message': 'relaunch_failed',
+      'text':
+          'Stopped ${session.device.name} to relaunch it on its changed '
+          'native libraries, and the relaunch failed: $reason',
+      'appId': session.appId,
+      'device': session.device.name,
+      'error': reason,
+    });
+  }
+
+  /// Reconnect [session] to its replacement process's VM service.
+  ///
+  /// Returns whether the app is ready to take commands. Connecting only proves
+  /// the process is up; the caller's next move is an `app.*` command, which
+  /// needs the app's service extensions registered — so this waits for the
+  /// first rasterized frame, the observable that says the framework got that
+  /// far. Answering before that turns the driver's first call after a relaunch
+  /// into `-32601 Method not found`.
+  Future<bool> _reconnect(DeviceSession session) async {
+    final Uri? uri = session.appInstance.vmServiceUri;
+    VmServiceClient? client;
+    Object? lastConnectFailure;
+    if (uri != null) {
+      for (var attempt = 0; attempt < 5; attempt++) {
+        client = VmServiceClient();
+        try {
+          await client.connect(uri);
+          break;
+        } catch (e) {
+          lastConnectFailure = e;
+          client = null;
+          // Each attempt, not just the last: the warning below names only the
+          // final failure, so without this the first four attempts leave no
+          // trace of how long the reconnect took.
+          logger.fine({
+            'message': 'relaunch_reconnect_attempt_failed',
+            'text':
+                'Reconnecting to ${session.appId} at $uri failed on attempt '
+                '${attempt + 1} of 5: $e',
+            'appId': session.appId,
+            'attempt': attempt + 1,
+            'error': '$e',
+          });
+          if (attempt < 4) {
+            await Future<void>.delayed(const Duration(seconds: 1));
+          }
+        }
+      }
+    }
+    session.vmClient = client;
+    if (client == null || uri == null) {
+      // Without this a session comes back `disconnected` with nothing anywhere
+      // saying why, while the relaunch it belongs to still reports success,
+      // just `ready: false`. The last failure is the one worth keeping: the
+      // earlier ones are the socket not being up yet, which is the relaunch
+      // working.
+      logger.warning({
+        'message': 'relaunch_vm_service_unreachable',
+        'text': uri == null
+            ? 'The relaunched ${session.appId} announced no VM service, so '
+                  'there was nothing to reconnect to. The session is marked '
+                  'disconnected, so commands naming it are refused rather than '
+                  'applied to a closed socket.'
+            : 'Reconnecting to ${session.appId} at $uri failed on all 5 '
+                  'attempts; the last said: $lastConnectFailure. The session is '
+                  'marked disconnected, so commands naming it are refused '
+                  'rather than applied to a closed socket.',
+        'appId': session.appId,
+        if (uri != null) 'uri': uri.toString(),
+        if (lastConnectFailure != null) 'error': '$lastConnectFailure',
+      });
+      return false;
+    }
+
+    protocol.appDebugPort(
+      session.appId,
+      uri.replace(
+        scheme: uri.scheme == 'https' ? 'wss' : 'ws',
+        path: '${uri.path}ws',
+      ),
+      uri,
+    );
+    if (assetsDir.isNotEmpty) {
+      client.assetDirectory = assetsDir;
+      client.devicePathsAreWindows = session.device.usesWindowsPaths;
+    }
+    return client.waitForFirstFrame();
+  }
+
+  List<hr.AppInstance> _appInstances() => [
+    for (final session in sessions)
+      if (session.vmClient != null)
+        hr.VmServiceAppInstance(
+          id: session.appId,
+          client: session.vmClient!,
+          rpcTimeout: session.device.applyTimeout,
+        ),
+  ];
+}

@@ -1,0 +1,2 @@
+# Evaluation-only workspace: CI runs `bazel query @red_deps//...` which must fail
+# on the tab-indented Podfile.lock fixture before toolchain download.

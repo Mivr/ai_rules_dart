@@ -1,0 +1,27 @@
+name: cycle_a
+description: 2-cycle member A
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.18.0"
+
+dependencies:
+  cycle_b:
+    path: ../cycle_b
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: dev.example.cycle_a
+        pluginClass: CycleAPlugin
+      ios:
+        pluginClass: CycleAPlugin
+      macos:
+        pluginClass: CycleAPlugin
+  assets:
+    - assets/cycle_a.txt

@@ -1,0 +1,21 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test all targets
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 64
+    expect:
+      exit_code: 0
+  - name: release signing wrong keystore password fails in apksigner
+    run: bazel build //:hello_world_android_release_wrong_password
+    expect:
+      non_zero: true
+      output_contains: keystore password was incorrect
+  - name: modified rules_android_maven install fails on invalid input signature
+    replace_in_files:
+      - path: MODULE.bazel
+        from: '"androidx.privacysandbox.tools:tools:1.0.0-alpha06"'
+        to: '"androidx.privacysandbox.tools:tools:1.0.0-alpha07"'
+    run: bazel fetch @rules_android_maven//:all
+    expect:
+      non_zero: true
+      output_contains: invalid input signature

@@ -1,0 +1,42 @@
+load(":android_rules_test.bzl", "android_rules_test_suite")
+load(":aot_guards_test.bzl", "aot_guards_test_suite")
+load(":architecture_invariants_test.bzl", "architecture_invariants_analysis_tests")
+load(":defs_rules_test.bzl", "defs_rules_test_suite")
+load(":header_only_kernel_info_test.bzl", "header_only_kernel_info_test_suite")
+load(":ios_rules_test.bzl", "ios_rules_test_suite")
+load(":linux_rules_test.bzl", "linux_rules_test_suite")
+load(":macos_rules_test.bzl", "macos_rules_test_suite")
+load(":native_assets_rules_test.bzl", "native_assets_rules_test_suite")
+load(":web_rules_test.bzl", "web_rules_test_suite")
+load(":windows_rules_test.bzl", "windows_rules_test_suite")
+
+android_rules_test_suite(name = "android_rules_test")
+
+defs_rules_test_suite(name = "defs_rules_test")
+
+ios_rules_test_suite(name = "ios_rules_test")
+
+linux_rules_test_suite(name = "linux_rules_test")
+
+macos_rules_test_suite(name = "macos_rules_test")
+
+native_assets_rules_test_suite(name = "native_assets_rules_test")
+
+web_rules_test_suite(name = "web_rules_test")
+
+windows_rules_test_suite(name = "windows_rules_test")
+
+aot_guards_test_suite(name = "aot_guards_test")
+
+header_only_kernel_info_test_suite(name = "header_only_kernel_info_test")
+
+# The FF6 provider analysis cases; `//flutter/tests:architecture_invariants_test`
+# runs them with the production-.bzl source scan.
+test_suite(
+    name = "architecture_analysis_cases",
+    tests = architecture_invariants_analysis_tests(
+        name = "arch_inv",
+        fixtures = "arch_inv",
+    ),
+    visibility = ["//flutter/tests:__pkg__"],
+)

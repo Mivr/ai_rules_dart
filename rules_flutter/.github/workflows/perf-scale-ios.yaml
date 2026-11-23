@@ -1,0 +1,167 @@
+# Mivr/ai_rules_flutter workflow.
+# Manual-only iOS scale bench (free macOS runners, no caches).
+#
+# Measures how the iOS build cost grows with the generated monorepo's
+# size: two sizes on the package axis (200 and 2,000 Dart packages, no native
+# plugin) and two on the plugin axis (0 and 30 native plugins of all three
+# kinds on the 200-package app). Each size is one matrix leg that generates
+# its workspace with `gen_monorepo.py generate --packages=N --plugins=M` and
+# measures the device_release and sim_debug flows with `sol.py`. The report job
+# then fits the growth exponent per flow and size axis with
+# `scale_report.py`, writes scale.json, and fails when an exponent exceeds
+# its ceiling in tools/perf/scale_ceilings.json, a flow failed, or a flow has
+# no ceiling.
+#
+# Cost: workflow_dispatch only (never automatic: the account's few concurrent
+# macOS runners belong to Full, which gates releases); macos-15, no caches,
+# small result artifacts (retention 3 days), build outputs never uploaded.
+name: iOS scale bench
+"on":
+  workflow_dispatch:
+    inputs:
+      head_ref:
+        description: "rules_flutter ref to measure (default: the dispatched commit)"
+        default: ""
+        type: string
+      seed:
+        description: generator seed
+        default: "1"
+        type: string
+      repeats:
+        description: repeats per scenario (medians are over these)
+        default: "1"
+        type: string
+permissions:
+  contents: read
+jobs:
+  measure:
+    name: iOS scale bench (${{ matrix.packages }} packages, ${{ matrix.plugins }} plugins)
+    runs-on: macos-15
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - packages: 200
+            plugins: 0
+          - packages: 2000
+            plugins: 0
+          - packages: 200
+            plugins: 30
+    steps:
+      - name: Check out bench tooling (this branch)
+        uses: actions/checkout@v7
+        with:
+          path: tools-src
+      - name: Check out rules_flutter at head_ref
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ inputs.head_ref || github.sha }}
+          path: rules-head
+      # Installs Bazel only (no cache configuration: every build is clean).
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+      - name: Generate pristine monorepo
+        env:
+          SEED: ${{ inputs.seed || '1' }}
+        run: |
+          set -euo pipefail
+          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/gen_monorepo.py" generate \
+            --packages "${{ matrix.packages }}" \
+            --plugins "${{ matrix.plugins }}" \
+            --seed "$SEED" \
+            --rules-flutter "$GITHUB_WORKSPACE/rules-head" \
+            --out "$RUNNER_TEMP/ws-head-pristine"
+      - name: Measure speed-of-light
+        # One repeat at a time: sol.py run resets the workspace from
+        # pristine before each config, builds the three scenarios, replays
+        # their execution logs and shuts its server down. A failing config
+        # is recorded and the loop continues; the step then exits
+        # non-zero, but summarize and upload still run.
+        env:
+          REPEATS: ${{ inputs.repeats || '1' }}
+        run: |
+          set -euo pipefail
+          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          failed=0
+          for rep in $(seq 1 "$REPEATS"); do
+            rm -rf "$RUNNER_TEMP/sol-out-$rep" "$RUNNER_TEMP/sol-run-$rep"
+            python3 "$tools/sol.py" run --tools "$tools" \
+              --pristine "$RUNNER_TEMP/ws-head-pristine" \
+              --work "$RUNNER_TEMP/sol-run-$rep" \
+              --out-base "$RUNNER_TEMP/sol-out-$rep" \
+              --results "$GITHUB_WORKSPACE/sol-results" \
+              --rep "$rep" \
+              --config device_release --config sim_debug \
+              || failed=1
+          done
+          exit "$failed"
+      - name: Summarize speed-of-light
+        # Runs even when measuring failed, so the point file (with the
+        # finished flows and the recorded reasons) is always written.
+        if: ${{ !cancelled() }}
+        env:
+          REPEATS: ${{ inputs.repeats || '1' }}
+          SEED: ${{ inputs.seed || '1' }}
+        run: |
+          set -euo pipefail
+          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD)"
+          python3 "$tools/sol.py" summarize \
+            --results "$GITHUB_WORKSPACE/sol-results" \
+            --sha "$sha" \
+            --repeats "$REPEATS" \
+            --target-loc "$(( ${{ matrix.packages }} * 2500 ))" \
+            --seed "$SEED" \
+            --lockfile none \
+            --out "$GITHUB_WORKSPACE/scale-point-${{ matrix.packages }}-${{ matrix.plugins }}.json"
+      - name: Upload point result
+        # Runs even when measuring failed: the artifact explains the run.
+        # Only the small result file is uploaded, never a build output.
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: scale-point-${{ matrix.packages }}-${{ matrix.plugins }}
+          path: scale-point-${{ matrix.packages }}-${{ matrix.plugins }}.json
+          retention-days: 3
+  report:
+    name: iOS scale bench growth report
+    needs: measure
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out bench tooling (this branch)
+        uses: actions/checkout@v7
+        with:
+          path: tools-src
+      - name: Download point results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: scale-point-*
+          path: points
+          merge-multiple: true
+      - name: Fit growth exponents
+        # scale_report.py writes scale.json first, then exits 1 when an
+        # exponent exceeds its ceiling, a flow failed or a flow has no
+        # ceiling; this step then fails the job.
+        run: |
+          set -euo pipefail
+          args=()
+          for file in points/scale-point-*.json; do
+            size="${file#points/scale-point-}"
+            size="${size%.json}"
+            args+=(--point "${size%-*},${size#*-},$file")
+          done
+          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/scale_report.py" \
+            "${args[@]}" \
+            --ceilings "$GITHUB_WORKSPACE/tools-src/tools/perf/scale_ceilings.json" \
+            --out "$GITHUB_WORKSPACE/scale.json"
+      - name: Upload scale report
+        # Runs even when the report failed: scale.json explains why.
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-scale
+          path: scale.json
+          retention-days: 3

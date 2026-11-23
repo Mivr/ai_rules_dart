@@ -1,0 +1,11 @@
+"""A kernel target in a second package, for the constant debug agent URI test."""
+
+load("//flutter/private:flutter_kernel_target.bzl", "flutter_kernel_target")
+
+flutter_kernel_target(
+    name = "other_label_kernel",
+    package_name = "agent_uris_other",
+    main = "main.dart",
+    tags = ["manual"],
+    visibility = ["//flutter/tests:__pkg__"],
+)

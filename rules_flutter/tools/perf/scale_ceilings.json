@@ -1,0 +1,50 @@
+{
+  "android-debug-app": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "android-debug-body": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "android-debug-clean": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "android-release-app": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "android-release-body": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "android-release-clean": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "ios-debug-app": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "ios-debug-body": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "ios-debug-clean": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "ios-release-app": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "ios-release-body": {
+    "packages": 1.5,
+    "plugins": 1.5
+  },
+  "ios-release-clean": {
+    "packages": 1.5,
+    "plugins": 1.5
+  }
+}

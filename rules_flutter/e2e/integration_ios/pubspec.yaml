@@ -1,0 +1,29 @@
+name: integration_ios
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  pod_bigint_plugin:
+    path: pod_bigint_plugin/
+  spm_bigint_plugin:
+    path: spm_bigint_plugin/
+  spm_graph_plugin:
+    path: spm_graph_plugin/
+  spm_objc_plugin:
+    path: spm_objc_plugin/
+  xcframework_plugin:
+    path: xcframework_plugin/
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  very_good_analysis: ^10.3.0

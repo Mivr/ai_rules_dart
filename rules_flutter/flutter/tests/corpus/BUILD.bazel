@@ -1,0 +1,660 @@
+# The public-surface corpus: one minimal fixture per public rule, macro and
+# aspect exported by the ten entry points listed in `exports_test.dart`.
+#
+# `bazel build //flutter/tests/corpus:all` builds every host-compatible
+# fixture. Apple and Windows fixtures are skipped here by their platform
+# constraint (or by the `manual` tag the public macro already gives them);
+# they stay declared so that an `aquery` on their host sees their graph.
+#
+# The checked-in `actions.golden.json` covers the targets in
+# `golden_targets.txt`; every other public fixture is in `uncovered_golden.txt`
+# with the missing host capability. `exports_test` enforces both directions.
+#
+# The golden is Linux-x64 specific: it holds `flutter_linux-x64` and
+# `llvm-toolchain-minimal-linux-amd64` repository paths, so regenerate it on a
+# Linux-x64 host. From the repo root:
+#
+#   1. golden_targets.txt: list the labels
+#      `bazel cquery --keep_going --skip_incompatible_explicit_targets
+#      --output=label 'kind(rule, //flutter/tests/corpus:all) except
+#      kind("dart_binary|dart_test|test_suite|cc_.*", //flutter/tests/corpus:all)'`
+#      prints (sorted, deduplicated), minus the labels whose
+#      `providers(target)` hold `IncompatiblePlatformProvider`.
+#   2. actions.golden.json:
+#      `bazel aquery --skip_incompatible_explicit_targets --output=jsonproto
+#      "set($(grep -vE '^\s*(#|$)' flutter/tests/corpus/golden_targets.txt))"
+#      > /tmp/flutter_corpus_aquery.json`, then
+#      `bazel run //flutter/tests/corpus:actions_golden --
+#      /tmp/flutter_corpus_aquery.json`.
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+load("//flutter:android.bzl", "flutter_android_aab", "flutter_android_aar", "flutter_android_apk_overlay", "flutter_android_app", "flutter_android_bundle", "flutter_android_engine", "flutter_android_engine_jar", "flutter_android_manifest_gen", "flutter_android_manifest_merge", "flutter_android_permissions_manifest", "flutter_android_plugin_library", "flutter_android_registrant", "flutter_android_runner_lib_gen", "flutter_drive_test")
+load("//flutter:defs.bzl", "flutter_aot_target", "flutter_application", "flutter_asset_bundle", "flutter_font_family", "flutter_gen_l10n", "flutter_integration_test", "flutter_kernel_target", "flutter_library", "flutter_native_library", "flutter_plugin", "flutter_prebuilt_test", "flutter_test")
+load("//flutter:dev_files.bzl", "flutter_dev_files")
+load("//flutter:ios.bzl", "flutter_apple_plugin_library", "flutter_apple_plugins_aggregator", "flutter_apple_xcframework_import", "flutter_darwin_xcframework_import", "flutter_entitlements_merge", "flutter_ios_app", "flutter_ios_engine", "flutter_ios_framework", "flutter_ios_framework_gen", "flutter_ios_info_plist_gen", "flutter_ios_native_frameworks_gen", "flutter_ios_privacy_manifests_gen", "flutter_ios_registrant_gen", "flutter_ios_runner_lib_gen", "flutter_ios_simulator_build", "flutter_ios_simulator_build_test", "flutter_ios_xcframeworks", "flutter_xtool_bundle_version", "flutter_xtool_ios_bundle", "ios_sim_debug_app")
+load("//flutter:linux.bzl", "flutter_linux_app", "flutter_linux_bundle", "flutter_linux_engine", "flutter_linux_plugin_library", "flutter_linux_registrant_gen", "flutter_linux_runner_lib_gen")
+load("//flutter:macos.bzl", "flutter_apple_plugin_objc_library", "flutter_apple_plugin_objc_settings", "flutter_macos_app", "flutter_macos_engine", "flutter_macos_framework_gen", "flutter_macos_info_plist_gen", "flutter_macos_menu_xib_gen", "flutter_macos_native_libs_gen", "flutter_macos_privacy_manifests_gen", "flutter_macos_registrant_gen", "flutter_macos_runner_lib_gen", "flutter_xtool_macos_bundle")
+load("//flutter:native_assets.bzl", "flutter_data_asset", "flutter_native_asset", "flutter_native_assets_manifest")
+load("//flutter:native_hot_patch.bzl", "flutter_native_hot_patch_aspect")
+load("//flutter:web.bzl", "flutter_web_app", "flutter_web_bundle", "flutter_web_manifest_gen")
+load("//flutter:windows.bzl", "flutter_windows_app", "flutter_windows_bundle", "flutter_windows_engine", "flutter_windows_plugin_library", "flutter_windows_registrant_gen", "flutter_windows_runner_lib_gen")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+load(":aspects.bzl", "corpus_aspects")
+
+package(default_visibility = ["//flutter/tests:__subpackages__"])
+
+# -- Core Dart and Flutter rules ---------------------------------------------
+
+flutter_application(
+    name = "app",
+    package_name = "corpus_app",
+    assets = ["data/blob.txt"],
+    main = "lib/main.dart",
+)
+
+flutter_library(
+    name = "library",
+    package_name = "corpus_library",
+    srcs = ["lib/plugin.dart"],
+    assets = ["data/blob.txt"],
+)
+
+flutter_plugin(
+    name = "plugin",
+    package_name = "corpus_plugin",
+    srcs = ["lib/plugin.dart"],
+)
+
+flutter_native_library(
+    name = "native_library",
+    binding_contract = ["data/contract.txt"],
+    library = ":native_shared",
+)
+
+flutter_asset_bundle(
+    name = "assets",
+    assets = ["data/blob.txt"],
+)
+
+flutter_font_family(
+    name = "font_family",
+    family = "CorpusSans",
+    fonts = [{"asset": "data/blob.txt"}],
+)
+
+flutter_gen_l10n(
+    name = "l10n",
+    arbs = [
+        "lib/l10n/app_en.arb",
+        "lib/l10n/app_es.arb",
+    ],
+)
+
+flutter_kernel_target(
+    name = "kernel",
+    package_name = "corpus_app",
+    main = "lib/main.dart",
+)
+
+flutter_aot_target(
+    name = "aot",
+    package_name = "corpus_app",
+    main = "lib/main.dart",
+    target_compatible_with = HOST_COMPATIBLE,
+)
+
+# A `flutter_test` cannot build outside a workspace root (its generated
+# bootstrap joins the package's source group); the corpus keeps the rule
+# instantiated for coverage and does not hand it to `bazel build :all`.
+flutter_test(
+    name = "widget_test",
+    package_name = "corpus_app",
+    srcs = ["lib/plugin.dart"],
+    main = "test/main_test.dart",
+    tags = ["manual"],
+    deps = ["//flutter/tests/corpus/flutter_test_stub:flutter_test_dep"],
+)
+
+flutter_prebuilt_test(
+    name = "prebuilt_test",
+    assets = ":assets",
+    dill = "data/dummy.dill",
+    tags = ["manual"],
+)
+
+flutter_integration_test(
+    name = "integration_test",
+    package_name = "corpus_app",
+    srcs = ["test/main_test.dart"],
+    app_srcs = ["lib/main.dart"],
+    platform = "linux",
+    tags = ["manual"],
+    deps = ["//flutter/tests/corpus/flutter_test_stub:flutter_test_dep"],
+)
+
+# -- Native assets ------------------------------------------------------------
+
+cc_library(
+    name = "native_c",
+    srcs = ["data/native.c"],
+)
+
+cc_shared_library(
+    name = "native_shared",
+    deps = [":native_c"],
+)
+
+flutter_native_asset(
+    name = "native_asset",
+    asset_id = "package:corpus_app/libcorpus.so",
+    bundle_filename = "libcorpus.so",
+    library = ":native_shared",
+    link_mode = "dynamic_loading_bundle",
+)
+
+flutter_data_asset(
+    name = "data_asset",
+    asset_id = "package:corpus_app/blob.txt",
+    file = "data/blob.txt",
+)
+
+flutter_native_assets_manifest(
+    name = "native_assets_manifest",
+    application = ":app",
+)
+
+# -- Aspects ------------------------------------------------------------------
+
+corpus_aspects(
+    name = "aspects",
+    aspects = [
+        flutter_dev_files,
+        flutter_native_hot_patch_aspect,
+    ],
+    dep = ":app",
+)
+
+# -- Android ------------------------------------------------------------------
+
+flutter_android_manifest_gen(
+    name = "android_manifest",
+    package_name = "com.example.corpus",
+)
+
+flutter_android_permissions_manifest(
+    name = "android_permissions",
+    permissions = ["android.permission.INTERNET"],
+)
+
+flutter_android_manifest_merge(
+    name = "android_merged_manifest",
+    base = "data/AndroidManifest.xml",
+    overlay = "data/OverlayManifest.xml",
+)
+
+flutter_android_registrant(
+    name = "android_registrant",
+    application = ":app",
+)
+
+flutter_android_engine(
+    name = "android_engine",
+    tags = ["manual"],
+)
+
+flutter_android_engine_jar(
+    name = "android_stripped_engine_jar",
+    android_abi = "arm64-v8a",
+    jar = "data/engine.jar",
+    tags = ["manual"],
+)
+
+flutter_android_runner_lib_gen(
+    name = "android_runner",
+    package_name = "com.example.corpus",
+    engine = ":android_engine",
+    tags = ["manual"],
+)
+
+flutter_android_plugin_library(
+    name = "android_plugin",
+    srcs = ["data/Plugin.kt"],
+    java_package = "com.example.corpus",
+    tags = ["manual"],
+)
+
+flutter_android_aar(
+    name = "android_aar",
+    package_name = "com.example.corpus",
+    application = ":app",
+    tags = ["manual"],
+)
+
+flutter_android_bundle(
+    name = "android_bundle",
+    application = ":app",
+    tags = ["manual"],
+)
+
+# The overlay needs the Android SDK toolchains, which this root module does
+# not configure; the direct fixture keeps the rule instantiated and points at
+# a base binary built by the app macro's own target.
+flutter_android_apk_overlay(
+    name = "android_apk_overlay",
+    binary = ":android_app",
+    flutter_assets = ":assets",
+    native_libs_jar = "data/blob.txt",
+    tags = ["manual"],
+)
+
+flutter_android_app(
+    name = "android_app",
+    package_name = "com.example.corpus",
+    application = ":app",
+    tags = ["manual"],
+)
+
+flutter_android_aab(
+    name = "android_aab",
+    package_name = "com.example.corpus",
+    application = ":app",
+    tags = ["manual"],
+)
+
+# A host driver against the app on the emulator; Android only, so it stays
+# `manual` like the app it drives.
+flutter_drive_test(
+    name = "drive_test",
+    package_name = "com.example.corpus",
+    app = ":android_app",
+    driver = "lib/main.dart",
+)
+
+# -- Linux --------------------------------------------------------------------
+
+flutter_linux_engine(
+    name = "linux_engine",
+    tags = ["manual"],
+)
+
+flutter_linux_registrant_gen(
+    name = "linux_registrant",
+    application = ":app",
+)
+
+flutter_linux_plugin_library(
+    name = "linux_plugin",
+    srcs = ["data/plugin.cc"],
+    hdrs = ["data/plugin.h"],
+    includes = ["data"],
+)
+
+cc_binary(
+    name = "linux_runner",
+    srcs = ["data/runner.c"],
+)
+
+flutter_linux_runner_lib_gen(
+    name = "linux_runner_lib",
+    engine = ":linux_engine",
+    registrant = ":linux_registrant",
+    tags = ["manual"],
+)
+
+flutter_linux_bundle(
+    name = "linux_bundle",
+    application = ":app",
+    runner = ":linux_runner",
+)
+
+flutter_linux_app(
+    name = "linux_app",
+    application = ":app",
+    tags = ["manual"],
+)
+
+# -- Web ----------------------------------------------------------------------
+
+flutter_web_manifest_gen(
+    name = "web_manifest",
+    app_name = "Corpus",
+)
+
+flutter_web_bundle(
+    name = "web_bundle",
+    package_name = "corpus_app",
+    main = "lib/main.dart",
+    tags = ["manual"],
+)
+
+flutter_web_app(
+    name = "web_app",
+    package_name = "corpus_app",
+    tags = ["manual"],
+    deps = [],
+)
+
+# -- iOS ----------------------------------------------------------------------
+
+flutter_ios_engine(
+    name = "ios_engine",
+    tags = ["manual"],
+)
+
+flutter_ios_registrant_gen(
+    name = "ios_registrant",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_native_frameworks_gen(
+    name = "ios_native_frameworks",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_privacy_manifests_gen(
+    name = "ios_privacy_manifests",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_framework_gen(
+    name = "ios_framework",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_framework(
+    name = "ios_raw_framework",
+    application = ":app",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_xcframeworks(
+    name = "ios_xcframeworks",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_info_plist_gen(
+    name = "ios_info_plist",
+    app_name = "Corpus",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_runner_lib_gen(
+    name = "ios_runner_lib",
+    engine = ":ios_engine",
+    registrant = ":ios_registrant",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_apple_plugin_library(
+    name = "ios_plugin",
+    srcs = ["data/Plugin.swift"],
+    module_name = "CorpusPlugin",
+    platform = "ios",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_apple_plugins_aggregator(
+    name = "ios_plugins",
+    application = ":app",
+    platform = "ios",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_app(
+    name = "ios_app",
+    srcs = ["data/Plugin.swift"],
+    application = ":app",
+    bundle_id = "com.example.corpus",
+)
+
+ios_sim_debug_app(
+    name = "ios_sim_debug",
+    app = ":ios_app",
+    tags = ["manual"],
+)
+
+flutter_ios_simulator_build(
+    name = "ios_simulator_build",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":ios_app"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_simulator_build_test",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":ios_app"],
+)
+
+flutter_apple_xcframework_import(
+    name = "apple_xcframework",
+    framework = "//flutter/tests:TinyKit.xcframework",
+)
+
+flutter_darwin_xcframework_import(
+    name = "darwin_xcframework",
+    framework_name = "TinyKit",
+    target_compatible_with = ["@platforms//os:macos"],
+    xcframework_imports = ["//flutter/tests:TinyKit.xcframework"],
+)
+
+flutter_entitlements_merge(
+    name = "entitlements",
+    additions = ["data/Additional.entitlements"],
+    base = "data/Base.entitlements",
+)
+
+flutter_xtool_bundle_version(
+    name = "xtool_version",
+    build_version = "1",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_xtool_ios_bundle(
+    name = "xtool_ios_bundle",
+    bundle_id = "com.example.corpus",
+    tags = ["manual"],
+)
+
+# -- macOS --------------------------------------------------------------------
+
+flutter_macos_engine(
+    name = "macos_engine",
+    tags = ["manual"],
+)
+
+flutter_macos_registrant_gen(
+    name = "macos_registrant",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_macos_native_libs_gen(
+    name = "macos_native_libs",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_macos_privacy_manifests_gen(
+    name = "macos_privacy_manifests",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_macos_framework_gen(
+    name = "macos_framework",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_macos_info_plist_gen(
+    name = "macos_info_plist",
+    app_name = "Corpus",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_macos_menu_xib_gen(
+    name = "macos_menu_xib",
+    app_name = "Corpus",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_macos_runner_lib_gen(
+    name = "macos_runner_lib",
+    engine = ":macos_engine",
+    registrant = ":macos_registrant",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_apple_plugin_library(
+    name = "macos_plugin",
+    srcs = ["data/Plugin.swift"],
+    module_name = "CorpusPlugin",
+    platform = "macos",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_apple_plugin_objc_library(
+    name = "macos_objc_plugin",
+    srcs = ["data/Plugin.m"],
+    module_name = "CorpusObjcPlugin",
+    platform = "macos",
+    settings = flutter_apple_plugin_objc_settings(sdk_frameworks = ["Foundation"]),
+)
+
+flutter_apple_plugins_aggregator(
+    name = "macos_plugins",
+    application = ":app",
+    platform = "macos",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_macos_app(
+    name = "macos_app",
+    srcs = ["data/Plugin.swift"],
+    additional_entitlements = ["data/Additional.entitlements"],
+    app_icons = [],
+    application = ":app",
+    bundle_id = "com.example.corpus",
+    entitlements = "data/Base.entitlements",
+)
+
+flutter_xtool_macos_bundle(
+    name = "xtool_macos_bundle",
+    bundle_id = "com.example.corpus",
+    tags = ["manual"],
+)
+
+# -- Windows ------------------------------------------------------------------
+
+flutter_windows_engine(
+    name = "windows_engine",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+flutter_windows_registrant_gen(
+    name = "windows_registrant",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+flutter_windows_plugin_library(
+    name = "windows_plugin",
+    srcs = ["data/plugin.cc"],
+    hdrs = ["data/plugin.h"],
+    includes = ["data"],
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+flutter_windows_runner_lib_gen(
+    name = "windows_runner_lib",
+    engine = ":windows_engine",
+    registrant = ":windows_registrant",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+flutter_windows_bundle(
+    name = "windows_bundle",
+    application = ":app",
+    runner = ":windows_runner_lib",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+flutter_windows_app(
+    name = "windows_app",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+# -- Corpus tooling -----------------------------------------------------------
+
+# Static export guard: discovers the workspace from its own runfile, reads the
+# ten public entry points and the corpus BUILD, and fails when a public export
+# is neither instantiated nor listed in non_instantiable.txt. Same unsandboxed
+# discovery shape as the guards in //flutter/tests.
+dart_test(
+    name = "exports_test",
+    size = "small",
+    srcs = ["golden_scope.dart"],
+    data = [
+        "BUILD.bazel",
+        "actions.golden.json",
+        "exports_test.dart",
+        "golden_scope.dart",
+        "golden_targets.txt",
+        "non_instantiable.txt",
+        "uncovered_golden.txt",
+    ],
+    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :exports_test.dart)"},
+    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
+    main = "exports_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+        "tree-reader",
+    ],
+    deps = ["@dev_tool_deps//:test"],
+)
+
+dart_test(
+    name = "actions_golden_test",
+    size = "small",
+    srcs = ["actions_golden.dart"],
+    data = glob(["testdata/**"]),
+    main = "actions_golden_test.dart",
+    deps = ["@dev_tool_deps//:test"],
+)
+
+dart_test(
+    name = "golden_scope_test",
+    size = "small",
+    srcs = ["golden_scope.dart"],
+    main = "golden_scope_test.dart",
+    deps = ["@dev_tool_deps//:test"],
+)
+
+dart_binary(
+    name = "actions_golden",
+    data = ["actions.golden.json"],
+    main = "actions_golden.dart",
+)
+
+# The corpus targets live in this package, not a subpackage, so the contract's
+# `//flutter/tests/corpus:...` pattern is a literal target name rather than a
+# recursive wildcard. This suite makes that exact invocation run both tests;
+# `//flutter/tests/corpus/...` also finds them individually.
+test_suite(
+    name = "...",
+    tests = [
+        ":actions_golden_test",
+        ":exports_test",
+        ":golden_scope_test",
+    ],
+)

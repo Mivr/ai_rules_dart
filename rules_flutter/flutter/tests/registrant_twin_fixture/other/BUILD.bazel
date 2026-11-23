@@ -1,0 +1,9 @@
+load("//flutter:defs.bzl", "flutter_library")
+
+flutter_library(
+    name = "other",
+    package_name = "registrant_twin_other",
+    srcs = ["lib/other.dart"],
+    tags = ["manual"],
+    visibility = ["//flutter/tests:__subpackages__"],
+)

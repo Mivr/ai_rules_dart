@@ -1,0 +1,25 @@
+# plugin_example
+
+End-to-end demonstrator for `rules_flutter`'s pub.dev plugin pipeline. Imports three real Flutter plugins via `pubspec.yaml` — `path_provider`, `url_launcher`, `package_info_plus` — plus the hand-written `:greeting_plugin` (regression case for pure-Bazel-deps plugins). `lib/main.dart` resolves four strings from those plugins (`appName`, `documentsPath`, `tempPath`, `launchOk`) and renders + emits them on a single `plugin_example_results …` log line that the e2e tests assert against.
+
+## Plugin choices
+
+- **`path_provider`** — federated umbrella (`default_package` style). `path_provider_foundation` exercises Swift Package Manager (`darwin/path_provider_foundation/Sources/path_provider_foundation/`). `path_provider_linux` and `path_provider_windows` are pure Dart (no native dir). `path_provider_android` is Kotlin.
+- **`url_launcher`** — federated. SwiftPM Apple. Real C++ on Linux (`xdg-open` via GTK) and Windows (`ShellExecuteW`). Kotlin Android. Web Dart impl.
+- **`package_info_plus`** — monolithic; one package owns every platform's native code (ObjC on Apple, Kotlin Android, web Dart).
+- **`record_android`** — Android-only federated implementation, depended on directly (no umbrella). Regression case for a plugin that ships `android/src/main/res/` resources (`R.drawable.ic_mic`) and declares no Gradle dependencies at all — it compiles purely against the Flutter embedding's exported androidx classpath, and its library manifest's RECORD_AUDIO permission must merge into the APK, with no flag needed.
+- **`//greeting_plugin`** — hand-written Bazel `flutter_plugin` target with `dart_plugin_class = "GreetingPlugin"`. Regression case for pure-Bazel-deps plugins.
+
+## Building and verifying
+
+Per-platform bundle targets: `:plugin_macos`, `:plugin_ios`, `:plugin_android`, `:plugin_linux`, `:plugin_windows`, `:plugin_web`. See `docs/TESTING.md` § "Plugin verification matrix" for how each platform's runtime assertion works.
+
+## Adding more pub plugins
+
+Drop them into `pubspec.yaml`, regenerate `pubspec.lock` with
+
+```sh
+bazel run @rules_flutter//flutter:pub -- get
+```
+
+then add the `@deps//:<pkg>` to your `flutter_application.deps`. Use that target rather than a `flutter pub get` from `PATH`: pub's solver takes the running SDK's version as a constraint, so a Flutter older than the pinned toolchain silently pins older packages into a lock that still looks valid (see the README's "Regenerating `pubspec.lock`"). Auto-detection handles the common SwiftPM / `linux/` / `windows/` / `android/src/main/` layouts. When a plugin's layout is non-standard, supply an `ext/` overlay (see `flutter.plugin_overlays(...)` in `MODULE.bazel` for user roots).

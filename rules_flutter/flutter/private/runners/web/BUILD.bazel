@@ -1,0 +1,4 @@
+exports_files(
+    ["manifest.json"],
+    visibility = ["//visibility:public"],
+)

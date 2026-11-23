@@ -1,0 +1,17 @@
+group 'com.example.lazy_plugin'
+version '1.0'
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace = 'com.example.lazy_plugin'
+
+    defaultConfig {
+        minSdk = 23
+    }
+}
+
+dependencies {
+    implementation 'com.example:lazy-unmapped:1.0'
+}

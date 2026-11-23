@@ -1,0 +1,69 @@
+# The app's extensions: a widget extension that holds a WidgetKit widget and a
+# Control Center control, and a share extension. They are plain Swift; nothing
+# Flutter runs inside an extension. //:app_extensions embeds them.
+load("@rules_flutter//flutter:macos.bzl", "flutter_entitlements_merge")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load(":defs.bzl", "example_macos_extension")
+
+exports_files(
+    ["AppGroup.entitlements"],
+    visibility = ["//:__pkg__"],
+)
+
+# macOS loads a widget or share extension only if it is sandboxed, and it
+# joins the App Group the app is in.
+flutter_entitlements_merge(
+    name = "extension_entitlements",
+    additions = ["AppGroup.entitlements"],
+    base = "Sandbox.entitlements",
+    tags = ["manual"],
+)
+
+# The same for the team-signed build, with the team-prefixed group from the
+# git-ignored //device package.
+flutter_entitlements_merge(
+    name = "extension_entitlements_team",
+    additions = ["//device:AppGroup.entitlements"],
+    base = "Sandbox.entitlements",
+    tags = ["manual"],
+)
+
+swift_library(
+    name = "widgets_lib",
+    srcs = ["widgets/Widgets.swift"],
+    # rules_apple's `app_intents` aspect refuses a library that does not name
+    # the AppIntents SDK framework.
+    linkopts = ["-Wl,-framework,AppIntents"],
+    module_name = "ExampleWidgets",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+example_macos_extension(
+    name = "widgets",
+    # The control's intent runs in the extension, so its metadata goes there.
+    # macos_extension takes `app_intents` only with the patch in MODULE.bazel.
+    app_intents = [":widgets_lib"],
+    bundle_id = "com.example.flutterapp.extensions.widgets",
+    infoplists = ["widgets/Info.plist"],
+    # Above the app's 12.0, for the widget's containerBackground. Each bundle
+    # records its own minimum, and macOS leaves the extension out below it.
+    minimum_os_version = "14.0",
+    deps = [":widgets_lib"],
+)
+
+swift_library(
+    name = "share_lib",
+    srcs = ["share/ShareViewController.swift"],
+    module_name = "ExampleShare",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+example_macos_extension(
+    name = "share",
+    bundle_id = "com.example.flutterapp.extensions.share",
+    infoplists = ["share/Info.plist"],
+    minimum_os_version = "12.0",
+    deps = [":share_lib"],
+)

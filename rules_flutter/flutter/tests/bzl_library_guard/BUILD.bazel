@@ -1,0 +1,31 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+dart_test(
+    name = "bzl_library_guard_test",
+    size = "small",
+    srcs = ["doc_extract_exemptions.dart"],
+    data = ["bzl_library_guard_test.dart"],
+    env = {
+        "GUARD_ROOT_ANCHOR": "$(rlocationpath :bzl_library_guard_test.dart)",
+    },
+    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
+    main = "bzl_library_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+        "tree-reader",
+    ],
+    deps = [
+        "@dev_tool_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "doc_extract_exemptions_test",
+    size = "small",
+    srcs = ["doc_extract_exemptions.dart"],
+    main = "doc_extract_exemptions_test.dart",
+    deps = [
+        "@dev_tool_deps//:test",
+    ],
+)

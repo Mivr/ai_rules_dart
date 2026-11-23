@@ -1,0 +1,25 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+
+# The `flutter gen-l10n` entrypoint. The generator itself is vendored out of
+# flutter_tools by `flutter_gen_l10n_repo` (see
+# //flutter/private:flutter_gen_l10n_repo.bzl); this package holds only the
+# main() that adapts it to a Bazel action, the pub pins its seven dependencies
+# resolve from, and the patches that carve it out.
+exports_files(
+    ["pubspec.lock"],
+    visibility = ["//visibility:public"],
+)
+
+dart_binary(
+    name = "gen_l10n",
+    compile_mode = "kernel",
+    main = "main.dart",
+    modular_kernel = False,
+    target_compatible_with = HOST_COMPATIBLE,
+    visibility = ["//flutter:__subpackages__"],
+    deps = [
+        "@flutter_gen_l10n//:gen_l10n",
+        "@gen_l10n_deps//:file",
+    ],
+)

@@ -1,0 +1,38 @@
+"""Pubspec-shape red path: malformed pubspecs must fail the fetch.
+
+The `bad_shape` path package declares `assets: assets/a.png` (a string where
+flutter_tools requires a list), and the `bad_font` path package declares a
+font `weight: 150` (outside the accepted 100..900). The `bad_sdk` path
+package declares `environment.sdk: "3.10"` (a string pub_semver refuses),
+and the `bad_sdk_type` path package declares a non-string
+`environment.sdk: 3.5`. CI fetches each spoke, expects each fetch to fail,
+and greps the exact refusal. They guard the fail-closed projections in
+`flutter_pubspec.bzl` and `flutter_pub_package.bzl`: a projection that
+skipped a shape or derived a default language version for a bad constraint
+would bundle the package with a green build, so only these red paths would
+turn red.
+"""
+
+module(name = "rules_flutter_pub_shape_red")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+git_override(
+    module_name = "ai_rules_dart",
+    commit = "e7163aab8f9171f54693cd1b99feb7d3cee9602d",
+    remote = "https://github.com/Mivr/ai_rules_dart.git",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.toolchain(flutter_version = "3.47.7")
+flutter.pub(
+    name = "red_deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "red_deps")

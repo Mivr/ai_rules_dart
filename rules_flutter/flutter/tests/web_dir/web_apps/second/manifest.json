@@ -1,0 +1,6 @@
+{
+  "name": "Second",
+  "short_name": "Second",
+  "start_url": ".",
+  "display": "standalone"
+}

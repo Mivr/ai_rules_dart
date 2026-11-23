@@ -1,0 +1,32 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+# Buildifier configuration guard. The root `.buildifier.json` lists every
+# warning the pinned buildifier knows except `unsorted-dict-items`, the
+# pre-commit format hook runs with linting off while the lint hook lints
+# against that config, and the hook's buildifier version matches the
+# `buildifier_prebuilt` dev dependency. The buildifier binary and the three
+# repository files are `data`, so an edit to any of them re-runs the test
+# instead of replaying a cached pass.
+dart_test(
+    name = "buildifier_config_test",
+    size = "small",
+    data = [
+        "//:.buildifier.json",
+        "//:.pre-commit-config.yaml",
+        "//:MODULE.bazel",
+        "@buildifier_prebuilt//:buildifier",
+    ],
+    env = {
+        "BUILDIFIER_JSON": "$(rlocationpath //:.buildifier.json)",
+        "BUILDIFIER_TOOL": "$(rlocationpath @buildifier_prebuilt//:buildifier)",
+        "MODULE_BAZEL": "$(rlocationpath //:MODULE.bazel)",
+        "PRE_COMMIT_CONFIG": "$(rlocationpath //:.pre-commit-config.yaml)",
+    },
+    main = "buildifier_config_test.dart",
+    deps = [
+        "//flutter/tests:dependency_floors_lib",
+        "@dev_tool_deps//:runfiles",
+        "@dev_tool_deps//:test",
+        "@dev_tool_deps//:yaml",
+    ],
+)

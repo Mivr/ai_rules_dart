@@ -1,0 +1,3 @@
+load(":asset_variants_test.bzl", "asset_variants_test_suite")
+
+asset_variants_test_suite(name = "asset_variants_test")

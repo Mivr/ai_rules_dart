@@ -1,0 +1,67 @@
+# Mivr/ai_rules_flutter workflow (moved from the frozen Mivr/rules_flutter fork on 2026-10-28).
+# Cut a release whenever a new tag is pushed to the repo.
+name: Release
+on:
+  # Can be triggered from the tag.yaml workflow
+  workflow_call:
+    inputs:
+      tag_name:
+        required: true
+        type: string
+  # Or, developers can manually push a tag from their clone
+  push:
+    tags:
+      - "v*.*.*"
+permissions:
+  id-token: write
+  attestations: write
+  contents: write
+  # The gate dispatches ci.yaml and full.yaml on the tag, and polls their runs.
+  actions: write
+jobs:
+  # Releases reuse proof instead of replaying tests. A tag push starts no CI or
+  # Full run. For each of ci.yaml and full.yaml, release_gate.sh takes the first
+  # of: a successful run on the tagged commit that is a nightly `schedule`, a
+  # push to main (Full runs on every push to main) or a `workflow_dispatch` on
+  # the tag, reused as it is; a nightly or main-push run on that commit still
+  # in progress, waited for; or a `workflow_dispatch` on the tag, which the
+  # gate dispatches when none exists yet. Dispatched runs run every job with
+  # the caches a pull request gets; only the nightly and `uncached` dispatches
+  # run cold. A release auto-release.yaml starts finds both proofs already
+  # there. The gate judges each run's current status on every poll, and it
+  # fails closed: a failed or cancelled run, a dispatched run that never appears,
+  # or no passing run within the deadline blocks the release.
+  gate-tag-matrix:
+    name: CI and Full passed for this tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Reuse a nightly proof or run the uncached CI and Full workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag_name || github.ref_name }}
+        # The tagged commit, from the tag: when auto-release.yaml calls this
+        # through tag.yaml, github.sha is main's head, not the tagged commit.
+        run: bash .github/workflows/release_gate.sh "$TAG" "$(gh api "repos/$REPO/commits/$TAG" --jq .sha)"
+  # A reusable-workflow call: `uses:` jobs take no timeout-minutes (only the
+  # called workflow's own jobs can carry one).
+  release:
+    needs: gate-tag-matrix
+    uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@1d798ff015ed0696433e01e2c3ccbb2abefadad7 # v7.7.0
+    with:
+      release_files: rules_flutter-*.tar.gz
+      # The gate job above already proved this commit (CI and Full passed on
+      # it), so this job repeats no tests. Loading and analysing every target
+      # checks the tagged checkout resolves before the archive is cut; the
+      # default, a cold `bazel test //...`, repeated the whole suite.
+      bazel_test_command: bazel build --nobuild //...
+      # No setup-bazel caches: a tag ref's caches are never restored by any
+      # later run, and v0.28.0's build saved 22 of them (1.7 GB), evicting
+      # main's disk caches under the 10 GB repository limit.
+      mount_bazel_caches: false
+      prerelease: false
+      tag_name: ${{ inputs.tag_name || github.ref_name }}

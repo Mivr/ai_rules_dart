@@ -1,0 +1,16 @@
+name: federated_greeting_alt
+version: 0.0.1
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    implements: federated_greeting
+    platforms:
+      android:
+        package: com.example.federated_greeting_alt
+        pluginClass: FederatedGreetingAltPlugin

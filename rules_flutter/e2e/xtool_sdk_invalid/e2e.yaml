@@ -1,0 +1,7 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: invalid xtool SDK path fails on the path
+    run: bazel fetch @flutter_xtool_darwin_sdk//...
+    expect:
+      non_zero: true
+      output_contains: "configured darwin.artifactbundle path '/nonexistent/darwin.artifactbundle' does not exist"

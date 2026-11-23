@@ -1,0 +1,247 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_apple//apple:macos.bzl", "macos_application")
+load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load(
+    "@rules_flutter//flutter:ios.bzl",
+    "IOS_DEFAULT_LAUNCH_STORYBOARD",
+    "flutter_ios_engine",
+    "flutter_ios_framework_gen",
+    "flutter_ios_native_frameworks_gen",
+    "flutter_ios_registrant_gen",
+    "flutter_ios_simulator_build_test",
+)
+load(
+    "@rules_flutter//flutter:macos.bzl",
+    "MACOS_MINIMUM_OS_VERSION",
+    "flutter_macos_engine",
+    "flutter_macos_framework_gen",
+    "flutter_macos_info_plist_gen",
+    "flutter_macos_menu_xib_gen",
+    "flutter_macos_native_libs_gen",
+    "flutter_macos_registrant_gen",
+)
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+exports_files(["pubspec.lock"])
+
+# =============================================================================
+# Shared: Flutter application (both entry points in single compilation)
+# =============================================================================
+
+# iOS 13.0 minimum: UIScene / UIWindowSceneDelegate APIs (required for
+# multi-scene support) are unavailable before iOS 13.
+flutter_application(
+    name = "app_flutter",
+    package_name = "multi_window_example",
+    main = "lib/main.dart",
+    min_os_version = "13.0",
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+apple_bundle_version(
+    name = "app_version",
+    build_version = "1.0",
+    short_version_string = "1.0",
+    tags = ["manual"],
+)
+
+# =============================================================================
+# macOS: Multi-window custom runner with multiple FlutterEngines
+# =============================================================================
+
+flutter_macos_framework_gen(
+    name = "macos_framework",
+    application = ":app_flutter",
+)
+
+flutter_macos_registrant_gen(
+    name = "macos_registrant",
+    application = ":app_flutter",
+)
+
+flutter_macos_engine(
+    name = "macos_engine",
+)
+
+flutter_macos_native_libs_gen(
+    name = "macos_native_libs",
+    application = ":app_flutter",
+)
+
+flutter_macos_info_plist_gen(
+    name = "macos_info_plist",
+    app_name = "Planner",
+)
+
+flutter_macos_menu_xib_gen(
+    name = "macos_menu_xib",
+    app_name = "Planner",
+)
+
+swift_library(
+    name = "macos_runner_lib",
+    srcs = [
+        "macos/AppDelegate.swift",
+        "macos/PlannerWindow.swift",
+        ":macos_registrant",
+    ],
+    module_name = "PlannerMacOSRunner",
+    deps = [":macos_engine"],
+)
+
+macos_application(
+    name = "app_macos",
+    additional_contents = {
+        ":macos_framework": "Frameworks",
+        ":macos_native_libs": "Frameworks",
+    },
+    bundle_id = "com.example.planner",
+    bundle_name = "Planner",
+    infoplists = [":macos_info_plist"],
+    minimum_os_version = MACOS_MINIMUM_OS_VERSION,
+    resources = [":macos_menu_xib"],
+    version = ":app_version",
+    deps = [":macos_runner_lib"],
+)
+
+# =============================================================================
+# iOS: Multi-scene custom runner with FlutterEngineGroup
+# =============================================================================
+
+flutter_ios_framework_gen(
+    name = "ios_framework",
+    application = ":app_flutter",
+)
+
+flutter_ios_registrant_gen(
+    name = "ios_registrant",
+    application = ":app_flutter",
+)
+
+flutter_ios_engine(
+    name = "ios_engine",
+)
+
+flutter_ios_native_frameworks_gen(
+    name = "ios_native_frameworks",
+    application = ":app_flutter",
+)
+
+swift_library(
+    name = "ios_runner_lib",
+    srcs = [
+        "ios/AppDelegate.swift",
+        "ios/PlannerSceneDelegate.swift",
+        ":ios_registrant",
+    ],
+    module_name = "PlannerRunner",
+    tags = ["manual"],
+    deps = [":ios_engine"],
+)
+
+_IOS_DEPS = [
+    ":ios_framework",
+    ":ios_native_frameworks",
+    ":ios_runner_lib",
+]
+
+_IOS_FAMILIES = [
+    "iphone",
+    "ipad",
+]
+
+ios_application(
+    name = "app_ios",
+    bundle_id = "com.example.planner",
+    families = _IOS_FAMILIES,
+    infoplists = ["ios/Info.plist"],
+    launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+    minimum_os_version = "13.0",
+    # Simulator builds are debug-only; `:ios_build_test` builds it in dbg.
+    tags = ["manual"],
+    version = ":app_version",
+    deps = _IOS_DEPS,
+)
+
+# The same app, signed for a physical device: `provisioning_profile` is the
+# only difference, so the device bundle shares the custom multi-scene runner,
+# `ios/Info.plist` and every `_gen` target with `:app_ios` above.
+#
+# `//device` is git-ignored and absent from a fresh clone. That is fine: the
+# target is tagged `manual`, so `bazel build //...` never expands it and
+# therefore never loads the missing package. Create it from device.example/.
+ios_application(
+    name = "app_ios_device",
+    bundle_id = "com.example.planner",
+    families = _IOS_FAMILIES,
+    infoplists = ["ios/Info.plist"],
+    launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+    minimum_os_version = "13.0",
+    provisioning_profile = "//device:profile",
+    tags = ["manual"],
+    version = ":app_version",
+    deps = _IOS_DEPS,
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+build_test(
+    name = "macos_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_macos"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_ios"],
+)
+
+dart_test(
+    name = "verify_macos_bundle_test",
+    size = "medium",
+    data = [":app_macos"],
+    main = "test/verify_macos_bundle_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables: each Dart file is checked against the nearest
+# listed one above it.
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Static analysis over this example's Dart. The app rule is a bundle and
+# carries no DartInfo, so the sources are declared once more as a library for
+# the analyzer to stage.
+flutter_library(
+    name = "app_lib",
+    package_name = "multi_window_example",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)

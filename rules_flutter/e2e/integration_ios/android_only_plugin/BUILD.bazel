@@ -1,0 +1,16 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+
+# An Android-only plugin: the app lists it beside its iOS plugins, but it has
+# no iOS implementation at all. `plugin_class` is set so that wrongly adding
+# "ios" to `platforms` would make the generated iOS registrant import the
+# missing module and call the missing class: the Linux registrant test fails
+# before the macOS leg ever builds.
+flutter_plugin(
+    name = "android_only_plugin",
+    package_name = "android_only_plugin",
+    srcs = ["lib/android_only_plugin.dart"],
+    android_package = "com.example.androidonly",
+    platforms = ["android"],
+    plugin_class = "AndroidOnlyPlugin",
+    visibility = ["//visibility:public"],
+)

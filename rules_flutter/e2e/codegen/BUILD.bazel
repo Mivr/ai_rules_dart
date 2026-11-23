@@ -1,0 +1,519 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_apple//apple:macos.bzl", "macos_application")
+load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
+load("@rules_dart//dart:defs.bzl", "dart_aggregate_codegen", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_codegen", "dart_library")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_gen_l10n", "flutter_library", "flutter_native_library", "flutter_test")
+load(
+    "@rules_flutter//flutter:macos.bzl",
+    "MACOS_MINIMUM_OS_VERSION",
+    "flutter_macos_engine",
+    "flutter_macos_framework_gen",
+    "flutter_macos_info_plist_gen",
+    "flutter_macos_menu_xib_gen",
+    "flutter_macos_native_libs_gen",
+    "flutter_macos_registrant_gen",
+    "flutter_macos_runner_lib_gen",
+)
+load("@rules_flutter//flutter:web.bzl", "flutter_web_bundle")
+
+# The generator scripts this package's codegen rules invoke by file label.
+# Named once here because the `dart_binary` analysis handles below iterate it.
+_GENERATOR_SCRIPTS = [
+    "simple_generator",
+    "json_generator",
+    "aggregate_generator",
+]
+
+# --- Per-file codegen (dart_codegen) ---
+# Generates a .g.dart companion for each source file independently.
+# dart_codegen is single-source, so each input file gets its own target.
+
+dart_codegen(
+    name = "model_generated",
+    package_name = "codegen_e2e",
+    src = "lib/model.dart",
+    generator = "tools/simple_generator.dart",
+    output_suffixes = [".g.dart"],
+)
+
+dart_codegen(
+    name = "order_generated",
+    package_name = "codegen_e2e",
+    src = "lib/order.dart",
+    generator = "tools/simple_generator.dart",
+    output_suffixes = [".g.dart"],
+)
+
+# --- Aggregate codegen (dart_aggregate_codegen) ---
+# Reads ALL source files and produces a single registry output.
+
+dart_aggregate_codegen(
+    name = "model_registry",
+    package_name = "codegen_e2e",
+    srcs = [
+        "lib/model.dart",
+        "lib/order.dart",
+    ],
+    generator_script = "tools/aggregate_generator.dart",
+    outputs = ["lib/registry.g.dart"],
+)
+
+# --- Flutter app consuming a generated part ---
+# lib/user.dart declares `part 'user.g.dart'`; user.g.dart is generated below.
+# Compiling the app exercises rules_flutter's kernel compile co-locating the
+# generated part with its hand-written source sibling so the part resolves.
+
+dart_codegen(
+    name = "user_json",
+    package_name = "codegen_e2e",
+    src = "lib/user.dart",
+    generator = "tools/json_generator.dart",
+    output_suffixes = [".g.dart"],
+)
+
+flutter_application(
+    name = "app",
+    package_name = "codegen_e2e",
+    srcs = [
+        "lib/user.dart",
+        ":user_json",
+    ],
+    main = "lib/main.dart",
+    # A loose native library (the `native_deps` contract), bundled but never
+    # called. It makes this the one workspace that is a codegen app *and*
+    # carries a `dlopen`ed library, which is the combination the dev tool's
+    # native-libs check exists for: a hot reload rebuilds this target to
+    # regenerate sources, that rebuild recompiles the library, and the running
+    # process cannot take it. `native_libs_reload_e2e_test.dart` drives both
+    # directions off it.
+    native_deps = [":native_add_lib"],
+    deps = [
+        "//dep_lib",
+        "//dep_part",
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# =============================================================================
+# macOS runner (Bazel-generated default runner — no `flutter create` files).
+#
+# This exists specifically so the dev tool's hot-reload path is exercised
+# against an app whose *own* Dart package is source-assembled: `:app` mixes a
+# source-tree file (lib/user.dart) with a generated one (:user_json), so
+# `colocate_packages` rewrites the app package's lib_root to an assembled
+# `*.pkgsrcs` tree-artifact, and its package_config.json rootUri becomes
+# `app.codegen_e2e.pkgsrcs` rather than the source-tree `../../..`. Pure
+# source-tree examples (macos_example, hello_world) never produce this shape,
+# so this target is the only e2e coverage of hot reload over an assembled
+# package. Uses the Bazel-generated runner so no `macos/` scaffold is needed.
+# =============================================================================
+
+# The native library the app bundles, plus what its bindings are generated from.
+#
+# The contract is *generated*, which is the shape a real binding generator has:
+# it reads the library's own source of truth and emits an interface description
+# beside the bindings. Here that is one line per exported declaration, extracted
+# from the header — so editing `native_add.c` moves the library alone, editing a
+# comment in the header moves the library and not the contract, and editing a
+# signature moves both. Those are the three cases
+# `native_libs_reload_e2e_test.dart` drives.
+#
+# Generated rather than the header itself (which would also be a valid contract
+# for a hand-written binding, and is what `ffi_example` declares) because only a
+# generated one exercises the part that can break: a contract is an input to no
+# action of the app, so the app target has to declare it as an output or the dev
+# tool is pointed at a path nothing writes. See `flutter_application`.
+genrule(
+    name = "native_add_ir",
+    srcs = ["//native_add:native/native_add.h"],
+    outs = ["native_add.ir"],
+    cmd = "grep -E '^NATIVE_ADD_EXPORT ' $< > $@",
+)
+
+flutter_native_library(
+    name = "native_add_lib",
+    binding_contract = [":native_add_ir"],
+    library = "//native_add:native_add_shared",
+)
+
+flutter_macos_framework_gen(
+    name = "app_framework",
+    application = ":app",
+)
+
+flutter_macos_registrant_gen(
+    name = "app_registrant",
+    application = ":app",
+)
+
+flutter_macos_native_libs_gen(
+    name = "app_native_libs",
+    application = ":app",
+)
+
+flutter_macos_engine(
+    name = "flutter_engine",
+)
+
+apple_bundle_version(
+    name = "app_version",
+    build_version = "1.0",
+    short_version_string = "1.0",
+    tags = ["manual"],
+)
+
+flutter_macos_info_plist_gen(
+    name = "app_info_plist",
+    app_name = "Codegen Example",
+)
+
+flutter_macos_menu_xib_gen(
+    name = "app_menu_xib",
+    app_name = "Codegen Example",
+)
+
+flutter_macos_runner_lib_gen(
+    name = "app_runner_lib",
+    engine = ":flutter_engine",
+    module_name = "BazelRunner",
+    registrant = ":app_registrant",
+)
+
+macos_application(
+    name = "app_macos",
+    additional_contents = {
+        ":app_framework": "Frameworks",
+        ":app_native_libs": "Frameworks",
+    },
+    bundle_id = "com.example.codegen",
+    infoplists = [":app_info_plist"],
+    minimum_os_version = MACOS_MINIMUM_OS_VERSION,
+    resources = [":app_menu_xib"],
+    # `manual` keeps this apple-bundling target out of the `//...` wildcard so
+    # `bazel test //...` on Linux doesn't try (and fail) to resolve a C++
+    # toolchain for it. macOS coverage comes via :macos_app_build_test, which
+    # references it explicitly and carries the target_compatible_with guard.
+    # Matches the macos_application pattern in the other e2e workspaces.
+    tags = ["manual"],
+    version = ":app_version",
+    deps = [":app_runner_lib"],
+)
+
+# --- Build tests ---
+# Verify the codegen rules produce their outputs, and that a Flutter app can
+# compile while consuming a generated part.
+
+build_test(
+    name = "per_file_codegen_test",
+    size = "small",
+    targets = [
+        ":model_generated",
+        ":order_generated",
+    ],
+)
+
+build_test(
+    name = "aggregate_codegen_test",
+    size = "small",
+    targets = [":model_registry"],
+)
+
+# Verify the macOS runner over the source-assembled (.pkgsrcs) app builds.
+build_test(
+    name = "macos_app_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_macos"],
+)
+
+build_test(
+    name = "flutter_codegen_test",
+    size = "small",
+    targets = [":app"],
+)
+
+_HOST_COMPATIBLE = select({
+    "@platforms//os:linux": [],
+    "@platforms//os:macos": [],
+    "@platforms//os:windows": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+# Exercises: a flutter_test that imports `package:codegen_e2e/user.dart` —
+# whose source-tree sibling has `part 'user.g.dart'` produced by `:user_json`
+# in `bazel-out`. The test's `package:` URI must resolve to a single
+# directory that holds both files, so the `part` directive finds its
+# generated companion.
+flutter_test(
+    name = "user_test",
+    package_name = "codegen_e2e",
+    size = "medium",
+    srcs = [
+        "lib/user.dart",
+        ":user_json",
+    ],
+    main = "test/user_test.dart",
+    target_compatible_with = _HOST_COMPATIBLE,
+    deps = [
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+    ],
+)
+
+# Exercises: the kernel `unused_inputs_list` wiring. `//unused_inputs/a`
+# adopts `//unused_inputs/b`'s `part of` file, re-exports
+# `//unused_inputs/c`, and folds a constant from `//unused_inputs/d`; editing
+# any of those must rebuild to the same dill a clean build produces. A wrongly
+# skipped compile would keep a stale value and fail these expectations after
+# an incremental rebuild.
+flutter_test(
+    name = "unused_inputs_test",
+    package_name = "codegen_e2e",
+    size = "medium",
+    main = "test/unused_inputs_test.dart",
+    target_compatible_with = _HOST_COMPATIBLE,
+    deps = [
+        "//unused_inputs/a",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+    ],
+)
+
+# Exercises: Native Assets under flutter_tester. The library is owned by a
+# dependency, so nothing here names an asset — the way a pub package's
+# hook-built library arrives. A test loads no application bundle, so this is
+# what pins the runfiles-resolved path in the manifest the frontend_server
+# embeds into the test's kernel.
+flutter_test(
+    name = "native_asset_test",
+    package_name = "codegen_e2e",
+    size = "medium",
+    main = "test/native_asset_test.dart",
+    target_compatible_with = _HOST_COMPATIBLE,
+    deps = [
+        "//native_add",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+    ],
+)
+
+# Exercises: a flutter_web_bundle whose `lib/main.dart` reaches `user.dart`
+# (with `part 'user.g.dart'`) via a relative import — covering both the
+# dart2js/dart2wasm compile and the icon-tree-shaking kernel compile. Both
+# must reach `main.dart` through the same colocated package so its relative
+# `import 'user.dart'` finds the assembled sibling.
+# A native module the page would instantiate, declared so the dev tool can tell
+# an edit the instantiated module can still serve from one it cannot. Eight bytes
+# of wasm header and a text file naming its exports: the tool compares bytes and
+# never parses either, so what a fixture needs is a module that moves when its
+# code does and a contract that moves when its callable surface does.
+#
+# Declared, not detected — the same bundle directory holds Flutter's own
+# `main.dart.wasm`, which changes on every Dart edit.
+flutter_native_library(
+    name = "demo_module",
+    binding_contract = ["web/demo_module.api"],
+    library = "web/demo_module.wasm",
+)
+
+flutter_web_bundle(
+    name = "web_app",
+    package_name = "codegen_e2e",
+    srcs = [
+        "lib/user.dart",
+        ":user_json",
+    ],
+    compiler = "dart2js",
+    main = "lib/main.dart",
+    native_modules = [":demo_module"],
+    renderer = "canvaskit",
+    deps = [
+        "//dep_lib",
+        "//dep_part",
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+build_test(
+    name = "flutter_web_codegen_test",
+    size = "small",
+    targets = [":web_app"],
+)
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables: each Dart file is checked against the nearest
+# listed one above it.
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Static analysis over this example's Dart. The app rule is a bundle and
+# carries no DartInfo, so the sources are declared once more as a library for
+# the analyzer to stage.
+flutter_library(
+    name = "app_lib",
+    package_name = "codegen_e2e",
+    # Mirrors the app's srcs rather than globbing: `user.g.dart` is a build
+    # output, so a source glob cannot see it, and analysing `lib/user.dart`
+    # without it fails on the unresolved `part`. lib/model.dart and
+    # lib/order.dart belong to a different target with generated parts of
+    # their own and are not part of this app.
+    srcs = [
+        "lib/main.dart",
+        "lib/user.dart",
+        ":user_json",
+    ],
+    deps = [
+        "//dep_lib",
+        "//dep_part",
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# Static analysis of the per-file-codegen sources. `lib/model.dart` and
+# `lib/order.dart` are inputs to `:model_generated` / `:order_generated` and
+# belong to no other target — `:app_lib` deliberately excludes them. Each
+# declares a `part`, so the generated companion has to be in `srcs` beside it
+# or the `part` directive does not resolve; that is the same colocation
+# `:app_lib` does for `user.dart`.
+#
+# A `dart_library`, not a `flutter_library`: neither file imports `dart:ui` or
+# anything from Flutter, so nothing here needs `sky_engine`.
+dart_library(
+    name = "models_lib",
+    package_name = "codegen_e2e",
+    srcs = [
+        "lib/model.dart",
+        "lib/order.dart",
+        ":model_generated",
+        ":order_generated",
+    ],
+)
+
+# Analysis handles for the generator scripts.
+#
+# `generator` and `generator_script` take a bare `.dart` file label — the
+# script runs as `dart <script>` with no package resolution of its own — so
+# no target owns the file, and the analysis aspect checks only files a target
+# owns. A `dart_binary` over the same source supplies the owner.
+#
+# Deliberately not wired into any codegen rule. `generator_bin` enlists its
+# executable in the persistent-worker protocol (see
+# `dart/private/dart_aggregate_codegen.bzl`), which these plain scripts do not
+# speak, so moving one into that slot to gain a target would hand it worker
+# requests it cannot answer.
+#
+# `options`, matching the test-source analyze targets above: these generators
+# hold to the same very_good_analysis bar as the app code.
+[dart_binary(
+    name = name,
+    main = "tools/%s.dart" % name,
+) for name in _GENERATOR_SCRIPTS]
+
+# Proves `bazel run <flutter_test> -- --update-goldens` rewrites a stale golden
+# PNG and that the test then passes. It works on a scratch copy of this
+# workspace in a temporary directory and never writes into the source tree.
+# `bazel run //:update_goldens_check -- --bazel=bazel`; CI runs it as its own
+# step on Linux and macOS.
+dart_binary(
+    name = "update_goldens_check",
+    main = "tools/update_goldens_check.dart",
+)
+
+# --- Localizations (flutter_gen_l10n) ---
+# Exercises: the vendored `flutter gen-l10n` generator end to end — arb files in,
+# AppLocalizations Dart out, compiled and run against package:flutter.
+#
+# `app_es.arb` and `app_es_419.arb` are both present on purpose. gen-l10n emits
+# one Dart file per primary language subtag, so the two collapse into a single
+# app_localizations_es.dart. A rule deriving one output per input arb would
+# declare a file the generator never writes; this target is what holds that.
+# Undeclared regional `.arb` sitting in the same `lib/l10n/` directory; staged
+# via `data` on `:l10n_test` so it is present in the execroot alongside the
+# declared `arbs` of `:app_l10n`.
+filegroup(
+    name = "undeclared_l10n_arb",
+    srcs = ["lib/l10n/app_en_US.arb"],
+)
+
+flutter_gen_l10n(
+    name = "app_l10n",
+    arbs = [
+        "lib/l10n/app_en.arb",
+        "lib/l10n/app_es.arb",
+        "lib/l10n/app_es_419.arb",
+    ],
+)
+
+flutter_test(
+    name = "l10n_test",
+    package_name = "codegen_e2e",
+    size = "medium",
+    srcs = [":app_l10n"],
+    data = [":undeclared_l10n_arb"],
+    main = "test/l10n_test.dart",
+    target_compatible_with = _HOST_COMPATIBLE,
+    deps = [
+        "@deps//:flutter",
+        "@deps//:flutter_localizations",
+        "@deps//:flutter_test",
+        "@deps//:intl",
+    ],
+)
+
+# Exercises: the golden-file comparator the rule installs. Goldens reach a test
+# only through `data` — the comparator reads them out of runfiles — so this is
+# the spelling every golden suite needs.
+flutter_test(
+    name = "golden_test",
+    package_name = "codegen_e2e",
+    size = "medium",
+    data = glob(["test/goldens/**"]),
+    main = "test/golden_test.dart",
+    target_compatible_with = _HOST_COMPATIBLE,
+    deps = [
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+    ],
+)
+
+# The paired negative: same test directory, same PNG on disk, no `data`. Do
+# not "fix" it by adding one.
+flutter_test(
+    name = "golden_undeclared_test",
+    package_name = "codegen_e2e",
+    size = "medium",
+    main = "test/golden_undeclared_test.dart",
+    target_compatible_with = _HOST_COMPATIBLE,
+    deps = [
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+    ],
+)
+
+# Exercises: the `test_api`-only configuration the rule documents as supported.
+# It is what fails if the bootstrap's golden block stops being gated on
+# `package:flutter_test`, since nothing here can resolve that package. Do not
+# add `@deps//:flutter_test` to it.
+flutter_test(
+    name = "test_api_only_test",
+    package_name = "codegen_e2e",
+    size = "medium",
+    main = "test/test_api_only_test.dart",
+    target_compatible_with = _HOST_COMPATIBLE,
+    deps = ["@deps//:test_api"],
+)

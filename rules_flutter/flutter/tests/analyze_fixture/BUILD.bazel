@@ -1,0 +1,15 @@
+load("//flutter:defs.bzl", "flutter_library")
+
+# A `flutter_library` over code that imports `dart:ui`, analyzed with nothing
+# but its own sources.
+#
+# It names no `sky_engine`, deliberately. The analyzer resolves `dart:ui` only
+# through `package:sky_engine/_embedder.yaml`, and `flutter_library` supplies
+# that package to analysis itself. A library that had to list it — as every
+# consumer once did, beside a second copy of the library for compilation —
+# fails here with `dart:ui` unresolved.
+flutter_library(
+    name = "analyze_fixture",
+    package_name = "analyze_fixture",
+    srcs = ["lib/geometry.dart"],
+)

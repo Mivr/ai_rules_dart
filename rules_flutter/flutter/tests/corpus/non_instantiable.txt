@@ -1,0 +1,13 @@
+# Public exports that are constants or providers, not rules, macros or
+# aspects. `exports_test` rejects an entry here that is unknown or that names
+# an instantiable export.
+ANDROID_MIN_SDK_VERSION
+ANDROID_TARGET_SDK_VERSION
+FLUTTER_APK_AAPT_NO_COMPRESS_EXTENSIONS
+IOS_MINIMUM_OS_VERSION
+IOS_DEFAULT_LAUNCH_STORYBOARD
+IOS_DEFAULT_MAIN_STORYBOARD
+MACOS_MINIMUM_OS_VERSION
+HOT_PATCH_OUTPUT_GROUP
+_HotPatchFilesInfo
+DEV_FILES_GROUP

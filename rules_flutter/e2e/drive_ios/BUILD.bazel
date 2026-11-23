@@ -1,0 +1,95 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load(
+    "@rules_flutter//flutter:ios.bzl",
+    "IOS_MINIMUM_OS_VERSION",
+    "flutter_drive_test",
+    "flutter_ios_app",
+    "ios_sim_debug_app",
+)
+
+exports_files(["pubspec.lock"])
+
+flutter_application(
+    name = "app_flutter",
+    package_name = "drive_ios",
+    main = "lib/main.dart",
+    min_os_version = IOS_MINIMUM_OS_VERSION,
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_ios_app(
+    name = "app",
+    application = ":app_flutter",
+    bundle_id = "com.rulesflutter.driveios",
+)
+
+# The simulator runs the JIT engine, so the app is rebuilt as a debug
+# sim_arm64 app; a release app hosts no Dart VM service for a driver.
+ios_sim_debug_app(
+    name = "app_sim",
+    app = ":app",
+    tags = ["manual"],
+)
+
+# The driver connects to the launched app's VM service URI and exits 0, so
+# this test passes only when the simulator ran the app and the rule forwarded
+# the URI. `manual`, `exclusive` and macOS-only come from the iOS `app`.
+flutter_drive_test(
+    name = "drive_pass_test",
+    app = ":app_sim",
+    driver = "test_driver/pass_driver.dart",
+)
+
+# Red twin: the driver exits 1 and prints DRIVE_RED_MUST_FAIL, so the test
+# must fail with that line in its log. full.yaml runs it and asserts the failure.
+flutter_drive_test(
+    name = "drive_fail_test",
+    app = ":app_sim",
+    driver = "test_driver/fail_driver.dart",
+)
+
+# Portable proof that the workspace loads and its Dart side compiles on every OS.
+build_test(
+    name = "ios_dart_side_build_test",
+    size = "small",
+    targets = [":app_flutter"],
+)
+
+# Host-side lint twin covering the app entrypoint and both macOS-only drivers,
+# so `ios_dart_analysis_test` lints every `.dart` file on every OS.
+flutter_library(
+    name = "drive_lint",
+    package_name = "drive_ios",
+    srcs = [
+        "lib/main.dart",
+        "test_driver/fail_driver.dart",
+        "test_driver/pass_driver.dart",
+    ],
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+dart_analysis_test(
+    name = "ios_dart_analysis_test",
+    size = "small",
+    targets = [":drive_lint"],
+)
+
+# Lint ruleset resolution for `analysis_options.yaml`; see `e2e/ios_example`.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)

@@ -1,0 +1,267 @@
+@Tags(['e2e'])
+import 'dart:convert';
+
+import 'package:test/test.dart';
+
+import 'dev_tool_e2e_harness.dart';
+
+typedef _Shot = ({List<int> bytes, String? detail, String? settled});
+
+/// Overrides the `-c dbg` a `--hot` run asks for (bazel takes the last
+/// occurrence of a flag), so the build succeeds and emits no
+/// `_dev_config.json` — the artifact the whole DDC dev loop hangs off.
+///
+/// fastbuild rather than opt on purpose: it is the configuration
+/// `bazel test //...` already populates in this workspace, so the negative
+/// tests below cost a cache hit instead of a release web compile.
+const _notDebug = ['--build-arg=--compilation_mode=fastbuild'];
+
+void main() {
+  final String workspace = e2eWorkspace('web_example');
+
+  group('Web/Chrome startup failures', () {
+    // What this whole group exists for: a tool that warns on stderr and then
+    // falls back to serving the stale bazel bundle launches Chrome, renders the
+    // app and reports `app.started` — with no DWDS, no VM service, no hot
+    // reload, no DevTools and no app console. It looks like a healthy run and
+    // cannot be debugged or reloaded at all.
+    test(
+      'a web target built without -c dbg ends the run, naming the cause',
+      () async {
+        final DevToolProcess dt = await startDevTool(
+          workspace: workspace,
+          target: ':app_wasm',
+          device: 'chrome',
+          extraArgs: _notDebug,
+        );
+
+        final String failure = await dt.waitForStderr(
+          '_dev_config.json',
+          timeout: const Duration(minutes: 4),
+        );
+        // LOG_FORMAT=json is on (the harness sets it), so the line a machine
+        // consumer reads must be a record with a level — not loose prose.
+        final record = json.decode(failure) as Map<String, dynamic>;
+        expect(record['level'], 'SEVERE');
+        expect(record['error'], contains('-c dbg'));
+
+        // And a --machine client is told why, rather than watching the
+        // JSON-RPC stream stop mid-run with no final event.
+        final Map<String, dynamic> logMessage = await dt.waitForEvent(
+          'daemon.logMessage',
+          timeout: const Duration(seconds: 30),
+        );
+        final params = logMessage['params'] as Map<String, dynamic>;
+        expect(params['level'], 'error');
+        expect(params['message'], contains('_dev_config.json'));
+
+        expect(
+          await dt.exitCodeWithin(
+            const Duration(seconds: 30),
+            stillRunning: 'the run failed to start but did not exit',
+          ),
+          isNot(0),
+        );
+        // Nothing reached the point of claiming a running app.
+        expect(
+          dt.events.map((e) => e['event']),
+          isNot(contains('app.started')),
+        );
+      },
+    );
+
+    test(
+      '--allow-no-vm-service runs the same build anyway, degraded',
+      () async {
+        final DevToolProcess dt = await startDevTool(
+          workspace: workspace,
+          target: ':app_wasm',
+          device: 'chrome',
+          extraArgs: [..._notDebug, '--allow-no-vm-service'],
+        );
+
+        await dt.waitForEvent(
+          'app.started',
+          timeout: const Duration(minutes: 4),
+        );
+        // The one line that says which flag is keeping this run alive, and
+        // what it gave up for it.
+        final degraded = json.decode(
+          await dt.waitForStderr(
+            'web_dev_server_failed',
+            timeout: const Duration(seconds: 30),
+          ),
+        ) as Map<String, dynamic>;
+        expect(degraded['level'], 'WARNING');
+        expect(degraded['flag'], '--allow-no-vm-service');
+        expect(degraded['error'], contains('_dev_config.json'));
+
+        // And the reload surface reports the real reason rather than a
+        // generic "no frontend server".
+        final Map<String, dynamic> reload = await dt.sendCommand(
+          1,
+          'app.hotReload',
+        );
+        expect(reload['result']?['error'], contains('hot reload unavailable'));
+
+        await dt.sendCommand(2, 'daemon.shutdown');
+      },
+    );
+  });
+
+  group('Web/Chrome e2e', () {
+    // Two facts a `--wasm` run has to state rather than leave a caller to
+    // discover. dart2wasm produces a bundle with no VM service behind it, so
+    // the `app.*` agent surface cannot exist; advertised anyway it answers `no
+    // VM service for <appId>` a minute later, which reads as a connection that
+    // failed rather than one that was never going to exist. And the address has
+    // to be announced: this tool launches Chrome with its own scratch profile,
+    // `--web-run-headless` gives it no window, and the address is otherwise
+    // recoverable only from that process's argv.
+    test('a WASM run says where the app is, and what it cannot do', () async {
+      final DevToolProcess dt = await startDevTool(
+        workspace: workspace,
+        target: ':app_wasm',
+        device: 'chrome',
+        extraArgs: const ['--wasm'],
+      );
+
+      final Map<String, dynamic> launched = await dt.waitForEvent(
+        'app.webLaunchUrl',
+        timeout: const Duration(minutes: 4),
+      );
+      final params = launched['params'] as Map<String, dynamic>;
+      expect(params['url'], startsWith('http://'));
+      expect(params['launched'], isTrue);
+      expect(params['appId'], isNotEmpty);
+      // And where to drive the browser from: Chrome picks the port, so this is
+      // the only place a client can learn it.
+      final dynamic cdpPort = params['cdpPort'];
+      expect(cdpPort, isA<int>());
+      expect(
+        params['webSocketDebuggerUrl'],
+        startsWith('ws://127.0.0.1:$cdpPort/devtools/page/'),
+      );
+
+      await dt.waitForEvent('app.started', timeout: const Duration(minutes: 4));
+
+      // Said once, up front, rather than one refused command at a time.
+      final absent = json.decode(
+        await dt.waitForStderr(
+          'agent_surface_unavailable',
+          timeout: const Duration(seconds: 30),
+        ),
+      ) as Map<String, dynamic>;
+      expect(absent['reason'], 'wasm');
+
+      // And the surface really is absent, not present-and-refusing.
+      final Map<String, dynamic> refusal = await dt.sendCommand(
+        1,
+        'app.getText',
+        params: {'appId': params['appId'], 'text': 'anything'},
+      );
+      expect(refusal['error'], contains('Unknown command: app.getText'));
+
+      // What a WASM run *can* still do is unaffected: its console arrives
+      // over CDP rather than a VM service.
+      expect(dt.commands, isNot(contains('app.getText')));
+      expect(dt.commands, contains('app.restart'));
+
+      // A screenshot waits for the app to go idle first — except here, where
+      // there is no VM service to ask. Said rather than silently skipped: the
+      // header is how a caller learns the picture carries no such promise,
+      // and on this run it is why waiting for a capturable page is the
+      // caller's job rather than the endpoint's.
+      final appId = params['appId']! as String;
+      await dt.nativeScreenshotWhenOnScreen(appId);
+      final _Shot shot = await dt.httpNativeScreenshotReply(appId);
+      expect(shot.settled, 'skipped');
+      expect(shot.detail, contains('no VM service'));
+
+      await dt.sendCommand(2, 'daemon.shutdown');
+    }, timeout: const Timeout(Duration(minutes: 6)));
+
+    test('WASM screenshot via HTTP control channel', () async {
+      final DevToolProcess dt = await startDevTool(
+        workspace: workspace,
+        target: ':app_wasm',
+        device: 'chrome',
+      );
+
+      await dt.waitForEvent('app.started');
+      final HttpControlInfo http = await dt.waitForHttpControl();
+      expect(http, isNotNull);
+
+      // Asked the instant the channel is up, with no sleep in front of it —
+      // which is when an agent acting on `app.started` asks, and the moment the
+      // endpoint has to get right. A browser's VM service is handed over by
+      // DWDS *after* that event, so the settle has to wait for the handover
+      // rather than read the field once and capture a page that has not
+      // painted. A 200 and a valid PNG say nothing about that: the picture
+      // comes back either way.
+      final _Shot shot = await dt.httpNativeScreenshotReply(dt.appId!);
+      expect(shot.settled, 'yes', reason: shot.detail);
+      expectRendered(shot.bytes, what: 'the WASM app captured on app.started');
+
+      await dt.sendCommand(1, 'daemon.shutdown');
+    });
+
+    test('JS screenshot via HTTP control channel', () async {
+      final DevToolProcess dt = await startDevTool(
+        workspace: workspace,
+        target: ':app_js',
+        device: 'chrome',
+      );
+
+      final Map<String, dynamic> launched = await dt.waitForEvent(
+        'app.webLaunchUrl',
+      );
+      await dt.waitForEvent('app.started');
+      final HttpControlInfo http = await dt.waitForHttpControl();
+      expect(http, isNotNull);
+
+      // `//:app_js` declares `base_href = "/web_example_js/"`, so this is also
+      // the case that a page served under a base path boots. Every file the
+      // page loads resolves under that path; a server answering from `/`
+      // instead leaves the page blank with DWDS never attaching, which this
+      // test used to accept as a fixture limitation.
+      final url = (launched['params'] as Map<String, dynamic>)['url'] as String;
+      expect(Uri.parse(url).path, '/web_example_js/');
+      final _Shot shot = await dt.httpNativeScreenshotReply(dt.appId!);
+      expect(shot.settled, 'yes', reason: shot.detail);
+      expectRendered(shot.bytes, what: 'the JS app served under its base href');
+
+      await dt.sendCommand(1, 'daemon.shutdown');
+    });
+
+    // `daemon.shutdown` is one of only two documented ways to end a run, and
+    // the only one an agent driving `--machine` has that is not "kill it".
+    // A run can answer `{"message":"shutdown"}`, emit `app.stop` and still
+    // leave the process alive — DWDS's debug-extension backend can hold a
+    // listening socket past `Dwds.stop()`, and a listening socket keeps the
+    // Dart VM up. Asserting on the answer alone cannot see that, so this
+    // asserts on the exit.
+    test('daemon.shutdown ends the process, not just the app', () async {
+      final DevToolProcess dt = await startDevTool(
+        workspace: workspace,
+        target: ':app_js',
+        device: 'chrome',
+      );
+
+      await dt.waitForEvent('app.started');
+      final Map<String, dynamic> response = await dt.sendCommand(
+        1,
+        'daemon.shutdown',
+      );
+      expect(response['result']?['message'], 'shutdown');
+
+      final int code = await dt.exitCodeWithin(
+        const Duration(seconds: 20),
+        stillRunning:
+            'daemon.shutdown was answered but the process did not exit. '
+            'Something the run owns is still holding the VM open',
+      );
+      expect(code, 0);
+    });
+  });
+}

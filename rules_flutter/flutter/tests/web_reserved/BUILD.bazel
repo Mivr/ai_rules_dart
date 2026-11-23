@@ -1,0 +1,6 @@
+load("//flutter/tests:web_test.bzl", "web_reserved_test_suite")
+
+# A `web_assets` entry's bundle destination is its path relative to this
+# package with a leading `web/` stripped, so the fixtures have to sit beside a
+# real `web/` directory. That is the only reason this is a package of its own.
+web_reserved_test_suite(name = "web_reserved_test")

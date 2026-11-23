@@ -1,0 +1,31 @@
+{
+  "spawns": [
+    {
+      "inputs": {
+        "bazel-out/k8-opt-exec-ST-1/bin/g": {}
+      },
+      "listedOutputs": ["bazel-out/k8-opt-exec-ST-1/bin/h"],
+      "metrics": {
+        "executionWallTime": "4.0s"
+      },
+      "mnemonic": "Host",
+      "targetLabel": "@@tools//:h"
+    },
+    {
+      "listedOutputs": ["bazel-out/k8-opt-exec-ST-1/bin/g"],
+      "metrics": {
+        "executionWallTime": "3.0s"
+      },
+      "mnemonic": "Host",
+      "targetLabel": "@@extra//:g"
+    },
+    {
+      "listedOutputs": ["bazel-out/k8-fastbuild/bin/t"],
+      "metrics": {
+        "executionWallTime": "2.0s"
+      },
+      "mnemonic": "Compile",
+      "targetLabel": "//app:t"
+    }
+  ]
+}

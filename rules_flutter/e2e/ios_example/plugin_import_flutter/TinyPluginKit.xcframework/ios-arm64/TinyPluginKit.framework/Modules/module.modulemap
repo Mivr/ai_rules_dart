@@ -1,0 +1,5 @@
+framework module TinyPluginKit {
+	umbrella header "TinyPluginKit.h"
+	export *
+	module * { export * }
+}

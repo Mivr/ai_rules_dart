@@ -1,0 +1,38 @@
+name: Free unused preinstalled toolchains
+description: >-
+  Frees disk on a hosted Ubuntu runner by removing preinstalled toolchains no
+  job here uses, and logs df before and after. The Android SDK and NDK under
+  /usr/local/lib/android stay: rules_android and rules_android_ndk discover them
+  through the image's ANDROID_HOME (hello_world, integration_android, pub_scc,
+  android_example). A missing path is named and skipped; a path that exists but
+  cannot be removed fails the step.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        echo "::group::df -h / before cleanup"
+        df -h /
+        echo "::endgroup::"
+        status=0
+        for p in /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/share/powershell /opt/microsoft /opt/az /usr/local/share/boost /usr/local/graalvm /usr/local/julia*; do
+          if [ ! -e "$p" ]; then
+            echo "skip: $p does not exist"
+            continue
+          fi
+          echo "removing $p"
+          if ! sudo rm -rf "$p"; then
+            echo "::error::cannot remove $p"
+            status=1
+          fi
+        done
+        if command -v docker >/dev/null 2>&1; then
+          echo "removing preinstalled docker images"
+          sudo docker image prune --all --force || { echo "::error::cannot prune docker images"; status=1; }
+        else
+          echo "skip: docker is not installed"
+        fi
+        echo "::group::df -h / after cleanup"
+        df -h /
+        echo "::endgroup::"
+        exit "$status"

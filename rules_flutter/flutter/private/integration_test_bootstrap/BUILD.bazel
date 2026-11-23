@@ -1,0 +1,9 @@
+# Bootstrap programs for `flutter_integration_test`, expanded per target with
+# `ctx.actions.expand_template` by `//flutter/private:flutter_integration_test.bzl`
+# and `//flutter/private:flutter_integration_test_ios.bzl`. Conditional snippets
+# they substitute (the live binding class and the harness-URL prologue) live in
+# `//flutter/private:integration_test_bootstrap_snippets.bzl`.
+exports_files(
+    glob(["*.dart.tpl"]),
+    visibility = ["//visibility:public"],
+)

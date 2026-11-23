@@ -1,0 +1,24 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: malformed flutter.assets fetch fails on shape refusal
+    run: bazel fetch @red_deps//:bad_shape
+    expect:
+      non_zero: true
+      output_contains: 'Expected "assets" to be a list'
+  - name: invalid font weight fetch fails on weight refusal
+    run: bazel fetch @red_deps//:bad_font
+    expect:
+      non_zero: true
+      output_contains:
+        - for font -> weight
+        - pubspec.yaml line 18
+  - name: unreadable environment.sdk fetch fails on sdk refusal
+    run: bazel fetch @red_deps//:bad_sdk
+    expect:
+      non_zero: true
+      output_contains: 'bad_sdk in bad_sdk/pubspec.yaml: invalid environment.sdk constraint "3.10"'
+  - name: non-string environment.sdk fetch fails on sdk refusal
+    run: bazel fetch @red_deps//:bad_sdk_type
+    expect:
+      non_zero: true
+      output_contains: 'bad_sdk_type in bad_sdk_type/pubspec.yaml: invalid environment.sdk constraint "3.5"'

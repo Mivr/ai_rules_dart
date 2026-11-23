@@ -1,0 +1,14 @@
+# Hand-written lock for the lazy Android path: the only resolved package is
+# the `lazy_plugin` path package. The fixture never runs `dart pub get`; the
+# Dart build only fetches the spoke, while the fail-closed script reaches the
+# Android aggregator on purpose.
+packages:
+  lazy_plugin:
+    dependency: "direct main"
+    description:
+      path: "lazy_plugin"
+      relative: true
+    source: path
+    version: "0.1.0"
+sdks:
+  dart: ">=3.13.0 <4.0.0"

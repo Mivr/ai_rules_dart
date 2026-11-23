@@ -1,0 +1,25 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test all targets
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 3
+    expect:
+      exit_code: 0
+  - name: pre-0.24.0 rules_dart fails on pub_scc.bzl
+    replace_in_files:
+      - path: MODULE.bazel
+        from: version = "0.28.3", repo_name = "rules_dart"
+        to: version = "0.21.0", repo_name = "rules_dart"
+      - path: MODULE.bazel
+        from: https://github.com/Mivr/ai_rules_dart/releases/download/v0.28.3/rules_dart-v0.28.3.tar.gz
+        to: https://github.com/Mivr/ai_rules_dart/releases/download/v0.21.0/rules_dart-v0.21.0.tar.gz
+      - path: MODULE.bazel
+        from: 75165afd286a20b381334761f271413b7a9839a843f1266190157d7ef526b7a1
+        to: 2c8796f98b39667be2b258b860e86c8b99ab7837aeec280180221c777ac69a9f
+      - path: MODULE.bazel
+        from: rules_dart-0.28.3
+        to: rules_dart-0.21.0
+    run: bazel query @deps//...
+    expect:
+      non_zero: true
+      output_contains: pub_scc.bzl

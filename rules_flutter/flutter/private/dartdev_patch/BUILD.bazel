@@ -1,0 +1,22 @@
+# The fail-closed `dartdev_aot.dart.snapshot` patch, applied by
+# `flutter_engine_artifacts` at fetch time. See `patch.dart` for what the
+# patch rewrites and when the fetch must fail instead.
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+
+exports_files(
+    [
+        "empty.json",
+        "patch.dart",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+dart_test(
+    name = "patch_test",
+    size = "small",
+    srcs = ["patch.dart"],
+    main = "patch_test.dart",
+    target_compatible_with = HOST_COMPATIBLE,
+    deps = ["@dev_tool_deps//:test"],
+)

@@ -1,0 +1,19 @@
+{
+  "spawns": [
+    {
+      "listedOutputs": ["bazel-out/k8-opt-exec-ST-1/bin/h"],
+      "mnemonic": "Host",
+      "targetLabel": "@@tools//:h"
+    },
+    {
+      "listedOutputs": ["bazel-out/k8-opt-exec-ST-1/bin/g"],
+      "mnemonic": "Host",
+      "targetLabel": "@@extra//:g"
+    },
+    {
+      "listedOutputs": ["bazel-out/k8-fastbuild/bin/t"],
+      "mnemonic": "Compile",
+      "targetLabel": "//app:t"
+    }
+  ]
+}

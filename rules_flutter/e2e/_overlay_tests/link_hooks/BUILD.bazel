@@ -1,0 +1,53 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app")
+
+exports_files(["pubspec.lock"])
+
+# `glyphs`' link hook runs over the uses the release compile records and emits
+# the index of glyphs the app constructs, bundled at
+# `flutter_assets/packages/glyphs/glyphs/index.json`.
+flutter_application(
+    name = "app",
+    package_name = "link_hooks",
+    link_hook_assets = ["package:glyphs/glyphs/index.json"],
+    main = "lib/main.dart",
+    deps = [
+        "//glyphs",
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_macos_app(
+    name = "macos_app",
+    app_name = "Link Hooks",
+    application = ":app",
+    bundle_id = "com.example.linkhooks",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# The same app with a `Glyph` built at run time: the hook refuses it, so this
+# must fail to build. Tagged manual so `//...` stays green; the e2e suite
+# builds it and checks the hook's message reaches the user.
+flutter_application(
+    name = "dynamic_app",
+    package_name = "link_hooks",
+    link_hook_assets = ["package:glyphs/glyphs/index.json"],
+    main = "lib/dynamic_main.dart",
+    tags = ["manual"],
+    deps = [
+        "//glyphs",
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+dart_test(
+    name = "bundle_test",
+    size = "small",
+    args = ["$(rlocationpaths :app)"],
+    data = [":app"],
+    main = "bundle_test.dart",
+    deps = ["@rules_dart//dart/runfiles"],
+)

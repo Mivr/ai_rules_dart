@@ -1,0 +1,14 @@
+"""Fan-in wide bundle (COV-63): the weighted base through 300 thin deps.
+
+Touching only this file and running `build --nobuild :bundle` re-analyses
+just this bundle; compare its server CPU against the narrow bundle at the
+same `p`.
+"""
+
+load("//flutter/tests/asset_fanin:defs.bzl", "asset_fanin_wide")
+
+asset_fanin_wide(
+    name = "bundle",
+    pool = "//flutter/tests/asset_fanin",
+    stem = "fanin",
+)

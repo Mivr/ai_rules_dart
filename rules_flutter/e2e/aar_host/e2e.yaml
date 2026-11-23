@@ -1,0 +1,17 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: build host app
+    run: bazel build //:host_app
+  - name: test aar host on emulator
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 1
+    expect:
+      exit_code: 0
+  - name: host app fails when AAR is left out
+    replace_in_files:
+      - path: BUILD.bazel
+        from: '":module_import",'
+        to: ''
+    run: bazel test //... --test_output=errors
+    expect:
+      non_zero: true

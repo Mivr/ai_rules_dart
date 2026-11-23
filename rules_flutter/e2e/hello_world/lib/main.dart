@@ -1,0 +1,330 @@
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:hello_world/common_widgets.dart';
+
+void main() {
+  runApp(const MyApp());
+}
+
+/// Root widget of the hello_world example, the fixture the dev-tool reload
+/// and gesture end-to-end tests drive.
+class MyApp extends StatelessWidget {
+  /// Creates the hello_world example's root widget.
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Hello World',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
+      ),
+      home: const MyHomePage(title: 'Hello World'),
+    );
+  }
+}
+
+/// The example's only screen: a counter plus the keyed widgets the agent
+/// end-to-end tests tap, type into, and read back.
+class MyHomePage extends StatefulWidget {
+  /// Creates the screen, showing [title] in the app bar.
+  const MyHomePage({required this.title, super.key});
+
+  /// Text shown in the app bar.
+  final String title;
+
+  @override
+  State<MyHomePage> createState() => _MyHomePageState();
+}
+
+class _MyHomePageState extends State<MyHomePage> {
+  int _counter = 0;
+  int _longPressCount = 0;
+  int _doubleTapCount = 0;
+  final _agentEchoController = TextEditingController();
+  String _submitted = '';
+  String _shortcut = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _agentEchoController.addListener(() => setState(() {}));
+  }
+
+  void _incrementCounter() {
+    setState(() {
+      _counter++;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: Text(widget.title),
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            const Text('You have pushed the button this many times:'),
+            AppTitle(text: '$_counter'),
+            // Icon from cupertino_icons (a pub package shipping its own
+            // font via flutter.fonts) — verifies that pub-package fonts
+            // make it into the bundle and render correctly.
+            const Icon(CupertinoIcons.heart, size: 48),
+            Text('count: $_counter', key: const ValueKey('agent_test_label')),
+            ElevatedButton(
+              key: const ValueKey('agent_test_button'),
+              onPressed: _incrementCounter,
+              child: const Text('Increment (agent)'),
+            ),
+            // ⌘' is bound the way an app binds a punctuation shortcut: by the
+            // logical key. press_key_e2e_test.dart presses it, because the
+            // apostrophe is the one key whose physical and logical debug
+            // names disagree, and pairing them by name sent ⌘".
+            CallbackShortcuts(
+              bindings: {
+                const SingleActivator(
+                  LogicalKeyboardKey.quoteSingle,
+                  meta: true,
+                ): () =>
+                    setState(() => _shortcut = "⌘'"),
+              },
+              child: SizedBox(
+                width: 200,
+                child: TextField(
+                  key: const ValueKey('agent_test_field'),
+                  controller: _agentEchoController,
+                  onSubmitted: (value) => setState(() => _submitted = value),
+                ),
+              ),
+            ),
+            // What Enter submitted, and which shortcut fired, ride on the echo
+            // line rather than rows of their own, so the layout the other
+            // agent tests measure is unchanged until press_key_e2e_test.dart
+            // sets them. Spans rather than one string: `app.waitFor` by text
+            // has to find a `Text.rich` by what it shows, and
+            // press_key_e2e_test.dart checks that it does.
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: 'echo: ${_agentEchoController.text}'),
+                  if (_submitted.isNotEmpty)
+                    TextSpan(text: ' | submitted: $_submitted'),
+                  if (_shortcut.isNotEmpty)
+                    TextSpan(text: ' | shortcut: $_shortcut'),
+                ],
+              ),
+              key: const ValueKey('agent_test_echo'),
+            ),
+            // An app that never goes idle, on request.
+            //
+            // `CircularProgressIndicator` runs an `AnimationController` that
+            // repeats forever, so a transient frame callback is registered for
+            // as long as it is on screen and the agent surface's settle-wait
+            // can never observe an idle frame. `settle: "false"` is the way
+            // out, and `agent_e2e_test.dart` asserts both halves against this
+            // widget.
+            //
+            // Behind a define because it is a property of the app under test,
+            // not of the test: with it on screen unconditionally, every other
+            // agent command in this workspace would time out.
+            if (const bool.fromEnvironment('E2E_NEVER_SETTLES'))
+              const CircularProgressIndicator(
+                key: ValueKey('agent_never_settles'),
+              ),
+            // A control that is in the tree but not where a pointer can
+            // reach it.
+            //
+            // Eight buttons in a 200px-wide horizontal scroll view: the first
+            // is on screen, the last is laid out past x=900 in an 800-wide
+            // window. Both are found by `ValueKey` and both have a rect, so
+            // only the visible-bounds check separates them.
+            // `agent_e2e_test.dart` asserts the refusal and the way through it.
+            //
+            // Behind a define for the same reason the spinner is: a clipped
+            // toolbar is a property of the app under test, not of every test
+            // in this workspace.
+            // The same refusal's other branch: in the view, and covered.
+            //
+            // A button under an opaque overlay is on screen and has a rect a
+            // pointer could reach — the event simply goes to whatever is on
+            // top. That is where a tap ends up when a reported coordinate
+            // lands in a different pane, and it reads nothing like the
+            // off-screen case, so the message says which one it is and the
+            // e2e exercises both.
+            if (const bool.fromEnvironment('E2E_CLIPPED_TOOLBAR'))
+              SizedBox(
+                width: 200,
+                height: 40,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: ElevatedButton(
+                        key: const ValueKey('covered_button'),
+                        onPressed: _incrementCounter,
+                        child: const Text('covered'),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {},
+                        child: const SizedBox.shrink(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (const bool.fromEnvironment('E2E_CLIPPED_TOOLBAR'))
+              SizedBox(
+                width: 200,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < 8; i++)
+                        Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: ElevatedButton(
+                            key: ValueKey('toolbar_$i'),
+                            onPressed: _incrementCounter,
+                            child: Text('btn $i'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                GestureDetector(
+                  key: const ValueKey('agent_gesture_box'),
+                  onLongPress: () => setState(() => _longPressCount++),
+                  onDoubleTap: () => setState(() => _doubleTapCount++),
+                  child: Container(
+                    width: 200,
+                    height: 40,
+                    color: Colors.amber,
+                    alignment: Alignment.center,
+                    child: Text(
+                      'gestures: lp=$_longPressCount dt=$_doubleTapCount',
+                      key: const ValueKey('agent_gesture_label'),
+                    ),
+                  ),
+                ),
+                const _PointerProbe(),
+              ],
+            ),
+            SizedBox(
+              height: 80,
+              width: 200,
+              child: ListView.builder(
+                key: const ValueKey('agent_test_list'),
+                itemCount: 50,
+                itemExtent: 24,
+                itemBuilder: (ctx, i) =>
+                    Text('item $i', key: ValueKey('agent_test_list_item_$i')),
+              ),
+            ),
+            ElevatedButton(
+              key: const ValueKey('agent_nav_button'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const Scaffold(
+                    body: Center(
+                      child: Text(
+                        'detail page',
+                        key: ValueKey('agent_nav_detail'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              child: const Text('Navigate'),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _incrementCounter,
+        tooltip: 'Increment',
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+/// What the agent's pointer and window-focus commands do to a widget: whether a
+/// pointer is over it, which kinds of device pressed it, and whether the
+/// framework thinks the window is active. The fixture `app.hover`,
+/// `pointer=mouse` and `app.setWindowActive` are tested against.
+class _PointerProbe extends StatefulWidget {
+  const _PointerProbe();
+
+  @override
+  State<_PointerProbe> createState() => _PointerProbeState();
+}
+
+class _PointerProbeState extends State<_PointerProbe>
+    with WidgetsBindingObserver {
+  bool _hovering = false;
+  String _pressed = 'none';
+  AppLifecycleState? _lifecycle = WidgetsBinding.instance.lifecycleState;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    setState(() => _lifecycle = state);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final active =
+        _lifecycle == null || _lifecycle == AppLifecycleState.resumed;
+    // The cursor and the tooltip are what the agent's hover reports and what
+    // `app.settle` must get past: a visible tooltip keeps a transient callback
+    // registered that no frame is waiting on.
+    return Tooltip(
+      message: 'probe tip',
+      waitDuration: const Duration(milliseconds: 300),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() => _hovering = false),
+        child: Listener(
+          onPointerDown: (e) => setState(() => _pressed = e.kind.name),
+          child: Container(
+            key: const ValueKey('agent_pointer_probe'),
+            width: 220,
+            height: 40,
+            color: _hovering ? Colors.lightBlue : Colors.grey,
+            alignment: Alignment.center,
+            child: Text(
+              'hover=${_hovering ? 'on' : 'off'} '
+              'press=$_pressed '
+              'active=${active ? 'yes' : 'no'}',
+              key: const ValueKey('agent_pointer_label'),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

@@ -1,0 +1,18 @@
+"""Fixtures for the lint baseline acceptance checks."""
+
+load("//flutter:defs.bzl", "flutter_library")
+
+# Green control: 2 avoid_print violations baselined at 2 in analysis_baseline.json.
+# Not manual, so this target is analyzed during `bazel test //...`.
+flutter_library(
+    name = "green",
+    srcs = ["lib/green.dart"],
+)
+
+# Red path: 1 avoid_print violation not present in analysis_baseline.json.
+# Tagged manual so it is excluded from `bazel test //...`.
+flutter_library(
+    name = "red",
+    srcs = ["lib/red.dart"],
+    tags = ["manual"],
+)

@@ -1,0 +1,36 @@
+{
+  "traceEvents": [
+    {
+      "cat": "repository fetch",
+      "dur": 10000000,
+      "name": "fetch",
+      "ph": "X",
+      "tid": 1,
+      "ts": 0
+    },
+    {
+      "cat": "configured target",
+      "dur": 10000000,
+      "name": "analyze",
+      "ph": "X",
+      "tid": 2,
+      "ts": 5000000
+    },
+    {
+      "args": {
+        "cpu": 2.0
+      },
+      "name": "CPU usage (Bazel)",
+      "ph": "C",
+      "ts": 0
+    },
+    {
+      "args": {
+        "cpu": 0.0
+      },
+      "name": "CPU usage (Bazel)",
+      "ph": "C",
+      "ts": 15000000
+    }
+  ]
+}

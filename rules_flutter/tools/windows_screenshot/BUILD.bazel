@@ -1,0 +1,26 @@
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+
+# DXGI desktop capture, native rather than a `py_binary`.
+#
+# A Python version needs dxcam, opencv, Pillow and numpy, which means it needs
+# a runfiles tree at runtime to find them — and Bazel on Windows defaults to
+# `--noenable_runfiles`, so one is never materialised. Spawned out of the dev
+# tool's runfiles it cannot start at all. This links Windows SDK libraries only
+# and reads nothing at runtime, so there are no runfiles to lose, which is the
+# same shape as `//tools/macos_screenshot:screenshot`.
+cc_binary(
+    name = "screenshot",
+    srcs = ["screenshot.cc"],
+    linkopts = [
+        # Desktop Duplication and the D3D11 device it needs.
+        "-DEFAULTLIB:d3d11.lib",
+        "-DEFAULTLIB:dxgi.lib",
+        # WIC, for the PNG encode.
+        "-DEFAULTLIB:windowscodecs.lib",
+        "-DEFAULTLIB:ole32.lib",
+        # CommandLineToArgvW.
+        "-DEFAULTLIB:shell32.lib",
+    ],
+    target_compatible_with = ["@platforms//os:windows"],
+    visibility = ["//tools/dev_tool:__pkg__"],
+)

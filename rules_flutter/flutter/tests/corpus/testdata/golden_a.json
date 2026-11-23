@@ -1,0 +1,6 @@
+{
+  "actions": [
+    "{\"arguments\":[\"{bindir}/pkg/a.out\"],\"environment\":[{\"key\":\"Z\",\"value\":\"{bindir}/z\"}],\"execution_info\":[{\"key\":\"k\",\"value\":\"{genfilesdir}/k\"}],\"mnemonic\":\"Alpha\",\"outputs\":[\"{bindir}/pkg/a.out\"],\"primary_output\":\"{bindir}/pkg/a.out\",\"target\":\"//pkg:a\"}",
+    "{\"arguments\":[\"--out\",\"{bindir}/pkg/a.out\",\"--gen\",\"{genfilesdir}/g.txt\",\"--log\",\"{testlogsdir}/t.log\",\"--other\",\"{bindir}/other\"],\"inputs\":[\"{bindir}/other\",\"{genfilesdir}/g.txt\",\"{testlogsdir}/t.log\"],\"mnemonic\":\"Zeta\",\"outputs\":[\"{bindir}/other\"],\"primary_output\":\"{bindir}/other\",\"target\":\"//pkg:b\"}"
+  ]
+}

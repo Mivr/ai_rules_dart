@@ -1,0 +1,490 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
+load("//flutter:android.bzl", "flutter_android_engine")
+load("//flutter/private:build_settings.bzl", "dart_defines_flag")
+load("//flutter/private:flutter_material_icons.bzl", "flutter_material_icons")
+load("//flutter/private:flutter_pub.bzl", "flutter_pub")
+
+# This is the target rule authors should put in their "toolchains"
+# attribute in order to get a runtime for the correct platform.
+# See https://docs.bazel.build/versions/main/toolchains.html#writing-rules-that-use-toolchains
+toolchain_type(
+    name = "toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+# Public aliases for the optional lazy sub-toolchain types consumed via
+# `resolve_flutter_sdk_info(ctx)`.
+alias(
+    name = "product_tools_toolchain_type",
+    actual = "//flutter/private:product_tools_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "aot_toolchain_type",
+    actual = "//flutter/private:aot_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "desktop_engine_toolchain_type",
+    actual = "//flutter/private:desktop_engine_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "material_icons_toolchain_type",
+    actual = "//flutter/private:material_icons_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "font_subset_toolchain_type",
+    actual = "//flutter/private:font_subset_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+# The compile-only engine every pub Android plugin library compiles against:
+# the FlutterPlugin SPI plus the embedding's androidx classes, never packaged
+# (the app's own engine, of its ABI, is the one that ships). Always arm64;
+# Java bytecode is ABI-independent.
+flutter_android_engine(
+    name = "android_plugin_engine",
+    neverlink = True,
+    visibility = ["//visibility:public"],
+)
+
+# Flutter's profile mode: AOT like release, with the Dart VM service kept so
+# DevTools can attach. Applies with `-c opt` only:
+#
+#   bazel build -c opt --@rules_flutter//flutter:profile //app
+#
+# `flutter_bazel run --profile` sets both.
+bool_flag(
+    name = "profile",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+# Release mode: `-c opt` without the profile flag. Used by select() in macros.
+config_setting(
+    name = "release",
+    flag_values = {":profile": "false"},
+    values = {"compilation_mode": "opt"},
+    visibility = ["//visibility:public"],
+)
+
+# Whether `flutter_android_app` builds rules_android's Go host tools in
+# rules_go pure mode (no C++ toolchain, so the hermetic LLVM runtimes are never
+# compiled from source). Default on; opt out with
+# `--@rules_flutter//flutter:android_pure_go=false`, for example when the app's
+# own subtree needs cgo. Scoped to the app: nothing outside a Flutter Android
+# app's build sees it.
+bool_flag(
+    name = "android_pure_go",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+# `flutter_android_app` finishes its APK by injecting the Flutter payload after
+# resource linking and re-running the stock zipalign/sign steps. The signature
+# schemes follow `@rules_android//flags:apk_signing_method`, read here so the
+# overlay signs exactly like the android_binary would have.
+config_setting(
+    name = "apk_signing_v1",
+    flag_values = {"@rules_android//flags:apk_signing_method": "v1"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "apk_signing_v2",
+    flag_values = {"@rules_android//flags:apk_signing_method": "v2"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "apk_signing_v4",
+    flag_values = {"@rules_android//flags:apk_signing_method": "v4"},
+    visibility = ["//visibility:public"],
+)
+
+# Release keystore for `flutter_android_app` (`flutter_android_apk_overlay`).
+# A target that sets the `keystore` attribute always signs with it; a target
+# that sets none takes the keystore from these flags, so CI can inject a
+# secret without editing BUILD files:
+#
+#   bazel build //app --@rules_flutter//flutter:android_release_keystore=//secret:upload
+#     --@rules_flutter//flutter:android_release_keystore_password_file=//secret:store_pass
+#     --@rules_flutter//flutter:android_release_key_alias=upload
+#
+# A flag counts as set as soon as it names any target but its default below:
+# that target must hold exactly one file, or analysis fails naming the flag,
+# the target and the file count. Never point a flag at an `allow_empty` glob.
+#
+# With neither the attribute nor the flag set, the overlay signs with the
+# debug keystore exactly as before.
+filegroup(
+    name = "_android_release_keystore_none",
+    srcs = [],
+)
+
+filegroup(
+    name = "_android_release_keystore_password_file_none",
+    srcs = [],
+)
+
+label_flag(
+    name = "android_release_keystore",
+    build_setting_default = ":_android_release_keystore_none",
+    visibility = ["//visibility:public"],
+)
+
+label_flag(
+    name = "android_release_keystore_password_file",
+    build_setting_default = ":_android_release_keystore_password_file_none",
+    visibility = ["//visibility:public"],
+)
+
+string_flag(
+    name = "android_release_key_alias",
+    build_setting_default = "",
+    visibility = ["//visibility:public"],
+)
+
+# Extra Dart environment defines folded into every Dart compile after any
+# target-level `defines`. Repeatable:
+#   bazel build //app --@rules_flutter//flutter:extra_dart_defines=FOO=bar
+# `flutter_bazel run --dart-define FOO=bar` forwards here.
+dart_defines_flag(
+    name = "extra_dart_defines",
+    build_setting_default = [],
+    visibility = ["//visibility:public"],
+)
+
+# Incremental Flutter kernel compiles: when true (the default), non-AOT
+# whole-program (`target == "flutter"`) `FlutterKernelCompile` actions of a
+# debug build (`-c dbg`) run through a persistent `frontend_server`
+# worker (`//flutter/private/tools:incr_fkc_worker`) instead of a batch
+# compile behind `kernel_filter`. Opt out with:
+#
+#   bazel build --@rules_flutter//flutter:incremental_kernel=false //app
+#
+# Scope: debug (`-c dbg`) non-AOT whole-program `target == "flutter"`
+# compiles — never other compilation modes (fastbuild, opt), AOT, web
+# (`dartdevc`), `from_dill`, `import_dill` or `recorded_uses` compiles. Outside
+# its scope, or with the flag false, a build runs byte-identical actions to the
+# base. One warm server holds about 1.75 GiB; bound worker processes with
+# `--worker_max_instances=FlutterKernelCompile=N` (each worker keeps at most
+# one warm server by default).
+bool_flag(
+    name = "incremental_kernel",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+# Development only, and deliberately NOT the default: lets the incremental
+# kernel worker keep `frontend_server`'s incremental serialization, so a warm
+# edit does not rewrite the full dill from scratch. The resulting dill is NOT
+# byte-identical to a one-shot compile, and the compiles that use it carry
+# `no-remote-cache` and `no-remote-exec`, so a default-on setting would take
+# every debug build off shared caches and remote executors. Do not use it in CI
+# or remote-cache configurations. Only has an effect together with
+# `//flutter:incremental_kernel`, on the compiles that flag routes through the
+# worker. Off by default; with it off every action is unchanged.
+bool_flag(
+    name = "dev_incremental_serialization",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+# Apps that use Material widgets list this in their flutter_application(
+# deps = [...]) to bundle MaterialIcons-Regular.otf into flutter_assets/.
+# Backed by the active flutter toolchain — the file ships with every
+# flutter_engine_artifacts repo, but the file label is platform-specific,
+# so a small custom rule resolves it via ctx.toolchains[...] instead of
+# requiring callers to select() on the host platform.
+flutter_material_icons(
+    name = "material_icons",
+    visibility = ["//visibility:public"],
+)
+
+# `dart pub`, run from the pinned toolchain against the current workspace, so
+# that the SDK which resolves pubspec.lock is the SDK which compiles it:
+#
+#   bazel run @rules_flutter//flutter:pub -- get
+#
+# Fetches @flutter_dev_root on first use; no normal build depends on it.
+flutter_pub(
+    name = "pub",
+    visibility = ["//visibility:public"],
+)
+
+exports_files(
+    [
+        "android.bzl",
+        "defs.bzl",
+        "dev_files.bzl",
+        "extensions.bzl",
+        "ios.bzl",
+        "linux.bzl",
+        "macos.bzl",
+        "native_assets.bzl",
+        "native_hot_patch.bzl",
+        "providers.bzl",
+        "repositories.bzl",
+        "toolchain.bzl",
+        "utils.bzl",
+        "web.bzl",
+        "windows.bzl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "android",
+    srcs = ["android.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:constants",
+        "//flutter/private:flutter_android_apk_overlay",
+        "//flutter/private:flutter_android_application",
+        "//flutter/private:flutter_android_binary_proxy",
+        "//flutter/private:flutter_android_engine",
+        "//flutter/private:flutter_android_engine_jar",
+        "//flutter/private:flutter_android_manifest_merge",
+        "//flutter/private:flutter_android_plugin_library",
+        "//flutter/private:flutter_android_registrant",
+        "@bazel_skylib//rules:expand_template",
+        "@bazel_skylib//rules:write_file",
+        "@rules_java//java:core_rules",
+    ],
+)
+
+bzl_library(
+    name = "defs",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:flutter_aot_target",
+        "//flutter/private:flutter_application",
+        "//flutter/private:flutter_asset_bundle",
+        "//flutter/private:flutter_gen_l10n",
+        "//flutter/private:flutter_integration_test",
+        "//flutter/private:flutter_kernel_target",
+        "//flutter/private:flutter_library",
+        "//flutter/private:flutter_native_library",
+        "//flutter/private:flutter_plugin",
+        "//flutter/private:flutter_prebuilt_test",
+        "//flutter/private:flutter_test",
+    ],
+)
+
+bzl_library(
+    name = "dev_files",
+    srcs = ["dev_files.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":providers",
+    ],
+)
+
+bzl_library(
+    name = "extensions",
+    srcs = ["extensions.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":repositories",
+        "//flutter/private:artifact_urls",
+        "//flutter/private:flutter_gen_l10n_repo",
+        "//flutter/private:flutter_pub_android_package",
+        "//flutter/private:flutter_pub_apple_pods",
+        "//flutter/private:flutter_pub_apple_pods_hub",
+        "//flutter/private:flutter_pub_cycle_breaks",
+        "//flutter/private:flutter_pub_lock_hub",
+        "//flutter/private:flutter_pub_maven",
+        "//flutter/private:flutter_pub_overlays",
+        "//flutter/private:flutter_pub_package",
+        "//flutter/private:flutter_pub_path",
+        "//flutter/private:flutter_pub_plugin_defines",
+        "//flutter/private:flutter_pub_plugin_deps",
+        "//flutter/private:flutter_pub_scc_plan",
+        "//flutter/private:flutter_pub_tag",
+        "//flutter/private:flutter_pubspec",
+        "//flutter/private:flutter_sdk_package",
+        "//flutter/private:pub_lock_sdks",
+        "//flutter/private:rules_dart_floor",
+        "//flutter/private:swiftpm_package",
+        "//flutter/private:swiftpm_resolved",
+        "//flutter/private:toolchain_selection",
+        "//flutter/private:versions",
+        "//flutter/private:xtool_darwin_sdk_repo",
+        "@rules_dart//dart/ext:registry",
+        "@rules_dart//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "ios",
+    srcs = ["ios.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:constants",
+        "//flutter/private:debug_build",
+        "//flutter/private:flutter_apple_plugin_library",
+        "//flutter/private:flutter_apple_plugins_aggregator",
+        "//flutter/private:flutter_apple_xcframework_import",
+        "//flutter/private:flutter_ios_application",
+        "//flutter/private:flutter_ios_registrant",
+        "//flutter/private:flutter_ios_xcframework",
+        "//flutter/private:flutter_plist_merge",
+        "//flutter/private:flutter_xtool_bundle",
+        "//flutter/private:ios_app",
+        "//flutter/private:ios_sim_debug",
+        "@bazel_skylib//rules:build_test",
+        "@rules_apple//apple",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "linux",
+    srcs = ["linux.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:flutter_integration_test",
+        "//flutter/private:flutter_linux_application",
+        "//flutter/private:flutter_linux_engine_rule",
+        "//flutter/private:flutter_linux_plugin_library",
+        "//flutter/private:flutter_linux_registrant",
+    ],
+)
+
+bzl_library(
+    name = "macos",
+    srcs = ["macos.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:constants",
+        "//flutter/private:flutter_apple_plugin_library",
+        "//flutter/private:flutter_apple_plugins_aggregator",
+        "//flutter/private:flutter_apple_xcframework_import",
+        "//flutter/private:flutter_macos_application",
+        "//flutter/private:flutter_macos_registrant",
+        "//flutter/private:flutter_plist_merge",
+        "//flutter/private:flutter_xtool_bundle",
+        "//flutter/private:macos_app",
+        "@bazel_skylib//rules:expand_template",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "native_assets",
+    srcs = ["native_assets.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:flutter_data_asset",
+        "//flutter/private:flutter_native_asset",
+        "//flutter/private:flutter_native_assets",
+    ],
+)
+
+bzl_library(
+    name = "native_hot_patch",
+    srcs = ["native_hot_patch.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":providers",
+    ],
+)
+
+bzl_library(
+    name = "providers",
+    srcs = ["providers.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "repositories",
+    srcs = ["repositories.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:android_headless_runtime_repo",
+        "//flutter/private:artifact_urls",
+        "//flutter/private:chrome_headless_shell_repo",
+        "//flutter/private:constants",
+        "//flutter/private:download",
+        "//flutter/private:engine_helpers",
+        "//flutter/private:engine_repo_files",
+        "//flutter/private:engine_support_repos",
+        "//flutter/private:flutter_android_engine_repo",
+        "//flutter/private:flutter_cross_repo",
+        "//flutter/private:flutter_desktop_cross_repo",
+        "//flutter/private:flutter_desktop_engine_repo",
+        "//flutter/private:flutter_dev_root_repo",
+        "//flutter/private:flutter_ios_engine_repo",
+        "//flutter/private:flutter_linux_sysroot_repo",
+        "//flutter/private:flutter_macos_engine_repo",
+        "//flutter/private:flutter_profile_repo",
+        "//flutter/private:flutter_sky_engine_repo",
+        "//flutter/private:flutter_web_sdk_repo",
+        "//flutter/private:linux_headless_runtime_repo",
+        "//flutter/private:local_sdk",
+        "//flutter/private:pub_lock_sdks",
+        "//flutter/private:repo_metadata",
+        "//flutter/private:toolchains_repo",
+        "//flutter/private:versions",
+        "//flutter/private:xtool_darwin_sdk_repo",
+    ],
+)
+
+bzl_library(
+    name = "toolchain",
+    srcs = ["toolchain.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":providers",
+        "//flutter/private:flutter_sdk_binary",
+        "//flutter/private:xtool_darwin_sdk_repo",
+    ],
+)
+
+bzl_library(
+    name = "utils",
+    srcs = ["utils.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:app_entrypoint",
+        "//flutter/private:common",
+        "//flutter/private:download",
+        "//flutter/private:flutter_aot_compile",
+        "//flutter/private:flutter_compile",
+        "//flutter/private:flutter_kernel_module",
+        "//flutter/private:flutter_pub_scc_target",
+        "//flutter/private:flutter_test_common",
+    ],
+)
+
+bzl_library(
+    name = "web",
+    srcs = ["web.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:flutter_integration_test",
+        "//flutter/private:flutter_web_application",
+        "@bazel_skylib//rules:expand_template",
+    ],
+)
+
+bzl_library(
+    name = "windows",
+    srcs = ["windows.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter/private:flutter_windows_application",
+        "//flutter/private:flutter_windows_engine_rule",
+        "//flutter/private:flutter_windows_plugin_library",
+        "//flutter/private:flutter_windows_registrant",
+    ],
+)

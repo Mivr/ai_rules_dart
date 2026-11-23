@@ -1,0 +1,18 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+
+# Real-compiler proof that a warm incremental worker's dill is byte-for-byte
+# the one-shot compile's: `bazel run //tools/incr_kernel_identity` from the
+# repo root. CI runs it as the identity step of the E2E Linux app job.
+dart_binary(
+    name = "incr_kernel_identity",
+    srcs = ["identity.dart"],
+    main = "incr_kernel_identity.dart",
+)
+
+dart_test(
+    name = "identity_test",
+    size = "small",
+    srcs = ["identity.dart"],
+    main = "test/identity_test.dart",
+    deps = ["@dev_tool_deps//:test"],
+)

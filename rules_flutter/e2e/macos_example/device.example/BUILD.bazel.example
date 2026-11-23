@@ -1,0 +1,38 @@
+# Per-developer macOS signing configuration — NOT checked into version control.
+#
+# This whole `device/` directory is git-ignored so your Apple Team ID and
+# provisioning profile never land in version control. It holds the profile and
+# the team-prefixed App Group, which carries your Team ID. The app itself is
+# `//:app_extensions_team` in the root BUILD.bazel.
+#
+# Setup:
+#   1. cp -r device.example device
+#   2. mv device/BUILD.bazel.example device/BUILD.bazel
+#   3. Replace TEAMID with your Team ID here and in
+#      device/AppGroup.entitlements.
+#   4. Set profile_name below to a Mac development profile of that team that
+#      covers com.example.flutterapp.extensions and its extensions, such as
+#      the team wildcard Xcode creates. List what you have with:
+#
+#        for f in ~/Library/Developer/Xcode/UserData/Provisioning\ Profiles/*.provisionprofile; do
+#          security cms -D -i "$f" | plutil -extract Name raw -; done
+#
+#   5. Build: bazel build //:app_extensions_team
+#      Test:  bazel test //:verify_macos_team_signing_test
+
+load("@rules_apple//apple:apple.bzl", "local_provisioning_profile")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["AppGroup.entitlements"])
+
+local_provisioning_profile(
+    name = "profile",
+    # macOS profiles end in .provisionprofile; rules_apple looks for
+    # .mobileprovision unless told otherwise.
+    profile_extension = ".provisionprofile",
+    profile_name = "Mac Team Provisioning Profile: *",
+    tags = ["manual"],
+    # Every team's wildcard has this name; this picks yours.
+    team_id = "TEAMID",
+)

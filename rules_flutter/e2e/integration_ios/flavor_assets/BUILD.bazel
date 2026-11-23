@@ -1,0 +1,17 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_library")
+
+flutter_library(
+    name = "flavor_assets",
+    package_name = "flavor_assets",
+    srcs = ["lib/flavor_assets.dart"],
+    pkg_asset_flavors = {
+        ":assets/dev_asset.txt": ["dev"],
+        ":assets/prod_asset.txt": ["prod"],
+    },
+    pkg_assets = {
+        ":assets/dev_asset.txt": "assets/dev_asset.txt",
+        ":assets/prod_asset.txt": "assets/prod_asset.txt",
+    },
+    visibility = ["//:__subpackages__"],
+    deps = ["@deps//:flutter"],
+)

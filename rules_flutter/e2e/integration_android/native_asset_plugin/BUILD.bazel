@@ -1,0 +1,25 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+load("@rules_flutter//flutter:native_assets.bzl", "flutter_native_asset")
+
+# A Dart Native Asset for the emulator: `:triple_native_asset` ties
+# `//:cov13_asset` to the id the VM derives for the `@Native` binding in
+# `lib/native_asset_plugin.dart`. This workspace builds for Android only, so
+# the asset needs no `select()`; the integration bundle's transition builds the
+# library with the NDK for the emulator's x86_64 ABI and the APK carries it as
+# `lib/x86_64/libcov13_asset.so`.
+flutter_native_asset(
+    name = "triple_native_asset",
+    asset_id = "package:native_asset_plugin/native_asset_plugin.dart",
+    bundle_filename = "libcov13_asset.so",
+    library = "//:cov13_asset",
+    link_mode = "dynamic_loading_bundle",
+)
+
+flutter_plugin(
+    name = "native_asset_plugin",
+    package_name = "native_asset_plugin",
+    srcs = ["lib/native_asset_plugin.dart"],
+    native_assets = [":triple_native_asset"],
+    platforms = [],
+    visibility = ["//visibility:public"],
+)

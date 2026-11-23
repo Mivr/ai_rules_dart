@@ -1,0 +1,5 @@
+load("//flutter/tests:web_dir_test.bzl", "web_dir_test_suite")
+
+# Fixtures for `web_dir`: a `web/` directory and a second app's web files
+# beside it, so the tests can tell which of the two reached the bundle root.
+web_dir_test_suite(name = "web_dir_test")

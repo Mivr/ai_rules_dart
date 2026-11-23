@@ -1,0 +1,2186 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load(":flutter_apple_plugin_library.bzl", "apple_engine_framework_targets")
+
+# The arm64 simulator platform add-to-app xcframeworks build their simulator
+# slice from. The public `//flutter/platforms` set predates Apple silicon
+# simulators and names only `ios_x64`; keeping this one private avoids growing
+# the public platform surface for a rule that fuses the two into one slice.
+platform(
+    name = "ios_sim_arm64",
+    constraint_values = [
+        "@platforms//os:ios",
+        "@platforms//cpu:aarch64",
+        "@apple_support//constraints:simulator",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Compilation mode config_settings for select() in macros.
+# compilation_mode is preserved across platform transitions (e.g. iOS).
+config_setting(
+    name = "dbg",
+    values = {"compilation_mode": "dbg"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "apk_signing_v1_dbg",
+    flag_values = {"@rules_android//flags:apk_signing_method": "v1"},
+    values = {"compilation_mode": "dbg"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "apk_signing_v2_dbg",
+    flag_values = {"@rules_android//flags:apk_signing_method": "v2"},
+    values = {"compilation_mode": "dbg"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "apk_signing_v4_dbg",
+    flag_values = {"@rules_android//flags:apk_signing_method": "v4"},
+    values = {"compilation_mode": "dbg"},
+    visibility = ["//visibility:public"],
+)
+
+# Profile mode: `-c opt` with `--@rules_flutter//flutter:profile`. Selects the
+# profile engine and gen_snapshot. The flag under any other `-c` matches
+# neither this nor `//flutter:release`; `flutter_application` refuses it.
+config_setting(
+    name = "profile",
+    flag_values = {"//flutter:profile": "true"},
+    values = {"compilation_mode": "opt"},
+    visibility = ["//visibility:public"],
+)
+
+# Internal sub-toolchain types so rules only trigger fetching of the lazy
+# SDK repositories they actually use (product patched SDK + font-subset,
+# AOT gen_snapshot, desktop engine + Linux sysroot, MaterialIcons font).
+toolchain_type(
+    name = "product_tools_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain_type(
+    name = "aot_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain_type(
+    name = "desktop_engine_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain_type(
+    name = "material_icons_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain_type(
+    name = "font_subset_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "android_headless_runtime_repo",
+    srcs = ["android_headless_runtime_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+    ],
+)
+
+bzl_library(
+    name = "app_entrypoint",
+    srcs = ["app_entrypoint.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "artifact_urls",
+    srcs = ["artifact_urls.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "asset_keys",
+    srcs = ["asset_keys.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asset_uri",
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "asset_uri",
+    srcs = ["asset_uri.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "asset_variant",
+    srcs = ["asset_variant.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "build_settings",
+    srcs = ["build_settings.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":validation",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "cc_runner_compile",
+    srcs = ["cc_runner_compile.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_cc//cc/common",
+    ],
+)
+
+bzl_library(
+    name = "chrome_headless_shell_repo",
+    srcs = ["chrome_headless_shell_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+    ],
+)
+
+bzl_library(
+    name = "common",
+    srcs = ["common.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":asset_keys",
+        ":asset_uri",
+        ":flutter_asset_bundle_action",
+        ":flutter_compile",
+        ":flutter_defines_files",
+        ":flutter_info",
+        ":flutter_kernel_module",
+        ":flutter_library",
+        ":flutter_shader_compile",
+        ":native_sources",
+        ":plugin_registrant",
+        ":validation",
+        "//flutter:providers",
+        "@bazel_skylib//rules:common_settings",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "constants",
+    srcs = ["constants.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "debug_build",
+    srcs = ["debug_build.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "download",
+    srcs = ["download.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "engine_helpers",
+    srcs = ["engine_helpers.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "engine_repo_files",
+    srcs = ["engine_repo_files.bzl"],
+    visibility = [
+        "//docs:__subpackages__",
+        "//flutter:__subpackages__",
+    ],
+)
+
+bzl_library(
+    name = "engine_support_repos",
+    srcs = ["engine_support_repos.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_aab",
+    srcs = ["flutter_android_aab.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_android_apk_overlay",
+        "@bazel_skylib//rules:write_file",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_apk_overlay",
+    srcs = ["flutter_android_apk_overlay.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_android_binary_proxy",
+        "@bazel_skylib//rules:common_settings",
+        "@rules_android//providers:providers_bzl",
+        "@rules_java//java/common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_application",
+    srcs = ["flutter_android_application.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_binary_proxy",
+    srcs = ["flutter_android_binary_proxy.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_drive_test",
+        "@rules_android//providers:providers_bzl",
+        "@rules_java//java/common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_engine",
+    srcs = ["flutter_android_engine.bzl"],
+    visibility = [
+        "//docs:__subpackages__",
+        "//flutter:__subpackages__",
+    ],
+    deps = [
+        "@rules_java//java:core_rules",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_engine_jar",
+    srcs = ["flutter_android_engine_jar.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@rules_cc//cc:action_names_bzl",
+        "@rules_cc//cc:find_cc_toolchain_bzl",
+        "@rules_cc//cc/common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_engine_repo",
+    srcs = ["flutter_android_engine_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":constants",
+        ":download",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_manifest_merge",
+    srcs = ["flutter_android_manifest_merge.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_android_registrant",
+        "@rules_android//providers:providers_bzl",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_plugin_closure",
+    srcs = ["flutter_android_plugin_closure.bzl"],
+    visibility = [
+        "//docs:__subpackages__",
+        "//flutter:__subpackages__",
+    ],
+    deps = [
+        ":common",
+        ":flutter_android_application",
+        ":plugin_federation",
+        "//flutter:providers",
+        "@rules_android//providers:providers_bzl",
+        "@rules_cc//cc/common",
+        "@rules_java//java:core_rules",
+        "@rules_java//java/common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_plugin_library",
+    srcs = ["flutter_android_plugin_library.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_android_plugin_closure",
+        "@bazel_skylib//rules:write_file",
+    ],
+)
+
+bzl_library(
+    name = "flutter_android_registrant",
+    srcs = ["flutter_android_registrant.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":constants",
+        ":flutter_android_aab",
+        ":flutter_android_application",
+        ":plugin_registrant",
+        "//flutter:providers",
+        "@bazel_skylib//rules:expand_template",
+    ],
+)
+
+bzl_library(
+    name = "flutter_aot_compile",
+    srcs = ["flutter_aot_compile.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_aot_target",
+    srcs = ["flutter_aot_target.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":flutter_aot_compile",
+        ":platform_constraints",
+    ],
+)
+
+bzl_library(
+    name = "flutter_apple_framework_modulemap",
+    srcs = ["flutter_apple_framework_modulemap.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_apple//apple:providers",
+        "@rules_cc//cc/common",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "flutter_apple_plugin_library",
+    srcs = ["flutter_apple_plugin_library.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_apple_framework_modulemap",
+        ":flutter_apple_plugin_defines",
+        ":flutter_apple_plugin_headers",
+        ":flutter_apple_plugin_library_helpers",
+        ":flutter_apple_plugins_aggregator",
+        ":flutter_xtool_bundle",
+        "//flutter:providers",
+        "@bazel_skylib//rules:write_file",
+        "@rules_apple//apple",
+        "@rules_cc//cc:core_rules",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "flutter_apple_plugins_aggregator",
+    srcs = ["flutter_apple_plugins_aggregator.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter:providers",
+        "@rules_cc//cc/common",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "flutter_apple_xcframework_import",
+    srcs = ["flutter_apple_xcframework_import.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_apple_framework_modulemap",
+        ":flutter_xtool_bundle",
+        "@rules_apple//apple",
+    ],
+)
+
+# A debug `flutter_application` compiles per-package kernel modules and links them (the default). #421 turned it off
+# because rules_dart's module strip left two disagreeing `org-dartlang-sdk:` Source entries that the VM refused; #422
+# fixed the strip and the default is back. Set to false for the whole-program compile. Private on purpose.
+bool_flag(
+    name = "debug_modular_app",
+    build_setting_default = True,
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_application",
+    srcs = ["flutter_application.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":flutter_aot_compile",
+        ":flutter_defines_files",
+        ":flutter_font_family",
+        ":flutter_info",
+        ":flutter_kernel_module",
+        ":flutter_native_assets",
+        ":layering_check",
+        ":native_sources",
+        "//flutter:providers",
+        "@apple_support//lib:apple_support",
+        "@bazel_skylib//lib:dicts",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_asset_bundle",
+    srcs = ["flutter_asset_bundle.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asset_keys",
+        ":common",
+        ":flutter_asset_bundle_action",
+        ":flutter_library",
+        "@rules_dart//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_asset_bundle_action",
+    srcs = ["flutter_asset_bundle_action.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asset_uri",
+        ":asset_variant",
+    ],
+)
+
+bzl_library(
+    name = "flutter_compile",
+    srcs = ["flutter_compile.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":flutter_compile_params",
+        "//flutter:providers",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "flutter_compile_params",
+    srcs = ["flutter_compile_params.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_cross_repo",
+    srcs = ["flutter_cross_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":engine_helpers",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_data_asset",
+    srcs = ["flutter_data_asset.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_info",
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_defines_files",
+    srcs = ["flutter_defines_files.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":validation",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "flutter_desktop_cross_repo",
+    srcs = ["flutter_desktop_cross_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":engine_helpers",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_desktop_engine_repo",
+    srcs = ["flutter_desktop_engine_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":engine_helpers",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_desktop_plugin_info",
+    srcs = ["flutter_desktop_plugin_info.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_dev_root_repo",
+    srcs = ["flutter_dev_root_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_font_family",
+    srcs = ["flutter_font_family.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asset_uri",
+        ":flutter_manifest_validate",
+    ],
+)
+
+bzl_library(
+    name = "flutter_gen_l10n",
+    srcs = ["flutter_gen_l10n.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_gen_l10n_repo",
+    srcs = ["flutter_gen_l10n_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_info",
+    srcs = ["flutter_info.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter:providers",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_integration_android_app",
+    srcs = ["flutter_integration_android_app.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":constants",
+        ":flutter_compile",
+        ":flutter_integration_test_common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_integration_test",
+    srcs = ["flutter_integration_test.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":common",
+        ":flutter_integration_test_android",
+        ":flutter_integration_test_bootstrap",
+        ":flutter_integration_test_ios",
+        ":flutter_integration_test_linux",
+        ":flutter_integration_test_web",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_integration_test_bootstrap",
+    srcs = ["flutter_integration_test_bootstrap.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":integration_test_bootstrap_snippets",
+    ],
+)
+
+bzl_library(
+    name = "flutter_integration_test_common",
+    srcs = ["flutter_integration_test_common.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":common",
+        ":flutter_aot_compile",
+        ":flutter_compile",
+        ":flutter_info",
+        ":flutter_integration_test_ios",
+        ":flutter_kernel_module",
+        ":flutter_native_assets",
+        ":layering_check",
+        ":plugin_registrant",
+        "//flutter:providers",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_integration_test_web",
+    srcs = ["flutter_integration_test_web.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":common",
+        ":flutter_integration_test_bootstrap",
+        ":flutter_integration_test_common",
+        ":flutter_integration_test_ios",
+        ":flutter_integration_web_bundle",
+        ":flutter_kernel_module",
+        ":flutter_web_compile",
+        ":layering_check",
+        ":plugin_registrant",
+        ":validation",
+        ":web_stubs",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_integration_test_linux",
+    srcs = ["flutter_integration_test_linux.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":common",
+        ":flutter_integration_test_bootstrap",
+        ":flutter_integration_test_common",
+        ":flutter_integration_test_ios",
+        ":flutter_kernel_module",
+        ":flutter_linux_application",
+        ":layering_check",
+        ":native_sources",
+        ":plugin_registrant",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_integration_test_android",
+    srcs = ["flutter_integration_test_android.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":common",
+        ":constants",
+        ":flutter_android_engine",
+        ":flutter_android_manifest_merge",
+        ":flutter_android_plugin_closure",
+        ":flutter_android_registrant",
+        ":flutter_integration_android_app",
+        ":flutter_integration_test_bootstrap",
+        ":flutter_integration_test_common",
+        ":flutter_integration_test_ios",
+        ":flutter_kernel_module",
+        ":layering_check",
+        ":native_sources",
+        "//flutter:providers",
+        "@bazel_skylib//rules:write_file",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_drive_test",
+    srcs = ["flutter_drive_test.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":layering_check",
+        "//flutter:providers",
+        "@rules_android//providers:providers_bzl",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_integration_test_bundle_id",
+    srcs = ["flutter_integration_test_bundle_id.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_integration_test_ios",
+    srcs = ["flutter_integration_test_ios.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":common",
+        ":flutter_application",
+        ":flutter_integration_test_bundle_id",
+        ":integration_test_bootstrap_snippets",
+        ":ios_app",
+        ":ios_sim_debug",
+        ":layering_check",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_integration_web_bundle",
+    srcs = ["flutter_integration_web_bundle.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_ios_application",
+    srcs = ["flutter_ios_application.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        ":flutter_native_assets",
+        "//flutter:providers",
+        "@apple_support//lib:apple_support",
+        "@bazel_skylib//lib:dicts",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "flutter_ios_engine_repo",
+    srcs = ["flutter_ios_engine_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_ios_registrant",
+    srcs = ["flutter_ios_registrant.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":plugin_registrant",
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_kernel_module",
+    srcs = ["flutter_kernel_module.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":flutter_kernel_tools",
+        ":flutter_test_common",
+        "//flutter:providers",
+        "@bazel_skylib//rules:common_settings",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_kernel_tools",
+    srcs = ["flutter_kernel_tools.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@bazel_skylib//rules:common_settings",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_kernel_target",
+    srcs = ["flutter_kernel_target.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":flutter_kernel_module",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_library",
+    srcs = ["flutter_library.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asset_keys",
+        ":asset_uri",
+        ":flutter_font_family",
+        ":flutter_info",
+        "//flutter:providers",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_linux_application",
+    srcs = ["flutter_linux_application.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cc_runner_compile",
+        ":common",
+        ":engine_helpers",
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_linux_engine_rule",
+    srcs = ["flutter_linux_engine_rule.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":engine_helpers",
+        "@rules_cc//cc/common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_linux_plugin_library",
+    srcs = ["flutter_linux_plugin_library.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_desktop_plugin_info",
+    ],
+)
+
+bzl_library(
+    name = "flutter_linux_registrant",
+    srcs = ["flutter_linux_registrant.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":plugin_registrant",
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_linux_sysroot_repo",
+    srcs = ["flutter_linux_sysroot_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":engine_helpers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_macos_application",
+    srcs = ["flutter_macos_application.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        "//flutter:providers",
+        "@apple_support//lib:apple_support",
+        "@bazel_skylib//lib:dicts",
+    ],
+)
+
+bzl_library(
+    name = "flutter_macos_engine_repo",
+    srcs = ["flutter_macos_engine_repo.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_macos_registrant",
+    srcs = ["flutter_macos_registrant.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":plugin_registrant",
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_manifest_validate",
+    srcs = ["flutter_manifest_validate.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_material_icons",
+    srcs = ["flutter_material_icons.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_info",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_native_asset",
+    srcs = ["flutter_native_asset.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_info",
+        ":native_sources",
+        "//flutter:providers",
+        "@rules_cc//cc/common",
+        "@rules_cc//cc/common:cc_shared_library_info_bzl",
+    ],
+)
+
+bzl_library(
+    name = "flutter_native_assets",
+    srcs = ["flutter_native_assets.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter:providers",
+        "@rules_dart//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_native_library",
+    srcs = ["flutter_native_library.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_plist_merge",
+    srcs = ["flutter_plist_merge.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_plugin",
+    srcs = ["flutter_plugin.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asset_keys",
+        ":common",
+        ":flutter_desktop_plugin_info",
+        ":flutter_info",
+        ":flutter_library",
+        ":native_sources",
+        "//flutter:providers",
+        "@rules_android//providers:providers_bzl",
+        "@rules_cc//cc/common",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+        "@rules_java//java/common",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "flutter_prebuilt_test",
+    srcs = ["flutter_prebuilt_test.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_test_common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_profile_repo",
+    srcs = ["flutter_profile_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":engine_helpers",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub",
+    srcs = ["flutter_pub.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_android_package",
+    srcs = ["flutter_pub_android_package.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_apple",
+        ":flutter_pub_maven",
+        ":flutter_pub_mirror",
+        ":flutter_pub_scan",
+        ":flutter_pubspec",
+        ":gradle",
+        ":starlark_literal",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_apple",
+    srcs = ["flutter_pub_apple.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_apple_byname",
+        ":flutter_pub_apple_deps",
+        ":flutter_pub_apple_pods",
+        ":flutter_pub_plugin_deps",
+        ":flutter_pub_walk",
+        ":podspec_read",
+        ":starlark_literal",
+        ":swiftpm_manifest",
+        ":swiftpm_paths",
+        ":swiftpm_resolved",
+        ":swiftpm_translate",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_apple_byname",
+    srcs = ["flutter_pub_apple_byname.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":swiftpm_manifest_lex",
+        ":swiftpm_translate",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_apple_deps",
+    srcs = ["flutter_pub_apple_deps.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":swiftpm_manifest",
+        ":swiftpm_resolved",
+        ":swiftpm_translate",
+    ],
+)
+
+bzl_library(
+    name = "flutter_apple_plugin_defines",
+    srcs = ["flutter_apple_plugin_defines.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_apple_plugin_headers",
+    srcs = ["flutter_apple_plugin_headers.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_cc//cc/common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_apple_plugin_library_helpers",
+    srcs = ["flutter_apple_plugin_library_helpers.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter:providers",
+        "@rules_cc//cc/common",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "podspec_read_regex",
+    srcs = ["podspec_read_regex.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "podspec_read_percent",
+    srcs = ["podspec_read_percent.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "podspec_read_check",
+    srcs = ["podspec_read_check.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "podspec_read_ruby",
+    srcs = ["podspec_read_ruby.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":podspec_read_percent",
+        ":podspec_read_regex",
+    ],
+)
+
+bzl_library(
+    name = "podspec_read_stmt",
+    srcs = ["podspec_read_stmt.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "podspec_read_xcconfig",
+    srcs = ["podspec_read_xcconfig.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_apple_plugin_defines",
+        ":starlark_literal",
+    ],
+)
+
+bzl_library(
+    name = "podspec_read",
+    srcs = ["podspec_read.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_apple_plugin_defines",
+        ":podspec_read_check",
+        ":podspec_read_ruby",
+        ":podspec_read_stmt",
+        ":podspec_read_xcconfig",
+        ":starlark_literal",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_apple_local",
+    srcs = ["flutter_pub_apple_local.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_apple_plugin_defines",
+        ":flutter_pub_apple",
+        ":flutter_pub_apple_byname",
+        ":flutter_pub_apple_local_refusal",
+        ":flutter_pub_apple_local_targets",
+        ":flutter_pub_walk",
+        ":podspec_read",
+        ":podspec_read_xcconfig",
+        ":swiftpm_manifest",
+        ":swiftpm_manifest_lex",
+        ":swiftpm_package",
+        ":swiftpm_translate",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_apple_local_refusal",
+    srcs = ["flutter_pub_apple_local_refusal.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":swiftpm_manifest",
+        ":swiftpm_manifest_lex",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_apple_local_targets",
+    srcs = ["flutter_pub_apple_local_targets.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":starlark_literal",
+        ":swiftpm_settings",
+        ":swiftpm_translate",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_apple_pods",
+    srcs = ["flutter_pub_apple_pods.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_apple_pods_hub",
+        ":podfile_lock",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_apple_pods_hub",
+    srcs = ["flutter_pub_apple_pods_hub.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":podfile_lock",
+        ":swiftpm_resolved",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_assets",
+    srcs = ["flutter_pub_assets.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asset_uri",
+        ":asset_variant",
+        ":flutter_pub_walk",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_cover",
+    srcs = ["flutter_pub_cover.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pub_cycle_breaks",
+    srcs = ["flutter_pub_cycle_breaks.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pub_lock_hub",
+    srcs = ["flutter_pub_lock_hub.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pub_maven",
+    srcs = ["flutter_pub_maven.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pub_mirror",
+    srcs = ["flutter_pub_mirror.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_assets",
+        ":flutter_pub_walk",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_overlays",
+    srcs = ["flutter_pub_overlays.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pub_package",
+    srcs = ["flutter_pub_package.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asset_uri",
+        ":flutter_pub_android_package",
+        ":flutter_pub_apple",
+        ":flutter_pub_apple_local",
+        ":flutter_pub_assets",
+        ":flutter_pub_cover",
+        ":flutter_pub_cycle_breaks",
+        ":flutter_pub_lock_hub",
+        ":flutter_pub_maven",
+        ":flutter_pub_mirror",
+        ":flutter_pub_package_helpers",
+        ":flutter_pub_plugin_defines",
+        ":flutter_pub_plugin_deps",
+        ":flutter_pub_scan",
+        ":flutter_pub_walk",
+        ":flutter_pubspec",
+        ":gradle",
+        ":starlark_literal",
+        ":swiftpm_resolved",
+        "@rules_dart//dart/pub:pub_lock_package",
+        "@rules_dart//dart/pub:pub_scc",
+        "@rules_dart//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_package_helpers",
+    srcs = ["flutter_pub_package_helpers.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_semver",
+        ":flutter_pubspec",
+        ":starlark_literal",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_path",
+    srcs = ["flutter_pub_path.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pub_plugin_defines",
+    srcs = ["flutter_pub_plugin_defines.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_apple",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_plugin_deps",
+    srcs = ["flutter_pub_plugin_deps.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pub_scan",
+    srcs = ["flutter_pub_scan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        "@rules_dart//dart/pub:pub_lock_package",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_scc",
+    srcs = ["flutter_pub_scc.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":download",
+        ":flutter_pub_cycle_breaks",
+        ":flutter_pub_mirror",
+        ":flutter_pub_path",
+        ":pub_lock_sdks",
+        "@rules_dart//dart/pub:extensions",
+        "@rules_dart//dart/pub:pinned_sources",
+        "@rules_dart//dart/pub:pub_lock_package",
+        "@rules_dart//dart/pub:pub_scc",
+        "@rules_dart//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_scc_build",
+    srcs = ["flutter_pub_scc_build.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_android_package",
+        ":flutter_pub_apple",
+        ":flutter_pub_package_helpers",
+        ":starlark_literal",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_scc_plan",
+    srcs = ["flutter_pub_scc_plan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_overlays",
+        ":flutter_pub_scc",
+        ":flutter_pub_scc_spoke",
+        ":pub_lock_sdks",
+        ":swiftpm_resolved",
+        "@rules_dart//dart/ext:registry",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_scc_spoke",
+    srcs = ["flutter_pub_scc_spoke.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":asset_uri",
+        ":download",
+        ":flutter_pub_android_package",
+        ":flutter_pub_apple",
+        ":flutter_pub_apple_local",
+        ":flutter_pub_cycle_breaks",
+        ":flutter_pub_mirror",
+        ":flutter_pub_package",
+        ":flutter_pub_package_helpers",
+        ":flutter_pub_path",
+        ":flutter_pub_plugin_defines",
+        ":flutter_pub_plugin_deps",
+        ":flutter_pub_scc",
+        ":flutter_pub_scc_build",
+        ":flutter_pubspec",
+        "@rules_dart//dart/pub:pinned_sources",
+        "@rules_dart//dart/pub:pub_lock_package",
+        "@rules_dart//dart/pub:pub_scc",
+        "@rules_dart//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_scc_target",
+    srcs = ["flutter_pub_scc_target.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_info",
+        ":flutter_library",
+        "//flutter:providers",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_pub_semver",
+    srcs = ["flutter_pub_semver.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pub_tag",
+    srcs = ["flutter_pub_tag.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pub_walk",
+    srcs = ["flutter_pub_walk.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_pubspec",
+    srcs = ["flutter_pubspec.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_manifest_validate",
+        "@rules_dart//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "flutter_sdk_package",
+    srcs = ["flutter_sdk_package.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":flutter_sky_engine_repo",
+        ":local_sdk",
+        ":repo_metadata",
+        "@rules_dart//dart/pub:pub_lock_package",
+        "@rules_dart//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "flutter_shader_compile",
+    srcs = ["flutter_shader_compile.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_sky_engine_repo",
+    srcs = ["flutter_sky_engine_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_test",
+    srcs = ["flutter_test.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":common",
+        ":flutter_compile",
+        ":flutter_kernel_module",
+        ":flutter_native_assets",
+        ":flutter_test_common",
+        ":layering_check",
+        ":platform_constraints",
+        "//flutter:providers",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "layering_check",
+    srcs = ["layering_check.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@bazel_skylib//rules:common_settings",
+        "@rules_dart//dart:import_check_bzl",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_test_common",
+    srcs = ["flutter_test_common.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_web_application",
+    srcs = ["flutter_web_application.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":common",
+        ":flutter_info",
+        ":flutter_kernel_module",
+        ":flutter_library",
+        ":flutter_web_compile",
+        ":layering_check",
+        ":plugin_registrant",
+        ":validation",
+        ":web_service_worker",
+        ":web_stubs",
+        ":web_templates",
+        "//flutter:providers",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
+    ],
+)
+
+bzl_library(
+    name = "flutter_web_compile",
+    srcs = ["flutter_web_compile.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_entrypoint",
+        ":common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_web_sdk_repo",
+    srcs = ["flutter_web_sdk_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":local_sdk",
+        ":repo_metadata",
+        ":toolchains_repo",
+    ],
+)
+
+bzl_library(
+    name = "flutter_windows_application",
+    srcs = ["flutter_windows_application.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cc_runner_compile",
+        ":common",
+        ":engine_helpers",
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_windows_engine_rule",
+    srcs = ["flutter_windows_engine_rule.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":engine_helpers",
+        "@rules_cc//cc/common",
+    ],
+)
+
+bzl_library(
+    name = "flutter_windows_plugin_library",
+    srcs = ["flutter_windows_plugin_library.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_desktop_plugin_info",
+    ],
+)
+
+bzl_library(
+    name = "flutter_windows_registrant",
+    srcs = ["flutter_windows_registrant.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":plugin_registrant",
+        "//flutter:providers",
+    ],
+)
+
+bzl_library(
+    name = "flutter_xtool_bundle",
+    srcs = ["flutter_xtool_bundle.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        ":flutter_xtool_bundle_pack",
+        ":xtool_import",
+        ":xtool_version",
+        "@apple_support//lib:apple_support",
+        "@bazel_skylib//lib:dicts",
+    ],
+)
+
+bzl_library(
+    name = "flutter_xtool_bundle_frameworks",
+    srcs = ["flutter_xtool_bundle_frameworks.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["//flutter:providers"],
+)
+
+bzl_library(
+    name = "flutter_xtool_bundle_pack",
+    srcs = ["flutter_xtool_bundle_pack.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_xtool_bundle_frameworks",
+        ":xtool_darwin_sdk_repo",
+        ":xtool_import",
+        ":xtool_version",
+        "//flutter:providers",
+        "@rules_cc//cc/common",
+    ],
+)
+
+bzl_library(
+    name = "gradle",
+    srcs = ["gradle.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gradle_deps",
+        ":gradle_model",
+        ":gradle_plugin",
+        ":gradle_readers",
+    ],
+)
+
+bzl_library(
+    name = "gradle_deps",
+    srcs = ["gradle_deps.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gradle_model",
+        ":gradle_parse",
+    ],
+)
+
+bzl_library(
+    name = "gradle_lex",
+    srcs = ["gradle_lex.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "gradle_model",
+    srcs = ["gradle_model.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gradle_lex",
+        ":gradle_parse",
+    ],
+)
+
+bzl_library(
+    name = "gradle_parse",
+    srcs = ["gradle_parse.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "gradle_plugin",
+    srcs = ["gradle_plugin.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gradle_deps",
+        ":gradle_lex",
+        ":gradle_model",
+    ],
+)
+
+bzl_library(
+    name = "gradle_readers",
+    srcs = ["gradle_readers.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":gradle_lex",
+        ":gradle_model",
+        ":gradle_parse",
+        ":gradle_plugin",
+    ],
+)
+
+bzl_library(
+    name = "integration_test_bootstrap_snippets",
+    srcs = ["integration_test_bootstrap_snippets.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_ios_xcframework",
+    srcs = ["flutter_ios_xcframework.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        ":flutter_apple_plugins_aggregator",
+        ":flutter_ios_application",
+        ":flutter_ios_registrant",
+        ":flutter_ios_xcframework_plist",
+        ":flutter_ios_xcframework_transitions",
+        ":ios_app",
+        ":validation",
+        "//flutter:providers",
+        "@bazel_skylib//lib:dicts",
+        "@rules_cc//cc:core_rules",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "flutter_ios_xcframework_transitions",
+    srcs = ["flutter_ios_xcframework_transitions.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_ios_xcframework_plist",
+    srcs = ["flutter_ios_xcframework_plist.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "ios_app",
+    srcs = ["ios_app.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        ":flutter_apple_plugins_aggregator",
+        ":flutter_ios_application",
+        ":flutter_ios_registrant",
+        ":flutter_plist_merge",
+        ":flutter_xtool_bundle",
+        ":ios_entitlements",
+        ":runner_module",
+        ":validation",
+        ":xtool_version",
+        "@bazel_skylib//rules:expand_template",
+        "@rules_apple//apple",
+        "@rules_apple//apple:ios",
+        "@rules_apple//apple:resources",
+        "@rules_apple//apple:versioning",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "ios_entitlements",
+    srcs = ["ios_entitlements.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "ios_sim_debug",
+    srcs = ["ios_sim_debug.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [":flutter_drive_test"],
+)
+
+bzl_library(
+    name = "linux_headless_runtime_repo",
+    srcs = ["linux_headless_runtime_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+    ],
+)
+
+bzl_library(
+    name = "local_sdk",
+    srcs = ["local_sdk.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "macos_app",
+    srcs = ["macos_app.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        ":flutter_apple_plugins_aggregator",
+        ":flutter_macos_application",
+        ":flutter_macos_registrant",
+        ":flutter_plist_merge",
+        ":flutter_xtool_bundle",
+        ":runner_module",
+        ":validation",
+        ":xtool_version",
+        "@bazel_skylib//rules:expand_template",
+        "@rules_apple//apple",
+        "@rules_apple//apple:macos",
+        "@rules_apple//apple:versioning",
+        "@rules_swift//swift",
+    ],
+)
+
+bzl_library(
+    name = "native_sources",
+    srcs = ["native_sources.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "platform_constraints",
+    srcs = ["platform_constraints.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+    ],
+)
+
+bzl_library(
+    name = "plugin_federation",
+    srcs = ["plugin_federation.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "plugin_registrant",
+    srcs = ["plugin_registrant.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":plugin_federation",
+    ],
+)
+
+bzl_library(
+    name = "podfile_lock",
+    srcs = ["podfile_lock.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":podfile_lock_scan",
+    ],
+)
+
+bzl_library(
+    name = "podfile_lock_scan",
+    srcs = ["podfile_lock_scan.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_lock_sdks",
+    srcs = ["pub_lock_sdks.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "repo_metadata",
+    srcs = ["repo_metadata.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "rules_dart_floor",
+    srcs = ["rules_dart_floor.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_dart//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "run_home",
+    srcs = ["run_home.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "runner_module",
+    srcs = ["runner_module.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":validation",
+    ],
+)
+
+bzl_library(
+    name = "starlark_literal",
+    srcs = ["starlark_literal.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "swiftpm_clang",
+    srcs = ["swiftpm_clang.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":swiftpm_paths",
+        ":swiftpm_settings",
+    ],
+)
+
+bzl_library(
+    name = "swiftpm_headers",
+    srcs = ["swiftpm_headers.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [":swiftpm_paths"],
+)
+
+bzl_library(
+    name = "swiftpm_manifest",
+    srcs = ["swiftpm_manifest.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":swiftpm_manifest_consts",
+        ":swiftpm_manifest_lex",
+        ":swiftpm_settings",
+    ],
+)
+
+bzl_library(
+    name = "swiftpm_manifest_consts",
+    srcs = ["swiftpm_manifest_consts.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "swiftpm_manifest_lex",
+    srcs = ["swiftpm_manifest_lex.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "swiftpm_package",
+    srcs = ["swiftpm_package.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":download",
+        ":flutter_pub_walk",
+        ":swiftpm_clang",
+        ":swiftpm_headers",
+        ":swiftpm_manifest",
+        ":swiftpm_paths",
+        ":swiftpm_translate",
+    ],
+)
+
+bzl_library(
+    name = "swiftpm_paths",
+    srcs = ["swiftpm_paths.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "swiftpm_resolved",
+    srcs = ["swiftpm_resolved.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "swiftpm_settings",
+    srcs = ["swiftpm_settings.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":swiftpm_paths",
+    ],
+)
+
+bzl_library(
+    name = "swiftpm_translate",
+    srcs = ["swiftpm_translate.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":swiftpm_clang",
+        ":swiftpm_settings",
+    ],
+)
+
+bzl_library(
+    name = "toolchain_selection",
+    srcs = ["toolchain_selection.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "toolchains_repo",
+    srcs = ["toolchains_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":xtool_sdk_render",
+    ],
+)
+
+bzl_library(
+    name = "tool_deps_extension",
+    srcs = ["tool_deps_extension.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_lock_hub",
+        ":flutter_pub_overlays",
+        ":flutter_pub_package",
+        ":flutter_pub_tag",
+        ":pub_lock_sdks",
+        "@rules_dart//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "validation",
+    srcs = ["validation.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "versions",
+    srcs = ["versions.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+    ],
+)
+
+bzl_library(
+    name = "web_service_worker",
+    srcs = ["web_service_worker.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "web_stubs",
+    srcs = ["web_stubs.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "web_templates",
+    srcs = ["web_templates.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [":web_service_worker"],
+)
+
+bzl_library(
+    name = "xtool_darwin_sdk_repo",
+    srcs = ["xtool_darwin_sdk_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":artifact_urls",
+        ":download",
+        ":xtool_sdk_render",
+        "@rules_cc//cc:action_names_bzl",
+        "@rules_cc//cc:defs_bzl",
+        "@rules_cc//cc/common",
+    ],
+)
+
+bzl_library(
+    name = "xtool_import",
+    srcs = ["xtool_import.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//flutter:providers",
+        "@apple_support//lib:apple_support",
+        "@bazel_skylib//lib:dicts",
+        "@rules_cc//cc/common",
+    ],
+)
+
+bzl_library(
+    name = "xtool_sdk_render",
+    srcs = ["xtool_sdk_render.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "xtool_version",
+    srcs = ["xtool_version.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_sdk_binary",
+    srcs = ["flutter_sdk_binary.bzl"],
+    visibility = [
+        "//docs:__subpackages__",
+        "//flutter:__subpackages__",
+    ],
+    deps = [
+        ":run_home",
+        "//flutter:providers",
+    ],
+)
+
+# `run_home.bzl` is read as data by the `run_home` unit test in
+# `//flutter/private/tools/test`, so the file itself is exported to
+# `//flutter:__subpackages__`.
+exports_files(
+    ["run_home.bzl"],
+    visibility = [
+        "//flutter:__subpackages__",
+    ],
+)
+
+exports_files(
+    ["integration_test_bootstrap_snippets.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+# The one Flutter engine import and module-map wrapper per Apple platform that
+# every `flutter_apple_plugin_library` of every app shares.
+apple_engine_framework_targets(name = "apple_engine_framework")

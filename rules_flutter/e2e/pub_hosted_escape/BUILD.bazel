@@ -1,0 +1,69 @@
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary")
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Header-scan e2e over the local registry in fixtures/ (see MODULE.bazel).
+# `ok_app` must stay green: clean tarballs and an in-package symlink scan
+# clean and materialise. Each hostile hub must fail its fetch before
+# extraction instead — `@eh_out//:evil_hard_out` and `@eh_in//:evil_hard_in`
+# on hard-link entries, `@eabs//:evil_abs` on the absolute target,
+# `@eesc//:evil_esc` on the escaping target, `@ep_abs//:evil_path_abs` on
+# the absolute entry path, `@ep_dotdot//:evil_path_dotdot` on the climbing
+# entry path — with a diagnostic naming the package and the entry. The CI
+# step drives each hub and greps its message.
+dart_binary(
+    name = "ok_app",
+    main = "main_ok.dart",
+    deps = [
+        "@ok_deps//:ok_clean",
+        "@ok_deps//:ok_inlink",
+    ],
+)
+
+# One app per hostile hub, all sharing the trivial main.dart: resolving the
+# dep already fetches the hostile tarball, so each of these must fail at
+# fetch with its hub's header-scan refusal (see MODULE.bazel). The CI
+# expected-failure step builds each and greps its diagnostic.
+dart_binary(
+    name = "evil_hard_out_app",
+    main = "main.dart",
+    deps = ["@eh_out//:evil_hard_out"],
+)
+
+dart_binary(
+    name = "evil_hard_in_app",
+    main = "main.dart",
+    deps = ["@eh_in//:evil_hard_in"],
+)
+
+dart_binary(
+    name = "evil_abs_app",
+    main = "main.dart",
+    deps = ["@eabs//:evil_abs"],
+)
+
+dart_binary(
+    name = "evil_esc_app",
+    main = "main.dart",
+    deps = ["@eesc//:evil_esc"],
+)
+
+dart_binary(
+    name = "evil_path_abs_app",
+    main = "main.dart",
+    deps = ["@ep_abs//:evil_path_abs"],
+)
+
+dart_binary(
+    name = "evil_path_dotdot_app",
+    main = "main.dart",
+    deps = ["@ep_dotdot//:evil_path_dotdot"],
+)

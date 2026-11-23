@@ -1,0 +1,62 @@
+{
+  "pathFragments": [
+    { "id": 1, "label": "bazel-out" },
+    { "id": 2, "label": "k8-fastbuild", "parentId": 1 },
+    { "id": 3, "label": "bin", "parentId": 2 },
+    { "id": 4, "label": "pkg", "parentId": 3 },
+    { "id": 5, "label": "a.out", "parentId": 4 },
+    { "id": 6, "label": "genfiles", "parentId": 2 },
+    { "id": 7, "label": "g.txt", "parentId": 6 },
+    { "id": 8, "label": "testlogs", "parentId": 2 },
+    { "id": 9, "label": "t.log", "parentId": 8 },
+    { "id": 10, "label": "k8-opt", "parentId": 1 },
+    { "id": 11, "label": "bin", "parentId": 10 },
+    { "id": 12, "label": "other", "parentId": 11 }
+  ],
+  "artifacts": [
+    { "id": 1, "pathFragmentId": 5 },
+    { "id": 2, "pathFragmentId": 7 },
+    { "id": 3, "pathFragmentId": 9 },
+    { "id": 4, "pathFragmentId": 12 }
+  ],
+  "targets": [
+    { "id": 1, "label": "//pkg:a" },
+    { "id": 2, "label": "//pkg:b" }
+  ],
+  "depSetOfFiles": [
+    { "id": 1, "directArtifactIds": [2, 3] },
+    { "id": 2, "directArtifactIds": [4], "transitiveDepSetIds": [1] }
+  ],
+  "actions": [
+    {
+      "targetId": 1,
+      "mnemonic": "Alpha",
+      "primaryOutputId": 1,
+      "outputIds": [1],
+      "arguments": ["bazel-out/k8-fastbuild/bin/pkg/a.out"],
+      "environmentVariables": [
+        { "key": "Z", "value": "bazel-out/k8-fastbuild/bin/z" }
+      ],
+      "executionInfo": [
+        { "key": "k", "value": "bazel-out/k8-fastbuild/genfiles/k" }
+      ]
+    },
+    {
+      "targetId": 2,
+      "mnemonic": "Zeta",
+      "primaryOutputId": 4,
+      "outputIds": [4],
+      "arguments": [
+        "--out",
+        "bazel-out/k8-fastbuild/bin/pkg/a.out",
+        "--gen",
+        "bazel-out/k8-fastbuild/genfiles/g.txt",
+        "--log",
+        "bazel-out/k8-fastbuild/testlogs/t.log",
+        "--other",
+        "bazel-out/k8-opt/bin/other"
+      ],
+      "inputDepSetIds": [2]
+    }
+  ]
+}

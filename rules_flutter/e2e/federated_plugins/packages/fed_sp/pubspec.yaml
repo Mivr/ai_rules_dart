@@ -1,0 +1,17 @@
+name: fed_sp
+version: 0.0.1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  fed_sp_linux:
+    path: ../fed_sp_linux
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      linux:
+        default_package: fed_sp_linux

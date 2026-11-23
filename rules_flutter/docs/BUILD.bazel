@@ -1,0 +1,161 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+# Five public `flutter/*.bzl` entries have no `starlark_doc_extract` target:
+# `starlark_doc_extract` refuses a load closure that reaches a Starlark module
+# with no `bzl_library` target.
+#
+# - `android.bzl`: its closure loads `@rules_android//android:rules.bzl` and
+#   `@rules_kotlin//kotlin:android.bzl`.
+# - `defs.bzl`, `linux.bzl` and `web.bzl`: `flutter_integration_test`
+#   (`flutter/private/flutter_integration_test.bzl`) brings those same two
+#   modules into each closure; its `platform = "android"` macro body declares
+#   `android_binary` and `kt_android_library`, and Bazel 9.3.0 has no
+#   `native.android_binary`.
+#   rules_android 0.8.0's `android/BUILD` declares no targets, and
+#   rules_kotlin 2.4.20's release `kotlin/BUILD` leaves `android.bzl` out of
+#   every target, so no `bzl_library` can cover them.
+# - `extensions.bzl`: its closure loads `@rules_dart//dart/pub:pub_scan.bzl`,
+#   `@rules_dart//dart/pub:pub_archive_scan.bzl` and
+#   `@rules_dart//dart/pub:pub_scanner_sdk.bzl`, which have no `bzl_library`
+#   at the pinned rules_dart v0.28.3. (`version.bzl` and `pub_scc_verify.bzl`
+#   have targets, with restricted visibility.)
+#
+# `flutter/tests/bzl_library_guard` derives the expected extracts from the
+# `flutter/*.bzl` files minus this exemption list and checks the Android
+# reasons against the load closures.
+#
+# Each of the five keeps its `bzl_library` and its `exports_files` entry in
+# `flutter/BUILD.bazel`; only the doc extract is omitted here.
+
+starlark_doc_extract(
+    name = "dev_files.doc_extract",
+    src = "//flutter:dev_files.bzl",
+    deps = [
+        "//flutter:dev_files",
+    ],
+)
+
+starlark_doc_extract(
+    name = "ios.doc_extract",
+    src = "//flutter:ios.bzl",
+    deps = [
+        "//flutter:ios",
+    ],
+)
+
+starlark_doc_extract(
+    name = "macos.doc_extract",
+    src = "//flutter:macos.bzl",
+    deps = [
+        "//flutter:macos",
+    ],
+)
+
+starlark_doc_extract(
+    name = "native_assets.doc_extract",
+    src = "//flutter:native_assets.bzl",
+    deps = [
+        "//flutter:native_assets",
+    ],
+)
+
+starlark_doc_extract(
+    name = "native_hot_patch.doc_extract",
+    src = "//flutter:native_hot_patch.bzl",
+    deps = [
+        "//flutter:native_hot_patch",
+    ],
+)
+
+starlark_doc_extract(
+    name = "providers.doc_extract",
+    src = "//flutter:providers.bzl",
+    deps = [
+        "//flutter:providers",
+    ],
+)
+
+starlark_doc_extract(
+    name = "repositories.doc_extract",
+    src = "//flutter:repositories.bzl",
+    deps = [
+        "//flutter:repositories",
+    ],
+)
+
+starlark_doc_extract(
+    name = "toolchain.doc_extract",
+    src = "//flutter:toolchain.bzl",
+    deps = [
+        "//flutter:toolchain",
+    ],
+)
+
+starlark_doc_extract(
+    name = "utils.doc_extract",
+    src = "//flutter:utils.bzl",
+    deps = [
+        "//flutter:utils",
+    ],
+)
+
+starlark_doc_extract(
+    name = "windows.doc_extract",
+    src = "//flutter:windows.bzl",
+    deps = [
+        "//flutter:windows",
+    ],
+)
+
+filegroup(
+    name = "all_doc_extracts",
+    srcs = [
+        ":dev_files.doc_extract",
+        ":ios.doc_extract",
+        ":macos.doc_extract",
+        ":native_assets.doc_extract",
+        ":native_hot_patch.doc_extract",
+        ":providers.doc_extract",
+        ":repositories.doc_extract",
+        ":toolchain.doc_extract",
+        ":utils.doc_extract",
+        ":windows.doc_extract",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Fails on any documentation gap in the extracts above: `//tools/doc_check`
+# reads the `ModuleInfo` binaryprotos and, for each function it finds, the
+# `.bzl` source that says whether the function returns a value.
+dart_test(
+    name = "doc_check_test",
+    size = "small",
+    srcs = ["//tools/doc_check:lib"],
+    data = [
+        ":all_doc_extracts",
+        "//flutter:dev_files",
+        "//flutter:ios",
+        "//flutter:macos",
+        "//flutter:native_assets",
+        "//flutter:native_hot_patch",
+        "//flutter:providers",
+        "//flutter:providers.bzl",
+        "//flutter:repositories",
+        "//flutter:toolchain",
+        "//flutter:utils",
+        "//flutter:windows",
+        "//tools/doc_check:allowlist.txt",
+        "//tools/doc_check:shared_phrasings.txt",
+    ],
+    env = {
+        "DOC_CHECK_ALLOWLIST_RLOCATION": "$(rlocationpath //tools/doc_check:allowlist.txt)",
+        "DOC_CHECK_ANCHOR_RLOCATION": "$(rlocationpath //flutter:providers.bzl)",
+        "DOC_CHECK_EXTRACTS_RLOCATIONS": "$(rlocationpaths :all_doc_extracts)",
+        "DOC_CHECK_SHARED_RLOCATION": "$(rlocationpath //tools/doc_check:shared_phrasings.txt)",
+    },
+    main = "//tools/doc_check:doc_check_docs_test.dart",
+    deps = [
+        "@dev_tool_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)

@@ -1,0 +1,20 @@
+load("//flutter:defs.bzl", "flutter_library")
+
+# Its own Bazel package: each library derives its `lib_root` from its package.
+package(default_visibility = ["//tests/rules_testing:__pkg__"])
+
+flutter_library(
+    name = "leaf",
+    package_name = "header_only_leaf",
+    srcs = ["lib/leaf.dart"],
+    tags = ["manual"],
+)
+
+# No `srcs`: the aspect takes the header-only branch and forwards the closure.
+flutter_library(
+    name = "header",
+    package_name = "header_only_header",
+    srcs = [],
+    tags = ["manual"],
+    deps = [":leaf"],
+)

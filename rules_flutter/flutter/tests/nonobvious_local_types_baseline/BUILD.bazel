@@ -1,0 +1,17 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+
+# `specify_nonobvious_local_variable_types` is burned down to zero, so it must
+# not re-enter `//:analysis_baseline.json`, and no file may keep an empty map.
+dart_test(
+    name = "nonobvious_local_types_baseline_test",
+    size = "small",
+    data = ["//:analysis_baseline.json"],
+    env = {"ANALYSIS_BASELINE": "$(rlocationpath //:analysis_baseline.json)"},
+    main = "nonobvious_local_types_baseline_test.dart",
+    target_compatible_with = HOST_COMPATIBLE,
+    deps = [
+        "@dev_tool_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)

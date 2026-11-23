@@ -1,0 +1,24 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+dart_test(
+    name = "tree_reader_uncached_guard_test",
+    size = "medium",
+    data = ["tree_reader_uncached_guard_test.dart"],
+    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :tree_reader_uncached_guard_test.dart)"},
+    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
+    main = "tree_reader_uncached_guard_test.dart",
+    tags = [
+        "external",
+        "local",
+        "no-sandbox",
+        "tree-reader",
+    ],
+    deps = [
+        "@dev_tool_deps//:test",
+    ],
+)
+
+alias(
+    name = "tree_reader_uncached_guard",
+    actual = ":tree_reader_uncached_guard_test",
+)

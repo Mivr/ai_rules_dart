@@ -1,0 +1,85 @@
+load("//flutter:defs.bzl", "flutter_application")
+load("//flutter/private:flutter_web_application.bzl", "flutter_web_bundle")
+load("//flutter/tests:layering_test.bzl", "layering_on_test")
+
+# `package:leaf` reaches the applications only through `mid`. The `bad_*`
+# targets import it without declaring it, which the layering check refuses when
+# the target builds; the `good_*` twins declare it. All four are `manual`
+# because they are only analyzed here: `bazel build --output_groups=_validation`
+# on a `bad_*` target fails with the check's message, on a `good_*` one it
+# passes.
+flutter_application(
+    name = "bad_app",
+    package_name = "layering_app_fixture",
+    srcs = ["lib/own.dart"],
+    main = "lib/bad_main.dart",
+    tags = ["manual"],
+    deps = ["//flutter/tests/layering_fixture/mid"],
+)
+
+flutter_application(
+    name = "good_app",
+    package_name = "layering_app_fixture",
+    srcs = ["lib/own.dart"],
+    main = "lib/good_main.dart",
+    tags = ["manual"],
+    deps = [
+        "//flutter/tests/layering_fixture/leaf",
+        "//flutter/tests/layering_fixture/mid",
+    ],
+)
+
+flutter_web_bundle(
+    name = "bad_web",
+    package_name = "layering_app_fixture",
+    srcs = ["lib/own.dart"],
+    main = "lib/bad_main.dart",
+    tags = ["manual"],
+    deps = ["//flutter/tests/layering_fixture/mid"],
+)
+
+flutter_web_bundle(
+    name = "good_web",
+    package_name = "layering_app_fixture",
+    srcs = ["lib/own.dart"],
+    main = "lib/good_main.dart",
+    tags = ["manual"],
+    deps = [
+        "//flutter/tests/layering_fixture/leaf",
+        "//flutter/tests/layering_fixture/mid",
+    ],
+)
+
+[
+    layering_on_test(
+        name = "bad_%s_on_test" % kind,
+        size = "small",
+        expect_absent = ["leaf"],
+        expect_direct = ["mid"],
+        expect_srcs = [
+            "flutter/tests/layering_app_fixture/lib/bad_main.dart",
+            "flutter/tests/layering_app_fixture/lib/own.dart",
+        ],
+        own_package = "layering_app_fixture",
+        target_under_test = ":bad_%s" % kind,
+    )
+    for kind in ("app", "web")
+]
+
+[
+    layering_on_test(
+        name = "good_%s_on_test" % kind,
+        size = "small",
+        expect_direct = [
+            "leaf",
+            "mid",
+        ],
+        expect_srcs = [
+            "flutter/tests/layering_app_fixture/lib/good_main.dart",
+            "flutter/tests/layering_app_fixture/lib/own.dart",
+        ],
+        own_package = "layering_app_fixture",
+        target_under_test = ":good_%s" % kind,
+    )
+    for kind in ("app", "web")
+]

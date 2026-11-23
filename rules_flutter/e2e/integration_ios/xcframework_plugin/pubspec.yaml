@@ -1,0 +1,17 @@
+name: xcframework_plugin
+description: E2e fixture proving a plugin can link a prebuilt .xcframework.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: XcframeworkPlugin

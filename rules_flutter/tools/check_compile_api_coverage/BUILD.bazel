@@ -1,0 +1,18 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+
+# Fails when a manual `_compile_api_build_negative_*` target is not built by a
+# CI step that requires the refusal: `bazel run //tools/check_compile_api_coverage`
+# from the repo root. CI runs it in the unit-tests job.
+dart_binary(
+    name = "check_compile_api_coverage",
+    srcs = ["coverage.dart"],
+    main = "check_compile_api_coverage.dart",
+)
+
+dart_test(
+    name = "coverage_test",
+    size = "small",
+    srcs = ["coverage.dart"],
+    main = "test/coverage_test.dart",
+    deps = ["@dev_tool_deps//:test"],
+)

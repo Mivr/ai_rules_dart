@@ -1,0 +1,194 @@
+"""Repository rule for the profile-mode engine artifacts.
+
+Profile mode (`-c opt --@rules_flutter//flutter:profile`) needs its own engine
+and its own gen_snapshot on every platform: the engine refuses an AOT snapshot
+built for another mode ("VM snapshot invalid"). These live in separate repos
+from the release and debug artifacts so that a build which never asks for
+profile never downloads them; a select() arm that is not taken does not fetch
+its repo.
+"""
+
+load("//flutter/private:repo_metadata.bzl", "download_mode_metadata")
+load(":artifact_urls.bzl", "desktop_engine_artifact_path", "engine_artifact_url", "host_artifacts_path", "require_sha256")
+load(":download.bzl", "pinned_download_and_extract")
+load(":engine_helpers.bzl", "PLATFORM_PREFIX_TO_OS", "engine_arch_for_os", "extract_macos_inner_framework")
+load(":local_sdk.bzl", "engine_cache_dir", "host_engine_cache_dir", "link_local_dir", "link_local_file", "macos_framework_cache_path", "resolve_local_sdk_root")
+
+visibility(["//flutter/..."])
+
+def local_host_profile_downloads(platform):
+    """The profile downloads dict for one host platform in local mode.
+
+    Carries the same downloads dict as download mode (the local fetch maps
+    each artifact path into the SDK's engine cache); checksums and the macOS
+    double-zip unpacking are download-only. The host-tools entry names the
+    cache directory, not the download: macOS is always `darwin-x64` in a
+    real install, even on Apple Silicon.
+
+    Args:
+        platform: The host platform key, e.g. `darwin-arm64`.
+
+    Returns:
+        A tuple of the downloads dict, the macOS framework directories, and
+        the host OS name.
+    """
+    host_os_name = PLATFORM_PREFIX_TO_OS[platform.split("-")[0]]
+    host_engine_arch = engine_arch_for_os(host_os_name, platform.split("-")[1])
+    downloads = {
+        desktop_engine_artifact_path(host_os_name, host_engine_arch, "profile"): "engine",
+    }
+    framework_dirs = []
+    if host_os_name == "macos":
+        downloads[host_artifacts_path(host_engine_cache_dir(platform), mode = "profile")] = "host-tools"
+        framework_dirs = ["engine"]
+    return downloads, framework_dirs, host_os_name
+
+def _link_profile_artifact(repository_ctx, sdk_root, artifact_path, output):
+    """Links one profile artifact out of a local SDK's engine cache.
+
+    The SDK directory mirrors the artifact path minus its filename (flutter_tool
+    `Cache` convention): `android-arm64-profile/artifacts.zip` lives extracted
+    in `bin/cache/artifacts/engine/android-arm64-profile/`, and a
+    cross-compile `android-arm64-profile/linux-x64.zip` in
+    `.../android-arm64-profile/linux-x64/`. The link target depends on how the
+    download mode places the archive:
+
+    * `output` is a directory (`engine`, `host-tools`): link the whole cache
+      directory — except a macOS framework archive, whose double zip the
+      download mode unpacks while the SDK already holds extracted.
+    * `output` is empty (repo root): link the archive's known top-level
+      entries — `flutter.jar` for Android, `Flutter.xcframework/` plus
+      `gen_snapshot_arm64` for iOS, the `gen_snapshot` binary for a
+      cross-compile archive.
+    """
+    sdk_dir_rel = "bin/cache/artifacts/engine/" + engine_cache_dir(artifact_path)
+    base = artifact_path.split("/")[-1]
+    if base == "FlutterMacOS.framework.zip":
+        # A real install holds the extracted framework inside the xcframework;
+        # only a downloaded double-zip needs unpacking.
+        link_local_dir(
+            repository_ctx,
+            sdk_root,
+            "bin/cache/artifacts/engine/" + macos_framework_cache_path(engine_cache_dir(artifact_path)),
+            output + "/FlutterMacOS.framework",
+            "the profile FlutterMacOS framework",
+        )
+        return
+    if output == "":
+        if base == "artifacts.zip":
+            if artifact_path.startswith("android-"):
+                link_local_file(
+                    repository_ctx,
+                    sdk_root,
+                    sdk_dir_rel + "/flutter.jar",
+                    "flutter.jar",
+                    "the profile Android engine",
+                )
+            elif artifact_path.startswith("ios"):
+                link_local_dir(
+                    repository_ctx,
+                    sdk_root,
+                    sdk_dir_rel + "/Flutter.xcframework",
+                    "Flutter.xcframework",
+                    "the profile iOS engine",
+                )
+                link_local_file(
+                    repository_ctx,
+                    sdk_root,
+                    sdk_dir_rel + "/gen_snapshot_arm64",
+                    "gen_snapshot_arm64",
+                    "the profile iOS gen_snapshot",
+                )
+            else:
+                fail("flutter local SDK: no root layout known for profile artifact " + artifact_path)
+        else:
+            # A cross-compile gen_snapshot archive: one binary at the top.
+            host = base[:-len(".zip")]
+            binary = "gen_snapshot.exe" if host.startswith("windows") else "gen_snapshot"
+            link_local_file(
+                repository_ctx,
+                sdk_root,
+                sdk_dir_rel + "/" + binary,
+                "gen_snapshot",
+                "the profile cross-compile gen_snapshot",
+            )
+        return
+    link_local_dir(
+        repository_ctx,
+        sdk_root,
+        sdk_dir_rel,
+        output,
+        "the profile artifact " + artifact_path,
+    )
+
+def _flutter_profile_repo_impl(repository_ctx):
+    if getattr(repository_ctx.attr, "local_path", ""):
+        sdk_root = resolve_local_sdk_root(repository_ctx, getattr(repository_ctx.attr, "local_path", ""))
+        for path, output in repository_ctx.attr.downloads.items():
+            _link_profile_artifact(repository_ctx, sdk_root, path, output)
+
+        # The SDK already holds an extracted framework; only downloaded
+        # double-zips need unpacking.
+        repository_ctx.file(
+            "BUILD.bazel",
+            "# Generated by flutter_profile_repo.bzl\n" + repository_ctx.attr.build_file_content,
+        )
+        return download_mode_metadata(repository_ctx)
+    for path, output in repository_ctx.attr.downloads.items():
+        url = engine_artifact_url(
+            repository_ctx.attr.engine_revision,
+            path,
+            getattr(repository_ctx.attr, "engine_base_url", ""),
+        )
+        pinned_download_and_extract(
+            repository_ctx,
+            url = url,
+            sha256 = require_sha256(repository_ctx.attr.sha256s.get(path, ""), url),
+            output = output,
+        )
+    for base_dir in repository_ctx.attr.macos_framework_dirs:
+        extract_macos_inner_framework(repository_ctx, base_dir)
+    repository_ctx.file(
+        "BUILD.bazel",
+        "# Generated by flutter_profile_repo.bzl\n" + repository_ctx.attr.build_file_content,
+    )
+    return download_mode_metadata(repository_ctx)
+
+flutter_profile_repo = repository_rule(
+    _flutter_profile_repo_impl,
+    doc = "Downloads profile-mode engine artifacts into a lazily fetched repo.",
+    attrs = {
+        "engine_revision": attr.string(
+            doc = "The engine commit hash the artifacts are published under. " +
+                  "Empty means a local SDK (with `local_path`).",
+            default = "",
+        ),
+        "engine_base_url": attr.string(
+            doc = "Optional replacement origin for the engine revision " +
+                  "directory (an enterprise build). Empty means the default GCS base.",
+            default = "",
+        ),
+        "local_path": attr.string(
+            doc = "Optional path to a pre-extracted Flutter SDK " +
+                  "(bin/cache layout) to source every artifact from instead " +
+                  "of the network. Mutually exclusive with downloading.",
+            default = "",
+        ),
+        "downloads": attr.string_dict(
+            doc = "Artifact path (relative to the engine revision) → directory to extract it into.",
+            default = {},
+        ),
+        "sha256s": attr.string_dict(
+            doc = "Artifact path → expected SHA-256. Unused with `local_path`.",
+            default = {},
+        ),
+        "macos_framework_dirs": attr.string_list(
+            doc = "Directories holding a double-zipped FlutterMacOS.framework to unpack.",
+            default = [],
+        ),
+        "build_file_content": attr.string(
+            doc = "BUILD file text written into the generated repository. Has no default; always set it.",
+            mandatory = True,
+        ),
+    },
+)

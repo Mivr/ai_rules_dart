@@ -1,0 +1,21 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# A SwiftPM consumer: imports the BigInt product translated from the
+# `Package.resolved` pin (see the `swift_package_*` attributes on the `deps`
+# hub in MODULE.bazel) and exposes it to the iOS simulator app in
+# //:swiftpm_consumer_app.
+swift_library(
+    name = "swiftpm_consumer",
+    srcs = [
+        "AppDelegate.swift",
+        "Consumer.swift",
+    ],
+    # No OS constraint: the simulator build test below builds this for the
+    # iOS simulator platform (whose OS is ios, not macos). `manual` keeps
+    # Linux's `bazel test //...` from building it on the host.
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+    deps = ["@deps__swiftpm-bigint//:BigInt"],
+)
+
+exports_files(["Info.plist"])

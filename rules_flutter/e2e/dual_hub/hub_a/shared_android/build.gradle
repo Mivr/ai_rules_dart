@@ -1,0 +1,7 @@
+// Fixture Gradle build for the dirlink_plugin path spoke. The runtime
+// coordinate below is declared to need no Bazel label by
+// `flutter.pub(name = "hub_a", android_maven_ignore = ...)` in the
+// workspace's MODULE.bazel; an unmapped coordinate fails the spoke fetch.
+dependencies {
+    implementation 'com.example:shared-android:1.0'
+}

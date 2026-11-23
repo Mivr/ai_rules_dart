@@ -1,0 +1,82 @@
+# See CONTRIBUTING.md for instructions.
+# Hooks run with prek (https://github.com/j178/prek), which reads this
+# pre-commit format. See https://pre-commit.com/hooks.html for more hooks
+
+# The commit message hook runs in the commit-msg stage, and the other hooks
+# must not run on commit messages. `prek install` installs both stages.
+default_stages: [pre-commit]
+default_install_hook_types: [pre-commit, commit-msg]
+# Use a slightly older version of node by default
+# as the default uses a very new version of GLIBC
+default_language_version:
+  node: 16.18.0
+repos:
+  - repo: meta
+    hooks:
+      - id: check-hooks-apply
+      - id: check-useless-excludes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: check-toml
+      - id: check-yaml
+      - id: destroyed-symlinks
+      - id: detect-private-key
+        # A throwaway self-signed certificate and key for the TLS tests.
+        exclude: ^tools/dev_tool/test/tls_fixture\.dart$
+      - id: end-of-file-fixer
+        # `flutter create` output is kept as generated.
+        exclude: ^e2e/[^/]+/((android|ios|linux|macos|web|windows)/|[^/]+/(ios|macos)/Runner/)
+      - id: trailing-whitespace
+        # A patch's blank context lines are a single space; stripping it
+        # stops the hunk from applying.
+        exclude: \.patch$
+  # Check formatting and lint for starlark code. These hooks are the only
+  # buildifier entry point. Both read the warning set from the root
+  # `.buildifier.json`. The format hook runs with linting off, so formatting
+  # never rewrites a lint finding. The lint hook keeps its upstream
+  # `-lint=warn` default and reports findings without changing a file.
+  - repo: https://github.com/keith/pre-commit-buildifier
+    rev: 10.1.0
+    hooks:
+      - id: buildifier
+        args: [-lint=off]
+      - id: buildifier-lint
+  # The commit policy in AGENTS.md: a conventional-commit subject, and a
+  # `Changelog:` trailer on user-visible commits.
+  - repo: local
+    hooks:
+      - id: commit-message
+        name: commit message policy
+        entry: bazel run --ui_event_filters=-info --noshow_progress --show_result=0 //tools/changelog:check --
+        language: system
+        stages: [commit-msg]
+  # The release gate script's test: a fake gh on PATH, no network, seconds.
+  - repo: local
+    hooks:
+      - id: release-gate-test
+        name: release gate tests
+        entry: bash .github/workflows/release_gate_test.sh
+        language: system
+        files: ^\.github/workflows/release_gate(_test)?\.sh$
+        pass_filenames: false
+      - id: release-prep-test
+        name: release prep tests
+        entry: bash .github/workflows/release_prep_test.sh
+        language: system
+        files: ^\.github/workflows/release_prep(_test)?\.sh$
+        pass_filenames: false
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.21.0
+    hooks:
+      - id: yamlfmt
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.51.0
+    hooks:
+      - id: typos

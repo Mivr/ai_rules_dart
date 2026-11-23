@@ -1,0 +1,5 @@
+"""Regex-literal lexing and fail-closed syntax tests for the podspec reader (#189)."""
+
+load(":podspec_read_regex_test.bzl", "podspec_read_regex_test_suite")
+
+podspec_read_regex_test_suite(name = "podspec_read_regex_test")

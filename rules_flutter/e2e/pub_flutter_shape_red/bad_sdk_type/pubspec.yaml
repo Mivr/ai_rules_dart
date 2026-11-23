@@ -1,0 +1,11 @@
+name: bad_sdk_type
+description: Red-path fixture path package with a non-string environment.sdk.
+version: 0.1.0
+publish_to: none
+
+environment:
+  # Deliberately non-string: pub requires environment.sdk to be a version
+  # constraint string. The spoke fetch must fail naming the package, its
+  # pubspec.yaml and environment.sdk instead of deriving a default language
+  # version.
+  sdk: 3.5

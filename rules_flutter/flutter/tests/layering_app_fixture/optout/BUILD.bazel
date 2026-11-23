@@ -1,0 +1,32 @@
+load("//flutter:defs.bzl", "flutter_application")
+load("//flutter/private:flutter_web_application.bzl", "flutter_web_bundle")
+load("//flutter/tests:layering_test.bzl", "layering_off_test")
+
+# The per-package opt-out: the same violation as `:bad_app` and `:bad_web` in
+# the parent package, switched off for every target here.
+package(features = ["-dart_layering_check"])
+
+flutter_application(
+    name = "off_app",
+    package_name = "layering_app_optout",
+    main = "lib/off_main.dart",
+    tags = ["manual"],
+    deps = ["//flutter/tests/layering_fixture/mid"],
+)
+
+flutter_web_bundle(
+    name = "off_web",
+    package_name = "layering_app_optout",
+    main = "lib/off_main.dart",
+    tags = ["manual"],
+    deps = ["//flutter/tests/layering_fixture/mid"],
+)
+
+[
+    layering_off_test(
+        name = "optout_%s_test" % kind,
+        size = "small",
+        target_under_test = ":off_%s" % kind,
+    )
+    for kind in ("app", "web")
+]

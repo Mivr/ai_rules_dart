@@ -1,0 +1,80 @@
+"""E2e: an Android app on `shared_preferences` registers its Android plugin in both registrants."""
+
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
+load(
+    "@rules_flutter//flutter:android.bzl",
+    "flutter_android_registrant",
+)
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load(":android_cc_toolchain.bzl", "declare_android_cc_toolchains")
+load(":dart_registrant.bzl", "android_dart_registrant")
+
+exports_files(["pubspec.lock"])
+
+declare_android_cc_toolchains(name = "android_cc")
+
+flutter_application(
+    name = "app_flutter",
+    package_name = "android_sharedprefs",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:flutter",
+        "@deps//:shared_preferences",
+    ],
+)
+
+# The Java registrant the app compiles: `GeneratedPluginRegistrant.java`.
+flutter_android_registrant(
+    name = "app_registrant",
+    application = ":app_flutter",
+)
+
+# The Android-configured Dart registrant `generate_dart_plugin_registrant` writes.
+android_dart_registrant(
+    name = "app_dart_registrant",
+    registrant = ":app_registrant",
+)
+
+build_test(
+    name = "android_registrant_build_test",
+    size = "small",
+    targets = [
+        ":app_dart_registrant",
+        ":app_registrant",
+    ],
+)
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+flutter_library(
+    name = "app_lib",
+    package_name = "android_sharedprefs",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "@deps//:flutter",
+        "@deps//:shared_preferences",
+    ],
+)
+
+# Reads the generated Dart and Java plugin registrants and fails unless
+# `shared_preferences_android` is registered in both.
+dart_test(
+    name = "registrants_test",
+    size = "small",
+    data = [
+        ":app_dart_registrant",
+        ":app_registrant",
+    ],
+    main = "test/registrants_test.dart",
+)

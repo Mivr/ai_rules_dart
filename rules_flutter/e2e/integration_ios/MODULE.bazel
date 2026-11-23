@@ -1,0 +1,166 @@
+"E2e test: Flutter iOS simulator integration test (flutter_integration_test)"
+
+module(name = "rules_flutter_integration_ios")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+bazel_dep(name = "apple_support", version = "2.9.1")
+bazel_dep(name = "rules_apple", version = "5.2.0")
+bazel_dep(name = "rules_cc", version = "0.2.26")
+bazel_dep(name = "rules_swift", version = "4.1.2")
+bazel_dep(name = "platforms", version = "1.1.0")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+git_override(
+    module_name = "ai_rules_dart",
+    commit = "e7163aab8f9171f54693cd1b99feb7d3cee9602d",
+    remote = "https://github.com/Mivr/ai_rules_dart.git",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.toolchain(flutter_version = "3.47.7")
+flutter.pub(
+    name = "deps",
+    ios_plugin_defines = {
+        "spm_bigint_plugin": ["PLUGIN_FLAG"],
+        "spm_objc_plugin": ["SPM_PLUGIN_DEFINE=100"],
+    },
+    lock = "//:pubspec.lock",
+    swift_package_resolved = "//ios/Runner.xcworkspace/xcshareddata/swiftpm:Package.resolved",
+    swift_package_sha256 = {
+        # `sha256sum` over
+        # https://github.com/attaswift/BigInt/archive/63feef7820abb1a8fb08587d7da56bb0b7db8751.tar.gz
+        # (BigInt v6.0.1).
+        "bigint": "55fc8a63f655a09d9216f2c9bc062c508f98d4eca4b8ebefaf295a3ea4ac8f22",
+        # `sha256sum` over
+        # https://github.com/apple/swift-algorithms/archive/f6919dfc309e7f1b56224378b11e28bab5bccc42.tar.gz
+        # (swift-algorithms v1.2.0).
+        "swift-algorithms": "a4b0ad3a0db2170d1c1a7f521aec9d7a1fd3a8180e7a51049d856ae27ab43b72",
+        # `sha256sum` over
+        # https://github.com/apple/swift-numerics/archive/0a5bc04095a675662cf24757cc0640aa2204253b.tar.gz
+        # (swift-numerics v1.0.2).
+        "swift-numerics": "2127f4ad551b0f1763595060eca64454884382907b14289844fbd2815c7635eb",
+    },
+)
+
+# Mapped twin of `deps`: the same lock, no resolved file and no sha256 at all.
+# Its BigInt product comes from `//:bigint_product`, the Bazel target that
+# already builds the product, so no pin or checksum can supply it.
+flutter.pub(
+    name = "deps_mapped",
+    ios_plugin_defines = {"spm_bigint_plugin": ["PLUGIN_FLAG"]},
+    lock = "//:pubspec.lock",
+    swift_package_product_deps = {
+        "bigint:BigInt": "//:bigint_product",
+    },
+)
+
+# Red-path twin of `deps`: the same lock and resolved file but no sha256, so
+# `@deps_unpinned__swiftpm-bigint` fails at fetch time. The full.yaml
+# integration_ios leg queries it and asserts the failure.
+flutter.pub(
+    name = "deps_unpinned",
+    lock = "//:pubspec.lock",
+    swift_package_resolved = "//ios/Runner.xcworkspace/xcshareddata/swiftpm:Package.resolved",
+)
+
+# CocoaPods mode hub: reads committed Podfile.lock and maps BigInt to the
+# translated BigInt product from the swiftpm-bigint spoke.
+flutter.pub(
+    name = "deps_pods",
+    ios_pod_deps = {
+        "BigInt": "@deps__swiftpm-bigint//:BigInt",
+    },
+    ios_podfile_lock = "//:ios/Podfile.lock",
+    lock = "//:pubspec.lock",
+)
+
+# Unmapped twin of `deps_pods`: no ios_pod_deps and no ios_pod_ignore, so
+# querying @deps_pods_unmapped__pod_bigint_plugin fails at fetch time with Message 11.
+flutter.pub(
+    name = "deps_pods_unmapped",
+    ios_podfile_lock = "//:ios/Podfile.lock",
+    lock = "//:pubspec.lock",
+)
+
+# Wrong-library twin of `deps_pods`: maps BigInt to //:wrong_bigint_stub, proving
+# ios_pod_deps controls what pod_bigint_plugin links.
+flutter.pub(
+    name = "deps_pods_wrong",
+    ios_pod_deps = {
+        "BigInt": "//:wrong_bigint_stub",
+    },
+    ios_podfile_lock = "//:ios/Podfile.lock",
+    lock = "//:pubspec.lock",
+)
+use_repo(
+    flutter,
+    "deps",
+    "deps__spm_bigint_plugin",
+    "deps__spm_graph_plugin",
+    "deps__spm_objc_plugin",
+    "deps__swiftpm-bigint",
+    "deps__swiftpm-swift-algorithms",
+    "deps__swiftpm-swift-numerics",
+    "deps__xcframework_plugin",
+    "deps_mapped",
+    "deps_mapped__spm_bigint_plugin",
+    "deps_pods",
+    "deps_pods__pod_bigint_plugin",
+    "deps_pods_unmapped",
+    "deps_pods_unmapped__pod_bigint_plugin",
+    "deps_pods_wrong",
+    "deps_pods_wrong__pod_bigint_plugin",
+    "deps_unpinned",
+    "deps_unpinned__spm_bigint_plugin",
+    "deps_unpinned__spm_graph_plugin",
+    "deps_unpinned__spm_objc_plugin",
+    "deps_unpinned__swiftpm-bigint",
+    "deps_unpinned__swiftpm-swift-algorithms",
+    "deps_unpinned__swiftpm-swift-numerics",
+    "flutter_ios_engine",
+    "flutter_toolchains",
+)
+
+register_toolchains("@flutter_toolchains//:all")
+
+# The greeting plugin on the mapped hub: the same Dart code and iOS Swift
+# source as `//ios_greeting_plugin`, but every Flutter package comes from
+# `deps_mapped`. That keeps the app, the greeting plugin and
+# `spm_bigint_plugin` on one hub, so their Flutter SDK assets do not collide.
+new_local_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
+
+new_local_repository(
+    name = "mapped_greeting_plugin",
+    build_file_content = """load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+load("@rules_flutter//flutter:macos.bzl", "flutter_apple_plugin_library")
+
+flutter_apple_plugin_library(
+    name = "ios_greeting_plugin_apple_ios",
+    srcs = ["ios/Classes/IosGreetingPlugin.swift"],
+    module_name = "ios_greeting_plugin",
+    platform = "ios",
+    visibility = ["//visibility:public"],
+)
+
+flutter_plugin(
+    name = "ios_greeting_plugin",
+    package_name = "ios_greeting_plugin",
+    srcs = ["lib/ios_greeting_plugin.dart"],
+    apple_libs = select({
+        "@platforms//os:ios": [":ios_greeting_plugin_apple_ios"],
+        "//conditions:default": [],
+    }),
+    platforms = ["ios"],
+    plugin_class = "IosGreetingPlugin",
+    visibility = ["//visibility:public"],
+    deps = ["@deps_mapped//:flutter"],
+)
+""",
+    path = "ios_greeting_plugin",
+)

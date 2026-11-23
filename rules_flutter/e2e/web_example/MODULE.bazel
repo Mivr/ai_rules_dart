@@ -1,0 +1,28 @@
+"E2e test: Flutter web application (dart2wasm + dart2js)"
+
+module(name = "rules_flutter_web_example")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+git_override(
+    module_name = "ai_rules_dart",
+    commit = "e7163aab8f9171f54693cd1b99feb7d3cee9602d",
+    remote = "https://github.com/Mivr/ai_rules_dart.git",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.toolchain(flutter_version = "3.47.7")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_toolchains", "flutter_web_sdk")
+
+register_toolchains("@flutter_toolchains//:all")

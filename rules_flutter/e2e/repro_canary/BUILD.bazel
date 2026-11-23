@@ -1,0 +1,7 @@
+"""Reproducibility canary target declaration."""
+
+load(":nondet.bzl", "repro_canary")
+
+repro_canary(
+    name = "canary",
+)

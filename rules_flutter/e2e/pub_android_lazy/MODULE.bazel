@@ -1,0 +1,34 @@
+"""Lazy Android model: a Dart-only consumer never reads a plugin's Gradle build.
+
+`lazy_plugin` is a path plugin that declares the `android` platform and ships
+an `android/build.gradle` whose `dependencies` block names a coordinate in no
+Maven table. Building `//:app` only reaches the plugin's Dart surface, so the
+spoke must resolve without reading that Gradle file. Only
+`@deps//android:all_android_plugin_libs` reaches the plugin's Android
+repository, and that fetch must fail closed naming the plugin, the build file
+and the coordinate.
+"""
+
+module(name = "pub_android_lazy_e2e")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+git_override(
+    module_name = "ai_rules_dart",
+    commit = "e7163aab8f9171f54693cd1b99feb7d3cee9602d",
+    remote = "https://github.com/Mivr/ai_rules_dart.git",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "deps-android-lazy_plugin")

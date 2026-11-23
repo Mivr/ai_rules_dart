@@ -1,0 +1,18 @@
+name: dirlink_plugin
+description: Fixture path plugin whose android/ and assets/ are directory symlinks to directories elsewhere in the workspace.
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.example.dirlink_plugin
+        pluginClass: DirlinkPlugin
+  assets:
+    - assets/
+    - path: assets/extra.txt
+      platforms:
+        - android

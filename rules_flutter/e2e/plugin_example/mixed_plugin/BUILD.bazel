@@ -1,0 +1,24 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_flutter//flutter:macos.bzl", "flutter_apple_plugin_library")
+
+# A mixed Objective-C + Swift plugin. The Swift half publishes
+# `mixed_plugin-Swift.h`; the ObjC half imports it and calls back into the
+# `@objc` Swift class, while the Swift half imports the headers-only
+# `mixed_plugin_objc` module. ObjC only compiles on macOS, so the build test
+# is macOS-only.
+flutter_apple_plugin_library(
+    name = "mixed_plugin_apple_macos",
+    srcs = [
+        "macos/Classes/MixedPlugin.h",
+        "macos/Classes/MixedPlugin.m",
+        "macos/Classes/MixedPlugin.swift",
+    ],
+    module_name = "mixed_plugin",
+    platform = "macos",
+)
+
+build_test(
+    name = "mixed_plugin_build_test",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":mixed_plugin_apple_macos"],
+)

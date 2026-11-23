@@ -1,0 +1,9 @@
+load(":manifest_validate_test.bzl", "manifest_validate_test_suite")
+load(":pub_assets_test.bzl", "pub_assets_test_suite")
+load(":shader_conditions_test.bzl", "shader_conditions_test_suite")
+
+pub_assets_test_suite(name = "pub_assets_test")
+
+manifest_validate_test_suite(name = "manifest_validate_test")
+
+shader_conditions_test_suite(name = "shader_conditions_test")

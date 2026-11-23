@@ -1,0 +1,13 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: Dart build resolves spoke without reading Gradle
+    run: bazel build //:app
+  - name: Android repository fetch refuses unmapped Gradle coordinate
+    run: bazel fetch @deps-android-lazy_plugin//android:lib
+    expect:
+      non_zero: true
+      output_contains:
+        - lazy_plugin
+        - android/build.gradle
+        - declares Android dependencies rules_flutter cannot translate to Bazel labels
+        - com.example:lazy-unmapped

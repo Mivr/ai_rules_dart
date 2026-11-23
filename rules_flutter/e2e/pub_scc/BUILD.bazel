@@ -1,0 +1,134 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+load(
+    "@rules_flutter//flutter:ios.bzl",
+    "flutter_ios_app",
+    "flutter_ios_simulator_build",
+    "flutter_ios_simulator_build_test",
+)
+
+exports_files(["MODULE.bazel"])
+
+flutter_application(
+    name = "app",
+    package_name = "pub_scc_app",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:acyclic_pkg",
+        "@deps//:cycle_a",
+        "@deps//:cycle_b",
+        "@deps//:flutter",
+    ],
+)
+
+dart_test(
+    name = "scc_3cycle_test",
+    size = "small",
+    srcs = ["test/scc_3cycle_test.dart"],
+    main = "test/scc_3cycle_test.dart",
+    deps = [
+        "@deps//:tri_a",
+        "@deps//:tri_b",
+        "@deps//:tri_c",
+    ],
+)
+
+dart_test(
+    name = "asset_bundle_test",
+    size = "small",
+    srcs = ["test/asset_bundle_test.dart"],
+    data = [":app"],
+    main = "test/asset_bundle_test.dart",
+    deps = [
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+flutter_android_app(
+    name = "app_android",
+    package_name = "dev.example.pubscc",
+    application = ":app",
+)
+
+build_test(
+    name = "android_build_test",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":app_android"],
+)
+
+build_test(
+    name = "android_aggregator_test",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = ["@deps//android:all_android_plugin_libs"],
+)
+
+dart_test(
+    name = "verify_android_apk_test",
+    size = "small",
+    srcs = [
+        "test/verify_android_apk_test.dart",
+        "test/zip_archive.dart",
+    ],
+    data = [
+        ":__app_android_registrant_src",
+        ":app_android",
+    ],
+    env = {
+        "APK_RLOCATION": "$(rlocationpaths :app_android)",
+        "REGISTRANT_RLOCATION": "$(rlocationpaths :__app_android_registrant_src)",
+    },
+    main = "test/verify_android_apk_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+flutter_ios_app(
+    name = "app_ios",
+    srcs = [
+        "@rules_flutter//flutter/private/runners/ios:AppDelegate.swift",
+        "@rules_flutter//flutter/private/runners/ios:SceneDelegate.swift",
+    ],
+    application = ":app",
+    bundle_id = "dev.example.pubscc",
+)
+
+flutter_ios_simulator_build(
+    name = "app_ios_simulator",
+    testonly = True,
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_ios"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_build_test",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_ios"],
+)
+
+dart_test(
+    name = "verify_ios_bundle_test",
+    size = "small",
+    srcs = [
+        "test/verify_ios_bundle_test.dart",
+        "test/zip_archive.dart",
+    ],
+    data = [
+        ":__app_ios_registrant",
+        ":app_ios_simulator",
+    ],
+    env = {
+        "IPA_RLOCATION": "$(rlocationpaths :app_ios_simulator)",
+        "REGISTRANT_RLOCATION": "$(rlocationpaths :__app_ios_registrant)",
+    },
+    main = "test/verify_ios_bundle_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "@rules_dart//dart/runfiles",
+    ],
+)

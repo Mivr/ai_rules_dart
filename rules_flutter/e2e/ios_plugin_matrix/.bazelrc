@@ -1,0 +1,3 @@
+# Keep the lock file the one Bazel writes here; a checkout that overrides a
+# module locally can turn lock checking off in its own .bazelrc.user.
+try-import %workspace%/.bazelrc.user
