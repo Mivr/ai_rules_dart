@@ -35,9 +35,6 @@ def library_vm_product(ctx):
 def kernel_compile_settings(
         target = "vm",
         platform_dill = None,
-        libraries_json = None,
-        libraries_platform = None,
-        extra_libraries = [],
         scheme = STABLE_SCHEME,
         extra_frontend_flags = [],
         product = True):
@@ -48,20 +45,14 @@ def kernel_compile_settings(
     stated for one compile cannot be forgotten for another.
 
     Args:
-      target: The `kernel_worker --target` name (`"vm"` by default;
-        `"flutter"` for Flutter modules).
+      target: The front end's target name (`"vm"` by default; `"flutter"`
+        for Flutter modules).
       platform_dill: The platform `.dill` File to compile against; defaults to
-        the tools' `platform_dill` when None.
-      libraries_json: The `libraries.json` File the planner reads available
-        `dart:` libraries from; defaults to the tools' `libraries_json` when
-        None.
-      libraries_platform: Optional platform key in `libraries.json` (in
-        addition to `"vm"`) whose libraries are available on the target.
-      extra_libraries: Extra bare `dart:` library names (e.g.
-        `["ui", "nativewrappers"]`) available in `platform_dill` even when
-        absent from `libraries.json`.
+        the tools' `platform_dill` when None. Which `dart:` libraries a module
+        may import is what this kernel holds.
       scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
-      extra_frontend_flags: Extra flags forwarded to `kernel_worker`.
+      extra_frontend_flags: Extra flags for the module compiler:
+        `--track-widget-creation`, `--enable-experiment=<name>`.
       product: The value of `-Ddart.vm.product` for a `vm` target: `True`
         for kernel binaries, `False` for tests (as under `dart test`).
 
@@ -72,9 +63,6 @@ def kernel_compile_settings(
         product = product,
         target = target,
         platform_dill = platform_dill,
-        libraries_json = libraries_json,
-        libraries_platform = libraries_platform,
-        extra_libraries = extra_libraries,
         scheme = scheme,
         extra_frontend_flags = extra_frontend_flags,
     )
@@ -97,8 +85,7 @@ def kernel_module_inputs(
         sources,
         packages,
         dep_kmods,
-        extra_inputs = None,
-        closure_excluded = None):
+        extra_inputs = None):
     """What a module compile reads: its own sources and its closure.
 
     Args:
@@ -107,13 +94,12 @@ def kernel_module_inputs(
       packages: The `DartPackageInfo` records the module's package config
         names: either the deduplicated list (an executable's entry or a
         fixture) or an `(own_records, transitive)` pair (a library module,
-        written by the config tool).
-      dep_kmods: Postorder depset of the module directories it links against.
+        whose config the module compiler writes).
+      dep_kmods: Postorder depset of the outline directories of the modules
+        it compiles against.
       extra_inputs: A depset of files the compile may read beyond `sources`,
-        such as the closure's sources, which an entry module compiles from
-        when it reaches an excluded file. None for a library.
-      closure_excluded: A depset of the `.vm_excluded.txt` sidecars of the
-        module's upstream modules. None when there are none.
+        such as the closure's cross-package sources, which an entry module
+        compiles from source when it reaches one. None for a library.
 
     Returns:
       A struct with those fields.
@@ -123,12 +109,10 @@ def kernel_module_inputs(
         packages = packages,
         dep_kmods = dep_kmods,
         extra_inputs = extra_inputs,
-        closure_excluded = closure_excluded,
     )
 
 def kernel_module_options(
         defines,
-        exclude_non_sources,
         droppable,
         check_imports = False,
         target_label = None,
@@ -142,18 +126,14 @@ def kernel_module_options(
         environment of the executable whose closure this is (the
         `executable_dart_defines` setting; an entry module takes the
         executable's own `defines`), then the `//dart:extra_dart_defines`
-        flag. When one contains a comma, the compile runs the toolchain's
-        patched worker snapshot; otherwise the pristine snapshot runs.
-      exclude_non_sources: Whether to emit only the listed sources, and not
-        the libraries reached through them. Both kinds pass True, so a module
-        holds its own libraries and an entry holds its own sources, and
-        neither embeds the SDK platform or a dependency library.
-      droppable: Whether `kernel_module` may retry once without the own
-        sources that fail for the VM. A library's module may, and one that
-        still fails fails the action. An entry module may not: dropping one of
-        the test's own files would silently run a test without it.
-      check_imports: Whether to run strict-layering import checks during the
-        module compile.
+        flag. A value may hold a comma.
+      droppable: Whether the module may leave out the own libraries that do
+        not compile for the target, and those that import them. A library's
+        module may. An entry module may not: leaving out one of the test's
+        own files would silently run a test without it, so any error fails
+        its action.
+      check_imports: Whether to run the strict-layering import check during
+        the module compile.
       target_label: The Bazel target label for diagnostics when checking
         imports.
       own_packages: Package names this target owns.
@@ -167,7 +147,6 @@ def kernel_module_options(
     return struct(
         defines = defines,
         define_file = define_file,
-        exclude_non_sources = exclude_non_sources,
         droppable = droppable,
         check_imports = check_imports,
         target_label = target_label,
@@ -182,8 +161,9 @@ def kernel_module_outputs(output, koutline = None, unused_inputs = False):
       output: The module's directory File to produce. It holds one kernel per
         component of the module's sources, and an `index.json` that lists
         them.
-      koutline: Optional directory File to receive stripped `.dill` outlines
-        and `index.json` for downstream `--input-kmod` compilation.
+      koutline: Optional directory File to receive the module's outline, the
+        sources it left out and an `index.json`, which dependant modules
+        compile against.
       unused_inputs: Whether the compile writes its unused-inputs list — the
         declared inputs no compile of this action read — and takes it as the
         action's `unused_inputs_list`, so Bazel skips the action when only an

@@ -257,7 +257,7 @@ dart_binary(
     main = "kernel_filter.dart",
     modular_kernel = False,
     target_compatible_with = HOST_COMPATIBLE,
-    # Public like rules_dart's `kernel_module` tool: a rule in another module
+    # Public like rules_dart's `kernel_link` tool: a rule in another module
     # composing over `@rules_flutter//flutter:utils.bzl` names it through
     # `FLUTTER_KERNEL_COMPILE_ATTRS`.
     visibility = ["//visibility:public"],

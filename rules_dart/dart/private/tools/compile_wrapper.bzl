@@ -2,8 +2,8 @@
 
 The `exe` and `aot-snapshot` compiles and the `gen_kernel` step run the
 wrapper (see `dart_compile.bzl`). Run from source, every action makes the VM
-parse and JIT-compile the whole tool before it does any work. The `kernel_module`
-tool avoids that cost by being an AOT snapshot run by `dartaotruntime`; the
+parse and JIT-compile the whole tool before it does any work. The module
+compiler avoids that cost by being an AOT snapshot run by `dartaotruntime`; the
 wrapper does the same: `//dart/private/tools:compile_wrapper` is the
 prebuilt AOT snapshot of the very same sources, compiled once (by the tool run
 from source, so it cannot depend on itself), and the compile actions

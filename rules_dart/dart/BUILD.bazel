@@ -247,6 +247,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":repositories",
+        "//dart/private:module_compiler_repo",
         "//dart/private:toolchain_selection",
         "//dart/pub:pub_scanner",
         "//dart/pub/private:yaml2json",
@@ -275,6 +276,10 @@ bzl_library(
     name = "toolchain",
     srcs = ["toolchain.bzl"],
     visibility = ["//visibility:public"],
+    deps = [
+        "//dart/private:module_compiler",
+        "//dart/private:module_compiler_versions",
+    ],
 )
 
 bzl_library(
@@ -296,12 +301,6 @@ bzl_library(
         "//dart/private:kernel_params",
         "//dart/private:source_set",
     ],
-)
-
-alias(
-    name = "kernel_module",
-    actual = "//dart/private/tools:kernel_module",
-    visibility = ["//visibility:public"],
 )
 
 # The strict-layering check tool, for rules outside rules_dart that call

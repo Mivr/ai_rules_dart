@@ -2,6 +2,7 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
+load("//dart/tests:module_compiler_tools.bzl", "module_compiler_tools")
 
 dart_binary(
     name = "noop",
@@ -51,8 +52,8 @@ exports_files(
 )
 
 # The kernel byte readers shared by the run-from-source tools (see
-# `dill_reader.dart`): compiled into `kernel_module` through `srcs`, run from
-# source beside the staged JIT tool through `:jit_tool_srcs`.
+# `dill_reader.dart`): run from source beside the staged JIT tool through
+# `:jit_tool_srcs`.
 exports_files(
     ["dill_reader.dart"],
     visibility = ["//dart:__subpackages__"],
@@ -84,8 +85,8 @@ filegroup(
 )
 
 # The single comma-splitting patch implementation (see `comma_patch.dart`):
-# run from source by the toolchain's declared patch actions, compiled into
-# `kernel_module` and `app_jit_snapshot` through `srcs`.
+# run from source by the toolchain's declared patch action, compiled into
+# `app_jit_snapshot` through `srcs`.
 exports_files(
     ["comma_patch.dart"],
     visibility = ["//dart:__subpackages__"],
@@ -118,8 +119,30 @@ dart_library(
     ],
 )
 
-# The multiplex loop `kernel_module` serves with: concurrent requests keep their
-# own ids, and a cancelled request is answered as cancelled.
+# The module compiler's behaviour, on the tool the module actions run: what an
+# edit does to an outline, that outlines stand in for full kernels, that a
+# linked closure runs, what is left out and why.
+module_compiler_tools(
+    name = "module_compiler_tools",
+    testonly = True,
+    visibility = ["//dart:__subpackages__"],
+)
+
+dart_test(
+    name = "module_compiler_test",
+    size = "medium",
+    srcs = ["worker_test_encode.dart"],
+    args = ["$(rlocationpath :module_compiler_tools)"],
+    data = [":module_compiler_tools"],
+    main = "module_compiler_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The worker loop the module compiler serves with: concurrent requests keep
+# their own ids, and a cancelled request is answered as cancelled.
 dart_test(
     name = "worker_serve_test",
     size = "small",
@@ -127,20 +150,8 @@ dart_test(
         "lib/worker_protocol.dart",
         "lib/worker_serve.dart",
     ],
-    args = [
-        "$(rlocationpath :kernel_module)",
-        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
-    ],
-    data = [
-        ":kernel_module",
-        "@dart_toolchains//sdk/3.13.5:compile_files",
-        "@dart_toolchains//sdk/3.13.5:dart",
-    ],
     main = "worker_serve_test.dart",
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
+    deps = ["@ext_pub_deps//:test"],
 )
 
 # Unit tests for the shared worker-protocol library: pin the behaviour every
@@ -394,10 +405,8 @@ dart_test(
         "$(rlocationpath :test_runner_suite_fixture)",
         "$(rlocationpath :test_runner_suite_runner)",
         "$(rlocationpath :test_runner_fixture.dart)",
-        "$(rlocationpath :BUILD.bazel)",
     ],
     data = [
-        "BUILD.bazel",
         ":test_runner",
         ":test_runner_fixture",
         ":test_runner_fixture.dart",
@@ -587,7 +596,8 @@ dart_test(
 
 # Concatenates module kernels into a modular `dart_test`'s or
 # `dart_binary(compile_mode = "kernel")`'s kernel. See the file's header.
-# It takes no `dart_library` dependency on purpose (like `kernel_module`
+# It takes no `dart_library` dependency on purpose (like the module
+# compiler
 # below): every `dart_library` names it as an implicit exec tool, so a
 # dependency would be a cycle. It reads the shared worker protocol through
 # `srcs` instead.
@@ -638,41 +648,26 @@ dart_test(
     ],
 )
 
-# Compiles one kernel module, excluding the sources that cannot compile for the VM.
-# A Bazel persistent worker. It has no dependencies on purpose: every `dart_library`
-# names it as an attribute, so depending on a `dart_library` would be a cycle.
-# It reads the shared guard through `srcs` instead: the file compiles in place,
-# so the relative import reaches it with no package edge.
-# An AOT snapshot (run by `dartaotruntime` in `kernel_module_action`): every module
-# and entry action pays the tool's startup, and the snapshot skips the VM's JIT
-# compile of the wrapper. It is smaller and faster to build than `exe`.
-dart_binary(
-    name = "kernel_module",
+# The module compiler's own sources. `dart_toolchain` builds them, with the
+# pinned sources of its SDK's tag, into that SDK's module compiler (see
+# `//dart/private:module_compiler.bzl`); they are a package of their own in
+# that build, so every file sits beside or below `module_compiler.dart`.
+filegroup(
+    name = "module_compiler_srcs",
     srcs = [
-        "comma_patch.dart",
-        "dill_outline.dart",
-        "dill_reader.dart",
-        "kernel_module_args.dart",
-        "kernel_module_import_check.dart",
-        "kernel_module_strip.dart",
+        "lib/layering_message.dart",
         "lib/worker_protocol.dart",
         "lib/worker_serve.dart",
+        "module_compiler.dart",
+        "module_outline.dart",
         "package_config.dart",
-        "//dart/guard:lib/directive_guard.dart",
     ],
-    code_assets_from_deps = False,
-    compile_mode = "aot-snapshot",
-    main = "kernel_module.dart",
-    modular_kernel = False,
-    # A persistent-worker tool: `dartaotruntime` runs the raw snapshot, so it
-    # must stay the executable rather than gaining a `bazel run` launcher.
-    snapshot_launcher = False,
     visibility = ["//visibility:public"],
 )
 
 # The compile wrapper (`app_jit_snapshot.dart`) as an AOT snapshot, run by
 # `dartaotruntime` in the `exe`, `aot-snapshot` and `gen_kernel` actions of
-# every `dart_binary` (see `compile_wrapper.bzl`). Built like `kernel_module`:
+# every `dart_binary` (see `compile_wrapper.bzl`). Run like `kernel_link`:
 # compiled once, never per app. It cannot be built through its own snapshot,
 # so `use_compile_wrapper = False` compiles it with the tool run from source,
 # as the `jit-snapshot` mode does. Its sources stay out of every app's inputs.
@@ -690,7 +685,7 @@ dart_binary(
     compile_mode = "aot-snapshot",
     main = "app_jit_snapshot.dart",
     modular_kernel = False,
-    # Run by `dartaotruntime` as a raw snapshot, like `kernel_module`.
+    # Run by `dartaotruntime` as a raw snapshot, like `kernel_link`.
     snapshot_launcher = False,
     use_compile_wrapper = False,
     visibility = ["//dart:__subpackages__"],
@@ -704,90 +699,9 @@ bzl_library(
     deps = ["//dart/private:dart_import_check"],
 )
 
-# The planner's and outline stripper's unit tests.
-#
-# Sharded because the suite is the slow one: it compiles from the SDK fixtures
-# twice. `package:test` hands each shard a contiguous block of cases, and the
-# heaviest cases sit together near the end of the file, so the slowest shard
-# only shrinks once that block splits. The p95 of the slowest shard over ten
-# runs each, run as the nightly flake sweep runs them (`--local_test_jobs` at
-# twice the host's CPUs, cases in random order): 24.2 s unsharded, 21.3 s at
-# 2 shards, 21.4 s at 4, 19.8 s at 8, 13.4 s at 16, near the floor set by the
-# single slowest case (about 7 s). At 16 that is under a quarter of `small`'s
-# 60 s timeout. `test_runner_test` holds the shard count and size to these
-# measurements.
-dart_test(
-    name = "kernel_module_test",
-    size = "medium",
-    srcs = [
-        "app_jit_aot_args.dart",
-        "app_jit_snapshot.dart",
-        "comma_patch.dart",
-        "dill_outline.dart",
-        "dill_reader.dart",
-        "dill_test_writer.dart",
-        "jit_lock.dart",
-        "jit_policy.dart",
-        "kernel_link.dart",
-        "kernel_module.dart",
-        "kernel_module_args.dart",
-        "kernel_module_import_check.dart",
-        "kernel_module_strip.dart",
-        "kernel_module_test_support.dart",
-        "lib/worker_protocol.dart",
-        "lib/worker_serve.dart",
-        "package_config.dart",
-        "worker_test_encode.dart",
-        "//dart/guard:lib/directive_guard.dart",
-    ],
-    args = [
-        "$(rlocationpath :kernel_module)",
-        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
-        "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
-    ],
-    data = [
-        ":kernel_module",
-        "//dart",
-        "@dart_toolchains//sdk/3.13.4:compile_files",
-        "@dart_toolchains//sdk/3.13.4:dart",
-        "@dart_toolchains//sdk/3.13.5:compile_files",
-        "@dart_toolchains//sdk/3.13.5:dart",
-    ],
-    main = "kernel_module_test.dart",
-    shard_count = 16,
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
-)
-
-# Tests for the strict-layering check inlined into kernel_module.
-dart_test(
-    name = "kernel_module_import_check_test",
-    size = "small",
-    srcs = [
-        "comma_patch.dart",
-        "dill_outline.dart",
-        "dill_reader.dart",
-        "dill_test_writer.dart",
-        "kernel_module.dart",
-        "kernel_module_args.dart",
-        "kernel_module_import_check.dart",
-        "kernel_module_strip.dart",
-        "kernel_module_test_support.dart",
-        "lib/worker_protocol.dart",
-        "lib/worker_serve.dart",
-        "package_config.dart",
-        "//dart/guard:lib/directive_guard.dart",
-    ],
-    main = "kernel_module_import_check_test.dart",
-    deps = [
-        "@ext_pub_deps//:test",
-    ],
-)
-
 # Generates one module's `package_config.json` from its closure's records.
-# It takes no `dart_library` dependency on purpose (like `kernel_module`
+# It takes no `dart_library` dependency on purpose (like the module
+# compiler
 # above): every `dart_library` names it as an implicit exec tool, so a
 # dependency would be a cycle. It reads the shared worker sources through
 # no `srcs`: it imports only `dart:` libraries.
@@ -806,7 +720,7 @@ dart_binary(
 
 # The strict-layering check (see `import_check.dart`): reads one target's
 # sources and fails when one imports a package its own `deps` do not provide.
-# Like `kernel_module` it takes no `dart_library` dependency, because every
+# Like `kernel_link` it takes no `dart_library` dependency, because every
 # `dart_binary` and `dart_library` aspect names it as an implicit exec tool, so
 # a dependency would be a cycle. It reads the shared guard through `srcs`: the
 # file compiles in place, so the relative import reaches it with no package edge.
@@ -814,6 +728,7 @@ dart_binary(
     name = "import_check",
     srcs = [
         "kernel_module_import_check.dart",
+        "lib/layering_message.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     code_assets_from_deps = False,
@@ -834,6 +749,7 @@ dart_binary(
     srcs = [
         "import_check.dart",
         "kernel_module_import_check.dart",
+        "lib/layering_message.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     code_assets_from_deps = False,
@@ -851,6 +767,7 @@ dart_test(
     srcs = [
         "import_check.dart",
         "kernel_module_import_check.dart",
+        "lib/layering_message.dart",
         "link_check.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
@@ -867,6 +784,7 @@ dart_test(
     srcs = [
         "import_check.dart",
         "kernel_module_import_check.dart",
+        "lib/layering_message.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     main = "import_check_test.dart",
@@ -891,26 +809,6 @@ dart_test(
     size = "small",
     srcs = ["//dart/guard:lib/directive_guard.dart"],
     main = "directive_guard_test.dart",
-    deps = ["@ext_pub_deps//:test"],
-)
-
-dart_test(
-    name = "kernel_module_unused_inputs_sandbox_test",
-    size = "small",
-    srcs = [
-        "comma_patch.dart",
-        "dill_outline.dart",
-        "dill_reader.dart",
-        "kernel_module.dart",
-        "kernel_module_args.dart",
-        "kernel_module_import_check.dart",
-        "kernel_module_strip.dart",
-        "lib/worker_protocol.dart",
-        "lib/worker_serve.dart",
-        "package_config.dart",
-        "//dart/guard:lib/directive_guard.dart",
-    ],
-    main = "kernel_module_unused_inputs_sandbox_test.dart",
     deps = ["@ext_pub_deps//:test"],
 )
 
@@ -1021,28 +919,6 @@ dart_test(
     deps = [
         "@ext_pub_deps//:test",
     ],
-)
-
-# Guards `WorkRequest.inputs` paths whose length needs a multi-byte varint.
-dart_test(
-    name = "kernel_module_input_varint_test",
-    size = "small",
-    srcs = [
-        "comma_patch.dart",
-        "dill_outline.dart",
-        "dill_reader.dart",
-        "kernel_module.dart",
-        "kernel_module_args.dart",
-        "kernel_module_import_check.dart",
-        "kernel_module_strip.dart",
-        "lib/worker_protocol.dart",
-        "lib/worker_serve.dart",
-        "package_config.dart",
-        "worker_test_encode.dart",
-        "//dart/guard:lib/directive_guard.dart",
-    ],
-    main = "kernel_module_input_varint_test.dart",
-    deps = ["@ext_pub_deps//:test"],
 )
 
 # The comma-splitting patch's unit tests: byte patterns, the fail-closed

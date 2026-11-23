@@ -4,8 +4,8 @@ A custom modular kernel — a rule built on `FLUTTER_MODULAR_KERNEL_ATTRS`,
 used through the public `//flutter:utils.bzl` — compiles with defines like the
 built-in rules do: its own `defines` are the configuration of its `deps` edge,
 so every dependency module and its entry compile with them, followed by the
-global `//flutter:extra_dart_defines`. A comma in a value fails the build: the
-module compiler cannot take one yet, and a custom kernel never falls back.
+global `//flutter:extra_dart_defines`. A value may hold a comma: the module
+compiler takes the defines as a map.
 
 The caller rules below load only the public `//flutter:utils.bzl`, the way a
 downstream pipeline would. The tests pin:
@@ -15,7 +15,7 @@ downstream pipeline would. The tests pin:
   `FlutterKernelCompile`, and the entry compile carries the global define;
 - a kernel's own `defines` reach its entry compile before the global ones, so
   the global flag wins on a key both set, as in the whole-program compile;
-- a comma in a global value fails the build, naming the target and the define;
+- a comma in a global value changes nothing: the kernel stays modular;
 - with the flag empty and no `defines` the entry compile carries no `-D` and
   the default complete link stages no base dill.
 """
@@ -110,11 +110,16 @@ def _own_defines_test_impl(ctx):
     )
     return analysistest.end(env)
 
-def _comma_refused_test_impl(ctx):
-    """A comma in a global value fails the build, naming the target and the define."""
+def _comma_stays_modular_test_impl(ctx):
+    """A comma in a global value changes nothing: the kernel stays modular and the entry carries the value whole."""
     env = analysistest.begin(ctx)
-    for expected in ctx.attr.expected_substrings:
-        asserts.expect_failure(env, expected)
+    asserts.true(
+        env,
+        "-DCUSTOM_KERNEL_COMMA=a,b" in _entry_defines(env),
+        "the entry compile must carry the comma define whole, got %s" % _entry_defines(env),
+    )
+    whole_program = [a for a in analysistest.target_actions(env) if a.mnemonic == "FlutterKernelCompile"]
+    asserts.equals(env, [], whole_program, "a comma define must not select the whole-program compile")
     return analysistest.end(env)
 
 def _empty_unchanged_test_impl(ctx):
@@ -145,10 +150,8 @@ _WITH_COMMA = _DBG | {
 
 _global_stays_modular_test = analysistest.make(_global_stays_modular_test_impl, config_settings = _WITH_GLOBAL_DEFINES)
 _own_defines_test = analysistest.make(_own_defines_test_impl, config_settings = _WITH_GLOBAL_DEFINES)
-_comma_refused_test = analysistest.make(
-    _comma_refused_test_impl,
-    expect_failure = True,
-    attrs = {"expected_substrings": attr.string_list(mandatory = True)},
+_comma_stays_modular_test = analysistest.make(
+    _comma_stays_modular_test_impl,
     config_settings = _WITH_COMMA,
 )
 _empty_unchanged_test = analysistest.make(_empty_unchanged_test_impl, config_settings = _DBG)
@@ -190,15 +193,13 @@ def custom_kernel_defines_test_suite(name):
         name = name + "_own_defines",
         target_under_test = ":_custom_kernel_defines_test_own",
     )
-    _comma_refused_test(
-        name = name + "_test_comma_refused",
+    _comma_stays_modular_test(
+        name = name + "_test_comma_stays_modular",
         target_under_test = ":_custom_kernel_defines_test",
-        expected_substrings = ["_custom_kernel_defines_test", "CUSTOM_KERNEL_COMMA=a,b", "comma"],
     )
-    _comma_refused_test(
-        name = name + "_app_comma_refused",
+    _comma_stays_modular_test(
+        name = name + "_app_comma_stays_modular",
         target_under_test = ":_custom_kernel_defines_app",
-        expected_substrings = ["_custom_kernel_defines_app", "CUSTOM_KERNEL_COMMA=a,b", "comma"],
     )
     _empty_unchanged_test(
         name = name + "_empty_unchanged",
@@ -211,8 +212,8 @@ def custom_kernel_defines_test_suite(name):
             ":" + name + "_test_global_stays_modular",
             ":" + name + "_app_global_stays_modular",
             ":" + name + "_own_defines",
-            ":" + name + "_test_comma_refused",
-            ":" + name + "_app_comma_refused",
+            ":" + name + "_test_comma_stays_modular",
+            ":" + name + "_app_comma_stays_modular",
             ":" + name + "_empty_unchanged",
         ],
     )

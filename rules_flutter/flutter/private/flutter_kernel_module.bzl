@@ -12,7 +12,7 @@ output-path collisions.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("@rules_dart//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartKernelInfo")
+load("@rules_dart//dart:providers.bzl", "DartInfo", "DartKernelInfo")
 load(
     "@rules_dart//dart:utils.bzl",
     "EXECUTABLE_DEFINES_ATTRS",
@@ -48,7 +48,6 @@ load(
     "defines_transition",
     "entry_dart_env",
     "module_dart_env",
-    "refuse_comma_defines",
 )
 load(
     "//flutter/private:flutter_kernel_tools.bzl",
@@ -151,68 +150,45 @@ def _kernel_module_staged_inputs(ctx, sources, output, extra_inputs, packages, s
     stage = stage_generated_inputs(ctx, stage_candidates, output.basename, include_sources = True)
     return sources, package_config, stage
 
-def _resolve_module_sdk(tools, options):
-    """The SDK summaries the module compiles against, honouring overrides.
-
-    Returns struct(platform, libraries): the `--dart-sdk-summary` platform
-    dill and the `--libraries-json` specification, defaulting to the
-    toolchain's.
-    """
-    return struct(
-        platform = options.platform_dill if options.platform_dill != None else tools.platform_dill,
-        libraries = options.libraries_json if options.libraries_json != None else tools.libraries_json,
-    )
-
-def _kernel_module_base_args(ctx, package_config, stage, sdk, options):
-    """The kernel worker flags naming the target, SDK summaries and compile mode.
+def _kernel_module_base_args(ctx, package_config, stage, platform, options):
+    """The module compiler flags naming the target, the platform and the defines.
 
     Args:
         ctx: The rule or aspect context.
         package_config: The `--packages-file` package config File.
         stage: The staging result from `_kernel_module_staged_inputs`.
-        sdk: The `_resolve_module_sdk` result (platform and libraries).
-        options: struct with the compile options: `target`, `libraries_platform`,
-            `extra_libraries`, `scheme`, `defines`, `extra_frontend_flags` and
-            `exclude_non_sources`.
+        platform: The platform `.dill` File the module compiles against.
+        options: struct with the compile options: `target`, `scheme`,
+            `defines`, `define_file` and `extra_frontend_flags`.
     """
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
 
     args.add("--target", options.target)
-    args.add("--dart-sdk-summary", sdk.platform)
+    args.add("--dart-sdk-summary", platform)
     args.add("--packages-file", package_config)
-    args.add("--libraries-json", sdk.libraries)
-    if options.libraries_platform:
-        args.add("--libraries-platform", options.libraries_platform)
-    args.add_all(options.extra_libraries, before_each = "--extra-library")
     if stage.root != None:
         args.add("--multi-root", stage.root)
     args.add("--multi-root-scheme", options.scheme)
 
     # The defines file first: a `-D` of the same key (the target's own defines, the global flag) wins, as in the
-    # whole-program compile. A comma in a value is refused before this point (`refuse_comma_defines`), and
-    # `kernel_module` refuses one from the defines file.
+    # whole-program compile. The module compiler takes the defines as a map, so a value keeps its commas.
     define_file = getattr(options, "define_file", None)
     if define_file != None:
         args.add("--define-file", define_file)
     args.add_all(options.defines, format_each = "-D%s")
     args.add_all(options.extra_frontend_flags)
-    args.add("--no-summary-only")
-    args.add("--reuse-compiler-result")
-    args.add("--use-incremental-compiler")
-    if options.exclude_non_sources:
-        args.add("--exclude-non-sources")
     return args
 
 def _kernel_module_source_args(args, module, excluded, unused_inputs_list, options):
-    """Append the per-source, output and closure flags to the kernel worker args.
+    """Append the per-source and output flags to the module compiler args.
 
     Args:
-        args: The kernel worker args object to append to.
+        args: The module compiler args object to append to.
         module: struct with the per-module data: `sources`, `dep_kmods`,
-            `output`, `koutline`, `extra_inputs` and `closure_excluded`.
-        excluded: The VM exclusion report File (`--excluded-output`).
+            `output`, `koutline` and `extra_inputs`.
+        excluded: The sidecar File listing the sources left out (`--excluded-output`).
         unused_inputs_list: The unused-inputs list File, or None.
         options: struct with the compile options (`droppable`).
     """
@@ -231,8 +207,6 @@ def _kernel_module_source_args(args, module, excluded, unused_inputs_list, optio
         args.add("--unused-inputs-list", unused_inputs_list)
     if not options.droppable:
         args.add("--no-drop")
-    if module.closure_excluded:
-        args.add_all(module.closure_excluded, before_each = "--closure-excluded")
     if module.extra_inputs:
         args.add_all(module.extra_inputs, before_each = "--input-source")
 
@@ -241,95 +215,39 @@ def _optional_kernel_outputs(module, unused_inputs_list):
     outputs = [unused_inputs_list] if unused_inputs_list != None else []
     return outputs + ([module.koutline] if module.koutline != None else [])
 
-def _kernel_module_tool_inputs(ctx, tools, args, direct_inputs, action_tools):
-    """Pick the kernel worker executable and register its tool inputs.
-
-    Returns the `(executable, arguments)` pair for the compile action.
-    """
-    dart_exe = getattr(tools, "dart", None)
-    dartvm = getattr(tools, "dartvm", None)
-    tool_target = getattr(ctx.attr, "_kernel_module", None)
-    tool_compile_mode = (
-        tool_target[DartCompileInfo].compile_mode if tool_target != None and DartCompileInfo in tool_target else "kernel"
-    )
-    if tool_compile_mode == "aot-snapshot":
-        # The tool is an AOT snapshot: `dart` refuses to run `.aot` files, so
-        # `dartaotruntime` executes it directly. This also drops the `dart` and
-        # `dartvm` inputs: the snapshot needs only the runtime.
-        direct_inputs.append(ctx.executable._kernel_module)
-        executable = tools.dartaotruntime
-        arguments = [
-            ctx.executable._kernel_module.path,
-            "--kernel-worker",
-            tools.kernel_worker.path,
-            "--dartaotruntime",
-            tools.dartaotruntime.path,
-            args,
-        ]
-    elif dart_exe != None:
-        direct_inputs.extend([ctx.executable._kernel_module, dart_exe])
-        action_tools.append(dart_exe)
-        if dartvm != None:
-            direct_inputs.append(dartvm)
-            action_tools.append(dartvm)
-        executable = dart_exe
-        arguments = [
-            ctx.executable._kernel_module.path,
-            "--kernel-worker",
-            tools.kernel_worker.path,
-            "--dartaotruntime",
-            tools.dartaotruntime.path,
-            args,
-        ]
-    else:
-        executable = ctx.executable._kernel_module
-        arguments = [
-            "--kernel-worker",
-            tools.kernel_worker.path,
-            "--dartaotruntime",
-            tools.dartaotruntime.path,
-            args,
-        ]
-    return executable, arguments
-
 def flutter_kernel_module_action(ctx, tools, module, options):
     """Compiles one Flutter kernel module with staged generated inputs instead of mounting `ctx.bin_dir`.
 
     Args:
       ctx: The rule or aspect context, used to declare outputs and register the action.
-      tools: Kernel tool files (compiler, platform dill, libraries specification).
+      tools: Kernel tool files (the SDK's module compiler, `dartaotruntime` and platform dill).
       module: struct with the per-module data: `sources` (structs with `uri`
         and `file` for the module's own Dart sources), `packages` (package
         records rendered into the `--packages-file` package config),
-        `dep_kmods` (transitive dependency kernels and outlines
-        (`--input-kmod`)), `output` (the module output: a `.kmod` directory
-        for libraries, entries otherwise), `koutline` (optional outline output
-        receiving `--output-outline`), `extra_inputs` (optional additional
-        input files, e.g. entry sources) and `closure_excluded` (optional
-        upstream exclusion reports for the closed world).
-      options: struct with the compile options: `defines` (extra `--define`
-        flags forwarded to the kernel worker), `define_file` (optional File of
-        `-D` lines `kernel_module` reads before `defines`), `exclude_non_sources` (whether
-        the compile writes the VM exclusion report), `droppable` (whether
-        unreachable libraries may be dropped from the module), `target`
-        (kernel worker `--target`, defaults to `"flutter"`), `platform_dill`
-        (SDK summary override; defaults to the toolchain's), `libraries_json`
-        (libraries specification override; defaults to the toolchain's),
-        `libraries_platform` (optional platform libraries specification
-        override), `extra_libraries` (extra SDK libraries available to the
-        compile), `scheme` (package-config URI scheme for the module's
-        sources), `extra_frontend_flags` (additional flags forwarded to the
-        frontend) and `unused_inputs` (whether the compile writes its
+        `dep_kmods` (the outline directories of the modules it compiles
+        against (`--input-kmod`)), `output` (the module output: a `.kmod`
+        directory for libraries, entries otherwise), `koutline` (optional
+        outline output receiving `--output-outline`) and `extra_inputs`
+        (optional additional input files, e.g. entry sources).
+      options: struct with the compile options: `defines` (the `-D`
+        declarations of the compile), `define_file` (optional File of `-D`
+        lines read before `defines`), `droppable` (whether the module may
+        leave out the libraries that do not compile for the target; an entry
+        may not), `target` (the front end's target, `"flutter"` by default),
+        `platform_dill` (platform kernel override; defaults to the
+        toolchain's), `scheme` (package-config URI scheme for the module's
+        sources), `extra_frontend_flags` (additional flags for the module
+        compiler) and `unused_inputs` (whether the compile writes its
         unused-inputs list — the declared inputs no compile of this action
         read — and takes it as the action's `unused_inputs_list`, so Bazel
         skips the action when only an unread input changed. True at every
         call site: each registers its action once (the aspect's evaluations
         of one target compute identical actions, which Bazel merges), as
         `dart_library`'s own module does in rules_dart. False registers the
-        historical action with no list).
+        action with no list).
 
     Returns:
-      The declared VM exclusion report file.
+      The declared sidecar file listing the sources the module left out.
     """
     sources, package_config, stage = _kernel_module_staged_inputs(
         ctx,
@@ -339,10 +257,10 @@ def flutter_kernel_module_action(ctx, tools, module, options):
         module.packages,
         options.scheme,
     )
-    sdk = _resolve_module_sdk(tools = tools, options = options)
+    platform = options.platform_dill if options.platform_dill != None else tools.platform_dill
     excluded = ctx.actions.declare_file(module.output.basename + ".vm_excluded.txt")
     if options.unused_inputs:
-        # Written by `kernel_module` alongside the module. Declared here, where
+        # Written by the module compiler alongside the module. Declared here, where
         # the one registering action is, so the declaration and the action
         # that generates the file can never part ways.
         unused_inputs_list = ctx.actions.declare_file(module.output.basename + ".unused_inputs")
@@ -353,7 +271,7 @@ def flutter_kernel_module_action(ctx, tools, module, options):
         ctx = ctx,
         package_config = package_config,
         stage = stage,
-        sdk = sdk,
+        platform = platform,
         options = options,
     )
     _kernel_module_source_args(
@@ -364,36 +282,25 @@ def flutter_kernel_module_action(ctx, tools, module, options):
         options = options,
     )
 
+    # The compile reads every source through the staging root, and the module
+    # compiler reads only the files the request declares: the staged copies.
+    if stage.files:
+        args.add_all(stage.files, before_each = "--input-source")
+
     direct_inputs = [
         package_config,
-        tools.dartaotruntime,
-        tools.kernel_worker,
-        sdk.libraries,
-        sdk.platform,
+        platform,
     ] + [s.file for s in sources] + stage.files + [f for f in [getattr(options, "define_file", None)] if f != None]
-    action_tools = [
-        tools.dartaotruntime,
-        tools.kernel_worker,
-        sdk.platform,
-        ctx.executable._kernel_module,
-    ]
-    executable, arguments = _kernel_module_tool_inputs(ctx, tools, args, direct_inputs, action_tools)
 
     ctx.actions.run(
-        executable = executable,
-        arguments = arguments,
+        # The module compiler of the Dart SDK inside Flutter, run by that SDK's `dartaotruntime`.
+        executable = tools.dartaotruntime,
+        arguments = [tools.module_compiler.path, args],
         inputs = depset(
             direct = direct_inputs,
-            transitive = [module.dep_kmods] + [
-                d
-                for d in [module.extra_inputs, module.closure_excluded]
-                if d
-            ],
+            transitive = [module.dep_kmods] + ([module.extra_inputs] if module.extra_inputs else []),
         ),
-        tools = depset(
-            direct = action_tools,
-            transitive = [r for r in [getattr(tools, "runtime_files", None)] if r != None],
-        ),
+        tools = [tools.dartaotruntime, tools.module_compiler],
         outputs = [module.output, excluded] + _optional_kernel_outputs(module, unused_inputs_list),
         unused_inputs_list = unused_inputs_list,
         mnemonic = "DartKernel",
@@ -983,10 +890,9 @@ def _compile_flutter_entry_module(
     frontend flags (`--track-widget-creation` for a tracking application).
 
     The entry compiles with the environment its `deps` were configured with (`entry_dart_env`), so it and every
-    dependency module see the same defines. A comma in a define value fails the build here.
+    dependency module see the same defines. A value may hold a comma.
     """
     env = entry_dart_env(ctx)
-    refuse_comma_defines(ctx, env.defines)
     dep_outline_closure = depset(
         order = "postorder",
         transitive = [k.transitive_koutlines for k in dep_kernels],
@@ -1108,7 +1014,7 @@ def compile_flutter_modular_test_kernel(
     """Compiles a `flutter_test`'s entry module and links it with dependency modules.
 
     Compiles against the debug `platform_kernel_dill` without product defines so
-    `kernel_worker` preserves `AssertStatement` and `AssertInitializer` nodes in
+    The module compiler preserves `AssertStatement` and `AssertInitializer` nodes in
     both `.flutter.kmod` / `.flutter.koutline` and `.flutter_entry.kmod` (matching
     `--enable-asserts` in a whole-program `-c dbg` compile), which fire at runtime
     under `flutter_tester --enable-checked-mode`.
@@ -1227,7 +1133,7 @@ FLUTTER_MODULAR_KERNEL_ATTRS = {
         cfg = defines_transition,
     ),
     "defines": attr.string_list(
-        doc = "Dart environment defines (`KEY=VALUE`) of the kernel: its dependency modules and its entry compile with them, followed by the global `//flutter:extra_dart_defines`. A value with a comma fails the build.",
+        doc = "Dart environment defines (`KEY=VALUE`) of the kernel: its dependency modules and its entry compile with them, followed by the global `//flutter:extra_dart_defines`. A value may hold a comma.",
         default = [],
     ),
     "_extra_dart_defines": attr.label(

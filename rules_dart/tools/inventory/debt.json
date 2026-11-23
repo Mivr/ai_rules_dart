@@ -138,7 +138,6 @@
     {"rule":"depset-flatten","file":"rules_flutter/flutter/private/flutter_kernel_module.bzl","key":"seed_modules = [kmod] + dep_closure.to_list()","count":1},
     {"rule":"depset-flatten","file":"rules_flutter/flutter/private/flutter_kernel_module.bzl","key":"stage_candidates = stage_candidates + extra_inputs.to_list()","count":1},
     {"rule":"depset-flatten","file":"rules_flutter/flutter/private/flutter_kernel_module.bzl","key":"swap = {t.plain: t.kmod for t in twins.to_list()}","count":1},
-    {"rule":"depset-flatten","file":"rules_flutter/flutter/private/flutter_kernel_tools.bzl","key":"for f in flutter_sdk_info.tool_files.to_list():","count":1},
     {"rule":"depset-flatten","file":"rules_flutter/flutter/private/flutter_library.bzl","key":"files = target[DefaultInfo].files.to_list()","count":2},
     {"rule":"depset-flatten","file":"rules_flutter/flutter/private/flutter_library.bzl","key":"if FlutterInfo in dep and entry in dep[FlutterInfo].pub_fonts.to_list():","count":1},
     {"rule":"depset-flatten","file":"rules_flutter/flutter/private/flutter_library.bzl","key":"includes = tuple(depset(list(seen.includes) + list(job.includes)).to_list()),","count":1},

@@ -23,7 +23,7 @@ as written, and the `package:` URI to use.
   failure is the library's:
 
   ```
-  kernel_module: cannot compile package:pkg/a.dart: import 'org-dartlang-root:///dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead.
+  module_compiler: cannot compile package:pkg/a.dart: import 'org-dartlang-root:///dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead.
   ```
 
 - `//pkg:bad_bin` — must fail. The entry `pkg/bin/main.dart` compiles from
@@ -31,7 +31,7 @@ as written, and the `package:` URI to use.
   source into `//dep`'s sources instead of linking them:
 
   ```
-  kernel_module: cannot compile org-dartlang-root:///pkg/bin/main.dart: import '../../dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead.
+  module_compiler: cannot compile org-dartlang-root:///pkg/bin/main.dart: import '../../dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead.
   ```
 
 - `//pkg:good_app` — must succeed and print `dep`. The same edges spelled

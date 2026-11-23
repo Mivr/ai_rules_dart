@@ -10,7 +10,7 @@ local_path_override(
 # - `exec_dart` (3.13.5) for `//dart:exec_tools_toolchain_type`
 # - `target_dart` (3.13.4) for `//dart:toolchain_type`
 # Every internal kernel tool (`copy_tree`, codegen shims, `analyzer_summary`,
-# `analyze_runner`, `format_runner`, `fix_runner`, `kernel_module`, `kernel_link`)
+# `analyze_runner`, `format_runner`, `fix_runner`, `kernel_link`)
 # must compile with `exec_dart` so it matches the VM that executes it, while
 # target binaries and tests compile and run with `target_dart`.
 dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")

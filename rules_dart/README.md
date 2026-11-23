@@ -136,22 +136,25 @@ declares `@rules_dart//dart` in `data`, which brings the whole SDK.
 Kernel compilation is modular by default for both `dart_test` and
 `dart_binary(compile_mode = "kernel")` (including `package:test`'s
 `test_runner`). Each `dart_library` compiles its own sources once, into one
-kernel per group of libraries that import each other (`.kmod`), stripped outline
-kernels for downstream compilation (`.koutline`), and an index of those kernels.
+kernel per group of libraries that import each other (`.kmod`), the module's
+outline for downstream compilation (`.koutline`), and an index of those kernels.
+The module compiler is built once per SDK, from the pinned sources of the Dart
+SDK's own front end at that SDK's tag: the first build with an SDK fetches them
+(a 39 MB archive) and compiles the tool (about 20 s).
 A `dart_test` or kernel-mode `dart_binary` compiles only its own entry module and
 links in only the `.kmod` kernels its imports reach, so a library no executable
 imports is never linked. Editing a leaf library recompiles that library and the
 dependents that reach its changed outline, not every test or kernel binary in the
 repository, and `package:test` is compiled once rather than once per test.
 
-A library's module compiles the sources it declares that can compile for the VM.
-The build reads each source's imports to decide which those are. A source that
-imports a `dart:` library the VM lacks, such as `dart:html`, is excluded, and so is
-every source that imports an excluded one. A conditional import takes its VM
-alternative. Each module's `.vm_excluded.txt` sidecar lists its excluded sources,
-and the modules above it read those sidecars. An executable that reaches an
-excluded file compiles it from source along with its own code, so if the VM
-cannot run it, the compile fails as it would under a whole-program compile.
+A library's module compiles the sources it declares that compile for the VM.
+The compiler's own result decides which those are. A library that does not
+compile, because it imports a `dart:` library the VM lacks such as `dart:html`,
+is left out, and so is every library that imports one that is left out. A
+conditional import takes its VM alternative. Each module's `.vm_excluded.txt`
+sidecar lists the sources it left out, and why. An executable that reaches one
+compiles it from source along with its own code, so if the VM cannot run it,
+the compile fails as it would under a whole-program compile.
 Modular kernel compilation is on by default (`//dart:modular_kernel` defaults to
 `True`, and `dart_binary.modular_kernel` defaults to `True`); set
 `--@rules_dart//dart:modular_kernel=false` build-wide or `modular_kernel = False`

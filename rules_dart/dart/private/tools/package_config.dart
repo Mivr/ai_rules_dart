@@ -1,6 +1,7 @@
 // Generates a `package_config.json` for one kernel module from its closure's
-// package records, either through this binary or, as `kernel_module` does for
-// every library module, through `materializePackageConfig` on a worker request.
+// package records, either through this binary or, as the module compiler does
+// for every library module, through `materializePackageConfig` on a worker
+// request.
 //
 // A chain of N `dart_library` targets used to format N package records into a
 // JSON string in Starlark once per target, then to run one process per target
@@ -18,14 +19,14 @@
 // closure order; the tool keeps the first of each name.
 //
 // This binary takes no `dart_library` dependency on purpose (like
-// `kernel_module`): every `dart_library` names it as an implicit exec tool, so
+// `kernel_link`): every `dart_library` names it as an implicit exec tool, so
 // a dependency would be a cycle. It imports only `dart:` libraries.
 
 import 'dart:io';
 
 /// The record argument, once per package record in closure order. A worker
-/// request names its records with it too; `kernel_module` writes the file its
-/// `--packages-file` names from them.
+/// request names its records with it too; the module compiler writes the file
+/// its `--packages-file` names from them.
 const _recordFlag = '--record';
 
 /// The worker request's package config path.
@@ -114,7 +115,7 @@ List<String>? materializePackageConfig(List<String> args, StringBuffer log) {
       file + 1 >= rest.length ||
       scheme + 1 >= rest.length) {
     log.writeln(
-      'kernel_module: $_recordFlag needs $_packagesFlag and $_schemeFlag.',
+      'module_compiler: $_recordFlag needs $_packagesFlag and $_schemeFlag.',
     );
     return null;
   }
@@ -140,7 +141,7 @@ List<String> expandParamFiles(List<String> args) {
 }
 
 /// Writes the config a request of `--record`, `--packages-file` and
-/// `--multi-root-scheme` arguments describes, as `kernel_module` does.
+/// `--multi-root-scheme` arguments describes, as the module compiler does.
 void main(List<String> argv) {
   final List<String> args = expandParamFiles(argv);
   final log = StringBuffer();

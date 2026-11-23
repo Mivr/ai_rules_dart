@@ -4,8 +4,8 @@
 //
 // Bazel sends a worker that is not multiplexed one request at a time with
 // `request_id` 0, so the same loop serves both protocols. It takes no
-// `dart_library` dependency on purpose: `kernel_module` compiles it through
-// `srcs`, like `worker_protocol.dart`.
+// `dart_library` dependency on purpose: the module compiler takes it as a
+// source of its own build, like `worker_protocol.dart`.
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';

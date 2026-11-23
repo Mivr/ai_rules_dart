@@ -170,6 +170,7 @@ flutter_toolchain(
     dart2wasm_files = "@{host_repo_name}//:dart2wasm_files",
     dart2js_files = "@{host_repo_name}//:dart2js_files",
     dartaotruntime = "@{host_repo_name}//:dart-sdk/bin/{dartaotruntime_bin}",
+    dart_toolchain = "@{host_repo_name}//:dart_toolchain",
     engine_revision = "{engine_revision}",
     font_subset = "@{host_repo_name}//:font-subset-tools/font-subset{exe_suffix}",
     frontend_server = "@{host_repo_name}//:host-tools/frontend_server_aot.dart.snapshot",

@@ -667,6 +667,28 @@ bzl_library(
 )
 
 bzl_library(
+    name = "module_compiler",
+    srcs = ["module_compiler.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "module_compiler_repo",
+    srcs = ["module_compiler_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":download",
+        ":module_compiler_versions",
+    ],
+)
+
+bzl_library(
+    name = "module_compiler_versions",
+    srcs = ["module_compiler_versions.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
     name = "versions",
     srcs = ["versions.bzl"],
     visibility = ["//visibility:public"],

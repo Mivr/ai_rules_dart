@@ -23,9 +23,8 @@ checks rely on:
 - the app path does the same for the app's own sources, with the debug
   platform dill prepended at link time — complete by default, delta-linked
   with `use_base_dill` (base search, base staging and base group included);
-- a comma-bearing global `extra_dart_defines` fails the build naming the
-  target and the comma (the module compiler cannot take it yet, and a custom
-  kernel never falls back);
+- a comma-bearing global `extra_dart_defines` stays modular, and the entry
+  compile carries the value whole;
 - a caller-set `defines` stays modular: the `deps` edge makes it the
   closure's configuration, and the entry compile carries it;
 - the app path executes end to end in both modes (`build_test` over real
@@ -343,12 +342,16 @@ def _based_app_shapes_test_impl(ctx):
         )
     return analysistest.end(env)
 
-def _comma_refused_test_impl(ctx):
-    """A comma-bearing global define fails the build, naming the target and the define."""
+def _comma_stays_modular_test_impl(ctx):
+    """A comma-bearing global define stays modular, and the entry compile carries it whole."""
     env = analysistest.begin(ctx)
-    asserts.expect_failure(env, "_modular_api_test")
-    asserts.expect_failure(env, "FOO=a,b")
-    asserts.expect_failure(env, "comma")
+    entry, _ = _entry_and_link(env)
+    if entry:
+        asserts.true(
+            env,
+            "-DFOO=a,b" in entry.argv,
+            "the entry compile must carry the global define, got %s" % [a for a in entry.argv if a.startswith("-D")],
+        )
     return analysistest.end(env)
 
 def _defines_stay_modular_test_impl(ctx):
@@ -375,7 +378,7 @@ _test_shapes_test = analysistest.make(_test_shapes_test_impl, config_settings = 
 _based_test_shapes_test = analysistest.make(_based_test_shapes_test_impl, config_settings = _DBG)
 _app_shapes_test = analysistest.make(_app_shapes_test_impl, config_settings = _DBG)
 _based_app_shapes_test = analysistest.make(_based_app_shapes_test_impl, config_settings = _DBG)
-_comma_refused_test = analysistest.make(_comma_refused_test_impl, config_settings = _COMMA, expect_failure = True)
+_comma_stays_modular_test = analysistest.make(_comma_stays_modular_test_impl, config_settings = _COMMA)
 _defines_stay_modular_test = analysistest.make(_defines_stay_modular_test_impl, config_settings = _DBG)
 
 def modular_api_test_suite(name):
@@ -461,8 +464,8 @@ def modular_api_test_suite(name):
         name = name + "_based_app_shapes",
         target_under_test = ":_modular_api_app_based_build",
     )
-    _comma_refused_test(
-        name = name + "_comma_refused",
+    _comma_stays_modular_test(
+        name = name + "_comma_stays_modular",
         target_under_test = ":_modular_api_test",
     )
     _defines_stay_modular_test(
@@ -485,7 +488,7 @@ def modular_api_test_suite(name):
             ":" + name + "_based_test_shapes",
             ":" + name + "_app_shapes",
             ":" + name + "_based_app_shapes",
-            ":" + name + "_comma_refused",
+            ":" + name + "_comma_stays_modular",
             ":" + name + "_defines_stay_modular",
             ":" + name + "_build",
         ],

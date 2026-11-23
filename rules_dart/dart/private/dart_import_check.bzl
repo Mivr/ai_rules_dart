@@ -144,8 +144,9 @@ def _declare_check(ctx, tool, runtime, request):
 def _library_stamp(target, ctx, inputs, deps):
     """The check stamp of one library, or `None` when it runs no check.
 
-    Library layering checks run inside the module compile worker
-    (`kernel_module`), so a modular library registers no `DartImportCheck`
+    Library layering checks run inside the module compile (the module
+    compiler reads a library's imports from the kernel it just compiled), so
+    a modular library registers no `DartImportCheck`
     process of its own and uses its `.kmod` output as the validation stamp.
 
     Args:

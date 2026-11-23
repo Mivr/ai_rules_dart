@@ -403,231 +403,6 @@ def _modular_tools_off_test_impl(ctx):
     asserts.equals(env, None, tools, "a non-kernel compile takes the whole-program path")
     return unittest.end(env)
 
-def _custom_kernel_module_fixture_impl(ctx):
-    dartaotruntime = ctx.actions.declare_file(ctx.label.name + "_dartaotruntime")
-    kernel_worker = ctx.actions.declare_file(ctx.label.name + "_kernel_worker.snapshot")
-    patched_kernel_worker = ctx.actions.declare_file(ctx.label.name + "_kernel_worker_nocomma.snapshot")
-    default_platform_dill = ctx.actions.declare_file(ctx.label.name + "_vm_platform_strong.dill")
-    default_libraries_json = ctx.actions.declare_file(ctx.label.name + "_default_libraries.json")
-    custom_platform_dill = ctx.actions.declare_file(ctx.label.name + "_flutter_platform_strong.dill")
-    custom_libraries_json = ctx.actions.declare_file(ctx.label.name + "_flutter_libraries.json")
-    src_file = ctx.actions.declare_file(ctx.label.name + "_widget.dart")
-    for f in [
-        dartaotruntime,
-        kernel_worker,
-        patched_kernel_worker,
-        default_platform_dill,
-        default_libraries_json,
-        custom_platform_dill,
-        custom_libraries_json,
-        src_file,
-    ]:
-        ctx.actions.write(output = f, content = "")
-
-    tools = struct(
-        dartaotruntime = dartaotruntime,
-        kernel_worker = kernel_worker,
-        platform_dill = default_platform_dill,
-        libraries_json = default_libraries_json,
-        version = "3.11.0",
-        patched_kernel_worker = patched_kernel_worker,
-    )
-    kmod = ctx.actions.declare_directory(ctx.label.name + ".kmod")
-    koutline = ctx.actions.declare_directory(ctx.label.name + ".koutline")
-    excluded = kernel_module_action(
-        ctx = ctx,
-        tools = tools,
-        inputs = kernel_module_inputs(
-            sources = [struct(uri = "package:a/widget.dart", file = src_file)],
-            packages = [_pkg("a", "pkg/a", "3.9")],
-            dep_kmods = depset(order = "postorder"),
-        ),
-        outputs = kernel_module_outputs(output = kmod, koutline = koutline),
-        options = kernel_module_options(
-            defines = ["FLUTTER_WEB=false", "COMMA_VAL=a,b"],
-            exclude_non_sources = True,
-            droppable = True,
-        ),
-        compile = kernel_compile_settings(
-            target = "flutter",
-            platform_dill = custom_platform_dill,
-            libraries_json = custom_libraries_json,
-            libraries_platform = "flutter",
-            extra_libraries = ["ui", "nativewrappers"],
-            scheme = "org-dartlang-app",
-            extra_frontend_flags = ["--track-widget-creation"],
-        ),
-    )
-    linked_dill = ctx.actions.declare_file(ctx.label.name + "_linked.dill")
-    kernel_link_action(
-        ctx = ctx,
-        dep_kmods = depset(order = "postorder"),
-        entry = kmod,
-        output = linked_dill,
-        platform_dill = custom_platform_dill,
-    )
-    info = no_kernel_module()
-    return [
-        DefaultInfo(files = depset([kmod, koutline, excluded, linked_dill])),
-        DartKernelInfo(
-            kmod = kmod,
-            koutline = koutline,
-            transitive_kmods = info.transitive_kmods,
-            transitive_koutlines = info.transitive_koutlines,
-            modular = True,
-            closure_excluded = depset([excluded]),
-            cross_pkg_srcs = info.cross_pkg_srcs,
-            owned = info.owned,
-            edges = info.edges,
-            base_dill = info.base_dill,
-            base_keys = info.base_keys,
-            base_kmods = info.base_kmods,
-            unseeded_base_kmods = info.unseeded_base_kmods,
-        ),
-    ]
-
-_custom_kernel_module_fixture = rule(
-    implementation = _custom_kernel_module_fixture_impl,
-    attrs = {
-        "_kernel_module": attr.label(
-            default = Label("//dart:kernel_module"),
-            executable = True,
-            cfg = "exec",
-        ),
-        "_kernel_link": attr.label(
-            default = Label("//dart:kernel_link"),
-            executable = True,
-            cfg = "exec",
-        ),
-    },
-)
-
-def _kernel_module_action_custom_params_test_impl(ctx):
-    env = analysistest.begin(ctx)
-    target = analysistest.target_under_test(env)
-    asserts.true(env, DartKernelInfo in target, "fixture provides Public DartKernelInfo")
-    asserts.true(env, target[DartKernelInfo].modular)
-
-    actions = analysistest.target_actions(env)
-    pkg_cfg_writes = [
-        a
-        for a in actions
-        if a.mnemonic == "FileWrite" and a.outputs.to_list()[0].basename.endswith(".package_config.json")
-    ]
-    asserts.equals(env, 1, len(pkg_cfg_writes), "writes one package_config.json")
-    asserts.true(
-        env,
-        "org-dartlang-app:///pkg/a" in pkg_cfg_writes[0].content,
-        "package_config.json uses the custom scheme",
-    )
-
-    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
-    asserts.equals(env, 1, len(kernel_actions), "registers one DartKernel action")
-    kernel_action = kernel_actions[0]
-    argv = kernel_action.argv
-
-    asserts.true(env, "--target" in argv and "flutter" in argv, "--target flutter passed")
-    asserts.true(
-        env,
-        "--libraries-platform" in argv and "flutter" in argv,
-        "--libraries-platform flutter passed",
-    )
-    asserts.true(
-        env,
-        "--extra-library" in argv and "ui" in argv and "nativewrappers" in argv,
-        "--extra-library flags passed",
-    )
-    asserts.true(
-        env,
-        "--multi-root-scheme" in argv and "org-dartlang-app" in argv,
-        "--multi-root-scheme org-dartlang-app passed",
-    )
-    multi_roots = [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--multi-root"]
-    asserts.equals(env, 2, len(multi_roots), "two --multi-root flags passed")
-    asserts.equals(env, ".", multi_roots[0], "first --multi-root is '.' so stale generated files do not shadow source files")
-    asserts.true(env, multi_roots[1].endswith("/bin"), "second --multi-root is ctx.bin_dir.path")
-    asserts.true(
-        env,
-        "--track-widget-creation" in argv,
-        "extra_frontend_flags forwarded",
-    )
-    asserts.true(
-        env,
-        "--output-outline" in argv,
-        "--output-outline passed when koutline is given",
-    )
-    asserts.true(
-        env,
-        "-DFLUTTER_WEB=false" in argv,
-        "non-comma define is forwarded to kernel_module",
-    )
-    asserts.true(
-        env,
-        "-DCOMMA_VAL=a,b" in argv,
-        "comma-containing define is forwarded to kernel_module",
-    )
-    asserts.true(
-        env,
-        "--comma-patched-snapshot" in argv,
-        "comma defines pass the patched-snapshot marker as a startup argument",
-    )
-    snapshot_argv = [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--kernel-worker"]
-    asserts.equals(env, 1, len(snapshot_argv), "one --kernel-worker startup argument")
-    asserts.true(
-        env,
-        snapshot_argv[0].endswith("_kernel_worker_nocomma.snapshot"),
-        "comma defines run the patched worker snapshot, not the pristine one: %s" % snapshot_argv,
-    )
-    kernel_input_basenames = [f.basename for f in kernel_action.inputs.to_list()]
-    asserts.true(
-        env,
-        any([b.endswith("_kernel_worker_nocomma.snapshot") for b in kernel_input_basenames]),
-        "the patched worker snapshot is an action input: %s" % kernel_input_basenames,
-    )
-
-    input_basenames = [f.basename for f in kernel_action.inputs.to_list()]
-    asserts.true(
-        env,
-        any([b.endswith("_flutter_platform_strong.dill") for b in input_basenames]),
-        "custom platform_dill is in action inputs",
-    )
-    asserts.false(
-        env,
-        any([b.endswith("_vm_platform_strong.dill") for b in input_basenames]),
-        "default platform_dill is replaced when custom platform_dill is given",
-    )
-    asserts.true(
-        env,
-        any([b.endswith("_flutter_libraries.json") for b in input_basenames]),
-        "custom libraries_json is in action inputs",
-    )
-    asserts.false(
-        env,
-        any([b.endswith("_default_libraries.json") for b in input_basenames]),
-        "default libraries_json is replaced when custom libraries_json is given",
-    )
-
-    link_actions = [a for a in actions if a.mnemonic == "DartKernelLink"]
-    asserts.equals(env, 1, len(link_actions), "registers one DartKernelLink action")
-    link_action = link_actions[0]
-    asserts.true(
-        env,
-        "--platform" in link_action.argv,
-        "--platform passed to DartKernelLink when platform_dill is provided",
-    )
-    link_input_basenames = [f.basename for f in link_action.inputs.to_list()]
-    asserts.true(
-        env,
-        any([b.endswith("_flutter_platform_strong.dill") for b in link_input_basenames]),
-        "platform_dill is included in DartKernelLink inputs",
-    )
-    return analysistest.end(env)
-
-_kernel_module_action_custom_params_test = analysistest.make(
-    _kernel_module_action_custom_params_test_impl,
-    config_settings = pruned_inputs_settings(),
-)
-
 def _dummy_dart_source_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".dart")
     ctx.actions.write(output = out, content = "void main() {}\n")
@@ -721,47 +496,14 @@ def _non_modular_kernel_binary_test_impl(ctx):
 
 _non_modular_kernel_binary_test = analysistest.make(_non_modular_kernel_binary_test_impl)
 
-def _comma_defines_modular_binary_test_impl(ctx):
-    env = analysistest.begin(ctx)
-    actions = analysistest.target_actions(env)
-    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
-    asserts.equals(env, 1, len(kernel_actions), "modular kernel binary with comma defines registers one DartKernel entry action")
-    asserts.true(
-        env,
-        "-DCOMMA_FLAG=a,b" in kernel_actions[0].argv,
-        "comma-containing define is passed to modular DartKernel action",
-    )
-    asserts.true(
-        env,
-        "--comma-patched-snapshot" in kernel_actions[0].argv,
-        "modular comma compile passes the patched-snapshot marker",
-    )
-    entry_inputs = [f.basename for f in kernel_actions[0].inputs.to_list()]
-    asserts.true(
-        env,
-        "kernel_worker_nocomma.snapshot" in entry_inputs,
-        "the toolchain's patched worker snapshot is an input of the modular DartKernel action: %s" % entry_inputs,
-    )
-    link_actions = [a for a in actions if a.mnemonic == "DartKernelLink"]
-    asserts.equals(env, 1, len(link_actions), "modular kernel binary with comma defines registers one DartKernelLink action")
-    return analysistest.end(env)
-
-_comma_defines_modular_binary_test = analysistest.make(
-    _comma_defines_modular_binary_test_impl,
-    config_settings = pruned_inputs_settings({
-        str(Label("//dart:extra_dart_defines")): ["COMMA_FLAG=a,b"],
-    }),
-)
-
 def _unseeded_base_kmods_fixture_impl(ctx):
     dartaotruntime = ctx.actions.declare_file(ctx.label.name + "_dartaotruntime")
-    kernel_worker = ctx.actions.declare_file(ctx.label.name + "_kernel_worker.snapshot")
+    module_compiler = ctx.actions.declare_file(ctx.label.name + "_module_compiler.aot")
     platform_dill = ctx.actions.declare_file(ctx.label.name + "_vm_platform_strong.dill")
-    libraries_json = ctx.actions.declare_file(ctx.label.name + "_libraries.json")
     src_file = ctx.actions.declare_file(ctx.label.name + "_main_test.dart")
     base_dill = ctx.actions.declare_file(ctx.label.name + ".base.dill")
     base_keys = ctx.actions.declare_file(ctx.label.name + ".base.keys")
-    for f in [dartaotruntime, kernel_worker, platform_dill, libraries_json, src_file, base_dill, base_keys]:
+    for f in [dartaotruntime, module_compiler, platform_dill, src_file, base_dill, base_keys]:
         ctx.actions.write(output = f, content = "")
 
     base_kmod = ctx.actions.declare_directory(ctx.label.name + "_matcher.kmod")
@@ -812,9 +554,8 @@ def _unseeded_base_kmods_fixture_impl(ctx):
 
     tools = struct(
         dartaotruntime = dartaotruntime,
-        kernel_worker = kernel_worker,
+        module_compiler = module_compiler,
         platform_dill = platform_dill,
-        libraries_json = libraries_json,
         version = "3.11.0",
     )
     out_dill = ctx.actions.declare_file(ctx.label.name + ".dill")
@@ -835,11 +576,6 @@ _unseeded_base_kmods_fixture = rule(
     attrs = {
         "_extra_dart_defines": attr.label(
             default = Label("//dart:extra_dart_defines"),
-        ),
-        "_kernel_module": attr.label(
-            default = Label("//dart:kernel_module"),
-            executable = True,
-            cfg = "exec",
         ),
         "_kernel_link": attr.label(
             default = Label("//dart:kernel_link"),
@@ -1106,11 +842,10 @@ def _worker_execution_requirements_test_impl(ctx):
     )
     fake_ctx = struct(
         label = struct(name = "manual_target", package = "flutter/tests/foo"),
-        attr = struct(tags = ["manual"], _kernel_module = None, _kernel_link = None),
+        attr = struct(tags = ["manual"], _kernel_link = None),
         rule = struct(attr = struct(tags = ["manual"])),
         bin_dir = struct(path = "bazel-out/k8-fastbuild/bin"),
         executable = struct(
-            _kernel_module = _declare_file("kernel_module.dill"),
             _kernel_link = _declare_file("kernel_link.dill"),
         ),
         toolchains = {},
@@ -1118,9 +853,8 @@ def _worker_execution_requirements_test_impl(ctx):
     )
     fake_tools = struct(
         dartaotruntime = _declare_file("dartaotruntime"),
-        kernel_worker = _declare_file("kernel_worker.snapshot"),
+        module_compiler = _declare_file("module_compiler.aot"),
         platform_dill = _declare_file("vm_platform_strong.dill"),
-        libraries_json = _declare_file("libraries.json"),
         version = "3.11.0",
     )
     kmod = _declare_file("manual_target.kmod")
@@ -1135,7 +869,6 @@ def _worker_execution_requirements_test_impl(ctx):
         outputs = kernel_module_outputs(output = kmod),
         options = kernel_module_options(
             defines = [],
-            exclude_non_sources = False,
             droppable = False,
         ),
         compile = kernel_compile_settings(),
@@ -1153,7 +886,8 @@ def _worker_execution_requirements_test_impl(ctx):
     }
     asserts.equals(
         env,
-        dict(expected_reqs, **{"supports-multiplex-workers": "1", "supports-worker-cancellation": "1"}),
+        # Not multiplexed: the front end compiles one module at a time.
+        expected_reqs,
         runs[0]["execution_requirements"],
         "DartKernel sets worker execution_requirements even for manual target in flutter/tests",
     )
@@ -1189,11 +923,10 @@ def _unused_inputs_wiring_test_impl(ctx):
     )
     fake_ctx = struct(
         label = struct(name = "manual_target", package = "flutter/tests/foo"),
-        attr = struct(tags = ["manual"], _kernel_module = None, _kernel_link = None),
+        attr = struct(tags = ["manual"], _kernel_link = None),
         rule = struct(attr = struct(tags = ["manual"])),
         bin_dir = struct(path = "bazel-out/k8-fastbuild/bin"),
         executable = struct(
-            _kernel_module = _declare_file("kernel_module.dill"),
             _kernel_link = _declare_file("kernel_link.dill"),
         ),
         toolchains = {},
@@ -1201,9 +934,8 @@ def _unused_inputs_wiring_test_impl(ctx):
     )
     fake_tools = struct(
         dartaotruntime = _declare_file("dartaotruntime"),
-        kernel_worker = _declare_file("kernel_worker.snapshot"),
+        module_compiler = _declare_file("module_compiler.aot"),
         platform_dill = _declare_file("vm_platform_strong.dill"),
-        libraries_json = _declare_file("libraries.json"),
         version = "3.11.0",
     )
 
@@ -1222,7 +954,6 @@ def _unused_inputs_wiring_test_impl(ctx):
             ),
             options = kernel_module_options(
                 defines = [],
-                exclude_non_sources = False,
                 droppable = False,
             ),
             compile = kernel_compile_settings(),
@@ -1522,7 +1253,7 @@ def _toolchain_kernel_files_fixture_impl(ctx):
         compile_files = info.compile_files,
         runtime_files = info.runtime_files,
         version = info.version,
-        patched_kernel_worker = info.patched_kernel_worker,
+        module_compiler = info.module_compiler,
     ))
     if getattr(info, "kernel_module_files", None) == None:
         fail("the toolchain carries no kernel_module_files")
@@ -1558,15 +1289,6 @@ def kernel_test_suite(name):
     Args:
       name: Name of the generated `test_suite`.
     """
-    _custom_kernel_module_fixture(
-        name = name + "_custom_module_fixture",
-        tags = ["manual"],
-    )
-    _kernel_module_action_custom_params_test(
-        name = name + "_custom_module_action_test",
-        target_under_test = ":" + name + "_custom_module_fixture",
-        size = "small",
-    )
     _dummy_dart_source(
         name = name + "_binary_main",
         tags = ["manual"],
@@ -1594,11 +1316,6 @@ def kernel_test_suite(name):
     _non_modular_kernel_binary_test(
         name = name + "_non_modular_binary_test",
         target_under_test = ":" + name + "_non_modular_binary_fixture",
-        size = "small",
-    )
-    _comma_defines_modular_binary_test(
-        name = name + "_comma_defines_modular_binary_test",
-        target_under_test = ":" + name + "_modular_binary_fixture",
         size = "small",
     )
     dart_binary(
@@ -1752,10 +1469,8 @@ def kernel_test_suite(name):
         name = name,
         tests = [
             ":" + name + "_unit",
-            ":" + name + "_custom_module_action_test",
             ":" + name + "_modular_binary_test",
             ":" + name + "_non_modular_binary_test",
-            ":" + name + "_comma_defines_modular_binary_test",
             ":" + name + "_library_in_binary_product_test",
             ":" + name + "_library_in_test_product_test",
             ":" + name + "_binary_whole_program_product_test",

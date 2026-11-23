@@ -29,14 +29,10 @@ dart_test(
     args = [
         "$(rlocationpath :app_modular)",
         "$(rlocationpath :app_whole)",
-        "$(rlocationpath //dart/private/tools:kernel_module)",
-        "$(rlocationpath //dart/private/tools:kernel_link)",
     ],
     data = [
         ":app_modular",
         ":app_whole",
-        "//dart/private/tools:kernel_link",
-        "//dart/private/tools:kernel_module",
     ],
     main = "cross_pkg_cycle_test.dart",
     visibility = ["//dart/tests:__subpackages__"],

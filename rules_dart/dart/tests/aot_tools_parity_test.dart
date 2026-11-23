@@ -16,7 +16,11 @@ void main(List<String> args) {
   final String aotLink = runfiles.rlocation(args[2]);
   final String kernelLink = runfiles.rlocation(args[3]);
   final String sdkSummaryPath = runfiles.rlocation(args[4]);
-  final String kernelModule = runfiles.rlocation(args[5]);
+  final String kernelModule = runfiles.rlocation(
+    (jsonDecode(File(runfiles.rlocation(args[5])).readAsStringSync())
+            as Map<String, dynamic>)['module_compiler']
+        as String,
+  );
   final String sdkDir = p.dirname(p.dirname(Platform.resolvedExecutable));
   final exe = Platform.isWindows ? '.exe' : '';
   final String dart = Platform.resolvedExecutable;
@@ -72,7 +76,6 @@ void main(List<String> args) {
   });
 
   test('kernel_link output equals the kernel form', () {
-    final String librariesJson = p.join(sdkDir, 'lib', 'libraries.json');
     void write(String rel, String text) {
       File(p.join(tmp.path, rel))
         ..createSync(recursive: true)
@@ -93,30 +96,29 @@ void main(List<String> args) {
       'main.dart',
       "import 'package:pkg_a/a.dart';\nvoid main() { print(a()); }\n",
     );
-    void module(String name, String source, {List<String> inputs = const []}) {
+    void module(
+      String name,
+      String source,
+      String file, {
+      List<String> inputs = const [],
+    }) {
       final ProcessResult res = Process.runSync(aotRuntime, [
         kernelModule,
-        '--dartaotruntime',
-        aotRuntime,
-        '--kernel-worker',
-        p.join(sdkDir, 'bin', 'snapshots', 'kernel_worker_aot.dart.snapshot'),
         '--target',
         'vm',
         '--dart-sdk-summary',
         p.join(sdkDir, 'lib', '_internal', 'vm_platform_strong.dill'),
         '--packages-file',
         p.join(tmp.path, 'package_config.json'),
-        '--libraries-json',
-        librariesJson,
         '--multi-root',
         tmp.path,
         '--multi-root-scheme',
         'org-dartlang-root',
-        '--no-summary-only',
-        '--exclude-non-sources',
         for (final i in inputs) ...['--input-kmod', i],
         '--source',
         source,
+        '--input-source',
+        p.join(tmp.path, file),
         '--output',
         p.join(tmp.path, 'out', '$name.kmod'),
         if (inputs.isEmpty) ...[
@@ -125,19 +127,16 @@ void main(List<String> args) {
         ],
         '--excluded-output',
         p.join(tmp.path, 'out', '$name.vm_excluded.txt'),
-        if (inputs.isNotEmpty) ...[
-          '--no-drop',
-          '--closure-excluded',
-          p.join(tmp.path, 'out', 'a.vm_excluded.txt'),
-        ],
+        if (inputs.isNotEmpty) '--no-drop',
       ]);
       expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
     }
 
-    module('a', 'package:pkg_a/a.dart');
+    module('a', 'package:pkg_a/a.dart', 'pkg_a/lib/a.dart');
     module(
       'entry',
       '${_prefix}main.dart',
+      'main.dart',
       inputs: [p.join(tmp.path, 'out', 'a.koutline')],
     );
     String link(String runtime, String tool, String out) {

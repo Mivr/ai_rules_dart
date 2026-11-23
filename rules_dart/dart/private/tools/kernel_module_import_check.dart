@@ -3,6 +3,9 @@
 
 // ignore: avoid_relative_lib_imports, reason: compiled in place through `srcs`.
 import '../../guard/lib/directive_guard.dart';
+import 'lib/layering_message.dart';
+
+export 'lib/layering_message.dart';
 
 const _tool = 'import_check';
 
@@ -59,22 +62,6 @@ String? normaliseDirectiveUri(String uri) {
 String undecodableLine(String label, String path, String uri) =>
     "$label: $path names '$uri', which is not a valid URI: a '%' escape does "
     'not decode to UTF-8. Fix the escape.';
-
-/// The package a `package:` URI names, or null for any other URI. [uri] is
-/// judged as [normaliseDirectiveUri] returns it.
-String? packageOfUri(String uri) {
-  const prefix = 'package:';
-  if (!uri.startsWith(prefix)) return null;
-  final String rest = uri.substring(prefix.length);
-  final int slash = rest.indexOf('/');
-  return slash < 0 ? rest : rest.substring(0, slash);
-}
-
-/// The violation line for [path] importing [uri] from package [name].
-String violationLine(String label, String path, String uri, String name) =>
-    "$label: $path imports '$uri', but package '$name' is not a direct "
-    'dependency of $label, only of something it depends on. '
-    "Add the target that provides package '$name' to $label's deps.";
 
 /// The lines to print for [request], in path then source order. A source that
 /// does not scan is refused, never treated as clean.

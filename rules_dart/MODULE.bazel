@@ -88,7 +88,10 @@ dart = use_extension("//dart:extensions.bzl", "dart")
 dart.toolchain(dart_version = "3.13.5")
 
 # Besides the scanner, the pinned `yaml2json` the pub rules read pubspec files with
-# (`dart_yaml2json`) and the toolchains, the host SDK repositories for every
+# (`dart_yaml2json`), the hub naming each pinned SDK version's module compiler
+# sources (`dart_module_compiler`, which `//dart:toolchain.bzl` resolves
+# through this module's own mapping) and the toolchains, the host SDK
+# repositories for every
 # platform the pub archive scanner supports: the scanner repository compiles
 # its executable from the default toolchain's host SDK, resolved through this
 # module's own mapping (`Label("@dart_<platform>//:...")` in
@@ -102,6 +105,7 @@ use_repo(
     "dart_linux-x64",
     "dart_macos-arm64",
     "dart_macos-x64",
+    "dart_module_compiler",
     "dart_pub_scanner",
     "dart_toolchains",
     "dart_windows-x64",

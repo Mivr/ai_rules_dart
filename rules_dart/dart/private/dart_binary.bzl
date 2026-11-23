@@ -643,7 +643,7 @@ persistent-worker rules (`dart_codegen`, `dart_aggregate_codegen`, `dart_sqlcode
 launcher as `DefaultInfo.executable`.
 
 On by default. Turn it off only for a build-time tool that executes its raw snapshot \
-directly through `dartaotruntime` or `dart` (for example rules_dart's own `kernel_module` \
+directly through `dartaotruntime` or `dart` (for example rules_dart's own `kernel_link` \
 worker), where the raw file must stay the executable.""",
         ),
         "split_debug_info": attr.bool(

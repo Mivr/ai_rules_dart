@@ -315,20 +315,3 @@ def _global_extra_defines(ctx):
     if getattr(ctx.attr, "_extra_dart_defines", None) == None:
         return []
     return ctx.attr._extra_dart_defines[BuildSettingInfo].value
-
-def refuse_comma_defines(ctx, defines):
-    """Fails when a define a modular compile would take holds a comma.
-
-    `kernel_worker` splits `-D` values at commas, and the module compiler is
-    replaced only later, so such a value cannot reach a module compile yet.
-    Rather than build whole-program silently, the build stops and says so.
-
-    Args:
-        ctx: The rule context, for its label.
-        defines: The `KEY=VALUE` defines the entry and the modules compile with.
-    """
-    for d in defines:
-        if "," in d.partition("=")[2]:
-            fail(("%s: the Dart define %r has a comma in its value. A debug build compiles Dart as kernel " +
-                  "modules, and the module compiler cannot take a comma in a define value yet. Remove the " +
-                  "comma.") % (ctx.label, d))

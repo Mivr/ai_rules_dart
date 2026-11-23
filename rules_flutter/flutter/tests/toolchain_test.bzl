@@ -166,20 +166,19 @@ def _is_same_sdk_and_find_tools_test_impl(ctx):
     flutter_dart = struct(path = "external/flutter_linux/dart-sdk/bin/dart", basename = "dart")
     flutter_aot = struct(path = "external/flutter_linux/dart-sdk/bin/dartaotruntime", basename = "dartaotruntime")
     flutter_dartvm = struct(path = "external/flutter_linux/dart-sdk/bin/dartvm", basename = "dartvm")
-    flutter_kw = struct(path = "external/flutter_linux/dart-sdk/bin/snapshots/kernel_worker_aot.dart.snapshot")
-    flutter_libs = struct(path = "external/flutter_linux/dart-sdk/lib/libraries.json")
+    flutter_mc = struct(path = "bazel-out/k8-opt-exec/bin/external/flutter_linux/module_compiler.aot")
 
     rules_dart_bin = struct(path = "external/dart_sdk_linux/bin/dart", basename = "dart")
     rules_dart_aot = struct(path = "external/dart_sdk_linux/bin/dartaotruntime", basename = "dartaotruntime")
     rules_dart_vm = struct(path = "external/dart_sdk_linux/bin/dartvm", basename = "dartvm")
-    rules_dart_kw = struct(path = "external/dart_sdk_linux/bin/snapshots/kernel_worker_aot.dart.snapshot")
-    rules_dart_libs = struct(path = "external/dart_sdk_linux/lib/libraries.json")
+    rules_dart_mc = struct(path = "bazel-out/k8-opt-exec/bin/external/dart_sdk_linux/module_compiler.aot")
 
     flutter_info = FlutterSdkInfo(
         version = "3.41.2",
         engine_revision = "abc123",
         dart = flutter_dart,
         dartaotruntime = flutter_aot,
+        dart_module_compiler = flutter_mc,
         gen_snapshot = None,
         flutter_tester = None,
         frontend_server = "frontend_server_snap",
@@ -187,7 +186,7 @@ def _is_same_sdk_and_find_tools_test_impl(ctx):
         platform_kernel_dill_product = None,
         patched_sdk = "patched_sdk_target",
         icu_data = "icudtl.dat",
-        tool_files = depset([flutter_dart, flutter_aot, flutter_dartvm, flutter_kw, flutter_libs]),
+        tool_files = depset([flutter_dart, flutter_aot, flutter_dartvm]),
         dart_vm_files = depset([flutter_dart, flutter_dartvm]),
         dart_pub_files = depset([]),
         dart2wasm_files = depset([]),
@@ -210,9 +209,8 @@ def _is_same_sdk_and_find_tools_test_impl(ctx):
         dartvm = flutter_dartvm,
         runtime_files = depset([flutter_dart, flutter_dartvm]),
         dartaotruntime = flutter_aot,
-        kernel_worker = flutter_kw,
+        module_compiler = flutter_mc,
         platform_dill = "vm_platform_strong.dill",
-        libraries_json = flutter_libs,
         version = "3.13.4",
     )
     mismatched_exec_tools = struct(
@@ -220,9 +218,8 @@ def _is_same_sdk_and_find_tools_test_impl(ctx):
         dartvm = rules_dart_vm,
         runtime_files = depset([rules_dart_bin, rules_dart_vm]),
         dartaotruntime = rules_dart_aot,
-        kernel_worker = rules_dart_kw,
+        module_compiler = rules_dart_mc,
         platform_dill = "rules_dart_vm_platform_strong.dill",
-        libraries_json = rules_dart_libs,
         version = "3.13.5",
     )
 
@@ -248,20 +245,19 @@ def _is_same_sdk_and_find_tools_test_impl(ctx):
     asserts.equals(env, matching_exec_tools, same_result)
 
     # When @rules_dart's toolchain resolved first (mismatched_exec_tools),
-    # find_flutter_kernel_module_tools selects Flutter's dartaotruntime, kernel_worker,
-    # platform_dill, and libraries_json while keeping exec_tools' outer VM for kernel_module.dill.
+    # find_flutter_kernel_module_tools selects Flutter's dartaotruntime, module compiler and
+    # platform_dill, while the other fields stay exec_tools'.
     selected = find_flutter_kernel_module_tools(flutter_info, mismatched_exec_tools)
     asserts.true(env, selected != None, "should select Flutter SDK kernel module tools on mismatch")
     asserts.true(env, is_same_sdk(selected, flutter_info), "selected tools must match flutter_info SDK")
     asserts.equals(env, flutter_aot, selected.dartaotruntime)
-    asserts.equals(env, flutter_kw, selected.kernel_worker)
+    asserts.equals(env, flutter_mc, selected.module_compiler)
     asserts.equals(env, "flutter_platform_strong.dill", selected.platform_dill)
-    asserts.equals(env, flutter_libs, selected.libraries_json)
     asserts.equals(env, rules_dart_bin, selected.dart)
     asserts.equals(env, rules_dart_vm, selected.dartvm)
     asserts.equals(env, "3.13.5", selected.version)
 
-    # If flutter_info lacks kernel_worker in tool_files, returns None rather than silently using mismatched tools.
+    # If the Flutter toolchain has no module compiler, returns None rather than silently using mismatched tools.
     incomplete_flutter_info = FlutterSdkInfo(
         version = "3.41.2",
         engine_revision = "abc123",

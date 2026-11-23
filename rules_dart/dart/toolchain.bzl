@@ -1,6 +1,17 @@
 """This module implements the Dart SDK toolchain rule."""
 
+load(
+    "//dart/private:module_compiler.bzl",
+    _dart_module_compiler = "dart_module_compiler",
+    _module_compiler_sources = "module_compiler_sources",
+)
+load("//dart/private:module_compiler_versions.bzl", "module_compiler_sources_label")
+
 visibility("public")
+
+# Loaded by the repository that holds a pinned source closure (see
+# `//dart/private:module_compiler_repo.bzl`).
+module_compiler_sources = _module_compiler_sources
 
 DartSdkInfo = provider(
     doc = "Information about the Dart SDK provided by the toolchain.",
@@ -16,9 +27,9 @@ DartSdkInfo = provider(
         "target_arch": "str: Cross-compilation target architecture (`x64`, `arm64`, `riscv64`, `arm`), or empty for native.",
         "cross_gen_snapshot": "File or None: Pinned host-to-target `gen_snapshot` binary for cross-compilation (`target_os`/`target_arch`), or `None` for native.",
         "cross_dartaotruntime": "File or None: Pinned target `dartaotruntime` binary for cross-compilation (`target_os`/`target_arch`), or `None` for native.",
-        "patched_kernel_worker": "File or None: The `kernel_worker` AOT snapshot with comma-splitting disabled (see `comma_patch.dart`), or `None` when the SDK names no `kernel_worker` snapshot. Declared by one action per SDK; compiles that pass comma-containing `-D` values take it as a tool input.",
         "patched_gen_kernel": "File or None: The `gen_kernel` AOT snapshot with comma-splitting disabled, or `None` when the SDK names no `gen_kernel` snapshot. One action per SDK, like `patched_kernel_worker`.",
-        "kernel_module_files": "struct or None: The `compile_files` a modular kernel compile and link run from, found once per toolchain: `dartvm`, `dartaotruntime`, `kernel_worker` (the `kernel_worker_aot.dart.snapshot`), `platform_dill` (`vm_platform_strong.dill`) and `libraries_json`. All but `dartvm` are `None` when the SDK lacks any of them, and then no module compiles. Optional: a `DartSdkInfo` without it has the files searched for in `compile_files` instead.",
+        "kernel_module_files": "struct or None: The `compile_files` a modular kernel compile and link run from, found once per toolchain: `dartvm`, `dartaotruntime` and `platform_dill` (`vm_platform_strong.dill`). The last two are `None` when the SDK lacks either. Optional: a `DartSdkInfo` without it has the files searched for in `compile_files` instead.",
+        "module_compiler": "File or None: the module compiler of this SDK (`//dart/private/tools:module_compiler.dart`), an AOT snapshot built from the SDK tag's own front end and run by this SDK's `dartaotruntime`. `None` when the toolchain names no `module_compiler`: the SDK version has no pinned source closure, and no kernel module can be compiled with it.",
     },
 )
 
@@ -76,9 +87,8 @@ def _kernel_module_files(dart, compile_files):
       compile_files: The toolchain's final `compile_files` depset.
 
     Returns:
-      `struct(dartvm, dartaotruntime, kernel_worker, platform_dill,
-      libraries_json)`. When any of the last four is missing, all four are
-      `None`.
+      `struct(dartvm, dartaotruntime, platform_dill)`. When either of the
+      last two is missing, both are `None`.
     """
     sdk_root = dart.path
     for suffix in ("/bin/dart", "/bin/dart.exe"):
@@ -91,9 +101,7 @@ def _kernel_module_files(dart, compile_files):
     ]
     wanted = {
         "dartaotruntime": [sdk_root + "/bin/dartaotruntime", sdk_root + "/bin/dartaotruntime.exe"],
-        "kernel_worker": [sdk_root + "/bin/snapshots/kernel_worker_aot.dart.snapshot"],
         "platform_dill": [sdk_root + "/lib/_internal/vm_platform_strong.dill"],
-        "libraries_json": [sdk_root + "/lib/libraries.json"],
     }
     dartvm = None
     found = {}
@@ -108,9 +116,7 @@ def _kernel_module_files(dart, compile_files):
     return struct(
         dartvm = dartvm,
         dartaotruntime = found.get("dartaotruntime"),
-        kernel_worker = found.get("kernel_worker"),
         platform_dill = found.get("platform_dill"),
-        libraries_json = found.get("libraries_json"),
     )
 
 def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
@@ -140,8 +146,7 @@ def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
       kind: The snapshot kind for the patch tool's diagnostics.
 
     Returns:
-      The declared patched File, or None when the SDK names no such snapshot
-      (an older SDK without a `kernel_worker` snapshot compiles no module).
+      The declared patched File, or None when the SDK names no such snapshot.
     """
     snapshot = None
     for f in sdk_files.to_list():
@@ -225,6 +230,7 @@ def _dart_toolchain_impl(ctx):
         compile_files = _subset_with_dartvm(compile_files, dartvm)
         runtime_files = _subset_with_dartvm(runtime_files, dartvm)
 
+    kernel_module_files = _kernel_module_files(ctx.file.dart, compile_files)
     dart_sdk_info = DartSdkInfo(
         dart = ctx.file.dart,
         sdk_root = sdk_root,
@@ -237,14 +243,6 @@ def _dart_toolchain_impl(ctx):
         target_arch = ctx.attr.target_arch,
         cross_gen_snapshot = ctx.file.cross_gen_snapshot,
         cross_dartaotruntime = ctx.file.cross_dartaotruntime,
-        patched_kernel_worker = _patched_snapshot(
-            ctx,
-            tool_files,
-            ctx.file.dart,
-            "bin/snapshots/kernel_worker_aot.dart.snapshot",
-            "kernel_worker_nocomma.snapshot",
-            "kernel_worker",
-        ),
         patched_gen_kernel = _patched_snapshot(
             ctx,
             tool_files,
@@ -253,7 +251,8 @@ def _dart_toolchain_impl(ctx):
             "gen_kernel_nocomma.snapshot",
             "gen_kernel",
         ),
-        kernel_module_files = _kernel_module_files(ctx.file.dart, compile_files),
+        kernel_module_files = kernel_module_files,
+        module_compiler = ctx.file.module_compiler,
     )
 
     template_variables = platform_common.TemplateVariableInfo({
@@ -273,6 +272,10 @@ def _dart_toolchain_impl(ctx):
         default,
         toolchain_info,
         template_variables,
+        # So the tool can be built by itself: `--output_groups=module_compiler`.
+        OutputGroupInfo(
+            module_compiler = depset([dart_sdk_info.module_compiler] if dart_sdk_info.module_compiler != None else []),
+        ),
     ]
 
 dart_toolchain = rule(
@@ -314,6 +317,12 @@ dart_toolchain = rule(
             doc = "Pinned target `dartaotruntime` binary for cross-compilation (`target_os`/`target_arch`).",
             allow_single_file = True,
         ),
+        "module_compiler": attr.label(
+            doc = "The module compiler of this SDK (a `dart_module_compiler` target, built from the pinned sources of the SDK's version). Leave unset for an SDK version without pinned sources: no kernel module can then be compiled with this SDK.",
+            allow_single_file = True,
+            # One per SDK, whatever configuration the modules are compiled in.
+            cfg = "exec",
+        ),
         "_comma_patch": attr.label(
             doc = "The `comma_patch.dart` tool that disables comma-splitting in the SDK snapshots.",
             default = Label("//dart/private/tools:comma_patch.dart"),
@@ -341,7 +350,6 @@ _COMPILE_FILE_PATTERNS = [
     "bin/snapshots/gen_kernel*",
     "bin/snapshots/frontend_server*",
     "bin/snapshots/kernel-service*",
-    "bin/snapshots/kernel_worker*",
     "lib/_internal/vm_platform*.dill",
     "lib/_internal/allowed_experiments.json",
     "lib/libraries.json",
@@ -513,11 +521,28 @@ def declare_dart_sdk_toolchains(
     _declare_sdk_filegroups(prefix, sdk_root_name)
 
     sdk_root_label = ":" + sdk_root_name
+
+    # The module compiler of this SDK, when its version has a pinned source
+    # closure. Without one the SDK compiles no kernel module, and a rule that
+    # needs one says so.
+    module_compiler = None
+    sources = module_compiler_sources_label(version)
+    if sources != None:
+        module_compiler = ":module_compiler"
+        _dart_module_compiler(
+            name = "module_compiler",
+            compile_files = ":compile_files",
+            dart = dart,
+            sources = sources,
+            version = version,
+            visibility = ["//visibility:public"],
+        )
     dart_toolchain(
         name = "dart_toolchain",
         analyze_files = ":analyze_files",
         compile_files = ":compile_files",
         dart = dart,
+        module_compiler = module_compiler,
         runtime_files = ":runtime_files",
         sdk_root = sdk_root_label,
         version = version,

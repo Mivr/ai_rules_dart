@@ -101,7 +101,7 @@ def _compile(added, runs, **kw):
         dartvm = _fake_file("dartvm"),
         runtime_files = None,
         dartaotruntime = _fake_file("dartaotruntime"),
-        kernel_worker = _fake_file("kernel_worker.snapshot"),
+        module_compiler = _fake_file("module_compiler.aot"),
         platform_dill = _fake_file("platform_strong.dill"),
         libraries_json = _fake_file("libraries.json"),
         version = "3.13.5",

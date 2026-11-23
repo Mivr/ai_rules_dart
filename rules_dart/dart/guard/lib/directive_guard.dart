@@ -46,9 +46,8 @@
 // rejects these URIs before the compiler runs, with a diagnostic naming the
 // file, the directive and the URI.
 //
-// The prologue scanner and the directive-URI resolution moved here from
-// `kernel_module.dart` unchanged, so every tool classifies exactly what the
-// planner classifies. `scanAllDirectiveUris` collects the declared URI and
+// The prologue scanner and the directive-URI resolution live here, so every
+// tool classifies a directive the same way. `scanAllDirectiveUris` collects the declared URI and
 // every `if` alternative without evaluating conditions, for validators that
 // have no VM library set: a `file:` spelling in any branch fails, whichever
 // configuration would select it.

@@ -187,13 +187,13 @@ FlutterKernelModuleInfo = _FlutterKernelModuleInfo
 
 # The attrs a custom modular-kernel rule merges into its own. `deps` (with the
 # aspect applied), `defines`, the kernel tools (`_modular_kernel`,
-# `_kernel_module`, `_kernel_link`) and the transition allowlist are all
+# `_kernel_link`) and the transition allowlist are all
 # provided, so the calling rule declares only its own entry attrs
 # (`main`/`srcs` stay the caller's). No private-named attribute needs a
 # caller-set value. The `deps` edge makes the kernel's `defines` the
 # configuration of its closure, so every dependency module and the entry
 # compile with them, followed by the global `//flutter:extra_dart_defines`; a
-# value with a comma fails the build. With no `defines` the configuration is
+# value may hold a comma. With no `defines` the configuration is
 # untouched, so dependency modules share their action keys with the built-in
 # rules. See `FLUTTER_MODULAR_KERNEL_ATTRS`.
 FLUTTER_MODULAR_KERNEL_ATTRS = _FLUTTER_MODULAR_KERNEL_ATTRS

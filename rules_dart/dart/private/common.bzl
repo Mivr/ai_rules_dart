@@ -1461,10 +1461,11 @@ def target_dart_abi(ctx):
 def has_comma_define(defines):
     """Whether any `-D` declaration carries a comma in its value.
 
-    `gen_kernel` and `kernel_worker` split `-D`/`--define` values on commas
-    (`Parser._setOption`), so a comma-containing value only survives when the
-    compile runs a snapshot whose comma-splitting is disabled (see
-    `comma_patch.dart`). Callers run the toolchain's patched snapshot and pass
+    `gen_kernel` splits `-D`/`--define` values on commas
+    (`Parser._setOption`), so a comma-containing value only survives a
+    whole-program compile when it runs a snapshot whose comma-splitting is
+    disabled (see `comma_patch.dart`). A module compile takes its defines as
+    a map and needs no patch. Callers run the toolchain's patched snapshot and pass
     the `--comma-patched-snapshot` marker when this returns True, and the
     pristine snapshot otherwise.
 

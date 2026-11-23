@@ -765,6 +765,7 @@ flutter_toolchain(
     dart2wasm_files = ":dart2wasm_files",
     dart2js_files = ":dart2js_files",
     dartaotruntime = "dart-sdk/bin/{dartaotruntime_bin}",
+    dart_toolchain = ":dart_toolchain",
 {engine_library_attr}
     engine_revision = "{engine_revision}",
     flutter_tester = "host-tools/flutter_tester{exe_suffix}",

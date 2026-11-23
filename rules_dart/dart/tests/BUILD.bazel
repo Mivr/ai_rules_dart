@@ -64,6 +64,7 @@ load(":library_builder_library_direct_test.bzl", "library_builder_library_direct
 load(":library_test.bzl", "library_test_suite")
 load(":mockito_library_direct_test.bzl", "mockito_library_direct_test_suite")
 load(":modular_chain_test.bzl", "modular_chain_test_suite")
+load(":module_compiler_pin_test.bzl", "module_compiler_pin_test_suite")
 load(":native_assets_test.bzl", "native_assets_test_suite")
 load(":pinned_sources_test.bzl", "pinned_sources_test_suite")
 load(":project_staging_test.bzl", "project_staging_test_suite")
@@ -152,6 +153,8 @@ source_set_test_suite(name = "source_set_test")
 kernel_test_suite(name = "kernel_test")
 
 modular_chain_test_suite(name = "modular_chain_test")
+
+module_compiler_pin_test_suite(name = "module_compiler_pin_test")
 
 language_version_test_suite(name = "language_version_test")
 
@@ -396,7 +399,7 @@ dart_test(
         "$(rlocationpath //dart/private/tools:kernel_link)",
         "$(rlocationpath //dart/private/tools:kernel_link_reference)",
         "$(rlocationpath //dart/private:analyzer_sdk_summary)",
-        "$(rlocationpath //dart/private/tools:kernel_module)",
+        "$(rlocationpath //dart/private/tools:module_compiler_tools)",
     ],
     data = [
         "//dart/private:analyzer_sdk_summary",
@@ -404,7 +407,7 @@ dart_test(
         "//dart/private/tools:analyzer_summary_reference",
         "//dart/private/tools:kernel_link",
         "//dart/private/tools:kernel_link_reference",
-        "//dart/private/tools:kernel_module",
+        "//dart/private/tools:module_compiler_tools",
         "@dart_toolchains//sdk/3.13.5:compile_files",
     ],
     main = "aot_tools_parity_test.dart",

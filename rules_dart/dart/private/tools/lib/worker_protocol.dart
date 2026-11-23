@@ -4,10 +4,10 @@
 // `analyzer_summary`, `format_runner`, and `kernel_link` each ran Bazel's
 // `--persistent_worker` binary protobuf protocol over stdin/stdout with their
 // own copy of the framing, request/response codec, and `@param_file`
-// expansion; `web_compile_runner` shared the expansion too, and
-// `kernel_module` shared the path normalization and SHA-256. This library
-// holds the single copy. `kernel_module` compiles it through `srcs` (it takes
-// no `dart_library` dependency on purpose), `web_compile_runner` depends on
+// expansion; `web_compile_runner` shared the expansion too. This library
+// holds the single copy. The module compiler takes it as a source of its own
+// build (it is built per SDK by `dart_toolchain`, from no `dart_library`),
+// `kernel_link` compiles it through `srcs`, `web_compile_runner` depends on
 // the `worker_protocol` target below, and `analyzer_summary` and
 // `format_runner` depend on it alongside the `worker_tool_fs` target.
 import 'dart:async';

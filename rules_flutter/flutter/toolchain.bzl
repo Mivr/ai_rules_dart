@@ -27,6 +27,13 @@ FLUTTER_OPTIONAL_TOOLCHAINS = _FLUTTER_OPTIONAL_TOOLCHAINS
 resolve_exec_dart = _resolve_exec_dart
 resolve_flutter_sdk_info = _resolve_flutter_sdk_info
 
+def _dart_module_compiler(ctx):
+    """The module compiler of the bundled Dart SDK, from its Dart toolchain, or None."""
+    if ctx.attr.dart_toolchain == None:
+        return None
+    dart_sdk_info = ctx.attr.dart_toolchain[platform_common.ToolchainInfo].dart_sdk_info
+    return getattr(dart_sdk_info, "module_compiler", None)
+
 def _flutter_toolchain_impl(ctx):
     tool_files = depset(transitive = [ctx.attr.dart_sdk[DefaultInfo].files, ctx.attr.patched_sdk[DefaultInfo].files])
     dart_vm_files = ctx.attr.dart_vm_files[DefaultInfo].files if ctx.attr.dart_vm_files else tool_files
@@ -39,6 +46,7 @@ def _flutter_toolchain_impl(ctx):
         engine_revision = ctx.attr.engine_revision,
         dart = ctx.file.dart,
         dartaotruntime = ctx.file.dartaotruntime,
+        dart_module_compiler = _dart_module_compiler(ctx),
         gen_snapshot = ctx.file.gen_snapshot,
         flutter_tester = ctx.file.flutter_tester,
         frontend_server = ctx.file.frontend_server,
@@ -109,6 +117,10 @@ flutter_toolchain = rule(
             doc = "The `dartaotruntime` executable for running AOT snapshots like frontend_server.",
             mandatory = True,
             allow_single_file = True,
+        ),
+        "dart_toolchain": attr.label(
+            doc = "The `dart_toolchain` of the Flutter-bundled Dart SDK (`declare_dart_sdk_toolchains` declares it beside this toolchain). Its module compiler, built from that Dart SDK's own tag, compiles Flutter's kernel modules whichever Dart SDK the build resolves for its other tools.",
+            providers = [platform_common.ToolchainInfo],
         ),
         "gen_snapshot": attr.label(
             doc = "The `gen_snapshot` AOT compiler binary.",

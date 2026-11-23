@@ -9,31 +9,31 @@ Modular compilation is on by default (`//dart:modular_kernel = True`, and
 `dart_binary(compile_mode = "kernel")` (including `package:test`'s `test_runner`),
 and splits the work along `dart_library` boundaries. Each library
 compiles its own sources into a module: a `.kmod` directory of one kernel per
-component of its sources (with embedded source text stripped), a `.koutline`
-directory of deterministic outline kernels for downstream `--input-summary`
-compiles, and an index that lists them. Any class that can be used as a mixin
-(`mixin`, `mixin class`, and every class in a library whose language version is
-below 3.0) keeps its member bodies and field initializers in `.koutline`. Both
-binary strippers check the 32-bit kernel format version in the header (accepting
-version 138, Dart 3.13.x) and log a diagnostic to `stderr` while falling back to
-the unstripped `.dill` bytes on any other version. An executable compiles only
-its entry module, and links the `.kmod` kernels it reaches through the indexes,
-in dependency order, which the VM runs as one program. A kernel nothing reaches
-is never linked.
+component of its sources (without the source text), a `.koutline` directory
+holding the module's outline, which is what a dependant compiles against, and an
+index in each. The outline is the compiled module without executable code; a
+class that can be used as a mixin (`mixin`, `mixin class`, and every class in a
+library whose language version is below 3.0) stays whole in it. Both are written
+by the module compiler, a program built on the SDK's own front end at the tag of
+the SDK that runs it (see `module_compiler.bzl`), so nothing in the rules reads
+or writes the kernel format. An executable compiles only its entry module, and
+links the `.kmod` kernels it reaches through the indexes, in dependency order,
+which the VM runs as one program. A kernel nothing reaches is never linked.
 
 A module's package config names every package by a multi-root URI,
 `org-dartlang-root:///<path>`. The compiler resolves that against the source tree
 and the output tree alike, so a package split between the two (a `dart_codegen`
 part) is read where it lies and never copied.
 
-A module compiles the sources its library declares that can compile for the VM.
-`kernel_module` decides which those are from the import graph, before it compiles:
-a source that imports a `dart:` library the VM lacks, or a file that is excluded,
-is excluded, and so is every source that imports one. The excluded sources are
-listed in the module's `.vm_excluded.txt` sidecar, which the modules above it read.
-An executable whose entry module reaches an excluded file compiles that file from
-source, so it fails exactly as a whole-program compile would when the VM cannot run
-it.
+A module compiles the sources its library declares that compile for the target.
+The module compiler decides which those are from the front end's own result: a
+library that does not compile (it imports a `dart:` library the VM lacks, say),
+one that imports a library no dependency module defines, and every library that
+imports one of those are left out, and the module compiles once more with exactly
+the libraries it keeps. The sources left out are listed in the module's
+`.vm_excluded.txt` sidecar and staged in its outline directory. An executable
+whose entry module reaches one compiles it from source, so it fails exactly as a
+whole-program compile would when the VM cannot run it.
 
 Every decision that can send an executable back to whole-program compilation is a
 pure function here, so each can be unit tested. The actions are built only when a
@@ -42,7 +42,7 @@ module.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", _DartKernelInfo = "DartKernelInfo")
+load("//dart:providers.bzl", "DartInfo", _DartKernelInfo = "DartKernelInfo")
 load("//dart/private:aot_tool.bzl", "aot_tool_launch")
 load(
     "//dart/private:build_settings.bzl",
@@ -58,8 +58,6 @@ load(
     "STABLE_SCHEME",
     "collect_transitive_srcs",
     "generate_stable_package_config",
-    "has_comma_define",
-    "kernel_sdk_mismatch_error",
     "sdk_path_from_dart",
     "stable_path",
     "writable_home_env",
@@ -109,35 +107,24 @@ EXEC_TOOLS_TOOLCHAIN = Label("//dart:exec_tools_toolchain_type")
 
 DartKernelInfo = _DartKernelInfo
 
-def _kernel_module_for_mode(compile_mode, modular_kernel):
-    if compile_mode in ("kernel", "exe", "aot-snapshot") and modular_kernel:
-        return Label("//dart/private/tools:kernel_module")
-    return None
-
 def _kernel_link_for_mode(compile_mode, modular_kernel):
     if compile_mode in ("kernel", "exe", "aot-snapshot") and modular_kernel:
         return Label("//dart/private/tools:kernel_link")
     return None
 
-# The build setting and the module compiler. `dart_library` takes these (its
+# The build setting and the link tool. `dart_library` takes these (its
 # module), `dart_test` takes `MODULAR_KERNEL_ATTRS`, and `dart_binary` takes
-# `BINARY_MODULAR_KERNEL_ATTRS` (which resolves the tools only for the modes that
-# link modules, `kernel`, `exe` and `aot-snapshot`, and only when `modular_kernel`
-# is on: the tools set it to `False`, so none depends on itself).
+# `BINARY_MODULAR_KERNEL_ATTRS` (which resolves the link tool only for the modes
+# that link modules, `kernel`, `exe` and `aot-snapshot`, and only when
+# `modular_kernel` is on: the tools set it to `False`, so none depends on itself).
 #
-# `kernel_module` is a `dart_binary` with no pub dependencies, so it reaches no
-# `dart_library` and no cycle is possible.
+# The module compiler is not an attribute: it is built per SDK and comes with the
+# exec tools toolchain (`DartSdkInfo.module_compiler`).
 KERNEL_MODULE_ATTRS = {
     "_modular_kernel": attr.label(
         doc = "The `//dart:modular_kernel` build setting (`True` by default). When off, kernel-mode executables compile whole-program as before.",
         default = Label("//dart:modular_kernel"),
         providers = [BuildSettingInfo],
-    ),
-    "_kernel_module": attr.label(
-        doc = "The tool that compiles one module with `kernel_worker`, excluding the sources that cannot compile for the VM. See `kernel_module.dart`.",
-        default = Label("//dart/private/tools:kernel_module"),
-        executable = True,
-        cfg = "exec",
     ),
     "_kernel_link": attr.label(
         doc = "The tool that links an executable's kernel from the kernels its entry reaches. See `kernel_link.dart`.",
@@ -155,12 +142,6 @@ BINARY_MODULAR_KERNEL_ATTRS = {
         doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible (`exe` and `aot-snapshot` compile from sources unless `link_modules = True` opts them in, see `compile_mode`). Enabled (`True`) by default (including for `package:test`'s `test_runner`); set `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false` for whole-program compilation.",
     ),
     "_modular_kernel": KERNEL_MODULE_ATTRS["_modular_kernel"],
-    "_kernel_module": attr.label(
-        doc = "The tool that compiles one module with `kernel_worker`, when `compile_mode` is `kernel` (or in `dart_test`).",
-        default = _kernel_module_for_mode,
-        executable = True,
-        cfg = "exec",
-    ),
     "_kernel_link": attr.label(
         doc = "The tool that links an executable's kernel from the kernels its entry reaches, when `compile_mode` is `kernel`, `exe` or `aot-snapshot`.",
         default = _kernel_link_for_mode,
@@ -170,7 +151,8 @@ BINARY_MODULAR_KERNEL_ATTRS = {
 }
 
 # Optional, so a build that registers no exec tools toolchain keeps compiling
-# whole-program rather than failing. See `kernel_tools_for`.
+# whole-program rather than failing. One that registers an SDK whose version has
+# no pinned module compiler sources fails instead. See `kernel_tools_for`.
 MODULAR_KERNEL_TOOLCHAINS = [
     config_common.toolchain_type(EXEC_TOOLS_TOOLCHAIN, mandatory = False),
 ]
@@ -346,9 +328,9 @@ def duplicated_source(own_paths, owned, edges):
     """The source a modular executable cannot compile, or None.
 
     Each `dart_library` compiles the sources it lists into its module, and the
-    executable links the modules it reaches. Within one dependency chain the planner
-    in `kernel_module.dart` keeps one definition of a source: a library whose
-    dependency module already defines the source does not compile it again. Two
+    executable links the modules it reaches. Within one dependency chain the module
+    compiler keeps one definition of a source: a library whose dependency module
+    already defines the source does not compile it again. Two
     libraries that do not depend on each other each compile their own copy, and the
     executable would link two kernels that define one library. The frontend refuses
     that, and a whole-program compile merges the copies by file, so it never saw the
@@ -599,7 +581,7 @@ def has_cross_pkg_cycle(
     sibling libraries sharing `package_name = "a"`), or a library tagged
     `no-dart-analyze` because its sources are not standalone, can cause a file in
     one target to import a `package:` URI owned by another target that is not in its
-    own module closure. `kernel_module` excludes those files at module compile time
+    own module closure. The module compiler leaves those files out at module compile time
     so the entry module compiles them from source together with the rest of the
     closure. When this returns True, the participating sources are carried in
     `DartKernelInfo.cross_pkg_srcs` so the entry module action declares them as
@@ -663,71 +645,50 @@ def modular_kernel_eligible(conditions):
     )
 
 def find_kernel_module_tools(dart_sdk_info):
-    """Locates the files a module compile and a link run from, in an SDK.
-
-    The worker snapshot `kernel_worker_aot.dart.snapshot` is absent from older SDKs.
-    Its absence is not an error: the library compiles no module and every consumer
-    compiles whole-program, exactly as it did before modular compilation existed.
+    """Locates the files a module compile runs from, in an SDK.
 
     Args:
       dart_sdk_info: The `DartSdkInfo` of the exec tools toolchain.
 
     Returns:
-      `struct(dartaotruntime, kernel_worker, platform_dill, libraries_json,
-      version, patched_kernel_worker)`, or None
-      when the SDK lacks the worker snapshot. `patched_kernel_worker` is the
-      toolchain's comma-splitting-disabled copy of the worker snapshot, or
-      None when the toolchain declares none.
+      `struct(dart, dartvm, runtime_files, dartaotruntime, module_compiler,
+      platform_dill, version)`, or None when the SDK has no module compiler:
+      its version has no pinned source closure (see
+      `module_compiler_versions.bzl`), or it lacks `dartaotruntime` or the
+      platform kernel.
     """
+    module_compiler = getattr(dart_sdk_info, "module_compiler", None)
+    if module_compiler == None:
+        return None
 
     # `dart_toolchain` finds the files once and carries them; a `DartSdkInfo`
-    # built elsewhere may not, and then this searches as before.
+    # built elsewhere may not, and then this searches.
     named = getattr(dart_sdk_info, "kernel_module_files", None)
-    if named != None:
-        if named.kernel_worker == None:
-            return None
-        return struct(
-            dart = dart_sdk_info.dart,
-            dartvm = named.dartvm,
-            runtime_files = dart_sdk_info.runtime_files,
-            dartaotruntime = named.dartaotruntime,
-            kernel_worker = named.kernel_worker,
-            platform_dill = named.platform_dill,
-            libraries_json = named.libraries_json,
-            version = dart_sdk_info.version,
-            patched_kernel_worker = getattr(dart_sdk_info, "patched_kernel_worker", None),
+    if named == None:
+        sdk_root = sdk_path_from_dart(dart_sdk_info.dart)
+        found = {}
+        for f in dart_sdk_info.compile_files.to_list():
+            if f.path in (sdk_root + "/bin/dartvm", sdk_root + "/bin/dartvm.exe"):
+                found["dartvm"] = f
+            elif f.path in (sdk_root + "/bin/dartaotruntime", sdk_root + "/bin/dartaotruntime.exe"):
+                found["dartaotruntime"] = f
+            elif f.path == sdk_root + "/lib/_internal/vm_platform_strong.dill":
+                found["platform_dill"] = f
+        named = struct(
+            dartvm = found.get("dartvm"),
+            dartaotruntime = found.get("dartaotruntime"),
+            platform_dill = found.get("platform_dill"),
         )
-    sdk_root = sdk_path_from_dart(dart_sdk_info.dart)
-    dartvm_paths = [
-        sdk_root + "/bin/dartvm",
-        sdk_root + "/bin/dartvm.exe",
-    ]
-    wanted = {
-        "dartaotruntime": [sdk_root + "/bin/dartaotruntime", sdk_root + "/bin/dartaotruntime.exe"],
-        "kernel_worker": [sdk_root + "/bin/snapshots/kernel_worker_aot.dart.snapshot"],
-        "platform_dill": [sdk_root + "/lib/_internal/vm_platform_strong.dill"],
-        "libraries_json": [sdk_root + "/lib/libraries.json"],
-    }
-    dartvm = None
-    found = {}
-    for f in dart_sdk_info.compile_files.to_list():
-        if f.path in dartvm_paths:
-            dartvm = f
-        for key, paths in wanted.items():
-            if f.path in paths:
-                found[key] = f
-    if len(found) != len(wanted):
+    if named.dartaotruntime == None or named.platform_dill == None:
         return None
     return struct(
         dart = dart_sdk_info.dart,
-        dartvm = dartvm,
+        dartvm = named.dartvm,
         runtime_files = dart_sdk_info.runtime_files,
-        dartaotruntime = found["dartaotruntime"],
-        kernel_worker = found["kernel_worker"],
-        platform_dill = found["platform_dill"],
-        libraries_json = found["libraries_json"],
+        dartaotruntime = named.dartaotruntime,
+        module_compiler = module_compiler,
+        platform_dill = named.platform_dill,
         version = dart_sdk_info.version,
-        patched_kernel_worker = getattr(dart_sdk_info, "patched_kernel_worker", None),
     )
 
 def kernel_tools_for(ctx):
@@ -746,6 +707,24 @@ def kernel_tools_for(ctx):
     if toolchain == None:
         return None
     return find_kernel_module_tools(toolchain.dart_sdk_info)
+
+def no_module_compiler_error(label, dart_sdk_info):
+    """The analysis error for an executable whose SDK has no module compiler.
+
+    Args:
+      label: The executable's label.
+      dart_sdk_info: The `DartSdkInfo` of the exec tools toolchain.
+
+    Returns:
+      The message.
+    """
+    return ("%s compiles as kernel modules, but the module compiler cannot be built for Dart SDK %s: " +
+            "its version has no pinned sources in `MODULE_COMPILER_SOURCES` " +
+            "(@rules_dart//dart/private:module_compiler_versions.bzl), or its toolchain names no " +
+            "`module_compiler_sources`. Use an SDK version that table lists.") % (
+        label,
+        dart_sdk_info.version,
+    )
 
 def dep_kernels_or_none(deps):
     """The `DartKernelInfo` of each dependency, or None if any lacks one.
@@ -799,7 +778,7 @@ def _kmod_declare_outputs(ctx, output, packages, scheme, unused_inputs):
         ctx.actions.write(output = package_config, content = kernel_package_config(packages, scheme = scheme))
     excluded = ctx.actions.declare_file(output.basename + ".vm_excluded.txt")
     if unused_inputs:
-        # Written by `kernel_module` alongside the module. Declared here, where
+        # Written by the module compiler alongside the module. Declared here, where
         # the one registering action is, so the declaration and the action
         # that generates the file can never part ways.
         unused_inputs_list = ctx.actions.declare_file(output.basename + ".unused_inputs")
@@ -807,25 +786,19 @@ def _kmod_declare_outputs(ctx, output, packages, scheme, unused_inputs):
         unused_inputs_list = None
     return package_config, excluded, unused_inputs_list
 
-def _kmod_common_args(ctx, args, request):
-    """Adds the target/platform/define args shared by every module compile.
+def _kmod_args(ctx, args, request):
+    """Adds one module compile's request to `args`.
 
     Args:
       ctx: The rule context, for `ctx.bin_dir`.
-      args: The args object to add to.
-      request: A struct with `target`, `platform`, `package_config`, `package_records`,
-        `libraries`, `libraries_platform`, `extra_libraries`, `defines`, `extra_frontend_flags`,
-        and `scheme`.
+      args: The params-file args object to add to.
+      request: The module-compile struct (see `kernel_module_action`).
     """
     args.add("--target", request.target)
     args.add("--dart-sdk-summary", request.platform)
     args.add("--packages-file", request.package_config)
     if request.package_records != None:
         add_package_records(args, request.package_records)
-    args.add("--libraries-json", request.libraries)
-    if request.libraries_platform:
-        args.add("--libraries-platform", request.libraries_platform)
-    args.add_all(request.extra_libraries, before_each = "--extra-library")
     args.add("--multi-root", ".")
     args.add("--multi-root", ctx.bin_dir.path)
     args.add("--multi-root-scheme", request.scheme)
@@ -836,58 +809,12 @@ def _kmod_common_args(ctx, args, request):
             "-Ddart.vm.msan=false",
             "-Ddart.vm.tsan=false",
         ])
+
+    # The defines reach the front end as a map, so a value keeps its commas.
     if request.define_file != None:
         args.add("--define-file", request.define_file)
     args.add_all(request.defines, format_each = "-D%s")
     args.add_all(request.extra_frontend_flags)
-
-def _kmod_worker_snapshot(ctx, tools, defines):
-    """Selects the worker snapshot for comma defines. Returns (worker_snapshot, patched_marker)."""
-
-    # A comma-containing value only survives the frontend when the compile runs
-    # the toolchain's patched worker snapshot: `kernel_worker` splits `-D`
-    # values on commas. The patched snapshot is a distinct `--kernel-worker`
-    # startup argument, so comma compiles get their own worker process and never
-    # share one running the pristine snapshot. The marker is a startup argument
-    # too (never params-file content): the worker parses it once, and it never
-    # reaches a request's arguments, so `kernel_worker` never sees it. Without
-    # comma defines the pristine snapshot runs, exactly as before.
-    worker_snapshot = tools.kernel_worker
-    patched_marker = []
-    if has_comma_define(defines):
-        worker_snapshot = getattr(tools, "patched_kernel_worker", None)
-        if worker_snapshot == None:
-            fail(("kernel_module_action: target %s passes comma-containing " +
-                  "`-D` defines %s, but the exec SDK (Dart %s) declares no " +
-                  "patched `kernel_worker` snapshot, so no compile of this " +
-                  "module can keep the commas. Use an SDK whose snapshot " +
-                  "`comma_patch.dart` knows how to patch.") %
-                 (ctx.label, defines, getattr(tools, "version", "")))
-        patched_marker = ["--comma-patched-snapshot"]
-    return worker_snapshot, patched_marker
-
-def _kmod_source_args(args, request):
-    """Adds the per-module source, output, and exclusion args.
-
-    Args:
-      args: The args object to add to.
-      request: A struct with `sources`, `dep_kmods`, `output`, `koutline`,
-        `excluded`, `unused_inputs_list`, `droppable`, `closure_excluded`,
-        `extra_inputs`, and `exclude_non_sources`.
-    """
-
-    # The VM target does not support `--summary-only`: it prints an error and
-    # embeds the whole platform. Its absence keeps each kernel to its own libraries.
-    args.add("--no-summary-only")
-
-    # The worker keeps the platform and the dependency kernels loaded between
-    # requests, and reuses a result when a request repeats. It reads a file only
-    # through an input Bazel declared, and every request sends those inputs with
-    # their digests, so it never reads a file it was not given.
-    args.add("--reuse-compiler-result")
-    args.add("--use-incremental-compiler")
-    if request.exclude_non_sources:
-        args.add("--exclude-non-sources")
 
     # A module directory is one argument, not its files: `expand_directories` is off.
     args.add_all(request.dep_kmods, before_each = "--input-kmod", expand_directories = False)
@@ -899,137 +826,48 @@ def _kmod_source_args(args, request):
     args.add("--output", request.output.path)
     if request.koutline != None:
         args.add("--output-outline", request.koutline.path)
-
-    # Read by `kernel_module` and not passed to `kernel_worker`.
     args.add("--excluded-output", request.excluded)
     if request.unused_inputs_list != None:
         args.add("--unused-inputs-list", request.unused_inputs_list)
     if not request.droppable:
         args.add("--no-drop")
-    if request.closure_excluded:
-        args.add_all(request.closure_excluded, before_each = "--closure-excluded")
     if request.extra_inputs:
         args.add_all(request.extra_inputs, before_each = "--input-source")
-    if getattr(request, "check_imports", False):
+    if request.check_imports:
         args.add("--check-imports")
-        if getattr(request, "target_label", None):
+        if request.target_label:
             args.add("--target-label", request.target_label)
         args.add_all(request.own_packages, before_each = "--own-package")
         args.add_all(request.direct_packages, before_each = "--direct-package")
 
-def _kmod_select_executable(ctx, tools, direct_inputs, action_tools):
-    """Selects the module action's executable. Returns (executable, arguments-prefix, dart_exe)."""
-    dart_exe = getattr(tools, "dart", None)
-    dartvm = getattr(tools, "dartvm", None)
-    tool_target = getattr(ctx.attr, "_kernel_module", None)
-    tool_compile_mode = (
-        tool_target[DartCompileInfo].compile_mode if tool_target != None and DartCompileInfo in tool_target else "kernel"
-    )
-    if tool_compile_mode == "aot-snapshot":
-        # The tool is an AOT snapshot: `dart` refuses to run `.aot` files, so
-        # `dartaotruntime` executes it directly. This also drops the `dart` and
-        # `dartvm` inputs: the snapshot needs only the runtime. The
-        # SDK-mismatch check below is kernel-only; an AOT snapshot built by a
-        # foreign SDK fails loudly at execution time instead.
-        direct_inputs.append(ctx.executable._kernel_module)
-        return tools.dartaotruntime, ctx.executable._kernel_module.path, dart_exe
-    if dart_exe != None:
-        mismatch = kernel_sdk_mismatch_error(
-            ctx.label,
-            "_kernel_module",
-            getattr(ctx.attr, "_kernel_module", None),
-            getattr(tools, "version", ""),
-        )
-        if mismatch != None:
-            fail(mismatch)
-        direct_inputs.extend([ctx.executable._kernel_module, dart_exe])
-        action_tools.append(dart_exe)
-        if dartvm != None:
-            direct_inputs.append(dartvm)
-            action_tools.append(dartvm)
-        return dart_exe, ctx.executable._kernel_module.path, dart_exe
-    return ctx.executable._kernel_module, None, dart_exe
-
-def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_tools, runtime_files):
-    """Registers the module's `kernel_module` worker action.
-
-    Args:
-      ctx: The rule context, for `ctx.actions.run`.
-      executable: The executable to run.
-      arguments: The startup arguments plus the params-file args.
-      request: A struct with `tools`, `dep_kmods`, `extra_inputs`,
-        `closure_excluded`, `output`, `excluded`, `unused_inputs_list`,
-        `koutline`, `package_config`, and `package_records`.
-      direct_inputs: The action's direct input files.
-      action_tools: The action's direct tool files.
-      runtime_files: The SDK runtime files depset, or None.
-    """
-    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
-    ctx.actions.run(
-        executable = executable,
-        # The startup arguments name the SDK's compiler, so every module of one SDK
-        # shares one worker. Bazel keeps the process running as a worker, and sends
-        # each request's arguments through the params file.
-        arguments = arguments,
-        inputs = depset(
-            direct = direct_inputs,
-            transitive = [request.dep_kmods] + [d for d in [request.extra_inputs, request.closure_excluded] if d],
-        ),
-        tools = depset(action_tools, transitive = [runtime_files] if runtime_files != None else []),
-        outputs = [request.output, request.excluded] + [f for f in [
-            request.unused_inputs_list,
-            request.koutline,
-            request.package_config if request.package_records != None else None,
-        ] if f],
-        unused_inputs_list = request.unused_inputs_list,
-        mnemonic = "DartKernel",
-        progress_message = "Compiling Dart kernel module %s" % request.output.short_path,
-        env = writable_home_env(getattr(request.tools, "dart", None) or request.tools.dartaotruntime, request.output),
-        # Multiplex: one `kernel_module` process serves concurrent requests, sharing the loaded
-        # outline cache inside the process across a pool of `kernel_worker` children. Singleplex
-        # still works when Bazel does not multiplex (`--noworker_multiplex`). The link and
-        # analyzer-summary actions stay singleplex; see `kernel_link_action`.
-        # `supports-worker-cancellation`: `serveWorker` answers a cancel request and reaps the child
-        # compiler. Bazel sends that request only with `--experimental_worker_cancellation` and a
-        # sandboxed worker (dynamic execution, `--worker_sandboxing` or multiplex sandboxing).
-        execution_requirements = {
-            "supports-multiplex-workers": "1",
-            "supports-workers": "1",
-            "supports-worker-cancellation": "1",
-            "requires-worker-protocol": "proto",
-        },
-        # `tools` come from the exec tools toolchain (`kernel_tools_for`). A rule
-        # that resolves none hands over tools of its own, from no toolchain.
-        toolchain = EXEC_TOOLS_TOOLCHAIN if exec_tc != None else None,
-    )
-
 def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
-    """Compiles one module with `kernel_module`, which drives the persistent `kernel_worker`.
+    """Compiles one module with the SDK's module compiler.
 
-    `kernel_module` is a Bazel persistent worker: it keeps one `kernel_worker` child
-    running, so each module compile reuses the loaded SDK, and a retry reuses the
-    same child. Everything except the wrapper's startup flags goes in a params file,
-    which keeps long dependency lists off the command line.
+    The module compiler is a Bazel persistent worker: it keeps the platform and
+    the dependency outlines loaded between requests, each by the digest Bazel
+    sent, and reads only the files the request declares. The request goes in a
+    params file, which keeps long dependency lists off the command line; the
+    startup arguments name only the tool, so every module of one SDK shares a
+    worker.
 
     Args:
-      ctx: The rule context, carrying the `_kernel_module` executable.
+      ctx: The rule context.
       tools: The struct from `find_kernel_module_tools`.
       inputs: The struct from `kernel_module_inputs()`: the module's sources,
         packages, dependency modules, and closure inputs.
       outputs: The struct from `kernel_module_outputs()`: the module and
         outline directories to produce, and whether to write unused inputs.
-      options: The struct from `kernel_module_options()`: the defines and the
-        exclusion and dropping behavior.
+      options: The struct from `kernel_module_options()`: the defines and
+        whether the module may leave libraries out.
       compile: The struct from `kernel_compile_settings()`: the frontend
-        target, platform, libraries, scheme, and extra flags.
+        target, platform, scheme, and extra flags.
 
     Returns:
       The `.vm_excluded.txt` sidecar File, which lists each source that the module
-      excludes for the target, and why.
+      leaves out for the target, and why.
     """
     settings = compile
     platform = settings.platform_dill if settings.platform_dill != None else tools.platform_dill
-    libraries = settings.libraries_json if settings.libraries_json != None else tools.libraries_json
     package_config, excluded, unused_inputs_list = _kmod_declare_outputs(
         ctx,
         outputs.output,
@@ -1037,22 +875,17 @@ def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
         settings.scheme,
         outputs.unused_inputs,
     )
+    package_records = inputs.packages if type(inputs.packages) == "tuple" else None
 
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
-
-    # One object for the module-compile clump that the helpers below share.
-    request = struct(
-        tools = tools,
+    _kmod_args(ctx, args, struct(
         platform = platform,
-        libraries = libraries,
         package_config = package_config,
-        package_records = inputs.packages if type(inputs.packages) == "tuple" else None,
+        package_records = package_records,
         target = settings.target,
         product = settings.product,
-        libraries_platform = settings.libraries_platform,
-        extra_libraries = settings.extra_libraries,
         defines = options.defines,
         define_file = options.define_file,
         extra_frontend_flags = settings.extra_frontend_flags,
@@ -1064,73 +897,52 @@ def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
         excluded = excluded,
         unused_inputs_list = unused_inputs_list,
         droppable = options.droppable,
-        closure_excluded = inputs.closure_excluded,
         extra_inputs = inputs.extra_inputs,
-        exclude_non_sources = options.exclude_non_sources,
         check_imports = options.check_imports,
         target_label = options.target_label,
         own_packages = options.own_packages,
         direct_packages = options.direct_packages,
-    )
+    ))
 
-    _kmod_common_args(ctx, args, request)
-
-    worker_snapshot, patched_marker = _kmod_worker_snapshot(ctx, tools, options.defines)
-
-    _kmod_source_args(args, request)
-
-    _kmod_register(ctx, request, args, worker_snapshot, patched_marker)
-    return excluded
-
-def _kmod_register(ctx, request, args, worker_snapshot, patched_marker):
-    """Builds the module action's inputs, selects its executable, and registers it.
-
-    Args:
-      ctx: The rule context, carrying the `_kernel_module` executable.
-      request: The module-compile struct (see `kernel_module_action`).
-      args: The params-file args for the worker request.
-      worker_snapshot: The worker snapshot File to run.
-      patched_marker: The comma-patch startup marker list (possibly empty).
-    """
-    tools = request.tools
-    runtime_files = getattr(tools, "runtime_files", None)
-    direct_inputs = [
-        tools.dartaotruntime,
-        worker_snapshot,
-        request.libraries,
-        request.platform,
-    ] + [s.file for s in request.sources]
-    if request.define_file != None:
-        direct_inputs.append(request.define_file)
-    if request.package_records == None:
+    direct_inputs = [platform] + [s.file for s in inputs.sources]
+    if options.define_file != None:
+        direct_inputs.append(options.define_file)
+    if package_records == None:
         # An inline-written config is an input; a worker-written one is an output.
-        direct_inputs.append(request.package_config)
-    action_tools = [
-        tools.dartaotruntime,
-        worker_snapshot,
-        request.platform,
-        ctx.executable._kernel_module,
-    ]
-    executable, tool_path, _ = _kmod_select_executable(ctx, tools, direct_inputs, action_tools)
-    if tool_path != None:
-        arguments = [
-            tool_path,
-            "--kernel-worker",
-            worker_snapshot.path,
-            "--dartaotruntime",
-            tools.dartaotruntime.path,
-            args,
-        ] + patched_marker
-    else:
-        arguments = [
-            "--kernel-worker",
-            worker_snapshot.path,
-            "--dartaotruntime",
-            tools.dartaotruntime.path,
-            args,
-        ] + patched_marker
-
-    _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_tools, runtime_files)
+        direct_inputs.append(package_config)
+    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
+    ctx.actions.run(
+        executable = tools.dartaotruntime,
+        # The startup arguments name the SDK's compiler, so every module of one
+        # SDK shares a worker. Bazel sends each request's arguments through the
+        # params file.
+        arguments = [tools.module_compiler.path, args],
+        inputs = depset(
+            direct = direct_inputs,
+            transitive = [inputs.dep_kmods] + ([inputs.extra_inputs] if inputs.extra_inputs else []),
+        ),
+        tools = [tools.dartaotruntime, tools.module_compiler],
+        outputs = [outputs.output, excluded] + [f for f in [
+            unused_inputs_list,
+            outputs.koutline,
+            package_config if package_records != None else None,
+        ] if f],
+        unused_inputs_list = unused_inputs_list,
+        mnemonic = "DartKernel",
+        progress_message = "Compiling Dart kernel module %s" % outputs.output.short_path,
+        env = writable_home_env(tools.dartaotruntime, outputs.output),
+        # Not multiplexed: the front end compiles one module at a time, so Bazel
+        # runs as many worker processes as `--worker_max_instances` allows, each
+        # with its own loaded platform and outlines.
+        execution_requirements = {
+            "supports-workers": "1",
+            "requires-worker-protocol": "proto",
+        },
+        # `tools` come from the exec tools toolchain (`kernel_tools_for`). A rule
+        # that resolves none hands over tools of its own, from no toolchain.
+        toolchain = EXEC_TOOLS_TOOLCHAIN if exec_tc != None else None,
+    )
+    return excluded
 
 def kernel_link_action(
         ctx,
@@ -1289,6 +1101,11 @@ def modular_executable_tools(
         return None
     tools = kernel_tools_for(ctx)
     if tools == None:
+        exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN]
+        if exec_tc != None:
+            # One path per mode: an SDK that cannot compile modules is an
+            # error, not a silent whole-program compile.
+            fail(no_module_compiler_error(ctx.label, exec_tc.dart_sdk_info))
         return None
     if target_sdk == None:
         target_sdk = ctx.toolchains[_TOOLCHAIN_TYPE].dart_sdk_info
@@ -1486,7 +1303,7 @@ def modular_executable_kernel(
       dep_kernels: The `DartKernelInfo` of each direct dependency.
       output: The linked kernel File the executable runs.
       compile: The struct from `kernel_compile_settings()`: the frontend
-        target, platform, libraries, scheme, and extra flags.
+        target, platform, scheme, and extra flags.
       link: The struct from `kernel_link_options()`: `use_base_dill` links
         `output` as a delta against any shared `base_dill`/`base_keys` in
         `dep_kernels` and returns `base_dill`; `platform_dill` is prepended to
@@ -1534,7 +1351,6 @@ def modular_executable_kernel(
             packages = entry_packages,
             dep_kmods = dep_outline_closure,
             extra_inputs = cross_pkg_srcs,
-            closure_excluded = depset(transitive = [k.closure_excluded for k in dep_kernels]),
         ),
         kernel_module_outputs(
             output = entry,
@@ -1544,7 +1360,6 @@ def modular_executable_kernel(
         ),
         kernel_module_options(
             defines = canonical_dart_defines(own_defines) + global_dart_defines(ctx),
-            exclude_non_sources = True,
             droppable = False,
         ),
         compile,
@@ -1777,7 +1592,7 @@ def library_kernel_info(ctx, library, compile, options):
       library: The struct from `library_kernel_sources()`: the library's
         package identity, own sources, and own package records.
       compile: The struct from `kernel_compile_settings()`: the frontend
-        target, platform, libraries, scheme, and extra flags.
+        target, platform, scheme, and extra flags.
       options: The struct from `library_kernel_options()`: opaqueness, the
         dependency targets, and the unused-inputs and standalone behavior.
 
@@ -1819,7 +1634,6 @@ def library_kernel_info(ctx, library, compile, options):
             packages = state.module_packages,
             dep_kmods = graph.dep_outline_closure,
             extra_inputs = dep_cross_pkg_srcs,
-            closure_excluded = graph.upstream_excluded,
         ),
         kernel_module_outputs(
             output = kmod,
@@ -1829,7 +1643,6 @@ def library_kernel_info(ctx, library, compile, options):
         kernel_module_options(
             defines = env.defines,
             define_file = env.define_file,
-            exclude_non_sources = True,
             droppable = True,
             check_imports = LAYERING_FEATURE not in ctx.disabled_features and not ctx.label.workspace_name,
             target_label = "//%s:%s" % (ctx.label.package, ctx.label.name),

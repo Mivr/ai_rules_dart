@@ -128,12 +128,13 @@ def _flutter_test_defines_modular_test_impl(ctx):
     asserts.equals(env, [], whole_program, "a flutter_test with own defines must not run FlutterKernelCompile")
     return analysistest.end(env)
 
-def _flutter_test_comma_refused_test_impl(ctx):
-    """A comma in a global define fails a `flutter_test` (always modular), naming the target and the define."""
+def _flutter_test_comma_modular_test_impl(ctx):
+    """A comma in a global define changes nothing for a `flutter_test`: it links modularly."""
     env = analysistest.begin(ctx)
-    asserts.expect_failure(env, "_inputs_flutter_test")
-    asserts.expect_failure(env, "FOO=a,b")
-    asserts.expect_failure(env, "comma")
+    modular_links = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartKernelLink"]
+    asserts.equals(env, 1, len(modular_links), "a flutter_test with a comma define must link modularly")
+    whole_program = [a for a in analysistest.target_actions(env) if a.mnemonic == "FlutterKernelCompile"]
+    asserts.equals(env, [], whole_program, "a flutter_test with a comma define must not run FlutterKernelCompile")
     return analysistest.end(env)
 
 def _comma_defines_fallback_test_impl(ctx):
@@ -743,7 +744,7 @@ _synthetic_dart_sdk_toolchain = rule(
 )
 
 def _reverse_toolchain_flutter_test_impl(ctx):
-    """When `@rules_dart`'s SDK resolves first, modular `flutter_test` still compiles with Flutter's `kernel_worker`."""
+    """When `@rules_dart`'s SDK resolves first, modular `flutter_test` still compiles with the Flutter SDK's own module compiler."""
     env = analysistest.begin(ctx)
 
     kernel_action = _find_action(env, ["DartKernel"])
@@ -753,8 +754,7 @@ def _reverse_toolchain_flutter_test_impl(ctx):
         kernel_inputs,
         [
             "dart-sdk/bin/dartaotruntime",
-            "dart-sdk/bin/snapshots/kernel_worker_aot.dart.snapshot",
-            "dart-sdk/lib/libraries.json",
+            "module_compiler.aot",
             "flutter_patched_sdk/platform_strong.dill",
             "fake_test_api.flutter.koutline",
         ],
@@ -763,17 +763,14 @@ def _reverse_toolchain_flutter_test_impl(ctx):
     _assert_no_path_contains(
         env,
         kernel_inputs,
-        [
-            "synthetic_dart_sdk/bin/dartaotruntime",
-            "synthetic_dart_sdk/bin/snapshots/kernel_worker_aot.dart.snapshot",
-        ],
+        ["synthetic_dart_sdk/bin/dartaotruntime"],
         "reverse-toolchain flutter_test DartKernel inputs",
     )
     argv_joined = " ".join(kernel_action.argv)
     asserts.true(
         env,
-        "dart-sdk/bin/snapshots/kernel_worker_aot.dart.snapshot" in argv_joined,
-        "expected Flutter SDK kernel_worker in DartKernel argv, got %s" % kernel_action.argv,
+        "module_compiler.aot" in argv_joined and "synthetic_dart_sdk" not in argv_joined,
+        "expected the Flutter SDK's module compiler in DartKernel argv, got %s" % kernel_action.argv,
     )
     asserts.true(
         env,
@@ -938,9 +935,9 @@ _flutter_plugin_rule_kind_test = analysistest.make(
 )
 _flutter_test_runfiles_test = analysistest.make(_flutter_test_runfiles_test_impl)
 _flutter_test_defines_modular_test = analysistest.make(_flutter_test_defines_modular_test_impl)
-_flutter_test_comma_refused_test = analysistest.make(
-    _flutter_test_comma_refused_test_impl,
-    expect_failure = True,
+# A comma in a global define changes nothing for a `flutter_test`: it stays modular.
+_flutter_test_comma_modular_test = analysistest.make(
+    _flutter_test_comma_modular_test_impl,
     config_settings = {str(Label("//flutter:extra_dart_defines")): ["FOO=a,b"]},
 )
 _flutter_comma_defines_fallback_test = analysistest.make(
@@ -1244,8 +1241,8 @@ def action_inputs_test_suite(name):
         target_under_test = ":_inputs_flutter_test_defines",
         target_compatible_with = HOST_COMPATIBLE,
     )
-    _flutter_test_comma_refused_test(
-        name = name + "_flutter_test_comma_refused",
+    _flutter_test_comma_modular_test(
+        name = name + "_flutter_test_comma_modular",
         target_under_test = ":_inputs_flutter_test",
         target_compatible_with = HOST_COMPATIBLE,
     )
@@ -1379,7 +1376,7 @@ def action_inputs_test_suite(name):
             ":" + name + "_flutter_plugin_fonts_rule_kind",
             ":" + name + "_flutter_test_runfiles",
             ":" + name + "_flutter_test_defines_modular",
-            ":" + name + "_flutter_test_comma_refused",
+            ":" + name + "_flutter_test_comma_modular",
             ":" + name + "_flutter_test_dart_extra_defines_ignored",
             ":" + name + "_kernel_target_comma_defines_fallback",
             ":" + name + "_kernel_target_dart_extra_defines_ignored",

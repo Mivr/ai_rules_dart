@@ -36,7 +36,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-// Shared through `srcs`, like `kernel_module`'s guard import: this binary is
+// Shared through `srcs`: this binary is
 // an implicit exec tool of every `dart_library`, so it takes no
 // `dart_library` dependency (that would be a cycle).
 import 'lib/worker_protocol.dart';

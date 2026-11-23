@@ -1,7 +1,7 @@
 // The kernel (`.dill`) byte readers shared by the build-action tools: the
 // component splitter, the source-table and library-reference readers, and the
-// multi-root prefix stripper. `kernel_module.dart` compiles this file through
-// `srcs`; `app_jit_snapshot.dart` runs it from source beside the staged tool
+// multi-root prefix stripper. `app_jit_snapshot.dart` runs it from source
+// beside the staged tool
 // (see the `jit_tool_srcs` bundle in `dart/private/tools/BUILD.bazel`). One home for the table
 // layouts, so every read-set check parses the same bytes.
 
@@ -12,8 +12,7 @@ import '../../guard/lib/directive_guard.dart';
 
 /// The kernel component-file magic tag every reader below matches: one
 /// component, or concatenated ones each tagged. (This is the component-file
-/// tag of the kernel format; `dill_outline.dart` names the same value
-/// `Tag.ComponentFile` for the strippers.)
+/// tag of the kernel format.)
 const dillComponentMagic = 0x90ABCDEF;
 
 /// The path after `multiRootPrefix`, or null for any other URI.
