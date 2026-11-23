@@ -32,7 +32,7 @@ Git packages have no API: they are cloned and read the same way.
 
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub/private:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
-load("//dart/pub/private:pub_lock_package.bzl", "trim_gzip_trailing_nulls")
+load("//dart/pub/private:pub_lock_package.bzl", "archive_fetch_error", "trim_gzip_trailing_nulls")
 load("//dart/pub/private:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub/private:pub_scc_facts.bzl", "scope_pubspec_path")
 load("//dart/pub/private:pubspec_data.bzl", "pubspec_deps", "pubspec_sdk_constraint")
@@ -245,16 +245,16 @@ def collect_plan_keys(scopes):
         scope_keys.append(keys)
     return struct(hosted = hosted, git = git, scope_keys = scope_keys)
 
-def _check_pins(hosted_miss, git_miss):
+def _check_pins(hosted_miss, git_miss, rule):
     """Fails before any request when a package to plan is not pinned."""
     for key in sorted(hosted_miss.keys()):
         e = hosted_miss[key]
-        err = pinned_source_error("hosted", e.name, e.pkg.version, sha256 = e.pkg.sha256, rule = "pub.from_lock")
+        err = pinned_source_error("hosted", e.name, e.pkg.version, sha256 = e.pkg.sha256, rule = rule)
         if err:
             fail(err)
     for key in sorted(git_miss.keys()):
         e = git_miss[key]
-        err = pinned_source_error("git", e.name, e.pkg.version, resolved_ref = e.pkg.resolved_ref, rule = "pub.from_lock")
+        err = pinned_source_error("git", e.name, e.pkg.version, resolved_ref = e.pkg.resolved_ref, rule = rule)
         if err:
             fail(err)
 
@@ -312,11 +312,12 @@ def _fetch_fallback_archives(ctx, hosted_fallback):
         e = hosted_fallback[key]
         url = fallback_archive_url(e.pkg.url, e.name, e.pkg.version)
         archive = "%s/hosted_%d.tar.gz" % (_SCRATCH, i)
-        token = pinned_download(ctx, url = url, output = archive, sha256 = e.pkg.sha256, block = False)
-        started.append(struct(key = key, name = e.name, archive = archive, out = "%s/hosted_%d" % (_SCRATCH, i), url = url, token = token))
+        token = pinned_download(ctx, url = url, output = archive, sha256 = e.pkg.sha256, block = False, allow_fail = True)
+        started.append(struct(key = key, name = e.name, version = e.pkg.version, listing = listing_url(e.pkg.url, e.name), archive = archive, out = "%s/hosted_%d" % (_SCRATCH, i), url = url, token = token))
     pending = []
     for s in started:
-        s.token.wait()
+        if not s.token.wait().success:
+            fail(archive_fetch_error(s.name, s.version, s.url, s.listing))
         raw = ctx.read(s.archive, watch = "no")
         trimmed = trim_gzip_trailing_nulls(raw)
         if trimmed != raw:
@@ -324,7 +325,7 @@ def _fetch_fallback_archives(ctx, hosted_fallback):
         pending.append(s)
     return pending
 
-def _fetch_git_checkouts(ctx, git_miss):
+def _fetch_git_checkouts(ctx, git_miss, rule):
     """Clones each git package at its locked commit. Returns the pending entries."""
     pending = []
     for i, key in enumerate(sorted(git_miss.keys())):
@@ -334,7 +335,7 @@ def _fetch_git_checkouts(ctx, git_miss):
         # Absolute paths: `--git-dir` and `-o` take absolute paths, so no
         # command depends on the working directory.
         bare_rel = "%s/git_%d_bare" % (_SCRATCH, i)
-        what = 'pub.from_lock "%s"' % e.name
+        what = '%s "%s"' % (rule, e.name)
         git_transport_fetch(ctx, pkg.url, bare_rel, pkg.resolved_ref, what)
         archive = str(ctx.path("%s/git_%d.tar" % (_SCRATCH, i)))
         spec = pkg.resolved_ref if pkg.path == "." else pkg.resolved_ref + ":" + pkg.path
@@ -342,7 +343,7 @@ def _fetch_git_checkouts(ctx, git_miss):
         pending.append(struct(key = key, name = e.name, archive = archive, out = "%s/git_%d" % (_SCRATCH, i), url = None))
     return pending
 
-def plan_from_archives(ctx, hosted_fallback, git_miss):
+def plan_from_archives(ctx, hosted_fallback, git_miss, rule = "pub.from_lock"):
     """Plans packages from their archives: the hosted fallback and git packages.
 
     Every archive is scanned in one scanner run before the first is
@@ -356,11 +357,12 @@ def plan_from_archives(ctx, hosted_fallback, git_miss):
         the server could not answer for.
       git_miss: Fact key to `struct(name, pkg)` for git packages no fact
         covers.
+      rule: The tag that declared the packages, for messages.
 
     Returns:
       Dict of fact key to plan (`archive_url` only for hosted packages).
     """
-    pending = _fetch_fallback_archives(ctx, hosted_fallback) + _fetch_git_checkouts(ctx, git_miss)
+    pending = _fetch_fallback_archives(ctx, hosted_fallback) + _fetch_git_checkouts(ctx, git_miss, rule)
     if not pending:
         return {}
 
@@ -421,7 +423,7 @@ def read_pub_plans(ctx, labels):
             plans[key] = value
     return plans
 
-def plan_pub_graph(ctx, scopes, recorded, shipped = {}):
+def plan_pub_graph(ctx, scopes, recorded, shipped = {}, rule = "pub.from_lock"):
     """Plans every scope's packages: facts first, then listings, then archives.
 
     Args:
@@ -434,6 +436,8 @@ def plan_pub_graph(ctx, scopes, recorded, shipped = {}):
       shipped: Dict of fact key to plan from checked-in plan files
         (`read_pub_plans`), looked up after the lockfile facts. A package
         found there is neither requested nor recorded.
+      rule: The tag that declared the packages (`flutter.pub`, say), named in
+        the messages about them.
 
     Returns:
       One dict per scope, in order, of package name to its plan
@@ -464,10 +468,10 @@ def plan_pub_graph(ctx, scopes, recorded, shipped = {}):
             git_miss[key] = keys.git[key]
         else:
             plans[key] = hit
-    _check_pins(hosted_miss, git_miss)
+    _check_pins(hosted_miss, git_miss, rule)
     listed = plan_from_listings(ctx, hosted_miss)
     plans.update(listed.plans)
-    plans.update(plan_from_archives(ctx, listed.fallback, git_miss))
+    plans.update(plan_from_archives(ctx, listed.fallback, git_miss, rule))
     for key in sorted(plans.keys()):
         if key not in from_shipped:
             recorded[key] = plans[key]

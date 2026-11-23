@@ -5,6 +5,7 @@ Thin public facade: the implementation lives in `//dart/pub/private:pub_lock_pac
 load(
     "//dart/pub/private:pub_lock_package.bzl",
     _PUB_LOCK_PACKAGE_ATTRS = "PUB_LOCK_PACKAGE_ATTRS",
+    _archive_fetch_error = "archive_fetch_error",
     _derive_language_version = "derive_language_version",
     _fetch_pub_lock_archive = "fetch_pub_lock_archive",
     _make_dart_library_build_content = "make_dart_library_build_content",
@@ -28,4 +29,7 @@ pub_lock_package = _pub_lock_package
 # the same attributes, and the same checked download and extraction.
 PUB_LOCK_PACKAGE_ATTRS = _PUB_LOCK_PACKAGE_ATTRS
 fetch_pub_lock_archive = _fetch_pub_lock_archive
+
+# The failure of an archive download, naming the package and the credential helper fix.
+archive_fetch_error = _archive_fetch_error
 pub_lock_git_package = _pub_lock_git_package

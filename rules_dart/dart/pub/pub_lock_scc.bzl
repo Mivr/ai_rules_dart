@@ -19,7 +19,7 @@ wrong one must not plan a bogus merge).
 
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
-load("//dart/pub:pub_lock_package.bzl", "trim_gzip_trailing_nulls")
+load("//dart/pub:pub_lock_package.bzl", "archive_fetch_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
@@ -53,12 +53,15 @@ def _fetch_hosted_member(ctx, member, name):
 
     # Same padded-tarball workaround as `pub_lock_package`: pub.dev serves
     # some archives padded with trailing NUL bytes past the gzip trailer.
-    pinned_download(
+    result = pinned_download(
         ctx,
         url = url,
         output = archive,
         sha256 = member["sha256"].strip(),
+        allow_fail = True,
     )
+    if not result.success:
+        fail(archive_fetch_error(name, member.get("version", ""), url))
     raw_archive = ctx.read(archive, watch = "no")
     trimmed_archive = trim_gzip_trailing_nulls(raw_archive)
     if trimmed_archive != raw_archive:

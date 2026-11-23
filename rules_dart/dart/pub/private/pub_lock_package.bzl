@@ -158,6 +158,40 @@ def _pub_lock_write_build(ctx, rule_name):
 
     ctx.file("BUILD.bazel", build_content)
 
+def _url_host(url):
+    """The host of a URL, without scheme, credentials or port."""
+    rest = url.partition("://")[2] or url
+    host = rest.partition("/")[0].rpartition("@")[2]
+    if host.startswith("["):
+        return host.partition("]")[0] + "]"
+    return host.partition(":")[0]
+
+def archive_fetch_error(name, version, url, listing = None):
+    """The failure for a hosted package whose archive could not be downloaded.
+
+    Bazel prints the cause of each failed download (the HTTP status, a
+    checksum that differs) on a WARNING line before this message.
+
+    Args:
+      name: The package name.
+      version: The locked version.
+      url: The archive URL.
+      listing: The listing URL that failed before it, when planning tried one.
+
+    Returns:
+      The message.
+    """
+    tried = "its archive %s" % url
+    if listing:
+        tried = "the server's listing %s or %s" % (listing, tried)
+    return (
+        "pub package \"%s\" %s: could not download %s (Bazel's WARNING above says why). " +
+        "If the server needs a token (`dart pub token add`), give it to Bazel with a credential helper for " +
+        "its host: `--credential_helper=%s=<helper>` in .bazelrc (see docs/pub.md, Private servers). " +
+        "If the server no longer has this version, or serves other bytes than the lock's sha256, run " +
+        "`dart pub get` and commit the lock."
+    ) % (name, version, tried, _url_host(url))
+
 def fetch_pub_lock_archive(ctx):
     """Downloads, checks and extracts one hosted package into the repository root.
 
@@ -189,12 +223,15 @@ def fetch_pub_lock_archive(ctx):
     #
     # Download the archive (verifying its sha256), strip any trailing NUL
     # padding past the gzip trailer, and unpack with `ctx.extract`.
-    pinned_download(
+    result = pinned_download(
         ctx,
         url = url,
         output = "_archive.tar.gz",
         sha256 = ctx.attr.sha256.strip(),
+        allow_fail = True,
     )
+    if not result.success:
+        fail(archive_fetch_error(ctx.attr.package_name, ctx.attr.version, url))
     raw_archive = ctx.read("_archive.tar.gz", watch = "no")
     trimmed_archive = trim_gzip_trailing_nulls(raw_archive)
     if trimmed_archive != raw_archive:
