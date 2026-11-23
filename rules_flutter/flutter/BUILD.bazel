@@ -313,7 +313,6 @@ bzl_library(
         "//flutter/private:flutter_pubspec",
         "//flutter/private:flutter_sdk_package",
         "//flutter/private:pub_lock_sdks",
-        "//flutter/private:rules_dart_floor",
         "//flutter/private:swiftpm_package",
         "//flutter/private:swiftpm_resolved",
         "//flutter/private:toolchain_selection",

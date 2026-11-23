@@ -53,10 +53,6 @@ the repo has CI. To install the hook, `uv tool install prek`, then
 `bazel run //tools/changelog` prints the unreleased notes so you can see how
 they read.
 
-## rules_dart floor
-
-`flutter/private/rules_dart_floor.bzl` pins the minimum `ai_rules_dart` version with the probe that detects anything older; moving the floor means updating the probe to a shape the new floor refuses and the previous release accepts.
-
 ## Tooling
 
 This is a Dart family of projects. Write repo tooling in Dart, as a

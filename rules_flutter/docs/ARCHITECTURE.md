@@ -351,9 +351,10 @@ runner that the host requires.
 
 ### The rule set's own dependency
 
-The Dart toolchain comes from `ai_rules_dart` 0.28.3 (`MODULE.bazel:129`).
-`flutter/private/rules_dart_floor.bzl` refuses an older resolved release, and
-the floor is `RULES_DART_FLOOR` in that file.
+The Dart toolchain comes from `ai_rules_dart`, the sibling `rules_dart`
+module in the same repository, which `MODULE.bazel` takes through a
+`local_path_override`. Both modules come from one commit, so there is no
+separate floor check.
 
 ### The Flutter SDK is a pinned, versioned download
 

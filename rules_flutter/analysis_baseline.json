@@ -524,9 +524,6 @@
     "unnecessary_library_directive": 1,
     "unnecessary_library_name": 1
   },
-  "flutter/tests/rules_dart_floor_guard_test.dart": {
-    "use_raw_strings": 1
-  },
   "tools/changelog/check_commit_messages.dart": {
     "async_return_with_no_await": 1,
     "parameter_assignments": 1,
