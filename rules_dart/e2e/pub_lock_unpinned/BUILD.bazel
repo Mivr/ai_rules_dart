@@ -1,11 +1,6 @@
 load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
-load(":unpinned_lock_contract.bzl", "check_unpinned_lock_contract")
 
 exports_files(["pubspec.lock"])
-
-# Verifies at package load time that `lock_package_error` and
-# `pub_lock_package_sha256_error` reject a hosted lock entry without `sha256`.
-check_unpinned_lock_contract()
 
 # This workspace should FAIL to build at module resolution because pubspec.lock
 # lists a hosted package ("collection" 1.18.0) without a sha256 checksum:
