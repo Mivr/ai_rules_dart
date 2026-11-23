@@ -1,171 +1,49 @@
 load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 
+# The bench harness: every flow of the plan's target table, for the rules and
+# for the stock tools, measured the same way, into ledger rows; the merge
+# gate's regression check; the table. It drives Bazel, the stock SDK and the
+# emulator in scratch workspaces, so run it with `bazel run`:
+#
+#   cd rules_dart/tools
+#   bazel run //perf:bench -- list
+#   bazel run //perf:bench -- run --flows=tag:cheap --scratch=DIR
+#   bazel run //perf:bench -- check --flows=tag:cheap --baseline=rows.jsonl --scratch=DIR
 dart_library(
     name = "perf",
     package_name = "perf",
     srcs = glob(["lib/**/*.dart"]),
     visibility = ["//visibility:public"],
-    deps = [
-        "@rules_dart//dart/runfiles",
-    ],
+    deps = ["@pub_deps//:yaml"],
 )
 
 dart_binary(
-    name = "generate",
-    main = "bin/generate.dart",
+    name = "bench",
+    main = "bin/bench.dart",
     visibility = ["//visibility:public"],
-    deps = [
-        ":perf",
-    ],
+    deps = [":perf"],
 )
 
-dart_binary(
-    name = "runner",
-    main = "bin/runner.dart",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_binary(
-    name = "scale",
-    main = "bin/scale.dart",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_binary(
-    name = "summarize",
-    main = "bin/summarize.dart",
-    visibility = ["//visibility:public"],
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "generator_test",
-    size = "small",
-    main = "test/generator_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "scale_test",
-    size = "small",
-    args = [
-        "$(rlocationpath :scale_ceilings.json)",
-    ],
-    data = [
-        "scale_ceilings.json",
-    ],
-    main = "test/scale_test.dart",
-    deps = [
-        ":perf",
-        "@rules_dart//dart/runfiles",
-    ],
-)
-
-dart_test(
-    name = "generate_cli_test",
-    size = "small",
-    main = "test/generate_cli_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "server_evidence_test",
-    size = "small",
-    main = "test/server_evidence_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "proc_test",
-    size = "small",
-    main = "test/proc_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "peak_rss_test",
-    size = "small",
-    main = "test/peak_rss_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "spawn_log_test",
-    size = "small",
-    main = "test/spawn_log_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "replay_test",
-    size = "small",
-    main = "test/replay_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "result_writer_test",
-    size = "small",
-    main = "test/result_writer_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "ab_summary_test",
-    size = "small",
-    main = "test/ab_summary_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "cli_exit_test",
-    size = "small",
-    main = "test/cli_exit_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "floor_test",
-    size = "small",
-    main = "test/floor_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
-
-dart_test(
-    name = "floor_layout_test",
-    size = "small",
-    main = "test/floor_layout_test.dart",
-    deps = [
-        ":perf",
-    ],
-)
+[
+    dart_test(
+        name = name + "_test",
+        size = "small",
+        main = "test/" + name + "_test.dart",
+        deps = [
+            ":perf",
+            "@pub_deps//:test",
+        ],
+    )
+    for name in [
+        "bazel",
+        "check",
+        "daemon",
+        "flow",
+        "generate",
+        "host",
+        "ledger",
+        "pub",
+        "stats",
+        "table",
+    ]
+]

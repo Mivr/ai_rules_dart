@@ -1,4 +1,7 @@
 name: Dart Perf Linux
+# Runs flows of the bench harness (rules_dart/tools/perf) against a ref and
+# uploads the ledger rows. Stock-tool flows need the stock SDKs; this job runs
+# only the rules' side.
 on:
   workflow_dispatch:
     inputs:
@@ -6,30 +9,16 @@ on:
         description: "Git ref under measurement"
         required: true
         type: string
-      target_loc:
-        description: "Target lines of Dart code"
+      flows:
+        description: "Flow selection (see `bench list`), e.g. tag:cheap or dart.,flutter.,-tag:stock"
         required: false
-        default: "500000"
+        default: "tag:cheap"
         type: string
-      repeats:
-        description: "Number of measured repeats"
+      runs:
+        description: "Runs per flow (at least 5 for a baseline)"
         required: false
-        default: "3"
+        default: "5"
         type: string
-      seed:
-        description: "Deterministic random seed"
-        required: false
-        default: "1"
-        type: string
-      link_modules:
-        description: "dart_binary link_modules arm: off, on, or ab (paired off/on)"
-        required: false
-        default: "off"
-        type: choice
-        options:
-          - "off"
-          - "on"
-          - ab
 permissions:
   contents: read
 jobs:
@@ -37,20 +26,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
-      - name: Resolve link_modules arms
-        env:
-          LINK_MODULES: ${{ inputs.link_modules }}
-        run: |
-          case "$LINK_MODULES" in
-            off) arms="off" ;;
-            on) arms="on" ;;
-            ab) arms="off on" ;;
-            *)
-              echo "link_modules must be off, on or ab, got '$LINK_MODULES'" >&2
-              exit 1
-              ;;
-          esac
-          echo "ARMS=$arms" >> "$GITHUB_ENV"
       - name: Checkout bench tooling
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -76,142 +51,29 @@ jobs:
           ref: ${{ inputs.head_ref }}
           path: rules-head
           fetch-depth: 0
-      - name: Generate pristine monorepo
+      - name: Run the bench
         env:
-          TARGET_LOC: ${{ inputs.target_loc }}
-          SEED: ${{ inputs.seed }}
+          FLOWS: ${{ inputs.flows }}
+          RUNS: ${{ inputs.runs }}
         run: |
-          tooling_base="${RUNNER_TEMP}/tooling-outbase"
-          for arm in $ARMS; do
-            ws="${RUNNER_TEMP}/pristine-ws-$arm"
-            mkdir -p "$ws"
-            (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:generate -- \
-              --target-loc="$TARGET_LOC" \
-              --seed="$SEED" \
-              --link-modules="$arm" \
-              --rules-dart="$GITHUB_WORKSPACE/rules-head/rules_dart" \
-              --out="$ws")
-          done
-      - name: Commit lockfile via unmeasured analysis-only pass
-        run: |
-          cleanup_scratch() {
-            (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" shutdown) || echo "bazel shutdown failed" >&2
-            chmod -R u+w "$scratch_base" 2>/dev/null || echo "scratch cleanup chmod failed" >&2
-            rm -rf "$scratch_base"
-          }
-          trap cleanup_scratch EXIT
-          for arm in $ARMS; do
-            ws="${RUNNER_TEMP}/pristine-ws-$arm"
-            scratch_base="${RUNNER_TEMP}/scratch-outbase-$arm"
-            leaf_tests=$(cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" query 'kind(dart_test, //...)')
-            test -n "$leaf_tests"
-            # shellcheck disable=SC2086
-            (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" build --nobuild --lockfile_mode=update //app:app $leaf_tests)
-            cleanup_scratch
-            test -f "$ws/MODULE.bazel.lock"
-          done
-          trap - EXIT
-      - name: Run speed-of-light runner repeats
-        env:
-          REPEATS: ${{ inputs.repeats }}
-        run: |
-          tooling_base="${RUNNER_TEMP}/tooling-outbase"
-          case "$REPEATS" in
-            '' | *[!0-9]* | 0*)
-              echo "repeats must be a positive integer >= 1, got '$REPEATS'" >&2
-              exit 1
-              ;;
-          esac
-          failed=0
-          read -ra arms <<< "$ARMS"
-          for i in $(seq 1 "$REPEATS"); do
-            # Odd repeats run the arms in order, even repeats in reverse, so
-            # neither arm always runs first on the runner.
-            order=("${arms[@]}")
-            if [ $((i % 2)) -eq 0 ]; then
-              order=()
-              for ((k = ${#arms[@]} - 1; k >= 0; k--)); do order+=("${arms[k]}"); done
-            fi
-            for arm in "${order[@]}"; do
-              mkdir -p "${RUNNER_TEMP}/bench-results-$arm"
-              (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:runner -- \
-                --workspace="${RUNNER_TEMP}/pristine-ws-$arm" \
-                --repeat="$i" \
-                --repeats="$REPEATS" \
-                --out="${RUNNER_TEMP}/bench-results-$arm/repeat-$i.json") || failed=1
-            done
-          done
-          exit "$failed"
-      - name: Summarize speed-of-light results
-        if: ${{ !cancelled() }}
-        env:
-          HEAD_REF: ${{ inputs.head_ref }}
-          TARGET_LOC: ${{ inputs.target_loc }}
-          SEED: ${{ inputs.seed }}
-          REPEATS: ${{ inputs.repeats }}
-        run: |
-          tooling_base="${RUNNER_TEMP}/tooling-outbase"
-          case "$REPEATS" in
-            '' | *[!0-9]* | 0*)
-              echo "repeats must be a positive integer >= 1, got '$REPEATS'" >&2
-              exit 1
-              ;;
-          esac
-          if ! sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD 2>/dev/null)"; then
-            sha="$HEAD_REF"
-          fi
-          # One arm keeps dart-sol.json; an A/B run writes one file per arm and
-          # a paired report.
-          ab_args=()
-          if [ "$ARMS" = "off on" ]; then
-            results="${RUNNER_TEMP}/bench-results-off"
-            out="$GITHUB_WORKSPACE/dart-sol-off.json"
-            ab_args=(--on-results-dir="${RUNNER_TEMP}/bench-results-on" --on-out="$GITHUB_WORKSPACE/dart-sol-on.json" --ab-report="$GITHUB_WORKSPACE/dart-sol-ab.md")
-          else
-            results="${RUNNER_TEMP}/bench-results-$ARMS"
-            out="$GITHUB_WORKSPACE/dart-sol.json"
-          fi
-          mkdir -p "$results"
-          summary_rc=0
-          (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:summarize -- \
-            --results-dir="$results" \
-            --sha="$sha" \
-            --target-loc="$TARGET_LOC" \
-            --seed="$SEED" \
-            --repeats="$REPEATS" \
-            --out="$out" \
-            "${ab_args[@]}") || summary_rc=$?
-          for f in dart-sol-ab.md dart-sol.json dart-sol-off.json dart-sol-on.json; do
-            if [ -f "$GITHUB_WORKSPACE/$f" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-              cat "$GITHUB_WORKSPACE/$f" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          done
-          exit "$summary_rc"
+          mkdir -p "$GITHUB_WORKSPACE/bench-out"
+          (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/tooling-outbase" run //perf:bench -- run \
+            --flows="$FLOWS,-tag:stock,-tag:unavailable" \
+            --runs="$RUNS" \
+            --repo="$GITHUB_WORKSPACE/rules-head" \
+            --scratch="$RUNNER_TEMP/bench" \
+            --out="$GITHUB_WORKSPACE/bench-out/rows.jsonl")
       - name: Shut down tooling Bazel server
         if: ${{ always() }}
         run: |
-          tooling_base="${RUNNER_TEMP}/tooling-outbase"
           if [ -d tools-src/rules_dart/tools ]; then
-            (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || echo "bazel shutdown failed" >&2
+            (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/tooling-outbase" shutdown) || echo "bazel shutdown failed" >&2
           fi
-      - name: Upload dart-sol artifact
-        if: ${{ !cancelled() && inputs.head_ref != '' && inputs.link_modules != 'ab' }}
+      - name: Upload the rows
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: dart-sol
-          path: dart-sol.json
-          retention-days: 3
-      - name: Upload dart-sol-off artifact
-        if: ${{ !cancelled() && inputs.head_ref != '' && inputs.link_modules == 'ab' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: dart-sol-off
-          path: dart-sol-off.json
-          retention-days: 3
-      - name: Upload dart-sol-on artifact
-        if: ${{ !cancelled() && inputs.head_ref != '' && inputs.link_modules == 'ab' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: dart-sol-on
-          path: dart-sol-on.json
-          retention-days: 3
+          name: bench-rows
+          path: bench-out
+          if-no-files-found: error
+          retention-days: 7
