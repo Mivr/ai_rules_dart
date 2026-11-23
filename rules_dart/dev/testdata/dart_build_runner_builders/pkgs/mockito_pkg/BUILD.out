@@ -1,0 +1,29 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library", "dart_test")
+
+dart_library(
+    name = "mockito_pkg",
+    package_name = "mockito_pkg",
+    srcs = ["lib/src/repository.dart"],
+    visibility = ["//visibility:public"],
+)
+
+dart_test(
+    name = "repository_test",
+    srcs = [":test/repository_test.mocks.dart"],
+    main = "test/repository_test.dart",
+    deps = [
+        ":mockito_pkg",
+        "@pub_deps//:mockito",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_build_runner(
+    name = "gen",
+    outs = ["test/repository_test.mocks.dart"],
+    runner = "@pub_deps//build_runner",
+    deps = [
+        "@pub_deps//:mockito",
+        "@pub_deps//:test",
+    ],
+)

@@ -392,11 +392,23 @@ Gazelle will scan `lib/`, `bin/`, and `test/` directories, emitting
 resolves `import` statements to determine `deps`, including support for
 `show` and `deferred` import modifiers.
 
-Gazelle treats files with code-generation annotations as ordinary sources and
-writes no code-generation rules: add `dart_build_runner` by hand (see
-[Code generation](#code-generation)). It does not leave generated files such as
-`*.g.dart` out of `srcs`, so if you check them in, exclude them with
-`# gazelle:exclude`.
+When the lock has `build_runner` builders, Gazelle also writes one
+`dart_build_runner` per Dart package, with the generated files its sources
+name (`part 'user.g.dart';`, `import 'foo_test.mocks.dart';`) as outputs and in
+the `srcs` of the rules that use them. It then writes all of the package's
+rules in the BUILD file next to `pubspec.yaml`. It reads the builders from the
+pub hub, so give the hub's facts to the `gazelle` target:
+
+```starlark
+gazelle(
+    name = "gazelle",
+    data = ["@pub_deps//build_runner:builders.json"],
+    gazelle = "gazelle_bin",
+)
+```
+
+See [Gazelle in `docs/build_runner.md`](./docs/build_runner.md#gazelle) for
+what it writes and where its guess of the generated files can be wrong.
 
 #### Directives
 
@@ -412,6 +424,11 @@ Add directives as comments in a `BUILD.bazel` file to control generation:
   `package = ":pkg"` on the rules it generates instead of an inline
   `package_name`, and warns when the declaration's name differs from the one the
   pubspec or this directive supplies.
+
+- **`# gazelle:dart_build_runner pub_deps`** — the pub hub whose builders
+  Gazelle reads (`@pub_deps//build_runner:builders.json`); the default is the
+  `dart_pub_deps_repo` hub, else `pub_deps`. `off` writes no code generation
+  for the directory and below.
 
 - **`# gazelle:resolve dart foo //third_party:foo`** — overrides
   automatic dependency resolution for a Dart package (the `foo` of
@@ -464,7 +481,8 @@ dart_library(
 ```
 
 A generator of your own runs as a `dart_binary` under skylib's `run_binary`
-(see `e2e/codegen`). Gazelle does not write `dart_build_runner` yet.
+(see `e2e/codegen`). Gazelle writes `dart_build_runner` for you (see
+[BUILD file generation with Gazelle](#build-file-generation-with-gazelle)).
 
 See [`docs/build_runner.md`](./docs/build_runner.md) for attributes, Flutter,
 `--release`/`--define`/`--config`, error messages, and migration from the
@@ -841,7 +859,7 @@ The [`e2e/`](e2e/) directory contains complete working examples:
 | [`web_app`](e2e/web_app/)                             | JavaScript and WebAssembly compilation with library deps                                  |
 | [`pub_deps`](e2e/pub_deps/)                           | Single pub.dev package via `pub.package()`                                                |
 | [`pub_lock`](e2e/pub_lock/)                           | Multiple packages from `pubspec.lock` via `pub.from_lock()`                               |
-| [`gazelle`](e2e/gazelle/)                             | Automatic BUILD file generation with Gazelle                                              |
+| [`gazelle`](e2e/gazelle/)                             | Automatic BUILD file generation with Gazelle, code generation of a stock package included |
 | [`cross_compile`](e2e/cross_compile/)                 | Cross-compilation to other platforms via `platform_data` transition                       |
 | [`dart_test_pkg`](e2e/dart_test_pkg/)                 | `dart_test` with pub dependencies via `pub.from_lock()`                                   |
 | [`pub_lock_dedup`](e2e/pub_lock_dedup/)               | Cross-lock-file package deduplication                                                     |

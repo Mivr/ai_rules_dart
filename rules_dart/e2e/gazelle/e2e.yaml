@@ -1,5 +1,11 @@
 schema: mivr-e2e-spec/1
 commands:
+  # app/BUILD.bazel is what Gazelle writes for the stock package app/,
+  # code generation included: a run changes nothing.
+  - name: gazelle_up_to_date
+    run: bazel run //:gazelle -- -mode=diff app
+  # Gazelle's own tests, app/'s tests and its generated files against stock
+  # `dart run build_runner build` (reference/app).
   - name: test
     run: bazel test --test_output=errors //...
-    min_tests_executed: 1
+    min_tests_executed: 8

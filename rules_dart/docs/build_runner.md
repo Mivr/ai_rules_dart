@@ -76,7 +76,8 @@ dart_library(
 ```
 
 List every generated file you need in `outs`, relative to the package root. Add
-each one to the `srcs` of the rule that uses it, as `":" + out`. A generated
+each one to the `srcs` of the rule that uses it, as `":" + out`. Gazelle can
+write all of this for you: see [Gazelle](#gazelle). A generated
 test file (`test/foo_test.mocks.dart`) belongs to the test that imports it, not
 to the library.
 
@@ -197,6 +198,157 @@ run_binary(
 )
 ```
 
+## Gazelle
+
+`bazel run //:gazelle` writes the `dart_build_runner` of each Dart package
+whose lock has builders, and adds the generated files to the rules that use
+them. A stock project that runs `dart run build_runner build` needs no hand
+edits to its BUILD files.
+
+### Setup
+
+Gazelle reads the builders of the lock from the pub hub:
+`@<hub>//build_runner:builders.json`, which the hub writes from the
+`build.yaml` of the lock's builder packages with `package:build_config`.
+Gazelle does not read any `build.yaml` itself. Give the file to the `gazelle`
+target:
+
+```starlark
+# gazelle:dart_pub_deps_repo pub_deps
+
+gazelle(
+    name = "gazelle",
+    data = ["@pub_deps//build_runner:builders.json"],
+    gazelle = "gazelle_bin",
+)
+```
+
+The hub is the one `# gazelle:dart_pub_deps_repo` names, or `pub_deps`. Two
+directives change that, for the directory and below:
+
+| Directive                         | Meaning                                                                           |
+| --------------------------------- | --------------------------------------------------------------------------------- |
+| `# gazelle:dart_build_runner hub` | Read the builders of the pub hub `hub`.                                           |
+| `# gazelle:dart_build_runner off` | Write no code generation: per-directory rules, as for a lock without builders.    |
+
+The lock must be in a Bazel package (a `BUILD.bazel` next to `pubspec.lock`,
+empty is enough) for `pub.from_lock(lock = ...)` to name it.
+
+### What Gazelle writes
+
+For a Dart package (a directory with `pubspec.yaml`) whose lock has a builder
+that writes to the source tree (`build_to: source`), Gazelle writes every rule
+of the package's `lib/`, `bin/` and `test/` in the BUILD file next to
+`pubspec.yaml`, because Bazel declares a generated file only in the package
+that builds it:
+
+```starlark
+dart_library(
+    name = "app",
+    package_name = "app",
+    srcs = [
+        "lib/src/models/user.dart",
+        ":lib/src/models/user.g.dart",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:json_annotation"],
+)
+
+dart_test(
+    name = "user_service_test",
+    srcs = [":test/user_service_test.mocks.dart"],
+    main = "test/user_service_test.dart",
+    deps = [
+        ":app",
+        "@pub_deps//:mockito",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_build_runner(
+    name = "gen",
+    outs = [
+        "lib/src/models/user.g.dart",
+        "test/user_service_test.mocks.dart",
+    ],
+    runner = "@pub_deps//build_runner",
+    deps = [
+        "@pub_deps//:json_annotation",
+        "@pub_deps//:mockito",
+        "@pub_deps//:test",
+    ],
+)
+```
+
+- `dart_library`: every Dart file under `lib/`, and the generated ones as
+  `":" + path`.
+- `dart_test`: one per `test/**_test.dart`, named after its path under
+  `test/`; `srcs` holds the `test/` helpers it imports and the generated files
+  they name.
+- `dart_binary`: one per file directly in `bin/` (`<name>_bin` when the
+  library has its name).
+- `dart_build_runner`: the generated files as `outs`, and as `deps` what the
+  package's files import. Gazelle keeps the name of an existing one, and
+  deletes it when the package names no generated file any more.
+
+A package whose lock has no such builder, or with `off`, keeps the
+per-directory rules.
+
+### Which files are generated
+
+Gazelle cannot run the builders. A file is an output when both hold:
+
+1. a Dart file of the package names it, by `part`, `import` or `export`, as a
+   relative URI or `package:<self>/...`;
+2. a builder of the lock with `build_to: source` writes it, by its
+   `build_extensions`, for a file of the package (`lib/src/user.dart` gives
+   `lib/src/user.g.dart` for `.dart: [.g.dart]`; `^`, `{{}}`, `$lib$` and
+   `$package$` work as in `build_runner`).
+
+For the builders of `json_serializable`, `freezed`, `built_value`, `drift`,
+`retrofit`, `riverpod` and `go_router` (`part` directives), `mockito` and
+`injectable` (imported `.mocks.dart`, `.config.dart`, exported `.module.dart`)
+this gives the files stock `build_runner` writes. `auto_apply` and a
+builder's default `generate_for` do not narrow the guess: the package's own
+`build.yaml`, which Gazelle does not read, can widen both, and a file a source
+names must come from somewhere.
+
+Where the guess can be wrong:
+
+- A named file no builder writes (no annotation, a builder switched off or its
+  `generate_for` narrowed in `build.yaml`, a hand-written part named like a
+  generated one) is declared anyway. The build fails, naming the file:
+  `` No builder wrote `lib/src/plain.g.dart` of package app. `` Remove the
+  `part`, add the annotation, or switch Gazelle off for the package.
+- A builder option that changes `build_extensions` (mockito's
+  `build_extensions`) is not seen: Gazelle uses the extensions the builder
+  package declares.
+- A generated file no Dart file of the package names is not declared: a
+  non-Dart output, or one only another package imports. The build does not
+  need it.
+- Imports that only a generated file makes (a type a mock refers to from a
+  package the test does not import) are not in `deps` until the file is
+  checked in; the strict dependency check names the missing package.
+- A first-party dependency's `pubspec.yaml` and `build.yaml` are not passed
+  as `data`.
+- A package that imports Flutter needs `sdk_summary` (see [Flutter](#flutter)),
+  which Gazelle does not write; set it on the `dart_build_runner` by hand and
+  Gazelle keeps it.
+- A directory under `lib/`, `bin/` or `test/` with a BUILD file of its own is
+  a separate Bazel package: Gazelle keeps its per-directory rules and says on
+  stderr which generated file it cannot declare there.
+
+Another rule of the BUILD file that declares a named file in `out` or `outs`
+(a `run_binary` of your own) writes it: Gazelle adds it to `srcs` and leaves it
+out of the `dart_build_runner`.
+
+### Checked-in generated files
+
+A generated file that is also on disk (projects using `build_to: source` often
+commit them) is declared as an output and listed once, as `":" + path`. The
+build uses what the builders write, never the checked-in copy, which may be
+stale; what the copy imports still counts for `deps`.
+
 ## Errors
 
 A lock without `build_runner` fails every target that uses its runner:
@@ -242,10 +394,8 @@ Other checks:
 
 ## Limits
 
-- Gazelle does not write `dart_build_runner` yet: write it by hand. Gazelle
-  treats annotated files as ordinary sources and no longer leaves `*.g.dart`
-  and other generated files out of `srcs`. If generated files are checked in,
-  exclude them (`# gazelle:exclude`) or stop checking them in.
+- Gazelle predicts the generated files from the sources; see
+  [Gazelle](#gazelle) for where the prediction can be wrong.
 - Verified with `build_runner` 2.16.1 (rules_dart's e2e) and 2.17.1
   (rules_flutter's e2e). 2.8 to 2.15 are accepted but untested.
 - Post-process builders that write new files are untested.
@@ -344,6 +494,7 @@ file:
 | `# gazelle:dart_builder_config <Annotation> <json>`       | `options:` for the builder in `build.yaml`                                   |
 | `# gazelle:dart_language_version <major>.<minor>`         | Nothing: it only set `language_version` on the codegen rules Gazelle emitted |
 
-Gazelle no longer emits codegen rules and no longer filters generated files
-(`baseline_generated_extensions.txt` is gone). Annotated files are ordinary
-`srcs`. Gazelle does not write `dart_build_runner` yet; that is planned.
+Gazelle no longer emits per-builder codegen rules and no longer filters
+generated files by a list of extensions (`baseline_generated_extensions.txt` is
+gone). It writes one `dart_build_runner` per Dart package instead; see
+[Gazelle](#gazelle).

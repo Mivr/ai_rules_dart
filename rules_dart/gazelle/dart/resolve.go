@@ -51,7 +51,7 @@ func (d *dartLang) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.Rem
 	var deps []string
 	for _, pkg := range is.SortedPackages() {
 		// Skip self-references (importing own package)
-		if pkg == r.Name() {
+		if pkg == r.Name() || pkg == is.self {
 			continue
 		}
 

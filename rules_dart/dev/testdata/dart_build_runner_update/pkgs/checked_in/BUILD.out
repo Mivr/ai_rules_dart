@@ -1,0 +1,42 @@
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library", "dart_test")
+
+run_binary(
+    name = "message_part",
+    srcs = ["lib/message.dart"],
+    outs = ["lib/message.g.dart"],
+    tool = "//tools:part_gen",
+)
+
+dart_library(
+    name = "checked_in",
+    package_name = "checked_in",
+    srcs = [
+        "lib/message.dart",
+        "lib/user.dart",
+        ":lib/message.g.dart",
+        ":lib/user.g.dart",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:json_annotation"],
+)
+
+dart_test(
+    name = "user_test",
+    srcs = ["test/helpers/fixtures.dart"],
+    main = "test/user_test.dart",
+    deps = [
+        ":checked_in",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_build_runner(
+    name = "gen",
+    outs = ["lib/user.g.dart"],
+    runner = "@pub_deps//build_runner",
+    deps = [
+        "@pub_deps//:json_annotation",
+        "@pub_deps//:test",
+    ],
+)

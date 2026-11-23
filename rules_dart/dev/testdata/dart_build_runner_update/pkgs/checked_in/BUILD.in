@@ -1,0 +1,8 @@
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+
+run_binary(
+    name = "message_part",
+    srcs = ["lib/message.dart"],
+    outs = ["lib/message.g.dart"],
+    tool = "//tools:part_gen",
+)

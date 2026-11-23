@@ -1,0 +1,1 @@
+part 'message.g.dart';

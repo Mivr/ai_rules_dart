@@ -232,6 +232,66 @@ class User {
   }
   w.dispose();
 
+  // ---- code generation: one dart_build_runner in the package's BUILD ----
+  // The builder facts a pub hub writes (`@<hub>//build_runner:builders.json`),
+  // cut to source_gen's combining builder and mockito.
+  w = Workspace();
+  w.markRoot(build: '# gazelle:dart_pub_deps_repo pub_deps\n');
+  w.write('facts.json', '''
+{"version": 1, "builders": [
+  {"key": "mockito:mockBuilder", "package": "mockito", "auto_apply": "dependents",
+   "build_to": "source", "build_extensions": {".dart": [".mocks.dart"]},
+   "applies_builders": [], "required_inputs": [], "runs_before": [],
+   "is_optional": false, "generate_for": {"include": ["test/**"], "exclude": null}},
+  {"key": "source_gen:combining_builder", "package": "source_gen", "auto_apply": "none",
+   "build_to": "source", "build_extensions": {".dart": [".g.dart"]},
+   "applies_builders": [], "required_inputs": [".g.part"], "runs_before": [],
+   "is_optional": false, "generate_for": null}
+]}
+''');
+  w.write('pkg/pubspec.yaml', 'name: pkg\n');
+  w.write('pkg/lib/src/user.dart', '''
+import 'package:json_annotation/json_annotation.dart';
+part 'user.g.dart';
+''');
+  w.write('pkg/test/user_test.dart', '''
+import 'package:pkg/src/user.dart';
+import 'user_test.mocks.dart';
+''');
+  final facts = ['-dart_build_runner_facts=facts.json'];
+  w.gazelle(extra: facts);
+  for (final dir in ['pkg/lib', 'pkg/lib/src', 'pkg/test']) {
+    if (w.exists('$dir/BUILD.bazel')) {
+      fail('$dir/BUILD.bazel written: the package\'s rules belong next to its pubspec');
+    } else {
+      stdout.writeln('PASS: no $dir/BUILD.bazel');
+    }
+  }
+  w.check('pkg/BUILD.bazel', 'dart_build_runner(', 'dart_build_runner');
+  w.check('pkg/BUILD.bazel', '":lib/src/user.g.dart"', 'generated part in srcs');
+  w.check(
+    'pkg/BUILD.bazel',
+    '":test/user_test.mocks.dart"',
+    'generated mocks in the test',
+  );
+  final firstPkg = w.read('pkg/BUILD.bazel');
+  w.gazelle(extra: facts);
+  if (w.read('pkg/BUILD.bazel') == firstPkg) {
+    stdout.writeln('PASS: second code generation run is a no-op');
+  } else {
+    fail('second run changed pkg/BUILD.bazel');
+  }
+  // Switched off: the per-directory rules, and no dart_build_runner.
+  w.write('pkg/BUILD.bazel', '# gazelle:dart_build_runner off\n');
+  w.gazelle(extra: facts);
+  w.check('pkg/lib/src/BUILD.bazel', 'dart_library(', 'per-directory library');
+  w.checkAbsent(
+    'pkg/BUILD.bazel',
+    'dart_build_runner(',
+    'dart_build_runner written with generation off',
+  );
+  w.dispose();
+
   // ---- analysis options: per-directory targets and the root config ------
   w = Workspace();
   w.markRoot();

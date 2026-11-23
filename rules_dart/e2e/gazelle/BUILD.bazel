@@ -1,6 +1,11 @@
 load("@gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@rules_dart//dart:defs.bzl", "dart_test")
 
+# app/ is a stock Dart package: `bazel run //:gazelle -- app` writes its
+# BUILD file, code generation included (e2e.yaml checks that it is up to
+# date).
+# gazelle:dart_pub_deps_repo pub_deps
+
 gazelle_binary(
     name = "gazelle_bin",
     languages = [
@@ -10,6 +15,9 @@ gazelle_binary(
 
 gazelle(
     name = "gazelle",
+    # The builders of app/'s lock, which Gazelle reads to write its
+    # dart_build_runner.
+    data = ["@pub_deps//build_runner:builders.json"],
     gazelle = "gazelle_bin",
 )
 

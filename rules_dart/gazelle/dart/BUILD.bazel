@@ -4,6 +4,8 @@ go_library(
     name = "dart",
     srcs = [
         "analysis_options.go",
+        "build_extensions.go",
+        "build_runner.go",
         "generate.go",
         "kinds.go",
         "language.go",
@@ -19,6 +21,8 @@ go_library(
         "@bazel_gazelle//repo:go_default_library",
         "@bazel_gazelle//resolve:go_default_library",
         "@bazel_gazelle//rule:go_default_library",
+        "@bazel_gazelle//walk:go_default_library",
+        "@io_bazel_rules_go//go/runfiles",
     ],
 )
 
@@ -27,6 +31,7 @@ go_test(
     size = "small",
     srcs = [
         "analysis_options_test.go",
+        "build_runner_test.go",
         "parser_test.go",
     ],
     embed = [":dart"],

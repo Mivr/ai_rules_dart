@@ -1,0 +1,1 @@
+gazelle: dart: pkgs/split: lib/user.g.dart is generated, but lib has a BUILD file, so the Dart package's dart_build_runner in pkgs/split cannot declare it. Delete that BUILD file to let Gazelle write the package's rules in pkgs/split.

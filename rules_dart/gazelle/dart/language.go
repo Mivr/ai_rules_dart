@@ -7,6 +7,7 @@ package dart
 
 import (
 	"flag"
+	"strings"
 
 	"github.com/bazelbuild/bazel-gazelle/config"
 	"github.com/bazelbuild/bazel-gazelle/language"
@@ -18,6 +19,11 @@ const dartName = "dart"
 // dartLang implements language.Language for Dart.
 type dartLang struct {
 	analysis analysisState
+	// factsFlag is -dart_build_runner_facts: a builders.json to read instead
+	// of the hub's in the runfiles.
+	factsFlag string
+	// facts caches each hub's builder facts for the run.
+	facts map[string]*factsResult
 }
 
 // NewLanguage creates a new Dart language extension for Gazelle.
@@ -27,13 +33,18 @@ func NewLanguage() language.Language {
 
 func (*dartLang) Name() string { return dartName }
 
-func (*dartLang) RegisterFlags(fs *flag.FlagSet, cmd string, c *config.Config) {}
-func (*dartLang) CheckFlags(fs *flag.FlagSet, c *config.Config) error          { return nil }
+func (d *dartLang) RegisterFlags(fs *flag.FlagSet, cmd string, c *config.Config) {
+	fs.StringVar(&d.factsFlag, "dart_build_runner_facts", "",
+		"builder facts (a pub hub's build_runner/builders.json) to read instead of the hub's in the runfiles; "+
+			"relative to the repository root")
+}
+func (*dartLang) CheckFlags(fs *flag.FlagSet, c *config.Config) error { return nil }
 
 func (*dartLang) KnownDirectives() []string {
 	return []string{
 		"dart_package_name",
 		"dart_pub_deps_repo",
+		buildRunnerDirective,
 	}
 }
 
@@ -55,6 +66,12 @@ func (*dartLang) Configure(c *config.Config, rel string, f *rule.File) {
 				c.Exts = make(map[string]interface{})
 			}
 			c.Exts["dart_pub_deps_repo"] = d.Value
+		case buildRunnerDirective:
+			// The hub whose builders apply here, or "off".
+			if c.Exts == nil {
+				c.Exts = make(map[string]interface{})
+			}
+			c.Exts[buildRunnerDirective] = strings.TrimSpace(d.Value)
 		}
 	}
 }
@@ -67,7 +84,7 @@ func (*dartLang) Loads() []rule.LoadInfo {
 	return []rule.LoadInfo{
 		{
 			Name:    "@rules_dart//dart:defs.bzl",
-			Symbols: []string{"dart_library", "dart_binary", "dart_test", "dart_analysis_options", "dart_analysis_config"},
+			Symbols: []string{"dart_library", "dart_binary", "dart_test", "dart_build_runner", "dart_analysis_options", "dart_analysis_config"},
 		},
 	}
 }
@@ -76,7 +93,7 @@ func (*dartLang) ApparentLoads(moduleToApparentName func(string) string) []rule.
 	return []rule.LoadInfo{
 		{
 			Name:    "@rules_dart//dart:defs.bzl",
-			Symbols: []string{"dart_library", "dart_binary", "dart_test", "dart_analysis_options", "dart_analysis_config"},
+			Symbols: []string{"dart_library", "dart_binary", "dart_test", "dart_build_runner", "dart_analysis_options", "dart_analysis_config"},
 		},
 	}
 }

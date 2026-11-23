@@ -33,6 +33,18 @@ var dartKinds = map[string]rule.KindInfo{
 		},
 		ResolveAttrs: map[string]bool{"deps": true},
 	},
+	// One per Dart package whose lock has builders (build_runner.go), in the
+	// package's own BUILD file. It matches whatever its name.
+	"dart_build_runner": {
+		MatchAny:      true,
+		NonEmptyAttrs: map[string]bool{"outs": true},
+		MergeableAttrs: map[string]bool{
+			"outs":   true,
+			"deps":   true,
+			"runner": true,
+		},
+		ResolveAttrs: map[string]bool{"deps": true},
+	},
 	// One per analysis_options.yaml, and the root's list of them. The config
 	// matches by name alone: there is one per repository.
 	"dart_analysis_options": {

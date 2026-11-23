@@ -19,6 +19,10 @@ type DartImport struct {
 
 var importRe = regexp.MustCompile(`^\s*(?:import|export)\s+['"](.+?)['"]`)
 
+// partRe matches a `part '<uri>';` directive. `part of` is not matched: its
+// URI does not follow `part` directly.
+var partRe = regexp.MustCompile(`^\s*part\s+['"](.+?)['"]`)
+
 // condLineRe detects continuation lines: indented "if (" clauses.
 var condLineRe = regexp.MustCompile(`^\s+if\s*\(`)
 
@@ -48,15 +52,27 @@ func classifyURI(uri string) DartImport {
 // ParseDartFile extracts import/export URIs from a Dart source file,
 // including conditional import/export branch URIs.
 func ParseDartFile(path string) ([]DartImport, error) {
+	imports, _, err := parseDartSource(path)
+	return imports, err
+}
+
+// parseDartSource returns a Dart file's import and export URIs (as
+// ParseDartFile) and the URIs of its `part` directives.
+func parseDartSource(path string) ([]DartImport, []string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lines := strings.Split(string(data), "\n")
 	var imports []DartImport
+	var parts []string
 
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
+		if pm := partRe.FindStringSubmatch(line); pm != nil {
+			parts = append(parts, pm[1])
+			continue
+		}
 		m := importRe.FindStringSubmatch(line)
 		if m == nil {
 			continue
@@ -77,7 +93,7 @@ func ParseDartFile(path string) ([]DartImport, error) {
 			}
 		}
 	}
-	return imports, nil
+	return imports, parts, nil
 }
 
 // ParsePubspecName reads pubspec.yaml in dir and returns the package name,
@@ -123,6 +139,7 @@ func FindPubspecName(dir string, rel string) string {
 type DartFileInfo struct {
 	Path    string       // Relative path from package root
 	Imports []DartImport // Parsed imports
+	Parts   []string     // URIs of its `part` directives
 }
 
 // ParseDartDir scans a directory for Dart files and parses their imports.
@@ -133,13 +150,14 @@ func ParseDartDir(dir string, files []string) ([]DartFileInfo, error) {
 			continue
 		}
 		fullPath := filepath.Join(dir, name)
-		imports, err := ParseDartFile(fullPath)
+		imports, parts, err := parseDartSource(fullPath)
 		if err != nil {
 			continue // Skip files that can't be parsed
 		}
 		result = append(result, DartFileInfo{
 			Path:    name,
 			Imports: imports,
+			Parts:   parts,
 		})
 	}
 	return result, nil

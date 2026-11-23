@@ -28,6 +28,9 @@ func (d *dartLang) GenerateRules(args language.GenerateArgs) language.GenerateRe
 }
 
 func (d *dartLang) generateDartRules(args language.GenerateArgs) language.GenerateResult {
+	if res, ok := d.generateCodegenPackage(args); ok {
+		return res
+	}
 	dartFiles, err := ParseDartDir(args.Dir, args.RegularFiles)
 	if err != nil || len(dartFiles) == 0 {
 		return language.GenerateResult{}
@@ -166,10 +169,25 @@ func fileNames(files []DartFileInfo) []string {
 
 type importSet struct {
 	packages map[string]bool
+	// self is the Dart package the rule belongs to and does not depend on
+	// (its library, or its dart_build_runner); "" for a rule that may.
+	self string
+}
+
+func newImportSet(self string) *importSet {
+	return &importSet{packages: make(map[string]bool), self: self}
+}
+
+func (is *importSet) add(f scannedFile) {
+	for _, imp := range f.Imports {
+		if imp.IsPackage {
+			is.packages[imp.Package] = true
+		}
+	}
 }
 
 func collectImports(files []DartFileInfo) *importSet {
-	is := &importSet{packages: make(map[string]bool)}
+	is := newImportSet("")
 	for _, f := range files {
 		for _, imp := range f.Imports {
 			if imp.IsPackage {

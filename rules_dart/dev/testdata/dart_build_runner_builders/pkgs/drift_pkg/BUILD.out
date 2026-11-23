@@ -1,0 +1,20 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+
+dart_library(
+    name = "drift_pkg",
+    package_name = "drift_pkg",
+    srcs = [
+        "lib/db/converters.dart",
+        "lib/db/database.dart",
+        ":lib/db/database.g.dart",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:drift"],
+)
+
+dart_build_runner(
+    name = "gen",
+    outs = ["lib/db/database.g.dart"],
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:drift"],
+)
