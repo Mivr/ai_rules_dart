@@ -19,6 +19,7 @@ the generated libraries exactly as they do for a hub SwiftPM package.
 load(":flutter_apple_plugin_defines.bzl", "dedupe_plugin_defines")
 load(
     ":flutter_pub_apple.bzl",
+    "apple_refused",
     "detect_apple_swiftpm_deps",
     "with_apple_swiftpm_deps",
 )
@@ -35,6 +36,7 @@ load(
 load(":flutter_pub_walk.bzl", "PUB_WALK_BOUND", "has_files_bound_error")
 load(":podspec_read.bzl", "apply_apple_podspec_link_settings")
 load(":podspec_read_xcconfig.bzl", "active_podspec_defines")
+load(":starlark_literal.bzl", "starlark_string_literal")
 load(":swiftpm_manifest.bzl", "parse_swiftpm_package")
 load(":swiftpm_manifest_lex.bzl", "lex_swiftpm_manifest", "swiftpm_first_content_line")
 load(":swiftpm_package.bzl", "swiftpm_is_code_file", "swiftpm_select_target_files")
@@ -555,7 +557,7 @@ def _local_other_source_dirs(ctx, manifest_dir, primary_dir):
     primary = str(ctx.path(primary_dir))
     return [str(e) for e in sources.readdir() if e.is_dir and str(e) != primary]
 
-def _detect_platform_local_targets(ctx, plugin, platform, srcs_dirs, podspec_defines):
+def _detect_platform_local_targets(ctx, plugin, platform, srcs_dirs, podspec_defines, errors = None):
     """Read and render one platform's plugin-local targets.
 
     Args:
@@ -564,6 +566,8 @@ def _detect_platform_local_targets(ctx, plugin, platform, srcs_dirs, podspec_def
         platform: `"ios"` or `"macos"`.
         srcs_dirs: The platform's detected source directories.
         podspec_defines: The platform podspec's static `GCC_PREPROCESSOR_DEFINITIONS`.
+        errors: None to fail on a `Package.swift` refusal, or a dict that
+            receives it under `platform` (the platform then renders nothing).
 
     Returns:
         `struct(ok, error, text, labels, xtool_files)`.
@@ -586,18 +590,21 @@ def _detect_platform_local_targets(ctx, plugin, platform, srcs_dirs, podspec_def
             _local_other_source_dirs(ctx, manifest_dir, primary_dir),
         )
         if not res.ok:
-            fail(res.error)
+            apple_refused(errors, platform, res.error)
+            return empty
         parsed = res.parsed
         if not parsed.ok:
             continue
         locals = plugin_local_targets(plugin, parsed.model, manifest_dir, primary_dir, platform)
         if not locals.ok:
-            fail(locals.error)
+            apple_refused(errors, platform, locals.error)
+            return empty
         if not locals.targets:
             continue
         files = local_target_files(ctx, plugin, locals.targets)
         if not files.ok:
-            fail(files.error)
+            apple_refused(errors, platform, files.error)
+            return empty
         rendered = render_local_target_blocks(
             plugin,
             platform,
@@ -606,17 +613,20 @@ def _detect_platform_local_targets(ctx, plugin, platform, srcs_dirs, podspec_def
             plugin_defines = plugin_defines,
         )
         if not rendered.ok:
-            fail(rendered.error)
+            apple_refused(errors, platform, rendered.error)
+            return empty
         return rendered
     return empty
 
-def detect_apple_local_targets(ctx, plugin, apple):
+def detect_apple_local_targets(ctx, plugin, apple, errors = None):
     """Detect and render the plugin-local targets of both Apple platforms.
 
     Args:
         ctx: The spoke's repository context.
         plugin: The pub plugin name.
         apple: The `detect_apple_plugin_sources` struct.
+        errors: None to fail on a `Package.swift` refusal, or a dict that
+            receives it under the platform.
 
     Returns:
         `struct(macos, ios)`: each platform's rendered local targets.
@@ -631,6 +641,7 @@ def detect_apple_local_targets(ctx, plugin, apple):
             "macos",
             apple.macos_srcs,
             active_podspec_defines(apple, "macos"),
+            errors,
         ),
         ios = _detect_platform_local_targets(
             ctx,
@@ -638,11 +649,72 @@ def detect_apple_local_targets(ctx, plugin, apple):
             "ios",
             apple.ios_srcs,
             active_podspec_defines(apple, "ios"),
+            errors,
         ),
+    )
+
+_UNBUILDABLE_BZL = """\
+\"\"\"Stands in for the Apple side of a plugin that cannot be read.\"\"\"
+
+def _flutter_apple_plugin_unbuildable_impl(ctx):
+    fail(ctx.attr.message)
+
+flutter_apple_plugin_unbuildable = rule(
+    implementation = _flutter_apple_plugin_unbuildable_impl,
+    attrs = {"message": attr.string(mandatory = True)},
+    doc = "Fails analysis with `message`: an Apple build of the plugin reaches it, no other build does.",
+)
+"""
+
+def unbuildable_apple_content(content, plugin, errors):
+    """Make each refused Apple platform fail where an Apple target analyses it.
+
+    Both `flutter_apple_plugin_library` targets of a refused platform gain a
+    dependency on a target that fails analysis with the refusal, so an Apple
+    build of the plugin fails naming it, while a web, Android or desktop
+    build (whose `apple_libs` select never reaches those targets) does not.
+
+    Args:
+        content: The rendered spoke BUILD content.
+        plugin: The pub plugin name.
+        errors: Dict of refused platform to its refusal.
+
+    Returns:
+        The BUILD content, unchanged when `errors` is empty.
+    """
+    if not errors:
+        return content
+    labels = {
+        platform: [":{plugin}_apple_{platform}_unbuildable".format(plugin = plugin, platform = platform)]
+        for platform in errors
+    }
+    content = with_apple_swiftpm_deps(content, plugin, labels.get("macos", []), labels.get("ios", []))
+    targets = []
+    for platform in sorted(errors):
+        message = (
+            "Flutter plugin {plugin}: its {platform} side cannot be built: {error}\n" +
+            "Only an Apple build of the plugin needs it; builds for other platforms do not."
+        ).format(plugin = repr(plugin), platform = platform, error = errors[platform])
+        targets.append("""
+flutter_apple_plugin_unbuildable(
+    name = "{plugin}_apple_{platform}_unbuildable",
+    message = {message},
+    tags = ["manual"],
+)
+""".format(plugin = plugin, platform = platform, message = starlark_string_literal(message)))
+    return (
+        'load(":apple_unbuildable.bzl", "flutter_apple_plugin_unbuildable")\n' +
+        content +
+        "".join(targets)
     )
 
 def apply_apple_native_deps(ctx, plugin, apple, content):
     """Wire a plugin's SwiftPM products and local targets into its BUILD.
+
+    A `Package.swift` the reader refuses does not fail the fetch: the
+    refused platform's library targets fail analysis instead
+    (`unbuildable_apple_content`), so only an Apple build needs that side to
+    be readable.
 
     Args:
         ctx: The spoke's repository context.
@@ -654,11 +726,21 @@ def apply_apple_native_deps(ctx, plugin, apple, content):
         The BUILD content with both kinds of Apple dependency wired in.
     """
     content = apply_apple_podspec_link_settings(ctx, content, plugin, apple)
-    swiftpm = detect_apple_swiftpm_deps(ctx, plugin, apple)
-    content = with_apple_swiftpm_deps(content, plugin, swiftpm.macos, swiftpm.ios)
-    local = detect_apple_local_targets(ctx, plugin, apple)
-    content = with_apple_local_targets(content, plugin, "macos", local.macos)
-    return with_apple_local_targets(content, plugin, "ios", local.ios)
+    errors = {}
+    swiftpm = detect_apple_swiftpm_deps(ctx, plugin, apple, errors)
+    local = detect_apple_local_targets(ctx, plugin, apple, errors)
+    content = with_apple_swiftpm_deps(
+        content,
+        plugin,
+        [] if "macos" in errors else swiftpm.macos,
+        [] if "ios" in errors else swiftpm.ios,
+    )
+    empty = struct(ok = True, error = "", text = "", labels = [], xtool_files = [])
+    content = with_apple_local_targets(content, plugin, "macos", empty if "macos" in errors else local.macos)
+    content = with_apple_local_targets(content, plugin, "ios", empty if "ios" in errors else local.ios)
+    if errors:
+        ctx.file("apple_unbuildable.bzl", _UNBUILDABLE_BZL)
+    return unbuildable_apple_content(content, plugin, errors)
 
 def with_apple_local_targets(content, plugin, platform, rendered):
     """Splice one platform's local libraries into the rendered spoke BUILD.

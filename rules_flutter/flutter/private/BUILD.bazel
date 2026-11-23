@@ -1072,6 +1072,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":flutter_pub_apple",
+        ":flutter_pub_git",
         ":flutter_pub_maven",
         ":flutter_pub_mirror",
         ":flutter_pubspec",
@@ -1220,6 +1221,7 @@ bzl_library(
         ":flutter_pub_walk",
         ":podspec_read",
         ":podspec_read_xcconfig",
+        ":starlark_literal",
         ":swiftpm_manifest",
         ":swiftpm_manifest_lex",
         ":swiftpm_package",
@@ -1332,6 +1334,7 @@ bzl_library(
         ":flutter_pub_apple_local",
         ":flutter_pub_assets",
         ":flutter_pub_cover",
+        ":flutter_pub_git",
         ":flutter_pub_lock_hub",
         ":flutter_pub_maven",
         ":flutter_pub_mirror",
@@ -1407,6 +1410,7 @@ bzl_library(
         ":flutter_pub_android_package",
         ":flutter_pub_apple",
         ":flutter_pub_apple_local",
+        ":flutter_pub_git",
         ":flutter_pub_mirror",
         ":flutter_pub_package",
         ":flutter_pub_package_helpers",
@@ -2116,3 +2120,13 @@ exports_files(
 # The one Flutter engine import and module-map wrapper per Apple platform that
 # every `flutter_apple_plugin_library` of every app shares.
 apple_engine_framework_targets(name = "apple_engine_framework")
+
+bzl_library(
+    name = "flutter_pub_git",
+    srcs = ["flutter_pub_git.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_dart//dart/pub:pinned_sources",
+        "@rules_dart//dart/pub:pub_scan",
+    ],
+)

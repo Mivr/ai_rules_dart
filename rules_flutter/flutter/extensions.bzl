@@ -37,6 +37,7 @@ load("//flutter/private:flutter_pub_android_package.bzl", "android_package_repo_
 load("//flutter/private:flutter_pub_apple_pods.bzl", "hub_cocoapods_attrs")
 load("//flutter/private:flutter_pub_apple_pods_hub.bzl", "hub_podfile_lock")
 load("//flutter/private:flutter_pub_cycle_breaks.bzl", "apply_cycle_breaks", "cycle_breaks_lock_error")
+load("//flutter/private:flutter_pub_git.bzl", "git_package_subdir")
 load("//flutter/private:flutter_pub_lock_hub.bzl", "flutter_pub_hub_files", "hub_scc_targets", "ios_native_deps_json")
 load("//flutter/private:flutter_pub_maven.bzl", "path_spoke_maven_inputs")
 load(
@@ -45,7 +46,7 @@ load(
     "overlay_replaces_spoke",
     "spoke_overlay_roots",
 )
-load("//flutter/private:flutter_pub_package.bzl", "flutter_pub_package", "flutter_pub_path_package", "is_maven_dep_label")
+load("//flutter/private:flutter_pub_package.bzl", "flutter_pub_git_package", "flutter_pub_package", "flutter_pub_path_package", "is_maven_dep_label")
 load("//flutter/private:flutter_pub_path.bzl", "collect_path_deps", "foreign_lock_path_error", "is_absolute_lock_path", "is_relative_path_dependency", "workspace_relative_lock_path")
 load("//flutter/private:flutter_pub_plugin_defines.bzl", "ios_plugin_defines_lock_error")
 load("//flutter/private:flutter_pub_plugin_deps.bzl", "ios_plugin_deps_lock_error")
@@ -470,8 +471,9 @@ def _fail_on_odd_package_name(hub_name, package_name):
             ))
 
 def _classify_lock_packages(hub_name, lock_label, lock_pkgs):
-    """Splits lock packages into hosted, path, Flutter-SDK, and all names."""
+    """Splits lock packages into hosted, git, path, Flutter-SDK, and all names."""
     hosted = {}
+    git = {}
     path_pkgs = {}
     sdk_flutter = {}
     all_package_names = []
@@ -480,6 +482,23 @@ def _classify_lock_packages(hub_name, lock_label, lock_pkgs):
         source = info.get("source", "unknown")
         if source == "hosted":
             hosted[name] = info
+            all_package_names.append(name)
+        elif source == "git":
+            desc = info.get("description", {})
+            desc = desc if type(desc) == "dict" else {}
+            url = desc.get("url", "")
+            if type(url) != "string" or not url:
+                fail("flutter.pub hub \"{hub}\": git dependency \"{pkg}\" has no url in the lock. Re-resolve the lock.".format(
+                    hub = hub_name,
+                    pkg = name,
+                ))
+            path = desc.get("path", ".")
+            git[name] = struct(
+                version = info.get("version", ""),
+                url = url,
+                resolved_ref = str(desc.get("resolved-ref", "")).strip(),
+                path = git_package_subdir(path if type(path) == "string" else "."),
+            )
             all_package_names.append(name)
         elif source == "path":
             desc = info.get("description", {})
@@ -512,8 +531,8 @@ def _classify_lock_packages(hub_name, lock_label, lock_pkgs):
             # Reason for print: warn the user that a locked package is
             # silently unsupported (not an error; the build proceeds).
             # buildifier: disable=print
-            print("flutter.pub: skipping package \"{}\" (source: {}). Only hosted, path, and Flutter SDK packages are supported.".format(name, source))
-    return hosted, path_pkgs, sdk_flutter, all_package_names
+            print("flutter.pub: skipping package \"{}\" (source: {}). Only hosted, git, path, and Flutter SDK packages are supported.".format(name, source))
+    return hosted, git, path_pkgs, sdk_flutter, all_package_names
 
 def _workspace_root_of_lock(module_ctx, lock_label):
     """The workspace root holding a root-module lock file.
@@ -638,7 +657,7 @@ def _collect_pub_hub(pub_tag, selected_info, user_overlay_roots, pub_yaml):
 
     Returns:
         A struct with the tag, its hub name, its packages by kind and its
-        planning scope: the hosted packages, planned by rules_dart's planner
+        planning scope: the hosted and git packages, planned by rules_dart's planner
         in the hub's own namespace (`<hub>__<package>`).
     """
     hub_name = pub_tag.name
@@ -655,7 +674,7 @@ def _collect_pub_hub(pub_tag, selected_info, user_overlay_roots, pub_yaml):
 
     _check_pub_flutter_floor(lock_data, toolchain_info, pub_tag)
 
-    hosted_info, path_pkgs, sdk_flutter, all_package_names = _classify_lock_packages(hub_name, pub_tag.lock, lock_pkgs)
+    hosted_info, git, path_pkgs, sdk_flutter, all_package_names = _classify_lock_packages(hub_name, pub_tag.lock, lock_pkgs)
     cycle_error = cycle_breaks_lock_error(pub_tag.cycle_breaks, all_package_names, sdk_flutter)
     if cycle_error:
         fail(cycle_error)
@@ -685,15 +704,18 @@ def _collect_pub_hub(pub_tag, selected_info, user_overlay_roots, pub_yaml):
         podfile = podfile,
         podfile_label = lock_label,
         hosted = hosted,
+        git = git,
         path_pkgs = path_pkgs,
         sdk_flutter = sdk_flutter,
         all_package_names = sorted(all_package_names),
         toolchain_info = toolchain_info,
-        scope = struct(hosted = hosted, git = {}),
+        scope = struct(hosted = hosted, git = git),
     )
 
 def _plan_hub_graph(module_ctx, hub, plans):
     """Plans one hub's dependency cycles from the planned and the path packages' names.
+
+    Hosted and git packages are planned by rules_dart's planner (`plans`).
 
     A path package has no server: its pubspec is read here, confined to the
     workspace. `cycle_breaks` drops its edges before the cycles are planned,
@@ -703,7 +725,7 @@ def _plan_hub_graph(module_ctx, hub, plans):
         `struct(raw, kept, sccs)`: every package's planned names, the names
         left after `cycle_breaks`, and rules_dart's cycle plan.
     """
-    raw = {name: plans[name]["deps"] for name in hub.hosted}
+    raw = {name: plans[name]["deps"] for name in list(hub.hosted.keys()) + list(hub.git.keys())}
     raw.update(collect_path_deps(module_ctx, hub.hub_name, hub.path_pkgs, hub.pub_tag.lock))
     kept = {}
     for name in sorted(raw.keys()):
@@ -741,6 +763,18 @@ def _scc_member_spec(hub, member, plans, graph):
             "version": pkg.version,
             "sha256": pkg.sha256,
             "url": plans[member]["archive_url"],
+            "planned_deps": graph.raw[member],
+            "code_assets": curated_code_assets(member, pkg.version),
+        }
+    if member in hub.git:
+        pkg = hub.git[member]
+        return {
+            "name": member,
+            "source": "git",
+            "version": pkg.version,
+            "url": pkg.url,
+            "resolved_ref": pkg.resolved_ref,
+            "path": pkg.path,
             "planned_deps": graph.raw[member],
             "code_assets": curated_code_assets(member, pkg.version),
         }
@@ -836,6 +870,33 @@ def _emit_pub_hub(module_ctx, hub, plans):
                 android_maven_ignore = pub_tag.android_maven_ignore,
             )
 
+    for name in sorted(hub.git.keys()):
+        pkg = hub.git[name]
+        git_attrs = dict(url = pkg.url, resolved_ref = pkg.resolved_ref, git_path = pkg.path)
+        if name not in graph.sccs.members:
+            flutter_pub_git_package(
+                name = hub_name + "__" + name,
+                package_name = name,
+                version = pkg.version,
+                planned_deps = graph.raw[name],
+                deps = own_dep_labels(name, graph.kept[name], labels),
+                code_assets = curated_code_assets(name, pkg.version),
+                ignore_hook = name in ignore_hooks,
+                android_maven_deps = pub_tag.android_maven_deps,
+                android_maven_ignore = pub_tag.android_maven_ignore,
+                **dict(git_attrs, **_flutter_spoke_attrs(hub, name))
+            )
+        if not overlay_replaces_spoke(module_ctx, hub.overlay_roots, name, pkg.version):
+            flutter_pub_android_package(
+                name = android_package_repo_name(hub_name, name),
+                package_name = name,
+                version = pkg.version,
+                hub_name = hub_name,
+                android_maven_deps = pub_tag.android_maven_deps,
+                android_maven_ignore = pub_tag.android_maven_ignore,
+                **git_attrs
+            )
+
     maven = path_spoke_maven_inputs(pub_tag)
     declares_android = _path_packages_declaring_android(module_ctx, _workspace_root_of_lock(module_ctx, pub_tag.lock), hub.path_pkgs)
     for name in sorted(hub.path_pkgs.keys()):
@@ -912,7 +973,7 @@ def _register_pub_hubs(module_ctx, selected_info, root_overlay_roots, pub_yaml):
                 hub_overlay_roots(root_overlay_roots, _overlay_roots_of_module(mod), mod.is_root),
                 pub_yaml,
             ))
-    if not any([hub.hosted for hub in hubs]):
+    if not any([hub.hosted or hub.git for hub in hubs]):
         for hub in hubs:
             _emit_pub_hub(module_ctx, hub, {})
         return None

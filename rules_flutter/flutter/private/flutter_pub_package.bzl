@@ -59,6 +59,7 @@ load(
     "pub_shader_condition_entries",
 )
 load(":flutter_pub_cover.bzl", "covering_entry", "covering_entry_lookup")
+load(":flutter_pub_git.bzl", "fetch_git_package")
 load(":flutter_pub_lock_hub.bzl", "android_plugin_libs_arg", "overlay_with_android_edge")
 load(":flutter_pub_maven.bzl", _maven_deps_attr = "maven_deps_attr", _maven_ignore_attr = "maven_ignore_attr")
 load(
@@ -1343,6 +1344,19 @@ def _flutter_pub_package_impl(ctx):
     _generate_spoke(ctx)
     return ctx.repo_metadata(reproducible = True)
 
+def _flutter_pub_git_package_impl(ctx):
+    fetch_git_package(
+        ctx,
+        ctx.attr.package_name,
+        ctx.attr.version,
+        ctx.attr.url,
+        ctx.attr.resolved_ref,
+        ctx.attr.git_path,
+        "flutter_pub_git_package",
+    )
+    _generate_spoke(ctx)
+    return ctx.repo_metadata(reproducible = True)
+
 def link_scoped_tree_bounded(ctx, node, repo_rel, package_name, package_realpath, workspace_realpath, linked, bound):
     """Mirror one real source directory into the spoke, reporting leftovers.
 
@@ -1480,7 +1494,12 @@ def _verify_spoke_deps(ctx, pubspec):
     drops. They are right only when the planned names are the real ones,
     so a difference fails the fetch here.
     """
-    rule_name = "flutter_pub_package" if hasattr(ctx.attr, "sha256") else "flutter_pub_path_package"
+    if hasattr(ctx.attr, "resolved_ref"):
+        rule_name = "flutter_pub_git_package"
+    elif hasattr(ctx.attr, "sha256"):
+        rule_name = "flutter_pub_package"
+    else:
+        rule_name = "flutter_pub_path_package"
     planned_err = spoke_planned_deps_error(
         rule_name,
         ctx.name,
@@ -1628,4 +1647,40 @@ flutter_pub_path_package = repository_rule(
         "ignore_hook": PUB_LOCK_PACKAGE_ATTRS["ignore_hook"],
     })),
     doc = "Symlinks a workspace-local `path:` pub package into a spoke and emits the same `flutter_plugin` / `flutter_library` / `dart_library` the hosted rule would. The `flutter pub get` analog for path dependencies: hermetic (workspace-relative only, watched for changes) and fail-closed on anything resolving outside the workspace's real root; the package's pubspec `name` and `version` must match the lock entry, since overlays and code assets are selected by lock name and version.",
+)
+
+# A git package's coordinates in the lock, as `flutter_pub_git_package` and
+# the Android repository of a git plugin take them.
+GIT_PACKAGE_ATTRS = {
+    "url": attr.string(
+        doc = "The git remote (the lock entry's `description.url`).",
+        mandatory = True,
+    ),
+    "resolved_ref": attr.string(
+        doc = "The locked commit (`description.resolved-ref`), a full 40-hex SHA.",
+        mandatory = True,
+    ),
+    "git_path": attr.string(
+        doc = "The package's directory inside the git repository (`description.path`); `.` is its root.",
+        default = ".",
+    ),
+}
+
+flutter_pub_git_package = repository_rule(
+    implementation = _flutter_pub_git_package_impl,
+    attrs = pub_spoke_swiftpm_rule_attrs(dict(_FLUTTER_SPOKE_ATTRS, **dict(GIT_PACKAGE_ATTRS, **{
+        "package_name": attr.string(
+            doc = "The pub package name.",
+            mandatory = True,
+        ),
+        "version": attr.string(
+            doc = "The locked version.",
+            default = "",
+        ),
+        "planned_deps": PUB_LOCK_PACKAGE_ATTRS["planned_deps"],
+        "deps": PUB_LOCK_PACKAGE_ATTRS["deps"],
+        "code_assets": PUB_LOCK_PACKAGE_ATTRS["code_assets"],
+        "ignore_hook": PUB_LOCK_PACKAGE_ATTRS["ignore_hook"],
+    }))),
+    doc = "Fetches a git-sourced Flutter pub package at its locked commit, the way rules_dart's `pub_lock_git_package` does, and emits the same `flutter_plugin` / `flutter_library` / `dart_library` the hosted rule would.",
 )

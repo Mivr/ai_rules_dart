@@ -46,6 +46,7 @@ load(
     "//flutter/private:flutter_pub_apple_local.bzl",
     "apply_apple_native_deps",
 )
+load("//flutter/private:flutter_pub_git.bzl", "fetch_git_package")
 load(
     "//flutter/private:flutter_pub_mirror.bzl",
     "detect_case_insensitive_host",
@@ -171,6 +172,10 @@ def _member_spoke_ctx(ctx, name):
             p = name if p in ("", ".") else name + "/" + p
         return ctx.read(p, watch = watch)
 
+    def member_file(p, content):
+        """Writes files relative to `<name>/`."""
+        return ctx.file(name + "/" + p, content)
+
     def member_watch(p):
         """Watches paths relative to `<name>/`."""
         if type(p) == "string":
@@ -182,6 +187,7 @@ def _member_spoke_ctx(ctx, name):
     return struct(
         path = member_path,
         read = member_read,
+        file = member_file,
         watch = member_watch,
         os = ctx.os,
         execute = ctx.execute,
@@ -216,7 +222,7 @@ def _detect_member_hooks(ctx, name, code_assets):
     )
 
 def _stage_scc_members(ctx, members):
-    """Stages all hosted and path members into their `<name>/` subdirectories.
+    """Stages all hosted, git and path members into their `<name>/` subdirectories.
 
     Every member's pubspec is read in one `yaml2json` run once it is in place; a
     path member's other files are linked after that, as its pubspec
@@ -227,8 +233,20 @@ def _stage_scc_members(ctx, members):
     """
     linked = {}
     for m in members:
-        if m.get("source", "hosted") == "path":
+        source = m.get("source", "hosted")
+        if source == "path":
             linked[m["name"]] = _link_path_scc_pubspec(ctx, m, m["name"])
+        elif source == "git":
+            fetch_git_package(
+                ctx,
+                m["name"],
+                m.get("version", ""),
+                m["url"],
+                m["resolved_ref"],
+                m.get("path", "."),
+                "flutter_pub_scc_package",
+                output = m["name"],
+            )
         else:
             _fetch_hosted_scc_member(ctx, m, m["name"])
     present = [m["name"] for m in members if ctx.path(m["name"] + "/pubspec.yaml").exists]

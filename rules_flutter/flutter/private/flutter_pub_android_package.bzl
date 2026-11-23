@@ -17,6 +17,7 @@ pure pieces the spoke generator and its unit tests consume.
 load("@rules_dart//dart/pub:pub_lock_package.bzl", "fetch_pub_lock_archive")
 load("@rules_dart//dart/pub:yaml.bzl", "yaml_to_json")
 load(":flutter_pub_apple.bzl", _has_files_under = "has_files_under")
+load(":flutter_pub_git.bzl", "fetch_git_package")
 load(":flutter_pub_maven.bzl", "maven_deps_attr", "maven_ignore_attr")
 load(
     ":flutter_pub_mirror.bzl",
@@ -757,6 +758,16 @@ def _flutter_pub_android_package_impl(ctx):
     """
     if ctx.attr.path:
         _link_path_android_package(ctx)
+    elif ctx.attr.resolved_ref:
+        fetch_git_package(
+            ctx,
+            ctx.attr.package_name,
+            ctx.attr.version,
+            ctx.attr.url,
+            ctx.attr.resolved_ref,
+            ctx.attr.git_path,
+            "flutter_pub_android_package",
+        )
     else:
         fetch_pub_lock_archive(ctx)
 
@@ -803,8 +814,17 @@ flutter_pub_android_package = repository_rule(
             default = "",
         ),
         "url": attr.string(
-            doc = "The archive URL planning found for a hosted package, the one its spoke fetches.",
+            doc = "The archive URL planning found for a hosted package, the one its spoke " +
+                  "fetches; for a git package, its remote.",
             default = "",
+        ),
+        "resolved_ref": attr.string(
+            doc = "The locked commit of a git package, or empty.",
+            default = "",
+        ),
+        "git_path": attr.string(
+            doc = "A git package's directory inside its repository; `.` is its root.",
+            default = ".",
         ),
         "path": attr.string(
             doc = "Workspace-relative directory of a path package, or empty for a hosted package. A path package's `android` platform directory is linked with the path spoke's confinement rules.",

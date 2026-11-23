@@ -906,8 +906,9 @@ def _apple_swiftpm_pins(ctx, resolved_label, checksums_label, hub_name):
         hub_name: The `flutter.pub` hub name.
 
     Returns:
-        `struct(resolved, pinned, unpinned, hub, lock_packages, lock_label, scc_targets)`
-        for the plugin's manifest reader.
+        `(pins, error)`: `struct(resolved, pinned, unpinned, hub,
+        lock_packages, lock_label, scc_targets)` for the plugin's manifest
+        reader, or None and the refusal.
     """
     hub = read_hub_pub_packages(ctx)
     lock_packages = hub.packages
@@ -922,7 +923,7 @@ def _apple_swiftpm_pins(ctx, resolved_label, checksums_label, hub_name):
             lock_packages = lock_packages,
             lock_label = lock_label,
             scc_targets = scc_targets,
-        )
+        ), None
     label = str(resolved_label)
     checksums_content = ctx.read(checksums_label) if checksums_label != None else None
     checksums_text = str(checksums_label) if checksums_label != None else ""
@@ -937,8 +938,8 @@ def _apple_swiftpm_pins(ctx, resolved_label, checksums_label, hub_name):
         scc_targets,
     )
     if not built.ok:
-        fail(built.error)
-    return built.pins
+        return None, built.error
+    return built.pins, None
 
 def _apple_swiftpm_product_deps(ctx, native_deps_label, hub_name):
     """Read the hub's iOS native-deps mapping for one plugin's links.
@@ -956,20 +957,42 @@ def _apple_swiftpm_product_deps(ctx, native_deps_label, hub_name):
         hub_name: The `flutter.pub` hub name, for messages.
 
     Returns:
-        The hub's `<identity>:<product>` -> label map.
+        `(product_deps, error)`: the hub's `<identity>:<product>` -> label
+        map, or None and the refusal.
     """
     if native_deps_label == None:
-        return {}
+        return {}, None
     label = str(native_deps_label)
     if not ctx.path(native_deps_label).exists:
-        fail((
+        return None, (
             "flutter.pub hub {hub}: its iOS native-deps file {label} is " +
             "missing: regenerate the hub."
-        ).format(hub = repr(hub_name), label = label))
+        ).format(hub = repr(hub_name), label = label)
     built = read_ios_native_deps(ctx.read(native_deps_label), label, hub_name)
     if not built.ok:
-        fail(built.error)
-    return built.product_deps
+        return None, built.error
+    return built.product_deps, None
+
+def apple_refused(errors, platform, message):
+    """Fails with `message`, or records it under `platform` when given `errors`.
+
+    A spoke records the refusals of its Apple side instead of failing its
+    fetch, so a build for another platform never depends on that side being
+    readable: the refusal is raised where an Apple target analyses it.
+
+    Args:
+        errors: None, or the dict of platform to its first refusal.
+        platform: `"ios"` or `"macos"`.
+        message: The refusal.
+
+    Returns:
+        No labels.
+    """
+    if errors == None:
+        fail(message)
+    if platform not in errors:
+        errors[platform] = message
+    return []
 
 def _detect_apple_swiftpm_platform(
         ctx,
@@ -979,7 +1002,8 @@ def _detect_apple_swiftpm_platform(
         resolved_label,
         checksums_label,
         native_deps_label,
-        hub_name):
+        hub_name,
+        errors = None):
     """Collect one platform's SwiftPM product labels.
 
     Reads the platform's `<platform>/<pkg>/Package.swift` and the shared
@@ -987,8 +1011,9 @@ def _detect_apple_swiftpm_platform(
     files are read only after a manifest is found; the native-deps map is
     read only when that manifest yields a product dependency, so a plugin
     without one never depends on the hub's pin list, checksum table or
-    mapping. A refusal fails the fetch: the spoke never downloads
-    anything itself.
+    mapping. The spoke never downloads anything itself. A refusal fails the
+    fetch, or, given `errors`, is recorded there under the platform and the
+    platform gets no labels.
 
     Args:
         ctx: The spoke's repository context.
@@ -999,6 +1024,8 @@ def _detect_apple_swiftpm_platform(
         checksums_label: The hub's checksum-file label, or None.
         native_deps_label: The hub's `ios_native_deps` label, or None.
         hub_name: The `flutter.pub` hub name, for dep labels.
+        errors: None to fail on a refusal, or a dict that receives it under
+            `platform`.
 
     Returns:
         The platform's spoke dep labels, deduplicated.
@@ -1014,14 +1041,18 @@ def _detect_apple_swiftpm_platform(
         if not ctx.path(manifest).exists:
             continue
         if pins == None:
-            pins = _apple_swiftpm_pins(ctx, resolved_label, checksums_label, hub_name)
+            pins, error = _apple_swiftpm_pins(ctx, resolved_label, checksums_label, hub_name)
+            if error:
+                return apple_refused(errors, platform, error)
         prepared = apple_swiftpm_manifest_products(package_name, ctx.read(manifest), manifest_dir, srcs_dirs, platform)
         if not prepared.ok:
-            fail(prepared.error)
+            return apple_refused(errors, platform, prepared.error)
         if not prepared.products:
             continue
         if product_deps == None:
-            product_deps = _apple_swiftpm_product_deps(ctx, native_deps_label, hub_name)
+            product_deps, error = _apple_swiftpm_product_deps(ctx, native_deps_label, hub_name)
+            if error:
+                return apple_refused(errors, platform, error)
         selected = _apple_swiftpm_labels_for_products(
             package_name,
             manifest_dir,
@@ -1032,14 +1063,14 @@ def _detect_apple_swiftpm_platform(
             product_deps,
         )
         if not selected.ok:
-            fail(selected.error)
+            return apple_refused(errors, platform, selected.error)
         for label in selected.labels:
             if label not in seen:
                 seen[label] = True
                 labels.append(label)
     return labels
 
-def detect_apple_swiftpm_deps(ctx, package_name, apple):
+def detect_apple_swiftpm_deps(ctx, package_name, apple, errors = None):
     """Link the plugin's `Package.swift` products for both Apple platforms.
 
     Args:
@@ -1047,6 +1078,8 @@ def detect_apple_swiftpm_deps(ctx, package_name, apple):
             label, checksum-file label, native-deps label and name.
         package_name: The pub plugin name.
         apple: The `detect_apple_plugin_sources` struct.
+        errors: None to fail on a `Package.swift` refusal, or a dict that
+            receives it under the platform.
 
     Returns:
         `struct(macos, ios)`: The per-platform spoke dep label lists.
@@ -1060,13 +1093,16 @@ def detect_apple_swiftpm_deps(ctx, package_name, apple):
     if mapped.mapped:
         return struct(macos = mapped.macos, ios = mapped.ios)
 
+    def detect_platform(*args):
+        return _detect_apple_swiftpm_platform(errors = errors, *args)
+
     if hasattr(ctx.attr, "podfile_lock") and ctx.attr.podfile_lock != None:
-        return detect_apple_cocoapods_deps(ctx, package_name, apple, _detect_apple_swiftpm_platform)
+        return detect_apple_cocoapods_deps(ctx, package_name, apple, detect_platform)
 
     resolved, sha = ctx.attr.package_resolved, ctx.attr.package_sha256
     ndeps, hub = ctx.attr.ios_native_deps, ctx.attr.hub_name
     return struct(
-        macos = _detect_apple_swiftpm_platform(
+        macos = detect_platform(
             ctx,
             package_name,
             "macos",
@@ -1076,7 +1112,7 @@ def detect_apple_swiftpm_deps(ctx, package_name, apple):
             ndeps,
             hub,
         ),
-        ios = _detect_apple_swiftpm_platform(
+        ios = detect_platform(
             ctx,
             package_name,
             "ios",

@@ -5,10 +5,15 @@ load(
     "//flutter/private:flutter_pub_apple.bzl",
     "apple_plugin_targets",
     "apple_swiftpm_pins",
+    "detect_apple_swiftpm_deps",
     "select_apple_swiftpm_deps",
     "with_apple_swiftpm_deps",
 )
-load("//flutter/private:flutter_pub_apple_local.bzl", "apply_apple_native_deps")
+load(
+    "//flutter/private:flutter_pub_apple_local.bzl",
+    "apply_apple_native_deps",
+    "detect_apple_local_targets",
+)
 load("//flutter/private:starlark_literal.bzl", "starlark_string_literal")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
@@ -716,8 +721,17 @@ def _spaced_package_declaration_is_refused_when_unreadable_test_impl(ctx):
     asserts.equals(env, [], selected.labels)
     return unittest.end(env)
 
-def _fake_spoke_ctx(files, dirs):
-    """Build a fake spoke repository context backed by `files` and `dirs`."""
+def _fake_spoke_ctx(files, dirs, written = None):
+    """Build a fake spoke repository context backed by `files` and `dirs`.
+
+    Files the spoke writes land in `written`, when given.
+    """
+
+    def _file(rel, content):
+        """Fake `ctx.file`: records the write."""
+        if written == None:
+            fail("unexpected write of " + rel)
+        written[rel] = content
 
     def _path(rel):
         """Fake `ctx.path` entry for `rel`."""
@@ -745,6 +759,7 @@ def _fake_spoke_ctx(files, dirs):
         ),
         path = _path,
         read = lambda rel: files[str(rel)],
+        file = _file,
     )
 
 def _apply_apple_native_deps_byname_product_test_impl(ctx):
@@ -775,8 +790,8 @@ def _apply_apple_native_deps_byname_product_test_impl(ctx):
     asserts.true(env, '"ios/spm_bigint_plugin/Sources/Helper/Helper.swift",' in rendered)
     return unittest.end(env)
 
-def _helper_spoke(primary_deps, helper_deps, extra_targets = ""):
-    """Run `apply_apple_native_deps` on a manifest whose `Helper` target has deps."""
+def _helper_inputs(primary_deps, helper_deps, extra_targets = "", written = None):
+    """The fake spoke and Apple sources of a manifest whose `Helper` target has deps."""
     manifest = _BYNAME_MANIFEST.replace(
         "    targets: [",
         '    targets: [.target(name: "Helper", dependencies: [%s]), %s' % (helper_deps, extra_targets),
@@ -794,15 +809,22 @@ def _helper_spoke(primary_deps, helper_deps, extra_targets = ""):
             "ios/spm_bigint_plugin/Sources/Helper": [("Helper.swift", False)],
             "ios/spm_bigint_plugin/Sources/Other": [("Other.swift", False)],
         },
+        written = written,
     )
     srcs = ["ios/spm_bigint_plugin/Sources/spm_bigint_plugin"]
     apple = struct(macos_srcs = [], ios_srcs = srcs, macos_podspec = None, ios_podspec = None)
-    base = apple_plugin_targets("spm_bigint_plugin", srcs, [], "ios")
+    return fake, apple, apple_plugin_targets("spm_bigint_plugin", srcs, [], "ios")
+
+def _helper_spoke(primary_deps, helper_deps, extra_targets = "", written = None):
+    """Run `apply_apple_native_deps` on a manifest whose `Helper` target has deps."""
+    fake, apple, base = _helper_inputs(primary_deps, helper_deps, extra_targets, written)
     return apply_apple_native_deps(fake, "spm_bigint_plugin", apple, base)
 
 def _helper_spoke_impl(ctx):
-    """Rule body: runs the spoke wiring so its `fail` surfaces at analysis."""
-    _helper_spoke(ctx.attr.primary_deps, ctx.attr.helper_deps)
+    """Rule body: reads the manifest without deferring, so its refusal surfaces at analysis."""
+    fake, apple, _ = _helper_inputs(ctx.attr.primary_deps, ctx.attr.helper_deps)
+    detect_apple_swiftpm_deps(fake, "spm_bigint_plugin", apple)
+    detect_apple_local_targets(fake, "spm_bigint_plugin", apple)
     return [DefaultInfo()]
 
 _helper_spoke_rule = rule(
@@ -844,6 +866,26 @@ def _refusal_tests(name):
         )
         labels.append(":%s_refused_%d" % (name, index))
     return labels
+
+def _refused_manifest_fails_only_the_apple_targets_test_impl(ctx):
+    """A refused `Package.swift` does not fail the spoke: its Apple targets fail analysis instead."""
+    env = unittest.begin(ctx)
+    written = {}
+    rendered = _helper_spoke('"Helper"', '"BigInt"', written = written)
+    asserts.equals(env, ["apple_unbuildable.bzl"], written.keys())
+    asserts.true(env, "fail(ctx.attr.message)" in written["apple_unbuildable.bzl"])
+    asserts.true(
+        env,
+        rendered.startswith('load(":apple_unbuildable.bzl", "flutter_apple_plugin_unbuildable")\n'),
+        rendered,
+    )
+    asserts.equals(env, 2, len(rendered.split('":spm_bigint_plugin_apple_ios_unbuildable",')) - 1, rendered)
+    asserts.true(env, 'name = "spm_bigint_plugin_apple_ios_unbuildable",' in rendered, rendered)
+    asserts.true(env, "its ios side cannot be built" in rendered, rendered)
+    asserts.true(env, 'of target \\"Helper\\"' in rendered, rendered)
+    asserts.equals(env, 0, len(rendered.split("@deps__swiftpm-bigint//:BigInt")) - 1)
+    asserts.false(env, "spm_bigint_plugin_apple_ios__Helper" in rendered, rendered)
+    return unittest.end(env)
 
 def _linked_sibling_product_renders_as_base_test_impl(ctx):
     """A product the primary also links is not refused and links once."""
@@ -900,6 +942,9 @@ _manifests_without_links_resolve_empty_test = unittest.make(_manifests_without_l
 _deps_render_on_both_backends_test = unittest.make(_deps_render_on_both_backends_test_impl)
 _plugin_defines_render_on_both_backends_test = unittest.make(_plugin_defines_render_on_both_backends_test_impl)
 _apply_apple_native_deps_byname_product_test = unittest.make(_apply_apple_native_deps_byname_product_test_impl)
+_refused_manifest_fails_only_the_apple_targets_test = unittest.make(
+    _refused_manifest_fails_only_the_apple_targets_test_impl,
+)
 _linked_sibling_product_renders_as_base_test = unittest.make(_linked_sibling_product_renders_as_base_test_impl)
 _sibling_local_and_conditioned_deps_not_refused_test = unittest.make(_sibling_local_and_conditioned_deps_not_refused_test_impl)
 
@@ -939,6 +984,7 @@ def flutter_pub_apple_test_suite(name):
         _plugin_defines_render_on_both_backends_test,
         _apply_apple_native_deps_byname_product_test,
         _linked_sibling_product_renders_as_base_test,
+        _refused_manifest_fails_only_the_apple_targets_test,
         _sibling_local_and_conditioned_deps_not_refused_test,
     )
     native.test_suite(
