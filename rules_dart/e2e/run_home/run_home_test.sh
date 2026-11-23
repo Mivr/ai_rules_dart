@@ -64,8 +64,10 @@ trap cleanup EXIT
 # the archive's own `e2e/*` packages.
 ARCHIVE_DIR="$SCRATCH/archive"
 mkdir -p "$ARCHIVE_DIR"
-REPO_ROOT="$(git -C "$WORKSPACE" rev-parse --show-toplevel)"
-git -C "$REPO_ROOT" archive HEAD | tar -x -C "$ARCHIVE_DIR"
+# Archive the module (`rules_dart/`), not the repository: the repository's root
+# holds no MODULE.bazel, and the module is what the registry serves. Run from
+# the module directory, `git archive` takes that directory's files only.
+git -C "$WORKSPACE/../.." archive HEAD | tar -x -C "$ARCHIVE_DIR"
 # PUB_CACHE lives in the scratch directory, outside the canaries below.
 export PUB_CACHE="$SCRATCH/pubcache"
 mkdir -p "$PUB_CACHE"
