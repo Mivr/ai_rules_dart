@@ -5,6 +5,7 @@ module just projects the parsed value down to the exact shapes the rules_dart
 pub extension and repository rules consume.
 """
 
+load("//dart/pub/private:pin_checks.bzl", _is_valid_git_ref = "is_valid_git_ref", _is_valid_sha256 = "is_valid_sha256", _lock_package_error = "lock_package_error")
 load("//dart/pub/private:yaml_lock.bzl", _lock_error = "pubspec_lock_error", _parse_lock = "parse_pubspec_lock")
 load("//dart/pub/private:yaml_sdk_constraint.bzl", _sdk_constraint_ok = "is_valid_sdk_constraint")
 load("//dart/pub/private:yaml_subset.bzl", "document_value_and_problems")
@@ -103,111 +104,15 @@ def parse_pubspec_lock(content, lock_label = "pubspec.lock"):
     """
     return _parse_lock(content, lock_label)
 
-_HEX_LOWER = {
-    "0": True,
-    "1": True,
-    "2": True,
-    "3": True,
-    "4": True,
-    "5": True,
-    "6": True,
-    "7": True,
-    "8": True,
-    "9": True,
-    "a": True,
-    "b": True,
-    "c": True,
-    "d": True,
-    "e": True,
-    "f": True,
-}
-
-def is_valid_sha256(sha256):
-    """Returns True when `sha256` is 64 lowercase hex digits after trimming.
-
-    Args:
-        sha256: Candidate SHA-256 string.
-
-    Returns:
-        True when `sha256` trims to 64 lowercase hex characters, else False.
-    """
-    if type(sha256) != "string":
-        return False
-    trimmed = sha256.strip()
-    if len(trimmed) != 64:
-        return False
-    for ch in trimmed.elems():
-        if ch not in _HEX_LOWER:
-            return False
-    return True
-
-def is_valid_git_ref(ref):
-    """Returns True when `ref` is a full 40-hex lowercase commit SHA.
-
-    Args:
-        ref: Candidate resolved-ref string.
-
-    Returns:
-        True when `ref` trims to 40 lowercase hex characters, else False.
-    """
-    if type(ref) != "string":
-        return False
-    trimmed = ref.strip()
-    if len(trimmed) != 40:
-        return False
-    for ch in trimmed.elems():
-        if ch not in _HEX_LOWER:
-            return False
-    return True
+# The pin checks live in `pin_checks.bzl`; re-exported here for the callers
+# that still load them from this file.
+is_valid_sha256 = _is_valid_sha256
+is_valid_git_ref = _is_valid_git_ref
+lock_package_error = _lock_package_error
 
 # Backwards/alternative names for callers and tests.
-is_valid_resolved_ref = is_valid_git_ref
-is_valid_commit_sha = is_valid_git_ref
-
-def lock_package_error(name, info, lock_file):
-    """Validates that a parsed `pubspec.lock` package entry is pinned.
-
-    Hosted packages must carry a 64-lowercase-hex-digit `sha256` after
-    trimming, and git packages must carry a non-empty `resolved-ref`.
-
-    Args:
-        name: Package name from `pubspec.lock`.
-        info: Entry dict from `parse_pubspec_lock`.
-        lock_file: Label or string identifying the lock file for diagnostics.
-
-    Returns:
-        An error string when the entry is unpinned or malformed, or None when valid.
-    """
-    source = info.get("source", "unknown")
-    version = info.get("version", "")
-    desc = info.get("description", {})
-    if source == "hosted":
-        raw_sha256 = desc.get("sha256", "")
-        sha256 = str(raw_sha256).strip() if raw_sha256 != None else ""
-        if not sha256:
-            return (
-                'pub package "%s" %s in %s has no sha256. ' +
-                "Run `dart pub get` (Dart 2.19 or newer records one) and commit the lock."
-            ) % (name, version, lock_file)
-        if not is_valid_sha256(sha256):
-            return (
-                'pub package "%s" %s in %s has invalid sha256 %r: ' +
-                "expected 64 lowercase hex digits."
-            ) % (name, version, lock_file, raw_sha256)
-    elif source == "git":
-        raw_ref = desc.get("resolved-ref", "")
-        resolved_ref = str(raw_ref).strip() if raw_ref != None else ""
-        if not resolved_ref:
-            return (
-                'pub package "%s" %s in %s has no resolved-ref. ' +
-                "Run `dart pub get` and commit the lock."
-            ) % (name, version, lock_file)
-        if not is_valid_git_ref(resolved_ref):
-            return (
-                'pub package "%s" %s in %s has invalid resolved-ref %r: ' +
-                "expected 40 lowercase hex digits."
-            ) % (name, version, lock_file, raw_ref)
-    return None
+is_valid_resolved_ref = _is_valid_git_ref
+is_valid_commit_sha = _is_valid_git_ref
 
 def parse_pubspec_deps(content):
     """Extract dependency names from a pubspec.yaml file.

@@ -35,8 +35,14 @@ bzl_library(
     srcs = ["pinned_sources.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":yaml_parser",
+        ":pin_checks",
     ],
+)
+
+bzl_library(
+    name = "pin_checks",
+    srcs = ["pin_checks.bzl"],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(
@@ -77,6 +83,7 @@ bzl_library(
     srcs = ["yaml_parser.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":pin_checks",
         ":yaml_lock",
         ":yaml_sdk_constraint",
         ":yaml_subset",
@@ -131,9 +138,9 @@ bzl_library(
     srcs = ["pub_root_pin.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":pin_checks",
         ":pub_repository",
         ":version",
-        ":yaml_parser",
     ],
 )
 

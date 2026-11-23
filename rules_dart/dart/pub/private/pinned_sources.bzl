@@ -126,7 +126,7 @@ out a work tree and applies neither). Other committed attributes (such as
 host-side configuration is neutralized.
 """
 
-load("//dart/pub/private:yaml_parser.bzl", "is_valid_git_ref", "is_valid_sha256")
+load("//dart/pub/private:pin_checks.bzl", "is_valid_git_ref", "is_valid_sha256")
 
 visibility(["//dart/..."])
 

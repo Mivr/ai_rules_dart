@@ -26,9 +26,9 @@ declaration fields, lock entry fields). `resolve_pub_packages` in
 order, so the outcome never depends on module order.
 """
 
+load("//dart/pub/private:pin_checks.bzl", "is_valid_git_ref", "is_valid_sha256")
 load("//dart/pub/private:pub_repository.bzl", "pub_package_sha256_error")
 load("//dart/pub/private:version.bzl", "semver_gt")
-load("//dart/pub/private:yaml_parser.bzl", "is_valid_git_ref", "is_valid_sha256")
 
 visibility(["//dart/..."])
 
