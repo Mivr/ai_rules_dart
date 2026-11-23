@@ -290,6 +290,11 @@ dart_build_runner(
 - `dart_build_runner`: the generated files as `outs`, and as `deps` what the
   package's files import. Gazelle keeps the name of an existing one, and
   deletes it when the package names no generated file any more.
+- `build_runner_sdk_summary` named `flutter_sdk_summary`, for a package whose
+  files import `package:flutter` or `package:flutter_test`, set as the
+  `dart_build_runner`'s `sdk_summary` (see [Flutter](#flutter)). Its
+  `embedder` is `@flutter_sky_engine//:sky_engine`, rules_flutter's engine
+  repository, which `MODULE.bazel` must `use_repo`.
 
 A package whose lock has no such builder, or with `off`, keeps the
 per-directory rules.
@@ -318,7 +323,7 @@ Where the guess can be wrong:
 - A named file no builder writes (no annotation, a builder switched off or its
   `generate_for` narrowed in `build.yaml`, a hand-written part named like a
   generated one) is declared anyway. The build fails, naming the file:
-  `` No builder wrote `lib/src/plain.g.dart` of package app. `` Remove the
+  `` No builder wrote `lib/src/plain.g.dart` of package app; ... ``. Remove the
   `part`, add the annotation, or switch Gazelle off for the package.
 - A builder option that changes `build_extensions` (mockito's
   `build_extensions`) is not seen: Gazelle uses the extensions the builder
@@ -331,9 +336,9 @@ Where the guess can be wrong:
   checked in; the strict dependency check names the missing package.
 - A first-party dependency's `pubspec.yaml` and `build.yaml` are not passed
   as `data`.
-- A package that imports Flutter needs `sdk_summary` (see [Flutter](#flutter)),
-  which Gazelle does not write; set it on the `dart_build_runner` by hand and
-  Gazelle keeps it.
+- A package is taken for a Flutter one when one of its files imports
+  `package:flutter` or `package:flutter_test`; one that reaches Flutter only
+  through another package gets no `sdk_summary` (see below).
 - A directory under `lib/`, `bin/` or `test/` with a BUILD file of its own is
   a separate Bazel package: Gazelle keeps its per-directory rules and says on
   stderr which generated file it cannot declare there.
@@ -366,7 +371,7 @@ The lock of the pub hub "pub_deps" has build_runner 2.7.0; `dart_build_runner` s
 A file in `outs` that no builder writes:
 
 ```text
-No builder wrote `lib/plain.g.dart` of package my_pkg. `build_runner build` writes no file there either, so it is not an output: remove it from `outs`.
+No builder wrote `lib/plain.g.dart` of package my_pkg; `build_runner build` writes no file there either. It is in `outs` because a `part`, `import` or `export` of the package names it (Gazelle declares every generated file a source names). Either a builder should write it (an annotation is missing, or the builder is disabled in `build.yaml`), or that directive should go; then re-run Gazelle, or edit `outs` if you wrote it by hand.
 ```
 
 A builder that searches the package (`findAssets`) and could see a file that

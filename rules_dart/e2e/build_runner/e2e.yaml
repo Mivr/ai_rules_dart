@@ -20,7 +20,8 @@ commands:
     expect:
       non_zero: true
       output_contains:
-        - 'No builder wrote `lib/plain.g.dart` of package errors_missing.'
+        - 'No builder wrote `lib/plain.g.dart` of package errors_missing; `build_runner build` writes no file there either.'
+        - 'in `outs` because a `part`, `import` or `export` of the package names it'
   - name: undeclared_glob
     run: bazel build //errors/glob:gen
     expect:

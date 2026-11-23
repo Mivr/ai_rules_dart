@@ -84,7 +84,7 @@ func (*dartLang) Loads() []rule.LoadInfo {
 	return []rule.LoadInfo{
 		{
 			Name:    "@rules_dart//dart:defs.bzl",
-			Symbols: []string{"dart_library", "dart_binary", "dart_test", "dart_build_runner", "dart_analysis_options", "dart_analysis_config"},
+			Symbols: []string{"dart_library", "dart_binary", "dart_test", "dart_build_runner", "build_runner_sdk_summary", "dart_analysis_options", "dart_analysis_config"},
 		},
 	}
 }
@@ -93,7 +93,7 @@ func (*dartLang) ApparentLoads(moduleToApparentName func(string) string) []rule.
 	return []rule.LoadInfo{
 		{
 			Name:    "@rules_dart//dart:defs.bzl",
-			Symbols: []string{"dart_library", "dart_binary", "dart_test", "dart_build_runner", "dart_analysis_options", "dart_analysis_config"},
+			Symbols: []string{"dart_library", "dart_binary", "dart_test", "dart_build_runner", "build_runner_sdk_summary", "dart_analysis_options", "dart_analysis_config"},
 		},
 	}
 }

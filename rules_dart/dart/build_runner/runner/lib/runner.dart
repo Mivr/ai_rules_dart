@@ -464,10 +464,16 @@ class _Runner {
       out.writeAsBytesSync(bytes);
     }
     if (missing.isNotEmpty) {
+      final one = missing.length == 1;
       log.writeln(
         'No builder wrote ${missing.map((m) => '`$m`').join(', ')} of package '
-        '$root. `build_runner build` writes no file there either, so it is '
-        'not an output: remove it from `outs`.',
+        '$root; `build_runner build` writes no file there either. '
+        '${one ? 'It is' : 'They are'} in `outs` because a `part`, `import` or '
+        '`export` of the package names ${one ? 'it' : 'them'} (Gazelle declares '
+        'every generated file a source names). Either a builder should write '
+        '${one ? 'it' : 'them'} (an annotation is missing, or the builder is '
+        'disabled in `build.yaml`), or that directive should go; then re-run '
+        'Gazelle, or edit `outs` if you wrote it by hand.',
       );
       return false;
     }

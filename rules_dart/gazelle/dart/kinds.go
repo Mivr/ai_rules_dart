@@ -39,11 +39,17 @@ var dartKinds = map[string]rule.KindInfo{
 		MatchAny:      true,
 		NonEmptyAttrs: map[string]bool{"outs": true},
 		MergeableAttrs: map[string]bool{
-			"outs":   true,
-			"deps":   true,
-			"runner": true,
+			"outs":        true,
+			"deps":        true,
+			"runner":      true,
+			"sdk_summary": true,
 		},
 		ResolveAttrs: map[string]bool{"deps": true},
+	},
+	// The Flutter SDK summary of a package whose dart_build_runner needs one.
+	"build_runner_sdk_summary": {
+		NonEmptyAttrs:  map[string]bool{"embedder": true},
+		MergeableAttrs: map[string]bool{"embedder": true, "runner": true},
 	},
 	// One per analysis_options.yaml, and the root's list of them. The config
 	// matches by name alone: there is one per repository.

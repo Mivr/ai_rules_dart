@@ -1,4 +1,4 @@
-load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+load("@rules_dart//dart:defs.bzl", "build_runner_sdk_summary", "dart_build_runner", "dart_library")
 
 dart_library(
     name = "go_router_pkg",
@@ -23,8 +23,15 @@ dart_build_runner(
         "lib/routes_a.g.dart",
     ],
     runner = "@pub_deps//build_runner",
+    sdk_summary = ":flutter_sdk_summary",
     deps = [
         "@pub_deps//:flutter",
         "@pub_deps//:go_router",
     ],
+)
+
+build_runner_sdk_summary(
+    name = "flutter_sdk_summary",
+    embedder = "@flutter_sky_engine//:sky_engine",
+    runner = "@pub_deps//build_runner:runner",
 )

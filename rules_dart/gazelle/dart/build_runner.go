@@ -42,6 +42,13 @@ const (
 	buildRunnerOff       = "off"
 	defaultHub           = "pub_deps"
 	buildRunnerKind      = "dart_build_runner"
+	sdkSummaryKind       = "build_runner_sdk_summary"
+
+	// The SDK summary Gazelle writes for a package that imports Flutter, and
+	// the Flutter engine package it adds `dart:ui` from: rules_flutter's
+	// `flutter_sky_engine` repository, under the name its docs use.
+	flutterSummaryName = "flutter_sdk_summary"
+	skyEngineLabel     = "@flutter_sky_engine//:sky_engine"
 
 	// The file the hub writes, relative to the hub's root.
 	factsPath = "build_runner/builders.json"
@@ -550,14 +557,33 @@ func codegenRules(args language.GenerateArgs, cg *codegen, pkgName string, files
 			name = pkgName + "_gen"
 		}
 	}
+	// A package that imports Flutter needs an SDK summary with Flutter's
+	// `dart:ui`: the builders' analyzer resolves its sources against it.
+	flutter := all.packages["flutter"] || all.packages["flutter_test"]
 	if len(outs) > 0 {
 		r := rule.NewRule(buildRunnerKind, name)
 		r.SetAttr("outs", outs)
 		r.SetAttr("runner", "@"+cg.hub+"//build_runner")
+		if flutter {
+			r.SetAttr("sdk_summary", ":"+flutterSummaryName)
+		}
 		res.Gen = append(res.Gen, r)
 		res.Imports = append(res.Imports, all)
 	} else if existing != "" {
 		res.Empty = append(res.Empty, rule.NewRule(buildRunnerKind, existing))
+	}
+	if flutter && len(outs) > 0 {
+		r := rule.NewRule(sdkSummaryKind, flutterSummaryName)
+		r.SetAttr("embedder", skyEngineLabel)
+		r.SetAttr("runner", "@"+cg.hub+"//build_runner:runner")
+		res.Gen = append(res.Gen, r)
+		res.Imports = append(res.Imports, nil)
+	} else if args.File != nil {
+		for _, r := range args.File.Rules {
+			if r.Kind() == sdkSummaryKind && r.Name() == flutterSummaryName {
+				res.Empty = append(res.Empty, rule.NewRule(sdkSummaryKind, flutterSummaryName))
+			}
+		}
 	}
 	return res
 }
