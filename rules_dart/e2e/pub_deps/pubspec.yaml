@@ -1,0 +1,5 @@
+name: pub_deps
+environment:
+  sdk: ^3.11.0
+dependencies:
+  path: ^1.9.1

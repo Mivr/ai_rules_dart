@@ -1,0 +1,30 @@
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_test")
+
+# A test declared in the same Bazel package as the library it tests — the
+# ordinary pub layout — where the library itself is pure source and its
+# *dependency* is what carries generated members.
+#
+# `import_pkg` covers a dependency with generated members too, but there the
+# tested package is the one that carries them. Here `colocated_fixture` is pure
+# source with `lib_root` `colocated_test_pkg`, the directory the test sits in,
+# and `import_fixture`'s generated members sit in `import_pkg`. The compile
+# must resolve both packages from their own roots, with the test beside one of
+# them.
+
+dart_library(
+    name = "colocated_fixture",
+    package_name = "colocated_fixture",
+    srcs = ["lib/consumer.dart"],
+    language_version = "3.11",
+    deps = ["//import_pkg:import_fixture"],
+)
+
+dart_test(
+    name = "consumer_test",
+    size = "small",
+    main = "test/consumer_test.dart",
+    deps = [
+        ":colocated_fixture",
+        "@pub_deps//:test",
+    ],
+)

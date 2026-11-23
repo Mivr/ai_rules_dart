@@ -1,0 +1,249 @@
+load("//dart:defs.bzl", "dart_binary", "dart_code_asset", "dart_library", "dart_test")
+load(
+    "//dart/tests:defines_test.bzl",
+    "both_stages_asserts_test",
+    "dbg_both_stages_asserts_test",
+    "staged_defines_test",
+    "with_dbg_compilation_mode",
+    "with_extra_dart_defines",
+)
+
+# Two `dart_binary` targets differing only in whether they carry a code asset,
+# which adds a mapping to the kernel step. Both declare `defines`, and one a
+# front-end flag through `dart_compile_flags`, so the tests below assert only
+# on where they land.
+
+# The `snapshot_patch_test` suite in `//dart/tests` builds its fixtures on this
+# entrypoint and inspects their compile actions, so the file is visible there.
+exports_files(
+    ["main.dart"],
+    visibility = ["//dart/tests:__pkg__"],
+)
+
+dart_library(
+    name = "comma_lib",
+    package_name = "defines_fixture",
+    srcs = ["lib/comma_lib.dart"],
+)
+
+dart_binary(
+    name = "plain",
+    dart_compile_flags = ["-DFLAG=fe"],
+    defines = [
+        "CHANNEL=direct",
+        "COMMA_VAL=a,b",
+    ],
+    main = "main.dart",
+)
+
+staged_defines_test(
+    name = "direct_defines_test",
+    size = "small",
+    expected_flags = [
+        "-DCHANNEL=direct",
+        "-DCOMMA_VAL=a,b",
+        "-DFLAG=fe",
+    ],
+    target_under_test = ":plain",
+)
+
+dart_code_asset(
+    name = "asset",
+    asset_id = "package:defines_fixture/src/ffi/defines_fixture.g.dart",
+    shared_library = "//dart/tests/cc_fixture:empty_shared",
+)
+
+dart_binary(
+    name = "staged",
+    code_assets = [":asset"],
+    defines = [
+        "CHANNEL=staged",
+        "COMMA_VAL=a,b",
+    ],
+    main = "main.dart",
+)
+
+staged_defines_test(
+    name = "staged_defines_test",
+    size = "small",
+    expected_flags = [
+        "-DCHANNEL=staged",
+        "-DCOMMA_VAL=a,b",
+    ],
+    target_under_test = ":staged",
+)
+
+# `dart_test`'s own `defines`, asserted where it actually matters: at run time.
+# Both of its compile shapes are covered, since code assets swap the action
+# that produces the kernel.
+
+dart_test(
+    name = "test_defines_test",
+    size = "small",
+    defines = [
+        "CHANNEL=runtime",
+        "COMMA_VAL=a,b",
+    ],
+    main = "assert_channel.dart",
+    visibility = ["//dart/tests:__pkg__"],
+    deps = [":comma_lib"],
+)
+
+dart_test(
+    name = "test_defines_with_code_asset_test",
+    size = "small",
+    code_assets = [":asset"],
+    defines = [
+        "CHANNEL=runtime",
+        "COMMA_VAL=a,b",
+    ],
+    main = "assert_channel.dart",
+    deps = [":comma_lib"],
+)
+
+dart_binary(
+    name = "modular_comma_defines_kernel",
+    compile_mode = "kernel",
+    main = "assert_channel.dart",
+    modular_kernel = True,
+    tags = ["manual"],
+    deps = [":comma_lib"],
+)
+
+with_extra_dart_defines(
+    name = "modular_comma_defines_dill",
+    extra_dart_defines = [
+        "CHANNEL=runtime",
+        "COMMA_VAL=a,b",
+    ],
+    target = ":modular_comma_defines_kernel",
+)
+
+dart_test(
+    name = "modular_comma_defines_test",
+    size = "small",
+    data = [":modular_comma_defines_dill"],
+    env = {"DILL_PATH": "$(rlocationpath :modular_comma_defines_dill)"},
+    main = "run_dill_test.dart",
+    visibility = ["//dart/tests:__pkg__"],
+    deps = ["//dart/runfiles"],
+)
+
+# `--enable-asserts` must reach both `DartKernel` and `DartCompile` in `exe`
+# and `aot-snapshot` modes, with and without `record_use = True`, and under
+# `--compilation_mode=dbg`.
+
+dart_binary(
+    name = "exe_with_asserts",
+    compile_mode = "exe",
+    dart_compile_flags = ["--enable-asserts"],
+    main = "assert_enabled_main.dart",
+)
+
+both_stages_asserts_test(
+    name = "exe_asserts_both_stages_test",
+    size = "small",
+    target_under_test = ":exe_with_asserts",
+)
+
+dbg_both_stages_asserts_test(
+    name = "exe_asserts_dbg_no_duplicate_test",
+    size = "small",
+    target_under_test = ":exe_with_asserts",
+)
+
+dart_binary(
+    name = "aot_with_asserts",
+    compile_mode = "aot-snapshot",
+    dart_compile_flags = ["--enable-asserts"],
+    main = "assert_enabled_main.dart",
+    tags = ["manual"],
+)
+
+both_stages_asserts_test(
+    name = "aot_asserts_both_stages_test",
+    size = "small",
+    target_under_test = ":aot_with_asserts",
+)
+
+dart_binary(
+    name = "exe_record_use_with_asserts",
+    compile_mode = "exe",
+    dart_compile_flags = ["--enable-asserts"],
+    main = "assert_enabled_main.dart",
+    record_use = True,
+    tags = ["manual"],
+)
+
+both_stages_asserts_test(
+    name = "exe_record_use_asserts_both_stages_test",
+    size = "small",
+    target_under_test = ":exe_record_use_with_asserts",
+)
+
+dart_binary(
+    name = "aot_record_use_with_asserts",
+    compile_mode = "aot-snapshot",
+    dart_compile_flags = ["--enable-asserts"],
+    main = "assert_enabled_main.dart",
+    record_use = True,
+    tags = ["manual"],
+)
+
+dart_binary(
+    name = "exe_record_use_plain",
+    compile_mode = "exe",
+    main = "assert_enabled_main.dart",
+    record_use = True,
+    tags = ["manual"],
+)
+
+dbg_both_stages_asserts_test(
+    name = "exe_record_use_dbg_both_stages_test",
+    size = "small",
+    target_under_test = ":exe_record_use_plain",
+)
+
+with_dbg_compilation_mode(
+    name = "exe_record_use_dbg",
+    tags = ["manual"],
+    target = ":exe_record_use_plain",
+)
+
+dart_binary(
+    name = "aot_record_use_plain",
+    compile_mode = "aot-snapshot",
+    main = "assert_enabled_main.dart",
+    record_use = True,
+    tags = ["manual"],
+)
+
+with_dbg_compilation_mode(
+    name = "aot_record_use_dbg",
+    tags = ["manual"],
+    target = ":aot_record_use_plain",
+)
+
+dart_test(
+    name = "aot_asserts_test",
+    size = "small",
+    data = [
+        ":aot_record_use_dbg",
+        ":aot_record_use_with_asserts",
+        ":aot_with_asserts",
+        ":exe_record_use_dbg",
+        ":exe_record_use_with_asserts",
+        ":exe_with_asserts",
+    ],
+    env = {
+        "AOT_ASSERTS_PATH": "$(rlocationpath :aot_with_asserts)",
+        "AOT_RECORD_USE_ASSERTS_PATH": "$(rlocationpath :aot_record_use_with_asserts)",
+        "AOT_RECORD_USE_DBG_PATH": "$(rlocationpath :aot_record_use_dbg)",
+        "EXE_ASSERTS_PATH": "$(rlocationpath :exe_with_asserts)",
+        "EXE_RECORD_USE_ASSERTS_PATH": "$(rlocationpath :exe_record_use_with_asserts)",
+        "EXE_RECORD_USE_DBG_PATH": "$(rlocationpath :exe_record_use_dbg)",
+    },
+    main = "aot_asserts_test.dart",
+    visibility = ["//dart/tests:__pkg__"],
+    deps = ["//dart/runfiles"],
+)

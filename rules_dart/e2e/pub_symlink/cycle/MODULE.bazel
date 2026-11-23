@@ -1,0 +1,27 @@
+module(name = "pub_symlink_scc_e2e")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../..",
+)
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+dart.toolchain(dart_version = "3.13.5")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")
+
+# Red-by-design: the pair in pubspec.cycle.lock depends on each other, so
+# cycle planning merges them into one repository — but cycle_b_evil's
+# tarball carries a hard-link entry, and the header scan refuses it while
+# planning fetches the member archives. The fixtures live in
+# e2e/pub_symlink/fixtures/ (served over file://; the lock's FIXTURES_ROOT
+# placeholder is rewritten to the absolute path by the CI step).
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub", dev_dependency = True)
+pub.from_lock(
+    name = "cyc",
+    isolated = True,
+    lock = "//:pubspec.cycle.lock",
+)
+use_repo(pub, "cyc")

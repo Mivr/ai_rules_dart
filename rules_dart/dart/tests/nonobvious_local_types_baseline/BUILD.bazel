@@ -1,0 +1,14 @@
+load("//dart:defs.bzl", "dart_test")
+
+dart_test(
+    name = "nonobvious_local_types_baseline_test",
+    size = "small",
+    srcs = ["nonobvious_local_types_baseline_test.dart"],
+    args = ["$(rlocationpath //:analysis_baseline.json)"],
+    data = ["//:analysis_baseline.json"],
+    main = "nonobvious_local_types_baseline_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

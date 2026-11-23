@@ -1,0 +1,13 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzl
+e
+	fixture_a,Compiles the fixture sources into a library.*
+nameA unique name for this target. 
+e
+	fixture_b,Compiles the fixture sources into a library.*
+nameA unique name for this target. 
+e
+	fixture_c,Compiles the fixture sources into a library.*
+nameA unique name for this target. 
+e
+	fixture_d,Compiles the fixture sources into a library.*
+nameA unique name for this target. 

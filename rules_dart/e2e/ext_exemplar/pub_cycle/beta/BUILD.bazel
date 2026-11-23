@@ -1,0 +1,11 @@
+load("@rules_dart//dart:defs.bzl", "dart_package_member")
+
+# The other member of the `alpha`/`beta` cycle; see `//pub_cycle/alpha`.
+dart_package_member(
+    name = "beta",
+    package_name = "beta",
+    srcs = ["lib/beta.dart"],
+    language_version = "3.11",
+    version = "1.0.0",
+    visibility = ["//pub_cycle:__pkg__"],
+)

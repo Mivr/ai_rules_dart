@@ -1,0 +1,1343 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:runfiles/runfiles.dart';
+import 'package:test/test.dart';
+
+import '../../guard/lib/directive_guard.dart';
+
+/// Unit tests for the shared staged-source check, the absence of its former
+/// copies, and the enumeration of every Dart-reading tool through it.
+///
+/// The shared check lives in the public `package:rules_dart_guard` library
+/// (`dart/guard/lib/directive_guard.dart`). Every tool below enforces it: the
+/// whole-program `gen_kernel` wrapper imports it from source through its
+/// staged tool bundle, and the modular kernel planner — which takes no `deps`
+/// edge (every `dart_library` names it, so that would be a cycle) — reads the
+/// same file through `srcs` instead. One copy classifies every compile.
+///
+/// A Dart-reading tool that stops enforcing the check must fail the
+/// `every tool enforces the shared check` test below: each tool source is
+/// passed as a test argument (see BUILD.bazel) and must contain its
+/// enforcement marker. Tools that only parse Dart text without resolving
+/// directives against the filesystem are deliberately absent:
+/// `format_runner` (parses text only), `fix_applier`, `test_runner`,
+/// `kernel_launcher`, `copy_tree`, `dill_outline`, `kernel_link`, `noop` and
+/// `update_cross_sdk_versions` resolve no directive URI.
+
+/// The test's tool sources by file name, from the `rlocationpath` arguments
+/// under Bazel or from the source tree for a direct `dart test` run.
+Map<String, String> _toolSources(List<String> args) {
+  if (args.isEmpty) {
+    const guard = '../../guard/lib/directive_guard.dart';
+    const shim = '../../ext/lib/builder_shim.dart';
+    const names = [
+      'analyze_runner.dart',
+      'analyzer_summary.dart',
+      'app_jit_snapshot.dart',
+      'directive_guard.dart',
+      'fix_runner.dart',
+      'kernel_module.dart',
+      'link_hook_runner.dart',
+      'web_compile_runner.dart',
+      'builder_shim.dart',
+    ];
+    const relocated = {
+      'builder_shim.dart': shim,
+      'directive_guard.dart': guard,
+    };
+    return {
+      for (final name in names)
+        name: File.fromUri(Platform.script.resolve(relocated[name] ?? name))
+            .path,
+    };
+  }
+  final runfiles = Runfiles.create();
+  final sources = <String, String>{};
+  for (final arg in args) {
+    sources[arg.split('/').last] = runfiles.rlocation(arg);
+  }
+  return sources;
+}
+
+void main(List<String> args) {
+  late Directory tmp;
+
+  setUp(() {
+    tmp = Directory.systemTemp.createTempSync('directive_guard_test_');
+  });
+
+  tearDown(() {
+    tmp.deleteSync(recursive: true);
+  });
+
+  group('resolveStagedRelativeTarget', () {
+    test('sibling and nested relatives stay inside', () {
+      expect(
+        resolveStagedRelativeTarget('b.dart', '/r/proj/lib/a.dart'),
+        '/r/proj/lib/b.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('sub/b.dart', '/r/proj/lib/a.dart'),
+        '/r/proj/lib/sub/b.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('../dep/b.dart', '/r/proj/lib/sub/a.dart'),
+        '/r/proj/lib/dep/b.dart',
+      );
+    });
+
+    test('climbs leave the tree instead of clamping', () {
+      expect(
+        resolveStagedRelativeTarget('../../evil.dart', '/r/proj/lib/a.dart'),
+        '/r/evil.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('../evil.dart', '/r/proj/main.dart'),
+        '/r/evil.dart',
+      );
+    });
+
+    test('slash-absolute URIs resolve against the filesystem root', () {
+      expect(
+        resolveStagedRelativeTarget('/lib/b.dart', '/r/proj/lib/a.dart'),
+        '/lib/b.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('/etc/hostname', '/r/proj/lib/a.dart'),
+        '/etc/hostname',
+      );
+    });
+
+    test('backslashes separate like the analyzer', () {
+      expect(
+        resolveStagedRelativeTarget(r'..\..\evil.dart', '/r/proj/lib/a.dart'),
+        '/r/evil.dart',
+      );
+    });
+
+    test('encoded dots climb, encoded slashes name no file', () {
+      expect(
+        resolveStagedRelativeTarget('%2e%2e/evil.dart', '/r/proj/lib/a.dart'),
+        '/r/proj/evil.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('%2E%2E/evil.dart', '/r/proj/lib/a.dart'),
+        '/r/proj/evil.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget(
+          '..%2f..%2fevil.dart',
+          '/r/proj/lib/a.dart',
+        ),
+        isNull,
+      );
+    });
+
+    test('an empty reference names the importing file itself', () {
+      expect(
+        resolveStagedRelativeTarget('', '/r/proj/lib/a.dart'),
+        '/r/proj/lib/a.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('?query=1', '/r/proj/lib/a.dart'),
+        '/r/proj/lib/a.dart',
+      );
+    });
+
+    test('a query is dropped and the path part resolved', () {
+      expect(
+        resolveStagedRelativeTarget('b.dart?x=1', '/r/proj/lib/a.dart'),
+        '/r/proj/lib/b.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget(
+          '../../evil.dart?x=1',
+          '/r/proj/lib/a.dart',
+        ),
+        '/r/evil.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('/etc/hostname?x=1', '/r/proj/lib/a.dart'),
+        '/etc/hostname',
+      );
+      expect(
+        resolveStagedRelativeTarget('../evil.dart?a:b', '/r/proj/main.dart'),
+        '/r/evil.dart',
+      );
+    });
+
+    test('a fragment names no file, whatever path precedes it', () {
+      const from = '/r/proj/lib/a.dart';
+      expect(resolveStagedRelativeTarget('#frag', from), isNull);
+      expect(resolveStagedRelativeTarget('b.dart#frag', from), isNull);
+      expect(resolveStagedRelativeTarget('b.dart?x=1#frag', from), isNull);
+      expect(resolveStagedRelativeTarget('../../evil.dart#frag', from), isNull);
+    });
+
+    test('schemes, authorities and drive paths yield null', () {
+      const from = '/r/proj/lib/a.dart';
+      expect(resolveStagedRelativeTarget('dart:core', from), isNull);
+      expect(resolveStagedRelativeTarget('package:p/a.dart', from), isNull);
+      expect(resolveStagedRelativeTarget('file:/etc/hosts', from), isNull);
+      expect(resolveStagedRelativeTarget('a.dart#x', from), isNull);
+      expect(resolveStagedRelativeTarget('//host/a.dart', from), isNull);
+      expect(resolveStagedRelativeTarget('C:/a.dart', from), isNull);
+    });
+  });
+
+  group('empty segments', () {
+    const dirs = {'demo': 'pkg/lib'};
+    const from = 'pkg/lib/a.dart';
+
+    test('resolveStagedRelativeTarget counts them like RFC 3986', () {
+      const file = '/r/pkg/lib/a.dart';
+      expect(
+        resolveStagedRelativeTarget('sibling//helper.dart', file),
+        '/r/pkg/lib/sibling/helper.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('../src//b.dart', file),
+        '/r/pkg/src/b.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('a///b.dart', file),
+        '/r/pkg/lib/a/b.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('src//../b.dart', file),
+        '/r/pkg/lib/src/b.dart',
+      );
+      expect(resolveStagedRelativeTarget('/a//b.dart', file), isNull);
+    });
+
+    test('resolveDirectiveUri accepts them after the first segment', () {
+      expect(
+        resolveDirectiveUri('package:demo/src//b.dart', from, dirs),
+        'pkg/lib/src/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('package:demo/a//b//c.dart', from, dirs),
+        'pkg/lib/a/b/c.dart',
+      );
+      expect(
+        resolveDirectiveUri('package:demo/src//../b.dart', from, dirs),
+        'pkg/lib/src/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('sibling//helper.dart', from, dirs),
+        'pkg/lib/sibling/helper.dart',
+      );
+      expect(
+        resolveDirectiveUri('../src//b.dart', from, dirs),
+        'pkg/lib/src/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('src//../b.dart', from, dirs),
+        'pkg/lib/src/b.dart',
+      );
+    });
+
+    test('resolveDirectiveUri and resolveStagedRelativeTarget agree', () {
+      for (final uri in [
+        'sibling//helper.dart',
+        'a///b.dart',
+        'x//../y.dart',
+      ]) {
+        final String? staged = resolveStagedRelativeTarget(
+          uri,
+          '/r/pkg/lib/a.dart',
+        );
+        expect('/r/${resolveDirectiveUri(uri, from, dirs)}', staged);
+      }
+    });
+
+    test('resolveDirectiveUri still refuses the host-reading spellings', () {
+      for (final uri in [
+        'package:demo//b.dart',
+        'package:demo///b.dart',
+        '/a//b.dart',
+        '//host/b.dart',
+        'org-dartlang-root:///a//b.dart',
+        'package:demo/src//../../../b.dart',
+      ]) {
+        expect(resolveDirectiveUri(uri, from, dirs), isNull, reason: uri);
+      }
+    });
+  });
+
+  group('isEscapingPackageUri', () {
+    test('climbs above the package escape', () {
+      expect(isEscapingPackageUri('package:p/sub/../../x.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/../../x.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/%2e%2e/x.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/%2E%2E/x.dart'), isTrue);
+    });
+
+    test('an escaping path still escapes with a query or fragment', () {
+      expect(isEscapingPackageUri('package:p/../../x.dart?q'), isTrue);
+      expect(
+        isEscapingPackageUri('package:p/sub/../../x.dart?x=1#frag'),
+        isTrue,
+      );
+      expect(isEscapingPackageUri('package:p/../../x.dart#frag'), isTrue);
+      expect(isEscapingPackageUri('package:p//x.dart?x=1'), isTrue);
+      expect(isEscapingPackageUri('package:p/..%2F..%2Fx.dart?q'), isTrue);
+    });
+
+    test('a decoded separator escapes however the front end spells it', () {
+      expect(isEscapingPackageUri('package:p/..%2F..%2Fx.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/..%2f..%2fx.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/..%5C..%5Cx.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/a%2Fb.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/a%5Cb.dart'), isTrue);
+    });
+
+    test('an empty segment right after the package name escapes', () {
+      expect(isEscapingPackageUri('package:p//x.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p///x.dart'), isTrue);
+      expect(isEscapingPackageUri(r'package:p\\x.dart'), isTrue);
+    });
+
+    test('a later empty segment stays inside and counts for `..`', () {
+      expect(isEscapingPackageUri('package:p/a//x.dart'), isFalse);
+      expect(isEscapingPackageUri('package:p/a/b//c//d.dart'), isFalse);
+      expect(isEscapingPackageUri('package:p/a//../x.dart'), isFalse);
+      expect(isEscapingPackageUri('package:p/a//../../x.dart'), isFalse);
+      // The empty segment is popped by the first `..`, the second pops `a`,
+      // the third leaves the package.
+      expect(isEscapingPackageUri('package:p/a//../../../x.dart'), isTrue);
+    });
+
+    test('URIs inside the package do not escape', () {
+      expect(isEscapingPackageUri('package:p/a.dart'), isFalse);
+      expect(isEscapingPackageUri('package:p/sub/../a.dart'), isFalse);
+      expect(isEscapingPackageUri('package:p'), isFalse);
+      expect(isEscapingPackageUri('package:p/a.dart?x=1'), isFalse);
+      expect(isEscapingPackageUri('package:p/a.dart#frag'), isFalse);
+      expect(isEscapingPackageUri('package:p/a.dart?x=1#frag'), isFalse);
+      expect(isEscapingPackageUri('package:p/sub/a.dart?x=../../y'), isFalse);
+    });
+
+    test('only plain package: URIs are classified', () {
+      expect(isEscapingPackageUri('package:p/a.dart?x=1'), isFalse);
+      expect(isEscapingPackageUri('../x.dart'), isFalse);
+      expect(isEscapingPackageUri('dart:core'), isFalse);
+    });
+  });
+
+  group('hasEmptyPathSegment', () {
+    test('doubled slashes count where the front end reads a host file', () {
+      expect(hasEmptyPathSegment('/a//b.dart'), isTrue);
+      expect(hasEmptyPathSegment('package:p//a.dart'), isTrue);
+      expect(hasEmptyPathSegment('package:p///a.dart'), isTrue);
+      expect(hasEmptyPathSegment('org-dartlang-root:////a.dart'), isTrue);
+      expect(hasEmptyPathSegment('org-dartlang-root:///a//b.dart'), isTrue);
+    });
+
+    test('doubled slashes inside a package path or a relative do not', () {
+      expect(hasEmptyPathSegment('a//b.dart'), isFalse);
+      expect(hasEmptyPathSegment(r'a\\b.dart'), isFalse);
+      expect(hasEmptyPathSegment('a//b.dart?x=1'), isFalse);
+      expect(hasEmptyPathSegment('../src//b.dart'), isFalse);
+      expect(hasEmptyPathSegment('package:p/a//b.dart'), isFalse);
+      expect(hasEmptyPathSegment('package:p/a//b.dart?x=1'), isFalse);
+    });
+
+    test('single slashes and segment-free URIs do not', () {
+      expect(hasEmptyPathSegment('a/b.dart'), isFalse);
+      expect(hasEmptyPathSegment('/a/b.dart'), isFalse);
+      expect(hasEmptyPathSegment('package:p/a.dart'), isFalse);
+      expect(hasEmptyPathSegment('org-dartlang-root:///a.dart'), isFalse);
+      expect(hasEmptyPathSegment(''), isFalse);
+      expect(hasEmptyPathSegment('?x=1'), isFalse);
+      expect(hasEmptyPathSegment('#frag'), isFalse);
+      expect(hasEmptyPathSegment('//host/a.dart'), isFalse);
+      expect(hasEmptyPathSegment('dart:core'), isFalse);
+      expect(hasEmptyPathSegment('file:///etc/hosts'), isFalse);
+      expect(hasEmptyPathSegment('package:p'), isFalse);
+    });
+  });
+
+  group('isDisallowedDirectiveUri', () {
+    test(
+      'schemeless authorities are disallowed in every separator spelling',
+      () {
+        expect(isDisallowedDirectiveUri('//host/evil.dart'), isTrue);
+        expect(isDisallowedDirectiveUri(r'\\host\evil.dart'), isTrue);
+        expect(isDisallowedDirectiveUri('//host/evil.dart?v=1'), isTrue);
+        expect(isDisallowedDirectiveUri('//host/evil.dart#frag'), isTrue);
+      },
+    );
+
+    test('relatives and declared schemes pass', () {
+      expect(isDisallowedDirectiveUri('b.dart'), isFalse);
+      expect(isDisallowedDirectiveUri('../b.dart'), isFalse);
+      expect(isDisallowedDirectiveUri('b.dart#frag'), isFalse);
+      expect(isDisallowedDirectiveUri('dart:core'), isFalse);
+      expect(isDisallowedDirectiveUri('package:demo/b.dart'), isFalse);
+      expect(
+        isDisallowedDirectiveUri('org-dartlang-root:///pkg/lib/b.dart'),
+        isFalse,
+      );
+      expect(isDisallowedDirectiveUri(''), isFalse);
+    });
+  });
+
+  group('findDisallowedDirectives', () {
+    test('triple-quoted URIs are refused in every directive kind', () {
+      expect(
+        findDisallowedDirectives({
+          'm.dart': "import '''   \nfile:///etc/hosts''';\n",
+          'n.dart': "export '''\t\n/secret/s.dart''';\n",
+          'o.dart': "part '''   \n../../evil_part.dart''';\n",
+          'p.dart': "part of r'''   \n../../evil_lib.dart''';\n",
+        }, tool: 'guard-test'),
+        [
+          "guard-test: m.dart import '   \nfile:///etc/hosts' "
+              'is not a declared input.',
+          "guard-test: n.dart export '\t\n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: o.dart part '   \n../../evil_part.dart' "
+              'is not a declared input.',
+          "guard-test: p.dart part of '   \n../../evil_lib.dart' "
+              'is not a declared input.',
+        ],
+      );
+    });
+
+    test('single-line URIs still classify by scheme', () {
+      expect(
+        findDisallowedDirectives({
+          'm.dart': "import 'file:///etc/hosts';\n",
+          'n.dart': "import '''b.dart''';\n",
+        }, tool: 'guard-test'),
+        [
+          "guard-test: m.dart import 'file:///etc/hosts' "
+              'is not a declared input.',
+        ],
+      );
+    });
+
+    test('a directive without its semicolon swallows no directive', () {
+      // A missing `;` once let the tail skip swallow the next directive
+      // unchecked: the swallowed URI never reached the checks. The skip now
+      // stops at the directive boundary, so the next directive is scanned
+      // and its disallowed URI reported.
+      expect(
+        findDisallowedDirectives({
+          'm.dart': "import 'a.dart' import 'file:///etc/hosts';\n",
+        }, tool: 'guard-test'),
+        [
+          "guard-test: m.dart import 'file:///etc/hosts' "
+              'is not a declared input.',
+        ],
+      );
+    });
+  });
+
+  group('projectStagedRoots', () {
+    test('a .proj project scans itself and its .extpkgs sibling', () {
+      expect(projectStagedRoots('/r/x.proj'), ['/r/x.proj', '/r/x.extpkgs']);
+      expect(projectStagedRoots('/r/x.proj/'), ['/r/x.proj/', '/r/x.extpkgs']);
+    });
+
+    test('other roots scan alone', () {
+      expect(projectStagedRoots('/r/other'), ['/r/other']);
+    });
+  });
+
+  group('hasLineBreak', () {
+    test('a scanned value holding a line break counts', () {
+      expect(hasLineBreak('a\nb.dart'), isTrue);
+      expect(hasLineBreak('a\rb.dart'), isTrue);
+      expect(hasLineBreak('a\r\nb.dart'), isTrue);
+      expect(hasLineBreak('   \n/secret/s.dart'), isTrue);
+      expect(hasLineBreak('\n/secret/s.dart'), isTrue);
+    });
+
+    test('single-line spellings do not', () {
+      expect(hasLineBreak('b.dart'), isFalse);
+      expect(hasLineBreak('/etc/hostname'), isFalse);
+      expect(hasLineBreak('file:///etc/hosts'), isFalse);
+      // A literal backslash-n is two characters, not a break: only the
+      // scanner's unescaped value (where an escape became a real break)
+      // reaches this predicate.
+      expect(hasLineBreak(r'a\nb.dart'), isFalse);
+      expect(hasLineBreak(''), isFalse);
+    });
+  });
+
+  group('findStagedDirectiveViolations', () {
+    late Directory staged;
+
+    String stagedFile(String relative, String content) {
+      final file = File('${staged.path}/$relative')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(content);
+      return file.path.replaceAll(r'\', '/');
+    }
+
+    setUp(() {
+      staged = Directory('${tmp.path}/pkg/demo.proj')
+        ..createSync(recursive: true);
+      stagedFile('lib/b.dart', 'library b;\n');
+      stagedFile('lib/a.dart', "import 'b.dart';\n");
+      stagedFile('lib/sub/ok.dart', "import '../b.dart';\n");
+      stagedFile('lib/climb.dart', "import '../../evil.dart';\n");
+      stagedFile(
+        'lib/cond.dart',
+        "import 'b.dart' if (dart.library.io) '../../evil.dart';\n",
+      );
+      stagedFile('lib/scheme.dart', "import 'file:///etc/hosts';\n");
+      stagedFile(
+        'lib/pkg.dart',
+        "import 'package:demo/sub/../../evil.dart';\n",
+      );
+      stagedFile('lib/abs.dart', "import '/etc/hostname';\n");
+      stagedFile('lib/empty.dart', "import 'a//b.dart';\n");
+      stagedFile('lib/emptypkg.dart', "import 'package:demo//evil.dart';\n");
+      stagedFile('lib/emptypkg3.dart', "export 'package:demo///evil.dart';\n");
+      stagedFile('lib/emptyabs.dart', "import '/lib//b.dart';\n");
+      stagedFile('lib/sub/t.dart', 'library t;\n');
+      stagedFile(
+        'lib/doubled.dart',
+        "import 'package:demo/sub//t.dart';\n"
+            "export 'sub//t.dart';\n"
+            "import 'sub//../t.dart';\n"
+            "import '../lib//b.dart';\n"
+            "part 'sub///t.dart';\n"
+            "part of 'package:demo/sub//t.dart';\n"
+            "import 'package:demo/sub//../b.dart';\n",
+      );
+      stagedFile('lib/part.dart', "part '../../evil_part.dart';\n");
+      stagedFile('lib/partof.dart', "part of '../../evil_lib.dart';\n");
+      stagedFile('lib/dart.dart', "import 'dart:core';\n");
+      stagedFile('lib/inside.dart', "import 'package:demo/sub/a.dart';\n");
+      stagedFile('lib/self.dart', "import '' as self;\n");
+      stagedFile('lib/selfq.dart', "import '?v=1' as self;\n");
+      stagedFile('lib/qsib.dart', "import 'b.dart?v=1';\n");
+      stagedFile('lib/qclimb.dart', "import '../../evil.dart?v=1';\n");
+      stagedFile('lib/qabs.dart', "import '/etc/hostname?v=1';\n");
+      stagedFile('lib/frag.dart', "import 'b.dart#frag';\n");
+      stagedFile('lib/slashauth.dart', "import '//host/evil.dart';\n");
+      // Four source backslashes (0x5C): the scanner unescapes `\\` pairs, so
+      // the extracted URI leads with `\\`, which the check reads as the `//`
+      // authority refusal. A single source backslash would unescape to one and
+      // refuse as an absolute path instead.
+      File('${staged.path}/lib/backslash.dart'.replaceAll(r'\', '/'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([
+          ...utf8.encode("import '"),
+          0x5c,
+          0x5c,
+          0x5c,
+          0x5c,
+          ...utf8.encode('host'),
+          0x5c,
+          0x5c,
+          ...utf8.encode("evil.dart';\n"),
+        ]);
+      File('${staged.path}/lib/malformed.dart'.replaceAll(r'\', '/'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([
+          ...utf8.encode("import 'b.dart';\n// "),
+          0xff,
+          ...utf8.encode("\nimport '../../evil.dart';\n"),
+        ]);
+      stagedFile('main.dart', "import '../evil.dart';\n");
+    });
+
+    test('refuses every escape and allows the declared tree', () {
+      final List<String> violations = findStagedDirectiveViolations([
+        staged.path,
+      ], tool: 'guard-test');
+      final String Function(String relative) at = (String relative) =>
+          '${staged.path}/$relative'.replaceAll(r'\', '/');
+      expect(violations, [
+        "guard-test: ${at('lib/abs.dart')} import '/etc/hostname' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/backslash.dart')} import '\\\\host\\evil.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/climb.dart')} import '../../evil.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/cond.dart')} import '../../evil.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/empty.dart')} import 'a//b.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/emptyabs.dart')} import '/lib//b.dart' is not a declared input.",
+        "guard-test: ${at('lib/emptypkg.dart')} import 'package:demo//evil.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/emptypkg3.dart')} export 'package:demo///evil.dart' is not a declared input.",
+        "guard-test: ${at('lib/frag.dart')} import 'b.dart#frag' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/malformed.dart')} import '../../evil.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/part.dart')} part '../../evil_part.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/partof.dart')} part of '../../evil_lib.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/pkg.dart')} import "
+            "'package:demo/sub/../../evil.dart' is not a declared input.",
+        "guard-test: ${at('lib/qabs.dart')} import '/etc/hostname?v=1' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/qclimb.dart')} import '../../evil.dart?v=1' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/scheme.dart')} import 'file:///etc/hosts' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/slashauth.dart')} import '//host/evil.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('main.dart')} import '../evil.dart' "
+            'is not a declared input.',
+      ]);
+    });
+
+    test('missing roots scan as empty', () {
+      expect(
+        findStagedDirectiveViolations([
+          '${tmp.path}/no-such-dir',
+        ], tool: 'guard-test'),
+        isEmpty,
+      );
+    });
+
+    group('triple-quoted URIs', () {
+      late Directory tq;
+      late String hostSecret;
+
+      String tqFile(String relative, String content) {
+        final file = File('${tq.path}/$relative')
+          ..createSync(recursive: true)
+          ..writeAsStringSync(content);
+        return file.path.replaceAll(r'\', '/');
+      }
+
+      setUp(() {
+        tq = Directory('${tmp.path}/tq.proj')..createSync(recursive: true);
+        tqFile('lib/ok.dart', 'const ok = 1;\n');
+        // A host file outside the staged tree, named by an absolute path.
+        hostSecret =
+            (File('${tmp.path}/host_secret.dart')
+                  ..writeAsStringSync('const hostSecret = 1;\n'))
+                .path
+                .replaceAll(r'\', '/');
+        // Every spelling the front end reads differently from the guard: a
+        // whitespace-only (or lone-backslash) first line is dropped, so the
+        // front end reads `/secret/s.dart` (or the host path) while the
+        // guard would see a relative staged path. All are refused outright.
+        tqFile('lib/ws.dart', "import '''   \n/secret/s.dart''';\n");
+        tqFile('lib/tab.dart', "import '''\t\t\n/secret/s.dart''';\n");
+        tqFile('lib/bs.dart', "import '''\\\n/secret/s.dart''';\n");
+        tqFile('lib/raw.dart', "import r'''   \n/secret/s.dart''';\n");
+        tqFile('lib/dq.dart', 'import """   \n/secret/s.dart""";\n');
+        tqFile('lib/host.dart', "import '''   \n$hostSecret''';\n");
+        tqFile('lib/hostfile.dart', "import '''   \nfile:///etc/hosts''';\n");
+        tqFile('lib/exp.dart', "export '''   \n/secret/s.dart''';\n");
+        tqFile('lib/prt.dart', "part '''   \n../../evil_part.dart''';\n");
+        tqFile('lib/pof.dart', "part of '''   \n../../evil_lib.dart''';\n");
+        // A relative target with no staged file is refused too: only a
+        // staged file backs a declared input.
+        tqFile('lib/missing.dart', "import 'nosuch.dart';\n");
+      });
+
+      test('every triple-quote spelling is refused', () {
+        final List<String> violations = findStagedDirectiveViolations([
+          tq.path,
+        ], tool: 'guard-test');
+        final String Function(String relative) at = (String relative) =>
+            '${tq.path}/$relative'.replaceAll(r'\', '/');
+        expect(violations, [
+          "guard-test: ${at('lib/bs.dart')} import '\n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/dq.dart')} import '   \n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/exp.dart')} export '   \n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/host.dart')} import '   \n$hostSecret' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/hostfile.dart')} import "
+              "'   \nfile:///etc/hosts' is not a declared input.",
+          "guard-test: ${at('lib/missing.dart')} import 'nosuch.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/pof.dart')} part of '   \n../../evil_lib.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/prt.dart')} part '   \n../../evil_part.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/raw.dart')} import '   \n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/tab.dart')} import '\t\t\n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/ws.dart')} import '   \n/secret/s.dart' "
+              'is not a declared input.',
+        ]);
+      });
+
+      test('single-line triple-quoted URIs still resolve', () {
+        tqFile('lib/clean.dart', "import '''ok.dart''';\n");
+        tqFile('lib/cleanexp.dart', "export '''ok.dart''';\n");
+        // An empty first line is dropped by the guard and the front end
+        // alike, so this names the staged sibling, not the host.
+        tqFile('lib/emptyfirst.dart', "import '''\nok.dart''';\n");
+        final List<String> violations = findStagedDirectiveViolations([
+          tq.path,
+        ], tool: 'guard-test');
+        expect(violations.where((v) => v.contains('clean')), isEmpty);
+        expect(violations.where((v) => v.contains('emptyfirst')), isEmpty);
+      });
+
+      test('the summary runner still refuses multi-line URIs', () {
+        // Dependency sources arrive through summaries, not the staged tree,
+        // so the summary runner allows a relative target with no staged file
+        // — but a URI spanning lines is refused however it spells its target.
+        final List<String> allowed = findStagedDirectiveViolations(
+          [tq.path],
+          tool: 'guard-test',
+          requireTargetsExist: false,
+        );
+        expect(allowed.where((v) => v.contains('missing.dart')), isEmpty);
+        final String wsAt = '${tq.path}/lib/ws.dart'.replaceAll(r'\', '/');
+        expect(
+          allowed,
+          contains(
+            "guard-test: $wsAt import '   \n/secret/s.dart' "
+            'is not a declared input.',
+          ),
+        );
+      });
+    });
+  });
+
+  group('no staged-resolver copies', () {
+    test('the wrapper imports the shared library instead of copying it', () {
+      final Map<String, String> s = _toolSources(args);
+      final String text = File(s['app_jit_snapshot.dart']!).readAsStringSync();
+      expect(text, contains("import '../../guard/lib/directive_guard.dart';"));
+      expect(text, isNot(contains('staged-resolver-mirror')));
+      expect(text, isNot(contains('Mirror of `directive_guard.dart`')));
+    });
+  });
+
+  group('unparsable prologues', () {
+    // Each source hides an escaping directive past a syntax error, so the
+    // scanner gives up: the checks refuse the file instead of calling it
+    // clean. The first is the review's probe; the rest start with a directive
+    // keyword but form no directive of that kind, which ends the prologue
+    // early on older code and hides what follows.
+    const bad = [
+      "import 'dart:core' if (dart.library.io) ;\n"
+          "import '../../host/secret.dart';\n",
+      "library a.;\nimport 'file:///etc/hosts';\n",
+      "import 'a.dart;\nimport 'file:///etc/hosts';\n",
+      "export lib.dart;\nimport '../../host/secret.dart';\n",
+      "import foo;\nimport 'file:///etc/hosts';\n",
+      "import;\nimport 'file:///etc/hosts';\n",
+      "import 'a.dart';\nimport",
+      "part foo;\nimport 'file:///etc/hosts';\n",
+      "part;\nimport 'file:///etc/hosts';\n",
+      "library 123;\nimport '../../host/secret.dart';\n",
+      "library 'x';\nimport '../../host/secret.dart';\n",
+    ];
+
+    test('findDisallowedDirectives refuses sources it cannot scan', () {
+      for (var i = 0; i < bad.length; i++) {
+        final List<String> errors = findDisallowedDirectives({
+          'bad$i.dart': bad[i],
+        }, tool: 'guard-test');
+        expect(errors, hasLength(1));
+        expect(errors.single, contains('bad$i.dart'));
+        expect(errors.single, contains('could not be checked'));
+        expect(errors.single, contains('syntax error'));
+      }
+    });
+
+    test('findStagedDirectiveViolations refuses sources it cannot scan', () {
+      final root = Directory('${tmp.path}/unparsable.proj')
+        ..createSync(recursive: true);
+      for (var i = 0; i < bad.length; i++) {
+        File('${root.path}/bad$i.dart').writeAsStringSync(bad[i]);
+      }
+      final List<String> violations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+      expect(violations, hasLength(bad.length));
+      for (var i = 0; i < bad.length; i++) {
+        final String hit = violations.singleWhere(
+          (v) => v.contains('bad$i.dart'),
+        );
+        expect(hit, contains('could not be checked'));
+        expect(hit, contains('syntax error'));
+      }
+    });
+  });
+
+  group('valid prologues', () {
+    test('scan the same directives as before', () {
+      final cases = <String, List<String>>{
+        '#!/usr/bin/env dart\nimport \'a.dart\';\n': ['a.dart'],
+        '﻿import \'a.dart\';\n': ['a.dart'],
+        'library;\nimport \'a.dart\';\n': ['a.dart'],
+        'library a.b;\nimport \'a.dart\';\n': ['a.dart'],
+        '@Tag(\'x\', (1)) library L;\nimport \'a.dart\';\n': ['a.dart'],
+        '@Tag(\'x\') import \'a.dart\';\n': ['a.dart'],
+        'import \'a.dart\' if (dart.library.io) \'io.dart\' '
+            'if (dart.library.html == \'true\') \'html.dart\';\n': [
+          'a.dart',
+          'io.dart',
+          'html.dart',
+        ],
+        'export \'a.dart\' if (dart.library.io) \'io.dart\';\n': [
+          'a.dart',
+          'io.dart',
+        ],
+        'import \'a.dart\' deferred as a show Foo hide Bar;\n': ['a.dart'],
+        'import r\'a.dart\';\n': ['a.dart'],
+        'import \'a.dart\' \'b.dart\';\n': ['a.dartb.dart'],
+        'import \'\'\'a.dart\'\'\';\n': ['a.dart'],
+        // A directive without its `;` ends at the next directive boundary:
+        // the tail skip stops instead of swallowing the next directive.
+        'import \'a.dart\' import \'b.dart\';\n': ['a.dart', 'b.dart'],
+        'export \'a.dart\' export \'b.dart\';\n': ['a.dart', 'b.dart'],
+        'import \'a.dart\' @A import \'b.dart\';\n': ['a.dart', 'b.dart'],
+        'import \'a.dart\' if (dart.library.io) \'b.dart\' export \'c.dart\';\n':
+            ['a.dart', 'b.dart', 'c.dart'],
+        'import \'a.dart\' show library;\n': ['a.dart'],
+        'import \'a.dart\' as part;\n': ['a.dart'],
+        'import \'a.dart\' hide export;\n': ['a.dart'],
+        'part \'p.dart\';\npart of \'l.dart\';\n': ['p.dart', 'l.dart'],
+        'part of my.lib;\n': [],
+        '// c\n/* d */ import /* e */ \'a.dart\' /* f */ ; // g\n': ['a.dart'],
+        'import \'a.dart\';\nvoid main() {}\nimport \'b.dart\';\n': ['a.dart'],
+        // Directive words used as declaration names end the prologue instead:
+        // none of these statements starts with a directive keyword.
+        'final part = 1;\n': [],
+        'void importer() {}\n': [],
+        'import \'a.dart\';\nint get library => 0;\n': ['a.dart'],
+      };
+      for (final MapEntry<String, List<String>> entry in cases.entries) {
+        expect(
+          scanAllDirectiveUris(entry.key).map((r) => r.uri).toList(),
+          entry.value,
+          reason: entry.key,
+        );
+      }
+    });
+  });
+
+  group('directive words as names', () {
+    test('declarations using them still end the prologue cleanly', () {
+      final root = Directory('${tmp.path}/names.proj')
+        ..createSync(recursive: true);
+      File('${root.path}/a.dart')
+          .writeAsStringSync('final part = 1;\nvoid importer() {}\n');
+      File('${root.path}/b.dart')
+          .writeAsStringSync("import 'a.dart';\nint get library => 0;\n");
+      expect(
+        findStagedDirectiveViolations([root.path], tool: 'guard-test'),
+        isEmpty,
+      );
+      expect(
+        findDisallowedDirectives({
+          'a.dart': 'final part = 1;\nvoid importer() {}\n',
+          'b.dart': "import 'a.dart';\nint get library => 0;\n",
+        }, tool: 'guard-test'),
+        isEmpty,
+      );
+    });
+
+    test('functions named with directive keywords end the prologue', () {
+      const keywords = ['library', 'import', 'export', 'part'];
+      const shapes = [
+        '() => 1;',
+        '<T>() => 2;',
+        '\n() => 1;',
+        '/* c */ () => 1;',
+        '// c\n() => 1;',
+      ];
+      final sources = <String, String>{};
+      for (final keyword in keywords) {
+        for (var i = 0; i < shapes.length; i++) {
+          final src = "import 'a.dart';\n$keyword${shapes[i]}\n";
+          expect(scanAllDirectiveUris(src).map((r) => r.uri).toList(), [
+            'a.dart',
+          ], reason: '$keyword${shapes[i]}');
+          sources['$keyword$i.dart'] = src;
+        }
+      }
+      expect(findDisallowedDirectives(sources, tool: 'guard-test'), isEmpty);
+    });
+
+    test('keyword-named declarations are clean in the staged tree', () {
+      final root = Directory('${tmp.path}/kwnames.proj')
+        ..createSync(recursive: true);
+      File('${root.path}/a.dart').writeAsStringSync('const a = 1;\n');
+      for (final keyword in ['library', 'import', 'export', 'part']) {
+        File('${root.path}/$keyword.dart')
+            .writeAsStringSync("import 'a.dart';\n$keyword<T>() => 2;\n");
+      }
+      expect(
+        findStagedDirectiveViolations([root.path], tool: 'guard-test'),
+        isEmpty,
+      );
+    });
+  });
+
+  group('isEscapingPackageUri backslashes', () {
+    test('backslash spellings climbing out escape', () {
+      const escaping = [
+        r'package:proj\..\..\host\secret.dart',
+        r'package:proj\..%5c..%5chost%5csecret.dart',
+        'package:proj%5c..%5c..%5chost%5csecret.dart',
+        'package:proj%5C..%5C..%5Chost%5Csecret.dart',
+        r'package:proj/..\..\host/secret.dart',
+        r'package:\x.dart',
+        'package:/x.dart',
+      ];
+      for (final uri in escaping) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+      }
+    });
+
+    test('backslash spellings staying inside do not escape', () {
+      const inside = [
+        r'package:proj\lib_file.dart',
+        r'package:proj/a\..\b.dart',
+      ];
+      for (final uri in inside) {
+        expect(isEscapingPackageUri(uri), isFalse, reason: uri);
+      }
+    });
+  });
+
+  group('dot segments collapsing into an empty first segment', () {
+    const refused = [
+      'package:demo/.//x.dart',
+      'package:demo/a/..//x.dart',
+      'package:demo/././/x.dart',
+      'package:demo/%2E//x.dart',
+      'package:demo/a/%2e%2e//x.dart',
+      'package:demo/a/%2E%2e//x.dart',
+    ];
+    const accepted = [
+      'package:demo/src//b.dart',
+      'package:demo/a//b//c.dart',
+      'package:demo/src//../b.dart',
+      'package:demo/./src/b.dart',
+      'package:demo/a/../src/b.dart',
+    ];
+    const dirs = {'demo': 'demo/lib'};
+
+    test('every spelling is an escape and has an empty segment', () {
+      for (final uri in refused) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+        expect(hasEmptyPathSegment(uri), isTrue, reason: uri);
+        expect(resolveDirectiveUri(uri, 'demo/lib/a.dart', dirs), isNull);
+      }
+    });
+
+    test('a backslash spells the same collapse', () {
+      expect(isEscapingPackageUri(r'package:demo/.\\x.dart'), isTrue);
+    });
+
+    test('a doubled slash deeper in the path stays accepted', () {
+      for (final uri in accepted) {
+        expect(isEscapingPackageUri(uri), isFalse, reason: uri);
+        expect(hasEmptyPathSegment(uri), isFalse, reason: uri);
+        expect(resolveDirectiveUri(uri, 'demo/lib/a.dart', dirs), isNotNull);
+      }
+    });
+
+    test('the refusals that stay refused', () {
+      for (final uri in [
+        'package:p//x.dart',
+        'package:p///x.dart',
+        'package:p/a/../../x.dart',
+        'package:p/.//../../x.dart',
+        'package:p/a%2Fb.dart',
+        'package:p/a%5Cb.dart',
+      ]) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+      }
+    });
+
+    test('the staged check refuses each in import, export, part, part of', () {
+      final root = Directory('${tmp.path}/dotempty/demo.proj')
+        ..createSync(recursive: true);
+      var n = 0;
+      for (final uri in refused) {
+        for (final kind in ['import', 'export', 'part', 'part of']) {
+          File('${root.path}/lib/f${n++}.dart')
+            ..createSync(recursive: true)
+            ..writeAsStringSync("$kind '$uri';\n");
+        }
+      }
+      for (final uri in accepted) {
+        File('${root.path}/lib/ok${n++}.dart')
+          ..createSync(recursive: true)
+          ..writeAsStringSync("import '$uri';\n");
+      }
+      final List<String> violations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+      expect(violations, hasLength(refused.length * 4));
+      for (final uri in refused) {
+        for (final kind in ['import', 'export', 'part', 'part of']) {
+          expect(
+            violations,
+            contains(contains("$kind '$uri' is not a declared input.")),
+          );
+        }
+      }
+    });
+  });
+
+  group('dot segments before the package name and relative from lib/', () {
+    const refused = [
+      'package:./demo//x.dart',
+      'package:../demo//x.dart',
+      'package:%2E/demo//x.dart',
+      'package:%2e%2e/demo//x.dart',
+      'package:./demo///x.dart',
+    ];
+    const accepted = [
+      'package:demo/src//b.dart',
+      'package:demo/a//b//c.dart',
+      'package:demo/src//../b.dart',
+      'package:demo/./src/b.dart',
+      'package:demo/a/../src/b.dart',
+      'package:./demo/src/b.dart',
+    ];
+    const dirs = {'demo': 'demo/lib'};
+    const kinds = ['import', 'export', 'part', 'part of'];
+
+    test('every spelling is an escape and has an empty segment', () {
+      for (final uri in refused) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+        expect(hasEmptyPathSegment(uri), isTrue, reason: uri);
+        expect(resolveDirectiveUri(uri, 'demo/lib/a.dart', dirs), isNull);
+      }
+    });
+
+    test('the dot segment is dropped before the package is named', () {
+      expect(
+        resolveDirectiveUri('package:./demo/b.dart', 'demo/lib/a.dart', dirs),
+        'demo/lib/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('package:./other/b.dart', 'demo/lib/a.dart', dirs),
+        isNull,
+      );
+      for (final uri in accepted) {
+        expect(isEscapingPackageUri(uri), isFalse, reason: uri);
+        expect(hasEmptyPathSegment(uri), isFalse, reason: uri);
+        expect(resolveDirectiveUri(uri, 'demo/lib/a.dart', dirs), isNotNull);
+      }
+    });
+
+    test('the refusals that stay refused', () {
+      for (final uri in [
+        'package:p//x.dart',
+        'package:p///x.dart',
+        'package:p/../../x.dart',
+        'package:./p/../../x.dart',
+        'package:p/a%2Fb.dart',
+        'package:p/a%5Cb.dart',
+      ]) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+      }
+    });
+
+    test('a relative reference from lib/ resolves against its package URI', () {
+      for (final MapEntry<String, List<String>> entry in {
+        'demo/lib/src/c.dart': ['..//abs/m.dart', '.././/abs/m.dart'],
+        'demo/lib/a.dart': ['.//abs/m.dart', './/abs/m.dart?q'],
+      }.entries) {
+        for (final String ref in entry.value) {
+          expect(
+            resolveDirectiveUri(ref, entry.key, dirs),
+            isNull,
+            reason: '$ref from ${entry.key}',
+          );
+        }
+      }
+      for (final ref in [
+        'b.dart',
+        '../b.dart',
+        'sub//b.dart',
+        './sub/b.dart',
+      ]) {
+        expect(
+          resolveDirectiveUri(ref, 'demo/lib/src/c.dart', dirs),
+          isNotNull,
+          reason: ref,
+        );
+      }
+    });
+
+    for (final decoy in [false, true]) {
+      test('the staged check refuses each shape (decoy: $decoy)', () {
+        final root = Directory('${tmp.path}/dotname$decoy/demo.proj')
+          ..createSync(recursive: true);
+        void write(String relative, String content) =>
+            File('${root.path}/$relative').writeAsStringSync(content);
+        Directory('${root.path}/lib/src').createSync(recursive: true);
+        if (decoy) {
+          Directory('${root.path}/lib/abs').createSync(recursive: true);
+          write('lib/abs/m.dart', 'library m;\n');
+        }
+        write('lib/src/c.dart', "import '..//abs/m.dart';\n");
+        write('lib/a.dart', "import './/abs/m.dart';\n");
+        write('lib/src/ok.dart', "import '../src//c.dart';\n");
+        var n = 0;
+        for (final uri in refused) {
+          for (final kind in kinds) {
+            write('lib/f${n++}.dart', "$kind '$uri';\n");
+          }
+        }
+        for (final uri in accepted) {
+          write('lib/ok${n++}.dart', "import '$uri';\n");
+        }
+        final List<String> violations = findStagedDirectiveViolations([
+          root.path,
+        ], tool: 'guard-test');
+        expect(violations, hasLength(refused.length * kinds.length + 2));
+        for (final shape in [
+          "import '..//abs/m.dart'",
+          "import './/abs/m.dart'",
+        ]) {
+          expect(violations, contains(contains('$shape is not a declared')));
+        }
+        for (final uri in refused) {
+          for (final kind in kinds) {
+            expect(
+              violations,
+              contains(contains("$kind '$uri' is not a declared input.")),
+            );
+          }
+        }
+      });
+    }
+  });
+
+  group('relative from lib/ overshooting package root with empty segments', () {
+    const pkg = 'demo';
+    const dirs = {'demo': 'demo/lib'};
+    const kinds = ['import', 'export', 'part', 'part of'];
+
+    test('table of directive depths against package URI resolution', () {
+      final root = Directory('${tmp.path}/depths/demo.proj')
+        ..createSync(recursive: true);
+      final libDir = Directory('${root.path}/d0/d1/d2/d3/demo/lib')
+        ..createSync(recursive: true);
+      final srcDir = Directory('${libDir.path}/src')
+        ..createSync(recursive: true);
+
+      final cases = <({File file, String fromKey, String ref, String kind})>[];
+      var n = 0;
+      for (final (parentDir, dirKey, exact) in [
+        (libDir, '', '.'),
+        (srcDir, 'src/', '..'),
+      ]) {
+        for (var extra = 0; extra <= 3; extra++) {
+          final String prefix = extra == 0 ? exact : ('../' * extra) + exact;
+          final ref = '$prefix//x.dart';
+          for (final kind in ['import', 'part']) {
+            final name = 'f${n++}.dart';
+            final file = File('${parentDir.path}/$name')
+              ..writeAsStringSync("$kind '$ref';\n");
+            final fromKey = 'demo/lib/$dirKey$name';
+            final String decoy = resolveStagedRelativeTarget(ref, file.path)!;
+            File(decoy)
+              ..parent.createSync(recursive: true)
+              ..writeAsStringSync('library decoy;\n');
+            cases.add((file: file, fromKey: fromKey, ref: ref, kind: kind));
+          }
+        }
+      }
+
+      final List<String> violations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+
+      for (final c in cases) {
+        final String relPath = c.fromKey.substring('demo/lib/'.length);
+        final Uri uri = Uri.parse('package:$pkg/$relPath').resolve(c.ref);
+        final bool uriRefused =
+            uri.pathSegments.length > 1 && uri.pathSegments[1].isEmpty;
+        expect(uriRefused, isTrue);
+
+        final String filePath = c.file.path.replaceAll(r'\', '/');
+        expect(
+          violations,
+          contains(
+            contains("$filePath ${c.kind} '${c.ref}' is not a declared input."),
+          ),
+          reason: '${c.kind} ${c.ref} from ${c.fromKey}',
+        );
+        expect(
+          resolveDirectiveUri(c.ref, c.fromKey, dirs),
+          isNull,
+          reason: '${c.ref} from ${c.fromKey}',
+        );
+      }
+    });
+
+    test(
+      'the A spellings are refused for every directive kind with decoys',
+      () {
+        final root = Directory('${tmp.path}/aspellings/demo.proj')
+          ..createSync(recursive: true);
+        final libDir = Directory('${root.path}/d0/d1/d2/d3/demo/lib')
+          ..createSync(recursive: true);
+        final srcDir = Directory('${libDir.path}/src')
+          ..createSync(recursive: true);
+
+        final cases =
+            <({File file, String fromKey, String ref, String kind})>[];
+        var n = 0;
+        for (final (parentDir, dirKey, ref) in [
+          (libDir, '', '..//x.dart'),
+          (srcDir, 'src/', '../..//x.dart'),
+          (srcDir, 'src/', '../../..//x.dart'),
+          (srcDir, 'src/', '../../../..//x.dart'),
+        ]) {
+          for (final kind in kinds) {
+            final name = 'a${n++}.dart';
+            final file = File('${parentDir.path}/$name');
+            final content = kind == 'part of'
+                ? "part of '$ref';\n"
+                : "$kind '$ref';\n";
+            file.writeAsStringSync(content);
+            final fromKey = 'demo/lib/$dirKey$name';
+            final String decoy = resolveStagedRelativeTarget(ref, file.path)!;
+            File(decoy)
+              ..parent.createSync(recursive: true)
+              ..writeAsStringSync('library decoy;\n');
+            cases.add((file: file, fromKey: fromKey, ref: ref, kind: kind));
+          }
+        }
+
+        final List<String> violations = findStagedDirectiveViolations([
+          root.path,
+        ], tool: 'guard-test');
+
+        for (final c in cases) {
+          final String filePath = c.file.path.replaceAll(r'\', '/');
+          expect(
+            violations,
+            contains(
+              contains(
+                "$filePath ${c.kind} '${c.ref}' is not a declared input.",
+              ),
+            ),
+            reason: '${c.kind} ${c.ref} from ${c.fromKey}',
+          );
+          expect(
+            resolveDirectiveUri(c.ref, c.fromKey, dirs),
+            isNull,
+            reason: '${c.ref} from ${c.fromKey}',
+          );
+        }
+      },
+    );
+
+    test('in-package relatives and existing refusals remain unchanged', () {
+      final root = Directory('${tmp.path}/accepted/demo.proj')
+        ..createSync(recursive: true);
+      final libDir = Directory('${root.path}/demo/lib')
+        ..createSync(recursive: true);
+      final srcDir = Directory('${libDir.path}/src')
+        ..createSync(recursive: true);
+
+      File('${libDir.path}/b.dart').writeAsStringSync('library b;\n');
+      File('${srcDir.path}/b.dart').writeAsStringSync('library b;\n');
+      File('${srcDir.path}/ok1.dart')
+          .writeAsStringSync("import '../b.dart';\n");
+      File('${libDir.path}/ok2.dart')
+          .writeAsStringSync("import 'src//../b.dart';\n");
+
+      final List<String> cleanViolations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+      expect(cleanViolations, isEmpty);
+
+      expect(
+        resolveDirectiveUri('../b.dart', 'demo/lib/src/ok1.dart', dirs),
+        'demo/lib/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('src//../b.dart', 'demo/lib/ok2.dart', dirs),
+        'demo/lib/src/b.dart',
+      );
+
+      for (final ref in ['..%2F..%2Fx.dart']) {
+        expect(
+          resolveDirectiveUri(ref, 'demo/lib/src/c.dart', dirs),
+          isNull,
+          reason: ref,
+        );
+      }
+      for (final uri in [
+        'package:demo/../../x.dart',
+        'package:demo/sub/../../x.dart',
+        'package:demo/..%2F..%2Fx.dart',
+        'package:demo/..%5C..%5Cx.dart',
+        'package:demo/a%2Fb.dart',
+        'package:demo/a%5Cb.dart',
+      ]) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+      }
+
+      final evil = File('${srcDir.path}/evil.dart')
+        ..writeAsStringSync("import '..%2F..%2Fx.dart';\n");
+      final List<String> evilViolations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+      expect(
+        evilViolations,
+        contains(
+          contains("import '..%2F..%2Fx.dart' is not a declared input."),
+        ),
+      );
+      evil.deleteSync();
+    });
+  });
+
+  group('every tool enforces the shared check', () {
+    // Each Dart-reading tool and the marker proving it enforces the shared
+    // staged-source check: the runners call it directly, the whole-program
+    // gen_kernel wrapper scans through the shared library it imports, the
+    // modular kernel planner resolves every directive through the shared file
+    // it reads through `srcs`, and the builder shims import the shared library.
+    // A tool without its marker fails.
+    const markers = {
+      'analyze_runner.dart': 'findStagedDirectiveViolations(',
+      'analyzer_summary.dart': 'findStagedDirectiveViolations(',
+      'fix_runner.dart': 'findStagedDirectiveViolations(',
+      'web_compile_runner.dart': 'findStagedDirectiveViolations(',
+      'link_hook_runner.dart': 'findStagedDirectiveViolations(',
+      'app_jit_snapshot.dart': '_findDisallowedGenKernelDirectives(',
+      'kernel_module.dart': 'resolveDirectiveUri(',
+      'builder_shim.dart': 'findStagedShimViolations(',
+    };
+
+    test('the enumerated tools are exactly the tested sources', () {
+      final Map<String, String> sources = _toolSources(args);
+      expect(
+        sources.keys,
+        unorderedEquals([...markers.keys, 'directive_guard.dart']),
+      );
+    });
+
+    for (final MapEntry<String, String> entry in markers.entries) {
+      test('${entry.key} enforces `${entry.value}`', () {
+        final Map<String, String> sources = _toolSources(args);
+        final String text = File(sources[entry.key]!).readAsStringSync();
+        expect(
+          text.contains(entry.value),
+          isTrue,
+          reason: '${entry.key} does not enforce ${entry.value}',
+        );
+      });
+    }
+  });
+}

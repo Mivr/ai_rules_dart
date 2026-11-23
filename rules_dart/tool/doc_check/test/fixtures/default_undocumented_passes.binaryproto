@@ -1,0 +1,5 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzl
+£
+fixture_lib,Compiles the fixture sources into a library.4
+srcs*Source files to compile; defaults to none.0
+main$The entry point file of the library. 

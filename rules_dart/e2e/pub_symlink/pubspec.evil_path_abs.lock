@@ -1,0 +1,14 @@
+# Local-registry lock for the header-scan e2e: an absolute entry path must
+# fail the fetch before extraction. See pubspec.ok.lock for the url
+# placeholder.
+packages:
+  evil_path_abs:
+    dependency: "direct main"
+    description:
+      name: evil_path_abs
+      sha256: "773e813d1c71b5291656e6a2979376b29a2f6449a401afc14421bb58e191c1b2"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

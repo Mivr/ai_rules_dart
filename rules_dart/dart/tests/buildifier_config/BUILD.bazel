@@ -1,0 +1,33 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Hermetic regression test for the buildifier setup. It runs
+# `@buildifier_prebuilt//:buildifier -config=example` and pins the root
+# `.buildifier.json` to that warning list less `unsorted-dict-items`, pins the
+# `keith/pre-commit-buildifier` hooks in `.pre-commit-config.yaml` (`-lint=off`
+# on the format hook, linting against the root config on the lint hook), and
+# checks that the hook `rev` and the `buildifier_prebuilt` version in
+# `MODULE.bazel` agree on the first three version components. Every input is a
+# declared runfile, so an edit to any of them reruns the test.
+dart_test(
+    name = "buildifier_config_test",
+    size = "small",
+    args = [
+        "$(rlocationpath @buildifier_prebuilt//:buildifier)",
+        "$(rlocationpath //:.buildifier.json)",
+        "$(rlocationpath //:.pre-commit-config.yaml)",
+        "$(rlocationpath //:MODULE.bazel)",
+    ],
+    data = [
+        "//:.buildifier.json",
+        "//:.pre-commit-config.yaml",
+        "//:MODULE.bazel",
+        "@buildifier_prebuilt//:buildifier",
+    ],
+    main = "buildifier_config_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:collection",
+        "@ext_pub_deps//:test",
+        "@ext_pub_deps//:yaml",
+    ],
+)

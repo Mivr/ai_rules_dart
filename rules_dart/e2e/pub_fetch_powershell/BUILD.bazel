@@ -1,0 +1,16 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+# Regression cover for the portable pub symlink guard: this workspace mixes
+# one hosted package (`meta`) and one git package (`characters`), so fetching
+# it exercises the hosted spoke, the git spoke, and the module-extension
+# planning scratch. It is built from PowerShell on Windows CI (where `find`
+# resolves to FIND.EXE and no GNU tools are on PATH) and with stubbed host
+# tools on Linux CI, proving the fetch needs no host tools.
+dart_binary(
+    name = "app",
+    main = "main.dart",
+    deps = [
+        "@pub_deps//:characters",
+        "@pub_deps//:meta",
+    ],
+)

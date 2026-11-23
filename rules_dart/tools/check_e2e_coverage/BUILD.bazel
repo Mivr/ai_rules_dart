@@ -1,0 +1,35 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# The coverage logic, split from `bin/check_e2e_coverage.dart` so the unit
+# tests can drive the reference extraction and checks against synthetic
+# workflows without touching the real checkout.
+dart_library(
+    name = "check_e2e_coverage_lib",
+    package_name = "check_e2e_coverage",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pub_deps//:yaml",
+    ],
+)
+
+# `cd tools && bazel run //check_e2e_coverage:check_e2e_coverage`
+dart_binary(
+    name = "check_e2e_coverage",
+    main = "bin/check_e2e_coverage.dart",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":check_e2e_coverage_lib",
+    ],
+)
+
+dart_test(
+    name = "coverage_test",
+    size = "small",
+    main = "test/coverage_test.dart",
+    deps = [
+        ":check_e2e_coverage_lib",
+        "@pub_deps//:test",
+        "@pub_deps//:yaml",
+    ],
+)

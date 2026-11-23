@@ -1,0 +1,78 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+dart_binary(
+    name = "app",
+    main = "main.dart",
+    deps = ["@pub_deps//:characters"],
+)
+
+# A git-sourced spoke's non-`lib/` files ride runfiles too: the generated
+# `dart_library`'s `data` is what carries its `pubspec.yaml`.
+dart_test(
+    name = "package_files_test",
+    size = "small",
+    main = "package_files_test.dart",
+    deps = [
+        "@pub_deps//:characters",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+# A git package materialized from a bundle in this workspace (see
+# git_host_config_ext.bzl): its bytes must not depend on host git
+# configuration (core.autocrlf, core.eol, core.attributesFile), on any OS.
+dart_test(
+    name = "host_config_test",
+    size = "small",
+    main = "host_config_test.dart",
+    deps = ["@fmtpkg"],
+)
+
+# The template probe's helper-fetched package (see template_probe.bzl): its
+# bytes must survive a hostile template directory (export-subst attributes,
+# post-checkout hook) all the way to the compiler, on any OS.
+dart_test(
+    name = "probe_test",
+    size = "small",
+    main = "probe_test.dart",
+    deps = ["@probe//:fmtpkg"],
+)
+
+# The hostile-host fetch probes (see hostile_probe_ext.bzl): each marker
+# re-verifies that fetching under a hostile `GIT_*` environment (set and
+# empty quarantine/work-tree variables, unknown names, all-refs fallback,
+# inline-config `insteadOf`), a hostile `transfer.fsckObjects=true`
+# (config file, inline-config channel, path-conditional include), or a
+# hostile `protocol.version=0` / `transfer.unpackLimit` config file yields
+# byte-identical materialized archives on the expected fetch path.
+_HOSTILE_MARKERS = [
+    "@hostile_quarantine_set//:marker.txt",
+    "@hostile_quarantine_empty//:marker.txt",
+    "@hostile_worktree_set//:marker.txt",
+    "@hostile_worktree_empty//:marker.txt",
+    "@hostile_unknown_vars//:marker.txt",
+    "@hostile_fallback_quarantine//:marker.txt",
+    "@hostile_insteadof//:marker.txt",
+    "@hostile_file_url_raw//:marker.txt",
+    "@hostile_file_url_insteadof//:marker.txt",
+    "@hostile_fsck_config_file//:marker.txt",
+    "@hostile_fsck_inline//:marker.txt",
+    "@hostile_fsck_includeif//:marker.txt",
+    "@export_subst_protocol0//:marker.txt",
+    "@export_subst_unpacklimit//:marker.txt",
+]
+
+sh_test(
+    name = "hostile_env_test",
+    # Medium: the fourteen markers each re-fetch, which once took 60.1 s and
+    # timed out a small (60 s) test on a Windows runner.
+    size = "medium",
+    srcs = ["check_hostile_markers.sh"],
+    args = ["$(rlocationpath %s)" % marker for marker in _HOSTILE_MARKERS],
+    data = _HOSTILE_MARKERS,
+    # Runfiles resolution (rlocationpath + runfiles.bash in the script) keeps
+    # this portable: on Windows runfiles arrive via a manifest, not a symlink
+    # tree, so a raw $(rootpath) does not resolve from the test's cwd.
+    deps = ["@bazel_tools//tools/bash/runfiles"],
+)

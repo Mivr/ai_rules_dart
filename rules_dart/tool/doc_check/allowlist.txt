@@ -1,0 +1,5 @@
+# Documentation gaps the checker tolerates, one `symbol[.attr] reason` per line.
+#
+# The list is empty and may only shrink: an entry that no longer covers a
+# violation fails the check, and the tests pin the entry count at zero. Fix
+# the documentation instead of adding a line here.

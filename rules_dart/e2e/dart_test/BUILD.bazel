@@ -1,0 +1,83 @@
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# One options target for the whole workspace, including the two subpackages.
+# The ruleset is named here rather than in any library's `deps` because a lint
+# ruleset is not a dependency of the code it lints — listing it there would
+# carry it into the `DartInfo` of every test below.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@very_good_analysis"],
+)
+
+# Each test's `main` lives outside any package's `lib/`; the aspect analyzes the
+# test targets themselves, so every entrypoint is covered.
+dart_test(
+    name = "mathlib_test",
+    size = "small",
+    main = "mathlib_test.dart",
+    deps = ["//mathlib"],
+)
+
+dart_test(
+    name = "simple_test",
+    size = "small",
+    main = "test/simple_test.dart",
+)
+
+dart_test(
+    name = "utils_test",
+    size = "small",
+    main = "test/utils_test.dart",
+    deps = ["//utils"],
+)
+
+# Demonstrates the srcs attribute — test_helpers.dart is a local
+# source file used by the test but not in a dart_library. The aspect analyzes
+# `srcs` files too, so it covers test_helpers.dart.
+dart_test(
+    name = "helpers_test",
+    size = "small",
+    srcs = ["test_helpers.dart"],
+    main = "test/helpers_test.dart",
+)
+
+# Asserts fire at runtime in every compilation mode — the runner always
+# enables them on the VM. CI also runs this package under `-c dbg`.
+dart_test(
+    name = "asserts_test",
+    size = "small",
+    main = "test/asserts_test.dart",
+)
+
+# Demonstrates `defines`. The value is resolved when the test's kernel is
+# compiled during the build, which is why it has to be declared here rather
+# than passed to the VM at run time.
+#
+# `E2E_WINNER` is also set by the `extra_dart_defines` flag in this workspace's
+# .bazelrc, so the test observes which of the two wins.
+dart_test(
+    name = "defines_test",
+    size = "small",
+    defines = [
+        "E2E_WINNER=attr",
+        "GREETING=hello from bazel",
+    ],
+    main = "test/defines_test.dart",
+)
+
+# A test that prints and then hangs until Bazel's timeout kills it. Whatever it
+# printed must still be in its test.log, or a hang is undiagnosable from the
+# log. `manual` keeps it out of `//...`; CI's expected-failure job runs it with
+# a short `--test_timeout` and looks for its output.
+dart_test(
+    name = "hangs_until_killed_test",
+    size = "small",
+    main = "test/hangs_until_killed_test.dart",
+    tags = ["manual"],
+)

@@ -1,0 +1,29 @@
+# Bazel settings rules_dart recommends to a consumer. Only a bazelrc can set
+# them, so rules_dart cannot default them in its rules.
+#
+# Import this file from your own `.bazelrc` with one line:
+#
+#   import %workspace%/path/to/rules_dart/dart/consumer.bazelrc
+#
+# For a module dependency, copy the archive's `dart/consumer.bazelrc` into your
+# repository, or point the line at an unpacked rules_dart (the bench workspace
+# under `tools/perf` imports its checkout by absolute path). The README's
+# "Recommended Bazel settings" section lists each setting.
+#
+# No setting here relaxes a gate, a lockfile mode, sandboxing, hermeticity or
+# a checksum. Each line also appears, with the same value, in this
+# repository's own `.bazelrc` (through `tools/preset.bazelrc`) where it
+# carries one; //perf:consumer_preset_guard_test fails if they differ.
+
+# Reuse sandbox directories between actions instead of deleting and recreating
+# them, which saves sandbox setup time when many actions of one kind run.
+common --reuse_sandbox_directories
+
+# Do not create a runfiles tree for a binary or test until it is run, which
+# saves linking every runfile on each build. Run a built binary outside
+# `bazel run` with `--build_runfile_links`.
+common --nobuild_runfile_links
+
+# Shrink the pool of idle persistent workers (the analyzer, kernel and codegen
+# workers) when memory is tight, which saves the memory idle workers hold.
+common --experimental_shrink_worker_pool

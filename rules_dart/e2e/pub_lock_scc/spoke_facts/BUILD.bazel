@@ -1,0 +1,14 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+# Red-by-design (see MODULE.bazel): the committed lock's wrong facts fail
+# the `spoke_a` and `spoke_d` spoke fetches, so this target never builds
+# until the documented recovery re-plans from the real pubspecs — merging
+# `spoke_a` with `spoke_b` — after which it builds and runs.
+dart_binary(
+    name = "app",
+    main = "main.dart",
+    deps = [
+        "@spokes//:spoke_a",
+        "@spokes//:spoke_d",
+    ],
+)

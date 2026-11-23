@@ -1,0 +1,8 @@
+# This workspace should FAIL to fetch: `bad_package` is a hosted pub package
+# without a sha256 checksum, so the fetch site refuses it before downloading.
+#
+#   if bazel build @bad_package//... 2>/dev/null; then
+#     echo "ERROR: build should have failed with a missing sha256 error"
+#     exit 1
+#   fi
+#   bazel build @bad_package//... 2>&1 | grep -F -q 'pub_package "collection" (1.18.0) requires a non-empty sha256.'

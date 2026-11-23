@@ -1,0 +1,17 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 1
+  # Runs last: it edits the staged copy of member `b` so that it forgets
+  # `resolution: workspace`, and the `pub` extension must refuse the hub.
+  - name: member_without_resolution
+    run: bazel build //b:b
+    replace_in_files:
+      b/pubspec.yaml:
+        - find: "resolution: workspace\n"
+          replace: ""
+    expect:
+      non_zero: true
+      output_contains:
+        - "member @@//b:pubspec.yaml: its pubspec.yaml is missing `resolution: workspace`"

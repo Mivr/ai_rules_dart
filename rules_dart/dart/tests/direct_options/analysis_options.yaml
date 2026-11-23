@@ -1,0 +1,4 @@
+# An options file for the direct rule tests; only its path and contents are carried.
+linter:
+  rules:
+    - prefer_final_fields

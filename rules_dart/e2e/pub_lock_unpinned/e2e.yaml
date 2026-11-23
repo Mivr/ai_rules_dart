@@ -1,0 +1,9 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: build
+    run: bazel build //:app
+    expect:
+      non_zero: true
+      output_contains:
+        - 'pub package "collection" 1.18.0 in @@//:pubspec.lock has no sha256.'
+        - 'pub_lock_package "collection" (1.18.0) requires a non-empty sha256.'

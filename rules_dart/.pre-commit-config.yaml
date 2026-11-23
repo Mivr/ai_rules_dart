@@ -1,0 +1,144 @@
+# See CONTRIBUTING.md for instructions.
+# Hooks run with prek (https://github.com/j178/prek), which reads this
+# pre-commit format. See https://pre-commit.com/hooks.html for more hooks
+# The commit message check runs in commit-msg stage
+# but we don't want to run the other hooks on commit messages
+default_stages: [pre-commit]
+# One `prek install` sets up both stages
+default_install_hook_types: [pre-commit, commit-msg]
+# Use a slightly older version of node by default
+# as the default uses a very new version of GLIBC
+default_language_version:
+  node: 16.18.0
+repos:
+  - repo: meta
+    hooks:
+      - id: check-hooks-apply
+      - id: check-useless-excludes
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: check-toml
+      - id: check-yaml
+      - id: destroyed-symlinks
+      - id: detect-private-key
+      # Vendored third-party code, kept byte-for-byte as the SDK ships it.
+      # The git bundle below is a binary fixture: rewriting its bytes would
+      # corrupt it.
+      - id: end-of-file-fixer
+        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
+      - id: trailing-whitespace
+        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
+  # Check formatting and lint for starlark code. This is the only buildifier
+  # entry point; both hooks read the warning set from the root
+  # `.buildifier.json`. The format hook runs with `-lint=off`, so formatting
+  # never rewrites a lint finding; the lint hook keeps its upstream
+  # `-lint=warn` default and reports findings against that warning set. Keep
+  # `rev` on the same buildifier version (first three components) as the
+  # `buildifier_prebuilt` dev dependency in `MODULE.bazel`.
+  - repo: https://github.com/keith/pre-commit-buildifier
+    rev: 10.1.0
+    hooks:
+      - id: buildifier
+        args: [-lint=off]
+      - id: buildifier-lint
+  # Lint the GitHub workflows with pinned actionlint and ShellCheck releases.
+  # The hook downloads each platform's archive from its release only when the
+  # cache is empty, verifies its sha256 against the pinned checksum below (an
+  # unknown platform or a missing checksum fails closed), then lints every
+  # workflow file, so an invalid workflow fails pre-commit. ShellCheck runs
+  # from the pinned binary (`-shellcheck=`) and pyflakes is disabled
+  # (`-pyflakes=`), so the verdict never depends on host PATH tools. Bump
+  # the versions, asset names and checksums together: actionlint checksums
+  # come from the release's actionlint_<version>_checksums.txt; ShellCheck
+  # upstream publishes no checksums file, so its pins below were recorded
+  # from the release archives over TLS and are re-verified on every run.
+  - repo: local
+    hooks:
+      - id: actionlint
+        name: actionlint workflows
+        entry: |-
+          bash -c '
+          set -eu
+          actionlint_version=1.7.12
+          shellcheck_version=0.11.0
+          al_base="https://github.com/rhysd/actionlint/releases/download/v${actionlint_version}"
+          sc_base="https://github.com/koalaman/shellcheck/releases/download/v${shellcheck_version}"
+          os="$(uname -s)"
+          arch="$(uname -m)"
+          exe=""
+          case "${os}" in MINGW*|MSYS*|CYGWIN*) exe=".exe" ;; esac
+          case "${os}/${arch}" in
+            Linux/x86_64) al_asset="actionlint_${actionlint_version}_linux_amd64.tar.gz"; al_want=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8; sc_asset="shellcheck-v${shellcheck_version}.linux.x86_64.tar.gz"; sc_want=b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6; sc_subdir="shellcheck-v${shellcheck_version}/" ;;
+            Linux/aarch64|Linux/arm64) al_asset="actionlint_${actionlint_version}_linux_arm64.tar.gz"; al_want=325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6; sc_asset="shellcheck-v${shellcheck_version}.linux.aarch64.tar.gz"; sc_want=68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc; sc_subdir="shellcheck-v${shellcheck_version}/" ;;
+            Darwin/x86_64) al_asset="actionlint_${actionlint_version}_darwin_amd64.tar.gz"; al_want=5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644; sc_asset="shellcheck-v${shellcheck_version}.darwin.x86_64.tar.gz"; sc_want=c2c15e08df0e8fbc374c335b230a7ee958c313fa5714817a59aa59f1aa594f51; sc_subdir="shellcheck-v${shellcheck_version}/" ;;
+            Darwin/arm64|Darwin/aarch64) al_asset="actionlint_${actionlint_version}_darwin_arm64.tar.gz"; al_want=aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f; sc_asset="shellcheck-v${shellcheck_version}.darwin.aarch64.tar.gz"; sc_want=339b930feb1ea764467013cc1f72d09cd6b869ebf1013296ba9055ab2ffbd26f; sc_subdir="shellcheck-v${shellcheck_version}/" ;;
+            MINGW*/x86_64|MSYS*/x86_64|CYGWIN*/x86_64) al_asset="actionlint_${actionlint_version}_windows_amd64.zip"; al_want=6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9; sc_asset="shellcheck-v${shellcheck_version}.zip"; sc_want=8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e; sc_subdir="" ;;
+            *) echo "actionlint hook: unsupported platform ${os}/${arch}" >&2; exit 1 ;;
+          esac
+          : "${al_want:?actionlint hook: no pinned checksum for this platform}"
+          : "${sc_want:?actionlint hook: no pinned checksum for this platform}"
+          command -v curl >/dev/null || { echo "actionlint hook: curl is required" >&2; exit 1; }
+          if command -v sha256sum >/dev/null; then sum="sha256sum"; elif command -v shasum >/dev/null; then sum="shasum -a 256"; else echo "actionlint hook: sha256sum or shasum is required" >&2; exit 1; fi
+          dir="${XDG_CACHE_HOME:-$HOME/.cache}/rules-dart-actionlint-${actionlint_version}-shellcheck-${shellcheck_version}"
+          mkdir -p "${dir}"
+          fetch() {
+            archive="${dir}/$2"
+            if [ ! -f "${archive}" ]; then curl -fsSL -o "${archive}" "$1/$2"; fi
+            printf "%s  %s\n" "$3" "${archive}" | ${sum} -c - >&2
+            target="${dir}/$4$5"
+            if [ ! -x "${target}" ]; then
+              case "${archive}" in
+                *.zip) command -v unzip >/dev/null || { echo "actionlint hook: unzip is required" >&2; exit 1; }; unzip -o -d "${dir}" "${archive}" ;;
+                *.tar.gz) tar -xzf "${archive}" -C "${dir}" ;;
+              esac
+            fi
+            printf "%s" "${target}"
+          }
+          al_bin="$(fetch "${al_base}" "${al_asset}" "${al_want}" "" "actionlint${exe}")"
+          sc_bin="$(fetch "${sc_base}" "${sc_asset}" "${sc_want}" "${sc_subdir}" "shellcheck${exe}")"
+          "${al_bin}" -shellcheck="${sc_bin}" -pyflakes= .github/workflows/*.yaml
+          ' _
+        language: system
+        files: ^\.github/workflows/[^/]+\.ya?ml$
+        pass_filenames: false
+  # The release gate script's test: a fake gh on PATH, no network, seconds.
+  - repo: local
+    hooks:
+      - id: release-gate-test
+        name: release gate tests
+        entry: bash .github/workflows/release_gate_test.sh
+        language: system
+        files: ^\.github/workflows/release_gate(_test)?\.sh$
+        pass_filenames: false
+      - id: release-prep-test
+        name: release prep tests
+        entry: bash .github/workflows/release_prep_test.sh
+        language: system
+        files: ^\.github/workflows/release_prep(_test)?\.sh$
+        pass_filenames: false
+  # Enforce the commit message policy in AGENTS.md: a conventional-commit
+  # subject and the `Changelog:` trailer rules
+  - repo: local
+    hooks:
+      - id: commit-message
+        name: commit message policy
+        entry: bash -c 'cd tools && exec bazel run --ui_event_filters=-info --noshow_progress --show_result=0 //changelog:check -- "$@"' _
+        language: system
+        stages: [commit-msg]
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        exclude: ^third_party/dart_linter/
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.21.0
+    hooks:
+      - id: yamlfmt
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.51.1
+    hooks:
+      - id: typos
+        exclude: ^third_party/dart_linter/

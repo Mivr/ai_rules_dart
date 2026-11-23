@@ -1,0 +1,1289 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+load("//dart/private:dart_test.bzl", "dart_test_kernel")
+load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
+
+dart_binary(
+    name = "noop",
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "noop.dart",
+    visibility = ["//dart:__subpackages__"],
+)
+
+exports_files(
+    [
+        "noop.dart",
+        "runner_training_test.dart",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# The `aot-snapshot` and `jit-snapshot` launcher templates. `dart_binary`
+# expands the one for the target platform with the runfiles paths of the
+# pinned VM and the raw snapshot (see `dart/private/dart_binary.bzl`).
+exports_files(
+    [
+        "snapshot_launcher.bat.tpl",
+        "snapshot_launcher.sh.tpl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Run from source by the exec SDK's `dart`, by `dart_binary` in `jit-snapshot`
+# mode and by `dart_test_runner_snapshot`. See dart/private/dart_compile.bzl.
+exports_files(
+    ["app_jit_snapshot.dart"],
+    visibility = ["//dart:__subpackages__"],
+)
+
+# The shared-host lock handling `app_jit_snapshot.dart` opens its training
+# lock through (see `jit_lock.dart`, whose pure host facts live in
+# `jit_policy.dart`): exported for the unit test's staged tool bundle, which
+# resolves them beside the entry by relative import.
+exports_files(
+    [
+        "app_jit_aot_args.dart",
+        "jit_lock.dart",
+        "jit_policy.dart",
+    ],
+    visibility = ["//dart:__subpackages__"],
+)
+
+# The kernel byte readers shared by the run-from-source tools (see
+# `dill_reader.dart`): compiled into `kernel_module` through `srcs`, run from
+# source beside the staged JIT tool through `:jit_tool_srcs`.
+exports_files(
+    ["dill_reader.dart"],
+    visibility = ["//dart:__subpackages__"],
+)
+
+# The launcher's LCOV step, which `//dart/tests/coverage_map_fixture` feeds the
+# coverage map `dart_test` generated.
+exports_files(
+    ["test_runner_coverage.dart"],
+    visibility = ["//dart/tests/coverage_map_fixture:__pkg__"],
+)
+
+# The one bundle every action running the JIT tool from source stages: the
+# entry `app_jit_snapshot.dart` plus every source it imports, including the
+# guard library its reader helper resolves URIs through. The helpers pick
+# the entry by basename (see `dart_compile.bzl`), so the bundle grows by
+# adding a file here, with no rule change.
+filegroup(
+    name = "jit_tool_srcs",
+    srcs = [
+        "app_jit_aot_args.dart",
+        "app_jit_snapshot.dart",
+        "dill_reader.dart",
+        "jit_lock.dart",
+        "jit_policy.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    visibility = ["//dart:__subpackages__"],
+)
+
+# The single comma-splitting patch implementation (see `comma_patch.dart`):
+# run from source by the toolchain's declared patch actions, compiled into
+# `kernel_module` and `app_jit_snapshot` through `srcs`.
+exports_files(
+    ["comma_patch.dart"],
+    visibility = ["//dart:__subpackages__"],
+)
+
+# The single persistent-worker protocol and staged-source plumbing
+# implementation shared by the build-action runners (see
+# `worker_protocol.dart` and `worker_tool_fs.dart`). Two targets, not one:
+# `worker_protocol.dart` imports only dart: libraries, while
+# `worker_tool_fs.dart` needs package:analyzer and package:path, so one
+# target would hand every consumer a dependency on the side it does not use.
+# Both name the `rules_dart_worker` package: a package split across targets
+# is normal (see `merge_package_records` in dart/private/common.bzl), and the
+# shared `lib/` root means the compile still resolves all its files together.
+dart_library(
+    name = "worker_protocol",
+    package_name = "rules_dart_worker",
+    srcs = ["lib/worker_protocol.dart"],
+    visibility = ["//dart:__subpackages__"],
+)
+
+dart_library(
+    name = "worker_tool_fs",
+    package_name = "rules_dart_worker",
+    srcs = ["lib/worker_tool_fs.dart"],
+    visibility = ["//dart:__subpackages__"],
+    deps = [
+        "@ext_pub_deps//:analyzer",
+        "@ext_pub_deps//:path",
+    ],
+)
+
+# The multiplex loop `kernel_module` serves with: concurrent requests keep their
+# own ids, and a cancelled request is answered as cancelled.
+dart_test(
+    name = "worker_serve_test",
+    size = "small",
+    srcs = [
+        "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
+    ],
+    args = [
+        "$(rlocationpath :kernel_module)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+    ],
+    data = [
+        ":kernel_module",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "worker_serve_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Unit tests for the shared worker-protocol library: pin the behaviour every
+# build-action runner inherits, so a regression here blocks a behaviour
+# change in any tool.
+dart_test(
+    name = "worker_protocol_test",
+    size = "small",
+    main = "worker_protocol_test.dart",
+    deps = [
+        ":worker_protocol",
+        ":worker_tool_fs",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_binary(
+    name = "analyze_runner",
+    srcs = [
+        "analysis_baseline.dart",
+        "analyze_runner_machine.dart",
+        "analyze_runner_staged_prune.dart",
+        "baseline_json.dart",
+        "cli_flags.dart",
+        "private_home.dart",
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "analyze_runner.dart",
+    modular_kernel = False,
+    visibility = ["//dart:__subpackages__"],
+    deps = ["//dart/guard:directive_guard"],
+)
+
+# Slices the whole analysis baseline to one target's files for the aspect.
+dart_binary(
+    name = "baseline_slice",
+    srcs = [
+        "analysis_baseline.dart",
+        "baseline_json.dart",
+        "cli_flags.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "baseline_slice.dart",
+    modular_kernel = False,
+    visibility = ["//dart:__subpackages__"],
+)
+
+exports_files(
+    ["analyze_runner_test.dart"],
+    visibility = ["//dart/tests/early_return_analyze_runner:__pkg__"],
+)
+
+# Drives the built `analyze_runner` as a subprocess (it exits rather than
+# returning) and refuses a triple-quoted import before `dart analyze` runs.
+dart_test(
+    name = "analyze_runner_test",
+    size = "small",
+    srcs = [
+        "analysis_baseline.dart",
+        "analyze_runner.dart",
+        "analyze_runner_machine.dart",
+        "analyze_runner_staged_prune.dart",
+        "analyze_runner_test_support.dart",
+        "baseline_json.dart",
+        "cli_flags.dart",
+        "private_home.dart",
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    args = [
+        "$(rlocationpath :analyze_runner)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+    ],
+    data = [
+        ":analyze_runner",
+        "@dart_toolchains//sdk/3.13.5:analyze_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+        "@dart_toolchains//sdk/3.13.5:runtime_files",
+    ],
+    main = "analyze_runner_test.dart",
+    deps = [
+        "//dart/guard:directive_guard",
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The analyzer-summary mode of `dart_analyze`: summarizes one package, and checks
+# a staged project against summaries. See dart/private/dart_analyzer_summary.bzl.
+dart_binary(
+    name = "analyzer_summary",
+    srcs = [
+        "analysis_baseline.dart",
+        "analysis_model.dart",
+        "analyzer_summary_lints.dart",
+        "baseline_json.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "analyzer_summary.dart",
+    modular_kernel = False,
+    # Run by `dartaotruntime` on the raw snapshot (see `aot_tool.bzl`).
+    snapshot_launcher = False,
+    visibility = ["//dart:__subpackages__"],
+    deps = [
+        ":worker_protocol",
+        ":worker_tool_fs",
+        "//dart/guard:directive_guard",
+        "//dart/lints:rules_dart_project_lints",
+        "//third_party/dart_linter:linter",
+        "@ext_pub_deps//:analyzer",
+        "@ext_pub_deps//:path",
+    ],
+)
+
+# The kernel form `analyzer_summary` had before it became an AOT snapshot, for
+# `aot_tools_parity_test`.
+dart_binary(
+    name = "analyzer_summary_reference",
+    srcs = [
+        "analysis_baseline.dart",
+        "analysis_model.dart",
+        "analyzer_summary_lints.dart",
+        "baseline_json.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "analyzer_summary.dart",
+    modular_kernel = False,
+    visibility = ["//dart/tests:__pkg__"],
+    deps = [
+        ":worker_protocol",
+        ":worker_tool_fs",
+        "//dart/guard:directive_guard",
+        "//dart/lints:rules_dart_project_lints",
+        "//third_party/dart_linter:linter",
+        "@ext_pub_deps//:analyzer",
+        "@ext_pub_deps//:path",
+    ],
+)
+
+dart_binary(
+    name = "fix_runner",
+    srcs = [
+        "analyze_runner_staged_prune.dart",
+        "private_home.dart",
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "fix_runner.dart",
+    modular_kernel = False,
+    visibility = ["//dart:__subpackages__"],
+    deps = ["//dart/guard:directive_guard"],
+)
+
+dart_binary(
+    name = "fix_applier",
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "fix_applier.dart",
+    visibility = ["//dart:__subpackages__"],
+    deps = ["//dart/runfiles"],
+)
+
+dart_binary(
+    name = "test_runner",
+    srcs = [
+        "private_home.dart",
+        "test_runner_coverage.dart",
+        "test_runner_packages.dart",
+        "test_runner_workspace.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "test_runner.dart",
+    visibility = ["//dart:__subpackages__"],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:coverage",
+    ],
+)
+
+dart_binary(
+    name = "kernel_launcher",
+    srcs = [
+        "private_home.dart",
+        "test_runner_workspace.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "kernel_launcher.dart",
+    visibility = ["//visibility:public"],
+    deps = ["//dart/runfiles"],
+)
+
+# What `test_runner_test` runs through the launcher in place of a real test.
+dart_binary(
+    name = "test_runner_fixture",
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "test_runner_fixture.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+# The same fixture compiled as a `package:test` suite, declared where the
+# runner's `--precompiled` layout loads it from, as `dart_test` compiles a
+# test that runs under the runner: `test_runner_test` drives the launcher's
+# runner path with it.
+dart_test_kernel(
+    name = "test_runner_suite_fixture",
+    main = "test_runner_fixture.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+# The `package:test` runner that `test_runner_test` runs the suite fixture
+# under, built from the same `package:test` as the suite (the two talk over a
+# protocol private to that version), as the pub spoke builds the runner every
+# `dart_test` gets.
+dart_test_runner_main(name = "test_runner_suite_runner_main")
+
+dart_binary(
+    name = "test_runner_suite_runner",
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = ":test_runner_suite_runner_main",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+dart_test(
+    name = "test_runner_test",
+    size = "small",
+    srcs = [
+        "private_home.dart",
+        "test_runner.dart",
+        "test_runner_coverage.dart",
+        "test_runner_packages.dart",
+        "test_runner_workspace.dart",
+    ],
+    args = [
+        "$(rlocationpath :test_runner)",
+        "$(rlocationpath :test_runner_fixture)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath :test_runner_suite_fixture)",
+        "$(rlocationpath :test_runner_suite_runner)",
+        "$(rlocationpath :test_runner_fixture.dart)",
+        "$(rlocationpath :BUILD.bazel)",
+    ],
+    data = [
+        "BUILD.bazel",
+        ":test_runner",
+        ":test_runner_fixture",
+        ":test_runner_fixture.dart",
+        ":test_runner_suite_fixture",
+        ":test_runner_suite_runner",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "test_runner_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:coverage",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "test_runner_cleanup_test",
+    size = "small",
+    srcs = [
+        "private_home.dart",
+        "test_runner.dart",
+        "test_runner_coverage.dart",
+        "test_runner_packages.dart",
+        "test_runner_workspace.dart",
+    ],
+    main = "test_runner_cleanup_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:coverage",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "test_runner_coverage_test",
+    size = "small",
+    srcs = ["test_runner_coverage.dart"],
+    main = "test_runner_coverage_test.dart",
+    deps = [
+        "@ext_pub_deps//:coverage",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Copies files into a declared directory for `assemble_source_dir`, through
+# //dart:copy_toolchain_type. Only dart:io, so it names no pub dependencies.
+dart_binary(
+    name = "copy_tree",
+    srcs = ["coverage_map_expand.dart"],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "copy_tree.dart",
+    modular_kernel = False,
+    visibility = ["//dart:__subpackages__"],
+)
+
+dart_test(
+    name = "copy_tree_test",
+    size = "small",
+    srcs = [
+        "copy_tree.dart",
+        "coverage_map_expand.dart",
+    ],
+    main = "copy_tree_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+dart_test(
+    name = "coverage_map_expand_test",
+    size = "small",
+    srcs = ["coverage_map_expand.dart"],
+    main = "coverage_map_expand_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+dart_test(
+    name = "private_home_test",
+    size = "small",
+    srcs = ["private_home.dart"],
+    main = "private_home_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+# Runs the `dart_sdk_binary` launcher as a data dependency — resolved through
+# runfiles and executed directly, with no `RunEnvironmentInfo` environment —
+# the way `e2e/smoke:dart_version_test` uses `@rules_dart//dart`. Fails while
+# the launcher needs `DART_SDK_CONFIG` to find its SDK.
+dart_test(
+    name = "sdk_launcher_data_test",
+    size = "small",
+    srcs = [
+        "private_home.dart",
+        "sdk_launcher.dart",
+    ],
+    args = ["$(rlocationpath //dart)"],
+    data = ["//dart"],
+    main = "sdk_launcher_data_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_binary(
+    name = "format_runner",
+    srcs = ["private_home.dart"],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "format_runner.dart",
+    modular_kernel = False,
+    visibility = ["//dart:__subpackages__"],
+    deps = [
+        ":worker_protocol",
+        ":worker_tool_fs",
+        "@ext_pub_deps//:dart_style",
+        "@ext_pub_deps//:package_config",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:pub_semver",
+    ],
+)
+
+dart_binary(
+    name = "format_writer",
+    srcs = ["private_home.dart"],
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "format_writer.dart",
+    visibility = ["//dart:__subpackages__"],
+    deps = ["//dart/runfiles"],
+)
+
+dart_binary(
+    name = "sdk_launcher",
+    srcs = ["private_home.dart"],
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "sdk_launcher.dart",
+    visibility = ["//dart:__subpackages__"],
+    deps = ["//dart/runfiles"],
+)
+
+dart_binary(
+    name = "link_hook_runner",
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "link_hook_runner.dart",
+    modular_kernel = False,
+    # Public: rules calling `dart_link_hook_actions` declare it as an attribute.
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/guard:directive_guard",
+        "@ext_pub_deps//:args",
+        "@ext_pub_deps//:data_assets",
+        "@ext_pub_deps//:hooks",
+    ],
+)
+
+dart_test(
+    name = "link_hook_runner_test",
+    size = "small",
+    srcs = [
+        "link_hook_runner.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "link_hook_runner_test.dart",
+    deps = [
+        "//dart/guard:directive_guard",
+        "@ext_pub_deps//:args",
+        "@ext_pub_deps//:data_assets",
+        "@ext_pub_deps//:hooks",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Concatenates module kernels into a modular `dart_test`'s or
+# `dart_binary(compile_mode = "kernel")`'s kernel. See the file's header.
+# It takes no `dart_library` dependency on purpose (like `kernel_module`
+# below): every `dart_library` names it as an implicit exec tool, so a
+# dependency would be a cycle. It reads the shared worker protocol through
+# `srcs` instead.
+dart_binary(
+    name = "kernel_link",
+    srcs = ["lib/worker_protocol.dart"],
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "kernel_link.dart",
+    modular_kernel = False,
+    # Run by `dartaotruntime` on the raw snapshot (see `aot_tool.bzl`).
+    snapshot_launcher = False,
+    visibility = ["//visibility:public"],
+)
+
+# The kernel form `kernel_link` had before it became an AOT snapshot. Only
+# `aot_tools_parity_test` uses it, to compare the two forms' output bytes.
+dart_binary(
+    name = "kernel_link_reference",
+    srcs = ["lib/worker_protocol.dart"],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "kernel_link.dart",
+    modular_kernel = False,
+    visibility = ["//dart/tests:__pkg__"],
+)
+
+# The `kernel_link` persistent worker's top-level error handler.
+exports_files(
+    ["kernel_link_test.dart"],
+    visibility = ["//dart/tests/early_return_runner_workers:__pkg__"],
+)
+
+dart_test(
+    name = "kernel_link_test",
+    size = "small",
+    srcs = [
+        "kernel_link.dart",
+        "lib/worker_protocol.dart",
+    ],
+    args = [
+        "$(rlocationpath :kernel_link)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+    ],
+    data = [
+        ":kernel_link",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "kernel_link_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Compiles one kernel module, excluding the sources that cannot compile for the VM.
+# A Bazel persistent worker. It has no dependencies on purpose: every `dart_library`
+# names it as an attribute, so depending on a `dart_library` would be a cycle.
+# It reads the shared guard through `srcs` instead: the file compiles in place,
+# so the relative import reaches it with no package edge.
+# An AOT snapshot (run by `dartaotruntime` in `kernel_module_action`): every module
+# and entry action pays the tool's startup, and the snapshot skips the VM's JIT
+# compile of the wrapper. It is smaller and faster to build than `exe`.
+dart_binary(
+    name = "kernel_module",
+    srcs = [
+        "comma_patch.dart",
+        "dill_outline.dart",
+        "dill_reader.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
+        "kernel_module_strip.dart",
+        "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
+        "package_config.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "kernel_module.dart",
+    modular_kernel = False,
+    # A persistent-worker tool: `dartaotruntime` runs the raw snapshot, so it
+    # must stay the executable rather than gaining a `bazel run` launcher.
+    snapshot_launcher = False,
+    visibility = ["//visibility:public"],
+)
+
+# The compile wrapper (`app_jit_snapshot.dart`) as an AOT snapshot, run by
+# `dartaotruntime` in the `exe`, `aot-snapshot` and `gen_kernel` actions of
+# every `dart_binary` (see `compile_wrapper.bzl`). Built like `kernel_module`:
+# compiled once, never per app. It cannot be built through its own snapshot,
+# so `use_compile_wrapper = False` compiles it with the tool run from source,
+# as the `jit-snapshot` mode does. Its sources stay out of every app's inputs.
+dart_binary(
+    name = "compile_wrapper",
+    srcs = [
+        "app_jit_aot_args.dart",
+        "comma_patch.dart",
+        "dill_reader.dart",
+        "jit_lock.dart",
+        "jit_policy.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "app_jit_snapshot.dart",
+    modular_kernel = False,
+    # Run by `dartaotruntime` as a raw snapshot, like `kernel_module`.
+    snapshot_launcher = False,
+    use_compile_wrapper = False,
+    visibility = ["//dart:__subpackages__"],
+)
+
+# The launch of the compile wrapper, loaded by `dart_binary.bzl` and `dart_compile.bzl`.
+bzl_library(
+    name = "compile_wrapper_bzl",
+    srcs = ["compile_wrapper.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["//dart/private:dart_import_check"],
+)
+
+exports_files(
+    ["kernel_module_test.dart"],
+    visibility = ["//dart/tests/early_return_kernel_module:__pkg__"],
+)
+
+# The planner's and outline stripper's unit tests.
+#
+# Sharded because the suite is the slow one: it compiles from the SDK fixtures
+# twice. `package:test` hands each shard a contiguous block of cases, and the
+# heaviest cases sit together near the end of the file, so the slowest shard
+# only shrinks once that block splits. The p95 of the slowest shard over ten
+# runs each, run as the nightly flake sweep runs them (`--local_test_jobs` at
+# twice the host's CPUs, cases in random order): 24.2 s unsharded, 21.3 s at
+# 2 shards, 21.4 s at 4, 19.8 s at 8, 13.4 s at 16, near the floor set by the
+# single slowest case (about 7 s). At 16 that is under a quarter of `small`'s
+# 60 s timeout. `test_runner_test` holds the shard count and size to these
+# measurements.
+dart_test(
+    name = "kernel_module_test",
+    size = "medium",
+    srcs = [
+        "app_jit_aot_args.dart",
+        "app_jit_snapshot.dart",
+        "comma_patch.dart",
+        "dill_outline.dart",
+        "dill_reader.dart",
+        "dill_test_writer.dart",
+        "jit_lock.dart",
+        "jit_policy.dart",
+        "kernel_link.dart",
+        "kernel_module.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
+        "kernel_module_strip.dart",
+        "kernel_module_test_support.dart",
+        "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
+        "package_config.dart",
+        "worker_test_encode.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    args = [
+        "$(rlocationpath :kernel_module)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
+    ],
+    data = [
+        ":kernel_module",
+        "//dart",
+        "@dart_toolchains//sdk/3.13.4:compile_files",
+        "@dart_toolchains//sdk/3.13.4:dart",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "kernel_module_test.dart",
+    shard_count = 16,
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Tests for the strict-layering check inlined into kernel_module.
+dart_test(
+    name = "kernel_module_import_check_test",
+    size = "small",
+    srcs = [
+        "comma_patch.dart",
+        "dill_outline.dart",
+        "dill_reader.dart",
+        "dill_test_writer.dart",
+        "kernel_module.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
+        "kernel_module_strip.dart",
+        "kernel_module_test_support.dart",
+        "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
+        "package_config.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "kernel_module_import_check_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Generates one module's `package_config.json` from its closure's records.
+# It takes no `dart_library` dependency on purpose (like `kernel_module`
+# above): every `dart_library` names it as an implicit exec tool, so a
+# dependency would be a cycle. It reads the shared worker sources through
+# no `srcs`: it imports only `dart:` libraries.
+dart_binary(
+    name = "package_config",
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "package_config.dart",
+    modular_kernel = False,
+    # Run by `dartaotruntime` on the raw snapshot as a build-time tool, so the
+    # snapshot must stay the executable rather than gaining a `bazel run`
+    # launcher.
+    snapshot_launcher = False,
+    visibility = ["//visibility:public"],
+)
+
+# The strict-layering check (see `import_check.dart`): reads one target's
+# sources and fails when one imports a package its own `deps` do not provide.
+# Like `kernel_module` it takes no `dart_library` dependency, because every
+# `dart_binary` and `dart_library` aspect names it as an implicit exec tool, so
+# a dependency would be a cycle. It reads the shared guard through `srcs`: the
+# file compiles in place, so the relative import reaches it with no package edge.
+dart_binary(
+    name = "import_check",
+    srcs = [
+        "kernel_module_import_check.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "import_check.dart",
+    modular_kernel = False,
+    # `dartaotruntime` runs the raw snapshot, so it must stay the executable.
+    snapshot_launcher = False,
+    visibility = ["//dart:__subpackages__"],
+)
+
+# The `link_modules` check (see `link_check.dart`): refuses `dart:mirrors` and
+# `dart.library.mirrors` in the closure of an opted-in `exe` or `aot-snapshot`
+# binary. Built like `import_check`: it reads `expandSource` from that tool
+# through `srcs`, and never opts in itself, so it does not depend on itself.
+dart_binary(
+    name = "link_check",
+    srcs = [
+        "import_check.dart",
+        "kernel_module_import_check.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "link_check.dart",
+    modular_kernel = False,
+    # `dartaotruntime` runs the raw snapshot, so it must stay the executable.
+    snapshot_launcher = False,
+    visibility = ["//dart:__subpackages__"],
+)
+
+dart_test(
+    name = "link_check_test",
+    size = "small",
+    srcs = [
+        "import_check.dart",
+        "kernel_module_import_check.dart",
+        "link_check.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "link_check_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The layering check's unit tests.
+dart_test(
+    name = "import_check_test",
+    size = "small",
+    srcs = [
+        "import_check.dart",
+        "kernel_module_import_check.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "import_check_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The config generator's unit tests.
+dart_test(
+    name = "package_config_test",
+    size = "small",
+    srcs = ["package_config.dart"],
+    main = "package_config_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Bare sources for `directive_guard_test`, which reads every Dart-reading tool
+# and fails when one stops enforcing the shared staged-source check.
+exports_files(
+    [
+        "analyze_runner.dart",
+        "analyzer_summary.dart",
+        "fix_runner.dart",
+        "kernel_module.dart",
+        "link_hook_runner.dart",
+        "web_compile_runner.dart",
+    ],
+)
+
+dart_test(
+    name = "directive_guard_test",
+    size = "small",
+    srcs = ["//dart/guard:lib/directive_guard.dart"],
+    args = [
+        "$(rlocationpath :analyze_runner.dart)",
+        "$(rlocationpath :analyzer_summary.dart)",
+        "$(rlocationpath :app_jit_snapshot.dart)",
+        "$(rlocationpath //dart/guard:lib/directive_guard.dart)",
+        "$(rlocationpath :fix_runner.dart)",
+        "$(rlocationpath :kernel_module.dart)",
+        "$(rlocationpath :link_hook_runner.dart)",
+        "$(rlocationpath :web_compile_runner.dart)",
+        "$(rlocationpath //dart/ext:lib/builder_shim.dart)",
+    ],
+    data = [
+        ":analyze_runner.dart",
+        ":analyzer_summary.dart",
+        ":app_jit_snapshot.dart",
+        ":fix_runner.dart",
+        ":kernel_module.dart",
+        ":link_hook_runner.dart",
+        ":web_compile_runner.dart",
+        "//dart/ext:lib/builder_shim.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "directive_guard_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "kernel_module_unused_inputs_sandbox_test",
+    size = "small",
+    srcs = [
+        "comma_patch.dart",
+        "dill_outline.dart",
+        "dill_reader.dart",
+        "kernel_module.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
+        "kernel_module_strip.dart",
+        "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
+        "package_config.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "kernel_module_unused_inputs_sandbox_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+# Keeps the oversized planner tests and tools within their size ceilings.
+dart_test(
+    name = "tools_size_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :kernel_module_test.dart)",
+        "$(rlocationpath :kernel_module_unused_inputs_sandbox_test.dart)",
+        "$(rlocationpath :kernel_module.dart)",
+        "$(rlocationpath :analyze_runner_test_support.dart)",
+    ],
+    data = [
+        ":analyze_runner_test_support.dart",
+        ":kernel_module.dart",
+        ":kernel_module_test.dart",
+        ":kernel_module_unused_inputs_sandbox_test.dart",
+    ],
+    main = "tools_size_guard_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "analyzer_summary_test",
+    size = "medium",
+    srcs = [
+        "analysis_baseline.dart",
+        "analysis_model.dart",
+        "analyzer_summary.dart",
+        "analyzer_summary_lints.dart",
+        "analyzer_summary_test_support.dart",
+        "baseline_json.dart",
+        "worker_test_encode.dart",
+    ],
+    main = "analyzer_summary_test.dart",
+    deps = [
+        ":worker_protocol",
+        ":worker_tool_fs",
+        "//dart/guard:directive_guard",
+        "//dart/lints:rules_dart_project_lints",
+        "//third_party/dart_linter:linter",
+        "@ext_pub_deps//:analyzer",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "app_jit_snapshot_test",
+    size = "large",
+    srcs = [
+        "app_jit_aot_args.dart",
+        "app_jit_snapshot.dart",
+        "app_jit_snapshot_test_support.dart",
+        "comma_patch.dart",
+        "dill_reader.dart",
+        "dill_test_writer.dart",
+        "jit_lock.dart",
+        "jit_policy.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    args = [
+        "$(rlocationpath :app_jit_snapshot.dart)",
+        "$(rlocationpath :comma_patch.dart)",
+        "$(rlocationpath :dill_reader.dart)",
+        "$(rlocationpath :jit_lock.dart)",
+        "$(rlocationpath :jit_policy.dart)",
+        "$(rlocationpath //dart/guard:lib/directive_guard.dart)",
+        "$(rlocationpath :app_jit_aot_args.dart)",
+    ],
+    data = [
+        ":app_jit_aot_args.dart",
+        ":app_jit_snapshot.dart",
+        ":comma_patch.dart",
+        ":dill_reader.dart",
+        ":jit_lock.dart",
+        ":jit_policy.dart",
+        "//dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "app_jit_snapshot_test.dart",
+    shard_count = 8,
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The compile wrapper's one-pass guards, and the byte identity of its AOT
+# snapshot (`:compile_wrapper`) with the tool run from source.
+dart_test(
+    name = "app_jit_snapshot_guard_test",
+    size = "small",
+    srcs = [
+        "app_jit_aot_args.dart",
+        "app_jit_snapshot.dart",
+        "app_jit_snapshot_test_support.dart",
+        "comma_patch.dart",
+        "dill_reader.dart",
+        "dill_test_writer.dart",
+        "jit_lock.dart",
+        "jit_policy.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    args = ["$(rlocationpath :compile_wrapper)"],
+    data = [
+        ":compile_wrapper",
+        "//dart",
+    ],
+    main = "app_jit_snapshot_guard_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The lock policy's unit tests: the pinned rename call, the temporary-sibling
+# shape, the struct flock write-lock type and type offset, and the statx and
+# macOS struct stat decoders, all as pure functions of synthetic inputs,
+# without syscalls or SDK fixtures.
+dart_test(
+    name = "jit_policy_test",
+    size = "small",
+    srcs = ["jit_policy.dart"],
+    main = "jit_policy_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Guards `WorkRequest.inputs` paths whose length needs a multi-byte varint, and
+# that `kernel_module_test.dart` frames its `Input` messages with that encoder.
+dart_test(
+    name = "kernel_module_input_varint_test",
+    size = "small",
+    srcs = [
+        "comma_patch.dart",
+        "dill_outline.dart",
+        "dill_reader.dart",
+        "kernel_module.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
+        "kernel_module_strip.dart",
+        "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
+        "package_config.dart",
+        "worker_test_encode.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    args = ["$(rlocationpath :kernel_module_test.dart)"],
+    data = [":kernel_module_test.dart"],
+    main = "kernel_module_input_varint_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The comma-splitting patch's unit tests: byte patterns, the fail-closed
+# helpers, the file and CLI entry points against every listed SDK, and the
+# no-shared-state regression guard. The listed SDKs go beyond the two the
+# rules test by default (3.13.5, 3.13.4): 3.13.2 pins the patch against the
+# next-older SDK in the version table. Older table versions are not listed:
+# each entry downloads an SDK per CI platform, and the byte patterns are
+# compiler-codegen-specific, so an older SDK whose snapshot no longer matches
+# needs its own pattern, not silent inclusion here. The arm64 pattern runs
+# against real snapshots only on arm64 CI hosts; elsewhere synthetic buffers
+# cover its shape, and no macOS-built snapshot is ever executed off macOS.
+dart_test(
+    name = "comma_patch_test",
+    size = "medium",
+    srcs = ["comma_patch.dart"],
+    args = [
+        "$(rlocationpath :comma_patch.dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.2:dart)",
+    ],
+    data = [
+        ":comma_patch.dart",
+        "@dart_toolchains//sdk/3.13.2:compile_files",
+        "@dart_toolchains//sdk/3.13.2:dart",
+        "@dart_toolchains//sdk/3.13.4:compile_files",
+        "@dart_toolchains//sdk/3.13.4:dart",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "comma_patch_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "fix_runner_test",
+    size = "small",
+    srcs = [
+        "analyze_runner_staged_prune.dart",
+        "fix_runner.dart",
+        "private_home.dart",
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    args = ["$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)"],
+    data = [
+        "@dart_toolchains//sdk/3.13.5:analyze_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+        "@dart_toolchains//sdk/3.13.5:runtime_files",
+    ],
+    main = "fix_runner_test.dart",
+    deps = [
+        "//dart/guard:directive_guard",
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+exports_files(
+    ["format_runner_test.dart"],
+    visibility = ["//dart/tests/early_return_runner_workers:__pkg__"],
+)
+
+dart_test(
+    name = "project_lint_options_test",
+    size = "small",
+    srcs = [
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
+    ],
+    main = "project_lint_options_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+dart_test(
+    name = "format_runner_test",
+    size = "small",
+    srcs = [
+        "format_runner.dart",
+        "private_home.dart",
+    ],
+    args = [
+        "$(rlocationpath :format_runner)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
+    ],
+    data = [
+        ":format_runner",
+        "@dart_toolchains//sdk/3.13.4:compile_files",
+        "@dart_toolchains//sdk/3.13.4:dart",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "format_runner_test.dart",
+    deps = [
+        ":worker_protocol",
+        ":worker_tool_fs",
+        "//dart/runfiles",
+        "@ext_pub_deps//:dart_style",
+        "@ext_pub_deps//:package_config",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:pub_semver",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_binary(
+    name = "web_compile_runner",
+    srcs = ["private_home.dart"],
+    compile_mode = "kernel",
+    main = "web_compile_runner.dart",
+    modular_kernel = False,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":worker_protocol",
+        "//dart/guard:directive_guard",
+    ],
+)
+
+dart_test(
+    name = "web_compile_runner_test",
+    size = "small",
+    srcs = [
+        "private_home.dart",
+        "web_compile_runner.dart",
+    ],
+    data = ["//dart"],
+    main = "web_compile_runner_test.dart",
+    deps = [
+        ":worker_protocol",
+        "//dart/guard:directive_guard",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_binary(
+    name = "update_cross_sdk_versions",
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "update_cross_sdk_versions.dart",
+    visibility = ["//visibility:public"],
+    deps = ["@ext_pub_deps//:crypto"],
+)
+
+dart_test(
+    name = "update_cross_sdk_versions_test",
+    size = "small",
+    srcs = ["update_cross_sdk_versions.dart"],
+    main = "update_cross_sdk_versions_test.dart",
+    deps = [
+        "@ext_pub_deps//:crypto",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "kernel_launcher_test",
+    size = "small",
+    srcs = [
+        "kernel_launcher.dart",
+        "private_home.dart",
+        "test_runner_workspace.dart",
+    ],
+    main = "kernel_launcher_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+exports_files(
+    ["BUILD.bazel"],
+    visibility = ["//dart/tests:__subpackages__"],
+)

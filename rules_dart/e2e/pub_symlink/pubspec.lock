@@ -1,0 +1,15 @@
+packages:
+  evil_pkg:
+    dependency: "direct main"
+    description:
+      # Fill in after running the setup in BUILD.bazel: the `file://` remote
+      # below is a scratch git repository the setup creates, so the
+      # resolved-ref only exists on the machine that ran it.
+      path: "evil_pkg"
+      ref: main
+      resolved-ref: "0000000000000000000000000000000000000000"
+      url: "file:///tmp/pub_symlink_evil"
+    source: git
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

@@ -1,0 +1,23 @@
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_test")
+
+exports_files(["pubspec.yaml"])
+
+# Depends on its sibling member by a Bazel label, not through the lock.
+dart_library(
+    name = "b",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//a",
+        "@pub_deps//:path",
+    ],
+)
+
+dart_test(
+    name = "b_test",
+    size = "small",
+    main = "test/b_test.dart",
+    deps = [
+        ":b",
+    ],
+)

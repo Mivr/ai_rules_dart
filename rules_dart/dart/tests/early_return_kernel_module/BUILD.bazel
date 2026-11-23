@@ -1,0 +1,19 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Guards `kernel_module_test.dart` against going green without running: a case
+# must skip declaratively, never return before its first assertion.
+dart_test(
+    name = "kernel_module_early_return_test",
+    size = "small",
+    args = [
+        "$(rlocationpath //dart/private/tools:kernel_module_test.dart)",
+    ],
+    data = [
+        "//dart/private/tools:kernel_module_test.dart",
+    ],
+    main = "kernel_module_early_return_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

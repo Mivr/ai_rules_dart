@@ -1,0 +1,102 @@
+name: Perf Scale Linux
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      head_ref:
+        description: "Git ref under measurement"
+        required: true
+        type: string
+      sizes:
+        description: "Comma-separated library counts to measure"
+        required: false
+        default: "32,1000,5000"
+        type: string
+      seed:
+        description: "Deterministic random seed"
+        required: false
+        default: "1"
+        type: string
+permissions:
+  contents: read
+jobs:
+  scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout bench tooling
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: tools-src
+      - name: Enable and verify Linux user namespaces
+        run: tools-src/.github/scripts/enable_linux_sandbox.sh
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: false
+          disk-cache: false
+          external-cache: false
+          repository-cache: false
+          cache-save: false
+      - name: Configure tooling Bazel version
+        run: |
+          if [ -f tools-src/.bazelversion ]; then
+            cp tools-src/.bazelversion tools-src/tools/.bazelversion
+          fi
+      - name: Checkout rules under measurement
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.head_ref }}
+          path: rules-head
+          fetch-depth: 0
+      - name: Generate one workspace per size
+        env:
+          SIZES: ${{ inputs.sizes || '32,1000,5000' }}
+          SEED: ${{ inputs.seed || '1' }}
+        run: |
+          tooling_base="${RUNNER_TEMP}/tooling-outbase"
+          roots="${RUNNER_TEMP}/scale-workspaces"
+          case "$SIZES" in
+            '' | *[!0-9,]*)
+              echo "sizes must be comma-separated integers, got '$SIZES'" >&2
+              exit 1
+              ;;
+          esac
+          mkdir -p "$roots"
+          for n in $(echo "$SIZES" | tr ',' ' '); do
+            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:generate -- \
+              --libraries="$n" \
+              --seed="$SEED" \
+              --rules-dart="$GITHUB_WORKSPACE/rules-head" \
+              --out="$roots/ws-$n")
+          done
+      - name: Measure scale and check growth ceilings
+        env:
+          SIZES: ${{ inputs.sizes || '32,1000,5000' }}
+          SEED: ${{ inputs.seed || '1' }}
+        run: |
+          tooling_base="${RUNNER_TEMP}/tooling-outbase"
+          roots="${RUNNER_TEMP}/scale-workspaces"
+          mkdir -p "$GITHUB_WORKSPACE/scale-out"
+          (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:scale -- \
+            --workspace-root="$roots" \
+            --sizes="$SIZES" \
+            --seed="$SEED" \
+            --ceilings="$GITHUB_WORKSPACE/tools-src/tools/perf/scale_ceilings.json" \
+            --out="$GITHUB_WORKSPACE/scale-out/dart-scale.json")
+      - name: Shut down tooling Bazel server
+        if: ${{ always() }}
+        run: |
+          tooling_base="${RUNNER_TEMP}/tooling-outbase"
+          if [ -d tools-src/tools ]; then
+            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || echo "bazel shutdown failed" >&2
+          fi
+      - name: Upload dart-scale report and Starlark profiles
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-scale
+          path: scale-out
+          if-no-files-found: error
+          retention-days: 3

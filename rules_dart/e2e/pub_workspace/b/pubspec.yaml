@@ -1,0 +1,7 @@
+name: b
+resolution: workspace
+environment:
+  sdk: ^3.11.0
+dependencies:
+  a: any
+  path: ^1.9.1

@@ -1,0 +1,15 @@
+TN:
+SF:/home/runner/work/ws/lib/coverage_fixture.dart
+FN:10,sign
+FN:18,neverCalledFixtureFunction
+FNDA:2,sign
+FNDA:0,neverCalledFixtureFunction
+FNF:2
+FNH:1
+DA:11,2
+DA:12,0
+DA:14,2
+BRDA:11,0,0,0
+LF:3
+LH:2
+end_of_record

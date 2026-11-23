@@ -1,0 +1,98 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:legacy_mixin_fixture_legacy/legacy.dart';
+import 'package:legacy_mixin_fixture_mid/mid.dart';
+import 'package:runfiles/runfiles.dart';
+import 'package:test/test.dart';
+
+class _Direct with LegacyMixin, MidMixin {}
+
+class _SubChained extends ChainedLegacy {}
+
+void main(List<String> args) {
+  test('modular and whole-program binaries for a legacy-class mixin print the same output', () async {
+    final runfiles = Runfiles.create();
+    final String modularDill = runfiles.rlocation(args[0]);
+    final String wholeDill = runfiles.rlocation(args[1]);
+
+    final ProcessResult modularRes = await Process.run(
+      Platform.resolvedExecutable,
+      [modularDill],
+    );
+    expect(
+      modularRes.exitCode,
+      0,
+      reason: 'modular binary failed: ${modularRes.stderr}',
+    );
+
+    final ProcessResult wholeRes = await Process.run(
+      Platform.resolvedExecutable,
+      [wholeDill],
+    );
+    expect(
+      wholeRes.exitCode,
+      0,
+      reason: 'whole-program binary failed: ${wholeRes.stderr}',
+    );
+
+    final String modularOut = (modularRes.stdout as String).replaceAll(
+      '\r\n',
+      '\n',
+    );
+    final String wholeOut = (wholeRes.stdout as String).replaceAll(
+      '\r\n',
+      '\n',
+    );
+    expect(modularOut, equals(wholeOut));
+    expect(
+      modularOut,
+      startsWith(
+        'direct[hello world (legacy:15)]\n'
+        'mid[hello chain (legacy:12)]\n'
+        'Bad state: legacy boom (legacy:15)|',
+      ),
+    );
+    expect(
+      modularOut,
+      contains('package:legacy_mixin_fixture_legacy/legacy.dart:16:5'),
+    );
+  });
+
+  test('modular dart_test directly mixing in legacy classes preserves field initializers, member bodies and stack traces', () {
+    final d = _Direct()
+      ..bump = 7
+      ..prefix = 'test';
+    expect(d.tag, 'legacy');
+    expect(d.count, 17);
+    expect(d.label, 'legacy:17');
+    expect(d.decorate(d.greet('direct')), 'test[hello direct (legacy:17)]');
+
+    final c = _SubChained()..bump = 3;
+    expect(c.decorate(c.greet('sub')), 'mid[hello sub (legacy:13)]');
+
+    StackTrace? trace;
+    try {
+      d.failInLegacy();
+    } on StateError catch (_, st) {
+      trace = st;
+    }
+    expect(trace, isNotNull);
+    expect(
+      trace.toString(),
+      contains('package:legacy_mixin_fixture_legacy/legacy.dart:16:5'),
+    );
+  });
+
+  test(
+    'modular dart_test links unseeded transitive dependencies of package:test '
+    'such as package:crypto',
+    () {
+      expect(
+        sha1.convert(utf8.encode('rules_dart')).toString(),
+        'df6a4102edc2fcea2402779a434e6db2f358cf01',
+      );
+    },
+  );
+}

@@ -1,0 +1,7 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzlP
+
+fixture_fn
+target (
+
+args (
+kwargs (Runs the fixture function.

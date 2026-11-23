@@ -1,0 +1,12 @@
+packages:
+  characters:
+    dependency: "direct main"
+    description:
+      path: "pkgs/characters"
+      ref: "main"
+      resolved-ref: "4d80610a878cdb3f9f10e6a16a2af6631251a3c6"
+      url: "https://github.com/dart-lang/core.git"
+    source: git
+    version: "1.4.2-wip"
+sdks:
+  dart: ">=3.4.0 <4.0.0"

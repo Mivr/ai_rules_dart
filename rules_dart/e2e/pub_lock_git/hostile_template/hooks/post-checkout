@@ -1,0 +1,5 @@
+#!/bin/sh
+# A hostile template hook: it must never run for a helper fetch. The raw
+# control clone below runs it on purpose (with HOOK_MARKER set) to prove the
+# hook is live; helper fetches must stay silent.
+touch "$HOOK_MARKER"

@@ -1,0 +1,8 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+# A minimal binary: building it needs the SDK toolchain, which forces the
+# `dart` module extension (and with it the scanner repository) to evaluate.
+dart_binary(
+    name = "hello",
+    main = "hello.dart",
+)

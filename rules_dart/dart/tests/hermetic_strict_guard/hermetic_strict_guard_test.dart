@@ -1,0 +1,684 @@
+import 'dart:io';
+
+import 'package:runfiles/runfiles.dart';
+import 'package:test/test.dart';
+
+/// Locks the hermetic-strict CI signal in place.
+///
+/// The canary workspace stays red by design, the strict job keeps the H1
+/// flag set with its shimmed repository environment and its BEP check, the
+/// expected-failure job keeps the canary self-test, and no positive sweep
+/// picks the canary up. Runs unsandboxed over the live tree, resolving the
+/// root from its own runfiles anchor with an ancestor-walk fallback.
+void main(List<String> args) {
+  final String root = _repoRoot(args);
+  final String workflow = File('$root/.github/workflows/ci.yaml')
+      .readAsStringSync();
+  _checkCanary(root);
+  _checkUsernsScript(root);
+  _checkStrictJob(workflow);
+  _checkConclusion(workflow);
+  _checkSelfTest(workflow);
+  _checkSweep(root, workflow);
+  _checkSlicing(workflow);
+}
+
+/// Checks the red-by-design canary workspace layout.
+void _checkCanary(String root) {
+  group('canary workspace', () {
+    test('layout matches the red-by-design contract', () {
+      final dir = Directory('$root/e2e/hermetic_canary');
+      expect(dir.existsSync(), isTrue, reason: 'missing e2e/hermetic_canary');
+      _checkCanaryBuild(dir);
+      _checkCanaryModule(dir);
+      _checkCanaryRule(dir);
+      _checkCanaryTool(dir);
+    });
+  });
+}
+
+/// Checks the canary `BUILD.bazel` declares the tool and `//:canary`.
+void _checkCanaryBuild(Directory dir) {
+  final build = File('${dir.path}/BUILD.bazel');
+  _expectFile(build, 'e2e/hermetic_canary/BUILD.bazel');
+  final String buildText = build.readAsStringSync();
+  expect(buildText.trim(), isNotEmpty, reason: 'BUILD.bazel is empty');
+  for (final String needle in _buildNeedles) {
+    _expectContains(buildText, needle, 'BUILD.bazel must declare $needle');
+  }
+}
+
+/// Checks the canary `MODULE.bazel`, its version pin and its lockfile.
+void _checkCanaryModule(Directory dir) {
+  final module = File('${dir.path}/MODULE.bazel');
+  _expectFile(module, 'e2e/hermetic_canary/MODULE.bazel');
+  final String moduleText = module.readAsStringSync();
+  for (final String needle in _moduleNeedles) {
+    _expectContains(moduleText, needle, 'MODULE.bazel must contain $needle');
+  }
+  final version = File('${dir.path}/.bazelversion');
+  _expectFile(version, 'e2e/hermetic_canary/.bazelversion');
+  expect(
+    version.readAsStringSync().trim(),
+    equals('9.3.0'),
+    reason: '.bazelversion must pin 9.3.0',
+  );
+  final lock = File('${dir.path}/MODULE.bazel.lock');
+  _expectFile(lock, 'e2e/hermetic_canary/MODULE.bazel.lock');
+  expect(
+    lock.readAsStringSync().trim(),
+    isNotEmpty,
+    reason: 'MODULE.bazel.lock must be generated, not empty',
+  );
+}
+
+/// Checks the canary rule's documented action and undeclared host read.
+void _checkCanaryRule(Directory dir) {
+  final rule = File('${dir.path}/canary.bzl');
+  _expectFile(rule, 'e2e/hermetic_canary/canary.bzl');
+  final String ruleText = rule.readAsStringSync();
+  for (final String needle in _ruleNeedles) {
+    _expectContains(ruleText, needle, 'canary.bzl must contain $needle');
+  }
+  _expectNotContains(
+    ruleText,
+    '/usr/bin/env',
+    'the rule must not declare the undeclared host path in inputs',
+  );
+}
+
+/// Checks the Dart entry point reads `/usr/bin/env` and reports its absence.
+void _checkCanaryTool(Directory dir) {
+  final tool = File('${dir.path}/tool.dart');
+  _expectFile(tool, 'e2e/hermetic_canary/tool.dart');
+  final String toolText = tool.readAsStringSync();
+  for (final String needle in _toolNeedles) {
+    _expectContains(toolText, needle, 'tool.dart must contain $needle');
+  }
+}
+
+/// Every declaration the canary `BUILD.bazel` must keep.
+const List<String> _buildNeedles = [
+  'load("@rules_dart//dart:defs.bzl", "dart_binary")',
+  'dart_binary(',
+  'name = "tool"',
+  'hermetic_canary(',
+  'name = "canary"',
+];
+
+/// Every module declaration the canary `MODULE.bazel` must keep.
+const List<String> _moduleNeedles = [
+  'module(name = "hermetic_canary")',
+  'bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")',
+  'local_path_override(',
+  'path = "../..",',
+  'dart_version = "3.13.5"',
+  'use_repo(dart, "dart_toolchains")',
+  'register_toolchains("@dart_toolchains//:all")',
+];
+
+/// Every action declaration the canary rule must keep.
+const List<String> _ruleNeedles = [
+  'ctx.actions.run(',
+  'executable = ctx.executable._tool',
+  'tools = [ctx.attr._tool[DefaultInfo].files_to_run]',
+  'use_default_shell_env = False',
+  'mnemonic =',
+  'doc =',
+  'attrs =',
+];
+
+/// Every step the canary Dart entry point must keep.
+const List<String> _toolNeedles = [
+  '/usr/bin/env',
+  'readAsBytesSync()',
+  'stderr',
+  'exit(1)',
+  'args[0]',
+];
+
+/// Checks the strict job keeps every H1 flag, mount, phase and BEP file.
+void _checkStrictJob(String workflow) {
+  group('strict job', () {
+    test('block keeps every H1 flag, mount and BEP file', () {
+      final String block = _jobBlock(workflow, 'hermetic-strict');
+      _checkStrictSetup(block);
+      _checkStrictFlags(block);
+      _checkStrictWorkspaces(block);
+      _checkStrictPhases(block);
+      _checkWorkerProof(block);
+      _checkStrictBep(block);
+    });
+  });
+}
+
+/// Checks the strict job's runner, checkout and blocked-tool shims.
+void _checkStrictSetup(String block) {
+  _expectContains(block, 'runs-on: ubuntu-latest', 'strict job runner');
+  _expectContains(block, 'timeout-minutes:', 'strict job timeout');
+  _expectContains(block, 'actions/checkout@', 'strict job checkout');
+  _checkUserns(block, 'strict job');
+  _expectContains(
+    block,
+    'for tool in curl python3 find cp tar unzip',
+    'blocked-tool shim list',
+  );
+  _expectContains(block, r'test ! -e "$SHIM_DIR/git"', 'git is not shimmed');
+  _expectContains(block, 'test -x /usr/bin/git', 'git stays in /usr/bin');
+  _expectContains(
+    block,
+    r'--repo_env=PATH="$SHIM_DIR:/usr/bin:/bin"',
+    'the shim directory comes first on the repository PATH',
+  );
+}
+
+/// Checks [text] runs the shared user-namespace script before any Bazel use.
+void _checkUserns(String text, String scope) {
+  const script = '.github/scripts/enable_linux_sandbox.sh';
+  _expectContains(text, 'run: $script', '$scope runs the shared script');
+  _expectNotContains(text, 'sysctl', '$scope must not carry an inline sysctl');
+  _expectNotContains(
+    text,
+    'userns_probe',
+    '$scope must not carry a probe copy',
+  );
+  expect(
+    text.indexOf(script),
+    lessThan(text.indexOf(RegExp(r'\bbazel (build|test)\b'))),
+    reason: '$scope must enable user namespaces before starting Bazel',
+  );
+}
+
+/// Checks the shared script enables and verifies user namespaces.
+void _checkUsernsScript(String root) {
+  group('user-namespace script', () {
+    test('enables and verifies user namespaces unprofiled', () {
+      final file = File('$root/.github/scripts/enable_linux_sandbox.sh');
+      _expectFile(file, '.github/scripts/enable_linux_sandbox.sh');
+      final String text = file.readAsStringSync();
+      const sysctl = 'kernel.apparmor_restrict_unprivileged_userns=0';
+      _expectContains(text, sysctl, 'script enables Ubuntu user namespaces');
+      _expectNotContains(
+        text,
+        'if ! unshare',
+        'script must not gate sysctl behind profiled /usr/bin/unshare',
+      );
+      _expectContains(
+        text,
+        'userns_probe',
+        'script probes via unprofiled copy',
+      );
+      _expectContains(
+        text,
+        'unshare -U -r -m -p -f --mount-proc true',
+        'script verifies /proc mount in a pid namespace',
+      );
+    });
+  });
+}
+
+/// Checks every strict flag, mount and BEP file, and no tolerated failure.
+void _checkStrictFlags(String block) {
+  for (final String flag in _strictFlags) {
+    _expectContains(block, flag, 'hermetic-strict must keep $flag');
+  }
+  for (final String mount in _mounts) {
+    _expectContains(block, mount, 'hermetic-strict must mount $mount');
+  }
+  _expectAtLeast(block, '--build_event_json_file=', 4, 'BEP files');
+  _expectAtLeast(
+    block,
+    '--experimental_use_hermetic_linux_sandbox',
+    2,
+    'strict Phase 1 builds',
+  );
+  _checkWorkerSandboxingPairing(block);
+  _expectNotContains(block, '|| true', 'the strict job tolerates nothing');
+  _expectNotContains(block, 'exit 4', 'the strict job tolerates no exit 4');
+  _expectNotContains(
+    block,
+    'continue-on-error',
+    'the strict job tolerates no failure',
+  );
+  _expectExactly(
+    block,
+    '--sandbox_add_mount_pair=',
+    20,
+    'the strict job mounts only the four minimal pairs in five builds',
+  );
+}
+
+/// Joins backslash-continued lines so each Bazel invocation is one string.
+List<String> _invocations(String block) =>
+    block.replaceAll(RegExp(r'\\\s*\n'), ' ').split('\n');
+
+/// Checks every `--worker_sandboxing` invocation also passes
+/// `--noworker_multiplex`, and that there are at least four of them.
+///
+/// Multiplex workers ignore `--worker_sandboxing`, so without the second
+/// flag `DartKernel` would escape the sandbox this job claims to test.
+void _checkWorkerSandboxingPairing(String block) {
+  final List<String> sandboxed = _invocations(block)
+      .where((line) => line.contains('--worker_sandboxing'))
+      .toList();
+  expect(
+    sandboxed.length,
+    greaterThanOrEqualTo(4),
+    reason: 'hermetic-strict needs at least 4 --worker_sandboxing invocations',
+  );
+  for (final line in sandboxed) {
+    _expectContains(
+      line,
+      '--noworker_multiplex',
+      'every --worker_sandboxing invocation needs --noworker_multiplex',
+    );
+  }
+}
+
+/// Checks both workspaces, the codegen query and the Phase 2 test runs.
+void _checkStrictWorkspaces(String block) {
+  _expectContains(
+    block,
+    'working-directory: e2e/hello_world',
+    'hello_world workspace',
+  );
+  _expectContains(block, 'working-directory: e2e/codegen', 'codegen workspace');
+  _expectContains(
+    block,
+    "bazel query '//... except attr(generator_function, build_test, //...)'",
+    'codegen resolves the underlying build targets',
+  );
+  _expectContains(
+    block,
+    '--skip_incompatible_explicit_targets',
+    'codegen skips incompatible explicit targets',
+  );
+  _expectContains(block, "bazel query 'tests(//...)'", 'test discovery');
+  _expectContains(block, 'bazel test //...', 'Phase 2 test runs');
+}
+
+/// Checks the hermetic flag is in Phase 1 and absent from Phase 2.
+void _checkStrictPhases(String block) {
+  final String helloBuild = _stepBlock(block, 'Phase 1 hello_world');
+  final String codegenBuild = _stepBlock(block, 'Phase 1 codegen');
+  final String helloTest = _stepBlock(block, 'Phase 2 hello_world');
+  final String codegenTest = _stepBlock(block, 'Phase 2 codegen');
+  _expectContains(
+    helloBuild,
+    '--experimental_use_hermetic_linux_sandbox',
+    'hello_world Phase 1 is strict',
+  );
+  _expectContains(
+    codegenBuild,
+    '--experimental_use_hermetic_linux_sandbox',
+    'codegen Phase 1 is strict',
+  );
+  _expectNotContains(
+    helloTest,
+    '--experimental_use_hermetic_linux_sandbox',
+    'hello_world Phase 2 omits the hermetic sandbox flag',
+  );
+  _expectNotContains(
+    codegenTest,
+    '--experimental_use_hermetic_linux_sandbox',
+    'codegen Phase 2 omits the hermetic sandbox flag',
+  );
+}
+
+/// Checks the worker sandbox proof step: a verbose build that fails on any
+/// `non-sandboxed` worker line and on output without a sandboxed worker, run
+/// before the first Phase 2 step.
+void _checkWorkerProof(String block) {
+  final String step = _stepBlock(block, 'Worker sandbox proof');
+  _expectContains(step, '--worker_verbose', 'the proof prints worker lines');
+  _expectContains(
+    step,
+    "grep -n 'non-sandboxed'",
+    'the proof fails on a non-sandboxed worker line',
+  );
+  _expectContains(
+    step,
+    "grep -q 'Created new sandboxed'",
+    'the proof fails when no sandboxed worker was created',
+  );
+  _expectContains(step, '--disk_cache=', 'the proof builds uncached');
+  _expectContains(step, '--output_base=', 'the proof uses a fresh output base');
+  _expectContains(step, 'trap ', 'the proof shuts its server down on EXIT');
+  final int proof = block.indexOf(step);
+  final int phase2 = block.indexOf('- name: Phase 2');
+  expect(phase2, greaterThan(0), reason: 'hermetic-strict has Phase 2 steps');
+  expect(
+    proof,
+    lessThan(phase2),
+    reason: 'the worker sandbox proof must come before the first Phase 2 step',
+  );
+}
+
+/// Checks the BEP assertion reads both command-line labels and the flag.
+void _checkStrictBep(String block) {
+  _expectContains(block, 'canonical', 'BEP canonical command line');
+  _expectContains(block, 'original', 'BEP original command line');
+  _expectContains(block, '--action_env', 'BEP action-env assertion');
+}
+
+/// Every flag the strict phases must keep passing to Bazel.
+const List<String> _strictFlags = [
+  '--worker_sandboxing',
+  '--noworker_multiplex',
+  '--experimental_worker_sandbox_hardening',
+  '--experimental_worker_strict_flagfiles',
+  '--experimental_use_hermetic_linux_sandbox',
+  '--sandbox_add_mount_pair',
+  '--nosandbox_default_allow_network',
+  '--sandbox_fake_username',
+  '--sandbox_fake_hostname',
+  '--experimental_strict_repo_env',
+  '--repo_env=PATH=',
+  '--build_event_json_file=',
+  '--skip_incompatible_explicit_targets',
+];
+
+/// Minimal mount set the hermetic sandbox must keep.
+const List<String> _mounts = [
+  '/lib64',
+  '/lib/x86_64-linux-gnu',
+  '/usr/lib/x86_64-linux-gnu',
+  '/etc/ld.so.cache',
+];
+
+/// Checks the conclusion job still gates on the strict job.
+void _checkConclusion(String workflow) {
+  group('conclusion', () {
+    test('conclusion still gates on the strict job', () {
+      final String block = _jobBlock(workflow, 'conclusion');
+      expect(
+        RegExp(r'^\s*-\s*hermetic-strict\s*$', multiLine: true).hasMatch(block),
+        isTrue,
+        reason: 'conclusion needs must list hermetic-strict',
+      );
+    });
+  });
+}
+
+/// Checks the expected-failure canary self-test.
+void _checkSelfTest(String workflow) {
+  group('self-test', () {
+    test('expected-failure proves the canary fails strict', () {
+      final String block = _jobBlock(workflow, 'expected-failure');
+      _expectNotContains(block, 'continue-on-error', 'no tolerated failure');
+      final String step = _stepBlock(block, 'e2e/hermetic_canary');
+      _expectNotContains(step, '|| true', 'no tolerated failure');
+      _expectContains(
+        step,
+        'working-directory: e2e/hermetic_canary',
+        'the canary step runs in its workspace',
+      );
+      _checkUserns(block, 'expected-failure');
+      _expectContains(
+        step,
+        'bazel build //:canary ||',
+        'the default build must succeed first',
+      );
+      _expectContains(
+        step,
+        '--experimental_use_hermetic_linux_sandbox',
+        'the self-test passes the hermetic flag',
+      );
+      _expectContains(
+        step,
+        r'--output_base="$RUNNER_TEMP/hermetic_canary_strict"',
+        'the self-test isolates its base under RUNNER_TEMP',
+      );
+      _expectNotContains(
+        step,
+        '--output_base=/tmp',
+        'output_base must not sit under /tmp, which -w /tmp bind-mounts over',
+      );
+      _expectContains(
+        step,
+        r'if out=$(bazel ',
+        'the strict build must be expected to fail',
+      );
+      _expectContains(
+        step,
+        'grep -F -q "/usr/bin/env"',
+        'the self-test greps the strict output',
+      );
+      for (final String mount in _mounts) {
+        _expectContains(step, mount, 'the self-test must mount $mount');
+      }
+      _expectExactly(
+        step,
+        '--sandbox_add_mount_pair=',
+        4,
+        'the self-test uses only the four minimal mounts',
+      );
+    });
+  });
+}
+
+/// Checks no positive sweep runs the canary.
+void _checkSweep(String root, String workflow) {
+  group('sweep', () {
+    test('no positive sweep runs the canary', () {
+      _expectNotContains(
+        _jobBlock(workflow, 'test'),
+        'e2e/hermetic_canary',
+        'test matrices must not name the canary',
+      );
+      final String options = File('$root/tools/vm/run_e2e_options.dart')
+          .readAsStringSync();
+      _expectNotContains(
+        options,
+        'e2e/hermetic_canary',
+        'ciFolders must not name the canary',
+      );
+      final String full = File('$root/.github/workflows/full.yaml')
+          .readAsStringSync();
+      _expectNotContains(
+        full,
+        'e2e/hermetic_canary',
+        'full.yaml must not name the canary',
+      );
+    });
+  });
+}
+
+/// Checks the job and step slicers used above.
+void _checkSlicing(String workflow) {
+  group('checker self-checks', () {
+    test('job slicing stops at the next job', () {
+      const doc = '  alpha:\n    x: 1\n  beta:\n    y: 2\n';
+      expect(_jobBlock(doc, 'alpha'), contains('x: 1'));
+      expect(_jobBlock(doc, 'alpha'), isNot(contains('y: 2')));
+    });
+
+    test('step slicing stops at the next step', () {
+      const doc =
+          '      - name: first\n        run: one\n'
+          '      - name: second\n        run: two\n';
+      expect(_stepBlock(doc, 'first'), contains('one'));
+      expect(_stepBlock(doc, 'first'), isNot(contains('two')));
+    });
+
+    test('worker sandboxing without --noworker_multiplex is rejected', () {
+      const bad =
+          '          bazel build //... \\\n'
+          '            --worker_sandboxing \\\n'
+          '            --nosandbox_default_allow_network\n';
+      expect(
+        () => _checkWorkerSandboxingPairing(bad * 4),
+        throwsA(isA<TestFailure>()),
+      );
+      expect(
+        () => _checkWorkerSandboxingPairing(
+          bad.replaceAll(
+                '--worker_sandboxing',
+                '--worker_sandboxing --noworker_multiplex',
+              ) *
+              3,
+        ),
+        throwsA(isA<TestFailure>()),
+        reason: 'fewer than four invocations is rejected',
+      );
+    });
+
+    test('worker proof without its conditions is rejected', () {
+      final String good = _stepBlock(
+        _jobBlock(workflow, 'hermetic-strict'),
+        'Worker sandbox proof',
+      );
+      const head = '      - name: Phase 1 hello_world\n        run: x\n';
+      const tail = '      - name: Phase 2 hello_world\n        run: y\n';
+      expect(() => _checkWorkerProof('$head$good\n$tail'), returnsNormally);
+      for (final needle in [
+        '--worker_verbose',
+        'non-sandboxed',
+        'Created new sandboxed',
+      ]) {
+        expect(
+          () => _checkWorkerProof(
+            '$head${good.replaceAll(needle, 'removed')}\n$tail',
+          ),
+          throwsA(isA<TestFailure>()),
+          reason: 'a proof without $needle is rejected',
+        );
+      }
+      expect(
+        () => _checkWorkerProof('$tail$good'),
+        throwsA(isA<TestFailure>()),
+        reason: 'a proof after Phase 2 is rejected',
+      );
+    });
+
+    test('missing job or step raises', () {
+      expect(() => _jobBlock('  alpha:\n', 'beta'), throwsStateError);
+      expect(
+        () => _stepBlock('      - name: first\n', 'second'),
+        throwsStateError,
+      );
+    });
+  });
+}
+
+/// The YAML block of a two-space-indented top-level job.
+String _jobBlock(String text, String job) {
+  final RegExpMatch? start = RegExp(
+    '^  $job:\\s*\$',
+    multiLine: true,
+  ).firstMatch(text);
+  if (start == null) {
+    throw StateError('job $job not found');
+  }
+  final Iterable<RegExpMatch> later = RegExp(
+    r'^  [A-Za-z0-9_-]+:\s*$',
+    multiLine: true,
+  ).allMatches(text).where((RegExpMatch m) => m.start > start.start);
+  final int end = later.isEmpty ? text.length : later.first.start;
+  return text.substring(start.start, end);
+}
+
+/// The YAML block of the step whose text contains [marker].
+String _stepBlock(String text, String marker) {
+  final List<String> lines = text.split('\n');
+  final int at = lines.indexWhere((String line) => line.contains(marker));
+  if (at < 0) {
+    throw StateError('step $marker not found');
+  }
+  final stepStart = RegExp('^      - ');
+  var start = at;
+  while (start > 0 && !stepStart.hasMatch(lines[start])) {
+    start--;
+  }
+  if (!stepStart.hasMatch(lines[start])) {
+    throw StateError('step $marker has no step header');
+  }
+  int end = at + 1;
+  while (end < lines.length && !stepStart.hasMatch(lines[end])) {
+    end++;
+  }
+  return lines.sublist(start, end).join('\n');
+}
+
+/// Expects [path] to exist and to be a file.
+void _expectFile(File path, String name) {
+  expect(path.existsSync(), isTrue, reason: 'missing $name');
+}
+
+/// Expects [text] to contain [needle].
+void _expectContains(String text, String needle, String reason) {
+  expect(text.contains(needle), isTrue, reason: reason);
+}
+
+/// Expects [text] not to contain [needle].
+void _expectNotContains(String text, String needle, String reason) {
+  expect(text.contains(needle), isFalse, reason: reason);
+}
+
+/// Expects [text] to contain at least [count] occurrences of [needle].
+void _expectAtLeast(String text, String needle, int count, String what) {
+  expect(
+    _countOf(text, needle),
+    greaterThanOrEqualTo(count),
+    reason: 'need at least $count $what',
+  );
+}
+
+/// Expects [text] to contain exactly [count] occurrences of [needle].
+void _expectExactly(String text, String needle, int count, String reason) {
+  expect(_countOf(text, needle), equals(count), reason: reason);
+}
+
+/// Counts the occurrences of [needle] in [text].
+int _countOf(String text, String needle) {
+  return needle.isEmpty ? 0 : text.split(needle).length - 1;
+}
+
+/// Source-tree root from the runfiles anchor or an ancestor walk.
+String _repoRoot(List<String> args) {
+  if (args.isNotEmpty) {
+    try {
+      final String located = Runfiles.create().rlocation(args.first);
+      if (File(located).existsSync()) {
+        final String? found = _climb(Directory(located).parent);
+        if (found != null) {
+          return found;
+        }
+      }
+    } on Object catch (_) {
+      // Fall through to the environment walk below.
+    }
+  }
+  for (final candidate in <String?>[
+    Platform.environment['BUILD_WORKSPACE_DIRECTORY'],
+    Platform.environment['BUILD_WORKING_DIRECTORY'],
+    Directory.current.path,
+  ]) {
+    if (candidate == null) {
+      continue;
+    }
+    final String? found = _climb(Directory(candidate));
+    if (found != null) {
+      return found;
+    }
+  }
+  throw StateError('cannot locate the workspace root');
+}
+
+/// Nearest ancestor holding both MODULE.bazel and a dart/ tree.
+String? _climb(Directory? here) {
+  var dir = here;
+  while (dir != null) {
+    final bool module = File('${dir.path}/MODULE.bazel').existsSync();
+    final bool dart = Directory('${dir.path}/dart').existsSync();
+    if (module && dart) {
+      return dir.path;
+    }
+    final Directory parent = dir.parent;
+    if (parent.path == dir.path) {
+      return null;
+    }
+    dir = parent;
+  }
+  return null;
+}

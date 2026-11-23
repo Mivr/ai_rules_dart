@@ -1,0 +1,200 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("//dart:defs.bzl", "dart_test")
+
+bzl_library(
+    name = "defs",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:pub_repository",
+        "//dart/pub/private:version",
+    ],
+)
+
+bzl_library(
+    name = "extensions",
+    srcs = ["extensions.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pinned_sources",
+        ":pub_lock_package",
+        ":pub_lock_scc",
+        ":pub_scan",
+        ":pub_scc",
+        ":yaml_parser",
+        "//dart/private:download",
+        "//dart/pub/private:build_content",
+        "//dart/pub/private:pub_emit",
+        "//dart/pub/private:pub_resolution_warnings",
+        "//dart/pub/private:pub_root_pin",
+        "//dart/pub/private:pub_scanner_sdk",
+        "//dart/pub/private:pub_scc_entries",
+        "//dart/pub/private:pub_workspace",
+    ],
+)
+
+bzl_library(
+    name = "pinned_sources",
+    srcs = ["pinned_sources.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:pinned_sources",
+    ],
+)
+
+bzl_library(
+    name = "pub_lock_hub",
+    srcs = ["pub_lock_hub.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:pub_lock_hub",
+    ],
+)
+
+bzl_library(
+    name = "pub_lock_package",
+    srcs = ["pub_lock_package.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:pub_lock_package",
+    ],
+)
+
+bzl_library(
+    name = "pub_lock_scc",
+    srcs = ["pub_lock_scc.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pinned_sources",
+        ":pub_lock_package",
+        ":pub_scan",
+        ":yaml_parser",
+        "//dart/private:download",
+        "//dart/pub/private:build_content",
+        "//dart/pub/private:language_version",
+        "//dart/pub/private:pub_scc_verify",
+        "//dart/pub/private:pub_symlink",
+    ],
+)
+
+bzl_library(
+    name = "pub_scan",
+    srcs = ["pub_scan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:pub_scan",
+    ],
+)
+
+bzl_library(
+    name = "pub_scanner",
+    srcs = ["pub_scanner.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:pub_scanner_repo",
+    ],
+)
+
+bzl_library(
+    name = "pub_scc",
+    srcs = ["pub_scc.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:parser_sources",
+        "//dart/pub/private:pub_scc_facts",
+        "//dart/pub/private:pub_scc_verify",
+        "//dart/pub/private:scc",
+    ],
+)
+
+bzl_library(
+    name = "yaml_parser",
+    srcs = ["yaml_parser.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:yaml_parser",
+    ],
+)
+
+# Bare sources for `pinned_sources_guard_test`, which reads every Starlark
+# file in `//dart/pub` and fails when a fetch call site stops going through
+# the shared pinned-source validation.
+exports_files(
+    [
+        "defs.bzl",
+        "extensions.bzl",
+        "pinned_sources.bzl",
+        "pub_lock_hub.bzl",
+        "pub_lock_package.bzl",
+        "pub_lock_scc.bzl",
+        "pub_scan.bzl",
+        "pub_scanner.bzl",
+        "pub_scc.bzl",
+        "yaml_parser.bzl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+dart_test(
+    name = "pub_scan_test",
+    size = "small",
+    srcs = ["//dart/pub/private:pub_scan.dart"],
+    main = "//dart/pub/private:pub_scan_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "pinned_sources_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :defs.bzl)",
+        "$(rlocationpath :extensions.bzl)",
+        "$(rlocationpath :pinned_sources.bzl)",
+        "$(rlocationpath :pub_lock_hub.bzl)",
+        "$(rlocationpath :pub_lock_package.bzl)",
+        "$(rlocationpath :pub_lock_scc.bzl)",
+        "$(rlocationpath :pub_scan.bzl)",
+        "$(rlocationpath :yaml_parser.bzl)",
+        "$(rlocationpath //dart/pub/private:build_content.bzl)",
+        "$(rlocationpath //dart/pub/private:language_version.bzl)",
+        "$(rlocationpath //dart/pub/private:pinned_sources.bzl)",
+        "$(rlocationpath //dart/pub/private:pub_lock_hub.bzl)",
+        "$(rlocationpath //dart/pub/private:pub_lock_package.bzl)",
+        "$(rlocationpath //dart/pub/private:pub_repository.bzl)",
+        "$(rlocationpath //dart/pub/private:pub_scan.bzl)",
+        "$(rlocationpath //dart/pub/private:pub_symlink.bzl)",
+        "$(rlocationpath //dart/pub/private:scc.bzl)",
+        "$(rlocationpath //dart/pub/private:version.bzl)",
+        "$(rlocationpath //dart/pub/private:yaml_parser.bzl)",
+        "$(rlocationpath //dart/pub/private:yaml_subset.bzl)",
+    ],
+    data = [
+        ":defs.bzl",
+        ":extensions.bzl",
+        ":pinned_sources.bzl",
+        ":pub_lock_hub.bzl",
+        ":pub_lock_package.bzl",
+        ":pub_lock_scc.bzl",
+        ":pub_scan.bzl",
+        ":yaml_parser.bzl",
+        "//dart/pub/private:build_content.bzl",
+        "//dart/pub/private:language_version.bzl",
+        "//dart/pub/private:pinned_sources.bzl",
+        "//dart/pub/private:pub_lock_hub.bzl",
+        "//dart/pub/private:pub_lock_package.bzl",
+        "//dart/pub/private:pub_repository.bzl",
+        "//dart/pub/private:pub_scan.bzl",
+        "//dart/pub/private:pub_symlink.bzl",
+        "//dart/pub/private:scc.bzl",
+        "//dart/pub/private:version.bzl",
+        "//dart/pub/private:yaml_parser.bzl",
+        "//dart/pub/private:yaml_subset.bzl",
+    ],
+    main = "pinned_sources_guard_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

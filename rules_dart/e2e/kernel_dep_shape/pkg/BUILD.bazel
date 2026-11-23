@@ -1,0 +1,44 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library")
+
+# Must fail: names `dep`'s source with its multi-root spelling, so the front
+# end would read the file while the plan links `dep`'s outline. A bare
+# library builds no kernel until a binary consumes it, so `bad_lib_app`
+# drives the compile; the failure below is the library's.
+dart_library(
+    name = "bad_lib",
+    package_name = "pkg",
+    srcs = ["lib/a.dart"],
+    deps = ["//dep"],
+)
+
+dart_binary(
+    name = "bad_lib_app",
+    compile_mode = "kernel",
+    main = "bin/use_a.dart",
+    deps = [":bad_lib"],
+)
+
+# Must fail: the entry compiles from its multi-root URI, so the relative
+# import resolves from source into `dep`'s sources instead of linking them.
+dart_binary(
+    name = "bad_bin",
+    compile_mode = "kernel",
+    main = "bin/main.dart",
+    deps = ["//dep"],
+)
+
+# Must succeed: the same library edge spelled `package:` links `dep`'s
+# outline, and the entry's `package:` import does too.
+dart_library(
+    name = "good_lib",
+    package_name = "pkg",
+    srcs = ["lib/good.dart"],
+    deps = ["//dep"],
+)
+
+dart_binary(
+    name = "good_app",
+    compile_mode = "kernel",
+    main = "bin/use_good.dart",
+    deps = [":good_lib"],
+)

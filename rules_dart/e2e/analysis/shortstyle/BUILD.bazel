@@ -1,0 +1,16 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+# The language version selects the formatting style, and the format check takes
+# it from the target's own package. This package declares 3.6, whose short
+# style is not what any later version produces, so `short.dart` is formatted
+# correctly here and a violation at the default. A green format check means the
+# version reached the formatter from the library — `dart format` on the
+# developer's machine writes exactly what is checked in.
+dart_library(
+    name = "shortstyle",
+    srcs = ["lib/short.dart"],
+    language_version = "3.6",
+    # Laid out in the 3.6 short style for the format check, which the root
+    # ruleset's trailing-comma lint rejects.
+    tags = ["no-dart-analyze"],
+)

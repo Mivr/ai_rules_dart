@@ -1,0 +1,404 @@
+/// Unit tests for chain replay, side-effect sweeping and output verification.
+library;
+
+import 'dart:io';
+
+import 'package:perf/cpu.dart';
+import 'package:perf/replay.dart';
+import 'package:perf/spawn_log.dart';
+
+void _check(bool condition, String message) {
+  if (!condition) throw StateError('FAIL: $message');
+}
+
+void _cleanupDir(Directory dir) {
+  try {
+    dir.deleteSync(recursive: true);
+  } on FileSystemException catch (e) {
+    stderr.writeln('Temp directory cleanup skipped (${dir.path}): $e');
+  }
+}
+
+List<SpawnRecord> _setupMultiStepExecroot(String execroot) {
+  Directory('$execroot/src').createSync(recursive: true);
+  File('$execroot/src/keep.dart').writeAsStringSync('// keep\n');
+
+  final kmodSubDir = Directory('$execroot/bazel-out/pkg0.kmod/sub')
+    ..createSync(recursive: true);
+  File('${kmodSubDir.path}/module.dill').writeAsStringSync('KMOD_BYTES_V1');
+  File('$execroot/bazel-out/app.dill').writeAsStringSync('KMOD_BYTES_V1_OK');
+
+  final step1Script = File('$execroot/src/step1.dart')
+    ..writeAsStringSync('''
+import 'dart:io';
+
+void main() {
+  if (Directory('bazel-out/pkg0.kmod/sub').existsSync()) {
+    stderr.writeln('Tree artifact child directory was pre-created');
+    exit(55);
+  }
+  Directory('bazel-out/pkg0.kmod/sub').createSync(recursive: true);
+  File('bazel-out/pkg0.kmod/sub/module.dill').writeAsStringSync('KMOD_BYTES_V1');
+  File('bazel-out/undeclared.tmp').writeAsStringSync('LEAKED_FILE');
+  Directory('undeclared_dir').createSync(recursive: true);
+  File('undeclared_dir/leak.txt').writeAsStringSync('LEAKED_DIR_FILE');
+}
+''');
+
+  final step2Script = File('$execroot/src/step2.dart')
+    ..writeAsStringSync('''
+import 'dart:io';
+
+void main() {
+  if (Platform.environment.containsKey('TEST_TMPDIR') ||
+      Platform.environment.containsKey('RUNFILES_MANIFEST_FILE')) {
+    stderr.writeln('Outer Bazel/test env leaked into replay step');
+    exit(42);
+  }
+  final mod = File('bazel-out/pkg0.kmod/sub/module.dill').readAsStringSync();
+  final envTag = Platform.environment['REPLAY_TAG'] ?? '';
+  File('bazel-out/app.dill').writeAsStringSync('\${mod}_\$envTag');
+}
+''');
+
+  return [
+    SpawnRecord(
+      commandArgs: [Platform.resolvedExecutable, step1Script.path],
+      environmentVariables: const {},
+      inputs: const ['src/keep.dart'],
+      listedOutputs: const ['bazel-out/pkg0.kmod'],
+      actualOutputs: const ['bazel-out/pkg0.kmod/sub/module.dill'],
+      runner: 'local',
+      exitCode: 0,
+      isCached: false,
+    ),
+    SpawnRecord(
+      commandArgs: [Platform.resolvedExecutable, step2Script.path],
+      environmentVariables: const {'REPLAY_TAG': 'OK'},
+      inputs: const ['bazel-out/pkg0.kmod/sub/module.dill'],
+      listedOutputs: const ['bazel-out/app.dill'],
+      actualOutputs: const [],
+      runner: 'worker',
+      exitCode: 0,
+      isCached: false,
+    ),
+  ];
+}
+
+void _testFileAndTreeReplayAndSideEffectSweep() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_replay_ok_');
+  try {
+    final execroot = tempDir.path;
+    final spawns = _setupMultiStepExecroot(execroot);
+    final clock = FakeChildCpuClock([1.0, 1.04, 1.04, 1.10]);
+    final result = replayChainAndVerify(
+      orderedSpawns: spawns,
+      execroot: execroot,
+      verifyPaths: {'bazel-out/pkg0.kmod', 'bazel-out/app.dill'},
+      clock: clock,
+    );
+
+    _check(result.identical, 'Multi-step file + tree replay identical');
+    _check(result.reason == 'ok', 'Reason is ok');
+    _check(
+      ((result.solCpuSeconds ?? 0) - 0.10).abs() < 1e-6,
+      'Summed per-step CPU deltas (0.04 + 0.06 = 0.10)',
+    );
+    _check(
+      !File('$execroot/bazel-out/undeclared.tmp').existsSync(),
+      'Swept undeclared file inside bazel-out',
+    );
+    _check(
+      !Directory('$execroot/undeclared_dir').existsSync(),
+      'Swept undeclared directory in execroot',
+    );
+    _check(
+      File('$execroot/src/keep.dart').existsSync(),
+      'Preserved pre-existing source file',
+    );
+    _check(
+      File('$execroot/bazel-out/app.dill').readAsStringSync() ==
+          'KMOD_BYTES_V1_OK',
+      'Restored original app.dill output',
+    );
+    _check(
+      File('$execroot/bazel-out/pkg0.kmod/sub/module.dill')
+              .readAsStringSync() ==
+          'KMOD_BYTES_V1',
+      'Restored original tree artifact output',
+    );
+  } finally {
+    _cleanupDir(tempDir);
+  }
+}
+
+void _testMismatchRestoresOriginalOutputs() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_replay_mismatch_');
+  try {
+    final execroot = tempDir.path;
+    Directory('$execroot/bazel-out').createSync(recursive: true);
+    final outFile = File('$execroot/bazel-out/app.dill')
+      ..writeAsStringSync('BAZEL_ORIGINAL_BYTES');
+
+    final badScript = File('$execroot/bad_compile.dart')
+      ..writeAsStringSync('''
+import 'dart:io';
+
+void main() {
+  Directory('bazel-out').createSync(recursive: true);
+  File('bazel-out/app.dill').writeAsStringSync('DRIFTED_REPLAY_BYTES');
+}
+''');
+
+    final spawn = SpawnRecord(
+      commandArgs: [Platform.resolvedExecutable, badScript.path],
+      environmentVariables: const {},
+      inputs: const [],
+      listedOutputs: const ['bazel-out/app.dill'],
+      actualOutputs: const [],
+      runner: 'local',
+      exitCode: 0,
+      isCached: false,
+    );
+
+    final result = replayChainAndVerify(
+      orderedSpawns: [spawn],
+      execroot: execroot,
+      verifyPaths: {'bazel-out/app.dill'},
+      clock: FakeChildCpuClock([0.0, 0.02]),
+    );
+
+    _check(!result.identical, 'Detected byte mismatch');
+    _check(result.solCpuSeconds == null, 'solCpuSeconds is null on mismatch');
+    _check(result.reason.contains('Byte mismatch'), 'Reason reports mismatch');
+    _check(
+      outFile.readAsStringSync() == 'BAZEL_ORIGINAL_BYTES',
+      'Bazel original bytes restored even after failed replay',
+    );
+  } finally {
+    _cleanupDir(tempDir);
+  }
+}
+
+SpawnRecord _makeTestFlowSpawn({
+  required String mnemonic,
+  required String scriptPath,
+  required String output,
+  List<String> inputs = const [],
+}) {
+  return SpawnRecord(
+    mnemonic: mnemonic,
+    commandArgs: [Platform.resolvedExecutable, scriptPath],
+    environmentVariables: const {},
+    inputs: inputs,
+    listedOutputs: [output],
+    actualOutputs: const [],
+    runner: 'local',
+    exitCode: 0,
+    isCached: false,
+  );
+}
+
+void _testLeafTestRunnerPassAndFail() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_replay_testflow_');
+  try {
+    final execroot = tempDir.path;
+    Directory('$execroot/bazel-out/testlogs').createSync(recursive: true);
+    File('$execroot/bazel-out/test.dill').writeAsStringSync('COMPILED_DILL');
+    File('$execroot/bazel-out/testlogs/test.log')
+        .writeAsStringSync('elapsed: 12ms\n');
+
+    final compileScript = File('$execroot/compile_test.dart')
+      ..writeAsStringSync(
+        'import "dart:io"; void main() => '
+        'File("bazel-out/test.dill").writeAsStringSync("COMPILED_DILL");\n',
+      );
+    final passScript = File('$execroot/pass_runner.dart')
+      ..writeAsStringSync(
+        'import "dart:io"; void main() {\n'
+        '  Directory("bazel-out/testlogs").createSync(recursive: true);\n'
+        '  File("bazel-out/testlogs/test.log").writeAsStringSync("99ms\\n");\n'
+        '}\n',
+      );
+    final failScript = File('$execroot/fail_runner.dart')
+      ..writeAsStringSync('import "dart:io"; void main() => exit(1);\n');
+
+    final compileSpawn = _makeTestFlowSpawn(
+      mnemonic: 'DartKernelLink',
+      scriptPath: compileScript.path,
+      output: 'bazel-out/test.dill',
+    );
+    final passSpawn = _makeTestFlowSpawn(
+      mnemonic: 'TestRunner',
+      scriptPath: passScript.path,
+      output: 'bazel-out/testlogs/test.log',
+      inputs: const ['bazel-out/test.dill'],
+    );
+    final passChain = [compileSpawn, passSpawn];
+    final verifyPaths = selectLeafTestVerifyPaths(passChain);
+
+    final passRes = replayChainAndVerify(
+      orderedSpawns: passChain,
+      execroot: execroot,
+      verifyPaths: verifyPaths,
+      clock: FakeChildCpuClock([0.0, 0.03, 0.03, 0.08]),
+      isTestFlow: true,
+    );
+    _check(passRes.identical, 'Passing TestRunner with differing test.log ok');
+
+    final failSpawn = _makeTestFlowSpawn(
+      mnemonic: 'TestRunner',
+      scriptPath: failScript.path,
+      output: 'bazel-out/testlogs/test.log',
+      inputs: const ['bazel-out/test.dill'],
+    );
+    final failRes = replayChainAndVerify(
+      orderedSpawns: [compileSpawn, failSpawn],
+      execroot: execroot,
+      verifyPaths: verifyPaths,
+      clock: FakeChildCpuClock([0.0, 0.03, 0.03, 0.05]),
+      isTestFlow: true,
+    );
+    _check(!failRes.identical, 'Non-zero TestRunner fails replay');
+    _check(failRes.solCpuSeconds == null, 'solCpuSeconds null on test failure');
+    _check(
+      failRes.reason.contains('TestRunner failed with exit code 1'),
+      'Reason reports TestRunner failure: ${failRes.reason}',
+    );
+  } finally {
+    _cleanupDir(tempDir);
+  }
+}
+
+void _testSymlinkOutputReplay() {
+  if (Platform.isWindows) return;
+  final tempDir = Directory.systemTemp.createTempSync('rd_replay_link_');
+  try {
+    final execroot = tempDir.path;
+    Directory('$execroot/bazel-out').createSync(recursive: true);
+    File('$execroot/bazel-out/real_bin').writeAsStringSync('BIN');
+    Link('$execroot/bazel-out/app_launcher').createSync('real_bin');
+
+    final linkScript = File('$execroot/make_link.dart')
+      ..writeAsStringSync(
+        'import "dart:io"; void main() => '
+        'Link("bazel-out/app_launcher").createSync("real_bin");\n',
+      );
+    final spawn = _makeTestFlowSpawn(
+      mnemonic: 'Symlink',
+      scriptPath: linkScript.path,
+      output: 'bazel-out/app_launcher',
+    );
+    final res = replayChainAndVerify(
+      orderedSpawns: [spawn],
+      execroot: execroot,
+      verifyPaths: {'bazel-out/app_launcher'},
+      clock: FakeChildCpuClock([0.0, 0.01]),
+    );
+    _check(res.identical, 'Symlink declared output verified identical');
+    _check(
+      Link('$execroot/bazel-out/app_launcher').targetSync() == 'real_bin',
+      'Symlink output restored after replay',
+    );
+  } finally {
+    _cleanupDir(tempDir);
+  }
+}
+
+void _testMissingExecutableRecordsFailureAndRestores() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_replay_nobin_');
+  try {
+    final execroot = tempDir.path;
+    Directory('$execroot/bazel-out').createSync(recursive: true);
+    final outFile = File('$execroot/bazel-out/app.dill')
+      ..writeAsStringSync('ORIGINAL_DILL_BYTES');
+
+    const spawn = SpawnRecord(
+      commandArgs: ['/nonexistent_dir_rd_perf/missing_tool_bin', '--arg'],
+      environmentVariables: {},
+      inputs: [],
+      listedOutputs: ['bazel-out/app.dill'],
+      actualOutputs: [],
+      runner: 'local',
+      exitCode: 0,
+      isCached: false,
+    );
+    final res = replayChainAndVerify(
+      orderedSpawns: const [spawn],
+      execroot: execroot,
+      verifyPaths: const {'bazel-out/app.dill'},
+      clock: FakeChildCpuClock([0.0, 0.0]),
+    );
+    _check(!res.identical, 'Missing executable returns identical == false');
+    _check(res.solCpuSeconds == null, 'Missing executable sets sol to null');
+    _check(
+      res.reason.contains('failed to start'),
+      'Reason explains process launch failure: ${res.reason}',
+    );
+    _check(
+      outFile.readAsStringSync() == 'ORIGINAL_DILL_BYTES',
+      'Original output restored after ProcessException',
+    );
+  } finally {
+    _cleanupDir(tempDir);
+  }
+}
+
+void _testAreFilesByteIdentical() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_perf_bytes_');
+  try {
+    File write(String name, List<int> bytes) =>
+        File('${tempDir.path}/$name')..writeAsBytesSync(bytes);
+    const size = 300 * 1024;
+    final big = List<int>.generate(size, (i) => (i * 31) % 251);
+    final lastDiffers = List<int>.of(big)..[size - 1] ^= 0xff;
+    final firstDiffers = List<int>.of(big)..[0] ^= 0xff;
+
+    _check(
+      areFilesByteIdentical(write('e1', const []), write('e2', const [])),
+      'empty files are identical',
+    );
+    _check(
+      areFilesByteIdentical(write('b1', big), write('b2', big)),
+      'multi-chunk identical files are identical',
+    );
+    _check(
+      !areFilesByteIdentical(write('b3', big), write('b4', lastDiffers)),
+      'multi-chunk files differing in the final byte differ',
+    );
+    _check(
+      !areFilesByteIdentical(write('b5', big), write('b6', firstDiffers)),
+      'files differing in the first byte differ',
+    );
+    _check(
+      !areFilesByteIdentical(
+        write('l1', big),
+        write('l2', big.sublist(0, size - 1)),
+      ),
+      'different-length files differ',
+    );
+    _check(
+      !areFilesByteIdentical(write('m1', big), File('${tempDir.path}/missing')),
+      'missing second file differs',
+    );
+    _check(
+      !areFilesByteIdentical(
+        File('${tempDir.path}/missing'),
+        File('${tempDir.path}/missing2'),
+      ),
+      'two missing files differ',
+    );
+  } finally {
+    _cleanupDir(tempDir);
+  }
+}
+
+void main() {
+  _testAreFilesByteIdentical();
+  _testFileAndTreeReplayAndSideEffectSweep();
+  _testMismatchRestoresOriginalOutputs();
+  _testLeafTestRunnerPassAndFail();
+  _testSymlinkOutputReplay();
+  _testMissingExecutableRecordsFailureAndRestores();
+  stdout.writeln('All replay tests passed.');
+}

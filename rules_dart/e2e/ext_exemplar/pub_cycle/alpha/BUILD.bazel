@@ -1,0 +1,13 @@
+load("@rules_dart//dart:defs.bzl", "dart_package_member")
+
+# One member of the `alpha`/`beta` cycle: it keeps its own package name and its
+# own `lib/` root, and provides a package record rather than a dependency. The
+# merged library in `//pub_cycle` is the only target that compiles it.
+dart_package_member(
+    name = "alpha",
+    package_name = "alpha",
+    srcs = ["lib/alpha.dart"],
+    language_version = "3.11",
+    version = "1.0.0",
+    visibility = ["//pub_cycle:__pkg__"],
+)

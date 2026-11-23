@@ -1,0 +1,8 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "hidden",
+    package_name = "hidden",
+    srcs = ["lib/hidden.dart"],
+    visibility = ["//import_check_export:__pkg__"],
+)

@@ -1,0 +1,38 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Bazel's test contract starts a test in the runfiles workspace root, so `data`
+# is found by workspace-relative path.
+dart_test(
+    name = "cwd_test",
+    size = "small",
+    data = ["data.txt"],
+    main = "cwd_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+# `env` reaches the test, with location functions expanded against `data`.
+dart_test(
+    name = "env_test",
+    size = "small",
+    data = ["data.txt"],
+    env = {
+        "DATA_RLOCATIONPATH": "$(rlocationpath data.txt)",
+        "PLAIN": "as written",
+    },
+    main = "env_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# A plain-`main` `dart_test` (without `package:test`) also runs in a working
+# directory where `data` is found by workspace-relative path, including under
+# `--noenable_runfiles`.
+dart_test(
+    name = "direct_cwd_test",
+    size = "small",
+    data = ["data.txt"],
+    main = "direct_cwd_test.dart",
+    deps = ["//dart/runfiles"],
+)

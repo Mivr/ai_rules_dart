@@ -1,0 +1,29 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+
+dart_binary(
+    name = "create_linux_vm",
+    srcs = ["gcloud.dart"],
+    main = "create_linux_vm.dart",
+)
+
+dart_binary(
+    name = "create_windows_vm",
+    srcs = ["gcloud.dart"],
+    main = "create_windows_vm.dart",
+)
+
+dart_binary(
+    name = "run_e2e",
+    srcs = [
+        "gcloud.dart",
+        "run_e2e_options.dart",
+    ],
+    main = "run_e2e.dart",
+)
+
+dart_test(
+    name = "run_e2e_options_test",
+    size = "small",
+    srcs = ["run_e2e_options.dart"],
+    main = "test/run_e2e_options_test.dart",
+)

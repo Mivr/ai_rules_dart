@@ -1,0 +1,3 @@
+load("//dart/pub/tests:pub_root_pin_test.bzl", "pub_root_pin_test_suite")
+
+pub_root_pin_test_suite(name = "pub_root_pin_test")

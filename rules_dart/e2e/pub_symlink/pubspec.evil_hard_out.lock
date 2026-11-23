@@ -1,0 +1,14 @@
+# Local-registry lock for the header-scan e2e: the tarball's hard-link
+# entry must fail the fetch before extraction. See pubspec.ok.lock for the
+# url placeholder.
+packages:
+  evil_hard_out:
+    dependency: "direct main"
+    description:
+      name: evil_hard_out
+      sha256: "16801f5b6333b3140ba8905d1de811cc718eb6bd0f567fdcfbc4b0929efce2f3"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

@@ -1,0 +1,13 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 1
+  - name: build with -c dbg
+    run: bazel build -c dbg //...
+  - name: build
+    run: bazel build //...
+  - name: run hello
+    run: bazel run //:hello
+    expect:
+      output_contains: Hello, World!

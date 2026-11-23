@@ -1,0 +1,168 @@
+load(
+    "@rules_dart//dart:defs.bzl",
+    "dart_library",
+    "dart_test",
+)
+load(
+    "@rules_dart//dart/ext/stacked:defs.bzl",
+    "stacked_bottomsheet_library",
+    "stacked_dialog_library",
+    "stacked_form_library",
+    "stacked_locator_library",
+    "stacked_logger_library",
+    "stacked_router_library",
+)
+
+# Comprehensive stacked exemplar covering all six sub-builders, each through its
+# public `stacked_*_library` macro:
+#
+#   - locator (pure Dart) — compiled into :app_library, behavioral test
+#     via `setupLocator()` + `locator<T>()`.
+#   - router / dialog / bottomsheet / logger (Flutter-bound) — their wrapping
+#     libraries are tagged `manual` and wired as `data` into structural tests
+#     that read the generated .dart via runfiles. Nothing compiles them,
+#     because their output imports package:flutter, which can't be compiled in
+#     rules_dart's pure-Dart CI.
+#   - form (Flutter-bound) — same structural-assertion pattern over
+#     @FormView's output.
+#
+# Reference: stacked_generator 2.0.2's builder.dart exposes one Builder
+# factory per sub-builder; each macro wires one of them per source.
+
+dart_library(
+    name = "services",
+    package_name = "stacked_fixture",
+    srcs = ["lib/services.dart"],
+    language_version = "3.11",
+    visibility = ["//visibility:public"],
+)
+
+# --- locator sub-builder (pure Dart, behavioral) ---
+
+stacked_locator_library(
+    name = "app_library",
+    package_name = "stacked_fixture",
+    srcs = ["lib/app.dart"],
+    annotation_dep = "@pub_deps//:stacked_shared",
+    language_version = "3.11",
+    visibility = ["//visibility:public"],
+    deps = [":services"],
+)
+
+dart_test(
+    name = "locator_test",
+    size = "small",
+    main = "test/locator_test.dart",
+    deps = [
+        ":app_library",
+        "@pub_deps//:test",
+    ],
+)
+
+# --- Flutter-bound sub-builders (structural tests only) ---
+
+stacked_router_library(
+    name = "app_router",
+    package_name = "stacked_fixture",
+    srcs = ["lib/app.dart"],
+    annotation_dep = "@pub_deps//:stacked_shared",
+    language_version = "3.11",
+    tags = ["manual"],
+    deps = [":services"],
+)
+
+stacked_dialog_library(
+    name = "app_dialogs",
+    package_name = "stacked_fixture",
+    srcs = ["lib/app.dart"],
+    annotation_dep = "@pub_deps//:stacked_shared",
+    language_version = "3.11",
+    tags = ["manual"],
+    deps = [":services"],
+)
+
+stacked_bottomsheet_library(
+    name = "app_bottomsheets",
+    package_name = "stacked_fixture",
+    srcs = ["lib/app.dart"],
+    annotation_dep = "@pub_deps//:stacked_shared",
+    language_version = "3.11",
+    tags = ["manual"],
+    deps = [":services"],
+)
+
+stacked_logger_library(
+    name = "app_logger",
+    package_name = "stacked_fixture",
+    srcs = ["lib/app.dart"],
+    annotation_dep = "@pub_deps//:stacked_shared",
+    language_version = "3.11",
+    tags = ["manual"],
+    deps = [":services"],
+)
+
+dart_test(
+    name = "router_structure_test",
+    size = "small",
+    data = [":app_router"],
+    main = "test/router_structure_test.dart",
+    deps = [
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+dart_test(
+    name = "dialog_structure_test",
+    size = "small",
+    data = [":app_dialogs"],
+    main = "test/dialog_structure_test.dart",
+    deps = [
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+dart_test(
+    name = "bottomsheet_structure_test",
+    size = "small",
+    data = [":app_bottomsheets"],
+    main = "test/bottomsheet_structure_test.dart",
+    deps = [
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+dart_test(
+    name = "logger_structure_test",
+    size = "small",
+    data = [":app_logger"],
+    main = "test/logger_structure_test.dart",
+    deps = [
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+# --- form sub-builder (@FormView; separate source file) ---
+
+stacked_form_library(
+    name = "login_view_form",
+    package_name = "stacked_fixture",
+    srcs = ["lib/login_view.dart"],
+    annotation_dep = "@pub_deps//:stacked_shared",
+    language_version = "3.11",
+    tags = ["manual"],
+)
+
+dart_test(
+    name = "form_structure_test",
+    size = "small",
+    data = [":login_view_form"],
+    main = "test/form_structure_test.dart",
+    deps = [
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)

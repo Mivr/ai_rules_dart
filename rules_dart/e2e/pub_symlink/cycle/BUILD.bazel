@@ -1,0 +1,10 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+# Red-by-design (see MODULE.bazel): evaluating the `pub` extension already
+# fails on cycle_b_evil's hard-link entry, so this target never builds. The
+# CI step expects the fetch failure and greps its diagnostic.
+dart_binary(
+    name = "app",
+    main = "main.dart",
+    deps = ["@cyc//:cycle_a"],
+)

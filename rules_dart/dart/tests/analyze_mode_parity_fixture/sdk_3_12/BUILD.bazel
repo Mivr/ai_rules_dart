@@ -1,0 +1,10 @@
+exports_files(
+    ["dart-sdk/bin/dart"],
+    visibility = ["//dart/tests:__subpackages__"],
+)
+
+filegroup(
+    name = "sdk_root",
+    srcs = glob(["dart-sdk/**"]),
+    visibility = ["//dart/tests:__subpackages__"],
+)

@@ -1,0 +1,67 @@
+load(
+    "@rules_dart//dart:defs.bzl",
+    "dart_sqlcodegen",
+    "dart_test",
+)
+load("@rules_dart//dart/ext/drift:defs.bzl", "drift_library")
+
+# Comprehensive e2e for drift:
+#  - .drift file include (todos + `AS Todo` data class + `allTodos` query)
+#  - Dart-only tables (Users, Posts) with FK + TypeConverter + default
+#  - @DriftAccessor DAO (PostsDao)
+#  - Multi-table join in a .drift named query (postsByUser)
+#
+# drift_library handles the full 4-stage pipeline (prep + discover +
+# analyzer + driftBuilder) plus combining per source.
+
+drift_library(
+    name = "drift_fixture",
+    package_name = "drift_fixture",
+    srcs = [
+        "lib/database.dart",
+        "lib/posts_dao.dart",
+    ],
+    drift_srcs = ["lib/database.drift"],
+    language_version = "3.11",
+    visibility = ["//visibility:public"],
+)
+
+# drift's NativeDatabase uses package:sqlite3, whose @Native bindings need a
+# libsqlite3 at runtime. This test names NO code_assets: `pub.from_lock()`
+# attaches rules_dart's curated libsqlite3 to the `sqlite3` spoke itself, and
+# it propagates here through drift's dependency on it — the test
+# source stays plain `NativeDatabase.memory()`, no dart:ffi.
+dart_test(
+    name = "database_test",
+    size = "small",
+    main = "test/database_test.dart",
+    deps = [
+        ":drift_fixture",
+        "@pub_deps//:drift",
+        "@pub_deps//:test",
+    ],
+)
+
+# The public `dart_sqlcodegen` rule on its own: drift's `PreprocessBuilder` over
+# a `.drift` file that is not part of `:drift_fixture`, so it declares an output
+# the macro above does not. The test reads that output back through runfiles.
+dart_sqlcodegen(
+    name = "schema_prep",
+    package_name = "drift_fixture",
+    src = "lib/schema_only.drift",
+    generator_bin = "@rules_dart//dart/ext/drift:shim_prep",
+    language_version = "3.11",
+    output_suffixes = [".drift_prep.json"],
+    deps = ["@pub_deps//:drift"],
+)
+
+dart_test(
+    name = "schema_prep_test",
+    size = "small",
+    data = [":schema_prep"],
+    main = "test/schema_prep_test.dart",
+    deps = [
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)

@@ -1,0 +1,83 @@
+load("//dart:defs.bzl", "dart_binary", "dart_js_binary", "dart_library", "dart_test", "dart_wasm_binary")
+
+# Subjects of `//dart/tests:architecture_invariants_test`, the provider and
+# rule invariants `docs/ARCHITECTURE.md` states. Every target is `manual`:
+# the analysis tests there analyze them, and the `*_on_*` targets are meant to
+# fail analysis.
+
+package(default_visibility = ["//dart/tests:__pkg__"])
+
+# One of each rule whose published providers are an invariant: the library
+# publishes `DartInfo`, the four executables `DartAnalyzableInfo` only.
+
+dart_library(
+    name = "library",
+    package_name = "arch_invariants",
+    srcs = ["lib/arch.dart"],
+    tags = ["manual"],
+)
+
+dart_binary(
+    name = "binary",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":library"],
+)
+
+dart_test(
+    name = "test",
+    size = "small",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":library"],
+)
+
+dart_js_binary(
+    name = "js_binary",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":library"],
+)
+
+dart_wasm_binary(
+    name = "wasm_binary",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":library"],
+)
+
+# A valid target that provides no `DartInfo`. Naming it in `deps` must fail
+# the rule's own provider check, whichever rule declares the `deps`.
+
+filegroup(
+    name = "not_dart_info",
+    srcs = ["lib/arch.dart"],
+)
+
+dart_library(
+    name = "library_on_filegroup",
+    tags = ["manual"],
+    deps = [":not_dart_info"],
+)
+
+# An executable is not a dependency: a library naming one fails the same check.
+dart_library(
+    name = "library_on_binary",
+    tags = ["manual"],
+    deps = [":binary"],
+)
+
+dart_binary(
+    name = "binary_on_filegroup",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":not_dart_info"],
+)
+
+dart_test(
+    name = "test_on_filegroup",
+    size = "small",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":not_dart_info"],
+)

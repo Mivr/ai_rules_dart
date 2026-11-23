@@ -1,0 +1,57 @@
+load("//dart:defs.bzl", "dart_analysis_options", "dart_format", "dart_library", "dart_test")
+
+dart_library(
+    name = "format_run_ruleset",
+    resources = ["lib/opts.yaml"],
+)
+
+# Listed in the root `//:analysis_config`, which is what `:format` reads. It
+# governs `ws/`, a directory with no targets of its own: the test below builds
+# a scratch workspace with files at those paths.
+dart_analysis_options(
+    name = "options",
+    src = "ws/analysis_options.yaml",
+    visibility = ["//:__pkg__"],
+    deps = [":format_run_ruleset"],
+)
+
+dart_analysis_options(
+    name = "sub_options",
+    src = "ws/sub/analysis_options.yaml",
+    visibility = ["//:__pkg__"],
+)
+
+dart_analysis_options(
+    name = "undeclared_options",
+    src = "ws/undeclared/analysis_options.yaml",
+    visibility = ["//:__pkg__"],
+)
+
+dart_format(name = "format")
+
+filegroup(
+    name = "format_config",
+    srcs = [":format"],
+    output_group = "dart_format_config",
+)
+
+# Runs `:format` over a scratch workspace and checks that each file got its
+# nearest listed options: the included page width and the file's own
+# `trailing_commas` under `ws/`, the stock defaults elsewhere.
+dart_test(
+    name = "format_run_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :format)",
+        "$(rlocationpath :format_config)",
+    ],
+    data = [
+        ":format",
+        ":format_config",
+    ],
+    main = "format_run_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

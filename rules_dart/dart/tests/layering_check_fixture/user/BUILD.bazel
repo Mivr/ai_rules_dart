@@ -1,0 +1,11 @@
+load("//dart:defs.bzl", "dart_library")
+
+# `user` depends on `mid`, which depends on `leaf`, and `user` imports
+# `package:leaf`: a transitive-only import the layering check rejects.
+dart_library(
+    name = "user",
+    package_name = "user",
+    srcs = ["lib/user.dart"],
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = ["//dart/tests/layering_check_fixture/mid"],
+)

@@ -1,0 +1,166 @@
+load("//dart:defs.bzl", "dart_analysis_options", "dart_library")
+load(
+    "//dart/tests:analyze_test.bzl",
+    "analyzed_test",
+    "aspect_applies_test",
+    "format_action_test",
+    "formatted_test",
+    "governing_options_paths_test",
+    "resolve_format_mode_test",
+    "worker_action_env_shared_test",
+)
+
+# The `dart_analyze` aspect's format check, under the root `//:analysis_config`,
+# which lists `lib/wide/analysis_options.yaml`. Its red paths are in
+# `e2e/analysis_failure`, where CI expects each build to fail.
+
+# Reaches `format_fixture_rules` by `package:` URI, so its `deps` must be
+# staged with it for the page width to apply.
+dart_analysis_options(
+    name = "wide_options",
+    src = "lib/wide/analysis_options.yaml",
+    visibility = ["//:__pkg__"],
+    deps = ["//dart/tests/format_fixture/format_fixture_rules"],
+)
+
+# Each file meets the nearest listed options above it, as in the IDE:
+# `wide.dart` is laid out for its 100-column page, `narrow.dart` for the stock
+# 80 of the repository root's options, and each is wrong under the other's. A
+# green here also means the ruleset `wide_options` includes by `package:` URI
+# was staged and resolved: unresolved, the formatter falls back to 80 and warns,
+# which the check escalates.
+dart_library(
+    name = "mixed",
+    srcs = [
+        "lib/narrow.dart",
+        "lib/wide/wide.dart",
+    ],
+)
+
+formatted_test(
+    name = "nearest_options_per_file_test",
+    size = "small",
+    target = ":mixed",
+)
+
+# The version comes from the target's own package: 3.6 selects the short style,
+# which no later version produces.
+formatted_test(
+    name = "language_version_test",
+    size = "small",
+    target = "//dart/tests/format_fixture/short",
+)
+
+# An executable's entrypoint takes the version of the package whose root
+# contains it, not the SDK's newest: short style again.
+formatted_test(
+    name = "entrypoint_language_version_test",
+    size = "small",
+    target = "//dart/tests/format_fixture/short:short_main",
+)
+
+# An executable that states its own package's version is formatted at it, in a
+# package with no library to state it: short style, for VM and web entrypoints.
+[
+    formatted_test(
+        name = "stated_%s_format_test" % target,
+        size = "small",
+        target = "//dart/tests/format_fixture/stated:" + target,
+    )
+    for target in [
+        "stated_main",
+        "stated_test",
+        "meta_test",
+        "stated_js",
+        "stated_wasm",
+    ]
+]
+
+# A nested options file that `include:`s its listed parent by relative path:
+# both checks must honour the parent's settings, which only resolve if the
+# include is followed within the staged project.
+formatted_test(
+    name = "relative_include_formatted_test",
+    size = "small",
+    target = "//dart/tests/format_fixture/rel_include",
+)
+
+analyzed_test(
+    name = "relative_include_analyzed_test",
+    size = "small",
+    target = "//dart/tests/format_fixture/rel_include",
+)
+
+# Each opt-out tag removes its own check and nothing else.
+aspect_applies_test(
+    name = "no_format_tag_test",
+    size = "small",
+    expect_analyzed = True,
+    expect_fixable = True,
+    expect_formatted = False,
+    target_under_test = "//dart/tests/format_fixture/tagged",
+)
+
+analyzed_test(
+    name = "no_format_tag_analyzed_test",
+    size = "small",
+    target = "//dart/tests/format_fixture/tagged",
+)
+
+# Another repository's code is never checked, formatting included.
+aspect_applies_test(
+    name = "external_skipped_test",
+    size = "small",
+    expect_analyzed = False,
+    expect_fixable = False,
+    expect_formatted = False,
+    target_under_test = "@ext_pub_deps//:meta",
+)
+
+resolve_format_mode_test(
+    name = "resolve_format_mode_test",
+    size = "small",
+)
+
+governing_options_paths_test(
+    name = "governing_options_paths_test",
+    size = "small",
+)
+
+format_action_test(
+    name = "in_process_format_action_test",
+    size = "small",
+    expect_compile_files = False,
+    expected_language_version = "3.13",
+    target_under_test = ":mixed",
+)
+
+format_action_test(
+    name = "short_style_format_action_test",
+    size = "small",
+    expect_compile_files = False,
+    expected_language_version = "3.6",
+    target_under_test = "//dart/tests/format_fixture/short",
+)
+
+dart_library(
+    name = "cli_fallback_probe",
+    srcs = ["lib/narrow.dart"],
+    language_version = "2.11",
+    tags = ["manual"],
+)
+
+format_action_test(
+    name = "cli_fallback_format_action_test",
+    size = "small",
+    expect_compile_files = True,
+    expected_language_version = "2.11",
+    target_under_test = ":cli_fallback_probe",
+)
+
+worker_action_env_shared_test(
+    name = "worker_action_env_shared_test",
+    size = "small",
+    peer_target = "//dart/tests/format_fixture/short",
+    target_under_test = ":mixed",
+)

@@ -1,0 +1,9 @@
+load("//dart:defs.bzl", "dart_binary")
+
+dart_binary(
+    name = "chain_app",
+    compile_mode = "kernel",
+    main = "main.dart",
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = ["//dart/tests/modular_chain_fixture/chain_top"],
+)

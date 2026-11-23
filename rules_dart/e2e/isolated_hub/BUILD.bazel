@@ -1,0 +1,39 @@
+load("@rules_dart//dart:defs.bzl", "dart_analysis_test", "dart_binary", "dart_test")
+
+exports_files([
+    "lock_a.lock",
+    "lock_b.lock",
+])
+
+dart_binary(
+    name = "app",
+    main = "main_app.dart",
+    deps = ["@deps//:analyzer"],
+)
+
+dart_binary(
+    name = "tool",
+    main = "main_tool.dart",
+    deps = ["@tool_deps//:analyzer"],
+)
+
+dart_analysis_test(
+    name = "analysis_test",
+    size = "small",
+    targets = [
+        ":app",
+        ":tool",
+    ],
+)
+
+# An isolated hub's spokes ship their runtime files too; the hub's separate
+# resolution must not change that.
+dart_test(
+    name = "package_files_test",
+    size = "small",
+    main = "package_files_test.dart",
+    deps = [
+        "@rules_dart//dart/runfiles",
+        "@tool_deps//:analyzer",
+    ],
+)

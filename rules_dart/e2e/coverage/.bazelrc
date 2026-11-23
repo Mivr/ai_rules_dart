@@ -1,0 +1,5 @@
+# `bazel coverage` needs no flag from this file: CI and the acceptance command
+# pass `--combined_report=lcov`, the instrumentation filter and
+# `--instrument_test_targets=false` on the command line, so the report this
+# workspace checks is the one a user's own invocation would produce.
+try-import %workspace%/.bazelrc.user

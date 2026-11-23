@@ -1,0 +1,19 @@
+load("//dart:defs.bzl", "dart_library")
+load("//dart/tests:layering_check_test.bzl", "layering_optout_test")
+
+# The per-target opt-out: the same violation as `:user` in the parent package,
+# switched off for every target here.
+package(features = ["-dart_layering_check"])
+
+dart_library(
+    name = "opted_out",
+    package_name = "opted_out",
+    srcs = ["lib/opted_out.dart"],
+    deps = ["//dart/tests/layering_check_fixture/mid"],
+)
+
+layering_optout_test(
+    name = "optout_test",
+    size = "small",
+    target_under_test = ":opted_out",
+)

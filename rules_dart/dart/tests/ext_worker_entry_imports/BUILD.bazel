@@ -1,0 +1,16 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Hermetic guard: `dart/ext/lib/worker_entry.dart` must import its sibling
+# library through `package:rules_dart_ext/`, never a relative path
+# (`always_use_package_imports`).
+dart_test(
+    name = "ext_worker_entry_imports_test",
+    size = "small",
+    args = ["$(rlocationpath //dart/ext:lib/worker_entry.dart)"],
+    data = ["//dart/ext:lib/worker_entry.dart"],
+    main = "ext_worker_entry_imports_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

@@ -1,0 +1,31 @@
+load("//dart:defs.bzl", "dart_test")
+
+exports_files(
+    ["BUILD.bazel"],
+    visibility = ["//dart/tests:__subpackages__"],
+)
+
+# Reads the live BUILD files and test sources, so it is local and unsandboxed
+# and always re-runs. The workspace root comes from the runfiles-resolved
+# anchor (this test's own source), which also works where runfiles are a
+# manifest rather than symlinks (Windows).
+dart_test(
+    name = "test_strength_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :test_strength_guard_test.dart)",
+    ],
+    data = [
+        "test_strength_guard_test.dart",
+    ],
+    local = True,
+    main = "test_strength_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

@@ -1,0 +1,55 @@
+load("//dart:defs.bzl", "dart_binary", "dart_test")
+
+dart_binary(
+    name = "app_modular",
+    compile_mode = "kernel",
+    main = "main.dart",
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [
+        "//dart/tests/part_sources_fixture/same_pkg:part_lib",
+        "//dart/tests/part_sources_fixture/same_pkg:rev_parent_lib",
+        "//dart/tests/part_sources_fixture/same_pkg:sib_parent_lib",
+        "//dart/tests/part_sources_fixture/same_pkg:sib_part_lib",
+    ],
+)
+
+dart_binary(
+    name = "app_whole",
+    compile_mode = "kernel",
+    main = "main.dart",
+    modular_kernel = False,
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [
+        "//dart/tests/part_sources_fixture/same_pkg:part_lib",
+        "//dart/tests/part_sources_fixture/same_pkg:rev_parent_lib",
+        "//dart/tests/part_sources_fixture/same_pkg:sib_parent_lib",
+        "//dart/tests/part_sources_fixture/same_pkg:sib_part_lib",
+    ],
+)
+
+dart_test(
+    name = "part_sources_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :app_modular)",
+        "$(rlocationpath :app_whole)",
+        "$(rlocationpath //dart/private/tools:kernel_module)",
+        "$(rlocationpath //dart/private/tools:kernel_link)",
+    ],
+    data = [
+        ":app_modular",
+        ":app_whole",
+        "//dart/private/tools:kernel_link",
+        "//dart/private/tools:kernel_module",
+    ],
+    main = "part_sources_test.dart",
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [
+        "//dart/runfiles",
+        "//dart/tests/part_sources_fixture/same_pkg:part_lib",
+        "//dart/tests/part_sources_fixture/same_pkg:rev_parent_lib",
+        "//dart/tests/part_sources_fixture/same_pkg:sib_parent_lib",
+        "//dart/tests/part_sources_fixture/same_pkg:sib_part_lib",
+        "@ext_pub_deps//:test",
+    ],
+)

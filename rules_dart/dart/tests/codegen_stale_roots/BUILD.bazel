@@ -1,0 +1,3 @@
+load(":codegen_stale_roots_test.bzl", "codegen_stale_roots_suite")
+
+codegen_stale_roots_suite(name = "codegen_stale_roots")

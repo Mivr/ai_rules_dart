@@ -1,0 +1,258 @@
+load("//dart:defs.bzl", "dart_code_asset", "dart_library", "dart_package_member")
+load(
+    "//dart/tests:dart_info_test.bzl",
+    "analyzable_with_package_test",
+    "code_assets_for_check_test",
+    "declared_code_asset_ownership_test",
+    "facade_library",
+    "forwards_closures_test",
+    "language_version_passthrough_test",
+    "misowned_asset_test",
+    "no_package_empty_test",
+    "no_package_name_test",
+    "no_package_test",
+    "ownership_failure_test",
+    "wrapper_executable",
+    "wrapper_library",
+)
+
+# The dependency carries one of each thing `DartInfo` propagates, so a wrapper
+# that forgets any single merge loses something observable.
+
+dart_code_asset(
+    name = "dep_asset",
+    asset_id = "package:info_dep/src/ffi/dep.g.dart",
+    shared_library = "//dart/tests/cc_fixture:empty_shared",
+)
+
+dart_library(
+    name = "dep",
+    package_name = "info_dep",
+    srcs = ["lib/dep.dart"],
+    code_assets = [":dep_asset"],
+    resources = ["lib/dep.yaml"],
+)
+
+wrapper_library(
+    name = "wrapper",
+    package_name = "wrapper_pkg",
+    srcs = ["lib/wrapped.dart"],
+    deps = [":dep"],
+)
+
+forwards_closures_test(
+    name = "forwards_closures_test",
+    size = "small",
+    target_under_test = ":wrapper",
+)
+
+# `:wrapper` sets no `language_version`, so its rule passes `""` to the
+# constructor — the "this package states none" answer, which must still produce
+# a record rather than an error.
+language_version_passthrough_test(
+    name = "empty_language_version_test",
+    size = "small",
+    expected_language_version = "",
+    expected_package = "wrapper_pkg",
+    target_under_test = ":wrapper",
+)
+
+# The stated half: a value declared on the rule reaches the package record it
+# describes.
+wrapper_library(
+    name = "wrapper_stated_lv",
+    package_name = "stated_lv_pkg",
+    srcs = ["lib/wrapped.dart"],
+    language_version = "3.11",
+)
+
+language_version_passthrough_test(
+    name = "stated_language_version_test",
+    size = "small",
+    expected_language_version = "3.11",
+    expected_package = "stated_lv_pkg",
+    target_under_test = ":wrapper_stated_lv",
+)
+
+# A facade over the same dependency: forwards everything, contributes no
+# package record of its own.
+facade_library(
+    name = "facade",
+    deps = [":dep"],
+)
+
+no_package_test(
+    name = "no_package_test",
+    size = "small",
+    target_under_test = ":facade",
+)
+
+# The production shape: a non-Dart file and no deps at all, the way
+# `flutter_material_icons` carries a font.
+facade_library(
+    name = "font_only_facade",
+    data = ["lib/dep.yaml"],
+)
+
+no_package_empty_test(
+    name = "no_package_empty_test",
+    size = "small",
+    target_under_test = ":font_only_facade",
+)
+
+# An executable that also contributes a package: `lib/owned.dart` is the
+# package's, `entry.dart` is the entrypoint outside it. The two lists are what
+# the constructor keeps apart, and the fixture supplies one of each so a
+# collapse in either direction is observable.
+#
+# It carries a resource and a code asset of its own for the same reason the
+# `dep` above does: every parameter this constructor forwards is a line that
+# could be dropped without a test noticing, and the record it forwards them
+# onto is this target's own rather than a dependency's.
+dart_code_asset(
+    name = "exec_asset",
+    asset_id = "package:exec_pkg/src/ffi/owned.g.dart",
+    # A different library from `dep_asset`'s: the two records would dedupe to a
+    # single file otherwise, and the flat-depset assertion could not tell a
+    # forwarded asset from a dropped one.
+    shared_library = "//dart/tests/cc_fixture:empty_shared_alt",
+)
+
+wrapper_executable(
+    name = "exec",
+    package_name = "exec_pkg",
+    srcs = ["entry.dart"],
+    code_assets = [":exec_asset"],
+    language_version = "3.11",
+    package_srcs = ["lib/owned.dart"],
+    resources = ["lib/owned.yaml"],
+    # Two packages rooted at one directory, which no package_config may hold:
+    # a provider-shape fixture, not a project the analyzer can resolve.
+    tags = ["no-dart-analyze"],
+    deps = [":dep"],
+)
+
+analyzable_with_package_test(
+    name = "analyzable_with_package_test",
+    size = "small",
+    target_under_test = ":exec",
+)
+
+# No package name means the caller wanted the other constructor. `dart_info()`
+# would build a nameless package record instead of saying so.
+wrapper_executable(
+    name = "unnamed_exec",
+    package_name = "",
+    srcs = ["entry.dart"],
+    tags = ["manual"],
+)
+
+no_package_name_test(
+    name = "no_package_name_test",
+    size = "small",
+    target_under_test = ":unnamed_exec",
+)
+
+# The asset id is namespaced to `info_dep`; a wrapper claiming a different
+# package must be refused by the constructor, not by `dart_library`.
+wrapper_library(
+    name = "misowned_wrapper",
+    package_name = "not_info_dep",
+    code_assets = [":dep_asset"],
+    tags = ["manual"],
+)
+
+misowned_asset_test(
+    name = "misowned_asset_test",
+    size = "small",
+    target_under_test = ":misowned_wrapper",
+)
+
+# A pinned prebuilt asset namespaced to another package. `code_assets_for`
+# declares the exception, and the asset still rides `host`'s own record.
+dart_code_asset(
+    name = "other_asset",
+    asset_id = "package:other/thing",
+    shared_library = "//dart/tests/cc_fixture:empty_shared",
+)
+
+dart_library(
+    name = "host_declared",
+    package_name = "host",
+    srcs = ["lib/host.dart"],
+    code_assets = [":other_asset"],
+    code_assets_for = ["other"],
+)
+
+declared_code_asset_ownership_test(
+    name = "declared_code_asset_ownership_test",
+    size = "small",
+    target_under_test = ":host_declared",
+)
+
+# The same asset without the declaration: the ownership check still fails.
+dart_library(
+    name = "host_undeclared",
+    package_name = "host",
+    srcs = ["lib/host.dart"],
+    code_assets = [":other_asset"],
+    tags = ["manual"],
+)
+
+ownership_failure_test(
+    name = "undeclared_code_asset_ownership_test",
+    size = "small",
+    expected_message = "code asset id `package:other/thing` is not namespaced to this package",
+    target_under_test = ":host_undeclared",
+)
+
+# A declaration for `other` does not admit an asset for `third`.
+dart_code_asset(
+    name = "third_asset",
+    asset_id = "package:third/thing",
+    shared_library = "//dart/tests/cc_fixture:empty_shared",
+)
+
+dart_library(
+    name = "host_wrong_declared",
+    package_name = "host",
+    srcs = ["lib/host.dart"],
+    code_assets = [":third_asset"],
+    code_assets_for = ["other"],
+    tags = ["manual"],
+)
+
+ownership_failure_test(
+    name = "unlisted_code_asset_ownership_test",
+    size = "small",
+    expected_message = "code asset id `package:third/thing` is not namespaced to this package",
+    target_under_test = ":host_wrong_declared",
+)
+
+# The ownership check on its own, without a rule in the way.
+code_assets_for_check_test(
+    name = "code_assets_for_check_test",
+    size = "small",
+)
+
+# A multi-package library states every per-package fact on its members, so
+# `code_assets_for` is rejected there exactly like `code_assets`.
+dart_package_member(
+    name = "host_member",
+    package_name = "host_member",
+    srcs = ["lib/host.dart"],
+)
+
+dart_library(
+    name = "members_with_code_assets_for",
+    code_assets_for = ["other"],
+    members = [":host_member"],
+    tags = ["manual"],
+)
+
+ownership_failure_test(
+    name = "members_code_assets_for_test",
+    size = "small",
+    expected_message = "`members` and `code_assets_for` cannot both be set",
+    target_under_test = ":members_with_code_assets_for",
+)

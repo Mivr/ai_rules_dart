@@ -1,0 +1,2256 @@
+name: CI
+# Controls when the action will run.
+on:
+  # Triggers the workflow on push or pull request events but only for the main branch
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+    branches: [main]
+  # Nightly run to catch upstream breakage (new Dart SDK, Bazel, deps).
+  # A `schedule` run never restores or saves any Bazel cache (see the
+  # `schedule` branches on every cache input below), so this is the cold,
+  # uncached run: every test job re-executes instead of replaying the disk
+  # cache. Tag runs (release dispatches), branch and PR pushes stay cached;
+  # `uncached` dispatches run cold too.
+  schedule:
+    - cron: "0 9 * * *"
+  # Allows you to run this workflow manually from the Actions tab. The release
+  # gate (release.yaml) dispatches it on a tag, with caches, when no passing
+  # nightly run exists. Pass `uncached: true` for a cold run.
+  workflow_dispatch:
+    inputs:
+      uncached:
+        description: Run every test job without restoring or saving any Bazel cache
+        required: false
+        default: false
+        type: boolean
+concurrency:
+  # Cancel previous actions from the same PR or branch except 'main' branch.
+  # Tag runs (release dispatches) are never cancelled.
+  # See https://docs.github.com/en/actions/using-jobs/using-concurrency and https://docs.github.com/en/actions/learn-github-actions/contexts for more info.
+  group: concurrency-group::${{ github.workflow }}::${{ github.event.pull_request.number > 0 && format('pr-{0}', github.event.pull_request.number) || github.ref_name }}${{ github.ref_name == 'main' && format('::{0}', github.run_id) || ''}}
+  cancel-in-progress: ${{ github.ref_type != 'tag' && github.ref_name != 'main' }}
+jobs:
+  # The e2e workspaces (plus `.`, `dev`, `tools` and `.github/workflows`) used
+  # to run as one CI job per (OS, folder): ~90 jobs whose macOS third queued
+  # behind the account's 5 shared macOS slots. Linux and Windows now run as 6
+  # shard jobs sharing one Bazel disk cache per shard: one cache restore and
+  # one Bazelisk install per job instead of one per folder. Push CI runs a
+  # single macOS smoke job (`mac-smoke`); the macOS coverage that Linux and
+  # Windows do not already prove runs in the `full.yaml` pre-release workflow.
+  # Every folder runs `bazel test //...` on Linux (or
+  # `bazel build //...` for explicit build-only folders with no non-manual
+  # test targets). Folders in a shard run a few at a
+  # time (`parallelism` waves); each folder's full log is streamed under a
+  # `===== <folder> =====` header the moment that folder finishes (not after
+  # all waves), and uploaded as an artifact `if: always()`, so a killed job
+  # still leaves its evidence and the executed-test counts stay auditable.
+  # Each folder runs under its own Bazel server (`--output_base`): the folders
+  # of a shard otherwise share the output base setup-bazel pins, so concurrent
+  # folders kill each other's servers and flake with exit 1. Folders with an
+  # e2e.yaml launch the e2e runner from one shared tools server, built once
+  # per shard; each runner then stages its workspace under its own base.
+  # The per-shard `cache` name keys the shared disk cache; the repository,
+  # external and bazelisk caches keep their shared keys.
+  # Coverage map: every directory under e2e/ with a MODULE.bazel is built and
+  # tested by some job in this workflow. Green workspaces run
+  # `bazel test //...` in the `test` shards above (and the darwin-relevant
+  # ones in `full.yaml` on macOS, each under its own Bazel server): every e2e/
+  # folder a shard lists. Red-by-design workspaces run in
+  # `expected-failure` below: e2e/pub_lock_conflict, e2e/pub_lock_unpinned,
+  # e2e/pub_package_unpinned, e2e/pub_spoke_blank_sha,
+  # e2e/pub_spoke_malformed_sha, e2e/pub_git_unpinned_ref,
+  # e2e/pub_scc_unpinned_member, e2e/kernel_dep_shape, e2e/layering_check,
+  # e2e/sdk_unknown_version, e2e/pub_symlink
+  # (plus its nested red-by-design `cycle` workspace),
+  # e2e/hermetic_canary.
+  # e2e/pub_workspace runs in `test` (Linux shard 2); its spec's
+  # expected-failure command runs only under the e2e runner, not in that job.
+  # e2e/pub_scanner_intruder is green but needs its scanner built explicitly,
+  # so it runs in a step there too.
+  # e2e/pub_fetch_powershell runs in the shard-3-only steps below;
+  # e2e/analysis_failure and e2e/analyze_composition also run in
+  # `expected-failure` and `format-hermeticity`, and e2e/dart_test also in
+  # `dbg-mode` and `expected-failure`. e2e/run_home runs in `run-home`,
+  # and e2e/repro_canary runs in `reproducibility`.
+  # e2e/coverage runs in `coverage`: its `bazel coverage` run and report check,
+  # its `bazel test //...`, and a root-workspace coverage run of //dart/runfiles
+  # that its `lcov_check_ruleset` checks. `full.yaml` repeats that job.
+  # e2e/hermetic_canary is Linux-only and red by design, so it runs in
+  # `expected-failure` only and never in a positive sweep; e2e/hello_world
+  # and e2e/codegen also run in `hermetic-strict` under the H1 flag set.
+  # No e2e workspace is left without a job.
+  # A tag run (release dispatch) runs every job, matrix entry and step below
+  # (with caches): no job skips work on a tag run that the nightly run does.
+  test:
+    name: test (${{ matrix.os }}, shard ${{ matrix.shard }})
+    runs-on: ${{ matrix.os }}
+    # actions: write lets the prune step delete superseded cache entries.
+    permissions:
+      actions: write
+      contents: read
+    # A hung folder fails fast instead of burning the runner for hours.
+    # Healthy shards finish well inside this; cold nightly and `uncached` runs
+    # need the headroom. GitHub caps jobs at 6 h.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            shard: 1
+            parallelism: 3
+            cache: test-linux-1
+            folders: |
+              .
+              e2e/fix
+              e2e/link_hook
+              e2e/codegen
+              e2e/analyze_composition
+              e2e/cross_compile
+              tools
+              e2e/pub_deps
+          - os: ubuntu-latest
+            shard: 2
+            parallelism: 3
+            cache: test-linux-2
+            folders: |
+              e2e/pub_lock_upgrade
+              dev
+              .github/workflows
+              e2e/pub_lock_scc
+              e2e/pub_lock
+              e2e/pub_workspace
+              e2e/dart_test_pkg
+              e2e/hello_world
+              e2e/dual_build
+              e2e/isolated_hub
+              e2e/analysis
+          - os: ubuntu-latest
+            shard: 3
+            parallelism: 3
+            cache: test-linux-3
+            folders: |
+              e2e/ext_exemplar
+              e2e/web_app
+              e2e/gazelle
+              e2e/smoke
+              e2e/library_deps
+              e2e/dart_test
+              e2e/pub_lock_git
+              e2e/pub_lock_cross_module
+              e2e/pub_lock_dedup
+              e2e/guard_reuse
+              e2e/root_sdk_pin
+              e2e/sdk_coupling
+          - os: windows-latest
+            shard: 1
+            parallelism: 3
+            cache: test-windows-1
+            # The root workspace alone: with other folders running beside it
+            # on the same runner its 19k actions take 3x longer, which sets
+            # the whole run's wall time. Alone it only competes with itself.
+            folders: |
+              .
+          - os: windows-latest
+            shard: 2
+            parallelism: 3
+            cache: test-windows-2
+            # e2e/link_hook alone, for the same reason as the root workspace.
+            folders: |
+              e2e/link_hook
+          - os: windows-latest
+            shard: 3
+            parallelism: 3
+            cache: test-windows-3
+            folders: |
+              e2e/ext_exemplar
+              e2e/web_app
+              e2e/gazelle
+              e2e/smoke
+              e2e/library_deps
+              e2e/dart_test
+              e2e/pub_lock_git
+              e2e/pub_lock_cross_module
+              e2e/pub_lock_dedup
+              e2e/guard_reuse
+              e2e/root_sdk_pin
+              e2e/sdk_coupling
+          - os: windows-latest
+            shard: 4
+            parallelism: 3
+            cache: test-windows-4
+            folders: |
+              e2e/fix
+              e2e/codegen
+              e2e/analyze_composition
+              e2e/cross_compile
+              tools
+              e2e/pub_deps
+              e2e/pub_lock_upgrade
+              dev
+          - os: windows-latest
+            shard: 5
+            parallelism: 3
+            cache: test-windows-5
+            folders: |
+              .github/workflows
+              e2e/pub_lock_scc
+              e2e/pub_lock
+              e2e/dart_test_pkg
+              e2e/hello_world
+              e2e/dual_build
+              e2e/isolated_hub
+              e2e/analysis
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Enable and verify Linux user namespaces
+        if: matrix.os == 'ubuntu-latest'
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          # Branch, PR and tag runs restore every cache below (main pushes
+          # save). `schedule` runs and
+          # `uncached` dispatches restore neither the Bazel disk cache nor
+          # the external cache and save nothing, so every test really
+          # executes instead of replaying the disk cache. The
+          # content-addressed repository cache and the bazelisk cache still
+          # restore (every fetch is sha256-pinned).
+          # The disk cache is restored and saved by the steps below instead.
+          disk-cache: false
+          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          repository-cache: ${{ github.event_name != 'schedule' && (github.ref_type == 'tag' || !inputs.uncached) }}
+          # Only main saves: a branch restores main's keys, and the gate's ci/
+          # candidate saves duplicated them (7 GB on 2026-11-04), evicting main's
+          # under the 10 GB repository cache limit.
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
+          # Rotates setup-bazel's cache keys (repository, external,
+          # bazelisk; the disk cache has its own steps). setup-bazel skips the post-job save for any cache whose
+          # key restored with an exact hit, so a key saved by a failed or
+          # partial run stays stale forever and every later run misses against
+          # it. Bump this after a sharding change or a poisoned key; the next
+          # run is cold once, then its post-job saves write complete entries.
+          cache-version: "3"
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+            common --enable_bzlmod=true
+            # Memory bounds: a shard runs PARALLELISM=3 folders at once (see
+            # the Test step). By default every server grows its JVM heap to
+            # ~1/4 of host RAM and schedules actions as if it owned the whole
+            # machine, so concurrent cold servers exhaust a 4-CPU/16 GB runner
+            # and the job dies on a shutdown signal (exit 143). Per server:
+            # heap 2 GB (3 x 2 = 6 GB, was ~3 x 4 = 12 GB), 1 CPU (3 of 4
+            # cores), scheduled RAM 15% of host RAM (3 x 15% = 45%, ~7.2 GB of
+            # 16 GB): heaps plus scheduled actions stay near ~13 GB, leaving
+            # room for the OS, the Bazel clients and JVM off-heap.
+            # HOST-relative so smaller runners (macOS) scale the same
+            # fractions. Scheduling limits only: action keys are unchanged, so
+            # cache warmth is unaffected.
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=1
+            build --local_resources=memory=HOST_RAM*.15
+            # Disk-cache garbage collection (flags checked against
+            # `bazel help build` at 9.3.0). Disk is not the limit: an
+            # ubuntu-latest runner starts with ~86 GB free (was ~14 GB when
+            # this cap was set). The 4G cap keeps the cache, and so its
+            # restore and save time, from growing run over run. Entries
+            # unused for 7d are dropped. GC runs when a
+            # server has been idle for 5m. The cache keys and `cache-version`
+            # are unchanged: an oversized restored cache is trimmed by GC.
+            build --experimental_disk_cache_gc_max_size=4G
+            build --experimental_disk_cache_gc_max_age=7d
+            build --experimental_disk_cache_gc_idle_delay=5m
+      # The Bazel disk cache, one per shard (`matrix.cache`). setup-bazel's own
+      # disk cache never re-saved a key that already existed, and its key only
+      # changed with MODULE and BUILD files, so a shard's cache went stale as
+      # sources changed: on 2026-11-16 about 700 actions per Linux shard missed
+      # it (the sb-ws remote cache had been hiding that). Each run now restores
+      # the newest entry under the shard's prefix, and a main push saves a new
+      # entry under its own run's key at the end of the job, then prunes the
+      # shard's older entries, so the cache follows main. The legacy
+      # setup-bazel entries (same path, so same cache version) are the last
+      # fallback until the first main push saves. Schedule and `uncached`
+      # runs neither restore nor save.
+      - name: Set disk cache key
+        if: github.event_name != 'schedule' && !inputs.uncached
+        shell: bash
+        run: |
+          key="rd-disk-${{ runner.os }}-${{ matrix.cache }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}"
+          echo "DISK_CACHE_KEY=$key" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=$key-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ matrix.os == 'windows-latest' && 'D:/_bazel-disk' || '/home/runner/.cache/bazel-disk' }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: |
+            rd-disk-${{ runner.os }}-${{ matrix.cache }}-
+            setup-bazel-3-${{ matrix.os == 'windows-latest' && 'win32' || 'linux' }}-x64-disk-${{ matrix.cache }}-
+      - name: Point Bazel at the disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached && matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p /home/runner/.cache/bazel-disk
+          echo "build --disk_cache=/home/runner/.cache/bazel-disk" >> ~/.bazelrc
+      # PowerShell, so ~/.bazelrc is the same file setup-bazel wrote (Git
+      # Bash's home can differ).
+      - name: Point Bazel at the disk cache (Windows)
+        if: github.event_name != 'schedule' && !inputs.uncached && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "D:/_bazel-disk" | Out-Null
+          Add-Content ~/.bazelrc "build --disk_cache=D:/_bazel-disk"
+      - name: Disk report (after cache restore)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_disk_report.sh "after cache restore"
+      - name: Memory report (before Test)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "before Test"
+      - name: Test
+        env:
+          FOLDERS: ${{ matrix.folders }}
+          PARALLELISM: ${{ matrix.parallelism }}
+        # Explicit bash: the default shell is PowerShell on Windows, where the
+        # wave below is not valid; Windows still runs it under bash.
+        shell: bash
+        run: |
+          ws="${GITHUB_WORKSPACE//\\//}"
+          # Per-folder logs live under RUNNER_TEMP so the upload step below can
+          # ship them even when this step fails or the job is killed. Each
+          # folder's log is printed under a `===== <folder> =====` header the
+          # moment that folder finishes (not after all waves), so a killed job
+          # still leaves the completed folders' evidence and the
+          # executed-test counts stay auditable.
+          logdir="${RUNNER_TEMP}/shard-logs"
+          rm -rf "$logdir"
+          mkdir -p "$logdir"
+          # One Bazel server per folder (see run_one below). Native path: the
+          # Windows bazel.exe does not understand msys /tmp spellings.
+          outbasedir="${RUNNER_TEMP}/bazel-servers"
+          # Pin the Bazel version in every folder of this shard, as the old
+          # per-folder Configure step did.
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            echo "9.3.0" > "$ws/$folder/.bazelversion"
+          done <<< "$FOLDERS"
+          # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's sole test is manual and requires-network.
+          build_only_folders=".github/workflows e2e/dual_build"
+          # On Linux every server exits after 60 idle seconds and is shut down
+          # as soon as its folder finishes, so one server at a time stays
+          # resident beside the running ones. Windows is unchanged.
+          idle=()
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            idle=(--max_idle_secs=60)
+          fi
+          # A folder with an e2e.yaml runs through the e2e runner, started
+          # from tools/ (the runner stages a copy of the workspace and picks
+          # its own output base for it). Only a folder without a spec runs
+          # bazel itself. Every runner launch shares one tools server,
+          # runner_base, built once below before the waves: a fresh tools
+          # server per folder cost 9 to 41 s each to start and analyze the
+          # same binary. `bazel run` hands the binary to its client and frees
+          # the server before the runner starts, so concurrent folders only
+          # wait for each other's cached build. That server has no idle limit
+          # and is shut down once every folder has finished.
+          runner_base="$outbasedir/_e2e_runner"
+          bazel_home() {
+            if [ -f "$ws/$1/e2e.yaml" ]; then echo "$ws/tools"; else echo "$ws/$1"; fi
+          }
+          run_one() {
+            slug="$(printf '%s' "$1" | tr '/.' '_')"
+            rc=0
+            (
+              cd "$(bazel_home "$1")" &&
+              if [ -f "$ws/$1/e2e.yaml" ]; then
+                MSYS2_ARG_CONV_EXCL="*" bazel --output_base="$runner_base" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+              else
+                case " $build_only_folders " in
+                  *" $1 "*) bazel "${idle[@]}" --output_base="$outbasedir/$slug" build //... ;;
+                  *) bazel "${idle[@]}" --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
+                esac
+              fi
+            ) >"$logdir/$slug.log" 2>&1 || rc=1
+            # Shut the folder's server down before reporting it finished. The
+            # folder's status is the command's; a failed shutdown is logged
+            # as a warning in the folder's log and does not change it. A spec
+            # folder has no server of its own: runner_base is shared.
+            if [ "$RUNNER_OS" = "Linux" ] && [ ! -f "$ws/$1/e2e.yaml" ]; then
+              if ! ( cd "$(bazel_home "$1")" && bazel "${idle[@]}" --output_base="$outbasedir/$slug" shutdown ) >>"$logdir/$slug.log" 2>&1; then
+                echo "::warning::bazel shutdown failed for $1" >>"$logdir/$slug.log"
+              fi
+            fi
+            echo "$rc" >"$logdir/$slug.status"
+          }
+          # Build the e2e runner once, serially, before any folder starts, on
+          # the shared runner_base server (see bazel_home above).
+          has_spec=0
+          while IFS= read -r folder; do
+            [ -n "$folder" ] && [ -f "$ws/$folder/e2e.yaml" ] && has_spec=1
+          done <<< "$FOLDERS"
+          if [ "$has_spec" = 1 ]; then
+            if ! ( cd "$ws/tools" && MSYS2_ARG_CONV_EXCL="*" bazel --output_base="$runner_base" build //e2e_runner:e2e_runner ) >"$logdir/_e2e_runner.log" 2>&1; then
+              cat "$logdir/_e2e_runner.log"
+              echo "::error::building the e2e runner failed"
+              exit 1
+            fi
+          fi
+          # Windows runners fail when the first Bazel servers start at once:
+          # they race creating the shared base directory (error 183). Each
+          # folder has its own server directory now, but still start them
+          # serially here; the waves below then attach to running servers.
+          # Spec folders use runner_base, already started above.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            while IFS= read -r folder; do
+              [ -z "$folder" ] && continue
+              [ -f "$ws/$folder/e2e.yaml" ] && continue
+              slug="$(printf '%s' "$folder" | tr '/.' '_')"
+              if ! ( cd "$(bazel_home "$folder")" && bazel --output_base="$outbasedir/$slug" version ) >/dev/null 2>&1; then
+                echo "::error::bazel failed to start for $folder"
+                exit 1
+              fi
+            done <<< "$FOLDERS"
+          fi
+          running=0
+          # Folders already printed by print_done below.
+          printed=""
+          # Print the log of every finished folder not printed yet.
+          print_done() {
+            while IFS= read -r folder; do
+              [ -z "$folder" ] && continue
+              slug="$(printf '%s' "$folder" | tr '/.' '_')"
+              case " $printed " in
+                *" $slug "*) continue ;;
+              esac
+              if [ -f "$logdir/$slug.status" ]; then
+                echo "===== $folder (exit $(cat "$logdir/$slug.status")) ====="
+                cat "$logdir/$slug.log"
+                printed="$printed $slug "
+              fi
+            done <<< "$FOLDERS"
+          }
+          # Block until at least one more folder finishes, then stream the
+          # newly finished logs. Polling (not `wait -n`) so this also runs
+          # under macOS bash 3.2, which full.yaml shares.
+          wait_one() {
+            before=0
+            for s in "$logdir"/*.status; do
+              [ -f "$s" ] || continue
+              before=$((before + 1))
+            done
+            while true; do
+              print_done
+              have=0
+              for s in "$logdir"/*.status; do
+                [ -f "$s" ] || continue
+                have=$((have + 1))
+              done
+              [ "$have" -gt "$before" ] && return 0
+              sleep 10
+            done
+          }
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            run_one "$folder" &
+            running=$((running + 1))
+            if [ "$running" -ge "$PARALLELISM" ]; then
+              wait_one
+              running=$((running - 1))
+            fi
+          done <<< "$FOLDERS"
+          wait
+          print_done
+          if [ "$has_spec" = 1 ]; then
+            if ! ( cd "$ws/tools" && bazel --output_base="$runner_base" shutdown ) >>"$logdir/_e2e_runner.log" 2>&1; then
+              echo "::warning::bazel shutdown failed for the e2e runner server"
+            fi
+          fi
+          fail=0
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            slug="$(printf '%s' "$folder" | tr '/.' '_')"
+            [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
+          done <<< "$FOLDERS"
+          exit "$fail"
+      # Every e2e/*/MODULE.bazel must be run by some job; a new workspace that
+      # no job names fails here.
+      - name: E2E workspace coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        working-directory: tools
+        shell: bash
+        run: bazel --max_idle_secs=60 run //check_e2e_coverage:check_e2e_coverage
+      - name: Memory report (after Test)
+        if: always() && matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "after Test"
+      - name: Disk report (after Test)
+        if: always() && matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_disk_report.sh "after Test"
+      # The corpus instantiates every public rule and macro in one package;
+      # its checked-in golden records the action graph they produce. A stale
+      # golden fails here, so an action change reaches review as a diff.
+      - name: Memory report (before Corpus tests)
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "before Corpus tests"
+      - name: Corpus tests
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        # This server runs alone: it may use 70% of host RAM. It is shut down
+        # when the command ends, whatever the command's status was.
+        run: |
+          status=0
+          bazel --max_idle_secs=60 test "--local_resources=memory=HOST_RAM*.7" //dart/tests/corpus:... || status=$?
+          bazel --max_idle_secs=60 shutdown || echo "::warning::bazel shutdown failed after Corpus tests"
+          exit "$status"
+      - name: Memory report (after Corpus tests)
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "after Corpus tests"
+      - name: Memory report (before Corpus action graph)
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "before Corpus action graph"
+      - name: Corpus action graph
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: |
+          status=0
+          {
+            bazel --max_idle_secs=60 aquery "--local_resources=memory=HOST_RAM*.7" --output=jsonproto --include_file_write_contents //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json" &&
+              bazel --max_idle_secs=60 run "--local_resources=memory=HOST_RAM*.7" //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
+          } || status=$?
+          bazel --max_idle_secs=60 shutdown || echo "::warning::bazel shutdown failed after Corpus action graph"
+          exit "$status"
+      - name: Upload corpus action graph on failure
+        if: failure() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-corpus-aquery-${{ matrix.os }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dart_corpus_aquery.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Memory report (after Corpus action graph)
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "after Corpus action graph"
+      # Ship the per-folder logs even when the Test step fails or the job is
+      # killed, so a dead shard still leaves its evidence for diagnosis.
+      - name: Upload shard logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: shard-logs-${{ matrix.os }}-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-logs
+          if-no-files-found: warn
+          retention-days: 3
+      # The pub symlink guard (`dart/pub/private/pub_symlink.bzl`) must not
+      # depend on host tools or PATH. Every step above runs Bazel under bash
+      # (see the Test step's `shell: bash`), where Git Bash's GNU
+      # find/readlink/cp/rm/mv come first on PATH and mask such a
+      # dependency — rules_flutter main caught it instead, with Windows
+      # resolving `find` to FIND.EXE. This step fetches and builds a
+      # workspace holding one hosted and one git pub package from
+      # PowerShell, with a fresh output base so the fetch really runs under
+      # PowerShell's PATH. It shares shard 3's runner and disk cache, so it
+      # fits the existing shard time.
+      - name: PowerShell pub fetch (no host tools)
+        if: matrix.os == 'windows-latest' && matrix.shard == 3
+        working-directory: e2e/pub_fetch_powershell
+        shell: powershell
+        run: |
+          [System.IO.File]::WriteAllText(".bazelversion", "9.3.0`n")
+          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" build "--repo_contents_cache=" //...
+          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" run "--repo_contents_cache=" //:app
+          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" shutdown
+      # Same guard, other direction: shadow find/readlink/cp/rm/mv with
+      # shims that fail loudly, fetch the mixed hosted+git workspace twice
+      # (normal vs stubbed PATH, fresh output bases so both really fetch),
+      # and diff the fetched package trees: they must be identical, with no
+      # symlinks left behind. Shares shard 3's runner and disk cache.
+      - name: Restricted-PATH pub fetch equality
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 3
+        shell: bash
+        run: |
+          ws="${GITHUB_WORKSPACE}"
+          shims="$(mktemp -d)"
+          shutdown_pw() {
+            for ob in "$RUNNER_TEMP/bazel-pw-normal" "$RUNNER_TEMP/bazel-pw-stubbed"; do
+              if [ -d "$ob" ]; then
+                ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$ob" shutdown ) || echo "::warning::bazel shutdown failed for $ob"
+              fi
+            done
+            rm -rf "$shims"
+          }
+          trap shutdown_pw EXIT
+          for tool in find readlink cp rm mv; do
+            printf '#!/bin/sh\necho "blocked: %s must not be used" >&2\nexit 99\n' "$tool" > "$shims/$tool"
+            chmod +x "$shims/$tool"
+          done
+          echo "9.3.0" > "$ws/e2e/pub_fetch_powershell/.bazelversion"
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/bazel-pw-normal" build --repo_contents_cache= //... )
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/bazel-pw-normal" shutdown )
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/bazel-pw-stubbed" build --repo_contents_cache= --repo_env=PATH="$shims:/usr/local/bin:/usr/bin:/bin" //... )
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/bazel-pw-stubbed" shutdown )
+          for repo in "ai_rules_dart++pub+dart_pub__characters" "ai_rules_dart++pub+dart_pub__meta" "ai_rules_dart++pub+pub_deps"; do
+            diff -r "$RUNNER_TEMP/bazel-pw-normal/external/$repo" "$RUNNER_TEMP/bazel-pw-stubbed/external/$repo"
+          done
+          test -z "$(find "$RUNNER_TEMP/bazel-pw-stubbed/external/ai_rules_dart++pub+dart_pub__characters" "$RUNNER_TEMP/bazel-pw-stubbed/external/ai_rules_dart++pub+dart_pub__meta" -type l)"
+      # Guards Mivr/rules_dart#1: a minimal consuming module must be able to
+      # enumerate the whole published module. Dev-only tooling lives in nested
+      # modules excluded via REPO.bazel `ignore_directories`, so no package under
+      # @rules_dart//... may load a dev-only repository. `e2e/smoke` is that
+      # minimal consumer, pointed at an extracted `git archive HEAD` (the published
+      # shape, without /dart/tests/) by --override_module. A planted package that
+      # loads @rules_testing must make the query fail. It runs here,
+      # once per OS, instead of in its own job.
+      - name: Consumer query
+        if: matrix.shard == 1
+        shell: bash
+        run: |
+          archive_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/rd_archive.XXXXXX")"
+          archive_override="$archive_dir"
+          if command -v cygpath >/dev/null 2>&1; then
+            archive_dir="$(cygpath -u "$archive_dir")"
+            archive_override="$(cygpath -m "$archive_dir")"
+          fi
+          trap '(cd e2e/smoke 2>/dev/null && bazel shutdown) >/dev/null 2>&1 || true; rm -rf "$archive_dir"' EXIT
+          git archive HEAD | tar -x -C "$archive_dir"
+          echo "9.3.0" > e2e/smoke/.bazelversion
+          (cd e2e/smoke && bazel query --override_module=ai_rules_dart="$archive_override" "@rules_dart//...")
+          # Red path: a package loading a dev-only repository must fail the query.
+          mkdir -p "$archive_dir/dart/tests"
+          printf 'load("@rules_testing//lib:analysis_test.bzl", "analysis_test")\n' > "$archive_dir/dart/tests/BUILD.bazel"
+          rc=0
+          red="$(cd e2e/smoke && bazel query --override_module=ai_rules_dart="$archive_override" "@rules_dart//..." 2>&1)" || rc=$?
+          if [ "$rc" -eq 0 ] || ! printf '%s' "$red" | grep -q 'rules_testing'; then
+            echo "expected the query to fail on the missing @rules_testing repository, exit $rc"
+            printf '%s\n' "$red"
+            exit 1
+          fi
+      - name: Disk report (end of job)
+        if: always() && matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_disk_report.sh "end of job"
+      # Success-gated (no `always()`): a failed run must not replace the last
+      # good entry with a half-populated one.
+      - name: Save disk cache
+        if: github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ matrix.os == 'windows-latest' && 'D:/_bazel-disk' || '/home/runner/.cache/bazel-disk' }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Once this run's entry exists, drop the shard's entries created before
+      # it on this ref (a newer entry from a concurrent run is kept), and the
+      # shard's legacy setup-bazel entries.
+      - name: Prune older disk cache entries
+        if: github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          LEGACY: setup-bazel-3-${{ matrix.os == 'windows-latest' && 'win32' || 'linux' }}-x64-disk-${{ matrix.cache }}-
+        run: |
+          # Pruning is housekeeping: no failure here may fail the job.
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at' || true)
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id' || true)
+          ids="$ids $(gh api "repos/$REPO/actions/caches?per_page=100&key=$LEGACY" --jq '.actions_caches[] | select(.ref == env.REF) | .id' || true)"
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  # The e2e workspaces again, under the oldest Bazel the module supports
+  # (`bazel_compatibility` in MODULE.bazel). Each shard takes the folders of
+  # the matching Linux `test` shard from that job's matrix above, so no second
+  # folder list exists, and runs in parallel with it: the merge critical path
+  # is one shard of either job. Only folders with an `e2e.yaml` run: the
+  # others have no runner pass to repeat. The `test` job's pass (the
+  # `.bazelversion` version) is not repeated here. The runner's own build
+  # stays on the tools module's Bazel; the staged copy of each workspace takes
+  # the version pinned in its `.bazelversion`. The pinned version is printed
+  # once, from `bazel version`, and a client that reports another one fails
+  # the step.
+  e2e-floor:
+    name: e2e-floor (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      FLOOR_VERSION: "9.0.0"
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          # Same cache policy as the `test` job; the disk cache has its own
+          # key per shard.
+          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && format('floor-linux-{0}', matrix.shard) || false }}
+          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          repository-cache: ${{ github.event_name != 'schedule' && (github.ref_type == 'tag' || !inputs.uncached) }}
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
+          cache-version: "3"
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+            common --enable_bzlmod=true
+            # Memory bounds for three concurrent folders, as in the `test` job.
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=1
+            build --local_resources=memory=HOST_RAM*.15
+            build --experimental_disk_cache_gc_max_size=4G
+            build --experimental_disk_cache_gc_max_age=7d
+            build --experimental_disk_cache_gc_idle_delay=5m
+      - name: Run the e2e workspaces under the floor version
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
+        shell: bash
+        run: |
+          ws="$GITHUB_WORKSPACE"
+          logdir="${RUNNER_TEMP}/floor-logs"
+          outbasedir="${RUNNER_TEMP}/bazel-servers"
+          rm -rf "$logdir"
+          mkdir -p "$logdir"
+          matrix="$(yq -o=json . .github/workflows/ci.yaml)"
+          # A new Linux `test` shard needs a matching entry in this job's matrix.
+          linux="$(jq '[.jobs.test.strategy.matrix.include[] | select(.os == "ubuntu-latest")] | length' <<< "$matrix")"
+          if [ "$linux" != "$SHARD_TOTAL" ]; then
+            echo "::error::the test job has $linux Linux shards but this job has $SHARD_TOTAL"
+            exit 1
+          fi
+          folders=""
+          while IFS= read -r folder; do
+            [ -f "$ws/$folder/e2e.yaml" ] && folders="$folders$folder"$'\n'
+          done < <(jq -r --argjson shard "$SHARD" '.jobs.test.strategy.matrix.include[] | select(.os == "ubuntu-latest" and .shard == $shard) | .folders' <<< "$matrix")
+          if [ -z "$folders" ]; then
+            echo "::error::shard $SHARD has no folder with an e2e.yaml"
+            exit 1
+          fi
+          expected_label="Build label: $FLOOR_VERSION"
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            echo "$FLOOR_VERSION" > "$ws/$folder/.bazelversion"
+            spec_json="$(yq -o=json . "$ws/$folder/e2e.yaml")"
+            jq --arg lbl "$expected_label" \
+              '.commands = [{name: "bazel version", run: "bazel version", expect: {stdout_contains: $lbl, output_regex: ("^" + ($lbl | gsub("(?<c>[.\\[\\]*^$()+?{|\\\\])"; "\\\(.c)")) + "\\r?$")}}] + .commands' \
+              <<< "$spec_json" > "$ws/$folder/e2e.yaml"
+          done <<< "$folders"
+          first="$(head -n 1 <<< "$folders")"
+          label="$(cd "$ws/$first" && bazel --max_idle_secs=60 version | grep '^Build label:')"
+          (cd "$ws/$first" && bazel --max_idle_secs=60 shutdown)
+          echo "Workspaces of shard $SHARD run under: $label"
+          if [ "$label" != "Build label: $FLOOR_VERSION" ]; then
+            echo "::error::expected Build label: $FLOOR_VERSION"
+            exit 1
+          fi
+          run_one() {
+            slug="$(printf '%s' "$1" | tr '/.' '_')"
+            rc=0
+            (
+              cd "$ws/tools" &&
+              bazel --max_idle_secs=60 --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+            ) >"$logdir/$slug.log" 2>&1 || rc=1
+            (cd "$ws/tools" && bazel --max_idle_secs=60 --output_base="$outbasedir/$slug" shutdown) >>"$logdir/$slug.log" 2>&1 ||
+              echo "::warning::bazel shutdown failed for $1" >>"$logdir/$slug.log"
+            echo "$rc" >"$logdir/$slug.status"
+            { echo "===== $1 (exit $rc) ====="; cat "$logdir/$slug.log"; }
+          }
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            while [ "$(jobs -rp | wc -l)" -ge 3 ]; do sleep 5; done
+            run_one "$folder" &
+          done <<< "$folders"
+          wait
+          fail=0
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            slug="$(printf '%s' "$folder" | tr '/.' '_')"
+            [ "$(cat "$logdir/$slug.status")" = 0 ] || { echo "::error::$folder failed under $FLOOR_VERSION"; fail=1; }
+          done <<< "$folders"
+          exit "$fail"
+  # Push CI's only macOS job: a fast smoke test that always runs cold (no
+  # cache restore or save), so it executes real compile actions under the
+  # darwin sandbox on every run instead of replaying the disk cache. The
+  # macOS-specific risks are toolchain/SDK resolution for macOS-arm64 and
+  # action execution under the darwin sandbox; `e2e/hello_world` exercises
+  # both by building all four `dart_binary` compile modes and running the
+  # binary, whose output is asserted: unlike the old
+  # `bazel test //... || [ $? -eq 4 ]`, this cannot pass while executing
+  # 0 actions on a "no tests found" no-op. The consumer query keeps the
+  # Mivr/rules_dart#1 module-enumeration guard on macOS. The analyzer red path
+  # (`e2e/analysis_failure`) runs on both operating systems: Linux in
+  # `expected-failure` and macOS in this job (`mac-smoke`). The rest of the
+  # darwin-relevant macOS coverage runs in the `full.yaml` pre-release
+  # workflow, which releases require.
+  mac-smoke:
+    # macOS is deferred to the nightly (owner decision 2026-11-04): pushes and
+    # PRs skip this job, and the nightly schedule and dispatched (release)
+    # runs keep it. The gate accepts it as skipped by its exact name
+    # (control ctl/config.py DEFERRED_JOBS); a red nightly becomes a queue item.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          # Always cold: this job's whole point is executing real macOS
+          # actions, so it neither restores nor saves any Bazel cache.
+          disk-cache: false
+          external-cache: false
+          repository-cache: false
+          cache-save: false
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+            common --enable_bzlmod=true
+            # Memory bounds: a shard runs PARALLELISM=3 folders at once (see
+            # the Test step). By default every server grows its JVM heap to
+            # ~1/4 of host RAM and schedules actions as if it owned the whole
+            # machine, so concurrent cold servers exhaust a 4-CPU/16 GB runner
+            # and the job dies on a shutdown signal (exit 143). Per server:
+            # heap 2 GB (3 x 2 = 6 GB, was ~3 x 4 = 12 GB), 1 CPU (3 of 4
+            # cores), scheduled RAM 15% of host RAM (3 x 15% = 45%, ~7.2 GB of
+            # 16 GB): heaps plus scheduled actions stay near ~13 GB, leaving
+            # room for the OS, the Bazel clients and JVM off-heap.
+            # HOST-relative so smaller runners (macOS) scale the same
+            # fractions. Scheduling limits only: action keys are unchanged, so
+            # cache warmth is unaffected.
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=1
+            build --local_resources=memory=HOST_RAM*.15
+      - name: Configure Bazel version
+        working-directory: e2e/hello_world
+        run: |
+          echo "9.3.0" > .bazelversion
+          bazel version
+      # `bazel build` executes the real compile actions for all four compile
+      # modes under the darwin sandbox; `bazel run` executes the result. The
+      # output assertion means this fails unless something really ran.
+      - name: Build hello_world
+        working-directory: e2e/hello_world
+        run: bazel build //...
+      - name: Run hello_world
+        working-directory: e2e/hello_world
+        run: |
+          out="$(bazel run //:hello 2>&1)"
+          echo "$out"
+          echo "$out" | grep -q "Hello, World!"
+      - name: analysis_failure — expect analyzer diagnostics to fail the build, at workspace paths
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //:bad_lib 2>/dev/null; then
+            echo "ERROR: build should have failed with analyzer diagnostics"
+            exit 1
+          fi
+          out=$(bazel test //:bad_lib 2>&1 || true)
+          echo "$out" | grep -q "unused_local_variable"
+          # Named as the user's file, not as the staged copy under `src/`.
+          echo "$out" | grep -q -- "- lib/bad.dart:4:7 -"
+          echo "OK: expected analyzer failure detected, at the workspace path"
+      - name: Consumer query
+        run: |
+          archive_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/rd_archive.XXXXXX")"
+          trap '(cd e2e/smoke 2>/dev/null && bazel shutdown) >/dev/null 2>&1 || true; rm -rf "$archive_dir"' EXIT
+          git archive HEAD | tar -x -C "$archive_dir"
+          echo "9.3.0" > e2e/smoke/.bazelversion
+          (cd e2e/smoke && bazel query --override_module=ai_rules_dart="$archive_dir" "@rules_dart//...")
+  # `dart format` and `dart analyze` find their configuration by walking up from
+  # the file they are given, and that walk does not stop at the project root. It
+  # used to escape: under a sandbox it found nothing (so a repo's configured
+  # page width was silently ignored), and unsandboxed it climbed into the
+  # execroot — or, in manifest runfiles mode, ran against the source tree
+  # outright. Which of those happened decided the verdict, so the same code
+  # passed or failed depending on the flags.
+  #
+  # The `dart_analyze` aspect's staged project bounds the walk, and
+  # `e2e/analysis_failure`'s root analysis_options.yaml — deliberately left out
+  # of its `analysis_config` — carries an absurd `page_width: 20` canary so this
+  # job can prove it: `//:clean_lib` there is formatted at the stock 80, so if
+  # the walk ever escapes it reaches the canary and turns red. `e2e/analysis`
+  # runs its whole suite beside it, so its configured widths, `package:`
+  # includes and language versions must agree across all eight cells too.
+  #
+  # The job has eight cells: the empty-flags and `--noenable_runfiles` cells run
+  # an unsandboxed persistent worker; `--worker_sandboxing` cells also get
+  # `--noworker_multiplex` from the step, so they run singleplex workers
+  # sandboxed (multiplex workers ignore `--worker_sandboxing`, and the flag
+  # stays out of the matrix so the job names do not change); `--strategy=DartAnalyze=sandboxed` runs
+  # the analyzer as a one-shot sandboxed action.
+  format-hermeticity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: forest runfiles, unsandboxed worker
+            flags: ""
+          - name: forest runfiles, standalone
+            flags: "--spawn_strategy=standalone"
+          - name: forest runfiles, worker-sandboxed
+            flags: "--worker_sandboxing"
+          - name: forest runfiles, analyze sandboxed
+            flags: "--strategy=DartAnalyze=sandboxed"
+          - name: manifest runfiles, unsandboxed worker
+            flags: "--noenable_runfiles"
+          - name: manifest runfiles, standalone
+            flags: "--noenable_runfiles --spawn_strategy=standalone"
+          - name: manifest runfiles, worker-sandboxed
+            flags: "--noenable_runfiles --worker_sandboxing"
+          - name: manifest runfiles, analyze sandboxed
+            flags: "--noenable_runfiles --strategy=DartAnalyze=sandboxed"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: analysis — ${{ matrix.name }}
+        working-directory: e2e/analysis
+        run: bazel test ${{ matrix.flags }} ${{ contains(matrix.flags, '--worker_sandboxing') && '--noworker_multiplex' || '' }} --test_output=errors //...
+      - name: analysis_failure canary — ${{ matrix.name }}
+        working-directory: e2e/analysis_failure
+        run: bazel build ${{ matrix.flags }} ${{ contains(matrix.flags, '--worker_sandboxing') && '--noworker_multiplex' || '' }} --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+  # Every runnable entry point (`bazel run` on every public target, plus one
+  # instance of every public rule whose target it accepts) keeps its HOME
+  # policy: `e2e/run_home/run_home_test.sh` checks the registry against
+  # `bazel query` both ways, runs every entry under a fresh canary HOME, and
+  # fails naming entries that write into a canary or exit other than
+  # expected. A new entry point must be registered in `e2e/run_home`
+  # (see `registry.sh`) or this job goes red.
+  run-home:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: run_home canary sweep
+        working-directory: e2e/run_home
+        run: ./run_home_test.sh
+  # Coverage: `bazel coverage` of e2e/coverage's fixture and of the ruleset's own
+  # //dart/runfiles tests, each report checked for executed and unexecuted lines,
+  # `FNDA:0` records, `BRDA:` records and workspace-relative `SF:` paths.
+  # `bazel coverage` writes the combined report only after every test of the
+  # invocation has finished, so each report is copied (a later Bazel command may
+  # replace `bazel-out`) and checked by its own `bazel run` step afterwards. A
+  # failing coverage run, a failing check or a missing report fails the job:
+  # no step tolerates failure and no instrumentation filter is empty.
+  coverage:
+    runs-on: ubuntu-latest
+    # A cold e2e/coverage coverage run, then a cold root-workspace coverage run
+    # of //dart/runfiles; healthy runs finish well inside this.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: e2e/coverage - coverage run, then the fixture report check
+        working-directory: e2e/coverage
+        run: |
+          bazel --max_idle_secs=60 coverage --combined_report=lcov --instrumentation_filter='^//' --instrument_test_targets=false //...
+          report="$(mktemp)"
+          cp bazel-out/_coverage/_coverage_report.dat "$report"
+          bazel --max_idle_secs=60 run //:lcov_check -- "$report"
+          bazel --max_idle_secs=60 test --test_output=errors //...
+      - name: Root workspace - coverage of the runfiles test
+        run: |
+          bazel --max_idle_secs=60 coverage --combined_report=lcov --instrumentation_filter='^//dart[/:]' --instrument_test_targets=false //dart/runfiles/...
+          cp bazel-out/_coverage/_coverage_report.dat "$RUNNER_TEMP/ruleset_coverage_report.dat"
+          bazel --max_idle_secs=60 shutdown
+      - name: e2e/coverage - ruleset report check
+        working-directory: e2e/coverage
+        run: bazel --max_idle_secs=60 run //:lcov_check_ruleset -- "$RUNNER_TEMP/ruleset_coverage_report.dat"
+  # Workspaces that are expected to fail at module resolution.
+  # Validates that rules_dart produces the correct error messages. The analyzer
+  # red path (`e2e/analysis_failure`) runs on both operating systems: Linux in
+  # this job (`expected-failure`) and macOS in `mac-smoke`.
+  expected-failure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: pub_lock_conflict — expect version conflict error
+        run: cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/pub_lock_conflict
+      # A hosted lock entry without a sha256 fails module resolution: the
+      # extension reports both the lock-level error and the spoke-level one.
+      - name: pub_lock_unpinned — expect a missing sha256 to fail resolution
+        run: cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/pub_lock_unpinned
+      # One runner run per remaining pub fetch path. Each red workspace below
+      # instantiates a single fetch rule with unpinned coordinates through a
+      # test extension, so the failure carries that fetch site's own message:
+      # deleting the site's check turns its step red instead of surfacing a
+      # neighbouring site's message. Each fails before any download, so the
+      # steps stay cheap.
+      - name: pub_package_unpinned — expect an explicit package without sha256 to fail its fetch
+        run: cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/pub_package_unpinned
+      - name: pub_spoke_blank_sha — expect a blank sha256 to fail the spoke fetch
+        run: cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/pub_spoke_blank_sha
+      - name: pub_spoke_malformed_sha — expect a malformed sha256 to fail the spoke fetch
+        run: cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/pub_spoke_malformed_sha
+      - name: pub_git_unpinned_ref — expect a branch resolved-ref to fail the git fetch
+        run: cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/pub_git_unpinned_ref
+      - name: pub_scc_unpinned_member — expect an unpinned merged-cycle member to fail its fetch
+        run: cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/pub_scc_unpinned_member
+      # Each `e2e/digest_mismatch` case fetches the committed fixture over a
+      # local file:// URL through `pinned_download` with a different digest
+      # shape. Malformed shapes fail before any bytes move with the helper's
+      # own message (which names the URL, so only its stable half is grepped);
+      # the wrong digest fails on Bazel's checksum comparison; the correct
+      # digest succeeds. No network is involved.
+      - name: digest_mismatch — expect an empty digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_empty//... 2>&1); then
+            echo "ERROR: build should have failed with an empty-digest error"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "".' || fail_with_output "empty-digest error"
+          echo "OK: expected empty-digest error detected"
+      - name: digest_mismatch — expect a short digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_short//... 2>&1); then
+            echo "ERROR: build should have failed with a short-digest error"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a".' || fail_with_output "short-digest error"
+          echo "OK: expected short-digest error detected"
+      - name: digest_mismatch — expect an uppercase digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_upper//... 2>&1); then
+            echo "ERROR: build should have failed with an uppercase-digest error"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "86BEA300D6701FB6C1FDDC33B21235231D108B44A9793DB9DCD48940FA46A6A6".' || fail_with_output "uppercase-digest error"
+          echo "OK: expected uppercase-digest error detected"
+      - name: digest_mismatch — expect an SRI digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_sri//... 2>&1); then
+            echo "ERROR: build should have failed with an SRI-digest error"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "sha256-hr6jANZwH7bB/dwzshI1Ix0Qi0SpeT253NSJQPpGpqY=".' || fail_with_output "SRI-digest error"
+          echo "OK: expected SRI-digest error detected"
+      - name: digest_mismatch — expect a conditional blank digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_conditional//... 2>&1); then
+            echo "ERROR: build should have failed with a conditional-blank-digest error"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "".' || fail_with_output "conditional-blank-digest error"
+          echo "OK: expected conditional-blank-digest error detected"
+      - name: digest_mismatch — expect a wrong digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_wrong//... 2>&1); then
+            echo "ERROR: build should have failed with a checksum-mismatch error"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          # Only the wanted digest is grepped: the actual digest depends on
+          # the fixture bytes, which must survive every checkout unnormalized.
+          printf '%s\n' "$out" | grep -F -q 'Checksum was' || fail_with_output "checksum-mismatch error"
+          printf '%s\n' "$out" | grep -F -q 'but wanted 86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a7' || fail_with_output "wanted-digest error"
+          echo "OK: expected checksum-mismatch error detected"
+      - name: digest_mismatch — a correct digest on the same fixture succeeds
+        working-directory: e2e/digest_mismatch
+        run: |
+          if out=$(bazel build @good//... 2>&1); then
+            echo "OK: correct digest fetched"
+          else
+            echo "ERROR: correct digest should have fetched; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+      # A modular kernel compile rejects an import shape where a library or
+      # entry source reaches a dependency-defined source through a relative
+      # or multi-root URI. Each red case fails before the compiler runs with
+      # the refusal naming the `package:` URI to use, under the persistent
+      # worker and under the local strategy; the `package:` shape of the
+      # same edges still compiles. See e2e/kernel_dep_shape/README.md.
+      - name: kernel_dep_shape — expect a multi-root import of a dep source to fail the library
+        working-directory: e2e/kernel_dep_shape
+        run: |
+          if out=$(bazel build //pkg:bad_lib_app 2>&1); then
+            echo "ERROR: build should have failed with the import-shape refusal"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "cannot compile package:pkg/a.dart: import 'org-dartlang-root:///dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+          if out=$(bazel build //pkg:bad_lib_app --spawn_strategy=standalone 2>&1); then
+            echo "ERROR: local-strategy build should have failed with the import-shape refusal"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+          echo "OK: expected import-shape refusal detected"
+      - name: kernel_dep_shape — expect a relative import of a dep source to fail the entry
+        working-directory: e2e/kernel_dep_shape
+        run: |
+          if out=$(bazel build //pkg:bad_bin 2>&1); then
+            echo "ERROR: build should have failed with the import-shape refusal"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "cannot compile org-dartlang-root:///pkg/bin/main.dart: import '../../dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+          if out=$(bazel build //pkg:bad_bin --spawn_strategy=standalone 2>&1); then
+            echo "ERROR: local-strategy build should have failed with the import-shape refusal"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+          echo "OK: expected import-shape refusal detected"
+      - name: "kernel_dep_shape — the package: shape of the same edges succeeds"
+        working-directory: e2e/kernel_dep_shape
+        run: |
+          bazel build //pkg:good_app || exit 1
+          echo "OK: package: import of the dep source compiled"
+      # Strict layering: a target may import only the packages its own `deps`
+      # provide. `//:user` imports a package only `//:mid` depends on, so the
+      # default build fails naming the target, the file and the package; the
+      # `dart_layering_check` feature turns the check off, and adding the
+      # package's target to `deps` satisfies it. See e2e/layering_check/README.md.
+      - name: layering_check — expect a transitive-only import to fail, and the opt-out and the direct dep to pass
+        working-directory: e2e/layering_check
+        run: |
+          if out=$(bazel build //:user 2>&1); then
+            echo "ERROR: build should have failed with the layering refusal"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "//:user: user.dart imports 'package:leaf/leaf.dart', but package 'leaf' is not a direct dependency of //:user"
+          if out=$(bazel build //:conditional 2>&1); then
+            echo "ERROR: a conditional alternative should have been checked"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "package 'leaf' is not a direct dependency of //:conditional"
+          if ! out=$(bazel build --features=-dart_layering_check //:user 2>&1); then
+            echo "ERROR: --features=-dart_layering_check should turn the check off"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          if ! out=$(bazel build //:user_ok //:facade_user //:conditional_ok 2>&1); then
+            echo "ERROR: a direct dependency or a facade should satisfy the check"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          echo "OK: layering refusal detected, opt-out and direct deps build"
+      # An SDK version outside the pinned toolchain table must fail instead
+      # of downloading an SDK release with no recorded checksum.
+      - name: sdk_unknown_version — expect an unpinned SDK version to fail resolution
+        run: cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/sdk_unknown_version
+      # `e2e/pub_symlink` exercises the tar header scan
+      # (`dart/pub/private/pub_archive_scan.bzl`) over a local file://
+      # registry plus a live git remote. The step points the hosted locks'
+      # FIXTURES_ROOT placeholder at the fixtures directory and the git
+      # lock's placeholder resolved-ref at a scratch remote whose package
+      # smuggles a symlink above its root, then expects: the clean hub to
+      # stay green, the git fetch to fail on the escaping symlink, and each
+      # hostile hosted hub to fail its fetch before extraction with the
+      # refusal naming package, entry path, entry kind and raw target (entry
+      # paths that escape the root themselves fail with the path diagnostic
+      # naming package and path instead). The fixture lock commits the clean
+      # hub's planning facts, so these runs exercise planning on the hit path
+      # while every hostile spoke still scans its own archive and refuses: no
+      # planning verdict ever reaches a spoke, so no lockfile entry can weaken
+      # the spoke scan. All locks are restored on exit.
+      - name: pub_symlink — header scan stays green on clean packages, refuses hostile entries
+        working-directory: e2e/pub_symlink
+        run: |
+          trap 'git checkout -- pubspec.lock pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock pubspec.evil_path_abs.lock pubspec.evil_path_dotdot.lock' EXIT
+          rm -rf /tmp/pub_symlink_evil /tmp/pub_symlink_outside.txt
+          mkdir -p /tmp/pub_symlink_evil/evil_pkg/lib
+          ( cd /tmp/pub_symlink_evil && git init -q . && git config user.email t@t.t && git config user.name t && printf 'name: evil_pkg\nversion: 1.0.0\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n' > evil_pkg/pubspec.yaml && echo 'OUTSIDE-SECRET' > /tmp/pub_symlink_outside.txt && ln -s ../../outside.txt evil_pkg/lib/evil.dart && printf 'String get ok => "ok";\n' > evil_pkg/lib/ok.dart && git add -A && git commit -qm init )
+          ref=$(git -C /tmp/pub_symlink_evil rev-parse HEAD)
+          sed -i "s/0000000000000000000000000000000000000000/$ref/" pubspec.lock
+          fixtures="$PWD/fixtures"
+          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock pubspec.evil_path_abs.lock pubspec.evil_path_dotdot.lock
+          bazel build //:ok_app
+          echo "OK: clean hosted packages with an in-package symlink stay green"
+          grep -E -q 'pub\.scc\.v2\.[0-9a-f]{24}/hosted/ok_clean/' MODULE.bazel.lock
+          grep -E -q 'pub\.scc\.v2\.[0-9a-f]{24}/hosted/ok_inlink/' MODULE.bazel.lock
+          test "$(grep -c -F 'pub.scc.v1/' MODULE.bazel.lock)" = 0
+          echo "OK: planning runs on the committed facts while hostile spokes still refuse"
+          if bazel build //:app 2>/dev/null; then
+            echo "ERROR: build should have failed on the escaping symlink"
+            exit 1
+          fi
+          bazel build //:app 2>&1 | grep -F -q 'pub package "evil_pkg": symlink "lib/evil.dart" escapes the package'
+          echo "OK: expected git symlink-escape error detected"
+          if bazel build //:evil_hard_out_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the escaping hard-link"
+            exit 1
+          fi
+          bazel build //:evil_hard_out_app 2>&1 | grep -F -q 'pub package "evil_hard_out": hard-link "lib/evil.dart" points at "../../outside.txt"'
+          echo "OK: expected hard-link error detected"
+          if bazel build //:evil_hard_in_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the in-package hard-link"
+            exit 1
+          fi
+          bazel build //:evil_hard_in_app 2>&1 | grep -F -q 'pub package "evil_hard_in": hard-link "lib/evil.dart" points at "lib/ok.dart"'
+          echo "OK: expected in-package hard-link error detected"
+          if bazel build //:evil_abs_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the absolute symlink target"
+            exit 1
+          fi
+          bazel build //:evil_abs_app 2>&1 | grep -F -q 'pub package "evil_abs": symlink "lib/evil.dart" escapes the package (points at "/etc/passwd")'
+          echo "OK: expected absolute-symlink error detected"
+          if bazel build //:evil_esc_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the escaping symlink"
+            exit 1
+          fi
+          bazel build //:evil_esc_app 2>&1 | grep -F -q 'pub package "evil_esc": symlink "lib/evil.dart" escapes the package (points at "../../outside.txt")'
+          echo "OK: expected hosted symlink-escape error detected"
+          if bazel build //:evil_path_abs_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the absolute entry path"
+            exit 1
+          fi
+          bazel build //:evil_path_abs_app 2>&1 | grep -F -q 'pub package "evil_path_abs": entry "/abs.dart" escapes the package'
+          echo "OK: expected absolute-path error detected"
+          if bazel build //:evil_path_dotdot_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the climbing entry path"
+            exit 1
+          fi
+          bazel build //:evil_path_dotdot_app 2>&1 | grep -F -q 'pub package "evil_path_dotdot": entry "../outside.dart" escapes the package'
+          echo "OK: expected climbing-path error detected"
+      # `e2e/pub_symlink/cycle` is a nested red-by-design workspace: the
+      # two packages form a dependency cycle, so planning merges them — but
+      # cycle_b_evil's tarball carries a hard-link entry, and the header
+      # scan refuses it while the plan fetches the member archives. The step
+      # points the lock's FIXTURES_ROOT placeholder at the parent
+      # fixtures directory, expects the planning failure, and restores the
+      # lock on exit.
+      - name: pub_symlink_scc — expect a hostile cycle member to fail planning
+        working-directory: e2e/pub_symlink/cycle
+        run: |
+          trap 'git checkout -- pubspec.cycle.lock' EXIT
+          fixtures="$(cd ../fixtures && pwd)"
+          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.cycle.lock
+          if bazel build //:app 2>/dev/null; then
+            echo "ERROR: build should have failed on the hostile cycle member"
+            exit 1
+          fi
+          bazel build //:app 2>&1 | grep -F -q 'pub package "cycle_b_evil": hard-link "lib/evil.dart" points at "../outside.txt"'
+          echo "OK: expected cycle hard-link error detected"
+      # `e2e/pub_lock_scc/spoke_facts` is a nested green workspace with a
+      # file:// fixture registry: `spoke_a` depends on `spoke_b`, while
+      # `spoke_b`, `spoke_c` and `spoke_d` have no dependencies. The step
+      # points the pubspec lock's FIXTURES_ROOT placeholder at the fixtures
+      # directory, builds the app green so the lock records the real
+      # cycle-planning facts, then corrupts the recorded facts for two
+      # spokes (`spoke_a`'s fact drops its edge to `spoke_b`, `spoke_d`'s
+      # fact gains a fake edge to `spoke_c`) and reorders the pubspec lock
+      # entries so the extension evaluates again and reads the facts back.
+      # Planning then leaves spokes whose fetches must fail naming the
+      # package with the planned and the real names: a dropped edge fails
+      # here instead of failing analysis with a bare target cycle, and a
+      # fake edge fails instead of passing silently. The step finishes with
+      # the documented recovery (drop the pub extension's `facts` and
+      # `moduleExtensions` entries, delete the output-base lock) and builds
+      # the app green again. The pubspec lock and the lockfile are restored
+      # on exit. On the base commit the corrupted facts heal when the
+      # extension re-evaluates, so the red builds pass and the step fails
+      # there.
+      - name: pub_lock_scc_spoke_facts — expect wrong planning facts to fail the spoke fetches
+        working-directory: e2e/pub_lock_scc/spoke_facts
+        run: |
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          trap 'git checkout -- pubspec.spoke.lock MODULE.bazel.lock' EXIT
+          fixtures="$(cd ../fixtures && pwd)"
+          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.spoke.lock
+          bazel build //:app
+          echo "OK: app builds green with the real facts recorded"
+          python3 - <<'EOF'
+          import json, re
+          lock = json.load(open('MODULE.bazel.lock'))
+          ext = [k for k, v in lock['facts'].items() if any('/spoke_' in f for f in v)]
+          assert len(ext) == 1, ext
+          facts = lock['facts'][ext[0]]
+          for name, want in (('spoke_a', []), ('spoke_d', ['spoke_c'])):
+              keys = [k for k in facts if '/%s/' % name in k]
+              assert len(keys) == 1, (name, keys)
+              facts[keys[0]] = want
+          json.dump(lock, open('MODULE.bazel.lock', 'w'), indent=2, sort_keys=True)
+          open('MODULE.bazel.lock', 'a').write('\n')
+          text = open('pubspec.spoke.lock').read()
+          head, sep, rest = text.partition('packages:\n')
+          assert sep, 'packages block not found'
+          pkg_part, tail_sep, tail = rest.partition('\nsdks:')
+          assert tail_sep, 'sdks block not found'
+          stanzas = re.split(r'(?m)^(  spoke_[a-d]:)$', pkg_part)
+          assert len(stanzas) == 9, len(stanzas)
+          # The partition above consumed the newline ending the last stanza
+          # body, so normalize every body to exactly one trailing newline.
+          pairs = [(stanzas[i], stanzas[i + 1].rstrip('\n') + '\n') for i in range(1, 8, 2)]
+          pairs.reverse()
+          open('pubspec.spoke.lock', 'w').write(head + sep + ''.join(h + b for h, b in pairs) + '\n' + 'sdks:' + tail)
+          print('facts wronged and pubspec entries reordered')
+          EOF
+          if out=$(bazel build @spokes//:spoke_a 2>&1); then
+            echo "ERROR: build should have failed on the dropped planned edge"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q 'package "spoke_a" lists different dependencies than cycle planning used (planned [], pubspec [spoke_b])' || fail_with_output "dropped-edge error"
+          echo "OK: expected dropped-edge spoke failure detected"
+          if out=$(bazel build @spokes//:spoke_d 2>&1); then
+            echo "ERROR: build should have failed on the fake planned edge"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q 'package "spoke_d" lists different dependencies than cycle planning used (planned [spoke_c], pubspec [])' || fail_with_output "fake-edge error"
+          echo "OK: expected fake-edge spoke failure detected"
+          python3 - <<'EOF'
+          import json
+          lock = json.load(open('MODULE.bazel.lock'))
+          for section in ('facts', 'moduleExtensions'):
+              for key in [key for key in lock[section] if key.endswith('%pub')]:
+                  if 'spokes__' in json.dumps(lock[section][key]) or '/spoke_' in json.dumps(lock[section][key]):
+                      del lock[section][key]
+          json.dump(lock, open('MODULE.bazel.lock', 'w'), indent=2, sort_keys=True)
+          open('MODULE.bazel.lock', 'a').write('\n')
+          EOF
+          # The output-base copy exists only if a previous evaluation wrote
+          # one; the red builds above fail before writing it on a clean
+          # runner, so the removal must not fail when it is absent.
+          rm -f "$(bazel info output_base)/MODULE.bazel.lock"
+          bazel build //:app
+          echo "OK: documented recovery rebuilds green with the real names"
+      # `e2e/pub_scanner_intruder` pins the scanner's SDK address: the
+      # `toolchain_intruder` module tags `dart.toolchain` and is listed ahead
+      # of rules_dart, so resolving the SDK by module order would fetch it
+      # from a repository that does not exist. The step builds the app (the
+      # toolchain works in an intruder graph) and the scanner itself (the
+      # scanner repository materializes from the mapping-based SDK address).
+      - name: pub_scanner_intruder — scanner SDK resolution survives an intruder module
+        working-directory: e2e/pub_scanner_intruder
+        run: |
+          bazel build //:hello
+          echo "OK: toolchain build stays green with an intruder module ahead of rules_dart"
+          bazel build @dart_pub_scanner//:scanner
+          echo "OK: scanner repository materializes with an intruder module ahead of rules_dart"
+      # A link hook that refuses the program's recorded uses fails the build,
+      # and its own message reaches the user.
+      - name: link_hook — expect a hook's refusal to fail the build, with its message
+        working-directory: e2e/link_hook
+        run: |
+          if bazel build //:dynamic_app_assets 2>/dev/null; then
+            echo "ERROR: build should have failed in glyphs' link hook"
+            exit 1
+          fi
+          bazel build //:dynamic_app_assets 2>&1 | grep -q "a Glyph is constructed at run time"
+          echo "OK: link hook failure reported"
+      # Each target in e2e/analysis_failure is expected red under the
+      # `dart_analyze` aspect, which its `.bazelrc` applies under `bazel test`.
+      # `check` builds one, expects the build to fail, and greps its output
+      # for the one diagnostic only that target produces.
+      - name: analysis_failure — expect analyzer diagnostics to fail the build, at workspace paths
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //:bad_lib 2>/dev/null; then
+            echo "ERROR: build should have failed with analyzer diagnostics"
+            exit 1
+          fi
+          out=$(bazel test //:bad_lib 2>&1 || true)
+          echo "$out" | grep -q "unused_local_variable"
+          # Named as the user's file, not as the staged copy under `src/`.
+          echo "$out" | grep -q -- "- lib/bad.dart:4:7 -"
+          echo "OK: expected analyzer failure detected, at the workspace path"
+      # The baseline fixture package: a group at its ceiling passes in both
+      # analysis modes, while a group above its ceiling and an unkeyed group
+      # fail naming the code and the observed/ceiling counts.
+      - name: analysis_failure — expect a baselined target to pass in both analysis modes
+        working-directory: e2e/analysis_failure
+        run: |
+          for mode in "" "--@rules_dart//dart:analyzer_summaries=false"; do
+            args=()
+            [ -n "$mode" ] && args+=("$mode")
+            bazel test "${args[@]}" //baseline:baselined_lib
+          done
+          echo "OK: baselined target passed in both analysis modes"
+      - name: analysis_failure — expect an over-baseline target to fail in both analysis modes
+        working-directory: e2e/analysis_failure
+        run: |
+          for mode in "" "--@rules_dart//dart:analyzer_summaries=false"; do
+            args=()
+            [ -n "$mode" ] && args+=("$mode")
+            if bazel test "${args[@]}" //baseline:over_baseline_lib 2>/dev/null; then
+              echo "ERROR: build should have failed above the baseline ceiling"
+              exit 1
+            fi
+            out=$(bazel test "${args[@]}" //baseline:over_baseline_lib 2>&1 || true)
+            echo "$out" | grep -q "baseline/lib/over_baseline.dart"
+            echo "$out" | grep -q "avoid_print"
+            echo "$out" | grep -q "observed 3, ceiling 2"
+          done
+          echo "OK: over-ceiling group failed with its observed count and ceiling"
+      - name: analysis_failure — expect an unkeyed target to fail in both analysis modes
+        working-directory: e2e/analysis_failure
+        run: |
+          for mode in "" "--@rules_dart//dart:analyzer_summaries=false"; do
+            args=()
+            [ -n "$mode" ] && args+=("$mode")
+            if bazel test "${args[@]}" //baseline:unbaselined_lib 2>/dev/null; then
+              echo "ERROR: build should have failed on an unkeyed diagnostic"
+              exit 1
+            fi
+            out=$(bazel test "${args[@]}" //baseline:unbaselined_lib 2>&1 || true)
+            echo "$out" | grep -q "baseline/lib/unbaselined.dart"
+            echo "$out" | grep -q "avoid_print"
+            echo "$out" | grep -q "observed 1, ceiling 0"
+          done
+          echo "OK: unkeyed group failed with its observed count and ceiling"
+      - name: analysis_failure — expect one target's baseline entry to leave another's action key alone
+        working-directory: e2e/analysis_failure
+        run: |
+          aquery_text() {
+            bazel aquery 'mnemonic("DartAnalyze", //baseline:cache_a)' --output=text 2>/dev/null
+          }
+          backup="$(mktemp)"
+          trap 'cp "$backup" baseline/baseline.json; rm -f "$backup"' EXIT
+          cp baseline/baseline.json "$backup"
+          aq_before=$(aquery_text)
+          echo "$aq_before" | grep -q "cache_a.dart_analyze.baseline.json"
+          if echo "$aq_before" | grep -q "baseline/baseline.json"; then
+            echo "ERROR: whole baseline leaked into cache_a's DartAnalyze inputs"
+            exit 1
+          fi
+          before=$(echo "$aq_before" | awk '/ActionKey:/ {print $2; exit}')
+          python3 - <<'PY'
+          import json
+          path = 'baseline/baseline.json'
+          with open(path, encoding='utf-8') as f:
+              data = json.load(f)
+          data['baseline/lib/cache_b.dart']['avoid_print'] = 3
+          with open(path, 'w', encoding='utf-8') as f:
+              json.dump(data, f, indent=2)
+              f.write('\n')
+          PY
+          after=$(aquery_text | awk '/ActionKey:/ {print $2; exit}')
+          if [ -z "$before" ] || [ "$before" != "$after" ]; then
+            echo "ERROR: cache_a's DartAnalyze action key moved with cache_b's entry"
+            echo "before=$before after=$after"
+            exit 1
+          fi
+          echo "OK: cache_a's DartAnalyze action key is unchanged"
+      - name: analysis_failure — expect a malformed baseline config to fail naming config, file, and entry
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel build //baseline:bad_baseline_config 2>/dev/null; then
+            echo "ERROR: build should have failed on a malformed baseline"
+            exit 1
+          fi
+          out=$(bazel build //baseline:bad_baseline_config 2>&1 || true)
+          echo "$out" | grep -q "//baseline:bad_baseline_config"
+          echo "$out" | grep -q "baseline/bad_baseline.json"
+          echo "$out" | grep -q "avoid_print"
+          echo "OK: malformed baseline config failed naming config, file, and entry"
+      - name: analysis_failure — expect a binary's entrypoint to be analyzed too
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //:bad_bin 2>/dev/null; then
+            echo "ERROR: build should have failed with analyzer diagnostics"
+            exit 1
+          fi
+          bazel test //:bad_bin 2>&1 | grep -q "unused_import"
+          echo "OK: expected analyzer failure detected"
+      # A `flutter_library` lists its files in `DefaultInfo` and leaves
+      # `DartAnalyzableInfo.srcs` empty; they are its own files all the same.
+      - name: analysis_failure — expect a flutter_library-shaped target to be analyzed
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //flutter_shaped 2>/dev/null; then
+            echo "ERROR: build should have failed with unused_element"
+            exit 1
+          fi
+          bazel test //flutter_shaped 2>&1 | grep -q "unused_element"
+          echo "OK: package-only target analyzed"
+      - name: analysis_failure — expect a bundle-shaped target's package sources to be analyzed
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //bundle_shaped 2>/dev/null; then
+            echo "ERROR: build should have failed with unused_element"
+            exit 1
+          fi
+          bazel test //bundle_shaped 2>&1 | grep -q "bundle_shaped/lib/bundle.dart.*unused_element"
+          echo "OK: package sources analyzed though DefaultInfo is a bundle"
+      # Each file is judged by the nearest options file above it, as in the
+      # IDE: `nested/lib/quiet.dart` breaks `nested/`'s `avoid_print`, and
+      # `nested/lib/loud/loud.dart` prints under nearer options that allow it.
+      - name: analysis_failure — expect the nearest options file to govern each file
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //nested 2>/dev/null; then
+            echo "ERROR: build should have failed with avoid_print"
+            exit 1
+          fi
+          out=$(bazel test //nested 2>&1 || true)
+          echo "$out" | grep -q "nested/lib/quiet.dart:5:3 .* avoid_print"
+          if echo "$out" | grep -q "loud.dart"; then
+            echo "ERROR: loud.dart was judged by options other than its nearest"
+            exit 1
+          fi
+          echo "OK: nearest options applied per file"
+      # An `include:` that does not resolve makes the analyzer apply no rules at
+      # all, so without a diagnostic a misconfigured ruleset and a clean
+      # codebase look identical. These two steps pin both halves: a broken
+      # include is reported, and a working one really does bring its lints to
+      # bear. Both are SDK behaviour that nothing else here asserts.
+      - name: analysis_failure — expect an unresolvable ruleset include to fail
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //unresolved_ruleset:clean_lib 2>/dev/null; then
+            echo "ERROR: build should have failed with an unresolved include"
+            exit 1
+          fi
+          bazel test //unresolved_ruleset:clean_lib 2>&1 | grep -q "include_file_not_found"
+          echo "OK: expected unresolved include detected"
+      - name: analysis_failure — expect an included ruleset's lints to be applied
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //vga:double_quoted_lib 2>/dev/null; then
+            echo "ERROR: build should have failed with a very_good_analysis lint"
+            exit 1
+          fi
+          bazel test //vga:double_quoted_lib 2>&1 | grep -q "prefer_single_quotes"
+          echo "OK: included ruleset's lints reached the code"
+      # The layout-gated half: `public_member_api_docs` only fires when the
+      # nearest-pubspec walk roots the file's package at its true lib_root,
+      # which the per-package stub pubspecs staged by `stage_dart_project`
+      # provide. If they go missing this build silently turns green.
+      - name: analysis_failure — expect package-root-gated lints to be applied
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //vga:undocumented_lib 2>/dev/null; then
+            echo "ERROR: build should have failed with public_member_api_docs"
+            exit 1
+          fi
+          bazel test //vga:undocumented_lib 2>&1 | grep -q "public_member_api_docs"
+          echo "OK: package-root-gated lint reached the code"
+      # A ruleset shared by another Bazel module is included from an options
+      # file of this one; the module's own options file cannot govern here.
+      - name: analyze_composition — expect another module's ruleset to apply
+        working-directory: e2e/analyze_composition
+        run: |
+          if bazel test //bad 2>/dev/null; then
+            echo "ERROR: build should have failed with avoid_print"
+            exit 1
+          fi
+          bazel test //bad 2>&1 | grep -q "avoid_print"
+          echo "OK: included ruleset from another module applied"
+      - name: analyze_composition — expect another repository's options to be refused
+        working-directory: e2e/analyze_composition
+        run: |
+          if bazel build //:cross_repo_config 2>/dev/null; then
+            echo "ERROR: build should have refused an options file from another repository"
+            exit 1
+          fi
+          bazel build //:cross_repo_config 2>&1 | grep -q "is in another repository"
+          echo "OK: cross-repository options refused"
+      # The format check's red paths, under the aspect's `dart_format` output
+      # group. The first is the obvious one; the other two exist because
+      # `dart format` treats an unresolvable `include:` as a warning, exits 0,
+      # and silently formats at stock defaults — so a broken options file and a
+      # correctly formatted codebase look identical unless the runner
+      # escalates. These also pin the SDK's warning text, which that escalation
+      # matches on. Each target is tagged `no-dart-analyze`, so the format check
+      # is the only thing that can fail it.
+      - name: analysis_failure — expect a formatting violation to fail
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //fmt 2>/dev/null; then
+            echo "ERROR: build should have failed with a formatting violation"
+            exit 1
+          fi
+          bazel test //fmt 2>&1 | grep -q "Changed fmt/lib/misformatted.dart"
+          echo "OK: expected formatting failure detected, at the workspace path"
+      - name: analysis_failure — expect an unresolvable format ruleset to fail
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //fmt_unresolved 2>/dev/null; then
+            echo "ERROR: build should have failed with an unresolved include"
+            exit 1
+          fi
+          bazel test //fmt_unresolved 2>&1 | grep -q "Failed to resolve package URI"
+          echo "OK: silently-degraded format options rejected"
+      # A relative `include:` of a yaml no target declares. The file exists in
+      # the workspace, so a check that read outside its staged project — as an
+      # unsandboxed action could — would go green or fail differently. Both
+      # checks must fail on the unreadable include, naming it at its workspace
+      # path, under the sandbox and without one alike.
+      - name: analysis_failure — expect an undeclared relative include to fail both checks
+        working-directory: e2e/analysis_failure
+        run: |
+          for strategy in "" "--spawn_strategy=standalone"; do
+            for group in dart_analyze dart_format; do
+              args=()
+              [ -n "$strategy" ] && args+=("$strategy")
+              args+=("--output_groups=-dart_analyze,-dart_format,+$group")
+              if bazel test "${args[@]}" //undeclared_include 2>/dev/null; then
+                echo "ERROR: $group [$strategy] should have failed on the undeclared include"
+                exit 1
+              fi
+              out=$(bazel test "${args[@]}" //undeclared_include 2>&1 || true)
+              case $group in
+                dart_analyze) echo "$out" | grep -q "The URI 'shared.yaml' included in 'undeclared_include/analysis_options.yaml' can't be found" ;;
+                dart_format) echo "$out" | grep -q "Couldn't read file \"undeclared_include/shared.yaml\"" ;;
+              esac
+            done
+          done
+          echo "OK: undeclared include refused by both checks, under every strategy"
+      # The format check runs only when its output group is asked for: with
+      # `dart_format` removed from the groups requested, the
+      # misformatted target builds green.
+      - name: analysis_failure — expect the format check to run only when requested
+        working-directory: e2e/analysis_failure
+        run: |
+          bazel build --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,-dart_format //fmt
+          echo "OK: format check skipped when its output group is not requested"
+      # A `manual` target is out of `//...`'s reach; `dart_analysis_test` names
+      # it and must fail to build on its violation, whatever output groups the
+      # command line asks for.
+      - name: analysis_failure — expect dart_analysis_test to fail on a manual target's violation
+        working-directory: e2e/analysis_failure
+        run: |
+          flags="--output_groups=-dart_analyze,-dart_format"
+          if bazel test $flags //manual:manual_analysis_test 2>/dev/null; then
+            echo "ERROR: build should have failed with dead_code"
+            exit 1
+          fi
+          bazel test $flags //manual:manual_analysis_test 2>&1 | grep -q "manual/lib/manual_bad.dart:4:3 - Dead code"
+          echo "OK: dart_analysis_test checked the manual target"
+      # A `manual` target is out of `//...`'s reach; the lint baseline fixture
+      # asserts that an unbaselined diagnostic fails the build under the root
+      # analysis options in both analysis modes.
+      - name: lint_baseline_fixture — expect an unbaselined diagnostic to fail
+        run: |
+          for mode in "" "--//dart:analyzer_summaries=false"; do
+            args=()
+            [ -n "$mode" ] && args+=("$mode")
+            rc=0
+            out=$(bazel test "${args[@]}" //dart/tests/lint_baseline_fixture:unbaselined_lib 2>&1) || rc=$?
+            if [ "$rc" -eq 0 ] || [ "$rc" -eq 4 ]; then
+              echo "ERROR: build should have failed on an unbaselined diagnostic (exit $rc)"
+              printf '%s\n' "$out"
+              exit 1
+            fi
+            grep -F -q "dart/tests/lint_baseline_fixture/lib/unbaselined.dart" <<<"$out"
+            grep -F -q "avoid_print" <<<"$out"
+            grep -F -q "observed 1, ceiling 0" <<<"$out"
+          done
+          echo "OK: expected unbaselined diagnostic detected"
+      # A hung test is diagnosed from what it printed before Bazel killed it, so
+      # that output has to be in test.log rather than held back by the launcher.
+      - name: dart_test — expect a timed-out test's output in its log
+        working-directory: e2e/dart_test
+        run: |
+          if bazel test --test_timeout=5 //:hangs_until_killed_test; then
+            echo "ERROR: test should have timed out"
+            exit 1
+          fi
+          log=bazel-testlogs/hangs_until_killed_test/test.log
+          grep -q "Test timed out" "$log"
+          grep -q "printed before hanging" "$log"
+          grep -q "written to stderr before hanging" "$log"
+          echo "OK: timed-out test's output reached its log"
+      # The hermeticity canary reads an undeclared host file: it builds with
+      # the default sandbox (where `/` stays readable) and must fail under
+      # the strict hermetic Linux sandbox with the minimal mount set. The
+      # strict build uses a distinct output base so the default build's
+      # cached success cannot satisfy it: Bazel keys the action on declared
+      # inputs only, so a shared base would make this self-test useless.
+      # The job-start step enables user namespaces so Bazel keeps
+      # `linux-sandbox`; keep `--output_base` under `RUNNER_TEMP` (not `/tmp`,
+      # which `-w /tmp` bind-mounts over before `pivot_root`).
+      - name: e2e/hermetic_canary — expect the undeclared /usr/bin/env read to fail under the strict sandbox
+        working-directory: e2e/hermetic_canary
+        run: |
+          bazel build //:canary || { echo "ERROR: default build should succeed"; exit 1; }
+          echo "OK: default build succeeded"
+          if out=$(bazel --output_base="$RUNNER_TEMP/hermetic_canary_strict" build //:canary --experimental_use_hermetic_linux_sandbox --sandbox_add_mount_pair=/lib64 --sandbox_add_mount_pair=/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/etc/ld.so.cache 2>&1); then
+            echo "ERROR: strict build should have failed"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "/usr/bin/env" || { echo "ERROR: strict output must name /usr/bin/env"; printf '%s\n' "$out"; exit 1; }
+          echo "OK: strict build failed naming /usr/bin/env"
+  # `dart compile kernel` rejects `--enable-asserts`, so dbg-mode flags are
+  # chosen per compile mode. hello_world builds all four dart_binary modes;
+  # dart_test exercises the kernel test path end-to-end.
+  dbg-mode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: hello_world — build all compile modes under -c dbg
+        working-directory: e2e/hello_world
+        run: bazel build -c dbg //...
+      - name: dart_test — run tests under -c dbg
+        working-directory: e2e/dart_test
+        run: bazel test -c dbg --test_output=errors //...
+  reproducibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: e2e/repro_canary — verify non-deterministic outputs differ across distinct output bases
+        working-directory: e2e/repro_canary
+        run: |
+          trap 'bazel "--output_base=${RUNNER_TEMP}/repro_canary_a" shutdown; bazel "--output_base=${RUNNER_TEMP}/repro_canary_b" shutdown' EXIT
+          bazel "--output_base=${RUNNER_TEMP}/repro_canary_a" build //:canary
+          sha_a=$(sha256sum bazel-bin/canary | awk '{print $1}')
+          bazel "--output_base=${RUNNER_TEMP}/repro_canary_b" build //:canary
+          sha_b=$(sha256sum bazel-bin/canary | awk '{print $1}')
+          if [ -z "$sha_a" ] || [ -z "$sha_b" ]; then
+            echo "ERROR: e2e/repro_canary sha256sum missing or empty (a='$sha_a', b='$sha_b')"
+            exit 1
+          fi
+          if [ "$sha_a" = "$sha_b" ]; then
+            echo "ERROR: e2e/repro_canary outputs are identical ($sha_a); expected non-deterministic builds"
+            exit 1
+          fi
+          echo "OK: e2e/repro_canary outputs differ across distinct output bases ($sha_a != $sha_b)"
+      - name: Verify repository contents cache reproducibility
+        working-directory: tools
+        run: |
+          trap 'bazel --max_idle_secs=60 shutdown' EXIT
+          bazel --max_idle_secs=60 run //repo_contents_cache:check -- .. \
+            dart_linux-x64 \
+            dart_linux-x64_cross_linux-arm64 \
+            dart_toolchains \
+            dart_pub_scanner \
+            ext_pub_deps \
+            ext_pub_deps__args
+          bazel --max_idle_secs=60 run //repo_contents_cache:check -- .. --scanner
+          bazel --max_idle_secs=60 run //repo_contents_cache:check -- ../e2e/pub_lock_scc \
+            pub_deps \
+            dart_pub__scc__dio__dio_web_adapter \
+            very_good_analysis
+          bazel --max_idle_secs=60 run //repo_contents_cache:check -- ../e2e/pub_lock_git \
+            fmtpkg \
+            pub_deps \
+            --probe probe
+  hermetic-strict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      # Default strategy selection in the root workspace must pick
+      # `linux-sandbox`: an uncached sandboxed test run records no
+      # `processwrapper-sandbox` spawn and at least one `linux-sandbox` spawn.
+      - name: Prove linux-sandbox runs root-workspace actions
+        run: |
+          base="${RUNNER_TEMP}/linux_sandbox_proof"
+          bep="${RUNNER_TEMP}/linux_sandbox_proof.json"
+          trap 'bazel "--output_base=$base" shutdown' EXIT
+          bazel "--output_base=$base" test \
+            --disk_cache= \
+            --nocache_test_results \
+            --build_event_json_file="$bep" \
+            //dart/tests/ci_linux_sandbox_guard:ci_linux_sandbox_guard_unit_test
+          count() {
+            jq -s --arg n "$1" '[.[].buildMetrics.actionSummary.runnerCount[]? | select(.name == $n) | .count] | add // 0' "$bep"
+          }
+          linux=$(count linux-sandbox)
+          wrapper=$(count processwrapper-sandbox)
+          echo "linux-sandbox=$linux processwrapper-sandbox=$wrapper"
+          if [ "$wrapper" -ne 0 ] || [ "$linux" -lt 1 ]; then
+            echo "ERROR: expected processwrapper-sandbox == 0 and linux-sandbox >= 1"
+            exit 1
+          fi
+      - name: Create blocked-tool shims
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          mkdir -p "$SHIM_DIR"
+          for tool in curl python3 find cp tar unzip; do
+            {
+              echo '#!/bin/sh'
+              echo "echo \"$tool: blocked by hermetic-strict\" >&2"
+              echo 'exit 1'
+            } > "$SHIM_DIR/$tool"
+            chmod +x "$SHIM_DIR/$tool"
+          done
+          test ! -e "$SHIM_DIR/git"
+          test -x /usr/bin/git
+          echo "OK: shims ready in $SHIM_DIR"
+      - name: Phase 1 hello_world — build under the strict H1 flags
+        working-directory: e2e/hello_world
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          bazel build //... \
+            --worker_sandboxing \
+            --noworker_multiplex \
+            --experimental_worker_sandbox_hardening \
+            --experimental_worker_strict_flagfiles \
+            --experimental_use_hermetic_linux_sandbox \
+            --sandbox_add_mount_pair=/lib64 \
+            --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/etc/ld.so.cache \
+            --nosandbox_default_allow_network \
+            --sandbox_fake_username \
+            --sandbox_fake_hostname \
+            --experimental_strict_repo_env \
+            --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" \
+            --build_event_json_file="$RUNNER_TEMP/bep_hello_build.json"
+      # A worker Bazel runs non-sandboxed despite the worker sandbox flag escapes
+      # the sandbox this job claims to test. A fresh output base and an empty
+      # disk cache make every worker get created, and --worker_verbose prints
+      # one `Created new [non-]sandboxed ...` line for each.
+      - name: Worker sandbox proof — every worker runs sandboxed
+        working-directory: e2e/hello_world
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          base="${RUNNER_TEMP}/worker_sandbox_proof"
+          out="${RUNNER_TEMP}/worker_sandbox_proof.log"
+          trap 'bazel "--output_base=$base" shutdown' EXIT
+          bazel "--output_base=$base" build //... \
+            --disk_cache= \
+            --worker_verbose \
+            --worker_sandboxing \
+            --noworker_multiplex \
+            --experimental_worker_sandbox_hardening \
+            --experimental_worker_strict_flagfiles \
+            --experimental_use_hermetic_linux_sandbox \
+            --sandbox_add_mount_pair=/lib64 \
+            --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/etc/ld.so.cache \
+            --nosandbox_default_allow_network \
+            --sandbox_fake_username \
+            --sandbox_fake_hostname \
+            --experimental_strict_repo_env \
+            --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" > "$out" 2>&1 || {
+            cat "$out"
+            echo "ERROR: the worker sandbox proof build failed"
+            exit 1
+          }
+          if grep -n 'non-sandboxed' "$out"; then
+            echo "ERROR: the lines above show workers running non-sandboxed"
+            exit 1
+          fi
+          if ! grep -q 'Created new sandboxed' "$out"; then
+            echo "ERROR: no sandboxed worker was created; the build was empty or cached"
+            exit 1
+          fi
+      - name: Phase 1 codegen — build resolved targets under the strict H1 flags
+        working-directory: e2e/codegen
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          TARGETS=$(bazel query '//... except attr(generator_function, build_test, //...)') || { echo "ERROR: bazel query failed"; exit 1; }
+          [ -n "$TARGETS" ] || { echo "ERROR: bazel query resolved nothing"; exit 1; }
+          # shellcheck disable=SC2086
+          bazel build $TARGETS \
+            --worker_sandboxing \
+            --noworker_multiplex \
+            --experimental_worker_sandbox_hardening \
+            --experimental_worker_strict_flagfiles \
+            --experimental_use_hermetic_linux_sandbox \
+            --sandbox_add_mount_pair=/lib64 \
+            --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/etc/ld.so.cache \
+            --nosandbox_default_allow_network \
+            --sandbox_fake_username \
+            --sandbox_fake_hostname \
+            --experimental_strict_repo_env \
+            --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" \
+            --skip_incompatible_explicit_targets \
+            --build_event_json_file="$RUNNER_TEMP/bep_codegen_build.json"
+      - name: Phase 2 hello_world — test with the worker H1 flags
+        working-directory: e2e/hello_world
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          TESTS=$(bazel query 'tests(//...)') || { echo "ERROR: bazel query tests failed"; exit 1; }
+          if [ -z "$TESTS" ]; then
+            echo "no test targets in e2e/hello_world, skipping"
+          else
+            bazel test //... \
+              --worker_sandboxing \
+              --noworker_multiplex \
+              --experimental_worker_sandbox_hardening \
+              --experimental_worker_strict_flagfiles \
+              --sandbox_add_mount_pair=/lib64 \
+              --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+              --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+              --sandbox_add_mount_pair=/etc/ld.so.cache \
+              --nosandbox_default_allow_network \
+              --sandbox_fake_username \
+              --sandbox_fake_hostname \
+              --experimental_strict_repo_env \
+              --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" \
+              --build_event_json_file="$RUNNER_TEMP/bep_hello_test.json"
+          fi
+      - name: Phase 2 codegen — test with the worker H1 flags
+        working-directory: e2e/codegen
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          TESTS=$(bazel query 'tests(//...)') || { echo "ERROR: bazel query tests failed"; exit 1; }
+          if [ -z "$TESTS" ]; then
+            echo "no test targets in e2e/codegen, skipping"
+          else
+            bazel test //... \
+              --worker_sandboxing \
+              --noworker_multiplex \
+              --experimental_worker_sandbox_hardening \
+              --experimental_worker_strict_flagfiles \
+              --sandbox_add_mount_pair=/lib64 \
+              --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+              --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+              --sandbox_add_mount_pair=/etc/ld.so.cache \
+              --nosandbox_default_allow_network \
+              --sandbox_fake_username \
+              --sandbox_fake_hostname \
+              --experimental_strict_repo_env \
+              --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" \
+              --skip_incompatible_explicit_targets \
+              --build_event_json_file="$RUNNER_TEMP/bep_codegen_test.json"
+          fi
+      - name: Assert no --action_env in the strict command lines
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          run_temp = os.environ.get("RUNNER_TEMP", "/tmp")
+          paths = [
+              os.path.join(run_temp, "bep_hello_build.json"),
+              os.path.join(run_temp, "bep_codegen_build.json"),
+              os.path.join(run_temp, "bep_hello_test.json"),
+              os.path.join(run_temp, "bep_codegen_test.json"),
+          ]
+
+
+          def bad_action_env(value):
+              """True when one command-line chunk/option is the banned flag."""
+              return value == "--action_env" or value.startswith("--action_env=")
+
+
+          def check_event(path, event, seen):
+              """Collect banned chunks and record a canonical/original event."""
+              scl = event.get("structuredCommandLine")
+              if not isinstance(scl, dict):
+                  return []
+              label = scl.get("commandLineLabel")
+              if label not in ("canonical", "original"):
+                  return []
+              seen.add(label)
+              bad = []
+              for section in scl.get("sections", []):
+                  for chunk in section.get("chunkList", {}).get("chunk", []):
+                      if bad_action_env(chunk):
+                          bad.append(path + ": " + chunk)
+                  for option in section.get("optionList", {}).get("option", []):
+                      for value in (option.get("combinedForm", ""), option.get("optionName", "")):
+                          if bad_action_env(value):
+                              bad.append(path + ": " + value)
+              return bad
+
+
+          bad = []
+          for path in paths:
+              try:
+                  with open(path, encoding="utf-8") as handle:
+                      lines = handle.read().splitlines()
+              except OSError as error:
+                  print("ERROR: cannot read BEP file " + path + ": " + str(error))
+                  sys.exit(1)
+              seen = set()
+              for line in lines:
+                  if not line.strip():
+                      continue
+                  try:
+                      event = json.loads(line)
+                  except ValueError as error:
+                      print("ERROR: malformed BEP line in " + path + ": " + str(error))
+                      sys.exit(1)
+                  bad.extend(check_event(path, event, seen))
+              if not seen:
+                  print("ERROR: " + path + " has no canonical or original structured command line")
+                  sys.exit(1)
+          if bad:
+              print("ERROR: --action_env in BEP command lines:")
+              for entry in bad:
+                  print(entry)
+              sys.exit(1)
+          print("OK: no --action_env in the strict command lines")
+          PY
+  # Flake sweep for pull requests: every non-`manual` test in the root
+  # workspace runs five times, uncached and with no retry, so a test that
+  # passes in some runs and fails in others is reported FLAKY instead of
+  # shipping on a lucky pass. Bazel counts a FLAKY test as passed in its exit
+  # code, so the second step reads each test's status from the build event
+  # protocol and fails on any FLAKY one; exit code 4 (no test ran) fails the
+  # sweep step like any other non-zero exit, with its own message. Pull
+  # requests only: the nightly ten-run sweep, with the cases in random order
+  # and each test's p95 checked against its `size` and `shard_count`, is
+  # `flake-sweep-nightly` in full.yaml. The cache inputs follow the `test`
+  # shards': the build is restored from this job's own disk cache, and
+  # `--nocache_test_results` still runs every test.
+  flake-sweep:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # A cold build of the root workspace plus five runs of every test fits
+    # well inside this; a hung test still fails the job instead of holding
+    # the runner for GitHub's 6 h cap.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && 'flake-sweep-linux' || false }}
+          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          cache-save: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          cache-version: "3"
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+            common --enable_bzlmod=true
+      - name: Sweep every test five times
+        shell: bash
+        run: |
+          set +e
+          bazel test //... \
+            --flaky_test_attempts=1 \
+            --runs_per_test=5 \
+            --runs_per_test_detects_flakes \
+            --nocache_test_results \
+            --test_tag_filters=-manual \
+            --test_output=errors \
+            --build_event_json_file="$RUNNER_TEMP/flake_sweep.json"
+          status=$?
+          set -e
+          if [ "$status" -eq 4 ]; then
+            echo "ERROR: bazel test exited 4: no test ran"
+          fi
+          exit "$status"
+      - name: Fail on any FLAKY test
+        shell: bash
+        run: |
+          python3 - "$RUNNER_TEMP/flake_sweep.json" <<'PY'
+          import json
+          import sys
+
+          flaky = set()
+          summaries = 0
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              for line in handle:
+                  if not line.strip():
+                      continue
+                  event = json.loads(line)
+                  ident = event.get("id", {})
+                  if "testSummary" in ident:
+                      summaries += 1
+                      if event.get("testSummary", {}).get("overallStatus") == "FLAKY":
+                          flaky.add(ident["testSummary"]["label"])
+                  elif "testResult" in ident:
+                      if event.get("testResult", {}).get("status") == "FLAKY":
+                          flaky.add(ident["testResult"]["label"])
+          if not summaries:
+              print("ERROR: no test summaries in the build events")
+              sys.exit(1)
+          for label in sorted(flaky):
+              print("ERROR: FLAKY: " + label)
+          if flaky:
+              sys.exit(1)
+          print("OK: %d tests, none FLAKY over five runs" % summaries)
+          PY
+  pre-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: j178/prek-action@v3.0.1
+        with:
+          # Keep in step with prek in multitool.lock.json
+          prek-version: 0.5.5
+  # The root module's tests under every Bazel incompatible flag it passes
+  # (`--config=strict`, defined in tools/strict.bazelrc). Non-blocking for
+  # the burn-in that ends 2026-11-14: `continue-on-error` keeps a red run from
+  # failing the workflow, and the job is not in `conclusion.needs`. After the
+  # burn-in it is promoted to blocking. Until then it runs in the nightly and
+  # on dispatches (release tags) only: on every push and pull request it held
+  # a runner for 7 to 8 min that nothing waited on.
+  strict:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          # The same cache policy as the `test` shards: `schedule` runs and
+          # `uncached` dispatches restore no disk cache and save nothing.
+          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && 'strict' || false }}
+          repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+            test --test_output=errors
+      - name: Test under --config=strict
+        run: bazel test --config=strict //...
+  # The root module's tests on the latest Bazel release candidate, so an
+  # upstream regression shows up before the release. The lockfile format can
+  # change between releases, so the lockfile is off. Never blocking:
+  # `continue-on-error` keeps a red run from failing the workflow, and the job
+  # is not in `conclusion.needs`, so an upstream Bazel release-candidate
+  # regression never blocks a merge or a release. It runs in the nightly and
+  # on dispatches (release tags) only: on every push and pull request it held
+  # a runner for 11 to 17 min that nothing waited on.
+  last_rc:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    continue-on-error: true
+    env:
+      USE_BAZEL_VERSION: last_rc
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          # Cold on purpose: no disk cache built by another Bazel version.
+          disk-cache: false
+          repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+            test --test_output=errors
+      - name: Bazel version
+        run: bazel version
+      - name: Test on the last release candidate
+        run: bazel test --lockfile_mode=off //...
+  # MODULE.bazel and MODULE.bazel.lock must be what `bazel mod tidy` and a
+  # lockfile refresh write: tidy the module, refresh the lockfile, check that
+  # it is complete, then fail on any difference from the committed files.
+  mod-tidy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: false
+          repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+      - name: Tidy MODULE.bazel
+        run: bazel mod tidy --lockfile_mode=refresh
+      - name: Refresh the lockfile
+        run: bazel build --nobuild --lockfile_mode=update //...
+      - name: Check the lockfile is complete
+        run: bazel build --nobuild --lockfile_mode=error //...
+      - name: Fail on drift
+        run: git diff --exit-code MODULE.bazel MODULE.bazel.lock
+  # For branch protection settings, this job provides a "stable" name that can be used to gate PR merges
+  # on "all matrix jobs were successful".
+  conclusion:
+    needs:
+      - test
+      - e2e-floor
+      - mac-smoke
+      - format-hermeticity
+      - run-home
+      - coverage
+      - expected-failure
+      - dbg-mode
+      - hermetic-strict
+      - pre-commit
+      - reproducibility
+      - mod-tidy
+      - flake-sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    steps:
+      - name: Fail if any job did not succeed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

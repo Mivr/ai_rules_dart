@@ -1,0 +1,9 @@
+# This workspace should FAIL to fetch: `bad_git` is a git package whose
+# resolved-ref is a branch name rather than a full commit SHA, so the fetch
+# site refuses it before cloning.
+#
+#   if bazel build @bad_git//... 2>/dev/null; then
+#     echo "ERROR: build should have failed with an unpinned resolved-ref error"
+#     exit 1
+#   fi
+#   bazel build @bad_git//... 2>&1 | grep -F -q 'pub_lock_git_package "evil_pkg" (1.0.0) requires a full 40-hex resolved-ref, got "main".'

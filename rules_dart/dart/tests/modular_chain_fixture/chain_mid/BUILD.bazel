@@ -1,0 +1,9 @@
+load("//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "chain_mid",
+    package_name = "chain_mid",
+    srcs = ["lib/mid.dart"],
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = ["//dart/tests/modular_chain_fixture/chain_leaf"],
+)

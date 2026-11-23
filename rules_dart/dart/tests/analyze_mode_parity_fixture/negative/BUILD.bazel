@@ -1,0 +1,9 @@
+load("//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "negative",
+    package_name = "parity_negative",
+    srcs = ["lib/negative.dart"],
+    tags = ["manual"],
+    visibility = ["//dart/tests:__subpackages__"],
+)

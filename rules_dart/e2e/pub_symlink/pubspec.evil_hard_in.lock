@@ -1,0 +1,14 @@
+# Local-registry lock for the header-scan e2e: a hard link is refused
+# whatever its target, even one staying inside the package. See
+# pubspec.ok.lock for the url placeholder.
+packages:
+  evil_hard_in:
+    dependency: "direct main"
+    description:
+      name: evil_hard_in
+      sha256: "2cc4f9a401e35f422ca3e20a5c812a0364d07f0f9cda2d8d5a6e56d41ecff74b"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

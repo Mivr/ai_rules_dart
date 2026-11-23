@@ -1,0 +1,129 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:runfiles/runfiles.dart';
+import 'package:test/test.dart';
+
+/// Drives `:cases` through its `dart_test` launcher with the environment Bazel
+/// sets for `--test_filter`, sharding and XML output.
+///
+/// The launcher under test no longer inherits `RULES_DART_*` from this test's
+/// own launcher, so `:cases_env` captures `:cases`' real `RunEnvironmentInfo`
+/// and forwards all runtime dependencies.
+void main(List<String> args) {
+  final r = Runfiles.create();
+  final String launcher = r.rlocation(args[0]);
+  final String envJson = File(r.rlocation(args[1])).readAsStringSync();
+  final Map<String, String> baseEnv =
+      (jsonDecode(envJson) as Map<String, dynamic>).cast<String, String>();
+  const selected = 'alpha|beta|gamma|no package:test';
+  final all = {'alpha', 'beta', 'gamma', 'no package:test default timeout'};
+
+  late Directory tmp;
+  setUp(() => tmp = Directory.systemTemp.createTempSync('protocol_test.'));
+  tearDown(() => tmp.deleteSync(recursive: true));
+
+  Future<ProcessResult> run(Map<String, String> env) => Process.run(
+    launcher,
+    const [],
+    environment: {...baseEnv, 'TEST_TMPDIR': tmp.path, ...env},
+  );
+
+  Set<String> ran(String xml) => {
+    for (final m in RegExp(
+      r'<testcase name="([^"]*)"',
+    ).allMatches(File(xml).readAsStringSync()))
+      m.group(1)!,
+  };
+
+  test('--test_filter selects cases, and the 30 s default is off', () async {
+    final xml = '${tmp.path}/filtered.xml';
+    final ProcessResult result = await run({
+      'TESTBRIDGE_TEST_ONLY': selected,
+      'XML_OUTPUT_FILE': xml,
+    });
+    expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+    expect(ran(xml), all);
+  });
+
+  test('without a filter every case runs, and a failure is reported', () async {
+    final xml = '${tmp.path}/all.xml';
+    final ProcessResult result = await run({'XML_OUTPUT_FILE': xml});
+    expect(result.exitCode, isNot(0));
+    final String report = File(xml).readAsStringSync();
+    expect(ran(xml), {
+      ...all,
+      'filtered_out',
+      'explicit timeout',
+      'never runs',
+    });
+    expect(report, contains('failures="1"'));
+    expect(report, contains('errors="1"'));
+    expect(report, contains('did not exclude this case'));
+  });
+
+  test("a case's own timeout still applies", () async {
+    final ProcessResult result = await run({
+      'TESTBRIDGE_TEST_ONLY': 'explicit timeout',
+    });
+    expect(result.exitCode, isNot(0));
+    expect('${result.stdout}', contains('Test timed out after 0.2 seconds'));
+  });
+
+  test('shards split the cases, each run once, and say so', () async {
+    const shards = 3;
+    final seen = <String>[];
+    for (var i = 0; i < shards; i++) {
+      final xml = '${tmp.path}/shard$i.xml';
+      final status = '${tmp.path}/status$i';
+      final ProcessResult result = await run({
+        'TESTBRIDGE_TEST_ONLY': selected,
+        'TEST_TOTAL_SHARDS': '$shards',
+        'TEST_SHARD_INDEX': '$i',
+        'TEST_SHARD_STATUS_FILE': status,
+        'XML_OUTPUT_FILE': xml,
+      });
+      expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+      expect(File(status).existsSync(), isTrue);
+      seen.addAll(ran(xml));
+    }
+    expect(seen.toSet(), all);
+    expect(seen, hasLength(all.length));
+  });
+
+  test('a shard that draws no cases passes', () async {
+    final ProcessResult result = await run({
+      'TESTBRIDGE_TEST_ONLY': 'alpha',
+      'TEST_TOTAL_SHARDS': '4',
+      'TEST_SHARD_INDEX': '3',
+    });
+    expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+  });
+
+  test('a filter that matches nothing in this target passes', () async {
+    final ProcessResult result = await run({
+      'TESTBRIDGE_TEST_ONLY': 'no_such_case',
+    });
+    expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+  });
+
+  test("a developer's own package:test config is not read", () async {
+    // Under HOME, where the runner looks by default. Were it read,
+    // `run_skipped` would run `never runs`, which fails.
+    final home = Directory('${tmp.path}/home')..createSync();
+    File('${home.path}/.dart_test.yaml')
+        .writeAsStringSync('run_skipped: true\n');
+    final ProcessResult result = await run({
+      'TESTBRIDGE_TEST_ONLY': 'never runs',
+      'HOME': home.path,
+    });
+    expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+  });
+
+  test('arguments reach main', () async {
+    // Checked indirectly elsewhere: this very test reads `args` under the
+    // runner. Kept explicit so a regression names itself. Two: the launcher
+    // under test and the captured RunEnvironmentInfo JSON file.
+    expect(args, hasLength(2));
+  });
+}

@@ -1,0 +1,13 @@
+# This workspace exercises the fail-closed download helpers in
+# `//dart/private:download.bzl` on a committed local fixture: every digest
+# shape below must fail its fetch with the helper's exact message, except
+# `good`, which must succeed. Each case is a separate repository so CI
+# fetches it separately:
+#
+#   if bazel build @bad_empty//... 2>/dev/null; then
+#     echo "ERROR: build should have failed with an empty-digest error"
+#     exit 1
+#   fi
+#   bazel build @bad_empty//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
+#   bazel build @bad_empty//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "".'
+#   bazel build @good//... || exit 1

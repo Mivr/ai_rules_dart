@@ -1,0 +1,12 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+# An `exe` binary that imports `dart:mirrors`. The default path compiles the
+# sources whole-program against the AOT platform, which refuses the import; the
+# nested-Bazel test in `//dart/tests/import_check_export` builds it and expects
+# that failure.
+dart_binary(
+    name = "mirrors_exe",
+    compile_mode = "exe",
+    main = "mirrors_main.dart",
+    tags = ["manual"],
+)

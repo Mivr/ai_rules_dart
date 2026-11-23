@@ -1,0 +1,23 @@
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_test")
+
+# Exemplar of `dart_package_member`: `alpha` and `beta` import each other, which
+# pub allows and a Bazel target graph does not. Each is declared as a member in
+# its own package, and this one library, merged over both, is the only target
+# that depends on them, so the cycle never reaches the target graph.
+dart_library(
+    name = "merged",
+    members = [
+        "//pub_cycle/alpha",
+        "//pub_cycle/beta",
+    ],
+)
+
+dart_test(
+    name = "cycle_test",
+    size = "small",
+    main = "test/cycle_test.dart",
+    deps = [
+        ":merged",
+        "@pub_deps//:test",
+    ],
+)

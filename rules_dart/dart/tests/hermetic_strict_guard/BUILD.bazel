@@ -1,0 +1,25 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Pins the hermetic-strict CI signal: the red-by-design canary workspace, the
+# strict job's H1 flags and BEP assertion, and the expected-failure self-test.
+# Unsandboxed over the live tree, like `//dart/tests:download_digest_guard_test`.
+dart_test(
+    name = "hermetic_strict_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :hermetic_strict_guard_test.dart)",
+    ],
+    data = [
+        "hermetic_strict_guard_test.dart",
+    ],
+    local = True,
+    main = "hermetic_strict_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

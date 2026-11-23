@@ -1,0 +1,276 @@
+"""Code generation from non-Dart input files (drift `.drift` / `.moor`).
+
+Mirrors `dart_codegen` in shape but accepts any file extension on `src`.
+Same shim-contract attrs (`package_name`, `deps`, `parts`, `config`,
+`package_config`, `generator_args`); same per-file behaviour — one input,
+one or more outputs derived by applying each `output_suffixes` entry.
+
+Used to wire SQL-input builders like `drift_dev`'s preparing stage into
+the same rules_dart shim contract as Dart-input builders.
+
+Usage:
+
+    load("@rules_dart//dart:defs.bzl", "dart_sqlcodegen")
+
+    dart_sqlcodegen(
+        name = "schema_prep",
+        src = "schema.drift",
+        generator_bin = "@rules_dart//dart/ext/drift:shim_prep",
+        output_suffixes = [".drift_prep.json"],
+        package_name = "my_app",
+        deps = ["@pub_deps//:drift"],
+    )
+"""
+
+load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
+load(
+    "//dart/private:common.bzl",
+    "DEFAULT_ROOT_LANGUAGE_VERSION",
+    "PACKAGE_IDENTITY_ATTRS",
+    "add_shim_contract_args",
+    "asset_path_for",
+    "dart_lib_root_for_package",
+    "kernel_sdk_mismatch_error",
+    "resolve_package_identity",
+    "same_package_library_dep_files",
+    "synth_package_config",
+    "writable_home_env",
+)
+
+visibility(["//dart/..."])
+
+def _sqlcodegen_outputs(ctx, src):
+    """Declares sibling outputs by stripping the source's extension and appending each suffix."""
+
+    # Strip the source's actual extension (may be `.drift`, `.moor`, …) and
+    # append each output_suffix; place outputs next to the source.
+    rel = src.short_path
+    if ctx.label.package and rel.startswith(ctx.label.package + "/"):
+        rel = rel[len(ctx.label.package) + 1:]
+    dot = rel.rfind(".")
+    if dot == 0:
+        # Dotfile with no stem (e.g. `.drift`). `.<suffix>` makes no sense
+        # as an output filename — fail rather than collide or silently
+        # produce a weird basename.
+        fail(("%s: `src` has no stem before its extension (%r). " +
+              "Dart codegen outputs need a non-empty stem.") %
+             (ctx.label, src.short_path))
+    rel_no_ext = rel[:dot] if dot > 0 else rel
+    return [
+        ctx.actions.declare_file(rel_no_ext + suffix)
+        for suffix in ctx.attr.output_suffixes
+    ]
+
+def _sqlcodegen_action_inputs(ctx, args, src, synth_pc, dart, lib_root, auto_staged, outputs):
+    """Builds the worker args and direct inputs. Returns the direct inputs list."""
+    args.use_param_file("@%s", use_always = True)
+    args.set_param_file_format("multiline")
+    args.add("--input", src.path)
+    args.add("--input-asset", asset_path_for(src, lib_root))
+    for output in outputs:
+        args.add("--output", output.path)
+
+    direct = [src] + list(ctx.files.data)
+    direct.extend(add_shim_contract_args(
+        args,
+        ctx,
+        synth_pc,
+        dart,
+        auto_stage_srcs = auto_staged,
+        asset_deps = ctx.files.asset_deps,
+        lib_root = lib_root,
+    ))
+    args.add_all(ctx.attr.generator_args)
+    return direct
+
+def _sqlcodegen_launch(ctx, toolchain, args, direct, transitive):
+    """Selects the worker executable, arguments, and tools. Returns (executable, arguments, action_tools)."""
+    generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
+    is_kernel_bin = (
+        DartCompileInfo in ctx.attr.generator_bin and
+        ctx.attr.generator_bin[DartCompileInfo].compile_mode == "kernel"
+    )
+    if is_kernel_bin:
+        kernel_bin = ctx.attr.generator_bin[DartCompileInfo].executable
+        direct.append(kernel_bin)
+        transitive.append(toolchain.dart_sdk_info.runtime_files)
+        return (
+            toolchain.dart_sdk_info.dart,
+            [kernel_bin.path, args],
+            [
+                ctx.attr.generator_bin[DefaultInfo].files_to_run,
+                depset(
+                    direct = [kernel_bin, toolchain.dart_sdk_info.dart],
+                    transitive = [toolchain.dart_sdk_info.runtime_files, generator_runfiles],
+                ),
+            ],
+        )
+    return (
+        ctx.executable.generator_bin,
+        [args],
+        [
+            ctx.attr.generator_bin[DefaultInfo].files_to_run,
+            depset(
+                direct = [ctx.executable.generator_bin, toolchain.dart_sdk_info.dart],
+                transitive = [generator_runfiles],
+            ),
+        ],
+    )
+
+def _dart_sqlcodegen_impl(ctx):
+    identity = resolve_package_identity(ctx)
+    toolchain = ctx.toolchains["//dart:exec_tools_toolchain_type"]
+    sdk_files = toolchain.dart_sdk_info.analyze_files
+
+    if not ctx.attr.output_suffixes:
+        fail("%s: `output_suffixes` must contain at least one suffix." %
+             ctx.label)
+    mismatch = kernel_sdk_mismatch_error(
+        ctx.label,
+        "generator_bin",
+        ctx.attr.generator_bin,
+        toolchain.dart_sdk_info.version,
+    )
+    if mismatch != None:
+        fail(mismatch)
+
+    src = ctx.file.src
+    synth_pc, lib_dep_srcs = synth_package_config(ctx, ctx.attr.deps)
+
+    lib_root_from_deps = dart_lib_root_for_package(
+        ctx.attr.deps,
+        identity.package_name,
+    )
+    lib_root = lib_root_from_deps if lib_root_from_deps != None else ctx.label.package
+
+    auto_staged, _ = same_package_library_dep_files(
+        ctx.attr.deps,
+        identity.package_name,
+        exclude_paths = [src.path],
+    )
+
+    outputs = _sqlcodegen_outputs(ctx, src)
+
+    args = ctx.actions.args()
+    direct = _sqlcodegen_action_inputs(
+        ctx,
+        args,
+        src,
+        synth_pc,
+        toolchain.dart_sdk_info.dart,
+        lib_root,
+        auto_staged,
+        outputs,
+    )
+
+    generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
+    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
+    transitive = ([lib_dep_srcs] if lib_dep_srcs != None else []) + [sdk_files, generator_runfiles] + data_runfiles
+
+    executable, arguments, action_tools = _sqlcodegen_launch(ctx, toolchain, args, direct, transitive)
+
+    ctx.actions.run(
+        executable = executable,
+        arguments = arguments,
+        inputs = depset(direct = direct, transitive = transitive),
+        tools = action_tools,
+        outputs = outputs,
+        mnemonic = "DartSqlCodegen",
+        progress_message = "DartSqlCodegen %s" % ctx.label,
+        env = writable_home_env(toolchain.dart_sdk_info.dart, outputs[0]),
+        execution_requirements = {
+            "supports-workers": "1",
+            "requires-worker-protocol": "proto",
+            "worker-key-mnemonic": "DartSqlCodegen",
+        },
+        toolchain = "//dart:exec_tools_toolchain_type",
+    )
+
+    return [
+        DefaultInfo(files = depset(outputs)),
+        # The *effective* values, built-in default included: a library stating
+        # 3.11 over a generator that silently fell back to 3.0 is exactly the
+        # disagreement `codegen_identity_error` exists to name.
+        DartPackageMetadataInfo(
+            package_name = identity.package_name,
+            language_version = (
+                identity.language_version or DEFAULT_ROOT_LANGUAGE_VERSION
+            ),
+        ),
+    ]
+
+dart_sqlcodegen = rule(
+    implementation = _dart_sqlcodegen_impl,
+    attrs = {
+        "src": attr.label(
+            doc = "The single non-Dart input file (`.drift`, `.moor`, …).",
+            mandatory = True,
+            allow_single_file = True,
+        ),
+        "generator_bin": attr.label(
+            doc = "Pre-compiled generator executable matching the " +
+                  "rules_dart shim CLI contract.",
+            executable = True,
+            cfg = "exec",
+            mandatory = True,
+        ),
+        "output_suffixes": attr.string_list(
+            doc = "Suffixes appended to the source stem (after stripping " +
+                  "its extension). E.g. `['.drift_prep.json']`. Multi-" +
+                  "output builders (e.g. drift_dev's preparing stage emits " +
+                  "both `.drift_prep.json` and `.expr.temp.dart`) declare " +
+                  "all suffixes here.",
+            mandatory = True,
+        ),
+        "package_name": attr.string(
+            doc = "Dart package name owning `src`. Must match the " +
+                  "consuming `dart_library`'s `package_name` — enforced " +
+                  "where the two meet, in that library's `srcs`. Set this " +
+                  "or `package`, not both; `package` is how one declaration " +
+                  "serves every rule building the package, including rules " +
+                  "in other BUILD files.",
+        ),
+        "language_version": attr.string(
+            doc = "Dart language version in `<major>.<minor>` form. " +
+                  "Empty falls back to a built-in default.",
+        ),
+        "deps": attr.label_list(
+            doc = "`dart_library`-shaped targets (anything exporting " +
+                  "`DartInfo`) whose transitive sources populate a " +
+                  "synthesised `package_config.json`. Same-package " +
+                  "siblings are auto-staged as `--dep`.",
+            providers = [DartInfo],
+        ),
+        "parts": attr.label_list(
+            doc = "Additional input files passed as `--part <path>`.",
+            allow_files = True,
+        ),
+        "config": attr.string(
+            doc = "Builder options as a JSON object string.",
+        ),
+        "package_config": attr.label(
+            doc = "Optional pre-existing `package_config.json`; " +
+                  "overrides the one synthesised from `deps`.",
+            allow_single_file = True,
+        ),
+        "generator_args": attr.string_list(
+            doc = "Escape-hatch additional arguments.",
+        ),
+        "data": attr.label_list(
+            doc = "Additional data files added to action inputs but not " +
+                  "passed as flagged args. Sandbox-only — NOT visible to " +
+                  "the Builder's `Resolver` / `findAssets`. For files the " +
+                  "Builder must see via its AssetReader, use `asset_deps`.",
+            allow_files = True,
+        ),
+        "asset_deps": attr.label_list(
+            doc = "Non-Dart files the Builder's `Resolver` / `findAssets` " +
+                  "must see. Each file is staged as an action input and " +
+                  "passed as `--dep <exec>|<asset>` using `asset_path_for`.",
+            allow_files = True,
+        ),
+    } | PACKAGE_IDENTITY_ATTRS,
+    toolchains = ["//dart:exec_tools_toolchain_type"],
+    doc = "Runs a Dart code generator over a non-Dart input (`.drift`, " +
+          "`.moor`, …), producing one or more sibling outputs.",
+)

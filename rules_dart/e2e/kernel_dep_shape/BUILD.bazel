@@ -1,0 +1,6 @@
+# Red workspace for the modular kernel import-shape refusal: a module must
+# name a dependency's sources with the `package:` URI the dependency defines,
+# never with a relative or multi-root spelling that reads the file itself.
+# `//pkg:bad_lib` and `//pkg:bad_bin` must each fail with the refusal that
+# names the `package:` spelling to use; `//pkg:good_lib` proves the
+# `package:` shape of the same edge still compiles. See README.md.

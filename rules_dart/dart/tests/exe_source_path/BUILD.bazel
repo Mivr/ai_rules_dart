@@ -1,0 +1,45 @@
+load("//dart:defs.bzl", "dart_binary", "dart_test")
+load(":exe_source_path_test.bzl", "exe_source_path_test_suite")
+
+# `dart.library.*` answers must be those of the AOT target, as `dart compile
+# exe` gives: `stub false`. Per-library modules compile against the JIT
+# platform, so `exe` and `aot-snapshot` take the source path whatever
+# `modular_kernel` says.
+
+[
+    dart_binary(
+        name = "exe_" + case,
+        srcs = [
+            "impl.dart",
+            "stub.dart",
+        ],
+        compile_mode = "exe",
+        main = "main.dart",
+        modular_kernel = modular,
+        tags = ["manual"],
+    )
+    for case, modular in {
+        "modular": True,
+        "source": False,
+    }.items()
+]
+
+dart_test(
+    name = "conditional_import_test",
+    size = "medium",
+    args = [
+        "$(rlocationpath :exe_modular)",
+        "$(rlocationpath :exe_source)",
+    ],
+    data = [
+        ":exe_modular",
+        ":exe_source",
+    ],
+    main = "conditional_import_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+exe_source_path_test_suite(name = "exe_source_path_analysis_test")

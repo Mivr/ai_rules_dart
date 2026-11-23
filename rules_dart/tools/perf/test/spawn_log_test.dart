@@ -1,0 +1,298 @@
+/// Unit tests for execution log parsing, spawn filtering and chain ordering.
+library;
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:perf/spawn_log.dart';
+
+void _check(bool condition, String message) {
+  if (!condition) throw StateError('FAIL: $message');
+}
+
+void _expectStateError(void Function() action, String message) {
+  try {
+    action();
+  } on StateError catch (e) {
+    _check(e.message.isNotEmpty, message);
+    return;
+  }
+  throw StateError('FAIL: $message (expected StateError)');
+}
+
+void _testConcatenatedJsonParsingAndWorkers() {
+  const jsonText =
+      '{"commandArgs":["tool1","arg1"],"runner":"linux-sandbox","listedOutputs":["bazel-out/k8-fastbuild/bin/a.dill"],"exitCode":0}'
+      '{"commandArgs":["tool2","arg{\\"nested\\": \\"}\\"}","--x={y}"],"runner":"worker","listedOutputs":["bazel-out/k8-fastbuild/bin/b.dill"],"exitCode":0}\n'
+      '{"commandArgs":["cached_worker"],"runner":"worker","cacheHit":true,"listedOutputs":["bazel-out/k8-fastbuild/bin/c.dill"],"exitCode":0}\n'
+      '{"commandArgs":["failed_tool"],"runner":"worker","listedOutputs":["bazel-out/k8-fastbuild/bin/bad.dill"],"exitCode":1}';
+
+  final objs = extractConcatenatedJsonObjects(jsonText).toList();
+  _check(objs.length == 4, 'Extracted 4 concatenated top-level JSON objects');
+
+  final parsed = parseExecutionLog(jsonText);
+  _check(parsed.allSpawns.length == 4, 'Parsed all 4 spawn records');
+  _check(parsed.chainSpawns.length == 2, 'Excluded cached and failed spawns');
+  _check(
+    parsed.workerSteps['worker'] == 1,
+    'workerSteps counts only non-cached target chain worker spawns',
+  );
+  _check(
+    parsed.blockedOutputs.contains('bazel-out/k8-fastbuild/bin/bad.dill'),
+    'Failed spawn output recorded in blockedOutputs',
+  );
+}
+
+void _testExecConfigAndWindowsPathFiltering() {
+  const logText = r'''
+{
+  "commandArgs": ["host_tool"],
+  "listedOutputs": ["bazel-out/k8-opt-exec-ST-d5f/bin/tool"],
+  "runner": "worker",
+  "exitCode": 0
+}
+{
+  "commandArgs": ["win_host_tool"],
+  "listedOutputs": ["bazel-out\\x64_windows-opt-exec\\bin\\tool.exe"],
+  "exitCode": 0
+}
+{
+  "commandArgs": ["dart_compile"],
+  "listedOutputs": ["bazel-out\\k8-fastbuild\\bin\\app.dill"],
+  "exitCode": 0
+}
+''';
+
+  final parsed = parseExecutionLog(logText);
+  _check(parsed.allSpawns.length == 3, 'Parsed 3 spawns');
+  _check(
+    parsed.chainSpawns.length == 1,
+    'Filtered both Unix and Windows exec-config spawns',
+  );
+  _check(parsed.workerSteps.isEmpty, 'Exec-config worker not counted in chain');
+  _check(
+    parsed.chainSpawns.single.declaredOutputs.single ==
+        'bazel-out/k8-fastbuild/bin/app.dill',
+    'Normalized Windows backslashes in declaredOutputs',
+  );
+}
+
+void _testOrderingTreeArtifactsAndBlockedRefusal() {
+  final spawnMod = parseSpawnMap({
+    'commandArgs': ['compile_kmod'],
+    'inputs': [
+      {'path': 'packages/pkg0/lib/pkg0.dart'},
+    ],
+    'listedOutputs': ['bazel-out/k8-fastbuild/bin/packages/pkg0/pkg0.kmod'],
+    'exitCode': 0,
+  })!;
+
+  final spawnLink = parseSpawnMap({
+    'commandArgs': ['kernel_link'],
+    'inputs': [
+      {'path': 'bazel-out/k8-fastbuild/bin/packages/pkg0/pkg0.kmod/0.dill'},
+    ],
+    'listedOutputs': [
+      'bazel-out/k8-fastbuild/bin/packages/pkg0/pkg0_test.dill',
+    ],
+    'exitCode': 0,
+  })!;
+
+  final spawnTest = parseSpawnMap({
+    'mnemonic': 'TestRunner',
+    'commandArgs': ['test-setup.sh'],
+    'inputs': [
+      {
+        'path': 'bazel-out/k8-fastbuild/bin/packages/pkg0/pkg0_test.runfiles/_main/packages/pkg0/pkg0_test.dill',
+      },
+    ],
+    'listedOutputs': ['bazel-out/k8-fastbuild/testlogs/pkg0_test/test.xml'],
+    'exitCode': 0,
+  })!;
+
+  final ordered = orderChainSpawns([spawnTest, spawnLink, spawnMod]);
+  _check(ordered.length == 3, 'Ordered 3 spawns');
+  _check(ordered[0].commandArgs.single == 'compile_kmod', 'Tree producer 1st');
+  _check(ordered[1].commandArgs.single == 'kernel_link', 'Tree consumer 2nd');
+  _check(
+    ordered[2].commandArgs.single == 'test-setup.sh',
+    'Runfiles consumer TestRunner ordered 3rd',
+  );
+}
+
+void _testCycleAndBlockedInputRefusal() {
+  final cycleA = parseSpawnMap({
+    'commandArgs': ['ca'],
+    'inputs': ['bazel-out/cb.out'],
+    'listedOutputs': ['bazel-out/ca.out'],
+  })!;
+  final cycleB = parseSpawnMap({
+    'commandArgs': ['cb'],
+    'inputs': ['bazel-out/ca.out'],
+    'listedOutputs': ['bazel-out/cb.out'],
+  })!;
+  _expectStateError(
+    () => orderChainSpawns([cycleA, cycleB]),
+    'Refuses cyclic dependency in chain spawns',
+  );
+
+  const blockedLog = '''
+{
+  "commandArgs": ["broken_gen"],
+  "listedOutputs": ["bazel-out/k8-fastbuild/bin/gen.dart"],
+  "exitCode": 1
+}
+{
+  "commandArgs": ["downstream_compile"],
+  "inputs": ["bazel-out/k8-fastbuild/bin/gen.dart"],
+  "listedOutputs": ["bazel-out/k8-fastbuild/bin/out.dill"],
+  "exitCode": 0
+}
+''';
+  final parsedBlocked = parseExecutionLog(blockedLog);
+  _expectStateError(
+    () => orderChainSpawns(
+      parsedBlocked.chainSpawns,
+      blockedOutputs: parsedBlocked.blockedOutputs,
+    ),
+    'Refuses chain spawn consuming output of failed upstream spawn',
+  );
+}
+
+void _testLeafTestVerifySetSelection() {
+  final kmodSpawn = parseSpawnMap({
+    'mnemonic': 'DartKernelModule',
+    'commandArgs': ['kernel_module'],
+    'listedOutputs': ['bazel-out/k8-fastbuild/bin/pkg28.kmod'],
+    'exitCode': 0,
+  })!;
+  final linkSpawn = parseSpawnMap({
+    'mnemonic': 'DartKernelLink',
+    'commandArgs': ['kernel_link'],
+    'inputs': ['bazel-out/k8-fastbuild/bin/pkg28.kmod/module.dill'],
+    'listedOutputs': ['bazel-out/k8-fastbuild/bin/pkg28_test.dill'],
+    'exitCode': 0,
+  })!;
+  final testRunnerSpawn = parseSpawnMap({
+    'mnemonic': 'TestRunner',
+    'commandArgs': ['external/bazel_tools/tools/test/test-setup.sh', 'pkg28'],
+    'inputs': ['bazel-out/k8-fastbuild/bin/pkg28_test.dill'],
+    'listedOutputs': [
+      'bazel-out/k8-fastbuild/testlogs/pkg28_test/test.log',
+      'bazel-out/k8-fastbuild/testlogs/pkg28_test/test.xml',
+      'bazel-out/k8-fastbuild/testlogs/pkg28_test/test.cache_status',
+    ],
+    'exitCode': 0,
+  })!;
+
+  final snapshotSpawn = parseSpawnMap({
+    'mnemonic': 'DartTestRunnerSnapshot',
+    'commandArgs': ['dart', 'test_runner_snapshot_gen.dart'],
+    'listedOutputs': ['bazel-out/k8-fastbuild/bin/test_runner_snapshot.jit'],
+    'exitCode': 0,
+  })!;
+  _check(
+    !snapshotSpawn.isTestRunner,
+    'DartTestRunnerSnapshot compile action is not TestRunner',
+  );
+  _check(
+    parseSpawnMap({'metadata': 'header_only'}) == null,
+    'Non-spawn JSON object without commandArgs returns null',
+  );
+  final diskCacheSpawn = parseSpawnMap({
+    'commandArgs': ['compile'],
+    'runner': 'disk cache hit',
+    'listedOutputs': ['bazel-out/k8-fastbuild/bin/cached.dill'],
+    'exitCode': 0,
+  })!;
+  _check(diskCacheSpawn.isCached, 'disk cache hit runner marked cached');
+
+  _check(testRunnerSpawn.isTestRunner, 'Detects TestRunner via mnemonic');
+  final verifySet = selectLeafTestVerifyPaths([
+    kmodSpawn,
+    linkSpawn,
+    snapshotSpawn,
+    testRunnerSpawn,
+  ]);
+  _check(
+    verifySet.contains('bazel-out/k8-fastbuild/bin/pkg28_test.dill'),
+    'Compiled .dill verified',
+  );
+  _check(
+    verifySet.contains('bazel-out/k8-fastbuild/bin/test_runner_snapshot.jit'),
+    'Compiled test runner snapshot verified',
+  );
+  _check(
+    verifySet.contains('bazel-out/k8-fastbuild/bin/pkg28.kmod'),
+    'Compiled .kmod verified',
+  );
+  _check(
+    !verifySet.any((p) => p.contains('testlogs/')),
+    'TestRunner test.log/test.xml/test.cache_status excluded from verifySet',
+  );
+}
+
+void _testLinkLogStats() {
+  String spawn(String mnemonic, String? total) =>
+      '{"commandArgs":["x"],"mnemonic":"$mnemonic","runner":"worker",'
+      '${total == null ? '' : '"metrics":{"totalTime":"$total"},'}'
+      '"exitCode":0}';
+  final off = readLinkLogStats('${spawn('DartKernel', '4.0s')}\n');
+  _check(!off.linked && off.checkWallSeconds == 0, 'no link spawns, no cost');
+  final on = readLinkLogStats(
+    [
+      spawn('DartKernel', '1.0s'),
+      spawn('DartKernelLink', '2.0s'),
+      spawn('DartLinkCheck', '0.25s'),
+      '{"commandArgs":["y"],"mnemonic":"DartLinkCheck","metrics":'
+          '{"totalTime":{"seconds":1,"nanos":500000000}}}',
+    ].join('\n'),
+  );
+  _check(on.linked, 'a DartKernelLink spawn sets linked');
+  _check(on.checkWallSeconds == 1.75, 'DartLinkCheck metrics are summed');
+  _expectStateError(
+    () => readLinkLogStats(spawn('DartLinkCheck', null)),
+    'a DartLinkCheck spawn without metrics is an error',
+  );
+}
+
+void _testStreamedLogObjects() {
+  const logText =
+      '{\n  "commandArgs": ["a{", "b\\"}", "\u00e9\u{1F600}"],\n'
+      '  "inputs": [{"path": "x/{y}.dart"}]\n}\n'
+      '{"commandArgs": ["c"], "env": {"k": "v\\\\"}}\n'
+      '{not json}\n'
+      '{"commandArgs": ["d}{"]}';
+  final dir = Directory.systemTemp.createTempSync('rd_spawn_log_stream_');
+  try {
+    final file = File('${dir.path}/exec.json')..writeAsStringSync(logText);
+    final expected = [
+      for (final s in extractConcatenatedJsonObjects(logText))
+        if (s != '{not json}') jsonEncode(jsonDecode(s)),
+    ];
+    _check(expected.length == 3, 'string scanner sees 3 valid objects');
+    for (var chunk = 1; chunk <= logText.length + 1; chunk++) {
+      final got = [
+        for (final o in readExecutionLogObjects(file, chunkBytes: chunk))
+          jsonEncode(o),
+      ];
+      _check(
+        got.join('\n') == expected.join('\n'),
+        'chunk $chunk reads the objects the string scanner reads: $got',
+      );
+    }
+  } finally {
+    dir.deleteSync(recursive: true);
+  }
+}
+
+void main() {
+  _testLinkLogStats();
+  _testConcatenatedJsonParsingAndWorkers();
+  _testExecConfigAndWindowsPathFiltering();
+  _testOrderingTreeArtifactsAndBlockedRefusal();
+  _testCycleAndBlockedInputRefusal();
+  _testLeafTestVerifySetSelection();
+  _testStreamedLogObjects();
+  stdout.writeln('All spawn_log tests passed.');
+}

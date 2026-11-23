@@ -1,0 +1,15 @@
+# Exercises the `--@rules_dart//dart:extra_dart_defines` command-line channel
+# the way a real config group would: one define this build sets only from the
+# flag, and one that collides with a target's own `defines` so the precedence
+# is observable. See `//:defines_test`.
+build --@rules_dart//dart:extra_dart_defines=E2E_FLAG=from_flag
+build --@rules_dart//dart:extra_dart_defines=E2E_WINNER=flag
+
+# Analyze and format-check every Dart target a test run names, under
+# //:analysis_config.
+test --aspects=@rules_dart//dart:analyze.bzl%dart_analyze
+test --output_groups=+dart_analyze
+test --output_groups=+dart_format
+common --@rules_dart//dart:analysis_config=//:analysis_config
+
+try-import %workspace%/.bazelrc.user

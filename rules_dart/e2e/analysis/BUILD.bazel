@@ -1,0 +1,39 @@
+load(
+    "@rules_dart//dart:defs.bzl",
+    "dart_analysis_config",
+    "dart_analysis_options",
+    "dart_analysis_test",
+    "dart_library",
+)
+
+dart_library(
+    name = "good_lib",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = ["//mylib"],
+)
+
+dart_analysis_test(
+    name = "good_lib_analysis_test",
+    size = "small",
+    targets = [":good_lib"],
+)
+
+# The options the `dart_analyze` aspect applies to every package here. The
+# ruleset is a pub package whose yaml the options file includes by `package:`
+# URI. Naming it here rather than in `good_lib`'s deps is the point: a lint
+# ruleset is not a dependency of the code it lints, and listing it there would
+# carry it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [
+        ":options",
+        "//pkg_wide:options",
+        "//wide:options",
+    ],
+)

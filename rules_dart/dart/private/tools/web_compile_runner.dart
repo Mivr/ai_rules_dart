@@ -1,0 +1,600 @@
+// Build-action runner for `dart compile js` and `dart compile wasm` over a
+// staged project directory.
+//
+// Under `--spawn_strategy=local` (or any non-sandboxed strategy), `<name>.proj`
+// and `<name>.extpkgs` persist in the shared execroot across incremental
+// builds. When a source file or dependency is removed from a web binary's
+// closure, Bazel stops creating its symlink in `<name>.proj/src/` or
+// `<name>.extpkgs/`, but does not delete the old symlink from the previous
+// build. This runner prunes unlisted files against `.dart_tool/src_manifest.txt`
+// and `.dart_tool/extpkgs_manifest.txt` before invoking `dart compile`.
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:rules_dart_guard/directive_guard.dart';
+import 'package:rules_dart_worker/worker_protocol.dart';
+
+import 'private_home.dart';
+
+void main(List<String> rawArgs) {
+  final int code = runWebCompileRequest(
+    expandParamFiles(rawArgs, skipEmptyLines: true, keepMissingArg: true),
+    outSink: stdout,
+    errSink: stderr,
+  );
+  exit(code);
+}
+
+/// Runs a single web compile request after pruning orphaned staged files.
+int runWebCompileRequest(
+  List<String> args, {
+  required StringSink outSink,
+  required StringSink errSink,
+  String? workingDirectory,
+}) {
+  final ({List<String> compileArgs, String? dart, String? project})? parsed =
+      _splitWebArgs(args, errSink: errSink);
+  if (parsed == null) return 64;
+  var (String? dart, String? project) = (parsed.dart, parsed.project);
+  final List<String> compileArgs = parsed.compileArgs;
+
+  project ??= _inferProjectFromArgs(compileArgs);
+
+  if (dart == null ||
+      dart.isEmpty ||
+      project == null ||
+      project.isEmpty ||
+      compileArgs.isEmpty) {
+    errSink.writeln(
+      'web_compile_runner: --dart, --project, and compile arguments are required',
+    );
+    return 64;
+  }
+
+  final (
+    :String? outputPath,
+    :String normProject,
+    :String? entrypointPath,
+  ) = _resolveWebPaths(
+    project: project,
+    compileArgs: compileArgs,
+    workingDirectory: workingDirectory,
+  );
+  if (outputPath != null) {
+    _deleteOutputs(outputPath);
+  }
+
+  final Set<String>? allowedSrc = pruneOrphanedStagedFiles(normProject);
+  if (!_checkStagedSources(normProject, allowedSrc, errSink)) return 1;
+  if (!_checkExternalSources(normProject, errSink)) return 1;
+  if (!_checkEntrypoint(normProject, allowedSrc, entrypointPath, errSink)) {
+    return 1;
+  }
+  if (!_checkStagedDirectives(normProject, errSink)) return 1;
+
+  return _runCompiler(
+    dart: dart,
+    compileArgs: compileArgs,
+    workingDirectory: workingDirectory,
+    outputPath: outputPath,
+    outSink: outSink,
+    errSink: errSink,
+  );
+}
+
+/// The runner flags split from the compiler arguments.
+///
+/// Returns null after reporting a malformed flag.
+({String? dart, String? project, List<String> compileArgs})? _splitWebArgs(
+  List<String> args, {
+  required StringSink errSink,
+}) {
+  String? dart;
+  String? project;
+  final compileArgs = <String>[];
+
+  var inCompileArgs = false;
+  for (var i = 0; i < args.length; i++) {
+    final String arg = args[i];
+    if (inCompileArgs) {
+      compileArgs.add(arg);
+      continue;
+    }
+    if (arg == 'compile') {
+      inCompileArgs = true;
+      compileArgs.add(arg);
+      continue;
+    }
+    if (arg == '--dart') {
+      if (i + 1 >= args.length) {
+        errSink.writeln('web_compile_runner: --dart requires a value');
+        return null;
+      }
+      dart = args[++i];
+    } else if (arg.startsWith('--dart=')) {
+      dart = arg.substring('--dart='.length);
+    } else if (arg == '--project') {
+      if (i + 1 >= args.length) {
+        errSink.writeln('web_compile_runner: --project requires a value');
+        return null;
+      }
+      project = args[++i];
+    } else if (arg.startsWith('--project=')) {
+      project = arg.substring('--project='.length);
+    } else {
+      inCompileArgs = true;
+      compileArgs.add(arg);
+    }
+  }
+  return (dart: dart, project: project, compileArgs: compileArgs);
+}
+
+/// Output, project, and entrypoint paths resolved into [workingDirectory].
+({String? outputPath, String normProject, String? entrypointPath})
+_resolveWebPaths({
+  required String project,
+  required List<String> compileArgs,
+  required String? workingDirectory,
+}) {
+  String resolveInWorkDir(String path) {
+    if (workingDirectory == null ||
+        workingDirectory.isEmpty ||
+        path.startsWith('/') ||
+        (path.length >= 2 && path[1] == ':')) {
+      return path;
+    }
+    return '${_trimTrailingSlash(workingDirectory)}/$path';
+  }
+
+  final String? rawOutputPath = _extractOutputPath(compileArgs);
+  final String? rawEntrypointPath = _extractEntrypointPath(compileArgs);
+  return (
+    outputPath: rawOutputPath == null ? null : resolveInWorkDir(rawOutputPath),
+    normProject: _trimTrailingSlash(resolveInWorkDir(project)),
+    entrypointPath: rawEntrypointPath == null
+        ? null
+        : resolveInWorkDir(rawEntrypointPath),
+  );
+}
+
+/// Refuses a `src_manifest.txt` the staged tree does not satisfy.
+bool _checkStagedSources(
+  String normProject,
+  Set<String>? allowedSrc,
+  StringSink errSink,
+) {
+  if (allowedSrc == null) return true;
+  if (allowedSrc.isEmpty) {
+    errSink.writeln(
+      'web_compile_runner: no sources listed in src_manifest.txt in $normProject',
+    );
+    return false;
+  }
+  for (final String rel in allowedSrc) {
+    if (!FileSystemEntity.isFileSync('$normProject/src/$rel')) {
+      errSink.writeln('web_compile_runner: expected source missing: $rel');
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Refuses an `extpkgs_manifest.txt` the sibling tree does not satisfy.
+bool _checkExternalSources(String normProject, StringSink errSink) {
+  final extManifest = File('$normProject/.dart_tool/extpkgs_manifest.txt');
+  final Directory? extDir = _siblingExtpkgsDir(normProject);
+  if (!extManifest.existsSync() || extDir == null) return true;
+  for (final String raw in extManifest.readAsLinesSync()) {
+    final String line = raw.trim();
+    if (line.isEmpty || line.endsWith('/')) continue;
+    final String rel = _normRel(line);
+    if (!FileSystemEntity.isFileSync('${extDir.path}/$rel')) {
+      errSink.writeln(
+        'web_compile_runner: expected external source missing: $rel',
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Refuses an entrypoint outside the staged sources or missing on disk.
+bool _checkEntrypoint(
+  String normProject,
+  Set<String>? allowedSrc,
+  String? entrypointPath,
+  StringSink errSink,
+) {
+  if (entrypointPath == null) return true;
+  final String normEntry = entrypointPath.replaceAll(r'\', '/');
+  final srcPrefix = '${normProject.replaceAll(r'\', '/')}/src/';
+  if (allowedSrc != null && normEntry.startsWith(srcPrefix)) {
+    final String relEntry = _normRel(normEntry.substring(srcPrefix.length));
+    if (!allowedSrc.contains(relEntry)) {
+      errSink.writeln(
+        'web_compile_runner: entrypoint not listed in src_manifest.txt: $relEntry',
+      );
+      return false;
+    }
+  }
+  if (!FileSystemEntity.isFileSync(entrypointPath)) {
+    errSink.writeln('web_compile_runner: entrypoint missing: $entrypointPath');
+    return false;
+  }
+  return true;
+}
+
+/// Refuses staged sources that read outside their declared inputs.
+bool _checkStagedDirectives(String normProject, StringSink errSink) {
+  // No staged source may read the host: a `file:` URI (in any spelling), any
+  // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
+  // above its package, or a relative URI climbing out of the staged tree
+  // would reach an undeclared file through the compiler's working directory.
+  // Refuse before compiling, through the one shared staged-source check.
+  final stagedRoots = <String>[normProject];
+  final Directory? siblingExtpkgs = _siblingExtpkgsDir(normProject);
+  if (siblingExtpkgs != null) stagedRoots.add(siblingExtpkgs.path);
+  final List<String> violations = findStagedDirectiveViolations(
+    stagedRoots,
+    tool: 'web_compile_runner',
+  );
+  if (violations.isNotEmpty) {
+    for (final violation in violations) {
+      errSink.writeln(violation);
+    }
+    return false;
+  }
+  return true;
+}
+
+/// Runs `dart compile` over the staged project, deleting stale outputs.
+int _runCompiler({
+  required String dart,
+  required List<String> compileArgs,
+  required String? workingDirectory,
+  required String? outputPath,
+  required StringSink outSink,
+  required StringSink errSink,
+}) {
+  final ProcessResult result = withPrivateHome(
+    'rules_dart_web_home.',
+    (env) => Process.runSync(
+      dart,
+      compileArgs,
+      workingDirectory: workingDirectory,
+      environment: env,
+    ),
+  );
+  errSink.write(result.stderr);
+  if (result.exitCode != 0) {
+    outSink.write(result.stdout);
+    if (outputPath != null) {
+      _deleteOutputs(outputPath);
+    }
+    return result.exitCode;
+  }
+  if (outputPath != null) {
+    return _deleteUndeclaredSidecars(outputPath, errSink);
+  }
+  return 0;
+}
+
+/// Removes any orphaned symlinks or unlisted files under `<project>/src/` when
+/// `.dart_tool/src_manifest.txt` is present, and under sibling `<name>.extpkgs/`
+/// when `.dart_tool/extpkgs_manifest.txt` (or `package_config.json`) is present.
+/// Returns the set of `/` relative paths allowed under `src/`, or `null` when
+/// no file-level `src_manifest.txt` is present. Never prunes without a manifest.
+Set<String>? pruneOrphanedStagedFiles(String project) {
+  final String normProject = _trimTrailingSlash(project);
+  _pruneExtpkgs(normProject);
+
+  final srcDir = Directory('$normProject/src');
+  if (!srcDir.existsSync()) return null;
+  final manifestFile = File('$normProject/.dart_tool/src_manifest.txt');
+  if (!manifestFile.existsSync()) return null;
+
+  final List<String> lines = [
+    for (final line in manifestFile.readAsLinesSync())
+      if (line.trim().isNotEmpty) line.trim(),
+  ];
+  if (lines.contains('*')) return null;
+
+  final allowed = <String>{for (final line in lines) _normRel(line)};
+  final String rootPath = srcDir.path;
+  final dirs = <Directory>[];
+  for (final FileSystemEntity entity in srcDir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
+    if (entity is Directory) {
+      dirs.add(entity);
+      continue;
+    }
+    final String rel = _relative(rootPath, entity.path);
+    if (!allowed.contains(rel)) {
+      _tryDelete(entity);
+    }
+  }
+  _removeEmptyDirsBottomUp(dirs);
+  return allowed;
+}
+
+void _pruneExtpkgs(String normProject) {
+  final Directory? extDir = _siblingExtpkgsDir(normProject);
+  if (extDir == null || !extDir.existsSync()) return;
+
+  final extManifest = File('$normProject/.dart_tool/extpkgs_manifest.txt');
+  if (extManifest.existsSync()) {
+    _pruneExtpkgsFromManifest(extDir, extManifest);
+    return;
+  }
+
+  final srcManifest = File('$normProject/.dart_tool/src_manifest.txt');
+  final pkgConfig = File('$normProject/.dart_tool/package_config.json');
+  if (!srcManifest.existsSync() || !pkgConfig.existsSync()) return;
+  _pruneUnreferencedExtpkgs(normProject, extDir, pkgConfig);
+}
+
+/// Removes sibling entries the `extpkgs_manifest.txt` does not list.
+void _pruneExtpkgsFromManifest(Directory extDir, File extManifest) {
+  final allowedFiles = <String>{};
+  final allowedDirPrefixes = <String>[];
+  for (final String raw in extManifest.readAsLinesSync()) {
+    final String trimmed = raw.trim();
+    if (trimmed.isEmpty) continue;
+    if (trimmed.endsWith('/')) {
+      allowedDirPrefixes.add(_normRel(trimmed));
+    } else {
+      allowedFiles.add(_normRel(trimmed));
+    }
+  }
+  final String rootPath = extDir.path;
+  final dirs = <Directory>[];
+  for (final FileSystemEntity entity in extDir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
+    if (entity is Directory) {
+      dirs.add(entity);
+      continue;
+    }
+    final String rel = _relative(rootPath, entity.path);
+    final bool inAllowedDir = allowedDirPrefixes.any(rel.startsWith);
+    if (!inAllowedDir && !allowedFiles.contains(rel)) {
+      _tryDelete(entity);
+    }
+  }
+  _removeEmptyDirsBottomUp(dirs);
+}
+
+/// Removes sibling packages `package_config.json` no longer references.
+void _pruneUnreferencedExtpkgs(
+  String normProject,
+  Directory extDir,
+  File pkgConfig,
+) {
+  final Set<String>? referencedExtPkgs = _referencedExtPackages(
+    normProject,
+    pkgConfig,
+  );
+  if (referencedExtPkgs == null) return;
+  for (final FileSystemEntity entity in extDir.listSync(followLinks: false)) {
+    final String name = _relative(extDir.path, entity.path);
+    if (!referencedExtPkgs.contains(name)) {
+      try {
+        entity.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore if read-only or already removed.
+      }
+    }
+  }
+}
+
+Set<String>? _referencedExtPackages(String normProject, File pkgConfig) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(pkgConfig.readAsStringSync());
+  } on FileSystemException {
+    // An unreadable package config names no referenced packages: skip the
+    // extpkgs prune, as when the config is absent.
+    return null;
+  } on FormatException {
+    // Malformed JSON names no referenced packages either: same fallback.
+    // Anything else propagates.
+    return null;
+  }
+  if (decoded is! Map || decoded['packages'] is! List) return null;
+  final Directory? extDir = _siblingExtpkgsDir(normProject);
+  if (extDir == null) return null;
+  final String extBaseName = extDir.path
+      .replaceAll(r'\', '/')
+      .split('/')
+      .where((s) => s.isNotEmpty)
+      .last;
+  final marker = '$extBaseName/';
+  final pkgs = <String>{};
+  for (final entry in decoded['packages'] as List) {
+    if (entry is! Map) continue;
+    final dynamic rootUri = entry['rootUri'];
+    if (rootUri is! String) continue;
+    final int idx = rootUri.indexOf(marker);
+    if (idx < 0) continue;
+    final String rest = rootUri.substring(idx + marker.length);
+    final String seg = rest
+        .split('/')
+        .firstWhere((s) => s.isNotEmpty, orElse: () => '');
+    if (seg.isNotEmpty) {
+      pkgs.add(seg);
+    }
+  }
+  return pkgs;
+}
+
+Directory? _siblingExtpkgsDir(String normProject) {
+  if (!normProject.endsWith('.proj')) return null;
+  return Directory(
+    '${normProject.substring(0, normProject.length - '.proj'.length)}.extpkgs',
+  );
+}
+
+void _tryDelete(FileSystemEntity entity) {
+  try {
+    entity.deleteSync();
+  } on FileSystemException {
+    // Ignore if read-only or already removed.
+  }
+}
+
+void _removeEmptyDirsBottomUp(List<Directory> dirs) {
+  dirs.sort((a, b) => b.path.length.compareTo(a.path.length));
+  for (final d in dirs) {
+    try {
+      if (d.existsSync() && d.listSync(followLinks: false).isEmpty) {
+        d.deleteSync();
+      }
+    } on FileSystemException {
+      // Ignore if non-empty or read-only.
+    }
+  }
+}
+
+String? _extractMultiRoot(List<String> compileArgs) {
+  for (final arg in compileArgs) {
+    if (arg.startsWith('--multi-root=')) {
+      return arg.substring('--multi-root='.length);
+    }
+    if (arg.startsWith('-E--multi-root=')) {
+      return arg.substring('-E--multi-root='.length);
+    }
+  }
+  return null;
+}
+
+String _resolveMultiRootUri(String rawUriOrPath, String? multiRoot) {
+  final int schemeIdx = rawUriOrPath.indexOf(':///');
+  if (schemeIdx < 0) return rawUriOrPath;
+  final String rel = rawUriOrPath.substring(schemeIdx + ':///'.length);
+  if (multiRoot == null || multiRoot.isEmpty || multiRoot == '.') {
+    return rel;
+  }
+  return '${_trimTrailingSlash(multiRoot)}/$rel';
+}
+
+String? _inferProjectFromArgs(List<String> compileArgs) {
+  const pkgSuffix = '/.dart_tool/package_config.json';
+  final String? multiRoot = _extractMultiRoot(compileArgs);
+  for (final arg in compileArgs) {
+    if (!arg.startsWith('--packages=')) continue;
+    final String val = _resolveMultiRootUri(
+      arg.substring('--packages='.length),
+      multiRoot,
+    );
+    if (val.endsWith(pkgSuffix)) {
+      return val.substring(0, val.length - pkgSuffix.length);
+    }
+  }
+  return null;
+}
+
+String? _extractOutputPath(List<String> compileArgs) {
+  for (var i = 0; i < compileArgs.length; i++) {
+    final String arg = compileArgs[i];
+    if (arg == '-o' || arg == '--output') {
+      if (i + 1 < compileArgs.length) {
+        return compileArgs[i + 1];
+      }
+    } else if (arg.startsWith('-o') &&
+        arg.length > 2 &&
+        !arg.startsWith('--')) {
+      return arg.substring(2);
+    } else if (arg.startsWith('--output=')) {
+      return arg.substring('--output='.length);
+    }
+  }
+  return null;
+}
+
+String? _extractEntrypointPath(List<String> compileArgs) {
+  if (compileArgs.isEmpty) return null;
+  final String last = compileArgs.last;
+  if (last.startsWith('-')) return null;
+  return _resolveMultiRootUri(last, _extractMultiRoot(compileArgs));
+}
+
+void _deleteOutputs(String outputPath) {
+  final candidates = <String>[
+    outputPath,
+    '$outputPath.map',
+    '$outputPath.deps',
+    if (outputPath.endsWith('.wasm')) ...[
+      '${outputPath.substring(0, outputPath.length - '.wasm'.length)}.mjs',
+      '${outputPath.substring(0, outputPath.length - '.wasm'.length)}.support.js',
+      '${outputPath.substring(0, outputPath.length - '.wasm'.length)}.unopt.wasm',
+    ],
+  ];
+  for (final path in candidates) {
+    final file = File(path);
+    if (file.existsSync()) {
+      _tryDelete(file);
+    }
+  }
+}
+
+/// Removes compiler sidecars beside [outputPath] that no action declares.
+///
+/// `dart compile js` writes `<output>.deps` (absolute `file:` paths into the
+/// exec root and the SDK) and `dart compile wasm` may leave `<base>.unopt.wasm`
+/// beside every output. Left behind they are undeclared action outputs:
+/// discarded under sandboxing and stale under `--spawn_strategy=local`.
+/// Declared outputs (`.js` and its `.js.map`, `.wasm` with its `.mjs`,
+/// `.support.js` and `.wasm.map`) are never touched.
+///
+/// Returns 0 when every sidecar is gone. A sidecar that cannot be removed is
+/// a loud failure: the message names the path and the return is non-zero, so
+/// a stray file can never survive silently. Only an already-gone sidecar is
+/// tolerated.
+int _deleteUndeclaredSidecars(String outputPath, StringSink errSink) {
+  final sidecars = <String>[
+    '$outputPath.deps',
+    if (outputPath.endsWith('.wasm'))
+      '${outputPath.substring(0, outputPath.length - '.wasm'.length)}.unopt.wasm',
+  ];
+  var code = 0;
+  for (final path in sidecars) {
+    try {
+      File(path).deleteSync();
+    } on FileSystemException catch (e) {
+      if (FileSystemEntity.typeSync(path) == FileSystemEntityType.notFound) {
+        continue;
+      }
+      errSink.writeln(
+        'web_compile_runner: cannot remove undeclared sidecar file $path: ${e.message}',
+      );
+      code = 1;
+    }
+  }
+  return code;
+}
+
+String _trimTrailingSlash(String raw) {
+  var s = raw;
+  while (s.length > 1 && (s.endsWith('/') || s.endsWith(r'\'))) {
+    s = s.substring(0, s.length - 1);
+  }
+  return s;
+}
+
+String _normRel(String raw) {
+  String rel = raw.replaceAll(r'\', '/');
+  while (rel.startsWith('./')) {
+    rel = rel.substring(2);
+  }
+  while (rel.startsWith('/')) {
+    rel = rel.substring(1);
+  }
+  return rel;
+}
+
+String _relative(String root, String path) {
+  return _normRel(path.substring(root.length));
+}

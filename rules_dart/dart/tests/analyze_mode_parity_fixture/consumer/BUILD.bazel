@@ -1,0 +1,9 @@
+load("//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "consumer",
+    package_name = "parity_consumer",
+    srcs = ["lib/consumer.dart"],
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = ["//dart/tests/analyze_mode_parity_fixture/dep"],
+)
