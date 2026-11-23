@@ -226,13 +226,13 @@ dart_test(
     ],
     args = [
         "$(rlocationpath :analyze_runner)",
-        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/default:dart)",
     ],
     data = [
         ":analyze_runner",
-        "@dart_toolchains//sdk/3.13.5:analyze_files",
-        "@dart_toolchains//sdk/3.13.5:dart",
-        "@dart_toolchains//sdk/3.13.5:runtime_files",
+        "@dart_toolchains//sdk/default:analyze_files",
+        "@dart_toolchains//sdk/default:dart",
+        "@dart_toolchains//sdk/default:runtime_files",
     ],
     main = "analyze_runner_test.dart",
     deps = [
@@ -401,7 +401,7 @@ dart_test(
     args = [
         "$(rlocationpath :test_runner)",
         "$(rlocationpath :test_runner_fixture)",
-        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/default:dart)",
         "$(rlocationpath :test_runner_suite_fixture)",
         "$(rlocationpath :test_runner_suite_runner)",
         "$(rlocationpath :test_runner_fixture.dart)",
@@ -412,8 +412,8 @@ dart_test(
         ":test_runner_fixture.dart",
         ":test_runner_suite_fixture",
         ":test_runner_suite_runner",
-        "@dart_toolchains//sdk/3.13.5:compile_files",
-        "@dart_toolchains//sdk/3.13.5:dart",
+        "@dart_toolchains//sdk/default:compile_files",
+        "@dart_toolchains//sdk/default:dart",
     ],
     main = "test_runner_test.dart",
     deps = [
@@ -633,12 +633,12 @@ dart_test(
     ],
     args = [
         "$(rlocationpath :kernel_link)",
-        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/default:dart)",
     ],
     data = [
         ":kernel_link",
-        "@dart_toolchains//sdk/3.13.5:compile_files",
-        "@dart_toolchains//sdk/3.13.5:dart",
+        "@dart_toolchains//sdk/default:compile_files",
+        "@dart_toolchains//sdk/default:dart",
     ],
     main = "kernel_link_test.dart",
     deps = [
@@ -959,11 +959,11 @@ dart_test(
         "project_lint_options.dart",
         "staged_project_copy.dart",
     ],
-    args = ["$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)"],
+    args = ["$(rlocationpath @dart_toolchains//sdk/default:dart)"],
     data = [
-        "@dart_toolchains//sdk/3.13.5:analyze_files",
-        "@dart_toolchains//sdk/3.13.5:dart",
-        "@dart_toolchains//sdk/3.13.5:runtime_files",
+        "@dart_toolchains//sdk/default:analyze_files",
+        "@dart_toolchains//sdk/default:dart",
+        "@dart_toolchains//sdk/default:runtime_files",
     ],
     main = "fix_runner_test.dart",
     deps = [
@@ -992,11 +992,18 @@ dart_test(
         "private_home.dart",
         "project_layout.dart",
     ],
-    args = ["$(rlocationpath :format_runner)"] + [
+    args = [
+        "$(rlocationpath :format_runner)",
+        "$(rlocationpath @dart_toolchains//sdk/default:dart)",
+    ] + [
         "$(rlocationpath @dart_toolchains//sdk/%s:dart)" % version
         for version in TOOL_VERSIONS
     ],
-    data = [":format_runner"] + [
+    data = [
+        ":format_runner",
+        "@dart_toolchains//sdk/default:compile_files",
+        "@dart_toolchains//sdk/default:dart",
+    ] + [
         "@dart_toolchains//sdk/%s:%s" % (version, target)
         for version in TOOL_VERSIONS
         for target in ["compile_files", "dart"]

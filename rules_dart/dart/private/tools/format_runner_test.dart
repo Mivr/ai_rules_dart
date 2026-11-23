@@ -10,7 +10,12 @@ import 'package:test/test.dart';
 import 'format_runner.dart'
     show FormatMode, resolveFormatMode, runFormatRequest;
 
+/// The `dart` of every SDK the rules list, one each.
 late List<String> _sdkDartPaths;
+
+/// The `dart` of the rules' default SDK: the one `format_runner` is built with
+/// and so the only one that loads its kernel. Empty on direct runs.
+late String _defaultDartPath;
 
 /// The `format_runner` kernel binary under test (first test arg). Empty on
 /// direct `dart path/to/format_runner_test.dart` runs, where the binary is
@@ -18,13 +23,23 @@ late List<String> _sdkDartPaths;
 late String _toolDillPath;
 late Directory _tmp;
 
+/// The version an SDK's `version` file states, for the SDK whose `dart` is [dartBin].
+String _sdkVersionOf(String dartBin) =>
+    File('${File(dartBin).parent.parent.path}/version')
+        .readAsStringSync()
+        .trim();
+
 void main(List<String> args) {
   final r = Runfiles.create();
-  if (args.length >= 2) {
-    _toolDillPath = r.rlocation(args.first);
-    _sdkDartPaths = [for (final a in args.sublist(1)) r.rlocation(a)];
+  if (args.length >= 3) {
+    // Under Bazel: the tool, the default SDK, then every listed SDK (the
+    // default among them, so it is dropped from the list once).
+    _toolDillPath = r.rlocation(args[0]);
+    _defaultDartPath = r.rlocation(args[1]);
+    _sdkDartPaths = {for (final a in args.sublist(2)) r.rlocation(a)}.toList();
   } else {
     _toolDillPath = '';
+    _defaultDartPath = '';
     _sdkDartPaths = [for (final a in args) r.rlocation(a)];
   }
 
@@ -107,6 +122,10 @@ void main(List<String> args) {
           .trim();
       seenSdkVersions.add(sdkVersion);
 
+      // The next language version after the SDK's own: a file that asks for it
+      // is above the SDK whichever SDK it is.
+      final sdk = Version.parse(sdkVersion);
+      final aboveSdk = '${sdk.major}.${sdk.minor + 1}';
       final cases =
           <
             ({
@@ -174,7 +193,7 @@ void main(List<String> args) {
               languageVersion: '3.6',
               optionsYaml: null,
               content:
-                  '// @dart=3.14\nclass Point(final int x, final int y);\n',
+                  '// @dart=$aboveSdk\nclass Point(final int x, final int y);\n',
               expectPass: false,
             ),
             (
@@ -314,8 +333,15 @@ void main(List<String> args) {
     );
   });
 
+  // The config fallback lives in the in-process formatter, which only the SDK
+  // series of the vendored `package:dart_style` uses (`FORMATTER_SDK_SERIES`);
+  // another listed SDK formats through its own `dart format`.
+  final bool anyInProcess = _sdkDartPaths.any(
+    (String d) => resolveFormatMode(_sdkVersionOf(d), 'latest').inProcess,
+  );
   test(
     'an unreadable package config falls back to stock formatter options',
+    skip: anyInProcess ? null : 'no listed SDK is formatted in process',
     () async {
       // Drives `findDirPackageConfig` with configs `findPackageConfig`
       // rejects: malformed JSON (`FormatException`) and a config version
@@ -323,15 +349,10 @@ void main(List<String> args) {
       // must fall back exactly like a config with no packages: the
       // `package:` include stays unresolvable, formatting runs at stock
       // defaults, and no error escapes `runFormatRequest`.
-      final String dartBin = _sdkDartPaths.first;
-      final String sdkVersion = File(
-        '${File(dartBin).parent.parent.path}/version',
-      ).readAsStringSync().trim();
-      expect(
-        resolveFormatMode(sdkVersion, 'latest').inProcess,
-        isTrue,
-        reason: 'the config fallback lives in the in-process formatter',
+      final String dartBin = _sdkDartPaths.firstWhere(
+        (String d) => resolveFormatMode(_sdkVersionOf(d), 'latest').inProcess,
       );
+      final String sdkVersion = _sdkVersionOf(dartBin);
       final configs = <String, String>{
         'malformed': '{not json\n',
         'future_version': '{"configVersion": 999, "packages": []}',
@@ -396,7 +417,7 @@ void main(List<String> args) {
     'persistent worker answers a failing request and logs to stderr',
     skip: _toolDillPath.isEmpty ? 'format_runner worker not in runfiles' : null,
     () async {
-      final String dartBin = _sdkDartPaths.first;
+      final String dartBin = _defaultDartPath;
       final Process proc = await Process.start(dartBin, [
         _toolDillPath,
         '--persistent_worker',

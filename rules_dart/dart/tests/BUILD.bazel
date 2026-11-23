@@ -426,7 +426,7 @@ dart_test(
         "//dart/private/tools:kernel_link",
         "//dart/private/tools:kernel_link_reference",
         "//dart/private/tools:module_compiler_tools",
-        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/default:compile_files",
     ],
     main = "aot_tools_parity_test.dart",
     deps = [

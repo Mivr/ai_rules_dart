@@ -217,4 +217,5 @@ def dart_register_toolchains(name, **kwargs):
         name = name + "_toolchains",
         user_repository_name = name,
         versions = list(TOOL_VERSIONS.keys()),
+        default_version = kwargs.get("dart_version", ""),
     )
