@@ -32,7 +32,7 @@ summaries, but still builds and propagates `sky_engine`'s embedder SDK summary
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartInfo")
 load("//dart/private:aot_tool.bzl", "aot_tool_launch")
-load("//dart/private:common.bzl", "generate_package_config", "owned_package_records", "writable_home_env")
+load("//dart/private:common.bzl", "owned_package_records", "writable_home_env")
 load("//dart/private:project_staging.bzl", "mangle_package_dir")
 load("//dart/private:source_set.bzl", "package_for_index", "package_index")
 
@@ -564,27 +564,30 @@ def _summary_split_state(deps, srcs, own_keys, lib_keys, inherited):
         redundant = not split
     return split, redundant
 
-def _summary_stage_own(ctx, info, own_records, srcs, name, config):
-    """Stages the package's own libraries. Returns (staged, own_root, own_staged_roots, stage_root, prefix)."""
+def _summary_stage_own(info, own_records, srcs, stage_root):
+    """Places the package's own libraries under `stage_root`.
+
+    Nothing is declared here: the summarize action links each path to its
+    source when it runs (see `_summary_run_action`).
+
+    Returns:
+      `(staged, own_root, own_staged_roots, stage_root, prefix)`: `staged` the
+      exec path each of `srcs` is laid out at.
+    """
     staged = []
     own_staged_roots = {}
     prefix = ""
-    stage_root = config.dirname + "/" + name + ".summary_root"
     if len(own_records) == 1:
         prefix = (info.lib_root + "/lib/") if info.lib_root else "lib/"
         for f in srcs:
-            link = ctx.actions.declare_file(name + ".summary_root/lib/" + f.short_path[len(prefix):])
-            ctx.actions.symlink(output = link, target_file = f)
-            staged.append(link)
+            staged.append(stage_root + "/lib/" + f.short_path[len(prefix):])
         return staged, stage_root, own_staged_roots, stage_root, prefix
     for f in srcs:
         record = _own_record_for(own_records, f.short_path)
         member_prefix = (record.lib_root + "/lib/") if record.lib_root else "lib/"
-        member_dir = name + ".summary_root/_own/" + mangle_package_dir(record.package_name)
-        own_staged_roots[record.package_name] = stage_root + "/_own/" + mangle_package_dir(record.package_name)
-        link = ctx.actions.declare_file(member_dir + "/lib/" + f.short_path[len(member_prefix):])
-        ctx.actions.symlink(output = link, target_file = f)
-        staged.append(link)
+        member_root = stage_root + "/_own/" + mangle_package_dir(record.package_name)
+        own_staged_roots[record.package_name] = member_root
+        staged.append(member_root + "/lib/" + f.short_path[len(member_prefix):])
     return staged, stage_root, own_staged_roots, stage_root, prefix
 
 def _summary_dep_roots(info, all_pkgs, own_records, own_root, own_staged_roots, stage_root, inherited):
@@ -608,46 +611,44 @@ def _summary_dep_roots(info, all_pkgs, own_records, own_root, own_staged_roots, 
                 conflicted_names[pkg.package_name] = True
     return roots, uncovered_pkgs, conflicted_names
 
-def _summary_stage_uncovered_pkg(ctx, pkg, stage):
-    """Stages one uncovered dependency package. Mutates the stage's inputs and roots.
+def _summary_stage_uncovered_pkg(pkg, stage):
+    """Places one uncovered dependency package. Mutates the stage's lists and roots.
+
+    Nothing is declared here: the summarize action links each path to its
+    file when it runs.
 
     Args:
-      ctx: The aspect context.
       pkg: `struct(pkg_name, pkg, pfiles)`: the uncovered package's name,
         record, and files to stage.
-      stage: `struct(name, stage_root, roots, uncovered_inputs,
-        uncovered_staged)` built once by `_summary_stage_uncovered`; its dict
-        and lists are mutated in place.
+      stage: `struct(stage_root, roots, uncovered_inputs, uncovered_staged,
+        uncovered_dirs)` built once by `_summary_stage_uncovered`; its dict
+        and lists are mutated in place. `uncovered_staged` holds
+        `(path, File)` pairs, `uncovered_dirs` the same for a package that is
+        one directory.
     """
     dep_mangled = mangle_package_dir(pkg.pkg_name)
+    stage.roots[pkg.pkg_name] = stage.stage_root + "/_deps/" + dep_mangled
     if not pkg.pfiles:
-        stage.roots[pkg.pkg_name] = stage.stage_root + "/_deps/" + dep_mangled
         return
     if len(pkg.pfiles) == 1 and pkg.pfiles[0].is_directory:
-        dir_link = ctx.actions.declare_directory(stage.name + ".summary_root/_deps/" + dep_mangled)
-        ctx.actions.symlink(output = dir_link, target_file = pkg.pfiles[0])
-        stage.uncovered_inputs.append(dir_link)
+        stage.uncovered_dirs.append((stage.stage_root + "/_deps/" + dep_mangled, pkg.pfiles[0]))
         stage.uncovered_inputs.extend(pkg.pfiles)
-        stage.roots[pkg.pkg_name] = stage.stage_root + "/_deps/" + dep_mangled
         return
     dep_prefix = (pkg.pkg.lib_root + "/lib/") if pkg.pkg.lib_root else "lib/"
     for f in pkg.pfiles:
         if f.is_directory or not f.short_path.startswith(dep_prefix):
             continue
         rel = f.short_path[len(dep_prefix):]
-        link = ctx.actions.declare_file(stage.name + ".summary_root/_deps/" + dep_mangled + "/lib/" + rel)
-        ctx.actions.symlink(output = link, target_file = f)
-        stage.uncovered_inputs.append(link)
-        stage.uncovered_staged.append(link)
+        stage.uncovered_staged.append((stage.stage_root + "/_deps/" + dep_mangled + "/lib/" + rel, f))
     stage.uncovered_inputs.extend(pkg.pfiles)
-    stage.roots[pkg.pkg_name] = stage.stage_root + "/_deps/" + dep_mangled
 
-def _summary_stage_uncovered(ctx, info, own_records, uncovered_pkgs, name, prefix, stage_root, roots):
-    """Stages uncovered dependency files. Returns (uncovered_inputs, uncovered_staged)."""
+def _summary_stage_uncovered(info, own_records, uncovered_pkgs, prefix, stage_root, roots):
+    """Places uncovered dependency files. Returns (uncovered_inputs, uncovered_staged, uncovered_dirs)."""
     uncovered_inputs = []
     uncovered_staged = []
+    uncovered_dirs = []
     if not uncovered_pkgs:
-        return uncovered_inputs, uncovered_staged
+        return uncovered_inputs, uncovered_staged, uncovered_dirs
     if len(own_records) == 1:
         others = [f for f in info.transitive_srcs.to_list() if not f.short_path.startswith(prefix)]
     else:
@@ -660,45 +661,38 @@ def _summary_stage_uncovered(ctx, info, own_records, uncovered_pkgs, name, prefi
             by_pkg.setdefault(owner, []).append(f)
     for pkg_name, pkg in uncovered_pkgs.items():
         _summary_stage_uncovered_pkg(
-            ctx,
             struct(pkg_name = pkg_name, pkg = pkg, pfiles = by_pkg.get(pkg_name, [])),
             struct(
-                name = name,
                 stage_root = stage_root,
                 roots = roots,
                 uncovered_inputs = uncovered_inputs,
                 uncovered_staged = uncovered_staged,
+                uncovered_dirs = uncovered_dirs,
             ),
         )
-    return uncovered_inputs, uncovered_staged
+    return uncovered_inputs, uncovered_staged, uncovered_dirs
+
+def _package_record_arg(pkg):
+    return "%s\t%s\t%s" % (pkg.package_name, pkg.lib_root, getattr(pkg, "language_version", "") or "")
 
 def _summary_run_action(ctx, info, own_records, action, closure):
-    """Writes the summary package config and runs `summarize`.
+    """Runs `summarize`, which lays out its sources and package config itself.
 
     Args:
       ctx: The aspect context.
       info: The target's `DartInfo`.
       own_records: The target's own `DartPackageInfo` records, in order.
-      action: `struct(srcs, staged, uncovered_inputs, uncovered_staged, name,
-        config)`: the action's sources, staged links, and declared outputs.
-      closure: `struct(all_pkgs, roots, packaged, dependencies,
-        conflicted_names, inherited_embedder_sdks, embedder_sdk_summary,
-        packages, own_files)`: the closure-wide summary inputs, built once by
+      action: `struct(srcs, staged, uncovered_inputs, uncovered_staged,
+        uncovered_dirs, name, stage)`: the action's sources, the paths they are
+        laid out at, and the directory it lays them out in.
+      closure: `struct(roots, packaged, dependencies, conflicted_names,
+        inherited_embedder_sdks, embedder_sdk_summary, packages, own_files,
+        stage_root, own_roots)`: the closure-wide summary inputs, built once by
         `_dart_analyzer_summary_impl`.
 
     Returns:
       A `DartAnalyzerSummaryInfo` carrying the new summary and the closure's summaries.
     """
-    ctx.actions.write(
-        output = action.config,
-        content = generate_package_config(
-            closure.all_pkgs,
-            [],
-            action.config,
-            roots = closure.roots,
-        ),
-    )
-
     summary_inputs = closure.dependencies
     if closure.conflicted_names:
         packaged = closure.packaged.to_list()
@@ -713,28 +707,38 @@ def _summary_run_action(ctx, info, own_records, action, closure):
     args.set_param_file_format("multiline")
     args.add("summarize")
     args.add("--sdk", sdk_root_path(dart_sdk_info))
-    args.add("--packages", action.config)
+    args.add("--stage-dir", action.stage.path)
+    args.add("--summary-root", closure.stage_root)
+    args.add("--packages", "%s/%s.package_config.json" % (action.stage.path, action.name))
     args.add("--out", summary)
     args.add("--sdk-summary", sdk_summary)
     for f, link in zip(action.srcs, action.staged):
         args.add("--source", link)
+        args.add("--stage-from", f)
         args.add("--uri", _package_uri(info, f))
-    if action.uncovered_staged:
-        args.add_all(action.uncovered_staged, before_each = "--dep-source")
+    for link, f in action.uncovered_staged:
+        args.add("--dep-source", link)
+        args.add("--dep-from", f)
+    for link, f in action.uncovered_dirs:
+        args.add("--dep-dir", link)
+        args.add("--dep-dir-from", f)
+    for own_name, own_root in closure.own_roots:
+        args.add("--own-root", "%s\t%s" % (own_name, own_root))
+    args.add_all(info.transitive_packages, map_each = _package_record_arg, before_each = "--package-record")
     args.add_all(summary_inputs, before_each = "--summary")
     ctx.actions.run(
         executable = launch.executable,
         arguments = launch.prefix + [args],
         inputs = depset(
-            direct = launch.inputs + [action.config, sdk_summary] +
-                     action.srcs + action.staged + action.uncovered_inputs,
+            direct = launch.inputs + [sdk_summary] +
+                     action.srcs + action.uncovered_inputs,
             transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, summary_inputs],
         ),
         tools = depset(
             direct = launch.inputs,
             transitive = [dart_sdk_info.runtime_files],
         ),
-        outputs = [summary],
+        outputs = [summary, action.stage],
         mnemonic = "DartAnalyzerSummary",
         progress_message = "Summarizing Dart library %{label}",
         env = writable_home_env(dart_sdk_info.dart, summary),
@@ -800,28 +804,26 @@ def _summary_own_names(own_keys, embedder, split, sibling_conflicts, redundant, 
         own = [CONFLICT_PREFIX + k for k in own_keys]
     return own + sibling_conflicts
 
-def _summary_stage_all(ctx, info, own_records, srcs, target):
-    """Stages the target's own libraries and its uncovered dependency packages.
+def _summary_stage_all(info, own_records, srcs, target):
+    """Places the target's own libraries and its uncovered dependency packages.
 
     Args:
-      ctx: The aspect context.
       info: The target's `DartInfo`.
       own_records: The target's owned package records.
       srcs: The target's own sources.
-      target: A struct with the summary `name`, the `config` file, and the `inherited` keys.
+      target: A struct with the `stage_root` and the `inherited` keys.
 
     Returns:
-      A struct with `staged`, `all_pkgs`, `roots`, `conflicted_names`, `uncovered_inputs`,
-      and `uncovered_staged`.
+      A struct with `staged`, `roots`, `own_roots`, `conflicted_names`,
+      `uncovered_inputs`, `uncovered_staged` and `uncovered_dirs`.
     """
-    name = target.name
 
     # Always stage the package's own libraries under `.summary_root` so
     # `package_config.json` never points at the real source tree where
     # undeclared files might exist on disk. A merged library stages each
     # member under its own directory: two members may ship the same
     # `lib/`-relative path, and one shared `lib/` could hold only one of them.
-    own_staging = _summary_stage_own(ctx, info, own_records, srcs, name, target.config)
+    own_staging = _summary_stage_own(info, own_records, srcs, target.stage_root)
     staged, own_root, own_staged_roots, stage_root, prefix = own_staging
 
     # Covered dependency packages come from their `.sum` files, so their `rootUri`
@@ -839,23 +841,27 @@ def _summary_stage_all(ctx, info, own_records, srcs, target):
         stage_root,
         target.inherited,
     )
-    uncovered_inputs, uncovered_staged = _summary_stage_uncovered(
-        ctx,
+    uncovered_inputs, uncovered_staged, uncovered_dirs = _summary_stage_uncovered(
         info,
         own_records,
         uncovered_pkgs,
-        name,
         prefix,
         stage_root,
         roots,
     )
+
+    # The roots the package config gives the target's own packages; an own
+    # package with no staged library has none (see `_package_record_arg`).
+    own_names = [r.package_name for r in own_records] if len(own_records) != 1 else [info.package_name]
+    own_roots = [(n, roots.get(n, "")) for n in own_names]
     return struct(
         staged = staged,
-        all_pkgs = all_pkgs,
         roots = roots,
+        own_roots = own_roots,
         conflicted_names = conflicted_names,
         uncovered_inputs = uncovered_inputs,
         uncovered_staged = uncovered_staged,
+        uncovered_dirs = uncovered_dirs,
     )
 
 def _dart_analyzer_summary_impl(target, ctx):
@@ -929,10 +935,11 @@ def _dart_analyzer_summary_impl(target, ctx):
         return [_summary_uncovered_info(dependencies, packaged, inherited_embedder_sdks, packages, own_files)]
 
     name = ctx.label.name + ".dart_analyzer_summary"
-    config = ctx.actions.declare_file(name + ".package_config.json")
+    stage_dir = ctx.actions.declare_directory(name + ".summary_stage")
+    stage_root = "%s/%s.summary_root" % (stage_dir.path, name)
 
-    plan = struct(name = name, config = config, inherited = inherited)
-    stage = _summary_stage_all(ctx, info, own_records, srcs, plan)
+    plan = struct(stage_root = stage_root, inherited = inherited)
+    stage = _summary_stage_all(info, own_records, srcs, plan)
 
     return [_summary_run_action(
         ctx,
@@ -943,11 +950,13 @@ def _dart_analyzer_summary_impl(target, ctx):
             staged = stage.staged,
             uncovered_inputs = stage.uncovered_inputs,
             uncovered_staged = stage.uncovered_staged,
+            uncovered_dirs = stage.uncovered_dirs,
             name = name,
-            config = config,
+            stage = stage_dir,
         ),
         struct(
-            all_pkgs = stage.all_pkgs,
+            stage_root = stage_root,
+            own_roots = stage.own_roots,
             roots = stage.roots,
             packaged = packaged,
             dependencies = dependencies,

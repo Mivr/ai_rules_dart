@@ -368,11 +368,131 @@ String? _reanchorThroughSymlink(String rootDir, String targetPath) {
 
 /// Writes the summary of one package's libraries.
 ///
-/// `--source` and `--uri` pair up in order: the i-th source is the library at
-/// the i-th `package:` URI. A `part` file is staged with the others, so its
-/// library resolves it, but it is not a library and has no URI in the bundle:
-/// naming it as one fails the bundle with "Missing library".
+/// With `--stage-dir`, the request lays out its own sources first, inside
+/// that directory, which the action declares as an output, and empties it
+/// afterwards: each `--source` (and `--dep-source`) is a path to create, as
+/// a link to the declared input its `--stage-from` (`--dep-from`) names, each
+/// `--dep-dir` a link to the input directory its `--dep-dir-from` names, and
+/// `--packages` is written from the `--package-record`s (`name`, `lib_root`,
+/// `language_version`, tab-separated, in order): an `--own-root` (`name`, tab,
+/// directory, empty for none) roots an own package, and every other package
+/// is rooted at `_deps/<name>` under the `--summary-root`.
 Future<int> _summarize(
+  AnalyzerArgs args, {
+  required StringSink errSink,
+  required fs.ResourceProvider resourceProvider,
+}) async {
+  final String? stageDir = args.optional('stage-dir');
+  if (stageDir == null) {
+    return await _summarizeStaged(
+      args,
+      errSink: errSink,
+      resourceProvider: resourceProvider,
+    );
+  }
+  try {
+    final String? error = _layOutSummary(args, stageDir);
+    if (error != null) return _usageError(errSink, error);
+    return await _summarizeStaged(
+      args,
+      errSink: errSink,
+      resourceProvider: resourceProvider,
+    );
+  } finally {
+    _emptyDirectory(stageDir);
+  }
+}
+
+/// Deletes everything inside [dir], keeping [dir].
+void _emptyDirectory(String dir) {
+  final d = Directory(dir);
+  if (!d.existsSync()) return;
+  for (final FileSystemEntity e in d.listSync(followLinks: false)) {
+    e.deleteSync(recursive: true);
+  }
+}
+
+/// Lays out one summarize request's sources and package config (see
+/// [_summarize]). Returns an error message, or null.
+String? _layOutSummary(AnalyzerArgs args, String stageDir) {
+  _emptyDirectory(stageDir);
+  String? linkAll(String linkFlag, String fromFlag) {
+    final List<String> links = args.all(linkFlag);
+    final List<String> targets = args.all(fromFlag);
+    if (links.length != targets.length) {
+      return 'every --$linkFlag needs a --$fromFlag';
+    }
+    for (var i = 0; i < links.length; i++) {
+      final String link = p.normalize(p.absolute(links[i]));
+      if (!p.isWithin(p.normalize(p.absolute(stageDir)), link)) {
+        return '--$linkFlag ${links[i]} is outside --stage-dir';
+      }
+      if (FileSystemEntity.typeSync(link, followLinks: false) !=
+          FileSystemEntityType.notFound) {
+        continue;
+      }
+      Directory(p.dirname(link)).createSync(recursive: true);
+      Link(link).createSync(p.normalize(p.absolute(targets[i])));
+    }
+    return null;
+  }
+
+  final String? error =
+      linkAll('source', 'stage-from') ??
+      linkAll('dep-source', 'dep-from') ??
+      linkAll('dep-dir', 'dep-dir-from');
+  if (error != null) return error;
+
+  final List<String> records = args.all('package-record');
+  if (records.isEmpty) return null;
+  final String config = args.single('packages');
+  final String configDir = p.dirname(p.normalize(config));
+  final String summaryRoot = args.single('summary-root');
+  final ownRoots = <String, String>{
+    for (final String entry in args.all('own-root'))
+      entry.split('\t').first: entry.split('\t').last,
+  };
+  final entries = <String>[];
+  for (final record in records) {
+    final List<String> f = record.split('\t');
+    if (f.length != 3) return 'bad --package-record `$record`';
+    final String name = f[0];
+    final String libRoot = f[1];
+    final String languageVersion = f[2];
+    // An own package with no staged files has no root, as before.
+    final String? root = switch (ownRoots[name]) {
+      null => '$summaryRoot/_deps/${_mangle(name)}',
+      '' => null,
+      final String own => own,
+    };
+    final String rootUri;
+    if (root != null) {
+      rootUri = p.posix.relative(root, from: configDir);
+    } else if (libRoot.isEmpty) {
+      rootUri = p.posix.relative('.', from: configDir);
+    } else {
+      continue;
+    }
+    final lv = languageVersion.isEmpty
+        ? ''
+        : ', "languageVersion": "$languageVersion"';
+    entries.add(
+      '    {"name": "$name", "rootUri": "$rootUri", "packageUri": "lib/"$lv}',
+    );
+  }
+  final file = File(config);
+  file.parent.createSync(recursive: true);
+  file.writeAsStringSync(
+    '{\n  "configVersion": 2,\n  "packages": [\n'
+    '${entries.join(',\n')}\n  ]\n}\n',
+  );
+  return null;
+}
+
+/// `mangle_package_dir`: path-hostile characters become `_`.
+String _mangle(String name) => name.replaceAll(RegExp('[/:.+]'), '_');
+
+Future<int> _summarizeStaged(
   AnalyzerArgs args, {
   required StringSink errSink,
   required fs.ResourceProvider resourceProvider,
