@@ -1,6 +1,6 @@
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app", "flutter_android_engine")
+load("@android_model//:defs.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_gen_l10n")
-load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
 load(
     "@rules_flutter//flutter:linux.bzl",
     "flutter_linux_bundle",
@@ -37,35 +37,24 @@ flutter_application(
     ],
 )
 
-# The app's own Kotlin code (MainActivity with a method channel). Spelled out
-# rather than discovered, because `manifest` below turns discovery off.
-flutter_android_engine(
-    name = "engine_x64_compile_only",
-    android_abi = "x64",
-    neverlink = True,
-)
+# Android from the stock project in `android/`: `bazel run //:android_pin` has Gradle describe it once
+# (android_model.json), and the app's own Kotlin code, its manifests, resources, version and plugins
+# come from there.
+flutter_android_pin(name = "android_pin")
 
-kt_android_library(
-    name = "runner",
-    srcs = glob(["android/app/src/main/kotlin/**/*.kt"]),
-    custom_package = "dev.rdf.counter",
-    deps = [":engine_x64_compile_only"],
-)
-
-# x86_64, for the emulator image on this host.
+# `:android` is the split APKs; `:android_apk` the whole APK, which is what stock
+# `flutter run --use-application-binary` takes. x86_64 only, for the emulator image on this host.
 flutter_android_app(
-    name = "app_x64",
-    package_name = "dev.rdf.counter",
-    android_abi = "x64",
+    name = "android",
+    abis = ["x86_64"],
     application = ":app_flutter",
-    # Stock `flutter run --use-application-binary` refuses an APK without
-    # android:versionCode ("Manifest versionCode not found"). Gradle takes it
-    # from `version:` in pubspec.yaml; until the rules do, this copy of the
-    # main manifest carries it.
-    manifest = "android/app/src/bazel/AndroidManifest.xml",
-    permissions = ["android.permission.INTERNET"],
-    resources = glob(["android/app/src/main/res/**"]),
-    deps = [":runner"],
+    # package:jni builds libdartjni.so with CMake in Gradle; here the Dart side builds it.
+    native_built_elsewhere = [":jni"],
+)
+
+alias(
+    name = "app_x64",
+    actual = ":android_apk",
 )
 
 # Linux desktop bundle with the rules' own runner and sysroot. The flutter-create
