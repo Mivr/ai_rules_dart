@@ -19,6 +19,7 @@ load(":analyzer_summary_tool_test.bzl", "analyzer_summary_tool_test_suite")
 load(":aot_tools_test.bzl", "aot_tools_test_suite")
 load(":architecture_invariants_test.bzl", "architecture_invariants_test_suite")
 load(":built_value_library_direct_test.bzl", "built_value_library_direct_test_suite")
+load(":closure_facts_test.bzl", "closure_facts_test_suite")
 load(":code_asset_test.bzl", "code_asset_test_suite")
 load(":codegen_direct_test.bzl", "codegen_direct_test_suite")
 load(":codegen_test.bzl", "codegen_test_suite")
@@ -228,6 +229,8 @@ compile_action_direct_test_suite(name = "compile_action_direct")
 compile_wrapper_test_suite(name = "compile_wrapper_test")
 
 unbacked_embedder_test_suite(name = "unbacked_embedder_test")
+
+closure_facts_test_suite(name = "closure_facts_test")
 
 dart_fix_direct_test_suite(name = "dart_fix_direct")
 

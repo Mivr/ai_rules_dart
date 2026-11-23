@@ -79,6 +79,7 @@ say: `language_version = ""` remains legal and keeps its meaning, which
 """
 
 load("//dart:providers.bzl", "DartAnalyzableInfo", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
+load("//dart/private:closure_facts.bzl", "closure_facts")
 
 visibility(["//dart/..."])
 
@@ -237,6 +238,8 @@ def dart_info(
     )
 
     return _merged_dart_info(
+        label = label,
+        deps = deps,
         dep_infos = dep_infos,
         package_name = package.package_name,
         lib_root = package.lib_root,
@@ -285,6 +288,8 @@ def dart_info_no_package(deps = []):
       A `DartInfo` carrying its dependencies' closures and nothing else.
     """
     return _merged_dart_info(
+        label = None,
+        deps = deps,
         dep_infos = [dep[DartInfo] for dep in deps],
         package_name = "",
         lib_root = "",
@@ -345,6 +350,8 @@ def dart_info_multi(label, records, deps = [], srcs = [], resources = [], packag
         seen[record.package_name] = record.lib_root
 
     return _merged_dart_info(
+        label = label,
+        deps = deps,
         dep_infos = [dep[DartInfo] for dep in deps],
         package_name = "",
         lib_root = "",
@@ -505,6 +512,8 @@ def derived_package_info(pkg, lib_root = None, code_assets = None, link_hook = N
     )
 
 def _merged_dart_info(
+        label,
+        deps,
         dep_infos,
         package_name,
         lib_root,
@@ -520,6 +529,9 @@ def _merged_dart_info(
     is added — and neither can be the one that forgets to forward it.
 
     Args:
+      label: The constructing rule's label, or None for a target that owns
+        no package record. Names the owner in `closure_facts`.
+      deps: The dependency targets, in the order of `dep_infos`.
       dep_infos: The `DartInfo` of each dependency.
       package_name: Value for `DartInfo.package_name`.
       lib_root: Value for `DartInfo.lib_root`.
@@ -588,4 +600,8 @@ def _merged_dart_info(
                 if hasattr(info, "transitive_code_asset_files")
             ],
         ),
+        # Optional for readers, like the two fields above: a dependency built
+        # without it leaves this target without it, and readers then take
+        # their precise path. See `closure_facts.bzl`.
+        closure_facts = closure_facts(label, packages, resources, dep_infos, [str(dep.label) for dep in deps]),
     )

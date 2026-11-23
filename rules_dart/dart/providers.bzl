@@ -53,6 +53,7 @@ forwarded silently discards every dependency's values.""",
         "transitive_package_files": "depset[File]: The runtime `data` files of this library and all transitive deps. Runfiles-only: never in `DefaultInfo.files`, `transitive_resources`, or an action's inputs. Optional: a producer built against a rules_dart predating the field omits it; read it with `getattr(..., depset())`.",
         "transitive_packages": "depset[DartPackageInfo]: Package records for this library and all transitive deps.",
         "transitive_code_asset_files": "depset[File]: The dynamic libraries of every transitive code asset. Carried separately from `transitive_packages` because a depset of providers cannot be turned back into files for runfiles.",
+        "closure_facts": "struct or None: Small facts about the closure, merged from the dependencies' facts where the provider is built, so a consumer need not walk `transitive_packages` to learn them: the closure's root packages, Flutter embedder files, whether any record has code assets or an unreplaced build hook or a root inside another package's `lib/`, the labels merged, and a depset naming the owner of each package name and root. None when a dependency carries none. Optional: read it with `getattr(..., None)`; a reader without it takes the path that walks the closure. Internal to rules_dart: its shape may change.",
     },
 )
 
