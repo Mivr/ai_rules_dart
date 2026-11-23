@@ -14,7 +14,7 @@ Bump the Dart SDK to version $ARGUMENTS.
 
 6. Leave `dart/runfiles/pubspec.yaml`'s `environment.sdk` alone unless the new SDK actually falls outside it. That package is published to pub.dev, so its lower bound stays as low as remains compatible rather than tracking the newest SDK (see CHORES.md).
 
-7. Run `dart run tool/refresh_locks.dart` to regenerate all lock files.
+7. Run `cd tools && bazel run //refresh_locks` to regenerate all lock files.
 
 8. Pick one e2e workspace (e.g. `e2e/hello_world`) and run `bazel build //...` in it to verify the new SDK resolves correctly.
 

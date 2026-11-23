@@ -65,7 +65,7 @@ Change them only when the version they name leaves the table.
    `DartFormat` runs the SDK's own `dart format` for any other series, so a new
    default works without a change, and moves to the in-process formatter when
    `dart/ext` is re-vendored for it
-6. Regenerate lock files: `dart run tool/refresh_locks.dart`
+6. Regenerate lock files: `cd tools && bazel run //refresh_locks`
 
 **Verification**: the suites of step 3 pass for every listed version, and
 `cd e2e/root_sdk_pin && bazel test //...` passes.
@@ -111,7 +111,7 @@ Change them only when the version they name leaves the table.
 
 1. Update all `.bazelversion` files to the new version
 2. If the major version changed, update `.bcr/presubmit.yml` matrix and `docs/ARCHITECTURE.md`
-3. Regenerate lock files: `dart run tool/refresh_locks.dart`
+3. Regenerate lock files: `cd tools && bazel run //refresh_locks`
 4. Run `bazel test //dart/tests/...` to verify
 
 **Verification**: `bazel test //dart/tests/...` passes.
@@ -149,7 +149,7 @@ Change them only when the version they name leaves the table.
 1. For each `bazel_dep` in root `MODULE.bazel`, check latest version on BCR
 2. Update versions, skip any already current
 3. Mirror version changes to e2e workspaces that duplicate the same deps
-4. Regenerate lock files: `dart run tool/refresh_locks.dart`
+4. Regenerate lock files: `cd tools && bazel run //refresh_locks`
 5. Run `bazel test //dart/tests/...` to verify
 
 **Verification**: `bazel test //dart/tests/...` passes.
@@ -160,58 +160,78 @@ Change them only when the version they name leaves the table.
 
 ## Lock File Refresh
 
-**Trigger**: After any change to `MODULE.bazel` files or their transitive deps —
-and after any change to a `.bzl` file reachable from a module extension. A lock
-records each extension's `bzlTransitiveDigest`, so editing (or merely adding a
-load to) anything in `dart/pub/extensions.bzl`'s closure invalidates the lock of
-**every** workspace using it, not just the one whose `MODULE.bazel` moved. Under
-`--lockfile_mode=error`, which `.bazelrc` sets, that is a hard CI failure.
+**Trigger**: After any change to a `MODULE.bazel` file or its transitive deps,
+to `.bazelversion`, and after any change to a `.bzl` file reachable from a
+module extension. A lock records each extension's `bzlTransitiveDigest`, so
+editing (or merely adding a load to) anything in `dart/pub/extensions.bzl`'s
+closure invalidates the lock of **every** workspace using it, not just the one
+whose `MODULE.bazel` moved. Under `--lockfile_mode=error`, which each module's
+`.bazelrc` sets, that is a hard CI failure.
 
-**Workspaces** (directories containing `MODULE.bazel`):
+**Workspaces**: one repository holds both modules, so one tool refreshes them
+all. It finds every directory with a `MODULE.bazel` (the two module roots,
+`rules_dart/tools`, `rules_dart/dev` and every `e2e/` workspace) and skips the
+few that are not workspaces of their own, each with its reason in
+`skippedWorkspaces` (`tools/refresh_locks/lib/workspaces.dart`): the nested
+modules consumed only from a parent workspace and the conformance overlays.
+`bazel run //refresh_locks -- --list` prints both sets.
 
-- `.` (root)
-- `e2e/smoke`
-- `e2e/hello_world`
-- `e2e/library_deps`
-- `e2e/dart_test`
-- `e2e/dart_test_pkg`
-- `e2e/analysis`
-- `e2e/analysis_failure`
-- `e2e/web_app`
-- `e2e/pub_deps`
-- `e2e/pub_lock`
-- `e2e/gazelle`
-- `e2e/cross_compile`
-- `e2e/pub_lock_cross_module`
-- `e2e/pub_lock_dedup`
-- `e2e/pub_lock_upgrade`
-- `e2e/codegen`
-- `e2e/ext_exemplar`
-- `e2e/fix`
-- `e2e/analyze_composition`
-- `e2e/link_hook`
-- `e2e/isolated_hub`
-- `e2e/root_sdk_pin`
+**Procedure**: from `rules_dart/tools`, with no `.bazelrc.user` in any
+workspace (an `--override_module` line in one changes the module graph away
+from the one CI resolves; the tool refuses to run until they are moved aside):
 
-`e2e/pub_lock_cross_module`'s `module_b` and `module_c` are skipped by the
-tool (`_skipWorkspaces` in `tool/refresh_locks.dart`): they are consumed only
-from their parent and don't resolve standalone. `e2e/pub_lock_conflict` fails
-on purpose (intentionally conflicting lock files); the tool accepts that one
-failure (`_expectedFailures`) and still refreshes the rest of its lock.
+```sh
+bazel run //refresh_locks                       # refresh every lockfile
+bazel run //refresh_locks -- --check            # write nothing; list stale ones
+bazel run //refresh_locks -- rules_flutter/e2e  # only workspaces under a path
+```
 
-**Procedure**: Run `dart run tool/refresh_locks.dart`. This both refreshes
-Bazel lock files (pulling fresh registry data, keeping MODULE.bazel
-formatting canonical, and evaluating every module extension in the graph,
-not only those the workspace's targets reach) and runs `dart pub get` in the in-repo Dart packages
-(`dart/ext/`, `dart/private/tools/`, `dart/runfiles/`) to refresh their
-`pubspec.lock` files. Pub runs on the pinned SDK
-(`bazel run @rules_dart//dart`), since a package's SDK floor can be ahead of
-the host's `dart`, with `FLUTTER_ROOT` taken from the environment or the
-`flutter` on PATH, for any lock that needs a Flutter-flavored pub.
+Per workspace it runs `mod tidy --lockfile_mode=refresh` (registry hashes and a
+canonical `MODULE.bazel`), `mod deps --lockfile_mode=update` (evaluates every
+module extension of the graph, not only those the workspace's targets reach)
+and `mod deps --lockfile_mode=error` (proves the lock stands alone), then stops
+that workspace's Bazel server. `--check` runs only the last command. Two
+workspaces run at a time (`--jobs=N`): each holds a Bazel server and asks the
+registry, and `pub.dev` for the packages whose facts the lock does not yet
+hold, so a refreshed lock makes the next run ask nothing. `--bazel=PATH` names
+another Bazel or a wrapper, `--expunge` deletes each output base afterwards,
+`--help` lists the rest. Logs of every command are in the directory it prints.
+The tool exits 1 listing the stale or failed workspaces.
 
-**Verification**: All workspaces and packages report success.
+`e2e/pub_lock_conflict` fails on purpose (conflicting lock files), and the
+workspaces whose hubs name a `file://FIXTURES_ROOT` registry that a CI step or
+the e2e runner rewrites cannot evaluate their pub extension in place. They are
+listed in `expectedFailures` with the text the failure must contain; their
+lockfiles hold what Bazel wrote before it failed and nothing about pub.
 
-**Automation**: `/refresh-locks` slash command.
+**Other operating systems**: the lockfiles are made on Linux x64 and checked
+there and on macOS and Windows. A lock holds one `general` entry per module
+extension unless the extension declares `os_dependent` or `arch_dependent`;
+then it holds one entry per system it ran on, and a lock made on Linux x64 has
+none for the others (`--lockfile_mode=error` fails there with "does not exist
+in the lockfile"). No extension of either module's graph declares that today:
+the tool's `--check` fails, naming the extension, as soon as any lockfile
+holds an entry keyed by system, which is the signal to add one made on that
+system. The extensions' own source (`dart` sets both to false) and every
+committed lockfile were read for this; nothing was run on macOS or Windows.
+Two more things must hold on Windows: files are checked out with LF
+(`rules_dart/.gitattributes` says so; a CRLF checkout changes the digest of
+every `.bzl` file and of `pubspec.lock`), and the workspace holds no
+`.bazelrc.user`.
+
+**Verification**: `bazel run //refresh_locks -- --check` passes, and so does
+`bazel build --nobuild --lockfile_mode=error //...` in a module root.
+
+**Automation**: `/refresh-locks` slash command. CI's `mod-tidy` and `repo-checks`
+jobs run the three commands on each module root and fail when they change a
+file.
+
+The `pubspec.lock` files of the in-repo Dart packages (`dart/ext/`,
+`dart/private/tools/`, `dart/runfiles/`) are not touched by the tool: refresh
+one with `bazel run @rules_dart//dart -- pub get` in its directory (the pinned
+SDK, since a package's SDK floor can be ahead of the host's `dart`, with
+`FLUTTER_ROOT` set for a Flutter-flavored lock), and regenerate the plan of
+`dart/ext/pubspec.lock` as described in [pub.md](pub.md).
 
 ### Lockfile-off Exemptions
 
@@ -338,8 +358,9 @@ Each in-repo Dart package is publishable to pub.dev. Maintenance includes:
   touched `MODULE.bazel.lock`s, and verify with `//dart/ext/...`,
   `e2e/codegen`, and a consuming app.
 
-- **Lock file**: `pubspec.lock` is refreshed automatically by
-  `tool/refresh_locks.dart`.
+- **Lock file**: `pubspec.lock` is refreshed with `pub get` or `pub upgrade`
+  (see Lock File Refresh); the Bazel lockfiles that depend on it with
+  `cd tools && bazel run //refresh_locks`.
 - **Version**: Committed as `0.0.0-dev`. The real version is injected from
   the git tag at publish time by the release workflow.
 - **Publishing**: Handled automatically by the `pub-publish` job in the
@@ -420,7 +441,7 @@ outdated dependencies.
 1. For each tool in `multitool.lock.json`, check its GitHub releases for newer versions
 2. Download archives for all platform variants (macOS/Linux, arm64/x86_64)
 3. Compute SHA-256 hashes and update the lockfile entries
-4. Regenerate lock files: `dart run tool/refresh_locks.dart`
+4. Regenerate lock files: `cd tools && bazel run //refresh_locks`
 5. Run `bazel run @multitool//tools/yamlfmt -- -lint -gitignore_excludes "$PWD"` and
    `bazel run @multitool//tools/typos -- "$PWD"` to verify the updated tools work
 

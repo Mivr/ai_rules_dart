@@ -15,7 +15,7 @@ Check and bump all `bazel_dep` versions in MODULE.bazel to their latest BCR rele
    Bumping `sqlite3` also requires updating the exact version literal asserted
    in `e2e/ext_exemplar/sqlite3_binary/test/direct_test.dart`.
 
-5. Regenerate all lock files: `dart run tool/refresh_locks.dart`
+5. Regenerate all lock files: `cd tools && bazel run //refresh_locks`
 
 6. Run `bazel test //dart/tests/...` to verify unit tests pass.
 

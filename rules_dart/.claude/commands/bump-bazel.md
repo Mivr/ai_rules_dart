@@ -14,7 +14,7 @@ Bump Bazel to version $ARGUMENTS.
    - Update `.bcr/presubmit.yml` — change the `bazel:` matrix value (e.g. `"8.x"` to `"9.x"`)
    - Update `docs/ARCHITECTURE.md` — any prose mentioning the major Bazel version
 
-4. Regenerate all lock files: `dart run tool/refresh_locks.dart`
+4. Regenerate all lock files: `cd tools && bazel run //refresh_locks`
 
 5. Run `bazel test //dart/tests/...` to verify unit tests pass.
 

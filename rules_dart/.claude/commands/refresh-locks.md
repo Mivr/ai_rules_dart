@@ -4,7 +4,7 @@ Regenerate all MODULE.bazel.lock files.
 
 1. Read `docs/CHORES.md` § "Lock File Refresh" for the workspace list.
 
-2. Run `dart run tool/refresh_locks.dart` to regenerate lock files in all workspaces.
+2. Run `cd tools && bazel run //refresh_locks` (add `-- --check` to only list stale lockfiles) to regenerate the lock files of every workspace of both modules.
 
 3. If any workspace fails, investigate and report the error.
 

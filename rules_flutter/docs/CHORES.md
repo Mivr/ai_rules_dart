@@ -128,19 +128,25 @@ Linux job runs.
 
 ## Lock File Refresh
 
-**Trigger**: After any change to the root `MODULE.bazel`, its transitive deps,
-or `.bazelversion` — the lock records a format version (Bazel 9.1.0 writes 26,
-9.2.0 writes 28) as well as registry hashes.
+**Trigger**: After any change to a `MODULE.bazel` file or its transitive deps,
+to `.bazelversion` or to a `.bzl` file a module extension loads — the lock
+records a format version (Bazel 9.1.0 writes 26, 9.2.0 writes 28), registry
+hashes and each extension's digest.
 
-**Only the root lock is enforced.** Every `e2e/*` workspace sets
-`--lockfile_mode=off` in its own `.bazelrc`, because each one is overridden onto
-a sibling `rules_dart` in local development, and their locks are intentionally
-left stale. Refreshing them produces a large diff that nothing checks.
+**Every lockfile of the repository is committed and refreshed by one tool**,
+the module root's and each `e2e/*` workspace's, in both modules. From
+`rules_dart/tools`:
 
-**Procedure**: move any `.bazelrc.user` aside — an `--override_module` line in it
-changes the module graph away from the one CI resolves, and a
-`--lockfile_mode=off` line stops the lock from being checked — then
-`bazel mod deps --lockfile_mode=update`, then put it back. Any host will do.
+```sh
+bazel run //refresh_locks               # refresh every lockfile
+bazel run //refresh_locks -- --check    # write nothing; list the stale ones
+```
+
+The procedure, the options, the workspaces it skips and what lockfiles made on
+Linux x64 lack for macOS and Windows are in `rules_dart/docs/CHORES.md`
+("Lock File Refresh"). Move any `.bazelrc.user` aside first: an
+`--override_module` line in it changes the module graph away from the one CI
+resolves (the tool refuses to run while one exists).
 
 There is deliberately no Python in the module graph: `//tools/ios_screenshot`
 builds `dart_binary` drivers that run their `pymobiledevice3` programs
@@ -149,11 +155,10 @@ through a host `python3` (see the comment in `MODULE.bazel`), so no
 maintain. If a future change reintroduces a Python toolchain, this section
 needs its refresh procedure back.
 
-**Verification**: `bazel test //...` in the root passes. To check the lock the
-way CI does, move `.bazelrc.user` aside and run
-`bazel mod deps --lockfile_mode=error`.
+**Verification**: `bazel run //refresh_locks -- --check`, and `bazel test //...`
+in the root.
 
-**Automation**: none.
+**Automation**: `bazel run //refresh_locks` (see above).
 
 ---
 

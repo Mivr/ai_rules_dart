@@ -23,7 +23,7 @@ Update multitool-managed tools to their latest versions.
 6. Also update the `rev:` for yamlfmt and typos in `.pre-commit-config.yaml`
    to match the new versions.
 
-7. Regenerate all lock files: `dart run tool/refresh_locks.dart`
+7. Regenerate all lock files: `cd tools && bazel run //refresh_locks`
 
 8. Verify the updated tools work:
 
