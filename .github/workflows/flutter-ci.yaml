@@ -52,7 +52,6 @@
 #     is the default), and the run_home hermeticity gate
 #   e2e-linux-android:   integration_android and aar_host, the workspaces that
 #     boot the Android emulator (with KVM)
-#   web-smoke:           web_example through the installed binary
 #   repo-checks:         `bazel mod tidy` leaves the lockfile unchanged,
 #     //tools/check_maven_pins and //tools/repo_contents_cache (repos marked
 #     reproducible are shared through the repo contents cache)
@@ -1380,20 +1379,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
-      - name: Run dev_tool tests
-        working-directory: rules_flutter/tools/dev_tool
-        # Exclude e2e tests (tagged @Tags(['e2e'])): they need a browser/CDP,
-        # iOS simulators, or a running macOS app — none available on this
-        # runner. Real-render coverage lives in the Bazel e2e workspaces and,
-        # for web, in the `web-smoke` job below.
-        #
-        # `runfiles` is excluded for a different reason: those tests read
-        # fixtures declared in a Bazel target's `data` and resolve them through
-        # the runfiles tree, which exists under `bazel test` and not here. They
-        # are covered by their Bazel targets, which this job does not replace.
-        run: dart test -x e2e -x runfiles
-      # `-x runfiles` for the same reason as the dev_tool step above: these
-      # tools are Bazel scripts, and two of them import packages that arrive
+      # `-x runfiles`: those tests read fixtures through the runfiles tree,
+      # which exists under `bazel test` only. These tools are Bazel scripts,
+      # and two of them import packages that arrive
       # through their `dart_test` deps rather than through this pubspec
       # (`flutter_test_runner` imports `package:runfiles`, `kernel_filter`'s
       # guard imports `package:rules_dart_guard`). Excluded here, covered by
@@ -1403,108 +1391,6 @@ jobs:
       - name: Run private tool tests
         working-directory: rules_flutter/flutter/private/tools
         run: dart pub get && dart test -x runfiles
-  # The only place CI runs the binary users install rather than `dart run`.
-  # One `-c dbg` Chrome run, asserted down to a VM service that answers
-  # `getVersion` — `app.started` alone does not prove DWDS came up.
-  web-smoke:
-    defaults:
-      run:
-        working-directory: rules_flutter
-    name: Web smoke (DWDS VM service)
-    runs-on: ubuntu-latest
-    # Cold, this downloads the Flutter SDK, the engine artifacts and the web
-    # SDK, then AOT-compiles the dev tool before the run itself starts.
-    timeout-minutes: 60
-    env:
-      DISK_CACHE_DIR: ~/.cache/bazel-disk
-      DISK_CACHE_SHARD: linux-web
-    steps:
-      - uses: actions/checkout@v7
-      - name: Enable Linux sandbox user namespaces
-        run: .github/scripts/enable_linux_sandbox.sh
-      - name: Set disk cache key
-        run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
-      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
-        with:
-          module-root: rules_flutter
-          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
-          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
-      - name: Restore disk cache
-        if: github.event_name != 'schedule' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
-          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
-      - name: Point Bazel at the disk cache
-        run: |
-          dir="${{ env.DISK_CACHE_DIR }}"
-          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
-          mkdir -p "$dir"
-          echo "build --disk_cache=$dir" >> ~/.bazelrc
-      # setup-bazel pins every workspace to one output base with a `startup`
-      # line in ~/.bazelrc. This job runs two workspaces: the root, whose
-      # bazel-bin holds the dev tool binary under test, and e2e/web_example,
-      # which that binary builds. Sharing a base, the second would restart the
-      # server and replace the execroot the running binary lives in. Drop the
-      # line so each workspace keeps Bazel's own per-workspace default.
-      - name: Keep one output base per workspace
-        run: sed -i '/^startup --output_base=/d' ~/.bazelrc
-      # The test process itself resolves this package's pubspec, and dwds
-      # requires a Dart newer than the runner's default. The tool under test
-      # runs on the hermetic Flutter toolchain either way.
-      - uses: dart-lang/setup-dart@v1
-        with:
-          sdk: 3.13.0
-      - name: Install xvfb
-        run: sudo apt-get update && sudo apt-get install -y xvfb
-      # google-chrome is preinstalled on this runner and is on PATH, which is
-      # exactly how the dev tool resolves it on Linux (host_tools.dart) — no
-      # CHROME_EXECUTABLE needed. xvfb gives that Chrome a display.
-      #
-      # Run through tool/e2e.dart rather than `dart test` directly: `dart test`
-      # exits 0 when every selected test skipped, so a skip gate would take this
-      # job green having executed nothing. The runner reads the JSON result
-      # stream and fails unless a verdict was reached, nothing failed, and at
-      # least one test ran. It supplies `--tags=e2e` and `--concurrency=1`
-      # itself and resolves tools/dev_tool from its own location.
-      - name: Web smoke
-        run: xvfb-run -a dart run tools/dev_tool/tool/e2e.dart test/e2e/web_smoke_e2e_test.dart
-      - name: Report cache sizes
-        if: always()
-        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_SAVE_KEY }}
-      # Each save gets its own key (run id and attempt), so a restore always
-      # finds a complete entry: deleting the key before re-saving it left a
-      # window in which concurrent runs restored nothing and built cold. Once
-      # this run's entry exists, drop this shard's entries created before it on
-      # this ref; a newer entry from a concurrent run is kept.
-      - name: Prune older disk cache entries
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REF: ${{ github.ref }}
-          REPO: ${{ github.repository }}
-        run: |
-          prefix="${DISK_CACHE_KEY%-*}-"
-          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
-          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
-          if [ -z "$created" ]; then
-            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
-            exit 0
-          fi
-          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
-          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
   reproducibility:
     defaults:
       run:
@@ -1677,7 +1563,7 @@ jobs:
         run: bazel test --config=strict //... --test_output=errors
   conclusion:
     name: Conclusion
-    needs: [e2e-macos-apple, e2e-macos-toolchain, unit-tests, flake-sweep, e2e-linux-app, e2e-linux-small, e2e-linux-examples, e2e-linux-pub-scc, e2e-linux-integration, e2e-linux-android, e2e-windows, repo-checks, dart-tool-tests, pre-commit, web-smoke, reproducibility]
+    needs: [e2e-macos-apple, e2e-macos-toolchain, unit-tests, flake-sweep, e2e-linux-app, e2e-linux-small, e2e-linux-examples, e2e-linux-pub-scc, e2e-linux-integration, e2e-linux-android, e2e-windows, repo-checks, dart-tool-tests, pre-commit, reproducibility]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10

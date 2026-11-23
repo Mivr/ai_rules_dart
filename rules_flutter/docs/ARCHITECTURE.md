@@ -10,10 +10,10 @@ the time of writing. Decisions behind these choices are recorded as ADRs in
 
 ### Public facades: `flutter/*.bzl`
 
-The public surface is the 15 `.bzl` files directly under `flutter/`: `defs.bzl`,
+The public surface is the 14 `.bzl` files directly under `flutter/`: `defs.bzl`,
 `utils.bzl`, `providers.bzl`, `toolchain.bzl`, `repositories.bzl`,
 `extensions.bzl`, `android.bzl`, `ios.bzl`, `macos.bzl`, `web.bzl`, `linux.bzl`,
-`windows.bzl`, `native_assets.bzl`, `native_hot_patch.bzl` and `dev_files.bzl`.
+`windows.bzl`, `native_assets.bzl` and `dev_files.bzl`.
 Consumers load these files and nothing under `flutter/private/`.
 
 A facade re-exports; it holds little logic. `flutter/defs.bzl:50-126` binds the

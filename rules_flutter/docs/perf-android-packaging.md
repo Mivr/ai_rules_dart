@@ -100,10 +100,10 @@ Reading the table:
 
 ## Not measured
 
-- The `payload_apk` and `base_apk` output groups the dev tool builds
+- The `payload_apk` and `base_apk` output groups
   (`split_apk_groups`): their overlay, zipalign and sign steps have no
-  number. The tool keeps them apart from the full APK by `_base`/`_payload` in
-  the event's primary output, so the profile needs
+  number. The profile keeps them apart from the full APK by `_base`/`_payload` in
+  the event's primary output, so it needs
   `--experimental_profile_include_primary_output`.
 - APK byte sizes (`--apk-dir`).
 - The cold-JVM floor of the signer (`--signer`, median of five

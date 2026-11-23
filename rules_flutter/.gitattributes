@@ -1,8 +1,8 @@
 # Exclude development-only files from release archives.
 #
 # Every pattern is anchored with a leading `/`. Without one, `git archive`
-# matches the basename at any depth, so an unanchored `e2e/` also strips
-# `tools/dev_tool/test/e2e/` and the published archive fails to load.
+# matches the basename at any depth, so an unanchored `e2e/` would also strip
+# any nested `e2e/` directory and the published archive could fail to load.
 #
 # `/e2e/` is listed workspace by workspace rather than wholesale: the archive
 # has to keep `e2e/smoke`, which `.bcr/presubmit.yml` names as `module_path`

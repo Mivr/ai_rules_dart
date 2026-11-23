@@ -85,21 +85,12 @@
 #   (`bazel query 'kind(".*_binary rule", //tools/...)'`) and are attested
 #   here: //tools/... does not load from a downstream workspace, so the
 #   script re-enumerates them only when the queries succeed and otherwise
-#   says so. //tools/dev_tool:flutter_bazel is a developer CLI that can
-#   spawn the toolchain `dart` executable (DevTools/DDS serving); any HOME
-#   writes there need a follow-up task with access to tools/**.
+#   says so.
 @rules_flutter//tools/changelog:check	dev tooling outside this task's paths; needs a follow-up for CLI spawns
-@rules_flutter//tools/dev_tool:flutter_bazel	dev tooling outside this task's paths; needs a follow-up for CLI spawns
-@rules_flutter//tools/dev_tool:flutter_bazel_binary_test	dev tooling outside this task's paths; needs a follow-up for CLI spawns
-@rules_flutter//tools/dev_tool:loose_sources	dev tooling outside this task's paths; needs a follow-up for CLI spawns
-@rules_flutter//tools/dev_tool:process_group_exec	dev tooling outside this task's paths; needs a follow-up for CLI spawns
-@rules_flutter//tools/ios_screenshot:screenshot	dev tooling outside this task's paths; needs a follow-up for CLI spawns
-@rules_flutter//tools/ios_screenshot:tunneld	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/repo_contents_cache:repo_contents_cache	dev tooling outside this task's paths; spawns only `bazel fetch` into temporary output bases
 @rules_flutter//tools/repo_contents_cache:cache_check_test	Dart unit test over fake directory trees; no CLI spawn and no HOME writes
 @rules_flutter//tools/update_flutter_version:update_flutter_version	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/vm:vm_scripts	dev tooling outside this task's paths; needs a follow-up for CLI spawns
-@rules_flutter//tools/windows_screenshot:screenshot	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 # - Platform app instances for macOS, Windows, iOS and Android, and the
 #   Android integration test, live in e2e/hello_world and
 #   e2e/integration_android (this workspace stays Linux-runnable so the

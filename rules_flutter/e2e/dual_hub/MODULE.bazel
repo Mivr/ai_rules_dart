@@ -10,8 +10,8 @@ spokes derive the same `language_version` and the package version is the only
 difference between them.
 
 This is not a hypothetical arrangement. rules_flutter's own root workspace
-already runs two hubs — `dev_tool_deps` and `gen_l10n_deps` — which share
-eleven package names and disagree on two of them, `clock` and `meta`. Nothing
+already runs two hubs — `tool_deps` and `gen_l10n_deps` — which share
+nine package names and disagree on one of them, `meta`. Nothing
 there merges the two records into one target's closure today, so the case goes
 unobserved; this workspace is where it is observed.
 """

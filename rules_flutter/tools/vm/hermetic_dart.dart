@@ -1,7 +1,6 @@
 /// The Dart version this repo's own toolchain resolves to.
 ///
-/// A VM that runs any of this repo's Dart — the dev tool's e2e suite most of
-/// all — needs an SDK matching what the build uses. Pinning that as a literal
+/// A VM that runs any of this repo's Dart — an e2e suite most of all — needs an SDK matching what the build uses. Pinning that as a literal
 /// here means two homes for one version, and a VM whose SDK has drifted below
 /// the suite's floor fails only when someone tries to run it there.
 ///

@@ -11,8 +11,8 @@ load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
 # is a reason they cannot be *run* by Bazel. It is not a reason they cannot be
 # *analyzed*: the analysis aspect reads `DartAnalyzableInfo` and stages
 # sources, and never asks the target for compiled output, so a handle that is
-# never run still carries them to the analyzer. `//flutter/private/tools` and
-# `//tools/dev_tool:loose_sources` already make this move.
+# never run still carries them to the analyzer. `//flutter/private/tools`
+# already makes this move.
 #
 # `main` has to be one of them and the four entrypoints are coequal —
 # `run_e2e.dart` roots the handle because it is the largest and mirrors the CI

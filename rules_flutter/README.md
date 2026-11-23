@@ -17,7 +17,7 @@ Bazel rules for building Flutter apps.
 
 > **Status: alpha.** It works today, but the public API may still change. Feedback and contributions are welcome.
 
-rules_flutter compiles Dart to kernel or AOT native code, bundles assets, and packages the result for macOS, iOS, Android, Linux, Windows, and the web. It builds on [ai_rules_dart](https://github.com/Mivr/ai_rules_dart) for Dart compilation and hands platform packaging to the rulesets that already do it well: `rules_apple`, `rules_android`, and friends. It also ships a dev tool, `flutter_bazel`, that gives you hot reload, hot restart, and an HTTP channel for driving a running app from a script.
+rules_flutter compiles Dart to kernel or AOT native code, bundles assets, and packages the result for macOS, iOS, Android, Linux, Windows, and the web. It builds on [ai_rules_dart](https://github.com/Mivr/ai_rules_dart) for Dart compilation and hands platform packaging to the rulesets that already do it well: `rules_apple`, `rules_android`, and friends. For development, `flutter_dev` builds the app with Bazel and hands it to the stock `flutter` tool, which gives you hot reload, hot restart, DevTools, the IDE debuggers and its `--machine` protocol; a debug agent package lets a script drive the running app through that protocol.
 
 ## Why build Flutter with Bazel
 
@@ -37,7 +37,7 @@ If `flutter build` works for you, here is what Bazel adds:
 - [Dependencies](#dependencies): pub packages, build hooks, native code
 - [Building for each platform](#building-for-each-platform): macOS, iOS, Android, Linux, Windows, web, cross-compiling, release permissions
 - [Rules reference](#rules-reference): libraries, applications, tests, plugins, code generation, providers
-- [The dev tool](#the-dev-tool): running apps, hot reload, driving an app from a script
+- [The dev loop](#the-dev-loop): running apps, hot reload, driving an app from a script
 - [Examples](#examples)
 
 ## Getting started
@@ -178,10 +178,10 @@ Build it, or run it with hot reload:
 
 ```sh
 bazel build //:my_app_macos
-bazel run @rules_flutter//tools/dev_tool:flutter_bazel -- run -t //:my_app_macos -d macos
+bazel run @rules_flutter//tools/flutter_dev -- run --bazel-target=//:my_app_macos -d macos
 ```
 
-The second command is long. [Shorter commands with bazel_env](#shorter-commands-with-bazel_env) turns it into `fl run -t //:my_app_macos -d macos`.
+The second command runs from the Flutter project directory; see [The dev loop](#the-dev-loop).
 
 ### Build modes
 
@@ -465,65 +465,9 @@ flutter_application(
 
 If you would rather bind with `@Native(assetId: ...)` and let the Dart VM find the library, declare it as a Native Asset with `flutter_native_asset` from `@rules_flutter//flutter:native_assets.bzl`, and carry it on a `flutter_plugin`. `e2e/ffi_example` shows both styles side by side.
 
-#### Hot reload across a native rebuild
+#### Native edits in the dev loop
 
-A running process cannot pick up a rebuilt native library; it keeps the one it already loaded. So when a native library goes stale under a hot reload, the dev tool has to decide whether the Dart it is about to inject still matches that library. Without more information it withholds the reload, and a pending native change blocks your Dart edits until you restart.
-
-The build tells it which files each native library is built from, so a reload notices an edit to a `.c` or `.rs` file even in an app that runs no build of its own — the reload stats those files, and nothing more. Before that, such an app reported a reload as successful while it went on running the machine code it launched with.
-
-You can tell it what the bindings were generated from, and then it can decide:
-
-```starlark
-flutter_native_library(
-    name = "bridge",
-    library = "@my_bridge//bridge:bridge_shared",
-    binding_contract = ["@my_bridge//bridge:codegen.ir"],
-)
-
-flutter_application(
-    name = "my_app",
-    native_deps = [":bridge"],
-    # ...
-)
-```
-
-`binding_contract` is whatever file decides what may be called and how: a binding generator's interface description, or the C header a hand-written FFI binding follows. The dev tool compares the bytes of those files and nothing else, so what matters is that every change to the wire format shows up in them, and that changes which do not affect the wire do not.
-
-With that declared, a reload has three outcomes:
-
-| What changed | What the reload does |
-|---|---|
-| Nothing native | Ordinary reload. |
-| The library's code, but not its contract | Delivers the edit and reports that the native code in the process is stale. |
-| The contract | Withholds the edit. Restart to pick up the new library — unless the library declares a `hot_patch` builder, which is asked instead (below). |
-
-#### Patching native code into a running app
-
-A process cannot replace a library it has loaded, but it can load a second one and send calls there. If the toolchain that builds your library can build such a patch, and the library routes its calls so that a patch can take them over, a hot reload delivers a native edit into the running app the way it delivers a Dart edit: state kept, no relaunch. Name the target that builds patches as `hot_patch`:
-
-```starlark
-flutter_native_library(
-    name = "bridge",
-    library = "@my_bridge//bridge:bridge_shared",
-    binding_contract = ["@my_bridge//bridge:codegen.ir"],
-    hot_patch = "@my_bridge//bridge:bridge_hot_patch",
-)
-```
-
-On each hot reload the dev tool checks the source files that target declares. When none moved, that is a `stat` per file and nothing else. When one did, it builds the patch for the configuration the app is running in, puts it where the app can load it (signed with the app's own identity on an iOS device), has the app load it, and then applies the Dart half of the edit. A widget that shows a native result is rebuilt, so the new answer appears even when no Dart changed.
-
-| What changed | What the reload does |
-|---|---|
-| A function body | Patches it into the running app. The reply names the library and what was patched. |
-| The contract | Asks the patch builder, which is the half that holds both interfaces. A patch that carries the new surface — a bridged function added, say — is delivered like any other. |
-| Anything the builder says a patch cannot carry (a struct's layout, say) | Withholds the edit and says why, in the builder's words. Restart to pick it up. |
-| An edit undone after it was patched | Sends calls back to the code the app launched with. |
-
-A restart (`R`) is still the reset: if any patch is live, or the rebuilt bundle differs from the launched one, it relaunches the app.
-
-What a `hot_patch` target builds, and what the library exports, is a small contract documented on the attribute in `flutter/private/flutter_native_library.bzl`. `e2e/ffi_example` implements it by hand for a C library (`native/mul_hot_patch.c` and `tools/c_patch_tool.dart`), and its `live 3 × 4` line changes on screen when you edit `native/mul.c` and press `r`. Anything created before a patch keeps the code it was created with, as with Dart closures.
-
-Patches reach apps on macOS, the iOS simulator, iOS devices and Android. Linux, Windows and web apps report the edit the way they did before: stale until restart.
+A running process cannot pick up a rebuilt native library; it keeps the one it already loaded. After an edit to native code, run `flutter_dev run` again: it rebuilds the app, and the stock tool reinstalls and relaunches it.
 
 On the web the same wrapper goes in `flutter_web_bundle`'s `native_modules`, which both serves the `.wasm` module and declares it. The situation is the same: the page instantiates the module once and a hot reload does not re-run `main()`. A web hot restart does re-run `main()`, so it re-fetches the module with no relaunch.
 
@@ -537,7 +481,7 @@ What a plain consumer's module graph pulls in, by feature. Floors are what `rule
 | iOS / macOS bundles | `rules_apple` ≥ 4.5.3, `rules_swift`, `apple_support`, `rules_cc` | 4.5.3 is the proven floor: `e2e/min_versions` pins it exactly and builds both Apple legs. `rules_swift`/`apple_support` float to the graph's maxima (4.5.3 accepts Swift at compatibility level 3). |
 | Android APK | `rules_android` 0.8.0, `rules_kotlin`, `rules_java`, `rules_jvm_external` 7.1, `rules_go` ≥ 0.59.0 | 0.8.0 is the floor: the signing overlay reads `rules_android`'s `apk_signing_method` flag, which exists only in 0.8.0+. The pinned `go_sdk.download` (Go 1.26.2, checksummed) in `rules_flutter`'s `MODULE.bazel` applies to every consumer without its own `go_sdk` block — it sorts before `rules_android`'s bundled unpinned 1.22.4 whatever order the root lists the modules in, while a root `go_sdk` block still wins; plain consumers fetch no Go SDK until a Go toolchain resolves. The `.bazelrc` Java settings above are required, and the build host needs `unzip` and `python3` for the AAR extractors. |
 | xtool Darwin backend (opt-in) | `llvm` 0.8.19, exec-host toolchain archive only | Needs only `flutter.darwin_sdk(url = ..., sha256 = ...)` or `flutter.darwin_sdk(path = ...)` in the root module — no other `MODULE.bazel` lines. Plain consumers fetch no LLVM archive and register no LLVM toolchain (see `docs/dependencies.md`). |
-| Dev tool, `gen_l10n` | Resolved inside `rules_flutter` | `rules_flutter_dev_tool_deps` and `rules_flutter_gen_l10n_deps` are the ruleset's own isolated `pub.from_lock` hubs in rules_dart's `pub` extension, shipped with their plans, so a consumer makes no pub request for them and never names them. |
+| Repository tools, `gen_l10n` | Resolved inside `rules_flutter` | `rules_flutter_tool_deps` and `rules_flutter_gen_l10n_deps` are the ruleset's own isolated `pub.from_lock` hubs in rules_dart's `pub` extension, shipped with their plans, so a consumer makes no pub request for them and never names them. |
 | No feature | No `rules_python` | The iOS screenshot/tunnel helpers are `dart_binary` drivers over a host `python3` (a documented host prerequisite like Xcode), so neither this repo's graph nor any consumer's contains `rules_python`. |
 
 Dev-only and never evaluated by consumers: `rules_multitool`, `buildifier_prebuilt`, `bazelrc-preset.bzl`, the eight `@llvm//toolchain:*` registrations, and the root-only `single_version_override` pinning this repo's own builds to `rules_apple` 5.2.0. (The `go_sdk.download` pin, by contrast, is a regular dependency so every consumer's Android host tools use it; it only downloads when a Go toolchain resolves. `llvm` itself is a regular dependency so the opt-in xtool backend can resolve it, but only a configured `flutter.darwin_sdk` — or this repo's own builds — fetches a toolchain archive.)
@@ -823,7 +767,7 @@ Keep the app target in the committed BUILD file and put only the `local_provisio
 Then run it:
 
 ```sh
-bazel run @rules_flutter//tools/dev_tool:flutter_bazel -- run -t //:my_app_ios_device -d ios
+bazel run @rules_flutter//tools/flutter_dev -- run --bazel-target=//:my_app_ios_device -d <device id>
 ```
 
 Each iOS example ships a `device.example/` folder. Copy it to a git-ignored `device/` and set your bundle id.
@@ -1197,7 +1141,7 @@ bazel build //:my_app_android \
 bazel build //:my_app_android -c dbg --output_groups=base_apk,payload_apk
 ```
 
-A Dart edit changes only the payload split, so the base APK's bytes, and the inputs of its signing action, stay the same and the base is not re-signed. The single `<name>.apk` stays the default output and is what a release build produces. `flutter_bazel run` installs a debug build as splits with `adb install-multiple`: the whole set the first time or when the base changed, and only the changed split (`adb install-multiple -p <package>`) when only the payload changed. It decides by the SHA-256 of each split against what it recorded at its last successful install in the session. A failed install names the command and adb's message. Pass `--single-apk` to install the single APK with `adb install -r`, as before.
+A Dart edit changes only the payload split, so the base APK's bytes, and the inputs of its signing action, stay the same and the base is not re-signed. The single `<name>.apk` stays the default output and is what a release build produces.
 
 **Code-size analysis.** Set `analyze_size = True` on `flutter_android_app` to pass `--print-instructions-sizes-to` to `gen_snapshot` and produce a `<name>_size.json` instruction-size breakdown. The file is a default output and also readable through the `analyze_size` output group:
 
@@ -1496,7 +1440,7 @@ Unlike the other platforms, the web macro takes `main` and `deps` directly rathe
 | `deps` | `dart_library` or `flutter_library` targets. Required. |
 | `main` | The entry point. Defaults to `"lib/main.dart"`. It can sit outside the package's `lib/`; list any file it imports by relative path in `srcs`. |
 | `pubspec`, `pubspec_srcs`, `pub_packages` | As on `flutter_application`. `pubspec` defaults to the package's `pubspec.yaml`, and the macro adds the files under `web/` to `pubspec_srcs`. See [Assets](docs/assets.md). |
-| `base_href` | Substituted for `$FLUTTER_BASE_HREF` in `web/index.html`. Defaults to `"/"`. `flutter_bazel run -d chrome` serves the app under it, as `flutter run` does. |
+| `base_href` | Substituted for `$FLUTTER_BASE_HREF` in `web/index.html`. Defaults to `"/"`. |
 | `web_defines` | Values for `{{NAME}}` placeholders in `web/index.html` and `web/flutter_bootstrap.js`, as `flutter build web --web-define` takes them. |
 | `pwa` | Ship `flutter_service_worker.js` and register it. Defaults to `True`. The worker adds no offline caching. Like `flutter build web`, which [deprecated its caching worker](https://github.com/flutter/flutter/issues/156910), it unregisters itself and reloads its clients, which frees visitors still holding a caching worker from an older deployment. |
 
@@ -1533,7 +1477,7 @@ flutter_web_bundle(
 
 #### Content-Security-Policy
 
-A `<meta http-equiv="Content-Security-Policy">` in `web/index.html` applies both to the built bundle and to the dev loop (`flutter_bazel run -d chrome`), because the dev loop serves the same page. Measured on `e2e/web_example` with Flutter 3.47:
+A `<meta http-equiv="Content-Security-Policy">` in `web/index.html` applies both to the built bundle and to the dev loop (`flutter_dev run -d chrome`), because the stock tool serves the same page. Measured on `e2e/web_example` with Flutter 3.47:
 
 | Policy | Built bundle (WASM) | Dev loop (DDC) |
 |---|---|---|
@@ -1749,7 +1693,7 @@ The flavor is set by the `flavor` attribute only: declaring `FLUTTER_APP_FLAVOR`
 
 `default_flavor` repeats the `default-flavor` of the application's `pubspec.yaml`, which Bazel cannot read. When `flavor` is unset, the application behaves exactly as if `flavor` were the `default_flavor` value; an explicit `flavor` wins, whatever `default_flavor` holds. rules_flutter does not check that `default_flavor` agrees with the pubspec, so keep the two in step. The flavor rules above apply to the effective flavor.
 
-**Defines from the command line.** The repeatable flag `--@rules_flutter//flutter:extra_dart_defines=KEY=VALUE` adds a define to every Dart compile: native kernel, `flutter_test`, dart2wasm, and dart2js. Each occurrence of the flag is one define, so values may contain commas. When a key is set both by the flag and by the `defines` attribute, the flag wins. Reserved defines (`dart.vm.*`, `dart.library.*`, `dart.tool.*`, `flutter.*`) are set by the build and SDK and cannot be passed. The dev tool's `--dart-define` forwards to this flag and replays the defines on hot reload and restart, matching `flutter run --dart-define`.
+**Defines from the command line.** The repeatable flag `--@rules_flutter//flutter:extra_dart_defines=KEY=VALUE` adds a define to every Dart compile: native kernel, `flutter_test`, dart2wasm, and dart2js. Each occurrence of the flag is one define, so values may contain commas. When a key is set both by the flag and by the `defines` attribute, the flag wins. Reserved defines (`dart.vm.*`, `dart.library.*`, `dart.tool.*`, `flutter.*`) are set by the build and SDK and cannot be passed. In the dev loop, pass `--dart-define` to `flutter_dev run` as to `flutter run`; for the build Bazel makes, add `--bazel-arg=--@rules_flutter//flutter:extra_dart_defines=KEY=VALUE` too.
 
 **Defines are configuration in a debug build.** A debug build compiles Dart as kernel modules, one per library, so an edit recompiles one module. An application's `defines`, its flavor and its `dart_defines` are the configuration of its `deps`: every dependency module compiles with them, and so does the app's own entry module. Applications with equal settings share every module; an application with another set compiles its closure once more (cached like any other build). The same holds for `flutter_test` and `flutter_kernel_target` with `defines`. Native code (a plugin's `native_deps`, its platform libraries, code and native assets) keeps one configuration whatever the defines. Add `common --incompatible_exclude_starlark_flags_from_exec_config` to your `.bazelrc` (rules_dart's `dart/consumer.bazelrc` carries it) so a new set of defines does not rebuild the build tools too. A define value may hold a comma: a module takes it whole.
 
@@ -2104,7 +2048,7 @@ These are what `flutter_application` is made of. Most apps never need them.
 | `flutter_kernel_target` | Compiles Dart to a kernel `.dill` with Flutter's patched platform kernel. |
 | `flutter_aot_target` | Compiles Dart to an AOT shared library (`.so` on Linux and Android, `.dylib` on macOS) with `gen_snapshot`. |
 | `flutter_pub_packages` | Every package of a pub lock, for an app's `pub_packages`. A Flutter hub declares one as `@<hub>//packages`. |
-| `flutter_native_library` | Pairs a native library with its binding contract. See [Hot reload across a native rebuild](#hot-reload-across-a-native-rebuild). |
+| `flutter_native_library` | Pairs a native library with the files its bindings are generated from (`binding_contract`). |
 | `flutter_native_asset`, `flutter_data_asset` | Declare Dart Native Assets, from `@rules_flutter//flutter:native_assets.bzl`. A data asset is bundled at `flutter_assets/packages/<package>/<name>`. |
 
 #### flutter_apple_xcframework_import
@@ -2313,437 +2257,33 @@ A Flutter workspace's Dart toolchain is the Dart SDK bundled with its Flutter re
 | `is_debug` | `bool` | `True` for a debug build. |
 | `native_plugin_registrant` | `File` or `None` | The generated plugin registrant source for desktop platforms. |
 
-## The dev tool
+## The dev loop
 
-`flutter_dev`, in `tools/flutter_dev/`, replaces the tool this section describes: Bazel builds the
-app, and the stock `flutter` tool installs, launches, reloads, restarts and debugs it, with
-DevTools and the IDE plugins as they are. See [its README](tools/flutter_dev/README.md). The
-section below stays until `flutter_bazel` is deleted.
-
-`flutter_bazel`, in `tools/dev_tool/`, is the development loop: it builds a target, installs and launches it on a device, and gives you hot reload and hot restart. It speaks the same `--machine` JSON-RPC protocol as `flutter run`, so the existing IDE plugins for VS Code and IntelliJ work with it. It also opens an HTTP channel that scripts and coding agents can use to drive the running app.
-
-### Running an app
+Bazel builds the app; the stock `flutter` tool installs, launches, reloads, restarts and debugs it.
+`flutter_dev` (`tools/flutter_dev`) is the small piece in between: it builds the target, writes the
+package config and the links to generated sources that the stock tool and the IDE read, and runs
+`flutter run --use-application-binary` or `flutter attach`. Every option other than `--bazel*` is
+the stock tool's, so `-d`, `--machine`, `--dart-define` and the IDE plugins work as with
+`flutter run`.
 
 ```sh
-bazel run @rules_flutter//tools/dev_tool:flutter_bazel -- run -t //:my_app_macos -d macos
+bazel run @rules_flutter//tools/flutter_dev -- run --bazel-target=//:my_app_android -d emulator-5554
 ```
 
-`run` builds the target, launches it, and then watches the filesystem. Saving a Dart file triggers a hot reload. The flags most people use:
-
-| Flag | What it does |
-|---|---|
-| `-t`, `--target` | The Bazel target to build and run. Required. |
-| `-d`, `--device` | Where to run it. Repeat for several devices at once. See below. |
-| `-c`, `--config` | A Bazel config to build with. |
-| `--build-arg` | An extra argument for `bazel build`. Repeatable. |
-| `--dart-define KEY=VALUE` | A Dart define, forwarded to the build and replayed on reload and restart. Repeatable. |
-| `--no-hot` | Run without hot reload. |
-| `--profile` | Profile mode: AOT with the Dart VM service, for DevTools. Builds `-c opt --@rules_flutter//flutter:profile`. Not on the iOS simulator. |
-| `--single-apk` | Install a debug Android app as one APK with `adb install -r`. By default a debug `flutter_android_app` installs as a base APK plus a Dart payload split with `adb install-multiple`. See "Split APKs". |
-| `--start-paused` | Hold the app at the start of `main()` until a debugger resumes it. |
-| `--vm-service-timeout` | How long to wait for the app's VM-service announcement, in seconds. Defaults to 180. Applies where the run reads the announcement from a log; a physical iOS device discovers over mDNS on its own budget instead. See below. |
-| `--route` | The initial route. |
-| `--no-watch` | Do not reload on save. Watching is on in terminal mode and off in `--machine` mode. |
-| `--no-devtools` | Do not launch DevTools. |
-| `--machine` | Speak the JSON-RPC protocol on stdout. |
-| `--no-http-control-channel` | Do not open the HTTP channel. |
-| `--wasm` | On the web, run the WASM build. No hot reload; edits rebuild and reload the page. |
-| `--web-port`, `--web-hostname`, `--web-launch-url`, `--web-viewport`, `--web-run-headless`, `--web-header`, `--web-browser-flag` | Web dev server and browser settings. `--web-viewport 393x660@3` lays the app out at a phone-sized viewport regardless of the window. |
-
-`flutter_bazel build` builds without running, and `flutter_bazel attach --debug-url <uri>` attaches to an app that is already running. `--help` on each command lists everything.
-
-### Shorter commands with bazel_env
-
-[bazel_env.bzl](https://github.com/buildbuddy-io/bazel_env.bzl) puts Bazel-built tools on your `PATH` under names you choose, so the dev tool becomes a two-letter command. Add it to `MODULE.bazel` and declare the tool:
-
-```starlark
-# MODULE.bazel
-bazel_dep(name = "bazel_env.bzl", version = "0.9.0", dev_dependency = True)
-```
-
-```starlark
-# BUILD.bazel
-load("@bazel_env.bzl", "bazel_env")
-
-bazel_env(
-    name = "bazel_env",
-    tools = {
-        "fl": "@rules_flutter//tools/dev_tool:flutter_bazel",
-    },
-)
-```
-
-Then run `bazel run //:bazel_env` once. It builds the tool, writes a shim to `.bazel_env/bin/fl`, and prints setup instructions for [direnv](https://direnv.net), which amount to this `.envrc` next to `MODULE.bazel`:
-
-```sh
-watch_file .bazel_env/bin
-PATH_add .bazel_env/bin
-if [[ ! -d .bazel_env/bin ]]; then
-  log_error "ERROR[bazel_env.bzl]: Run 'bazel run //:bazel_env' to regenerate .bazel_env/bin"
-fi
-```
-
-After `direnv allow`, the command is `fl run -t //:my_app_macos -d macos`, from any directory in the workspace. The shim finds the workspace root with `bazel info workspace`, so it does not depend on being launched by `bazel run`. Add `.bazel_env` to `.gitignore`. Without direnv, `bazel run //:bazel_env print-path` prints the directory to add to `PATH` yourself.
-
-The rest of this section spells the command out in full so it works before you set this up.
-
-### Choosing a device
-
-`-d` takes:
-
-| Id | Reaches |
-|---|---|
-| `macos`, `linux`, `windows` | The host desktop. |
-| `chrome` | A browser, through the dev module server. |
-| `ios-simulator`, `ios-simulator:<udid>` | The booted simulator, or the one named. |
-| `ios`, `ios:<udid>` | The attached iPhone, or the one named. |
-| `android`, `android:<serial>` | Whichever device `adb` picks, or the one named. |
-
-An id has to say what kind of device it names, so a bare UDID or serial is refused: an emulator is `-d android:emulator-5554`, not `-d emulator-5554`. Guessing the kind would mean asking `simctl`, `devicectl` and `adb` on every launch. When an id is refused, the tool asks them then, and names the form to pass, for example `pass -d ios-simulator:<udid>`.
-
-For `-d ios`, the tool lists attached devices with `devicectl` and ignores devices that were paired once but are not attached now. With two attached, it asks for `-d ios:<udid>` rather than guessing. A device has two identifiers, the hardware UDID Xcode shows and the CoreDevice UUID that `devicectl` prints, and either works there.
-
-### Hot reload and hot restart
-
-In terminal mode, press `r` to reload and `R` to restart, or just save a file. A reload compiles only the changed libraries and injects them into the running isolate, keeping app state. A restart re-runs `main()`, so it also reflects changes to code that runs only at startup.
-
-An edited shader reloads too, including one from a package in your workspace and one whose `#include` you changed: the reload recompiles it and has the engine reinitialize the program, as `flutter run` does. A web page cannot reinitialize a shader, so there the reload says so and a restart picks it up.
-
-An app whose `main` sits outside its package's `lib/` reloads and restarts the same way, like `flutter run -t test_driver/app.dart`. Such a file has no `package:` URI, so the build and the dev loop both compile it as `org-dartlang-app:///<its workspace path>`. Edits to it, and to the files it imports by relative path, are picked up because the build lists them: its compile can read only the `main` and the `srcs` you declare, so declare the siblings in `srcs`. As in any Dart program, reach code under `lib/` through `package:` imports, not `../lib/...`. A relative import there loads a second copy of that library, and its types stop matching the originals.
-
-A restart can go one step further. Dart code can be swapped into a running process, but a native library the process has already loaded cannot. So when a rebuild changes one of the app's native libraries (`native_deps` or Native Assets, including the `.framework` each becomes on iOS), `app.restart` relaunches the process instead of restarting the isolate, and says so in its response. If the replacement cannot launch, for example because the device has no room for the new install, the restart fails with the reason and the run ends, since the old process is already gone. The HTTP channel, its token, and the `appId` stay the same across a relaunch. Only the log buffer starts over.
-
-A hot reload cannot relaunch anything, because replacing the process is exactly the state loss a reload exists to avoid. When a reload rebuilds a native library, what happens depends on whether the bindings changed with it, which is what `flutter_native_library`'s `binding_contract` tells the tool. See [Hot reload across a native rebuild](#hot-reload-across-a-native-rebuild). Without that declaration, the reload is withheld and a restart picks up the library. A plain Dart edit takes the fast path: the check costs a `stat` per declared file and reaches Bazel only when one of them moved.
-
-### App output
-
-A running app's console output (`print`, `debugPrint`, `NSLog`, Java stack traces, uncaught errors) is forwarded for the whole run, starting before the VM service is up so that startup failures are visible.
-
-In terminal mode the app's stdout goes to the tool's stdout and its stderr to the tool's stderr, matching `flutter run`. With more than one `-d`, lines are prefixed with `[<device>] `. In `--machine` mode the output arrives as `app.log` events, and nothing else is written to raw stdout, which belongs to the protocol stream.
-
-Each platform has exactly one log source, because a Dart `print()` reaches both the process's stdout and the VM service's `Stdout` stream, and reading both would duplicate every line:
-
-| Platform | Source |
-|---|---|
-| macOS, Linux, Windows | The process's stdout and stderr. |
-| Android | `adb logcat`, filtered to `flutter*`, `DartVM`, `AndroidRuntime`, `System.err`, and fatal records. |
-| iOS simulator | A `simctl spawn log stream` scoped to the app process. |
-| iOS device | `devicectl --console` plus lldb's output. lldb stays attached for the whole run. |
-| Chrome, dev loop | The DWDS VM service's `Stdout` and `Stderr` streams. |
-| Chrome, WASM or production JS | Chrome DevTools Protocol console events. |
-| `attach` | The VM service's `Stdout` and `Stderr` streams, since there is no process to read. |
-
-### Waiting for the VM service
-
-A freshly booted iOS simulator can take well past 30 seconds to print its VM-service announcement, so the run keeps waiting while the launched app is still alive instead of giving up at a fixed timeout. After 30 seconds it reports `still waiting for the VM service` with the elapsed time, then repeats every 10 seconds, so a slow launch stays distinguishable from a hang.
-
-When the app exits before announcing, the run fails at once with the device name, the exit code (or the fact that the platform reported none), and the app's last 20 log lines. A `--vm-service-timeout` bound, in seconds and 180 by default, still caps the wait so a hung app cannot wait forever; when it expires on a living app the run gives up and reports the bound, the option that raises it, and the last log lines — aborting, unless `--allow-no-vm-service` continues without a VM service.
-
-How the run knows the app is alive depends on the device: on macOS, Linux and Windows the app is a child process, so its exit ends the wait; on the iOS simulator the pid `simctl launch` reports is polled; on Android there is no such signal, so the bound alone ends the wait. A physical iOS device is the exception to all of this: it discovers the VM service over mDNS on its own budget (5 minutes wired, 15 minutes wireless), so `--vm-service-timeout` does not apply there. Release builds serve no VM service and skip the wait entirely.
-
-### Assets and fonts
-
-An edit to a bundled asset goes live on hot reload or on save, the same as a Dart edit. The tool knows which workspace directories feed the `flutter_assets` tree, so it can tell whether an asset changed from a few directory listings. A run whose assets are untouched never pays for a `bazel build` on a Dart edit.
-
-When an asset has changed, the bundle is rebuilt and only the differing entries are uploaded into the app's devFS. That is what makes it work on a phone, inside an APK, and inside a sandboxed macOS app, none of which can read `bazel-out`. Everything else still resolves to what shipped, because the engine keeps the original bundle behind the devFS directory. A changed font also re-registers the engine's font collection, so re-exporting a `.ttf` takes effect where upstream waits for a restart.
-
-On the web the dev server serves `assets/` from the build tree on every request, so only the page's caches are dropped. Fonts are the exception: the web engine registers them once at startup with no reload hook, and the reload says so rather than reporting success.
-
-### Debugging from the first line
-
-`flutter_bazel run --start-paused` holds the app at the beginning of `main()` so a debugger can attach before any app code runs. Each platform gets the switch the way it accepts one: an engine switch on desktop, an intent extra on Android, argv on iOS. On the web there is no switch; DWDS holds `main()` until a client resumes it, so the tool withholds the run request.
-
-The pause is reported only once the tool has observed it from the main isolate's own pause event, so a target that ignored the switch is called out rather than leaving you waiting at a debugger for an app that already ran. While paused, `app.*` commands answer with the reason instead of blocking, and `--route` and `--trace-startup` are skipped with a warning, because both need a framework that has not started.
-
-### Physical iOS devices
-
-On every platform except iOS hardware, the VM service URI arrives in the app's log: the engine prints it, and the tool reads it off the same stream that carries app output.
-
-An iPhone is different. A wirelessly attached device has no console channel at all, and a wired device's console belongs to the `devicectl` call that launched the app. So the tool finds the URI through the app's mDNS advertisement instead. Every Flutter app built in debug or profile mode advertises `_dartVmService._tcp` with its port and auth code, and the generated debug and profile `Info.plist` declares the matching `NSBonjourServices` entry, so this works for any app built with these rules and no configuration.
-
-| Connection | VM service host | Port |
-|---|---|---|
-| Wired | `127.0.0.1` through an `iproxy` forward, because the service binds to the device's loopback. | The advertised port, forwarded. |
-| Wireless | The device's own address, from the advertisement. | The advertised port, dialed directly. |
-
-The tool picks the pair from what `devicectl list devices` reports. A wireless launch also passes `--vm-service-host=0.0.0.0` so the service is reachable off-device, and a wired launch does not.
-
-When discovery fails, three things are worth checking:
-
-- **Local Network permission.** On macOS the mDNS socket needs it. If it is denied, the error names System Settings > Privacy & Security > Local Network. The device also prompts once, the first time an app advertises.
-- **Lost queries.** mDNS is UDP and the spec requires retransmission. Against a USB-attached iPhone a single query succeeded about two times in five, so the tool retransmits with the specified backoff. In practice it resolves in around 200 ms, with 3.3 s the worst observed.
-- **`dns-sd` does not show what this tool sees**, in either direction. It answers from mDNSResponder's table, which includes records a raw multicast socket cannot reach: over USB, CoreDevice proxies the device's Bonjour records in as local-only registrations. So `dns-sd` listing the phone while the tool sees nothing over USB is correct on both sides. The table also keeps stale `_dartVmService` records on `lo0` from booted simulators with no app running. Unplugged, the phone multicasts for real on `en0` or `en1` and the raw socket sees it. If you do use `dns-sd`, read the interface index on each `Add` line; interface 1 is `lo0` and proves nothing about the device.
-
-**Launch times.** Expect the first log line to take longer than on a host. A debug build runs under the JIT breakpoint, and the engine traps to the debugger for every executable page it allocates, with each trap writing to device memory over the debugserver link. On a recent iPhone with a healthy Xcode install, the time from resume to the engine's first log line measured about 8 seconds over a cable and about 40 seconds over Wi-Fi. A cable is several times faster, but Wi-Fi works.
-
-A launch that takes minutes means something is wrong on the host, not the phone. The usual cause is an unfinished Xcode symbol copy, which leaves lldb without the shared cache. Check that Xcode has finished copying symbols for the device before looking anywhere else. The tool prints a "still waiting" note at 45 seconds so a slow launch stays distinguishable from a hang.
-
-Hot reload and restart get the same allowance. A reload is quick, since only the changed library is compiled. A restart re-runs `main()` and pays the breakpoint cost again, so it takes about as long as the launch. The per-call budget is five minutes wired and fifteen wireless, against thirty seconds on a host. Those are backstops for a run that will never succeed, sized for the slowest host state seen rather than the seconds a healthy one takes, because a budget that is too short does worse than wait less: it abandons the RPC and force-closes the VM service connection, reporting a timeout for a restart that was about to succeed.
-
-**Debugger stops.** On iOS 26 and later the engine announces each new page of JIT code at a breakpoint, and the debugger has to write the page before the app may run it. The tool resumes every one of those stops itself rather than letting lldb continue on its own: lldb loses some of them when two threads allocate code at once ([llvm/llvm-project#190956](https://github.com/llvm/llvm-project/issues/190956)), and the app then stops on `EXC_BAD_ACCESS (code=50)` with its VM service silent. `flutter_tools` handles it the same way. Any other stop, such as a native crash, is written to the app's output with a backtrace, and the debugger detaches and the run ends, as it does when an app exits on any other platform. Stopping a run, or a launch that fails part way, terminates the app on the device and every helper process it started.
-
-For log output, `devicectl --console` also carries devicectl's own progress banners, and lldb's output is included because lldb holds the debugserver the JIT depends on. Upstream does the same: with Xcode 26 and later, `flutter_tools` reads both, noting that `idevicesyslog` stopped working.
+The stock tool must be the Flutter release the rules build with. See
+[its README](tools/flutter_dev/README.md) for what it writes into the project, IDE launch
+configurations, and a table that maps the old `flutter_bazel` command's flags to their
+replacements.
 
 ### Driving the app from a script
 
-`flutter_bazel run` opens an HTTP control channel by default. IDE integrations, coding agents, and end-to-end test harnesses can drive the running app through it without a terminal: tap widgets, enter text, read text back, take screenshots, reload, restart, and shut down.
-
-```sh
-bazel run @rules_flutter//tools/dev_tool:flutter_bazel -- \
-  run -t //:my_app_macos -d macos --machine
-```
-
-On stderr, the tool prints the channel's record. Under `LOG_FORMAT=json` it is one JSON line that carries every endpoint with a ready-made URL, token included. The token is a query parameter, not an `Authorization` header:
-
-```json
-{"message":"http_control_channel","uri":"http://localhost:PORT",
- "token":"...","tokenParam":"token","endpoints":[
-   {"method":"POST","path":"/command",
-    "url":"http://localhost:PORT/command?token=...", ...}, ...]}
-```
-
-On stdout, the protocol stream starts with `daemon.connected` and then reports `app.start`, `app.started`, and the rest.
-
-**What counts as protocol on stdout.** A line is a protocol message if and only if it is a `[{…}]` envelope. Anything else is passthrough output that a client should show to the user rather than parse. That is upstream's convention too, and it is what makes `bazel run` safe here: bazel forwards a successful action's stdout, so a run that first has to rebuild the tool prints a line like `Generated: /…/flutter_bazel` before the first envelope.
-
-#### Endpoints
-
-| Endpoint | Verb | Purpose |
-|---|---|---|
-| `/command?token=…` | `POST` | Run a protocol method against the session. Body: `{"method":"app.<X>", "params":{"appId":"…", …}}`. |
-| `/commands?token=…` | `GET` | What this run can do right now: `{"protocolVersion", "commands":[{"name","longRunning"}]}`. |
-| `/sessions/{appId}/logs?token=…` | `GET` | The app's console output, from a bounded ring buffer. |
-| `/sessions/{appId}/screenshot/native?token=…` | `GET` | A PNG of the app as the platform sees it. Works on every device. |
-| `/sessions/{appId}/screenshot/flutter?token=…` | `GET` | A PNG of the widget tree from the engine. Not available at the pinned Flutter; see below. |
-
-The endpoints speak plain HTTP/1.1, so `curl -s "$URI/..."` works. If your `curl` tries HTTP/2 by default, add `--http1.1`.
-
-#### Which commands are available
-
-The set of commands is not fixed when a client connects. It grows through the run and describes this run rather than the tool. A web run gains `app.setViewport` once the browser is up and never offers `app.buildInfo`, because only a `-c dbg` native build carries the record that command reads. The widget-driving commands are offered once the tool knows the run has a VM service, which is every native run and the DDC dev loop on the web, and they answer once that service exists, which on the web and on an iPhone is well after `app.started`. `app.pressKey` is offered at the same point on every run, since a web run without a VM service can still take keys through the browser. So re-read `/commands` rather than caching the first answer. `longRunning` marks commands that rebuild or recompile before answering; those deserve a generous timeout and are the ones `app.progress` events are emitted for.
-
-A `--machine` client does not need the endpoint. It receives the list in `daemon.connected` and again in every `daemon.commandsChanged`. `daemon.connected` also carries `protocolVersion`. The protocol stream is also the only place for things the channel cannot push: `app.devTools` carries the DevTools URL, `app.debugPort` the VM service's `port`, `wsUri`, and `baseUri`, and `app.webLaunchUrl` the address a web run is served at. The browser the tool launches uses a scratch profile and may be headless, so that URL is how you open the page in your own browser. The full event list is the header comment of `tools/dev_tool/lib/machine_protocol.dart`.
-
-**Driving the browser yourself.** `app.webLaunchUrl` also carries the browser's DevTools protocol endpoint: `cdpPort`, and `webSocketDebuggerUrl` for the app's page. The same two fields are on the `web_app_url` log record, for a client reading stderr. Chrome picks the port, so nothing else tells you where it is. With it you can send your own `Input.dispatchKeyEvent`, `Runtime.evaluate` or trace. The page URL is the one listed when the browser came up. It survived a `--wasm` hot restart when we checked, but if it stops answering, re-read `http://127.0.0.1:<cdpPort>/json` and pick the `page` target on the app's origin, as the tool does before each of its own uses. Chrome takes several DevTools clients at once, so yours does not displace the tool's.
-
-The commands, once the app is up:
-
-- **Widget driving:** `app.dumpWidgetTree`, `app.tap`, `app.longPress`, `app.doubleTap`, `app.drag`, `app.hover`, `app.hoverExit`, `app.setWindowActive`, `app.scrollIntoView`, `app.enterText`, `app.getText`, `app.getRect`, `app.waitFor`, `app.waitForAbsent`, `app.pageBack`, `app.settle`. These are served by extensions the app registers before `main()` on every launch, so they survive hot restart.
-- **Keys:** `app.pressKey`, on every run, including `--wasm` and `--profile` web runs. See [Pressing keys](#pressing-keys).
-- **Lifecycle:** `app.hotReload`, `app.restart`, `app.stop`, `daemon.shutdown`.
-- **Run-specific:** `app.buildInfo` on native debug runs, `app.setViewport` on web runs.
-
-**Hover, mouse presses and window focus.** `app.hover` moves a synthetic mouse over the widget a selector names (its centre) or to `x` and `y` in logical pixels, and `app.hoverExit` takes it off the app. Neither moves the system cursor's position, so the real mouse stays free. The mouse stays where it was left, as a real one does. `app.tap`, `app.longPress`, `app.doubleTap` and `app.drag` take `"pointer": "mouse"` to press from that mouse, with the primary button, instead of from a finger, so a widget sees hover and press together. All four also take `x` and `y` instead of a selector, and a mouse press with neither lands where the mouse already is: hover, then press. The `app.hover` reply carries `cursor`, the cursor the widget under the mouse asked for (`click`, `text`, and so on), so it can be checked without looking at the screen. The engine applies a hover's cursor to the host, so the tool puts the arrow straight back after each move, and the host's cursor is the arrow again by the time the reply comes; `app.hoverExit` puts it back too (`cursorRestored`). The host's cursor shape can still change for an instant, and a real pointer over the window gets its own shape at its next movement. A hover has no timer of its own: pass `"settle": "false"` and wait as long as the state you are reading needs, a tooltip's delay for one. `app.settle` and the wait after every command treat the app as idle when no frame is scheduled, as `pumpAndSettle` does, so a visible tooltip does not keep them from settling. `app.settle` answers `settled` as `yes`, `no` or `skipped`, with `settleDetail` when it is not `yes`, like every other command. `app.setWindowActive` with `"active": "true"` or `"false"` tells the framework the window is focused or not (`AppLifecycleState.resumed` or `inactive`) without changing the frontmost app. That is the framework's view only: the native window's key state is untouched, a real click or key in the window flips it back, and AppKit-drawn chrome such as the traffic lights does not follow. A macOS window with no title bar can never become key, so there it is the only way to see the active state.
-
-`app.stop` stops the one app its `appId` names, as upstream's does. A run driving two devices carries on with the other. A bare `app.stop` with no `appId` is refused rather than read as "all of them". `daemon.shutdown` ends the run: every app, the browser, the compiler, and the tool itself.
-
-**A web run without a VM service offers no widget driving.** `--wasm`, `--profile`, and `--no-hot` serve a bundle built by dart2wasm or dart2js, where `registerExtension` is a stub and there is no service to dispatch through. The commands are absent from `/commands` rather than present and refusing, and the run says so once at startup as an `agent_surface_unavailable` log record. Such a run can still serve `app.pressKey`, `/logs`, `screenshot/native`, and `app.restart`. To drive the widget tree on the web, run the DDC dev loop: neither `--wasm` nor `--profile`.
-
-**Commands issued early wait.** `app.started` means `main()` has begun, which is what upstream's protocol means by it, and an app that has begun running has not built a widget tree yet. On `-d chrome` the gap is DWDS, which holds `main()` until the browser has connected. On an iPhone the gap is the app's own start, measured at 61 seconds after `app.started` for a debug build. A command sent in that window waits it out rather than failing, so you can fire on `app.started` without a readiness poll. The wait is reported as an `app.progress` pair — "Waiting for the app to render its first frame" opening it, and what the wait found closing it, so a client reading the stream can tell a frame that arrived from one that never did. An app that never paints is refused with a reason rather than a bare timeout. Waiting for a specific widget is still yours to ask for, with `app.waitFor`.
-
-#### Reading logs
-
-`/logs` is polled with a cursor. There is no long-lived connection, and each call returns exactly what you ask for.
-
-| `since` | Meaning |
-|---|---|
-| omitted | The last 200 lines. Use this when you have no cursor yet. |
-| `-N` | The last `N` lines. |
-| `0` | Everything still buffered, oldest first. |
-| `N > 0` | Resume at line `N`. Feed back a previous `nextCursor`. |
-
-`limit` caps the page, with a default and maximum of 500. A non-numeric `since` or a non-positive `limit` is a `400`, because a mistyped cursor would otherwise look like a working poll loop that re-reads the tail forever.
-
-```sh
-# Tail, then poll forward.
-curl -s "$URI/sessions/$APP/logs?token=$T"
-# {"lines":[{"index":812,"text":"flutter: meter -18dB","error":false}],
-#  "nextCursor":813,"launch":1,"missed":0,"dropped":0,"closed":false}
-
-curl -s "$URI/sessions/$APP/logs?token=$T&since=813"
-```
-
-The fields in the response:
-
-- `error` marks lines that arrived on an error channel: the process's stderr, a VM service `Stderr` event, `console.error`. It is a channel, not a severity. Platforms that deliver the whole device log over one stream (iOS and Android) deliver engine `[ERROR:…]` lines with `error: false`, so match on the text if you care about those.
-- `missed` is non-zero when the cursor you asked for had already been evicted, so a poller learns it has a gap instead of reading a short page as complete. `dropped` is the total evicted over the run.
-- `closed` turns true once the app's output has ended, so a poll loop can stop. The buffer survives the app's exit, so a crashed app's final output is still readable.
-- `launch` is which launch of the app the page came from: 1 for the original, one more per relaunch. Each launch buffers from zero, so when `launch` changes, drop your cursor and re-tail.
-
-#### Screenshots
-
-`screenshot/native` captures the app the way the platform sees it (`screencapture`, `scrot`, `simctl io screenshot`, `adb screencap`, or the browser's own capture) and works on every device. `screenshot/flutter` asks the engine for the widget tree alone, with no window chrome, but the engine cannot produce it under Impeller and there is no engine screenshot on the web at all. Since Flutter 3.47 every platform renders with Impeller by default, so every device answers `501` naming `screenshot/native`. The tool does not try to detect an app that has turned Impeller off, because `screenshot/native` captures either way.
-
-Both endpoints wait for the app to go idle before capturing, so a screenshot taken right after `app.tap` shows what the tap did. Without that wait you would get the frame from before the action painted, and a stale picture is indistinguishable from a feature that did not work. The response says what you got: `X-Settled: yes` means the app was idle first, `no` means the wait ran out or the app is backgrounded, and `skipped` means you passed `settle=false` or the run has no VM service to ask (`--wasm`, `--profile`). `X-Settle-Detail` carries the reason for anything but `yes`, percent-encoded so it can hold characters a header cannot; any URI-component decoder gives back the text. The wait is never fatal, since an app that cannot settle is the one whose picture you most want. `app.settle` is the same wait as a command, for use between two of your own.
-
-#### Driving widgets
-
-Methods that target a widget (`tap`, `longPress`, `doubleTap`, `drag`, `getRect`, `getText`, `enterText`, `scrollIntoView`, `waitFor`, `waitForAbsent`) take exactly one selector, following `flutter_driver`'s finder vocabulary:
-
-| Param | Matches |
-|---|---|
-| `key` | A widget whose `ValueKey` value equals the string. |
-| `text` | A widget whose displayed text equals the string, read the way `getText` reads it: a `Text`, including a `Text.rich` by its spans' plain text, a `RichText`, or a text field's contents. |
-| `tooltip` | A `Tooltip` whose `message` equals the string. |
-| `type` | A widget whose runtime type name equals the string, for example `ElevatedButton`. |
-| `semanticsLabel` | A widget whose semantics label equals the string. |
-
-Zero selectors or more than one is an error. Other params: `durationMs` (longPress, drag, scrollIntoView), `dx` and `dy` (drag, scrollIntoView), `scrollableKey` (scrollIntoView, `ValueKey` only), `timeoutMs`, `settle`, `requireHit`.
-
-Put the `Key` on the widget you would point at, such as the `Chip`, the `ListTile`, or the button, rather than on the `Text` it builds. A selector reaches the same distance for every method.
-
-- **`getText`** returns the text of the first text-bearing descendant of the match, in pre-order (`Text` including `Text.rich`, `RichText`, `EditableText`), and lists all of them in `texts`, so a container with two strings shows as two: `{"text":"Increment","texts":["Increment"]}`.
-- **`enterText`** takes `text` as the string to type, which is why it is the one method that does not accept the `text` selector. With a selector it focuses the first `EditableText` under the match and types into it, with no preceding tap needed, and reports what it typed into: `{"enteredText":"hi","into":"ValueKey(emailField)"}`. With no selector it types into whatever is focused, reporting `"into":"focused"`.
-
-**Settling.** After dispatching input, a method waits until the app is idle before returning, so a follow-up `getRect` or `getText` sees the post-action layout. The wait is bounded by `timeoutMs`, default 10000. Every input command's reply says how that wait ended, in `settled`: `yes`, `no`, or `skipped` (for `settle: "false"`, or an app that is backgrounded). These are the values `app.pressKey`'s browser route and the screenshot headers use. When it is not `yes`, `settleDetail` says why. A wait that runs out is `no` on an otherwise successful reply, not an error. The input was delivered before the wait began, so do not send the command again, or it taps twice. `settleDetail` gives the number of animations still running; zero means the app was backgrounded mid-command. An app that was already backgrounded returns immediately, because backgrounding is what stops frames, so there is nothing to wait for. On macOS a window that has been in front and is then hidden, or fully covered by another app's window, counts as backgrounded; one that was covered from the moment it opened keeps drawing, because the embedder reacts only to a change.
-
-**A backgrounded app takes input, and shows nothing.** An app the OS has backgrounded stops producing frames: a locked screen on a device, or on macOS a window hidden or covered after it had been in front. Input still lands and its handler still runs, but nothing rebuilds, so a `getText` straight afterwards answers with the tree as it was and not with what your tap changed. Every input command says so in that state, with a `notRendering` field on an otherwise successful reply, and so do `app.getText`, `app.getRect`, `app.waitFor` and `app.waitForAbsent`. When one of those finds nothing, its error carries the same note. That matters most after a restart in that state, when the tree holds only what `runApp`'s first frame built, and a widget the app shows once its data loads is not there yet. On a locked Pixel this looked like a tap that did nothing; the value appears when the device is unlocked.
-
-Some apps never go idle: a spinner, a progress indicator, any perpetual `AnimationController` keeps a frame callback pending for as long as it runs, so every command against such an app spends its whole timeout before answering `settled: "no"`. `settle: "false"` turns the wait off for one command, the equivalent of `flutter_driver`'s `runUnsynchronized`. What you give up is the guarantee: an immediate `getText` after an unsynchronised `tap` races the rebuild and reads the old value about half the time, so resynchronise with `app.waitFor` on the value you expect. `settle` accepts only `"true"` and `"false"`, because a typo would otherwise choose the opposite behaviour in silence.
-
-**Reaching the widget.** Being in the tree is not the same as being where a pointer can land. A child of a scroll view that is scrolled off screen is laid out outside the viewport, and a widget behind a dialog is covered. A selector still finds it and it still has a rect, so `tap`, `longPress`, `doubleTap`, and `drag` hit-test the point first and refuse when nothing there resolves to the target. The refusal says which case it is and what to do: scroll it into view, or move what covers it. This is `WidgetController`'s `warnIfMissed` with the fatal choice made, on the view that a success response for an event nobody received is worse than an error. `requireHit: "false"` dispatches at the point anyway, for a caller who means it.
-
-`app.scrollIntoView` is the way through, and its `reachable` field answers whether a tap would now land. `iterations` counts drag-scrolls of a lazy list; `0` means the target was already built and `Scrollable.ensureVisible` was used.
-
-#### Pressing keys
-
-`app.pressKey` presses one key, or one key with modifiers held, in whatever has focus:
-
-```sh
-curl -s -X POST "$URI/command?token=$T" \
-  -d '{"method":"app.pressKey","params":{"appId":"'$APP'","key":"Control+K"}}'
-```
-
-Keys are named the way Playwright's `keyboard.press` names them, since that is what agents already know: a character (`a`, `A`, `!`), a `KeyboardEvent` key or code (`Enter`, `Tab`, `Backspace`, `ArrowDown`, `Escape`, `KeyA`, `Digit1`, `Space`), and modifiers joined with `+` (`Control+K`, `Shift+Tab`, `Meta+A`). `ControlOrMeta` is Meta on Apple platforms and Control elsewhere. An unknown name is refused by name, with the spelling it probably meant: `Ctrl` gets "did you mean `Control`". Two Playwright details carry over: a single character is case-sensitive, and `Shift+a` types `a`, so write `A` or `Shift+KeyA` for a capital. One difference: only modifiers can be held, so `a+b` is refused. Send one command per key.
-
-It takes no selector. Focus the field first, with `app.tap` on it or by pressing `Tab`.
-
-How the key reaches the app depends on the device, and the reply names the route in `route`:
-
-| `route` | Devices | What happens | What it reaches |
-|---|---|---|---|
-| `browser` | Chrome: the DDC dev loop, `--wasm`, `--profile` | Real, trusted input sent to the app's page over the DevTools protocol (`Input.dispatchKeyEvent`). | What a keyboard reaches in that browser: the browser's own text editing, and the key events Flutter's web engine sees. |
-| `framework` | macOS, iOS, Android, Linux, Windows | Simulated inside the app, modeled on `flutter_test`'s key simulator: each key as a `ui.KeyData` plus the legacy `flutter/keyevent` message the engine sends. A key the framework leaves unhandled then goes where the platform's input method would take it: typed text into the focused field, Return to the field's action (which is what fires `onSubmitted`), and on macOS the Cocoa editing selectors AppKit would produce, sent as `TextInputClient.performSelectors`. | Shortcuts, focus traversal and text editing. Not the OS and not its input method: IMEs, dead keys, system shortcuts and OS key remapping are never involved. |
-
-A pass on the framework route is not evidence about OS-level input, which is why every reply says which route ran.
-
-The reply also says what was sent:
-
-- **browser:** `sent` is the CDP events, in order. `focus` is what had the browser's focus, as tag names through shadow roots; a focused Flutter text field reads `flutter-view > input`. When the key types text and the focus is not in a text field, `warning` says the text reached nothing.
-- **framework:** `sent` lists each key event and whether the framework handled it, `handled` is the answer for the main key, and `textInput` is what went to the field: `{"inserted":"a"}`, `{"selectors":["moveDown:"]}`, `{"action":"TextInputAction.done"}`, or `{"skipped":"<why>"}`. On desktop, a key pressed while the app's window is not the focused one, because another app is in front or after `app.setWindowActive` with `"false"`, first makes the app active, as a real key press would find it: the framework had taken focus off the field while the window was inactive, and gets it back. `activated` says this happened. The real window stays where it is.
-
-```json
-{"route":"framework","key":"ArrowDown","handled":false,
- "sent":[{"type":"down","key":"Arrow Down","handled":false},{"type":"up","key":"Arrow Down"}],
- "textInput":{"selectors":["moveDown:"]}}
-```
-
-**Mac editing keys in a browser.** On a Mac, a browser edits text through the Cocoa command AppKit attaches to a key, and CDP input enters below AppKit. So the browser route attaches the command a Mac would, from Playwright's `macEditingCommands` table. We measured the difference on a Flutter web text field: `Control+K` deletes to the end of the line only when it carries `deleteToEndOfParagraph`, while Backspace, the arrow keys and Enter worked with or without their commands. Enter carries `insertNewline` anyway, and in a textarea it inserted exactly one newline either way.
-
-**Waiting.** Both routes wait for the app to go idle before answering, with the same `timeoutMs` and `settle` as the other input commands, and report how the wait ended in `settled` and `settleDetail`: `yes`, `no` or `skipped`, the values the screenshot headers use. The browser route can ask only on the DDC dev loop. The keys were delivered in every case. A `--wasm` or `--profile` run has no VM service to ask, so it answers `skipped`; take a screenshot to see what the key did. A page in a hidden, minimized or covered window draws no frames, so the key's effect does not show until the page is visible again. The reply says `no` with that reason, and `--web-run-headless` avoids the problem.
-
-#### Reload and restart responses
-
-A reload or restart that landed in an app that is not drawing says so. The app is running the new code, so `succeeded` is `true`, and `notShown` says, per app, why the screen does not show it yet:
-
-```json
-{"succeeded":true,"runningCode":"updated",
- "notShown":{"<appId>":"the app is not drawing, because the OS reports it cannot be seen (lifecycle state \"hidden\": …). It shows the change once it can be seen again"},
- "message":"Restart successful, but the app is not drawing, because the OS reports it cannot be seen …"}
-```
-
-The reply comes as soon as the app has built its first frame and said it cannot draw, rather than after the ten seconds the tool gives a frame to arrive. On the macOS plugin example, restarts into a window hidden after it had been in front took 11.3 s before this and 1.4 s after. An app that neither draws nor says why, such as one attached to without the rules' agent extensions, still gets the ten seconds, and `notShown` then says only that no frame came.
-
-A restart that relaunched the process because a native library changed says so:
-
-```json
-{"succeeded":true,"runningCode":"updated","relaunched":true,
- "nativeLibsChanged":["…/libmul.dylib"],"launch":{"<appId>":2},"ready":true,
- "message":"Restart successful — the app was relaunched because its native libraries changed (…). …"}
-```
-
-`ready` says the relaunched app rendered a first frame before the response returned, so its extensions are registered and the next `app.*` call will land. `false` means that wait timed out, not that the app is broken. The protocol stream re-emits `app.debugPort` and `app.started` for the new process.
-
-A reload after a native rebuild, with the bindings unchanged, delivers the edit and reports the stale library:
-
-```json
-{"succeeded":true,"runningCode":"updated",
- "nativeLibsStale":["…/libbridge.dylib"],
- "message":"Hot reload successful. …/libbridge.dylib was rebuilt and its bindings did not change, so the increment is live over the library the app already loaded — the new native code is not running. A restart (R) relaunches the app on it."}
-```
-
-With the bindings changed, or nothing declaring them, the edit is withheld:
-
-```json
-{"succeeded":false,"runningCode":"unchanged",
- "nativeLibsStale":["…/libbridge.dylib"],
- "message":"Hot reload withheld: …/libbridge.dylib changed, and so did what its bindings are generated from …"}
-```
-
-Nothing is compiled and nothing is sent, so the app keeps the code and the library it launched with, and `app.restart` picks up the new one. `nativeLibsStale` means the same thing in both replies, and `succeeded` says whether the edit landed. The check costs no Bazel of its own: a `stat` per declared file, and a content hash only for a file the build rewrote.
-
-A reload that patched native code into the app says what it patched, and `nativeReverted` lists libraries sent back to their launched code:
-
-```json
-{"succeeded":true,"runningCode":"updated",
- "nativePatched":{"libmul.dylib":["mul_body"]},
- "message":"Hot reload successful. Patched libmul.dylib in the running app (mul_body)"}
-```
-
-A patch that cannot be delivered withholds the reload with the patch builder's reasons in `nativePatchRestart`, and one that did not load names the apps in `nativePatchFailed` and `nativePatchApplied`.
-
-#### How a command says no
-
-Every failure, on either transport, is a top-level `error` carrying the reason. Over HTTP the status says which kind: `404` the command or app does not exist here, `400` the request was malformed (a missing parameter, two selectors), `501` this run cannot serve it (an engine screenshot under Impeller), `422` it was asked properly and could not be done (the app refused, or never answered). A `500` means the tool itself broke, which is the one case worth retrying or reporting. On the stdin protocol the same failure is upstream's `{"id":…, "error":"<reason>"}`.
-
-An outcome that carries its own verdict stays inside `result`. A hot reload that ran and failed answers `{"succeeded":false, "error":…}`, because it ran and reported a failure rather than refusing to run.
-
-### Working with a coding agent
-
-The control channel is what lets a coding agent such as Claude Code check its own work: it can reload the app after an edit, read text back, and look at a screenshot rather than guessing from the code. Three choices make that work well.
-
-**Start the app in machine mode, in the background.** The run lives for the whole session, so start it once and send its output to files. `--machine` keeps stdout to protocol events, `LOG_FORMAT=json` makes the channel record on stderr one parseable line, and `--no-devtools` avoids opening a browser tab nobody will look at. On the web, add `--web-run-headless`.
-
-```sh
-LOG_FORMAT=json fl run -t //:my_app_macos -d macos --machine --no-devtools \
-  > /tmp/app.out 2> /tmp/app.err &
-```
-
-The agent reads the URL and token from the `http_control_channel` line in the stderr file, and waits for `app.started` in the stdout file before sending commands.
-
-**Choose a watch strategy.** In terminal mode the tool reloads on every save. In machine mode watching is off by default, and that is the better setting for an agent. An agent edits several files in a row, and a reload after each save would compile half-finished changes. Have the agent call `app.hotReload` itself when it is done editing. The reply says whether the reload landed and which files were recompiled, which is exactly the evidence the agent should be reporting. If the agent needs watch mode anyway, pass `--watch` and have it call `app.settle` before reading anything back.
-
-**Ask for screenshots before and after every change.** An agent that edits code without looking at the result will happily report success on a blank screen. Put the rule in the file your agent reads at startup, such as `CLAUDE.md` or `AGENTS.md`:
-
-```markdown
-## Running the app
-
-Start the app once per session, in the background, and keep it running:
-
-    LOG_FORMAT=json fl run -t //:my_app_macos -d macos --machine --no-devtools \
-      > /tmp/app.out 2> /tmp/app.err &
-
-The control channel URL and token are on the `http_control_channel` line of
-/tmp/app.err. Wait for an `app.started` event in /tmp/app.out before driving
-the app. The `appId` is in that event.
-
-## Every code change
-
-1. Before editing, save a screenshot: GET /sessions/<appId>/screenshot/native.
-2. Edit, then reload: POST /command with
-   {"method":"app.hotReload","params":{"appId":"<appId>"}}.
-   Use app.restart instead when the change touches main() or startup code.
-   Read `succeeded` from the reply. A reload that fails is not done.
-3. After the reload, save a second screenshot and compare it with the first.
-   Say in your report what changed on screen, not just what changed in code.
-   A reply with `notShown`, or a read with `notRendering`, means the window
-   is hidden or covered: bring it to the front before trusting the screen.
-4. Check GET /sessions/<appId>/logs for exceptions before moving on.
-
-Stop the app with daemon.shutdown at the end of the session.
-```
-
-Adjust the target and device to your project. With the long form of the command in place of `fl`, this works without bazel_env. The screenshot endpoint waits for the app to settle, so a capture taken straight after a tap or a reload shows the result; see [Screenshots](#screenshots).
+Coding agents and end-to-end tests drive a running app through the stock tool's `--machine`
+protocol: `flutter_dev run --machine`, then `app.callServiceExtension` with the commands of the
+debug agent (`ext.rules_flutter.tap`, `enterText`, `getText`, `waitFor`, `pressKey`, ...),
+`app.restart` for hot reload and restart, `device.takeScreenshot` and the `app.log` events. The
+agent is an ordinary Dart-only plugin the app depends on in debug,
+`@rules_flutter//flutter/debug_agent`; [its README](flutter/debug_agent/README.md) lists every
+command and shows how to set it up for an agent.
 
 ## Examples
 
@@ -2777,7 +2317,7 @@ The `e2e/` directory holds working workspaces, each with its own tests:
 
 `ai_rules_flutter` started as [aran/rules_flutter](https://github.com/aran/rules_flutter), written by
 [Aran Donohue](https://github.com/aran). He designed this rule set and wrote 323 of its commits: the toolchain,
-the platform packaging, `flutter.pub` and the `flutter_bazel` dev tool that everything here still builds on.
+the platform packaging and `flutter.pub` that everything here still builds on.
 Thank you, Aran. This project would not exist without your work, and its whole history is kept here with your
 name on every one of those commits.
 

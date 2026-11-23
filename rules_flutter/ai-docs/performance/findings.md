@@ -17,7 +17,7 @@ Unless stated otherwise: rules_flutter `51b22bb`, Flutter 3.47.6 (bundled Dart
 Against rules_dart `main` at `95089ce`, through `--override_module` with
 `--lockfile_mode=off`, the suite stays green:
 
-- The 85 tests that re-ran, all `dart_test`s in `//tools/dev_tool` and
+- The 85 tests that re-ran, all `dart_test`s in the old dev tool and
   `//flutter/private/tools` plus the two analyze fixtures, pass.
 - The other 253 results were cached. Their inputs did not change, so that is
   sound.

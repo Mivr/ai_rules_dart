@@ -148,11 +148,8 @@ Linux x64 lack for macOS and Windows are in `rules_dart/docs/CHORES.md`
 `--override_module` line in it changes the module graph away from the one CI
 resolves (the tool refuses to run while one exists).
 
-There is deliberately no Python in the module graph: `//tools/ios_screenshot`
-builds `dart_binary` drivers that run their `pymobiledevice3` programs
-through a host `python3` (see the comment in `MODULE.bazel`), so no
-`rules_python` bump, pip `facts` section, or per-host lock splicing exists to
-maintain. If a future change reintroduces a Python toolchain, this section
+There is deliberately no Python in the module graph, so no `rules_python`
+bump, pip `facts` section, or per-host lock splicing exists to maintain. If a future change reintroduces a Python toolchain, this section
 needs its refresh procedure back.
 
 **Verification**: `bazel run //refresh_locks -- --check`, and `bazel test //...`
@@ -173,10 +170,10 @@ consumer downloads — and what BCR presubmit runs against. Extracting an archiv
 and building it is the only thing that catches either of these:
 
 - **Patterns must be anchored with a leading `/`.** Without one they match a
-  basename at any depth: `e2e/` also stripped `tools/dev_tool/test/e2e/`, and
-  that package's `glob(["test/e2e/**/*.dart"])` then failed the whole archive at
-  load time with "glob pattern didn't match anything, but allow_empty is set to
-  False". The archive did not build at all, and nothing in CI looks at it.
+  basename at any depth: `e2e/` would also strip any nested `e2e/` directory a
+  shipped package globs, and that `glob` then fails the whole archive at load
+  time with "glob pattern didn't match anything, but allow_empty is set to
+  False". The archive does not build at all, and nothing in CI looks at it.
 - **`e2e/smoke` has to stay in.** `.bcr/presubmit.yml` names it as
   `module_path`, and BCR resolves that inside the extracted archive. It was
   excluded along with the rest of `e2e/`.
@@ -186,8 +183,7 @@ workspace needs a line here**, or it ships in the archive: the whole tree is 12M
 against a 1.5MB archive.
 
 **Verification**: `git archive --format=tar HEAD | tar t` and check that
-`e2e/smoke/` and `tools/dev_tool/test/e2e/` are present and no other e2e
-workspace is. To check it builds, extract the archive somewhere clean and run
+`e2e/smoke/` is present and no other e2e workspace is. To check it builds, extract the archive somewhere clean and run
 `bazel build --nobuild //...` — the load phase is what these mistakes break.
 
 ---

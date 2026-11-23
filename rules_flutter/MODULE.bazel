@@ -411,15 +411,7 @@ use_repo(multitool, "multitool")
 # `bazel run @rules_dart//dart/pub/plan -- write --lock <pubspec.lock> --out <pub_plan.json>`.
 pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
 
-# Dev tool pub dependencies (args, vm_service, watcher, path).
-pub.from_lock(
-    name = "rules_flutter_dev_tool_deps",
-    isolated = True,
-    lock = "//tools/dev_tool:pubspec.lock",
-    plan = "//tools/dev_tool:pub_plan.json",
-)
-
-# Pub dependencies of the other tools and the tests (args, boolean_selector,
+# Pub dependencies of the tools and the tests (args, boolean_selector,
 # path, yaml, test). The test runners the rules run for users are among them.
 pub.from_lock(
     name = "rules_flutter_tool_deps",
@@ -440,7 +432,6 @@ pub.from_lock(
 )
 use_repo(
     pub,
-    dev_tool_deps = "rules_flutter_dev_tool_deps",
     gen_l10n_deps = "rules_flutter_gen_l10n_deps",
     tool_deps = "rules_flutter_tool_deps",
 )
@@ -458,10 +449,3 @@ flutter_dev.pub(
     lock = "//tools/tool_deps:pubspec.lock",
     plan = "//tools/tool_deps:pub_plan.json",
 )
-
-# iOS device screenshots and the device tunnel deliberately use NO Python
-# toolchain: `//tools/ios_screenshot` builds `dart_binary` drivers that run
-# their `pymobiledevice3` programs through a host `python3` (a documented host
-# prerequisite, like the Android SDK or Xcode). So there is deliberately no
-# `rules_python` dependency and no `pip` hub here — neither in this repo's
-# graph nor in any consumer's.

@@ -265,7 +265,7 @@ class IosDriveSession {
   }
 
   /// `simctl spawn <udid> log stream` arguments; the predicate is the one
-  /// `tools/dev_tool` uses for the same announcement.
+  /// the old dev tool used for the same announcement.
   static List<String> _logStreamArgs(String udid) => <String>[
     'simctl',
     'spawn',

@@ -81,7 +81,7 @@ flutter_application(
 #    This workspace deliberately omits a `macos/Runner/` runner — the
 #    purpose is to regress-test the *generic* infrastructure
 #    (manifest emission, dylib bundling helpers, data-asset placement);
-#    the dev_tool screenshot e2e proves runtime correctness against
+#    a screenshot of the running app proves runtime correctness against
 #    `e2e/plugin_example`'s `:plugin_app` once `flutter create` is
 #    available.
 build_test(

@@ -13,7 +13,7 @@
 //      `flutter_assets/packages/native_assets_synthetic/blob.txt`.
 //   3. Renders both values in the UI. If either pipeline regresses,
 //      the FFI call throws or the asset fails to load — the screen
-//      blanks and the dev_tool screenshot e2e fails.
+//      blanks and a screenshot of the running app shows it.
 
 import 'dart:ffi';
 import 'dart:typed_data';

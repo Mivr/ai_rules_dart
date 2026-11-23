@@ -9,8 +9,7 @@
 ///   Flutter runner dies with `libgtk-3.so.0: cannot open shared object file`),
 ///   Xvfb, xdotool, x11-utils, scrot installed
 /// - `zip` as well as `unzip`: the cloud image ships only the latter, while
-///   GitHub's runner image has both, so `//tools/dev_tool:native_libs_fingerprint_test`
-///   (which shells out to `zip`) fails here and passes in CI without it
+///   GitHub's runner image has both
 /// - Dart SDK installed (for running verification scripts)
 ///
 /// After creation, use deploy_bundle.dart to SCP a bundle and verify it.

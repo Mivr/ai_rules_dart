@@ -159,14 +159,7 @@ xcrun simctl spawn booted log show --last 5m \
 # (Flutter) [ERROR:flutter/shell/common/engine.cc(219)] Engine run configuration was invalid.
 ```
 
-`flutter_bazel run` refuses the combination rather than handing back a session
-whose app will never draw:
-
-```
-$ flutter_bazel run -t //:app -d ios-simulator --profile
-Cannot run an AOT build on iOS Simulator: the simulator's Flutter engine is
-JIT-only and needs flutter_assets/kernel_blob.bin, ...
-```
+The stock `flutter run --profile` refuses a simulator the same way.
 
 The *build* is still allowed — `bazel build -c opt` for the simulator is a
 legitimate thing to do, and the default iOS configuration is the simulator, so

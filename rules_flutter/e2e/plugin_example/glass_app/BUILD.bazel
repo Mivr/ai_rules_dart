@@ -9,7 +9,7 @@ load("@rules_flutter//flutter:web.bzl", "flutter_web_app", "flutter_web_bundle")
 # Draws with //glass_plugin's shaders as a `Paint.shader` and as a
 # `BackdropFilter`, calls its native plugin, and shows one line saying which
 # of the three worked (lib/main.dart). The builds are tested here; running
-# them is tools/dev_tool/test/e2e/glass_plugin_e2e_test.dart.
+# them is a run of the app on that platform.
 
 _DEPS = [
     "//glass_plugin",

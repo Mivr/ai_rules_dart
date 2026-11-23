@@ -91,12 +91,10 @@ The bar is `CLAUDE.md`'s verification policy and `docs/TESTING.md`, applied to
    export ANDROID_HOME=$HOME/Library/Android/sdk
    export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<an installed version>   # ls $ANDROID_HOME/ndk
    ```
-5. **Dev tool e2e suite** (it also holds the web rendering checks):
-   `dart run tools/dev_tool/tool/e2e.dart`, with a Dart ≥ 3.13 first on `PATH`
-   (`docs/TESTING.md` § 2), a booted iOS simulator and the `flutter_test` Android
-   emulator. It needs the workspace to itself (a `git commit` runs Bazel through its
-   hooks) and a machine that isn't saturated: read `uptime` first. Rerun any failure on
-   its own before judging it, and report both results.
+5. **Dev loop e2e:** `agent_e2e` against `e2e/stock_dev_loop` on an Android emulator and
+   on Linux (`docs/TESTING.md` § 2), with the stock `flutter` of the rules' release on
+   `PATH`. It needs a machine that isn't saturated: read `uptime` first. Rerun any
+   failure on its own before judging it, and report both results.
 6. **Manual checks the unreleased commits call for** — `docs/TESTING.md`'s "Quick
    reference: what to test when" (macOS runtime test, hot reload and restart, device
    checks). Anything that changes what an app draws means seeing it render.

@@ -15,7 +15,7 @@
 #      against any Xcode project whose PRODUCT_BUNDLE_IDENTIFIER is that id.
 #   4. Set profile_name below to that profile's own name — see the note.
 #   5. Build:  bazel build //:hello_world_ios_device -c opt --ios_multi_cpus=arm64
-#      Or run: flutter_bazel run -t //:hello_world_ios_device -d ios
+#      Or run: bazel run @rules_flutter//tools/flutter_dev -- run --bazel-target=//:hello_world_ios_device -d <device id>
 #
 # Naming the profile: `profile_name` matches the profile's `Name` field, which
 # is *not* always "iOS Team Provisioning Profile: <bundle id>". Xcode mints a

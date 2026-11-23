@@ -210,11 +210,6 @@
       ]
     },
     {
-      "name": "dev-tool",
-      "note": "Re-implementation of `flutter run` (shrink to about 3k)",
-      "paths": ["rules_flutter/tools/dev_tool/**"]
-    },
-    {
       "name": "bench-python",
       "note": "Python bench harness of the Flutter rules (delete)",
       "paths": ["rules_flutter/tools/perf/**"]

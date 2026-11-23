@@ -67,7 +67,7 @@ bazel run @rules_dart//dart/pub/plan -- write --lock path/to/pubspec.lock --out 
 second, so it needs the network: the lock's server, or a mirror given with
 `--server <url>` (the plan keeps naming the lock's own server). Whoever changes
 one of the rules' own locks (`//dart/ext:pubspec.lock`, rules_flutter's
-`//tools/dev_tool:pubspec.lock` and `//flutter/private/gen_l10n:pubspec.lock`)
+`//tools/tool_deps:pubspec.lock` and `//flutter/private/gen_l10n:pubspec.lock`)
 regenerates its plan in the same change; `pub_plan_test` fails until they do. A package the plan covers is planned with no request and
 is not recorded in `MODULE.bazel.lock`; a package it does not cover (the lock
 changed, the plan did not) is planned as without a plan. Its entries are hints

@@ -15,7 +15,7 @@
 /// flag — a devices-only listing would treat an unavailable newest runtime
 /// as a candidate.
 ///
-/// Run it locally before the dev tool's iOS simulator e2e cases:
+/// Run it locally before an iOS simulator e2e run:
 ///
 /// ```sh
 /// dart flutter/private/tools/ios_simulator_boot.dart [--timeout=<seconds>]

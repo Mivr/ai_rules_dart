@@ -5,7 +5,7 @@ Complete instructions for testing rules_flutter changes. Run **all applicable se
 > **Never run `bazel clean`** — it destroys the cache and causes long rebuilds.
 
 > **Capture the whole run to a file, then read the file.** Anything long — `bazel
-> test //...`, the e2e suite, a manual `flutter_bazel run` — goes to a log that is
+> test //...`, the e2e suite, a manual `flutter_dev run` — goes to a log that is
 > inspected afterwards. Never watch one through a `tail`/`grep`/`head` filter on
 > the live pipe: the filter has to be chosen before you know what went wrong, it
 > keeps only the lines you already thought to ask for, and the output is gone once
@@ -14,7 +14,7 @@ Complete instructions for testing rules_flutter changes. Run **all applicable se
 >
 > Redirect rather than pipe, so the exit status survives as well — a shell reports
 > the *tail* of a pipeline, so `… | tee log` leaves `$?` at 0 no matter how the
-> command exited (§ 2 has the `dart test` case):
+> command exited:
 >
 > ```sh
 > bazel test //... > /tmp/root-tests.log 2>&1; echo "exit=$?"
@@ -53,7 +53,7 @@ Which probe discriminates depends on the owning target's shape:
   Unimported is what makes it proof: an imported one is reached through `main`'s
   own closure, so the target goes red whether or not `srcs` carries it.
 * **Target is `main`-only** — a `main` and no `srcs`
-  (`//tools/update_flutter_version`, `//tools/dev_tool:process_group_exec`) →
+  (`//tools/update_flutter_version`) →
   transiently repoint `main` at the probe; restoring must return it to green.
   The dropped-file form cannot discriminate here: a probe added to a `srcs` the
   committed target does not have goes red even if the `main` slot is never
@@ -89,43 +89,6 @@ downstream consumers, where nothing in this repo would notice.
 the analyzer never sees the build's defines. That is the general case, not one
 bad rule.
 
-### Why the Windows capture helper is native
-
-A `py_binary` cannot run here. rules_python's `stage2_bootstrap_template.py`
-finds runfiles only as a *directory* — it reads `RUNFILES_MANIFEST_FILE` solely
-to derive a directory name, then requires that directory to exist, and never
-reads the manifest. Bazel on Windows defaults to `--noenable_runfiles`, so no
-tree is materialised and the check cannot pass. **No value the parent forwards
-fixes this.**
-
-So `screenshot.cc` captures through DXGI Desktop Duplication and encodes with
-WIC, linking Windows SDK libraries only: it reads nothing at runtime and has no
-runfiles to lose — the same shape as `//tools/macos_screenshot:screenshot`.
-
-Two consequences worth keeping in mind:
-
-- **MSVC is a host dependency**, discovered the way `rules_apple` discovers
-  Xcode — there is no hermetic MSVC. It costs nothing here, because
-  `flutter_windows_application.bzl` already compiles the Win32 runner from C++,
-  so Windows users need it regardless, and the macOS helper makes the same
-  bargain with Xcode.
-- **Linux is the odd one out.** macOS and Windows bundle a native helper;
-  Linux shells out to `scrot` from `PATH`, so capture fails on a host that
-  lacks it. That is the same hermeticity gap as the `zip` dependency below,
-  and it is unfixed.
-
-### Two root tests shell out to host binaries
-
-`//tools/dev_tool:native_libs_fingerprint_test` runs `zip`, resolved from
-`PATH`. macOS ships it, and so does GitHub's `ubuntu-latest` runner image, so
-this is invisible in both places the suite normally runs — but a plain Ubuntu
-cloud image ships only `unzip`, and the test then fails with
-`ProcessException: No such file or directory`. `tools/vm/create_linux_vm.dart`
-installs `zip` so our own Linux VMs match CI.
-
-The verdict therefore depends on the host image. Making it hermetic means a
-`zip` from the build graph, not a PATH lookup.
-
 ### Language versions: unset, with pubspecs at the pinned SDK
 
 No target in this repo states `language_version`, and none should without a
@@ -147,415 +110,32 @@ version in the same change, then reformatting whatever the new style moves.
 The one exception is `flutter/private/gen_l10n/pubspec.yaml`, which matches
 upstream `flutter_tools` exactly.
 
-## 2. dev_tool tests
+## 2. The dev loop
 
-Unit tests run under section 1 — every one of them has a Bazel target, on the
-hermetic toolchain. To run just those:
-```sh
-bazel test //tools/dev_tool/...
-```
-
-E2e tests spawn real builds and drive real devices, so they are not Bazel
-targets (they invoke `bazel` themselves) and run sequentially. Run them through
-the guarded runner:
-```sh
-dart run tools/dev_tool/tool/e2e.dart
-```
-
-It forwards its arguments to `dart test`, so scoping works as usual — any
-positional argument replaces the default `test/e2e/` path:
-```sh
-dart run tools/dev_tool/tool/e2e.dart --plain-name="macOS"
-dart run tools/dev_tool/tool/e2e.dart test/e2e/agent_e2e_test.dart
-```
-
-**Give the suite the workspace to itself.** Every case builds and launches a real
-app with deadlines in minutes, and a `bazel` in this workspace takes the same
-lock the suite's builds need. Running anything else here while it goes — a
-`bazel test`, a `bazel build`, or a **`git commit`, which fires three bazel
-invocations through this repo's hooks** — pushes cases over their `app.started`
-and control-channel timeouts. Measured 2026-09-17: the same tree gave **53
-passed / 20 failed** with commits landing alongside it and **73 passed / 0
-failed** on a quiet machine, ~40 minutes apart. The failures name nothing about
-their cause, so the temptation is to go hunting in the change.
-
-### Why a runner rather than a bare `dart test`
-
-Because `dart test` has a way of finishing without running the suite that looks
-exactly like success. With `package:test` 1.31 — the version `pubspec.lock`
-resolves, not the `^1.25.0` the pubspec asks for:
-
-| condition | exit | verdict |
-|---|---|---|
-| version solving fails (a dep cannot resolve) | 65 | loud |
-| nothing selected (`--tags` / `-n` match none) | 79 | loud |
-| **every selected test skipped** | **0** | **silent** |
-
-The third row is the hole, and it is reachable rather than theoretical:
+`flutter_dev` (`tools/flutter_dev`) builds with Bazel and hands the app to the stock `flutter`
+tool. Its unit tests run with fake `bazel` and `flutter` executables and need no device:
 
 ```sh
-$ cd tools/dev_tool
-$ dart test test/e2e/agent_e2e_test.dart --tags=e2e --plain-name="occluded"
-00:23 +0 ~1: All tests skipped.
-$ echo $?
-0
+bazel test //tools/flutter_dev/...
 ```
 
-Zero tests ran; the shell was told everything is fine. Twenty-two of the
-thirty-three e2e files have cases `skip:`-gated on `Platform.isMacOS`, so on any
-other host a run that selects only those "passes" having executed nothing.
-
-`tool/e2e.dart` closes that by reading `dart test`'s machine-readable result
-stream instead of its exit code, and failing when the number of tests that
-actually *ran* is zero. It also asserts its own `Platform.version` up front and
-then runs the suite on `Platform.resolvedExecutable`, so the `dart` that was
-checked is necessarily the `dart` that runs — see the next section.
-
-One trap worth naming if you ever parse that stream yourself: a skipped test
-reports `result: "success"` in the JSON reporter, for backwards compatibility.
-The predicate for "ran and passed" is `result == "success" && !skipped
-&& !hidden`.
-
-### The `dart` that runs the e2e suite must be 3.13 or newer
-
-The suite is run by whatever `dart` is first on your `PATH`, and that is not a
-property of this repo. `tools/dev_tool`'s `pubspec.yaml` requires the SDK this
-repo pins (`sdk: ^3.13.0`), so pub refuses an older Dart during version solving,
-naming that constraint, before a single test runs.
-
-The Flutter toolchain this repo pins ships exactly that one. Put it first:
+The end-to-end check needs a device and the stock tool of the rules' Flutter release
+(`flutter_dev` refuses another). `agent_e2e` starts `e2e/stock_dev_loop` with
+`flutter_dev run --machine` and drives it the way an agent does: every
+`ext.rules_flutter.*` command of the debug agent through `app.callServiceExtension`, the widget
+tree, the example's own plugin extension, and `device.takeScreenshot` where the device has one;
+then a hot restart and a hot reload, and all of it again. It prints a JSON report and exits 1 when
+a check failed.
 
 ```sh
-export PATH="$(ls -d "$(bazel info output_base)"/external/*flutter+flutter_*/dart-sdk/bin | head -1):$PATH"
-dart --version   # expect 3.13 or newer
+cd e2e/stock_dev_loop   # Android also needs .bazelrc.user with the SDK and NDK
+bazel build @rules_flutter//tools/flutter_dev
+FLUTTER_DEV=$PWD/$(bazel cquery @rules_flutter//tools/flutter_dev --output=files 2>/dev/null)
+bazel run @rules_flutter//tools/flutter_dev:agent_e2e -- --screenshot=/tmp/shot.png -- \
+  "$FLUTTER_DEV" run --machine --bazel-target=//:app_x64 -d emulator-5554
+xvfb-run -a bazel run @rules_flutter//tools/flutter_dev:agent_e2e -- -- \
+  "$FLUTTER_DEV" run --machine --bazel-target=//:app_linux -d linux
 ```
-
-The glob spans both repo-name shapes: `+flutter+flutter_<platform>` when
-ai_rules_flutter is the main module (which it is here), and
-`ai_rules_flutter++flutter+flutter_<platform>` from a consumer workspace.
-
-The unit tests are unaffected — Bazel resolves the toolchain for them.
-
-**A too-old Dart never reaches the runner.** `tools/dev_tool`'s
-`pubspec.yaml` requires `sdk: ^3.13.0`, so an older SDK refuses to compile any
-library in the package — including the runner itself — and says so before
-`main` runs:
-
-```
-$ PATH="/path/to/an/old/sdk/bin:$PATH" dart run tools/dev_tool/tool/e2e.dart
-tool/e2e.dart:1:1: Error: The language version 3.13 specified for the package
-'flutter_bazel_dev_tool' is too high. The highest supported language version
-is 3.12.
-```
-
-It exits **254** — loud, so no pipeline or sweep script can read it as a pass
-— but it names the package rather than the fix. If you see it, the fix is the
-`export PATH=…` above. `tool/e2e.dart` used to check `Platform.version` itself
-and print a sentence naming the wrong `dart`; that check became unreachable
-when `pubspec.yaml` got a real floor in place of `^3.0.0`, and was removed
-rather than left promising a message nobody could see. Getting it back means
-moving the runner out of the package, which nothing has needed yet.
-
-The runner still spawns the suite on `Platform.resolvedExecutable`, so `PATH`
-is never consulted for the run itself and cannot disagree with the `dart` named
-in its first line of output.
-
-### The suite drives the shipped binary
-
-`startDevTool` / `attachDevTool` launch the AOT `dart_binary`
-`//tools/dev_tool:flutter_bazel` — what a user installs. The harness builds it
-itself (`ensureBuiltDevTool`, once per test file), so there is no `bazel build`
-pre-step and no way to measure a stale binary; a failed build ends the run
-quoting Bazel's own output rather than falling back.
-
-Passing `viaDartRun: true` launches `bin/flutter_bazel.dart` through the
-toolchain `dart` instead. Exactly one case does — a deliberate negative control
-in `machine_protocol_e2e_test.dart` that keeps the from-source path, and the
-"Running build hooks…" stdout prefix only it produces, exercised. That case is
-the reason `hermeticDart` still exists.
-
-### The Android SDK/NDK variables must be exported too
-
-`plugin_example` registers the NDK toolchain, so **every** test that builds in
-that workspace fails without `ANDROID_HOME` and `ANDROID_NDK_HOME` — including
-its macOS, iOS and Chrome groups, because toolchain resolution fetches the
-repository regardless of the target being built. The failure arrives as a
-`Build failed with exit code 1` under half a second, which reads like a broken
-dev tool rather than a missing variable:
-
-```sh
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/<version>"   # versioned dir, not ndk/
-```
-
-§ 3 has the full explanation, including why `.bazelrc` needs `--repo_env` for
-these rather than `--action_env`.
-
-Which failure you see depends on how warm the workspace's output base is. A
-test using `editableWorkspace` copies the workspace to a fresh temp directory,
-so its output base has never been built and the dev tool's *first* bazel
-command — the `bazel fetch` that materializes the Flutter toolchain repo before
-anything is compiled — is what hits the missing variable; the run reports
-`Error in fail: Either the ANDROID_NDK_HOME environment variable or …` together
-with the `cd … && bazel fetch …` that produced it. A *warm* in-tree workspace
-shows the `Build failed with exit code 1` above instead, because the toolchain
-repo is already on disk and the first thing to need the NDK is the build.
-
-### macOS permission prerequisites
-
-Two e2e groups drive the OS, not just the app, and macOS gates both behind
-permissions granted to **the terminal (or IDE) that launches the tests** —
-neither can be granted programmatically. Grant them in
-System Settings → Privacy & Security:
-
-| Permission | Needed by | Symptom when missing |
-|---|---|---|
-| **Screen Recording** | `macos_e2e_test.dart` and `multi_window_e2e_test.dart` native-screenshot tests (ScreenCaptureKit) | Test **fails**: `No window titled … Available titles: []` — with the permission missing, `SCShareableContent` still returns windows but their titles come back empty. Not every native-screenshot failure is this one; see "The display must be awake for the native-screenshot tests" below, and read the helper's own message, which names the windows it found |
-| **Accessibility** | `agent_e2e_test.dart` occlusion test, which minimizes the app window via `AXMinimized` | Test **skips**, after `osascript` refuses in well under a second: `agent_e2e: could not set AXMinimized=true — exit 1: … not allowed assistive access`. On macOS 27 (Darwin 27.0) the same refusal reads `Can’t get window 1 of process "Hello World". Invalid index. (-1719)`: System Events answers an untrusted client with no windows for any app, so the app's window looks missing rather than forbidden — `count of windows of process "<your terminal>"` coming back `0` is the tell |
-| **Automation** (System Events) | the same test, same `osascript` call | Test **skips**, after the bound expires: `agent_e2e: could not set AXMinimized=true — timed out`. Unlike a refusal this one has no error to return — with the permission undecided, the AppleEvent send simply blocks — so the call is given ten seconds and then killed |
-
-These dependencies are essential rather than incidental: there is no way to
-capture a real window without Screen Recording, and no way to get a window off
-screen — the state the occlusion regression is about, in which an agent must
-still get a bounded answer and the tap must still be delivered — without
-OS-level window control. Stubbing either would mean the test no longer
-exercises the behaviour it exists to guard.
-
-Note the asymmetry: a missing Screen Recording permission fails loudly, while
-missing window-control permissions skip. That skip is what `tool/e2e.dart`
-exists to keep visible — it names every skipped test on its own line and refuses
-to report a pass for a run in which nothing executed, so the skip cannot be the
-whole of a "green" suite. It is still worth reading those lines: a scoped run
-that skips its one interesting test is caught, but a full sweep that skips one
-of forty-five is a real result with a hole in it.
-
-### The display must be awake for the native-screenshot tests
-
-**`Failed to start stream due to audio/video capture failure` is a sleeping
-display, not a missing permission.** ScreenCaptureKit keeps enumerating windows
-after the panel powers down — and keeps resolving their titles, which requires
-Screen Recording — so the failure names the windows it found and then refuses
-to capture any of them:
-
-```
-Skipping window 15793 (Planner — Calendar): Failed to start stream due to audio/video capture failure
-No capturable windows for the target pid.
-```
-
-Seeing real titles in that message is the tell that the permission is granted
-and something else is wrong. The suite runs unattended for minutes,
-`displaysleep` defaults to 10, and a terminal driving tests is not user
-activity, so the display idles out mid-run.
-
-Hold the display on for the duration:
-
-```sh
-caffeinate -d -u dart run tools/dev_tool/tool/e2e.dart
-```
-
-`-d` is the display-sleep assertion specifically; plain `caffeinate` prevents
-only *system* sleep and will not help. `-u` matters just as much and for a
-different reason: `-d` keeps an awake display awake but does **not** wake one
-that is already off, so a suite started against a dark panel fails exactly as
-above with the assertion held the whole time. To wake it first without starting
-a run: `caffeinate -u -t 3`.
-
-To confirm after the fact:
-
-```sh
-pmset -g log | grep -E "Display is turned (on|off)|delayDisplayOff"
-```
-
-### Read `uptime` before you start, and again before you believe the result
-
-Every test in this suite builds, launches and drives something under a wall
-clock, so a machine that is already saturated does not produce a slower sweep —
-it produces a sweep whose failures are about the machine. Establish idleness by
-reading the load, not by grepping for process names you recognise:
-
-```sh
-uptime                       # before starting, and again when reading results
-```
-
-This is a **precondition for trusting a run**, not a cutoff: a sweep started
-against a busy machine tells you nothing, but no load level predicts any
-particular failure. For a failure you already have, see "'It failed under load'
-is not a diagnosis" below.
-
-**`memory_pressure` does not report free memory**, whatever its output says.
-Its "System-wide memory free percentage" is a *pressure* metric. Read memory off
-`vm_stat` and do the arithmetic (free + inactive + speculative, times the page
-size) rather than off that line.
-
-Some cases in this suite depend on the machine's GUI state — Screen Recording,
-window enumeration, an awake display — so a skip or a failure there can be about
-the environment rather than the code; the permission and display sections above
-say which.
-
-### "It failed under load" is not a diagnosis
-
-Reading a load average *before* a sweep, to decide whether the result is worth
-trusting, is sound — see "Read `uptime` before you start" above. Reading one
-*afterwards* to explain a failure you already have is not: load average is not
-the predictive axis, and quoting one as though it were a threshold invites the
-mistake this section exists to stop.
-
-**Do not treat "failed under load" as established without a preserved failing
-log.** `bazel-testlogs` is overwritten by the next run — including by the rerun
-you do to confirm. Copy the failing `test.log` out *before* re-running anything.
-
-When re-running to reproduce, use `--nocache_test_results` and read the
-`Stats over N runs` line — the summary line says "1 out of 1" whatever `N` is.
-
-### Dev tool e2e test matrix
-
-| Test file | Platform | What it validates |
-|-----------|----------|-------------------|
-| `macos_e2e_test.dart` | macOS | Both HTTP control-channel screenshot endpoints: `screenshot/flutter` — asserted as a **refusal**, since Flutter 3.47's macOS Impeller default means the VM service's `_flutter.screenshot` can no longer encode, so the endpoint must answer `501` naming the native one — and `screenshot/native` (the bundled ScreenCaptureKit helper, which is why it runs from the built binary rather than `dart run`). The refusal is asserted through `httpFlutterScreenshotReply`, not `httpScreenshot`, which follows a `501` through to `native` and would quietly duplicate the second case |
-| `web_e2e_test.dart` | Any (needs Chrome) | WASM + JS `--screenshot` (CDP), `--machine` screenshot — the JS one over `:app_js`, whose `base_href = "/web_example_js/"` the dev server has to serve under, so it asserts the launch URL's path and a rendered page — and what a `--wasm` run tells a client: `app.webLaunchUrl` carries the served address and the browser's DevTools endpoint (`cdpPort`, the page's `webSocketDebuggerUrl`), and the VM-service half of the `app.*` agent surface is absent from `/commands` rather than present and refusing |
-| `web_viewport_e2e_test.dart` | Any (needs Chrome) | `--web-viewport` captures at the size asked for, measured on the PNG from `screenshot/native`: `390x844@3` is 1170x2532 and survives a hot restart and an `app.setViewport` to 900x1500, and `390x844` is 390x844. Chrome 154 drops the CDP override when the connection that set it closes, so a tool that applied it and hung up launched cleanly and captured at the window's own 2400x1713 — a run that only checked the launch, or a fake that models the old browser, passes. `cdp_viewport_test` covers the connection handling against a fake that models the new one |
-| `web_define_e2e_test.dart` | Any (needs Chrome) | A `web_defines` value in the project's `web/flutter_bootstrap.js` template (`//:app_dev_boot`, project `dev_boot/`) reaches the running page — read off `window` over CDP, with a rendered `screenshot/native` and no service worker beside it. The dev loop must serve the build's bootstrap rather than generate one of its own, or the define works on `bazel build` and does nothing under `-d chrome` |
-| `ios_simulator_e2e_test.dart` | macOS | `--screenshot` (simctl), `--machine` screenshot |
-| `machine_protocol_e2e_test.dart` | macOS | Protocol lifecycle events, unknown-method error (reload/restart correctness is manual — see "Hot reload / hot restart (manual)") |
-| `attach_e2e_test.dart` | macOS | Launch app externally → attach → VM service connects; a hot reload and a hot restart driven over the machine protocol, the restart asserting a `main()`-level edit took effect (attach shares `run`'s reload pipeline, so it gets the orchestrator, asset tracking and codegen refresh). The reload case builds the app with a `--dart-define` attach is never given: the recompile keeps it only because the pipeline reads the defines off the running app. Two cases kill the app instead of driving it, on either side of the pipeline being assembled — both must end the run the same way (exit 0, naming the app as gone), because which side a death lands on is not something the user can see |
-| `dart_defines_e2e_test.dart` | macOS | `--dart-define` reaches the app (comma-in-value intact) and survives a hot reload (frontend_server -D replay) |
-| `asset_reload_e2e_test.dart` | macOS + Chrome + iOS sim | Editing `assets/message.txt` mid-run reaches the UI over an **explicit `app.hotReload`**: the tracker decides a build is warranted, the bundle is rebuilt, the changed bytes go up the devFS, and the app re-reads them without restarting. The browser case asserts both halves — the module server hands out the new bytes, and `app.getText` reads the repainted label. The iOS-simulator case is the only one that can catch a wrong assets tree: rules_apple's split transition puts the running app's tree in a config no command line can name, and on macOS both trees hold identical bytes, so watching the wrong one is invisible there. **Runs no watcher** — these launch `--machine` without `--watch`, so the watcher never starts and its accept-this-path predicate is never built. Watch-driven asset delivery has no e2e here or anywhere; that predicate's *parts* are unit-covered only (`source_watcher_test.dart` 'a custom filter widens what reaches the pipeline'; the `watches()` cases in `asset_bundle_test.dart`) |
-| `launch_path_e2e_test.dart` | macOS | A run launched through a path that then vanishes (a symlink the test deletes when the tool reports `launching`) still connects to the VM service, answers `app.getText` and takes a native screenshot. That is what `./bazel-bin/.../flutter_bazel run` does every time: the run's own `-c dbg` build repoints `bazel-bin`. Without `pinProcessLocation` the connect hung (DDS reads `Platform.resolvedExecutable` per client and the read threw inside its error zone) and every bundled helper went missing |
-| `main_outside_lib_e2e_test.dart` | macOS + Chrome | An app whose `main` sits outside its package's `lib/` (`e2e/macos_example :driver_app`, `e2e/web_example :app_test_driver`, both `test_driver/app.dart`) hot reloads an edit to that `main` and to the sibling it imports by relative path, each asserted by its exact text and by the reload answering `runningCode: updated`, then hot restarts. Before the build declared those files (`appSources` in `_dev_config.json`) the app ran and every such edit was dropped: reloads answered "no changes detected" and a restart recompiled nothing. On web a debug build of the shape was refused outright |
-| `start_paused_e2e_test.dart` | macOS + Chrome | `--start-paused` really holds `main()` (asserted from the isolate's own `pauseEvent`, and on web from the framework being absent), an `app.*` command answers instead of hanging, and resuming starts the app |
-| `agent_e2e_test.dart` | macOS + Chrome | Full `app.*` agent surface (tap/enterText/getText/…), and that it still works **after `app.restart`** (engine-hook registrant re-registers extensions). The Chrome case takes the other route in — the build stages the agent source and the dev tool's synthetic entrypoint registers it — and issues every command from `app.started` onward, which on web is before the VM service, the extensions or the widget tree exist |
-| `press_key_e2e_test.dart` | macOS + Chrome | `app.pressKey` on both routes, each asserting the reply's `route`. **macOS** (`hello_world`, framework route): typing, Backspace, ArrowLeft and ArrowDown — which the framework leaves unhandled on macOS, so they only edit through the Cocoa selectors the extension sends as `TextInputClient.performSelectors` — and Enter firing `onSubmitted`, read back with `app.getText`; plus `Meta+A` as a shortcut the framework handles, and an unknown key refused by name. **Chrome DDC** (`web_example`, browser route): the same editing through real CDP key events, deleting to the end of the line with `Control+K` on a Mac (through its `deleteToEndOfParagraph` command) and with two `Delete`s elsewhere, where Chrome binds nothing to `Control+K`, checked with `app.getText`, and a key typed with no field focused coming back with a `warning`. **Chrome `--wasm`**: `app.pressKey` is advertised where no VM-service command is, focus reaches the field by Tab alone, and the result is read off a screenshot — the fixture draws one magenta square per submitted character, counted by `countColourRuns`. Both Chrome cases run `--web-run-headless`, because a hidden headed window draws no frames. Seen red: with the Mac editing commands turned off, the `--wasm` page submitted `abcd` (four squares) instead of `ab` |
-| `reload_after_failure_e2e_test.dart` | macOS | A rejected hot reload does not wedge the resident compiler — the next reload still answers and `app.restart` recovers the session. Runs over `e2e/codegen`, which makes it the only automated check that a **source-assembled** app re-registers the engine's pre-main plugin registrant: the dev compiler feeds that registrant as a `file://` `--source` while a multi-root file system is mounted for the app's own package, and the post-restart `app.waitFor` can only be answered by extensions that registrant brought up. With the registrant suppressed, this test fails |
-| `watch_reload_e2e_test.dart` | macOS | The **filesystem watcher** (`--watch`) reload path — one of three tests that deliberately run the watcher — the others are `initial_compile_recovery_e2e_test.dart` and `dev_build_recovery_e2e_test.dart`; every other reload test issues an explicit `app.hotReload`. Two guards. (1) Over `e2e/codegen`: an edit to a **dependency package's** source must key to a `package:` URI through the build-emitted `sourcePackages`, or the watcher drops the path before the pipeline sees it and nothing reloads at all — silently, which is the whole difficulty. With that URI dropped from the watcher's list, the test fails with `Saw 0 app.reloadResult event(s)`. (2) Over `e2e/hello_world`: an edit made the instant `app.started` arrives still reloads, pinning that the watcher is created before the app launches rather than inside the session loop, where the startup window swallows the edit outright. Also asserts `--machine --watch` writes no prose onto the JSON-RPC stdout stream (the `log`-callback regression). **Not** the plugin registrant, deliberately: a hot reload never re-runs the engine's pre-main registrant hook, so that path is reached only by `reload_after_failure_e2e_test.dart`'s restart |
-| `initial_compile_recovery_e2e_test.dart` | macOS | A session whose **first** compile failed still reloads. Breaks `hello_world/lib/main.dart` inside the window the initial compile reads it in — on the `package_roots_stabilized` log line, after the launch build and before the compile — then fixes it and requires the watcher-driven reload to land and the app to render the fix. Also pins the reload in between as *answering* with the compiler's diagnostics, and `initial_compile_failed` as carrying `recoverable: true` (JSON mode drops the human `text`, so that field is all a machine client gets). Without the fix, the reload afterwards fails with `Initial compile failed; hot reload is unavailable.` |
-| `dev_build_recovery_e2e_test.dart` | macOS | A session whose **launch-time `bazel build`** failed still reloads — one step earlier than the row above, on the wider window. The assembler builds the flutter_application (whose `DefaultInfo` carries the app kernel under `is_debug`) before it starts any compiler, so a source that does not compile fails it; between `run`'s own launch build and this one sits an entire app launch, which is the window a developer saving a typo while the app comes up actually lands in. Breaks `hello_world/lib/main.dart` on the `resolving_toolchain` log line — the last thing logged before the cquery and the build, and **not** the build's own `bazel_command` record, since an edit racing bazel's file read is a coin flip whose lost half lands in the *other* recovery path. Asserts `dev_build_failed` carrying `recoverable: true` (JSON mode drops the human `text`), that it does not name the frontend server, and that the fix reloads and renders. Every edit is derived from the pristine file and asserted to have changed something, so a no-op edit cannot pass |
-| `native_libs_reload_e2e_test.dart` | macOS | Both directions of a hot reload whose **own rebuild** moved a native library. Over `e2e/codegen`, the one workspace that is source-assembled (so a reload runs `bazel build`) *and* bundles a `dlopen`ed library — through a `flutter_native_library` wrapper whose binding contract is `:native_add_ir`, one line per exported declaration extracted from the C header — *generated*, which is the shape a real binding generator has and the one that needs the app target to declare the contract as an output (see `flutter_application`). That is what makes both directions drivable from one fixture: editing `native_add.c` moves the library alone, editing a declaration in `native_add.h` moves both, and editing a comment in it moves neither. Case A (code only) asserts the reload **succeeds**, the window shows the new Dart, and `nativeLibsStale` names the library anyway — then that a restart relaunches and the reload after it is clean, which is the guard against a relaunch that failed to re-baseline and would report the library stale forever. Case B (contract too) asserts the reload is **withheld** and the window still shows case A's Dart, which is what makes `runningCode: unchanged` checkable rather than self-reported. Waits for `frontend_server_ready` before editing, because an edit inside the assembler's own build window is compiled into the baseline (see `NativeLibsWatch.of`). A second group does the same two verdicts over **Chrome**, against a `native_modules` entry on `codegen`'s web bundle (an eight-byte wasm header plus a text contract — the tool compares bytes and parses neither), and ends by asserting that a web *restart* re-baselines: the page re-runs `main()` and re-fetches the module, so the reload after it must report nothing stale |
-| `native_hot_patch_e2e_test.dart` | macOS | A native edit **patched into the running app** by a hot reload, over `ffi_example`'s hand-written C `hot_patch` (`native/mul_hot_patch.c`, `tools/c_patch_tool.dart`). `ffi_example` is not source-assembled, so the only thing that can notice the edit is the patcher's stat of the manifest's `sources`. Asserts, in one run: an edit to `native/mul.c` answers `nativePatched` and the `live 3 × 4` line shows the new value (which also pins the reassemble a reload with no Dart delta needs), the value `main` computed at launch is still on screen (no restart), a reload with nothing new says nothing native, an edit to `native/mul.h` that **adds a declaration** is withheld in the builder's own words (a moved contract with a `hot_patch` builder is asked, not refused — the dev tool never reads what about the contract moved), an edit that moves the contract *without* changing what it declares is **delivered** and the next reload over the same moved bytes is clean (the watch advances a patched library's contract with it), and undoing the edit answers `nativeReverted` and shows the launched value again. Waits for `native_hot_patch_armed` before editing, because the snapshot is taken at assembly |
-| `relaunch_e2e_test.dart` | macOS | `app.restart`'s **relaunch** branch: edits `ffi_example/native/mul.c` so the rebuilt dylib differs, then asserts the HTTP control channel survives the process swap and the relaunched app answers on it. The only test that reaches this branch — it needs a real native-library change |
-| `stop_during_build_e2e_test.dart` | macOS | Stopping a run **while its launch build is running** stops the build: `SIGTERM` and `SIGINT` to the tool's pid alone (exit `143`/`130`), `daemon.shutdown` (answered, exit `0`), and `SIGINT` to `flutter_bazel build` (exit `130`). Each forces a real build with a `--dart-define` no earlier run used and stops it on bazel's `Analyzed target` line, then asserts bazel's own `Bazel caught terminate signal`, that nothing of the command's process group is left, that `bazel --noblock_for_lock info` answers at once, and that no `command_failed` was reported. Signalling bazelisk's pid instead of its group fails it: the build runs on to `Build completed successfully` |
-| `glass_plugin_e2e_test.dart` | macOS/iOS-sim/Android/Chrome | A plugin written in the workspace that ships fragment shaders (`plugin_example`'s `//glass_plugin`, run as `//glass_app:glass_<platform>`): the shaders its pubspec names draw as a `Paint.shader` and as a `BackdropFilter`, checked by the app reading its own pixels, and its Swift/Kotlin is registered. On Chrome, under skwasm (`--wasm`), CanvasKit in the dev loop and a production CanvasKit build (`--profile`), the paint shader draws and the filter is refused, as web requires. `//impeller_shader`'s shader cannot be compiled for SkSL; its app draws with it under Impeller on macOS, the iOS simulator and Android. An edit to the package shader shows after a hot reload, with no restart, on macOS and the iOS simulator |
-| `plugin_example_e2e_test.dart` | macOS/iOS-sim/Android/Chrome | Plugin apps render non-blank frames; Dart plugin registration survives `app.restart` (macOS); web plugins register in both DDC and `--wasm` dev mode (Chrome) |
-
-### Dev tool screenshot mechanisms
-
-| Device | Debug mode | Profile and release |
-|--------|------------------------|---------------------------------|
-| macOS | bundled ScreenCaptureKit helper (always) | same |
-| Linux | `scrot` (always) | same |
-| Windows | bundled `dxcam` DXGI helper (always) | same |
-| Android (physical) | `adb screencap` (always) | `adb screencap` |
-| Android (emulator) | `adb emu screenrecord screenshot` (always) | same |
-| iOS Simulator | `simctl io screenshot` (always) | `simctl io screenshot` (always) |
-| iOS device | pymobiledevice3 DVT (always) | pymobiledevice3 DVT (always) |
-| Chrome/Web | CDP `Page.captureScreenshot` (always) | N/A (web is always debug) |
-
-Note: `_flutter.screenshot` captures only the Flutter widget tree (no OS chrome); the platform tools capture the full screen or window. The three desktop rows name the helper each `Device.screenshot` actually resolves out of runfiles (`tools/{macos,windows}_screenshot/screenshot`, and plain `scrot` on Linux). Windows must use DXGI, not GDI, which captures a Flutter surface as black (§ 4).
-
-Every cell says "always": at the pinned Flutter, **no** device can do `_flutter.screenshot`. Impeller cannot encode a compressed screenshot, and there is no engine screenshot on web at all. They all declare `supportsFlutterScreenshot => false`, so the control channel's `screenshot/flutter` endpoint answers `501` naming `screenshot/native` instead of passing back an engine error that reads as transient.
-
-**Android** answers the RPC with `(-32000) Could not capture image screenshot`. **The three desktop platforms** refuse it since the Flutter 3.47.2 engine, where each embedder's Impeller default flipped on — macOS `FlutterDartProject.enableImpeller` `NO` → `YES`, Linux `FlDartProject.enable_impeller` introduced as `TRUE`, Windows `FlutterWindowsEngine` resolving its `Default` switch to enabled. macOS is measured (`macos_e2e_test.dart` asserts the refusal directly); Linux and Windows are read from those embedder sources, not from a run.
-
-### Stopping a run: signals release what it holds
-
-`SIGTERM` and `SIGINT` (Ctrl-C) run the same shutdown `daemon.shutdown` does —
-the app stops, the browser and its temp profile go, the resident compiler
-closes, a bazel command still running is stopped — and the tool then exits
-`143` or `130`. Signal a second time to exit at once without waiting for the
-rest.
-
-**A bazel command the tool started stops with it.** A `bazel` on `PATH` is
-usually bazelisk, which ignores SIGINT and SIGTERM sent to its own pid and
-counts on a terminal signalling the whole process group. Measured before this
-was handled: a signal to the tool alone ended it in milliseconds, and its build
-ran on to completion, holding the output base's lock against the next command.
-So every bazel command starts in a process group of its own
-(`//tools/dev_tool:process_group_exec`), and shutdown sends that group SIGTERM
-— not SIGINT, which the Bazel client counts and answers on the third by killing
-the server — then waits for bazel to exit and for its last lines to be read.
-The Bazel server is never touched. `flutter_bazel build` stops its build the
-same way. Two launches cannot interrupt a command and say so if a stop has to
-wait on one: Windows, and the tool run from source with `dart run`, which has
-none of the helpers Bazel bundles. `stop_during_build_e2e_test.dart` is the
-guard.
-
-A leaked profile is not merely wasted bytes — see the `ChromeSession` docs on
-why an orphaned browser can serve a screenshot that makes a broken run look
-fine.
-
-**A run also has to be able to end without a signal.** An uncancelled
-`ProcessSignal.watch()` keeps the Dart VM alive after `main` returns, so
-`daemon.shutdown` can answer, release everything, and leave the process sitting
-there. Two guards assert the exit directly — `web_e2e_test.dart` and
-`attach_e2e_test.dart`, both "daemon.shutdown ends the process, not just the
-app" — and neither runs in CI, so the harness makes **every** e2e test a
-lifetime guard as well: `DevToolProcess.dispose` sends `daemon.shutdown`, and a
-tool still running 20s later fails the test instead of being killed quietly.
-
-### Capturing a web app at a phone viewport
-
-`--web-viewport WIDTHxHEIGHT[@scale]` lays the app out at a viewport of its
-own, whatever size the browser window is — `--web-viewport 393x660@3` gives a
-1179x1980 capture, and `--web-viewport 393x660` a 393x660 one. That is what a responsive-layout
-sweep needs, and the browser window cannot supply it: `--window-size=393,660`
-is accepted and then clamped by new-headless Chrome to about 500 CSS px wide,
-with the simulated window chrome coming off the height.
-
-The size is applied over CDP (`Emulation.setDeviceMetricsOverride`) once the
-page is up, and the run fails if the page does not come back reporting it. The
-connection that applied it stays open for the whole run: Chrome 154 ties the
-override to the CDP session that set it and puts the page back at the window's
-own size when that socket closes, so a tool that applied it and hung up still
-launched cleanly and then captured at 2400x1713. If the connection is lost
-mid-run the tool logs `web_viewport_lost`; `app.setViewport` sets it again. The
-override is not a mobile emulation, so the page is laid out at exactly the
-size asked for before its own code has run.
-
-`app.setViewport` changes it again mid-session — `{"method":"app.setViewport",
-"params":{"appId":"…","width":393,"height":660}}` — so a sweep across form
-factors is one run driven through several sizes rather than one run per size.
-
-The command exists **only on a web run**; a native session answers `Unknown
-command: app.setViewport`, because a desktop window is a real window and there
-is no view-metrics override on the VM service to emulate one. It takes a width
-and a height and refuses a scale, which cannot be changed on a running browser
-at all — the ratio comes from `--force-device-scale-factor`, fixed when Chrome
-starts. A different scale is a new run with `--web-viewport WxH@scale`. The
-`@scale` half goes on Chrome's command line as `--force-device-scale-factor`
-instead, because capture resolution follows the switch and not the override —
-an override carrying `deviceScaleFactor: 3` alone still captures at 1x. Passing
-`--web-browser-flag=--force-device-scale-factor` beside a `@scale` is refused
-for the usual reason: Chrome resolves a duplicated switch by position.
-
-### Why an emulator is captured through its console
-
-`adb screencap` on an emulator does not fail on a Flutter app — it succeeds and
-returns a **fully transparent** PNG — `mean=0, alpha=0`, identically through
-`screenshot/native` and through a raw `adb exec-out screencap -p`. `adb emu screenrecord screenshot
-<dir>` captures the emulator's own framebuffer on the host and gets the real
-image.
-
-Whether the blank covers the whole screen or only the Flutter surface varies by
-AVD and GPU mode. Either way, on an emulator `screencap` can return a fully
-transparent frame while reporting success, and the console capture returns the
-real image in both GPU modes — which is why the choice is made by device kind
-and not by inspecting the result.
-
-Two consequences worth knowing before reading a capture:
-
-* **`adb emu` says `OK` and exits 0 even when it wrote nothing** — for instance
-  into a directory that does not exist. The dev tool therefore captures into
-  a directory it creates for that one call and requires exactly one PNG to have
-  appeared; that file is the only evidence a capture happened.
-* **Rotate with `adb -s <serial> emu rotate`, not `settings put system
-  user_rotation`.** The console captures the emulator *window*, so it is
-  faithful to what the window shows. `emu rotate` turns the window and the
-  guest display together and gives an upright landscape capture.
-  `user_rotation` turns only the guest — the window
-  stays portrait with the UI lying on its side, and that is genuinely what the
-  screen then looks like, so the capture is correct and no rotation belongs in
-  the tool.
-
-An app that turns Impeller off could still serve the RPC, and this declaration gives up on it deliberately — the renderer is a runtime property of the app, nothing here can tell the two apart without asking it, and the native endpoint captures both.
 
 ## 3. E2E workspaces (automated)
 
@@ -675,14 +255,13 @@ cd e2e/windows_example && bazel test //...  # Windows-only (target_compatible_wi
 
 | Platform | Where the assertion runs |
 |---|---|
-| Web | `plugin_example_e2e_test.dart`, group `Web e2e` (asserts the four strings from the app-output line the run emits). |
-| macOS | `:verify_macos_app_test` (manual stdout check) plus the `macOS e2e` group of `tools/dev_tool/test/e2e/plugin_example_e2e_test.dart` (runs `:plugin_macos`, captures a screenshot via the dev_tool's HTTP control channel, asserts the PNG is well-formed and non-blank). Run with `dart run tools/dev_tool/tool/e2e.dart test/e2e/plugin_example_e2e_test.dart --plain-name="macOS"`. |
-| iOS Simulator | `iOS Simulator e2e` group of the same file. Boot any iOS simulator first (`xcrun simctl boot <udid>`), then run `dart run tools/dev_tool/tool/e2e.dart … --plain-name="iOS Simulator"`. |
-| Android | `:android_bundle_build_test` (build), `:verify_android_apk_test` (APK content: `libdartjni.so` present + ELF/ABI-valid, jni support classes in dex — runs in `bazel test //...`), `:verify_android_app_test` (manual: install on emulator/device, RESUMED + crash-buffer fail-fast, asserts the `plugin_example_results` logcat line reports a real `/data/user/0/…` path from path_provider — proves jnigen plugin registration end to end), plus the `Android e2e` group. Pre-step: bring up a device — either USB-authorize a phone (`adb devices` shows `device`) or boot an emulator (`emulator -avd flutter_test &`). The test resolves the device via `AndroidDeviceProbe.detect()` and runs `:plugin_android` against it; both emulator and connected-device paths must pass. That probe separates two outcomes a single nullable serial would collapse: `adb` running and listing nothing is the one legitimate skip, while an `adb` that cannot be run, exits non-zero, prints output it cannot parse, or lists only devices outside the `device` state (`unauthorized`, `offline`) **fails the test** naming the cause — a broken detector must not report itself as an empty bench. Set `$ANDROID_SERIAL` to choose between an attached phone and a booted emulator; naming one that `adb` does not offer in the `device` state is a failure, not a skip. The dev_tool screenshot goes through the platform — `adb screencap` on a physical device, the emulator console on an emulator (see "Why an emulator is captured through its console") — because Android declares `supportsFlutterScreenshot => false` (Impeller cannot encode one) and the `screenshot/flutter` endpoint refuses with `501`. |
+| macOS | `:verify_macos_app_test` (manual stdout check). |
+| iOS Simulator | Manual: `flutter_dev run` on a booted simulator, and read the `plugin_example_results` line. |
+| Android | `:android_bundle_build_test` (build), `:verify_android_apk_test` (APK content: `libdartjni.so` present + ELF/ABI-valid, jni support classes in dex — runs in `bazel test //...`), `:verify_android_app_test` (manual: install on emulator/device, RESUMED + crash-buffer fail-fast, asserts the `plugin_example_results` logcat line reports a real `/data/user/0/…` path from path_provider — proves jnigen plugin registration end to end). |
 | Linux | `:linux_bundle_build_test` (build only). Visual verification on the GCP VM is manual (see § Linux visual verification). |
 | Windows | `:windows_bundle_build_test` (build only). Visual verification on the GCP VM is manual (see § Windows visual verification). |
 
-The dev_tool screenshot is the dispositive end-to-end gate per platform: if Native Assets are broken the app crashes before drawing, and if plugin auto-wiring is broken `MissingPluginException` blanks the screen — both fail the non-blank PNG check (default threshold 4 KB, well above any blank/solid-color PNG).
+A run is the dispositive end-to-end check per platform: if Native Assets are broken the app crashes before drawing, and if plugin auto-wiring is broken a `MissingPluginException` replaces the results line.
 
 ### Android plugin native source builds (externalNativeBuild)
 
@@ -760,7 +339,7 @@ bazel test :verify_macos_app_test --test_tag_filters= --strategy=TestRunner=stan
 
 **When to run:** After any change to macOS runner code (`flutter/private/runners/macos/`) or to what the macOS bundle carries (`flutter_macos_application.bzl`).
 
-**`System Events reports no windows for any process` can be the Bazel server, not your grant.** The test reads windows through System Events, which answers only a client macOS trusts with Accessibility. Measured 2026-09-18: in a workspace whose Bazel server had first been started by `flutter_bazel run`, the test failed this way while `osascript -e 'tell application "System Events" to count processes'` answered from the same terminal. After `bazel shutdown` and a rerun from the terminal it passed. So check the `osascript` line first: if it answers, restart the server; if it does not, grant the terminal Accessibility.
+**`System Events reports no windows for any process` can be the Bazel server, not your grant.** The test reads windows through System Events, which answers only a client macOS trusts with Accessibility. Measured 2026-09-18: in a workspace whose Bazel server had first been started by another program (the old dev tool), the test failed this way while `osascript -e 'tell application "System Events" to count processes'` answered from the same terminal. After `bazel shutdown` and a rerun from the terminal it passed. So check the `osascript` line first: if it answers, restart the server; if it does not, grant the terminal Accessibility.
 
 ### FFI runtime tests (iOS simulator, macOS, Linux, Windows)
 
@@ -801,22 +380,6 @@ mkdir -p /tmp/macos_app && unzip -oq bazel-bin/app.zip -d /tmp/macos_app
 dart run ../../e2e/_macos_test/verify_macos_app.dart /tmp/macos_app/app.app "Flutter App"
 ```
 
-**The dev tool brings the app to the front itself.** After a macOS run's app is
-up it is activated, because a process started as a bare executable is not made
-frontmost, and on a Mac with Stage Manager its window sits in the strip as a
-thumbnail (about 113x138 pt) rather than at the size the app asked for — or
-comes out black in a capture once another app has come forward. Two ways, in
-order, because neither works everywhere: `open` on the bundle, which needs no
-permission but needs LaunchServices to know the process (over ssh it fails with
-`-600`, procNotFound); then System Events setting the process frontmost by pid,
-which needs the **Automation** permission above and, with that undecided,
-blocks, so it is killed after ten seconds. If both fail the run carries on and
-logs `macos_app_not_activated` with `openExitCode`, `openStderr`,
-`systemEventsExitCode` and `systemEventsStderr` (or `systemEventsError`) as
-fields. Found by the amorphous_ui session on a MacBook Air over ssh; on a
-machine with a desktop session and no Stage Manager the app comes to the front
-by itself and neither step is needed.
-
 **Over ssh, launch with `open`.** Running the app binary directly in an ssh
 session, with no window-server session of its own, gives a 134x129 window off
 the left edge of the screen, and `lifecycleState` stays null: the main window
@@ -826,175 +389,12 @@ machine with a logged-in desktop.)
 
 ### Hot reload / hot restart (manual)
 
-**MANDATORY** (CLAUDE.md verification policy item 6) for any change to the
-dev_tool reload paths: `tools/dev_tool/lib/run_command.dart`,
-`vm_service_client.dart`, `hot_reload/**`, `session.dart`. There is
-intentionally **no automated assertion** for reload correctness — a weak
-`expect(result, isNotNull)` smoke test stays green through real regressions. The
-bar is "I have seen the new text render in the macOS window."
-
-**Keep the window visible, and read the text rather than diffing bytes.** No
-settling step is needed before the screenshot: `app.hotReload` already waits for
-the first frame after the new kernel lands (`_applyAndVerify` in
-`vm_service_client.dart`).
-
-**Visible** means visible: ScreenCaptureKit enumerates with
-`onScreenWindowsOnly: true`, so a window outside that set is **not capturable at
-all** and `screenshot/native` fails outright rather than returning a stale
-picture. There is no reload verdict to read off an image that does not exist,
-and a visible window is the state that reliably keeps the window in that set.
-
-Read the new text off the image rather than diffing bytes, because a byte-diff
-against an earlier capture passes on any incidental change — a caret blink, a
-clock — and so cannot tell a reload that landed from one that did not.
-
-Verify all four:
-
-1. **Race**: send `app.hotReload` *immediately* on the `app.started` event
-   (no delay). Must return a success message, not
-   `{"error":"Hot reload is still starting up."}` or
-   `{"error":"No frontend server available"}`.
-2. **Hot reload**: edit `lib/main.dart` visible text → `app.hotReload` →
-   screenshot shows the new text.
-3. **Hot restart**: edit again → `app.restart` → screenshot shows the
-   change. Hot restart re-runs `main()` (engine `runInView`), so it must also
-   reflect a change made *inside `main()`* (e.g. a value computed there) that a
-   hot reload deliberately does NOT — verify a `main()`-level edit too.
-4. **Agent surface after restart**: after `app.restart`, `app.getText` must
-   still succeed. On native the `ext.rules_flutter.*` extensions are registered
-   by the generated plugin registrant the engine invokes before `main()` on
-   every root-isolate launch; if this errors with `Unknown method`, the
-   registrant trio (`--source` ×2 + `-Dflutter.dart_plugin_registrant`) is
-   missing from the dev tool's frontend_server invocation. The web route in is
-   different — the dev tool's generated entrypoint registers them itself — and
-   `agent_e2e_test.dart`'s Chrome case covers it, so there is no manual step.
-
-**Source-assembled (codegen) apps** — also verify against `e2e/codegen :app_macos`.
-This is the coverage for apps that mix hand-written + generated sources, including
-**dependency packages** that do so:
-- app package `codegen_e2e`: `lib/user.dart` + `:user_json` → `lib/user.g.dart`
-  (a generated `part`);
-- dep `dep_part`: a generated `part` (`lib/settings.dart` + `:settings_gen`);
-- dep `dep_lib`: a generated **standalone imported library** (`lib/catalog.dart`
-  imports `lib/catalog.g.dart`).
-
-`lib/main.dart` renders a value from all three in `build()`, so regenerated output
-is reload-observable. Verify:
-- **Codegen reload (the real flow — edit a codegen INPUT)**: add a field to
-  `dep_lib/lib/catalog.dart` → `app.hotReload` → the regenerated output renders
-  (`fields:name` becomes `fields:name,email`). The dev tool runs `bazel build` of
-  the flutter_application (`refreshGenerated`) to regenerate `*.g.dart`, then the
-  normal diff invalidates the changed library by its `package:` URI.
-
-  **`catalog.dart`, and a non-nullable field with a default** — e.g.
-  `final String email;` with `const Catalog(this.name, [this.email = 'e'])`. Two
-  constraints leave exactly this edit, and neither is about the dev tool:
-
-  - Every generator in this fixture discovers fields with
-    `final\s+\w+\s+(\w+);` (`tools/json_generator.dart`,
-    `dep_lib/tools/catalog_generator.dart`), which cannot match a **nullable**
-    `final String? email;` — the type carries a `?`. A nullable field
-    regenerates nothing at all, so the step passes only against an assertion
-    that was never going to fail.
-  - A **non-nullable** field is unreadable off an instance canonicalized before
-    the reload: `main()` builds `const User('Ada Lovelace', 36)`, the VM gives
-    the stale instance null in the new slot, and the next frame throws `type
-    'Null' is not a subtype of type 'String'`. It also walks into the
-    `app.restart` hang tracked as a known issue, so the session has to be
-    killed. That is Dart's hot-reload semantics, not this repo's.
-
-  `catalog.g.dart` is a top-level const list of field **names**, and
-  `Catalog.fieldSummary` joins those names without reading an instance field —
-  so a non-nullable added field there regenerates observable output and never
-  touches the stale slot.
-
-  **`app.waitFor`'s `text` selector is exact equality on the widget's own
-  string** (`flutter/private/agent_extensions/agent.dart`), not a substring
-  search: wait for `{name: Grace Hopper, age: 45}`, not `Grace Hopper`. A
-  `waitFor` that finds nothing answers with a top-level `error` and **no**
-  `result`, so any check shaped `response['result']?['error'] == null` reads a
-  miss as a pass.
-- **Hot restart over codegen**: edit the `User(...)` in `main()` → `app.restart` →
-  the change renders and all generated code (app + deps) still resolves.
-- **Dependency source edit**: edit a dep's hand-written source (e.g.
-  `dep_part/lib/settings.dart`) → reload → renders. This exercises the
-  `SourceUriResolver`, which keys every first-party source (app **and** deps) by its
-  `package:` URI from the build-emitted `sourcePackages` — a dep edit must NOT be
-  keyed `file://` (it would be silently dropped).
-
-> **Gotcha — never edit or revert a source while a build is in flight.** An
-> edit→revert cycle that straddles a build poisons bazel's action cache: the action
-> is left cached against one input digest while holding output built from different
-> content, and that stale output survives every later build (reproducible with pure
-> `bazel build`; a clean cache always re-runs). This is **not** specific to
-> generator scripts, and editing a codegen *input* is not immune — see
-> [Stale staged sources (a poisoned action cache)](#stale-staged-sources-a-poisoned-action-cache)
-> for the signature, the one-command diagnosis, and the fix.
-
-Requires a `local_path_override` for `ai_rules_dart` in `e2e/codegen/MODULE.bazel`
-until the new ai_rules_dart (`generate_dev_package_config` + `source_packages`) ships
-in a release.
-
-**Watch mode (filesystem-watcher-driven reload).** Machine mode defaults the watcher
-off; pass `--watch` to drive reloads from on-disk edits instead of explicit
-`app.hotReload` commands. Edit `lib/main.dart` and a **dependency** source on disk →
-the watcher debounces and reloads → the change renders. Automated guard:
-`tools/dev_tool/test/e2e/watch_reload_e2e_test.dart` (run via `tool/e2e.dart`). It
-waits on the `app.reloadResult` protocol event for each edit — asserting the reload
-succeeded and recompiled the edited package — and then on `app.waitFor` for the exact
-new string, so a slow reload, a failed reload and a dead watcher are three different
-failures rather than one silent one. Every on-disk
-edit fires a debounced build, so the revert rule in
-[Stale staged sources (a poisoned action cache)](#stale-staged-sources-a-poisoned-action-cache)
-applies to each one — wait for the reload to complete before reverting.
-
-**Release/AOT codegen run.** `bazel build //:app_macos -c opt` (release/AOT), launch
-the extracted `.app`, and capture its window (e.g. the bundled
-`//tools/macos_screenshot:screenshot --pid <pid>`): the generated output from the
-app package + both dep packages must render. This verifies the release `.pkgsrcs`
-assembly + gen_snapshot path co-locates and compiles all generated code at runtime —
-distinct from the dev multi-root path, and from the `build_test`s which only compile.
-
-Tests the full dev tool hot reload cycle: launch app, take screenshot, edit source, hot reload, take screenshot, verify the change rendered, revert source.
-
-```sh
-cd e2e/macos_example
-
-# 1. Start the dev tool with --machine for structured JSON events on stdout
-dart run ../../tools/dev_tool/bin/flutter_bazel.dart run \
-  -t :app -d macos --machine &
-
-# 2. Read stdout for the app.started event (contains appId) and
-#    http_control_channel event on stderr. Its `endpoints` each carry a `url`
-#    that already includes the token; the token is a query parameter, never an
-#    Authorization header.
-
-# 3. Take a screenshot
-curl -s "http://localhost:PORT/sessions/APPID/screenshot/flutter?token=TOKEN" \
-  -o /tmp/before.png
-
-# 4. Edit lib/main.dart (change visible text)
-
-# 5. Hot reload
-curl -s -X POST "http://localhost:PORT/command?token=TOKEN" \
-  -H "Content-Type: application/json" -d '{"method": "app.hotReload"}'
-
-# 6. Take another screenshot (should show the changed text)
-curl -s "http://localhost:PORT/sessions/APPID/screenshot/flutter?token=TOKEN" \
-  -o /tmp/after.png
-
-# 7. Revert the source change and stop the dev tool.
-#    Revert only AFTER the reload response from step 5 has arrived — for codegen
-#    apps that response is what tells you the build it triggered has finished.
-#    Reverting mid-build poisons the action cache: see "Stale staged sources".
-```
-
-**When to run:** After any change to the dev tool, frontend server integration, or hot reload logic.
-
-**Known issues:**
-- `app.hotReload` may report "no changes detected" if the file watcher already auto-reloaded the change. This only happens when the file watcher is enabled (terminal mode default); `--machine` disables it by default.
-
-**Note:** the dev tool owns DDS (starts it on the app's raw VM service and routes both its own VM client and DevTools through it), so `_flutter.screenshot` works with DevTools enabled; `--no-devtools` is not needed.
+Reload and restart are the stock tool's; what the rules decide is what it runs on (the APK or
+bundle, the package config, the links to generated sources). After a change to those, run the
+app with `flutter_dev run` and check by eye that an edit in the app, in another workspace package
+and in a generated source (an `.arb` file, then `bazel build -c dbg <generator>`) shows after
+`r`, and that `R` shows an edit inside `main()`. `agent_e2e` (§ 2) checks the agent commands
+after a restart.
 
 ### Stale staged sources (a poisoned action cache)
 
@@ -1002,8 +402,8 @@ An app package that mixes hand-written and generated sources is assembled into a
 `*.pkgsrcs` tree artifact (rules_dart's `assemble_source_dir`, via bazel-lib's
 `copy_to_directory`) so the Dart toolchain sees one real `rootUri`. That staged
 tree can keep content from a superseded build **while the source tree is clean**,
-and bazel will go on replaying it. It reads exactly like a broken checkout or a
-broken dev tool; it is neither.
+and bazel will go on replaying it. It reads exactly like a broken checkout; it
+is not one.
 
 **Signature.** Two entry points, one cause:
 
@@ -1176,23 +576,16 @@ gcloud compute instances delete flutter-windows-test --quiet
 
 ## 5. Web rendering verification
 
-Web rendering is verified from Dart, through the dev tool, as part of the e2e
-suite. There is no browser-test toolchain in this repo and no `npx` step.
+There is no browser-test toolchain in this repo and no `npx` step. The built bytes are checked by
+the web workspaces' own tests:
 
 | Check | Where | What it proves |
 |-------|-------|----------------|
-| Render | `web_smoke_e2e_test.dart` | Reads text back out of a keyed widget over the agent surface. Answering proves the framework built the tree *and* resolved the asset bundle behind it — a bundle that boots, answers the VM service and paints nothing fails here. |
-| Plugins on web | `plugin_example_e2e_test.dart` (`Web e2e`) | The four `plugin_example_results` strings on web, where each plugin takes a different path than on desktop (`package_info_plus` reads a generated JS manifest, `path_provider` has no web implementation, `url_launcher` goes through `window.open`). |
 | Templating / defines | `custom_boot/test/verify_templating_test.dart` | Substitution outcomes in the built bytes: web defines resolved, kept placeholders survived, `buildConfig` emitted, no `{{` left. |
 | Local CanvasKit | `web_example/test/verify_compiler_flags_test.dart` | `useLocalCanvasKit` is declared, so the renderer loads from the app origin rather than gstatic.com — the regression a strict `script-src 'self'` exposes. |
 
-Running the web checks needs a `dart` of 3.13+ on `PATH` (see § 2) and, for
-`plugin_example`, `ANDROID_HOME` / `ANDROID_NDK_HOME` — its workspace-level
-analysis loads the Android repo rule whichever target you build.
-
-```sh
-dart run tools/dev_tool/tool/e2e.dart test/e2e/web_smoke_e2e_test.dart
-```
+To see a page render, run it with `flutter_dev run --bazel-target=<app> -d chrome`, which serves
+it through the stock tool.
 
 ## 6. Standalone diagnostic scripts
 
@@ -1207,13 +600,6 @@ These are not Bazel tests — they're standalone Dart scripts for manual investi
 | `e2e/_windows_test/verify_windows_app.dart` | Launch Windows app, verify window via PowerShell | `dart run <script> <bundle_dir> [title]` |
 | `e2e/_windows_test/dxgi_screenshot.py` | Launch app + DXGI screenshot (captures D3D/Flutter) | `python <script> <exe_path> <output.png> [wait_s]` |
 | `e2e/_compare/compare_artifacts.dart` | Diff flutter build vs bazel build outputs | `dart run <script> <flutter_dir> <bazel_dir>` |
-| `tools/dev_tool/tool/concurrent_sessions.dart` | Two `flutter_bazel run` sessions in one workspace vs one (control) | `dart run <script> [solo\|pair] [edits]` |
-
-`concurrent_sessions.dart` targets a race that does not reliably reproduce.
-Read a passing `pair` as "the collision did not happen in this run", not as "it
-cannot": the race is timing-dependent and the generated-sources half of it is
-unfixed. Run `solo` alongside it as the control. Needs the hermetic Dart (§ 2) — the
-script's own package requires ≥ 3.13.
 
 ## Quick reference: what to test when
 
@@ -1226,19 +612,12 @@ script's own package requires ≥ 3.13.
 | Desktop engine selection (debug/release) | cross_compile_example `bazel build :cross_linux` + verify on VM |
 | Dart compilation / AOT | hello_world, ffi_example, macos_example |
 | Asset bundling | hello_world (incl. `:verify_pub_assets_test` and `:verify_sub_assets_test`), plugin_example |
-| Shader compilation, bundling or hot reload, or how a workspace plugin is wired | `glass_plugin_e2e_test.dart` on every platform it covers, and plugin_example's `//impeller_shader` build tests |
-| Web support | `web_smoke_e2e_test.dart` (render) + `plugin_example_e2e_test.dart` (plugins on web) + `native_libs_reload_e2e_test.dart`'s web group if the change touches `native_modules` or the web reload arms |
+| Shader compilation or bundling, or how a workspace plugin is wired | plugin_example's `//impeller_shader` build tests |
+| Web support | web_example, integration_web, and a `flutter_dev run -d chrome` by eye |
 | FFI / native deps / native assets | ffi_example (incl. manual iOS-sim + macOS runtime tests), ffi_plugin_example |
 | Plugins | plugin_example, ffi_plugin_example |
 | Toolchain / SDK | smoke, hello_world |
-| dev_tool (unit) | `bazel test //tools/dev_tool/...` (already covered by root `//...`) |
-| dev_tool (e2e) | `dart run tools/dev_tool/tool/e2e.dart` — needs a Dart ≥3.13 on `PATH`, see § 2 |
-| dev_tool reload paths (`run_command.dart`, `vm_service_client.dart`, `hot_reload/**`, `session.dart`, `reload_pipeline.dart`) | dev_tool unit + e2e **and** manual hot reload **and** hot restart — see "Hot reload / hot restart (manual)" |
-| dev_tool native-library checks (`native_libs_watch.dart`, `native_libs_verdict.dart`, `native_libs_fingerprint.dart`, `native_libs_relauncher.dart`, `native_sources.bzl`, `flutter_native_library`, the `nativeLibs` / `nativeLibContracts` / `nativeLibSources` fields of `_dev_config.json`, and what a moved contract does when a `hot_patch` builder covers the library) | `native_libs_reload_e2e_test.dart` (a reload delivered and a reload withheld) **and** `relaunch_e2e_test.dart` (a restart relaunching) **and** `native_hot_patch_e2e_test.dart`'s last case (an app that runs no build of its own, where only the declared sources can see a native edit) — the halves of one contract, and no unit test can reach any of them |
-| Native hot patching (`native_hot_patcher.dart`, `native_hot_patch_tool.dart`, `native_patch_delivery.dart`, `native_image_identity.dart`, `flutter/native_hot_patch.bzl`, `flutter_native_library.hot_patch`, `agent_extensions/native_patch.dart`) | dev_tool unit **and** `native_hot_patch_e2e_test.dart` (macOS) **and** `relaunch_e2e_test.dart` **and** the manual device check — a native edit patched into the app on the iOS simulator, an iOS device and Android, see "Native hot patch on devices (manual)" |
-| Keys (`key_press.dart`, `app.pressKey` in `agent_command.dart`, `pressKeyOverCdp` in `device.dart`, `ext.rules_flutter.pressKey` in `agent_extensions/agent.dart`) | dev_tool unit **and** `press_key_e2e_test.dart` (macOS, Chrome DDC, Chrome `--wasm`). The framework route on iOS, Android, Linux and Windows has no e2e: check it by hand on the device you changed it for |
-| dev_tool app-output forwarding (`app_log.dart`, `app_log_sink.dart`, `cdp_console.dart`, `vm_service_logs.dart`, `device.dart` launch paths) | dev_tool unit + e2e **and** the manual per-platform checks below |
-| dev_tool iOS device paths (`mdns_vm_service_discovery.dart`, `IOSDevice` in `device.dart`) | dev_tool unit **and** manual hot reload + hot restart on hardware, **wired and wireless** — see "iOS hardware (manual)" |
+| The dev loop (`tools/flutter_dev`, `flutter/dev_files.bzl`, `flutter/debug_agent`) | `bazel test //tools/flutter_dev/...` **and** `agent_e2e` on Android and Linux — see § 2 |
 | New or changed analysis coverage (a target's `srcs` glob or `main`, a new `manual` tag, a new `analysis_options.yaml`) | Root `//...` **and** the probe — see § 1 |
 | Golden comparator (`flutter/private/goldens/`, `flutter_test.bzl` bootstrap) | Root `//...` + codegen `//...` **and** the manual regeneration round trip below |
 | Everything | All sections above |
@@ -1286,10 +665,9 @@ cannot sit in `bazel test //...`. `:agreeing_bin` is the automated half and
 must keep passing — two records for `path` at the same 1.9.1 agree, so the
 guard lets them merge.
 
-The root workspace already has the ingredients — `dev_tool_deps` and
-`gen_l10n_deps` share eleven package names and disagree on `clock` and `meta` —
-but no target reaches both, so nothing there observes it. Do not add one: the
-edge that would make it observable is the bug.
+The root workspace has two tool hubs, `tool_deps` and `gen_l10n_deps`, and no
+target reaches both. Do not add one: if they disagreed on a shared package, the
+edge would be the bug.
 
 ### Golden regeneration (manual)
 
@@ -1332,147 +710,9 @@ asserts that the test fails, that `bazel run <target> -- --update-goldens`
 rewrites the PNG, and that the test then passes. It runs as its own step in the
 `e2e-linux-app` job and in the dispatch-only `e2e-macos-apple` job.
 
-### App output forwarding (manual)
-
-Unit tests cover the buffering, filtering and routing; they cannot prove that a
-real device's output actually arrives. Each launch path has its own log source
-(see README § Dev Tool → App output), so each one needs its own check. The bar
-is **"I saw the app's own output in my terminal"**, not "the tests passed".
-
-```sh
-# macOS — the reference case. plugin_example prints `plugin_example_results …`
-# from a FutureBuilder, i.e. well after the VM service comes up.
-cd e2e/plugin_example
-flutter_bazel run -t :plugin_macos -d macos
-#  → expect the `plugin_example_results …` line, and output that keeps
-#    flowing rather than stopping right after the VM-service line.
-
-# Machine mode: app output must travel as app.log and stdout must stay pure.
-flutter_bazel run -t :plugin_macos -d macos --machine \
-  | tee /tmp/machine.log >/dev/null
-grep -c '"event":"app.log"' /tmp/machine.log     # > 0
-grep -vc '^\[{' /tmp/machine.log                 # 0 — no raw text on stdout
-```
-
-Then per platform: `-d chrome` (both DDC and `--wasm`), `-d ios-simulator`,
-`-d ios` on attached hardware, and an Android device or emulator. On Android
-also confirm a deliberately thrown Java exception shows up as
-`E/AndroidRuntime` — an adb-level `flutter:I *:S` filter silences those
-entirely, so their absence looks like normal operation.
-
-Finally, check the pipe-pressure case: run an app that prints continuously well
-past 64 KB and confirm it neither stalls nor dies. An unread pipe is the failure
-mode that only shows up under sustained logging.
-
-### Native hot patch on devices (manual)
-
-`native_hot_patch_e2e_test.dart` covers macOS. On a device the same reload
-also signs the patch (iOS device), copies it through `simctl`'s shared
-filesystem, `devicectl` or `adb`, and loads it from the app's own container, and
-none of that is reachable from the host test. Check it by hand whenever
-`native_patch_delivery.dart`, `agent_extensions/native_patch.dart` or a device's
-`nativePatchDelivery` changes.
-
-The fixture is `e2e/ffi_example`'s patchable `mul`: `native/mul.c`,
-`native/mul_body.h`, `native/mul_hot_patch.c`, `c_hot_patch.bzl`,
-`tools/c_patch_tool.dart`, and the `mul_*` targets in its `BUILD.bazel`. The
-iOS simulator runs it in place:
-
-```sh
-cd e2e/ffi_example
-flutter_bazel run -t //:ffi_ios -d ios-simulator
-```
-
-For Android and a physical iPhone, copy those files and targets into a copy of
-`e2e/android_example` or `e2e/ios_example` (`//:app_device`), add
-`:mul_native` to the app's `native_deps`, and render `mul(3, 4)` in a widget's
-`build` with `DynamicLibrary.open('libmul.so')` (Android) or
-`DynamicLibrary.open('mul.framework/mul')` (iOS).
-
-On each: wait for `native_hot_patch_armed` in the log, read the `mul` line,
-change `return a * b;` to `return a * b + 1000;`, press `r`, and confirm:
-
-- the reply names `nativePatched` and the line reads 1012 **on screen**
-  (`app.getText` on an iOS device, where a screenshot needs the tunnel daemon);
-- the reload took about a second — measured 0.43 s on the iOS simulator, 0.47 s
-  on the Android emulator, 1.2 s on an iPhone 12 Pro over USB (signing and the
-  `devicectl` copy), against a relaunch of 16 s and 27 s on the last two;
-- undoing the edit and pressing `r` brings back 12 (`nativeReverted`; on the
-  Android emulator the fixture answered with a fresh `nativePatched` instead,
-  because its rebuilt patch library did not compare equal to the launch copy —
-  the value is still 12);
-- editing `native/mul.h` withholds the reload, and `R` relaunches.
-
-On an iPhone the patch is signed with the certificate that signed the app, read
-out of the installed `.app`. A signing failure answers `nativePatchFailed` with
-`codesign`'s own message; an unsigned or ad-hoc signed patch is what the device
-refuses with "missing code signature".
-
 ### iOS hardware (manual)
 
-The simulator and a physical device find the VM service by different mechanisms
-(log stream vs mDNS advertisement), and a wired device and a wireless one differ
-again in how that service is reached, so passing on one proves nothing about the
-others. All three need checking whenever `IOSDevice` or
-`mdns_vm_service_discovery.dart` changes.
-
-```sh
-cd e2e/ios_example   # needs device/BUILD.bazel — see device.example/
-
-flutter_bazel run -t //:app -d ios-simulator   # log-stream discovery
-flutter_bazel run -t //:app_device -d ios      # mDNS (+ iproxy when wired)
-```
-
-For each: confirm the app renders, then press `r` (hot reload) and `R` (hot
-restart) and confirm the change appears on screen. "The tool printed
-`Reloaded`" is not the bar — the UI is.
-
-For the wireless case, unplug the cable with the device paired for network
-debugging (Xcode > Window > Devices and Simulators > *Connect via network*) and
-confirm `xcrun devicectl list devices` reports `transportType: localNetwork`
-before running — the same `-d ios` command then takes the wireless path. A
-wireless launch must pass `--vm-service-host=0.0.0.0` and dial the device's own
-address; a wired one must do neither. If the device has never been used this way
-it will prompt for Local Network permission once — accept it, then re-run.
-
-One launch that renders proves little about the debugger. The JIT breakpoint
-can lose a page when threads race (see README "Debugger stops"), so a regression
-shows up as some launches freezing, not all of them. After changing how `IOSDevice`
-drives lldb, launch once and then relaunch several times with a native edit
-before each `R`, and confirm every relaunch renders the new value. Before the fix
-about half of a dozen launches froze on an iOS 27 iPhone; with it, 11 of 11
-worked.
-
-Then stop the run with Ctrl-C, and once during a launch as well, and confirm
-nothing is left: `pgrep -x iproxy`, `pgrep -x lldb` and `pgrep -x devicectl`
-print nothing, and `xcrun devicectl device info processes --device <udid>` no
-longer lists the app.
-
-Budget the time: starting a debug build under the JIT breakpoint costs more than
-a host launch, and the mDNS query only resolves once the app is up. On a recent
-iPhone with a healthy Xcode install, resume to first log is **~8 s wired and
-~40 s wireless**; a hot restart costs the same again, while a hot reload is
-quick on both. A "still waiting" note appears at 45 s.
-
-Minutes, not seconds, means a host fault — most often an incomplete Xcode symbol
-copy starving lldb of the on-disk shared cache. The 5-minute wired / 15-minute
-wireless budgets in `IOSDevice` are sized for that degraded case on purpose, so
-do not read them as estimates of a healthy launch.
-
-If a run does exhaust its budget, read the error — it names the advertisements
-it saw and which host sent each, which distinguishes "the app never started"
-from "that was the copy running in a simulator on this Mac."
-
-Do not reach for `dns-sd` to decide whether the phone is advertising: it answers
-from mDNSResponder, which sees records the tool's raw multicast socket cannot,
-and holds records that are not live at all. Over USB, CoreDevice proxies the
-device's records in as local-only registrations that no multicast socket can see
-by design, so the two channels legitimately disagree. Booted iOS simulators also
-leave stale `_dartVmService` registrations on `lo0` with no app running and no
-phone attached. Check the interface index on each `Add` line before believing
-any of it.
-
-The `/logs` control endpoint is exercised by
-`tools/dev_tool/test/e2e/plugin_example_e2e_test.dart`; to check it by hand,
-tail it, then poll `nextCursor` twice and confirm the pages neither overlap nor
-gap.
+`flutter_dev` hands an `ios_application`'s `.ipa` or `.app` to the stock tool, which finds the
+device and its VM service itself. Untested so far: run `flutter_dev run` against
+`e2e/ios_example` on a simulator and on a device, wired and wireless, and confirm that the app
+renders and that `r` and `R` show an edit.
