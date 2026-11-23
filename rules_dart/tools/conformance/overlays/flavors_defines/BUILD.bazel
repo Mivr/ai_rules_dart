@@ -1,4 +1,5 @@
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@android_model//:defs.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_font_family", "flutter_library", "flutter_test")
 load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
 load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
@@ -73,13 +74,33 @@ flutter_application(
     defines = DEFINES,
     flavor = "dev",
     main = "lib/main.dart",
-    deps = [":lib"] + PLUGINS,
+    # `lib/main.dart` is the app's own entry point, so the packages it imports are its direct deps.
+    deps = [":lib"] + PLUGINS + [
+        "@deps//:flutter",
+        "@deps//:flutter_localizations",
+        "@deps//:path_provider",
+        "@deps//:shared_preferences",
+        "@deps//:url_launcher",
+    ],
 )
 
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["devDebug"],
+)
+
+# `:android` is the split APKs of the dev flavor; the whole APK is what stock builds.
 flutter_android_app(
-    name = "apk",
-    package_name = "dev.rdf.flavors_defines.dev",
+    name = "android",
     application = ":app",
+    # package:jni builds libdartjni.so with CMake in Gradle; here the Dart side builds it.
+    native_built_elsewhere = [":jni"],
+    variant = "devDebug",
+)
+
+alias(
+    name = "apk",
+    actual = ":android_apk",
 )
 
 flutter_test(

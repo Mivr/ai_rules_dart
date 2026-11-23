@@ -1,4 +1,5 @@
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@android_model//:defs.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_test")
 load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
 load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
@@ -34,10 +35,17 @@ flutter_application(
     deps = DEPS,
 )
 
+flutter_android_pin(name = "android_pin")
+
+# `:android` is the split APKs; the whole APK is what stock builds.
 flutter_android_app(
-    name = "apk",
-    package_name = "dev.rdf.counter",
+    name = "android",
     application = ":app",
+)
+
+alias(
+    name = "apk",
+    actual = ":android_apk",
 )
 
 flutter_linux_app(

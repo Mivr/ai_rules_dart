@@ -1,10 +1,3 @@
 {
-  "entries": [
-    {
-      "kinds": ["apk"],
-      "item": "entry:assets/empty_asset_generated_by_bazel~",
-      "cause": "only in rules",
-      "reason": "rules_android's android_binary adds an empty placeholder asset; the Flutter engine reads only assets/flutter_assets/, so nothing at run time sees it"
-    }
-  ]
+  "entries": []
 }

@@ -2,8 +2,7 @@ module(name = "conformance_counter")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
 bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
-bazel_dep(name = "rules_android", version = "0.8.0")
-bazel_dep(name = "rules_android_ndk", version = "0.1.5")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
 
 flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
 flutter.toolchain(flutter_version = "3.47.7")
@@ -11,23 +10,17 @@ flutter.pub(
     name = "deps",
     lock = "//:pubspec.lock",
 )
-use_repo(flutter, "deps", "flutter_android_engine_arm64", "flutter_toolchains", "flutter_web_sdk")
+use_repo(flutter, "deps", "flutter_toolchains", "flutter_web_sdk")
 
 register_toolchains("@flutter_toolchains//:all")
 
-android_sdk = use_extension("@rules_android//rules/android_sdk_repository:rule.bzl", "android_sdk_repository_extension")
-android_sdk.configure(api_level = 35)
-use_repo(android_sdk, "androidsdk")
+# Android from the Gradle model: android_model.json is the pin of this corpus project
+# (`bazel run //:android_pin` in a copy of it with this overlay).
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
 
-android_ndk = use_extension("@rules_android_ndk//:extension.bzl", "android_ndk_repository_extension")
-use_repo(android_ndk, "androidndk")
-
-register_toolchains("@androidsdk//:sdk-toolchain", "@androidsdk//:all", "@androidndk//:all")
-
-bazel_dep(name = "rules_jvm_external", version = "7.1")
-
-maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
-use_repo(maven, "rules_android_maven")
+register_toolchains("@android_model//:kotlin_toolchain")
 
 bazel_dep(name = "llvm", version = "0.8.19")
 
