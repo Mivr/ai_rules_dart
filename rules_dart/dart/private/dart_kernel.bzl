@@ -314,6 +314,25 @@ def first_per_package(records):
         out.append(pkg)
     return out
 
+def _edge_list(edges):
+    """The `(label, dep_label)` edge list, flattened only when asked for.
+
+    Callers that may not need the edges pass a depset, or a function returning
+    the list (see `_closure_scan`), so the closure-sized flatten runs only on
+    the shapes that read them.
+
+    Args:
+      edges: A list, a depset, or a function of no arguments returning a list.
+
+    Returns:
+      The list of edges.
+    """
+    if type(edges) == "function":
+        return edges()
+    if type(edges) == "depset":
+        return edges.to_list()
+    return edges
+
 def duplicated_source(own_paths, owned, edges):
     """The source a modular executable cannot compile, or None.
 
@@ -332,7 +351,9 @@ def duplicated_source(own_paths, owned, edges):
     Args:
       own_paths: The `short_path` of each of the executable's own sources.
       owned: The `(label, short_path)` of each source of each library in its closure.
-      edges: The `(label, dep_label)` of each `dart_library` dependency in its closure.
+      edges: The `(label, dep_label)` of each `dart_library` dependency in its
+        closure: a list, or a depset or function (see `_edge_list`) that is
+        flattened only when some source has two owners.
 
     Returns:
       The `short_path` of the first source that cannot compile modularly, or None.
@@ -341,12 +362,19 @@ def duplicated_source(own_paths, owned, edges):
     for path in own_paths:
         own[path] = True
     owners = {}
+    shared = False
     for label, path in owned:
         if path in own:
             return path
-        owners.setdefault(path, {})[label] = True
+        labels = owners.setdefault(path, {})
+        labels[label] = True
+        if len(labels) > 1:
+            shared = True
+    if not shared:
+        # Every source has one owner: no pair to test, so the edges are not read.
+        return None
     reaches = {}
-    for label, dep in edges:
+    for label, dep in _edge_list(edges):
         reaches.setdefault(label, {})[dep] = True
     for path in sorted(owners.keys()):
         labels = sorted(owners[path].keys())
@@ -404,20 +432,103 @@ def package_of_source(short_path, packages):
             best_len = len(prefix)
     return best_name
 
+def package_prefix_index(packages):
+    """Indexes packages by the `lib/` prefix their files lie under.
+
+    `package_of_indexed_source` answers with this index what `package_of_source`
+    answers by scanning every package, so a closure of files costs one lookup
+    per directory level of each file instead of one comparison per package.
+
+    Args:
+      packages: The `DartPackageInfo` records, in the order `package_of_source`
+        would scan them.
+
+    Returns:
+      A dict from `lib/` prefix (e.g. `pkg/a/lib/`) to `package_name`. When two
+      records share a prefix the first one wins, as in `package_of_source`.
+    """
+    index = {}
+    for pkg in packages:
+        prefix = package_lib_prefix(pkg.lib_root)
+        if prefix not in index:
+            index[prefix] = pkg.package_name
+    return index
+
+def package_of_indexed_source(short_path, index):
+    """`package_of_source` over a `package_prefix_index`.
+
+    Every `lib/` prefix ends in `/`, so a prefix that `short_path` starts with
+    is one of the path's own directory prefixes. Checking each of them, the
+    deepest that is indexed wins, exactly as the deepest matching package wins
+    in `package_of_source`.
+
+    Args:
+      short_path: The source file's `File.short_path`.
+      index: The dict from `package_prefix_index`.
+
+    Returns:
+      The matching `package_name` string, or None.
+    """
+    best = None
+    prefix = ""
+    parts = short_path.split("/")
+    for part in parts[:-1]:
+        prefix += part + "/"
+        name = index.get(prefix)
+        if name != None:
+            best = name
+    return best
+
 def _cyclic_label_index(owned, packages):
     """Indexes owned sources by label and package. Returns (pkg_of_label, labels_of_pkg, paths_of_label)."""
     pkg_of_label = {}
     labels_of_pkg = {}
     paths_of_label = {}
+    index = package_prefix_index(packages)
     for label, path in owned:
         paths_of_label.setdefault(label, []).append(path)
-        pkg = package_of_source(path, packages)
+        pkg = package_of_indexed_source(path, index)
         if pkg != None:
             pkg_of_label[label] = pkg
             labels_of_pkg.setdefault(pkg, {})[label] = True
     return pkg_of_label, labels_of_pkg, paths_of_label
 
-def _cyclic_split_pkgs(own_package, dep_packages, labels_of_pkg, pkg_of_label, reaches, is_executable):
+def _dependents(edges, seeds):
+    """Every label that depends on one of `seeds` through at least one edge.
+
+    One walk up the reversed edges from all seeds at once, so the cost is
+    linear in the edges rather than one `_depends_on` search per label and
+    seed. A seed is in the result only when another seed, or a cycle, leads
+    back to it, as `_depends_on` would report.
+
+    Args:
+      edges: The `(label, dep_label)` edge list.
+      seeds: The labels to find the dependents of.
+
+    Returns:
+      A dict whose keys are the dependent labels.
+    """
+    parents = {}
+    for label, dep in edges:
+        parents.setdefault(dep, []).append(label)
+    found = {}
+    frontier = list(seeds)
+
+    # Each round finds at least one new label, and there are at most as many
+    # labels as edges, so the walk always ends before the bound.
+    for _ in range(len(edges) + 1):
+        if not frontier:
+            break
+        following = []
+        for current in frontier:
+            for parent in parents.get(current, []):
+                if parent not in found:
+                    found[parent] = True
+                    following.append(parent)
+        frontier = following
+    return found
+
+def _cyclic_split_pkgs(own_package, dep_packages, labels_of_pkg, pkg_of_label, edges, is_executable):
     """Returns the set of split packages seeding the cyclic-paths computation."""
     split_pkgs = {
         pkg: True
@@ -426,33 +537,38 @@ def _cyclic_split_pkgs(own_package, dep_packages, labels_of_pkg, pkg_of_label, r
     }
     if not is_executable and bool(own_package) and any([p.package_name == own_package for p in dep_packages]):
         split_pkgs[own_package] = True
-    if is_executable and bool(own_package):
+    if is_executable and bool(own_package) and own_package not in split_pkgs:
         own_pkg_labels = [label for label, pkg in pkg_of_label.items() if pkg == own_package]
-        for label, pkg in pkg_of_label.items():
-            if pkg != own_package and any([_depends_on(reaches, label, m) for m in own_pkg_labels]):
-                split_pkgs[own_package] = True
-                break
+        others = [label for label, pkg in pkg_of_label.items() if pkg != own_package]
+        if own_pkg_labels and others:
+            dependents = _dependents(_edge_list(edges), own_pkg_labels)
+            for label in others:
+                if label in dependents:
+                    split_pkgs[own_package] = True
+                    break
     return split_pkgs
 
-def _cyclic_active_labels(paths_of_label, pkg_of_label, reaches, split_pkgs):
+def _cyclic_active_labels(paths_of_label, pkg_of_label, edges, split_pkgs):
     """Returns the labels in split packages plus everything depending on them."""
-    seed_labels = [label for label, pkg in pkg_of_label.items() if pkg in split_pkgs]
+    seed_labels = {label: True for label, pkg in pkg_of_label.items() if pkg in split_pkgs}
+    dependents = _dependents(_edge_list(edges), seed_labels.keys())
     return {
         label: True
         for label in paths_of_label
-        if label in seed_labels or any([_depends_on(reaches, label, s) for s in seed_labels])
+        if label in seed_labels or label in dependents
     }
 
 def _cyclic_source_paths(own_package, dep_packages, owned, edges, packages, is_executable = False):
-    """The `short_path`s of sources in split or cyclic packages and targets depending on them."""
+    """The `short_path`s of sources in split or cyclic packages and targets depending on them.
+
+    `edges` is a list, or a depset or function (see `_edge_list`) that is
+    flattened only when a package is split.
+    """
     pkg_of_label, labels_of_pkg, paths_of_label = _cyclic_label_index(owned, packages)
-    reaches = {}
-    for label, dep in edges:
-        reaches.setdefault(label, {})[dep] = True
-    split_pkgs = _cyclic_split_pkgs(own_package, dep_packages, labels_of_pkg, pkg_of_label, reaches, is_executable)
+    split_pkgs = _cyclic_split_pkgs(own_package, dep_packages, labels_of_pkg, pkg_of_label, edges, is_executable)
     if not split_pkgs:
         return {}
-    active_labels = _cyclic_active_labels(paths_of_label, pkg_of_label, reaches, split_pkgs)
+    active_labels = _cyclic_active_labels(paths_of_label, pkg_of_label, edges, split_pkgs)
     return {
         path: True
         for label in active_labels
@@ -1143,9 +1259,8 @@ def modular_executable_tools(
     if own_record != None:
         records = [own_record] + records
 
-    owned = depset(transitive = [k.owned for k in kernels or []]).to_list()
-    edges = depset(transitive = [k.edges for k in kernels or []]).to_list()
-    duplicate = duplicated_source([f.short_path for f in own_files], owned, edges)
+    closure = _closure_scan(kernels or [])
+    duplicate = duplicated_source([f.short_path for f in own_files], closure.owned, closure.edges)
 
     eligible = modular_kernel_eligible(
         modular_kernel_conditions(
@@ -1159,9 +1274,54 @@ def modular_executable_tools(
             tools.version == target_sdk.version,
         ),
     )
-    return tools if eligible else None
+    if not eligible:
+        return None
 
-def _exec_entry_inputs(ctx, dep_kernels, packages, sources):
+    # The executable's entry compile reads the same closure: hand the one
+    # flattened copy over with the tools, so `modular_executable_kernel` does
+    # not flatten it again.
+    return struct(closure_scan = closure, **_struct_fields(tools))
+
+def _struct_fields(value):
+    """The fields of a struct as a dict, for rebuilding it with one more field."""
+    return {
+        name: getattr(value, name)
+        for name in dir(value)
+        if name not in ("to_json", "to_proto", "closure_scan")
+    }
+
+def _closure_scan(dep_kernels):
+    """The closure ownership an executable checks, flattened once.
+
+    `owned` is flattened here: the duplicate-source check and the
+    cross-package scan both read every source of the closure, and no flag
+    the libraries carry answers either. The edges are flattened on first use
+    and kept, since only a source with two owners or a split package reads
+    them.
+
+    Args:
+      dep_kernels: The `DartKernelInfo` of each direct dependency.
+
+    Returns:
+      `struct(kernels, owned, edges)`: `kernels` is `dep_kernels`, `owned` the
+      `(label, short_path)` list, and `edges` a function returning the
+      `(label, dep_label)` list.
+    """
+    memo = {}
+    edges_depset = depset(transitive = [k.edges for k in dep_kernels])
+
+    def edges():
+        if "edges" not in memo:
+            memo["edges"] = edges_depset.to_list()
+        return memo["edges"]
+
+    return struct(
+        kernels = dep_kernels,
+        owned = depset(transitive = [k.owned for k in dep_kernels]).to_list(),
+        edges = edges,
+    )
+
+def _exec_entry_inputs(ctx, dep_kernels, packages, sources, closure = None):
     """Collects the entry module's closures and cross-package sources. Returns (dep_closure, dep_outline_closure, cross_pkg_srcs)."""
     dep_closure = depset(
         order = "postorder",
@@ -1171,8 +1331,10 @@ def _exec_entry_inputs(ctx, dep_kernels, packages, sources):
         order = "postorder",
         transitive = [k.transitive_koutlines for k in dep_kernels],
     )
-    exec_owned = depset(transitive = [k.owned for k in dep_kernels]).to_list()
-    exec_edges = depset(transitive = [k.edges for k in dep_kernels]).to_list()
+    if closure == None or closure.kernels != dep_kernels:
+        closure = _closure_scan(dep_kernels)
+    exec_owned = closure.owned
+    exec_edges = closure.edges
     own_has_lib = bool(packages and any([package_of_source(s.file.short_path, packages[:1]) != None for s in sources]))
     own_pkg = packages[0].package_name if (packages and (len(sources) > 1 or own_has_lib)) else ""
     cyclic_paths = _cyclic_source_paths(
@@ -1229,7 +1391,13 @@ def modular_executable_kernel(
       The shared `base_dill` File if `link.use_base_dill` is True and a dependency
       provides one, or None.
     """
-    dep_closure, dep_outline_closure, cross_pkg_srcs = _exec_entry_inputs(ctx, dep_kernels, packages, sources)
+    dep_closure, dep_outline_closure, cross_pkg_srcs = _exec_entry_inputs(
+        ctx,
+        dep_kernels,
+        packages,
+        sources,
+        getattr(tools, "closure_scan", None),
+    )
     entry = ctx.actions.declare_directory(ctx.label.name + ".entry.kmod")
     kernel_module_action(
         ctx,

@@ -40,6 +40,11 @@ load(
     "stable_entry_path",
     "stable_path",
 )
+load(
+    "//dart/private:dart_kernel.bzl",
+    "package_of_indexed_source",
+    "package_prefix_index",
+)
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
 load("//dart/private:kernel_params.bzl", "kernel_link_options")
 load(":pruned_inputs.bzl", "pruned_inputs_settings")
@@ -1387,6 +1392,129 @@ _package_config_test = unittest.make(_package_config_test_impl)
 _package_config_custom_scheme_test = unittest.make(_package_config_custom_scheme_test_impl)
 _packages_consistent_test = unittest.make(_packages_consistent_test_impl)
 _first_per_package_test = unittest.make(_first_per_package_test_impl)
+def _package_prefix_index_test_impl(ctx):
+    env = unittest.begin(ctx)
+    package_sets = {
+        "distinct packages": [_pkg("a", "pkg/a"), _pkg("b", "pkg/b"), _pkg("leaf", "pkg/leaf")],
+        "the root package": [_pkg("root", ""), _pkg("a", "pkg/a")],
+        "a package nested in another's lib/": [_pkg("outer", "pkg/a"), _pkg("inner", "pkg/a/lib/inner")],
+        "the nested package listed first": [_pkg("inner", "pkg/a/lib/inner"), _pkg("outer", "pkg/a")],
+        "two names at one root": [_pkg("first", "pkg/a"), _pkg("second", "pkg/a")],
+        "no packages": [],
+    }
+    paths = [
+        "pkg/a/lib/a.dart",
+        "pkg/a/lib/src/deep/x.dart",
+        "pkg/a/lib/inner/lib/i.dart",
+        "pkg/a/lib/inner/x.dart",
+        "pkg/a/test/a_test.dart",
+        "pkg/b/lib/b.dart",
+        "lib/main.dart",
+        "lib/src/lib/x.dart",
+        "other/lib/x.dart",
+        "pkg/ab/lib/x.dart",
+        "x.dart",
+    ]
+    for reason, pkgs in package_sets.items():
+        index = package_prefix_index(pkgs)
+        for path in paths:
+            asserts.equals(
+                env,
+                package_of_source(path, pkgs),
+                package_of_indexed_source(path, index),
+                "%s: %s resolves as package_of_source does" % (reason, path),
+            )
+    return unittest.end(env)
+
+def _duplicated_source_lazy_edges_test_impl(ctx):
+    env = unittest.begin(ctx)
+    calls = []
+
+    def edges():
+        calls.append(True)
+        return [("//x:top", "//x:base")]
+
+    asserts.equals(
+        env,
+        None,
+        duplicated_source(["t.dart"], [("//x:a", "a.dart"), ("//x:b", "b.dart"), ("//x:a", "a.dart")], edges),
+        "distinct sources",
+    )
+    asserts.equals(env, 0, len(calls), "the edges are not read when every source has one owner")
+    asserts.equals(
+        env,
+        None,
+        duplicated_source([], [("//x:base", "s.dart"), ("//x:top", "s.dart")], edges),
+        "a library and a dependency that both list the source",
+    )
+    asserts.equals(env, 1, len(calls), "the edges are read when a source has two owners")
+    asserts.equals(
+        env,
+        "s.dart",
+        duplicated_source([], [("//x:one", "s.dart"), ("//x:two", "s.dart")], depset([("//x:top", "//x:base")])),
+        "two unrelated owners, with the edges as a depset",
+    )
+    return unittest.end(env)
+
+def _split_without_direct_edge_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # `a_base <- b <- a_top` with no edge from a_top to a_base. Every library
+    # here reports `DartKernelCycleInfo.has_cross = False` (no package repeats
+    # across any direct edge), yet the executable's scan sees package a split.
+    asserts.true(
+        env,
+        has_cross_pkg_cycle(
+            "",
+            [_pkg("a", "pkg/a"), _pkg("b", "pkg/b")],
+            owned = [
+                ("//pkg/a:a_base", "pkg/a/lib/a_base.dart"),
+                ("//pkg/b:b", "pkg/b/lib/b.dart"),
+                ("//pkg/a:a_top", "pkg/a/lib/a_top.dart"),
+            ],
+            edges = [
+                ("//pkg/b:b", "//pkg/a:a_base"),
+                ("//pkg/a:a_top", "//pkg/b:b"),
+            ],
+            packages = [_pkg("a", "pkg/a"), _pkg("b", "pkg/b")],
+            is_executable = True,
+        ),
+        "a package split with no direct edge between its parts is found by the scan",
+    )
+    own_a = dict(
+        owned = [
+            ("//pkg/a:a", "pkg/a/lib/a.dart"),
+            ("//pkg/b:b", "pkg/b/lib/b.dart"),
+            ("//pkg/c:c", "pkg/c/lib/c.dart"),
+        ],
+        packages = [_pkg("a", "pkg/a"), _pkg("b", "pkg/b"), _pkg("c", "pkg/c")],
+        is_executable = True,
+    )
+    asserts.true(
+        env,
+        has_cross_pkg_cycle(
+            "a",
+            [_pkg("a", "pkg/a"), _pkg("b", "pkg/b"), _pkg("c", "pkg/c")],
+            edges = [("//pkg/c:c", "//pkg/b:b"), ("//pkg/b:b", "//pkg/a:a")],
+            **own_a
+        ),
+        "an executable of package a whose closure reaches a's library through another package",
+    )
+    asserts.false(
+        env,
+        has_cross_pkg_cycle(
+            "a",
+            [_pkg("a", "pkg/a"), _pkg("b", "pkg/b"), _pkg("c", "pkg/c")],
+            edges = [("//pkg/c:c", "//pkg/b:b"), ("//pkg/a:a", "//pkg/b:b")],
+            **own_a
+        ),
+        "an executable of package a whose library only depends on the others",
+    )
+    return unittest.end(env)
+
+_package_prefix_index_test = unittest.make(_package_prefix_index_test_impl)
+_duplicated_source_lazy_edges_test = unittest.make(_duplicated_source_lazy_edges_test_impl)
+_split_without_direct_edge_test = unittest.make(_split_without_direct_edge_test_impl)
 _duplicated_source_test = unittest.make(_duplicated_source_test_impl)
 _eligible_test = unittest.make(_eligible_test_impl)
 _modular_tools_off_test = unittest.make(_modular_tools_off_test_impl)
@@ -1572,6 +1700,9 @@ def kernel_test_suite(name):
         _packages_consistent_test,
         _first_per_package_test,
         _duplicated_source_test,
+        _duplicated_source_lazy_edges_test,
+        _package_prefix_index_test,
+        _split_without_direct_edge_test,
         _eligible_test,
         _modular_tools_off_test,
         _has_cross_pkg_cycle_test,
