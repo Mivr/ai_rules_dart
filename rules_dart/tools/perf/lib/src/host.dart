@@ -28,12 +28,20 @@ final class Host {
   List<int> pids() {
     final dir = Directory(procRoot);
     if (!dir.existsSync()) return const [];
-    return [
-      for (final e in dir.listSync(followLinks: false))
-        if (int.tryParse(e.uri.pathSegments.lastWhere((s) => s.isNotEmpty))
-            case final int pid)
-          pid,
-    ];
+    // A process that exits while the table is listed makes the listing
+    // fail; the next listing does not see it.
+    for (var attempt = 0; ; attempt++) {
+      try {
+        return [
+          for (final e in dir.listSync(followLinks: false))
+            if (int.tryParse(e.uri.pathSegments.lastWhere((s) => s.isNotEmpty))
+                case final int pid)
+              pid,
+        ];
+      } on FileSystemException {
+        if (attempt == 4) rethrow;
+      }
+    }
   }
 
   /// The command line of [pid], or null when it has gone.

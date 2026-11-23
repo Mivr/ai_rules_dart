@@ -842,10 +842,13 @@ final class AddPluginFlow extends Flow {
     _ws = stock
         ? await _stockCopy(_plugins)(c)
         : await _e2e(_plugins, android: true)(c);
+    // The originals come from the repository, not from the copy, which a
+    // run killed between its edit and its tear-down leaves edited.
     for (final f in _files) {
-      final file = File('$_ws/$f');
+      final file = File('${c.repo}/$_plugins/$f');
       if (file.existsSync()) _saved[f] = file.readAsStringSync();
     }
+    _restore();
     if (!stock) _b = c.bazelIn(_ws, id);
     await must(
       _stockCmd(c, ['flutter', 'pub', 'get', '--offline']),
