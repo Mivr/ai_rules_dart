@@ -23,6 +23,35 @@ or repository rule), and `lock_packages`, `pubspec_deps`,
 `pubspec_sdk_constraint` and `pubspec_environment_error` make pub's checks
 on the decoded data.
 
+# How `pub.from_lock()` plans the package graph
+
+Before it generates a repository, the `pub` extension learns every locked
+package's dependency names: they decide which dependency cycles merge and
+which labels each package's `dart_library` depends on. For a hosted package
+it reads the server's listing, `GET <url>/api/packages/<name>` with
+`Accept: application/vnd.pub.v2+json` (`<url>` is the lock entry's
+`description.url`), the document `dart pub` itself reads. One request per
+distinct package name, all in parallel; no archive is downloaded while
+planning. Bazel runs at most `--http_max_parallel_downloads` (default 8) at a
+time; a very large lock plans faster with a higher value in `.bazelrc`.
+
+- The archive a build fetches is pinned by the lock's `sha256`, as always,
+  and fetched from the listing's `archive_url`. A listing whose
+  `archive_sha256` differs from the lock's fails the evaluation naming both
+  values; a server that lists no `archive_sha256` still works.
+- Every package repository compares its real `pubspec.yaml` with the names
+  planning used and fails its fetch, naming the package, when they differ.
+- A package the server cannot answer for (no listing, the locked version not
+  listed, a body that is not JSON) is planned from its archive instead, and a
+  `git` package from its checkout.
+- What each package version planned to is recorded as an extension fact in
+  `MODULE.bazel.lock`, keyed by name, version, `sha256` and server, so a
+  re-evaluation requests nothing for packages it already planned.
+- A package repository's attributes are that package's own (its coordinates,
+  the names planning used and its own dependency labels): changing one lock
+  entry refetches that entry's repository only, or the merged repository of a
+  dependency cycle it joins or leaves.
+
 # Runtime package files
 
 A pub package is more than its `lib/`: `pubspec.yaml`, `LICENSE`, a `hook/`
