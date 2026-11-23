@@ -703,6 +703,24 @@ class ModuleTextTest(unittest.TestCase):
         self.assertIn("archive_override(", text)
         self.assertIn("sha256-abc=", text)
 
+    def test_sibling_path_pin_becomes_absolute(self):
+        pin = ("local_path_override(\n"
+               "    module_name = \"ai_rules_dart\",\n"
+               "    path = \"%s\",\n"
+               ")\n")
+        rules = os.path.join(self.tmp, "merged", "rules_flutter")
+        os.makedirs(rules)
+        self.write_tree_module(rules, "ai_rules_flutter", "ai_rules_dart",
+                               pin % "../rules_dart", dart_repo="rules_dart")
+        self.write_full_fixture(rules, "ai_rules_flutter", "ai_rules_dart",
+                                pin % "../../../rules_dart",
+                                dart_repo="rules_dart")
+        text = module_bazel_text(rules, [])
+        self.assertIn("path = \"%s\"," % os.path.join(
+            self.tmp, "merged", "rules_dart"), text)
+        self.assertNotIn("../rules_dart", text)
+        self.assertEqual(text.count("module_name = \"ai_rules_dart\""), 1)
+
     def test_tree_fixture_name_mismatch_raises(self):
         rules = os.path.join(self.tmp, "bad-rules")
         os.makedirs(rules)

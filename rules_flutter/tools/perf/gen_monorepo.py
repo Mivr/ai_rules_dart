@@ -805,7 +805,7 @@ DART_MODULE_NAMES = ("rules_dart", "ai_rules_dart")
 HELLO_MODULE_NAME = "rules_flutter_hello_world"
 BENCH_MODULE_NAME = "bench_monorepo"
 OVERRIDE_KINDS = ("git_override", "archive_override",
-                  "single_version_override")
+                  "single_version_override", "local_path_override")
 
 
 def _strip_comments(text):
@@ -918,8 +918,28 @@ def read_tree_modules(rules_flutter_dir):
         if attrs.get("repo_name", attrs.get("name")) == "rules_dart":
             dart_name = attrs.get("name")
             break
+    pin = extract_pin_block(root, dart_name) if dart_name else None
     return (parse_module_name(root), dart_name,
-            extract_pin_block(root, dart_name) if dart_name else None)
+            _absolute_path_pin(pin, rules_flutter_dir))
+
+
+def _absolute_path_pin(pin, base_dir):
+    """pin with a relative local_path_override path resolved against base_dir.
+
+    The tree pins rules_dart by a path relative to its own root (the
+    sibling directory in the merged repository); the generated workspace
+    lives elsewhere, so it gets the absolute path. Any other pin is
+    returned unchanged.
+    """
+    if pin is None or not pin.startswith("local_path_override"):
+        return pin
+    attrs = _string_attrs(pin)
+    path = attrs.get("path")
+    if path is None or os.path.isabs(path):
+        return pin
+    return local_path_override(
+        attrs["module_name"],
+        os.path.normpath(os.path.join(os.path.abspath(base_dir), path)))
 
 
 def read_fixture_modules(fixture_text):
