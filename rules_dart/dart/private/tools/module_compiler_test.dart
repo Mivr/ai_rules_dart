@@ -619,6 +619,45 @@ void main() => print(lost());
       );
     });
 
+    test('fails an entry once per missing file, however many libraries '
+        'reach it', () {
+      for (final name in ['lost', 'also_lost']) {
+        _write('leaf/lib/$name.dart', '''
+import 'gone.dart';
+
+String $name() => gone();
+''');
+      }
+      _compile(_moduleArgs('leaf'));
+      _write('app/main.dart', '''
+import 'package:leaf/also_lost.dart';
+import 'package:leaf/lost.dart';
+
+void main() => print(lost() + also_lost());
+''');
+      final ProcessResult result = _run(
+        _entryArgs('app/main.dart', deps: ['leaf']),
+      );
+      expect(result.exitCode, 1);
+      final stderr = result.stderr as String;
+      expect(
+        stderr,
+        contains(
+          "cannot compile package:leaf/also_lost.dart: import 'gone.dart' "
+          'names leaf/lib/gone.dart, which is not an input of this compile.',
+        ),
+      );
+      expect(
+        stderr,
+        contains('1 more library reaches leaf/lib/gone.dart the same way.'),
+      );
+      expect(stderr, isNot(contains('cannot compile package:leaf/lost.dart')));
+      expect(
+        stderr,
+        contains('a directory with a BUILD file of its own is a package'),
+      );
+    });
+
     test("leaves out a library naming a file a dependency's package does "
         'not have', () {
       _compile(_moduleArgs('leaf'));

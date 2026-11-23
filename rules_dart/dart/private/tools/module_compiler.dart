@@ -85,6 +85,10 @@ const _entryDill = 'entry.dill';
 const _outlineDill = 'outline.dill';
 
 /// One compile, as `kernel_module_action` states it.
+/// A library whose import, export or part names a file that is not an input
+/// of the compile: why, and that file's key.
+typedef _Undeclared = ({String reason, String file});
+
 class Request {
   Request(List<String> args) {
     String value(int i) => i < args.length
@@ -465,7 +469,7 @@ class Compiler {
         misspelled.forEach(log.writeln);
         return 1;
       }
-      final Map<Library, String> undeclared = await _undeclared(
+      final Map<Library, _Undeclared> undeclared = await _undeclared(
         r,
         own,
         fromDill,
@@ -477,15 +481,7 @@ class Compiler {
       // library module leaves the library out, naming the import (another
       // target of a package split across targets may declare the file).
       if (r.entry && undeclared.isNotEmpty) {
-        for (final MapEntry<Library, String> e in undeclared.entries) {
-          final ({String dir, String reason})? upstream =
-              depLeftOut[_key(e.key.fileUri, r)];
-          log.writeln(
-            '$_tool: cannot compile ${e.key.importUri}: ${e.value}'
-            '${upstream == null ? '' : ' The module of ${upstream.dir} left '
-                      'it out; this program reaches it.'}',
-          );
-        }
+        _reportUndeclared(r, undeclared, depLeftOut).forEach(log.writeln);
         return 1;
       }
       if (r.checkImports && leftOut.isEmpty) {
@@ -508,7 +504,7 @@ class Compiler {
           ownSet,
           errors,
           depLeftOut,
-          undeclared,
+          {for (final e in undeclared.entries) e.key: e.value.reason},
         );
         if (bad == null) {
           log.write(out);
@@ -746,7 +742,7 @@ class Compiler {
   /// mistake in the build, and leaving the library out would hide it until
   /// something reaches it. An import of a package the package config does not
   /// name is left to the layering check.
-  Future<Map<Library, String>> _undeclared(
+  Future<Map<Library, _Undeclared>> _undeclared(
     Request r,
     List<Library> own,
     Map<Uri, Uri> fromDill,
@@ -757,14 +753,16 @@ class Compiler {
     final exists = <Uri, bool>{};
     Future<bool> present(Uri file) async =>
         exists[file] ??= await fileSystem.entityForUri(file).exists();
-    final found = <Library, String>{};
+    final found = <Library, _Undeclared>{};
     final List<Library> sorted = own.toList()
       ..sort((a, b) => '${a.fileUri}'.compareTo('${b.fileUri}'));
     for (final Library library in sorted) {
       if (!r.entry && !await present(library.fileUri)) {
-        found[library] =
-            'its file ${_key(library.fileUri, r)} is not an input of this '
-            'compile.';
+        final String file = _key(library.fileUri, r);
+        found[library] = (
+          reason: 'its file $file is not an input of this compile.',
+          file: file,
+        );
         continue;
       }
       for (final LibraryDependency dependency in library.dependencies) {
@@ -774,24 +772,72 @@ class Compiler {
         if (uri.isScheme('package') && translate(uri) == null) continue;
         if (depLeftOut.containsKey(_key(target.fileUri, r))) continue;
         if (await present(target.fileUri)) continue;
+        if (found.containsKey(library)) continue;
         final String written =
             await _written(fileSystem, library, dependency) ?? '$uri';
-        found[library] ??=
-            "${dependency.isExport ? 'export' : 'import'} "
-            "'$written' names ${_key(target.fileUri, r)}, which is not an "
-            'input of this compile. Add it to the srcs of the target that '
-            'owns it, and that target to deps.';
+        final String file = _key(target.fileUri, r);
+        found[library] = (
+          reason:
+              "${dependency.isExport ? 'export' : 'import'} "
+              "'$written' names $file, which is not an input of this "
+              'compile. Add it to the srcs of the target that owns it, and '
+              'that target to deps.',
+          file: file,
+        );
       }
       for (final LibraryPart part in library.parts) {
         final Uri file = _fileOf(library.fileUri.resolve(part.partUri));
-        if (await present(file)) continue;
-        found[library] ??=
-            "part '${part.partUri}' names "
-            '${_key(file, r)}, which is not an input of this compile. Add it '
-            'to the srcs of the target that owns the library.';
+        if (await present(file) || found.containsKey(library)) continue;
+        final String key = _key(file, r);
+        found[library] = (
+          reason:
+              "part '${part.partUri}' names $key, which is not an input of "
+              'this compile. Add it to the srcs of the target that owns the '
+              'library.',
+          file: key,
+        );
       }
     }
     return found;
+  }
+
+  /// The lines an entry fails with when its program reaches a file that is
+  /// not an input: one per missing file, naming the first library (by URI)
+  /// that reaches it and how, and how many others do. Every library that
+  /// imports a missing file is unfit, so one line per library would repeat
+  /// one cause many times over.
+  List<String> _reportUndeclared(
+    Request r,
+    Map<Library, _Undeclared> undeclared,
+    Map<String, ({String dir, String reason})> depLeftOut,
+  ) {
+    final byFile = <String, List<Library>>{};
+    for (final MapEntry<Library, _Undeclared> e in undeclared.entries) {
+      (byFile[e.value.file] ??= []).add(e.key);
+    }
+    final lines = <String>[];
+    for (final String file in byFile.keys.toList()..sort()) {
+      final List<Library> libraries = byFile[file]!
+        ..sort((a, b) => '${a.importUri}'.compareTo('${b.importUri}'));
+      final Library first = libraries.first;
+      final ({String dir, String reason})? upstream =
+          depLeftOut[_key(first.fileUri, r)];
+      final int others = libraries.length - 1;
+      lines.add(
+        '$_tool: cannot compile ${first.importUri}: '
+        '${undeclared[first]!.reason}'
+        '${upstream == null ? '' : ' The module of ${upstream.dir} left it '
+                  'out; this program reaches it.'}'
+        '${others == 0 ? '' : ' $others more '
+                  '${others == 1 ? 'library reaches' : 'libraries reach'} '
+                  '$file the same way.'}',
+      );
+    }
+    lines.add(
+      '$_tool: a directory with a BUILD file of its own is a package of its '
+      'own: a glob in a BUILD file above it does not list its files.',
+    );
+    return lines;
   }
 
   /// Why an entry that failed reached a source a dependency module left out:
