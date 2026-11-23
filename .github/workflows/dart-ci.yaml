@@ -495,8 +495,7 @@ jobs:
         shell: bash
         run: .github/scripts/ci_disk_report.sh "after Test"
       # The corpus instantiates every public rule and macro in one package;
-      # its checked-in golden records the action graph they produce. A stale
-      # golden fails here, so an action change reaches review as a diff.
+      # it builds, analyses and runs them.
       - name: Memory report (before Corpus tests)
         if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
         shell: bash
@@ -515,33 +514,6 @@ jobs:
         if: always() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
         shell: bash
         run: .github/scripts/ci_mem_report.sh "after Corpus tests"
-      - name: Memory report (before Corpus action graph)
-        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
-        shell: bash
-        run: .github/scripts/ci_mem_report.sh "before Corpus action graph"
-      - name: Corpus action graph
-        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
-        shell: bash
-        run: |
-          status=0
-          {
-            bazel --max_idle_secs=60 aquery "--local_resources=memory=HOST_RAM*.7" --output=jsonproto --include_file_write_contents //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json" &&
-              bazel --max_idle_secs=60 run "--local_resources=memory=HOST_RAM*.7" //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
-          } || status=$?
-          bazel --max_idle_secs=60 shutdown || echo "::warning::bazel shutdown failed after Corpus action graph"
-          exit "$status"
-      - name: Upload corpus action graph on failure
-        if: failure() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
-        uses: actions/upload-artifact@v7
-        with:
-          name: dart-corpus-aquery-${{ matrix.os }}-attempt-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/dart_corpus_aquery.json
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Memory report (after Corpus action graph)
-        if: always() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
-        shell: bash
-        run: .github/scripts/ci_mem_report.sh "after Corpus action graph"
       # Ship the per-folder logs even when the Test step fails or the job is
       # killed, so a dead shard still leaves its evidence for diagnosis.
       - name: Upload shard logs

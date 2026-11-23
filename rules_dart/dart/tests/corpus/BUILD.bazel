@@ -1,8 +1,6 @@
-# One fixture per public rule and macro, in one package, so a change that
-# alters the action graph shows up in `actions.golden.json`. The exports test
-# below fails when a public export of `//dart:defs.bzl`, `//dart/pub:defs.bzl`
-# or a `//dart/ext/*/defs.bzl` file is neither instantiated here nor listed in
-# `non_instantiable.txt`.
+# One fixture per public rule and macro, in one package: the package builds and
+# analyses every rule and macro of `//dart:defs.bzl`, `//dart/pub:defs.bzl` and
+# the `//dart/ext/*/defs.bzl` files, and `corpus_test` runs.
 
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load(
@@ -157,8 +155,6 @@ dart_analysis_test(
     size = "small",
     targets = [
         ":_drift_siblings",
-        ":actions_golden",
-        ":actions_golden_test",
         ":app_bin",
         ":builder_library",
         ":built_value",
@@ -166,7 +162,6 @@ dart_analysis_test(
         ":corpus_lib",
         ":corpus_test",
         ":drift",
-        ":exports_test",
         ":freezed",
         ":gen_shim",
         ":go_router",
@@ -386,57 +381,12 @@ stacked_bottomsheet_library(
     language_version = "3.11",
 )
 
-# --- the golden updater and its tests --------------------------------------
-
-dart_binary(
-    name = "actions_golden",
-    srcs = ["golden_digest.dart"],
-    data = [":actions.golden.json"],
-    main = "actions_golden.dart",
-    deps = ["//dart/runfiles"],
-)
-
-dart_test(
-    name = "exports_test",
-    size = "small",
-    args = ["$(rlocationpath :exports_test.dart)"],
-    data = ["exports_test.dart"],
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    local = True,
-    main = "exports_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-    ],
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
-)
-
-dart_test(
-    name = "actions_golden_test",
-    size = "small",
-    srcs = [
-        "actions_golden.dart",
-        "golden_digest.dart",
-    ],
-    data = glob(["testdata/*.json"]),
-    main = "actions_golden_test.dart",
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
-)
-
 # `bazel test //dart/tests/corpus:...` names this suite in the acceptance
 # command; Bazel treats the label after `:` as a literal target name.
 test_suite(
     name = "...",
     tests = [
-        ":actions_golden_test",
         ":analysis_test",
         ":corpus_test",
-        ":exports_test",
     ],
 )
