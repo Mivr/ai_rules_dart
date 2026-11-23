@@ -105,6 +105,12 @@ bzl_library(
 )
 
 bzl_library(
+    name = "closure_facts",
+    srcs = ["closure_facts.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
     name = "common",
     srcs = ["common.bzl"],
     visibility = ["//visibility:public"],
@@ -160,6 +166,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":analyze_targets",
+        ":closure_facts",
         ":common",
         ":dart_analyze_summary_fallback",
         ":dart_analyzer_summary",
@@ -197,6 +204,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":aot_tool",
+        ":closure_facts",
         ":common",
         ":project_staging",
         ":source_set",
@@ -287,6 +295,7 @@ bzl_library(
     srcs = ["dart_info.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":closure_facts",
         "//dart:providers",
     ],
 )
@@ -327,6 +336,7 @@ bzl_library(
     deps = [
         ":aot_tool",
         ":build_settings",
+        ":closure_facts",
         ":common",
         ":dart_info",
         ":kernel_exec_link",
@@ -521,6 +531,7 @@ bzl_library(
     srcs = ["executable_package.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":closure_facts",
         ":common",
         ":dart_info",
         ":dart_info_params",
