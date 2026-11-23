@@ -171,7 +171,6 @@ jobs:
   # - e2e/codegen: source generation, kernel only, no native code.
   # - e2e/dart_test: package:test runner on the Dart VM, same as Linux.
   # - e2e/dart_test_pkg: test package layout, pure Dart.
-  # - e2e/dual_build: build-only (its one test is manual).
   # - e2e/fix: `dart fix` manifests, text in and text out.
   # - e2e/guard_reuse: pub guard reuse, Starlark and lockfile logic.
   # - e2e/isolated_hub: pub hub isolation, resolution logic only.
@@ -265,7 +264,7 @@ jobs:
             # - .: cc fixtures, the webcrypto and sqlite3 code assets, link
             #   modules and cross fixtures, plus the action tools' and
             #   runfiles' own tests (darwin paths and sandbox).
-            # - e2e/ext_exemplar: sqlite3/drift and webcrypto over FFI and its
+            # - e2e/ext_exemplar: sqlite3 and webcrypto over FFI and its
             #   own dylib; its codegen tests are portable.
             darwin_folders: |
               . //dart/private/tools/... //dart/runfiles/...

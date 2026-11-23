@@ -126,7 +126,6 @@ jobs:
               e2e/pub_workspace
               e2e/dart_test_pkg
               e2e/hello_world
-              e2e/dual_build
               e2e/isolated_hub
               e2e/analysis
           - os: ubuntu-latest
@@ -202,7 +201,6 @@ jobs:
               e2e/pub_lock
               e2e/dart_test_pkg
               e2e/hello_world
-              e2e/dual_build
               e2e/isolated_hub
               e2e/analysis
     steps:
@@ -341,8 +339,8 @@ jobs:
             [ -z "$folder" ] && continue
             echo "9.3.0" > "$ws/$folder/.bazelversion"
           done <<< "$FOLDERS"
-          # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's sole test is manual and requires-network.
-          build_only_folders=".github/workflows e2e/dual_build"
+          # Build-only workspaces: .github/workflows has no tests.
+          build_only_folders=".github/workflows"
           # On Linux every server exits after 60 idle seconds and is shut down
           # as soon as its folder finishes, so one server at a time stays
           # resident beside the running ones. Windows is unchanged.
