@@ -149,7 +149,7 @@ Future<int> _main(List<String> args) async {
       results,
       date: flags.value('date') ?? _today(),
       commit: commit,
-      next: _git(root, 'next'),
+      next: _mergeBase(root),
     );
     final sink = File(ledger).openSync(mode: FileMode.append);
     for (final row in rows) {
@@ -199,6 +199,18 @@ String? _git(String root, String rev) {
   final ProcessResult r = Process.runSync(
     'git',
     ['-C', root, 'rev-parse', '--verify', '--quiet', rev],
+    environment: childEnvironment(),
+    includeParentEnvironment: false,
+  );
+  return r.exitCode == 0 ? (r.stdout as String).trim() : null;
+}
+
+/// The commit of `next` the rules under test come from: where `HEAD` left
+/// it.
+String? _mergeBase(String root) {
+  final ProcessResult r = Process.runSync(
+    'git',
+    ['-C', root, 'merge-base', 'HEAD', 'next'],
     environment: childEnvironment(),
     includeParentEnvironment: false,
   );
