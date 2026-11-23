@@ -29,6 +29,7 @@ declare `toolchains = ["@rules_flutter//flutter:toolchain_type"] + FLUTTER_OPTIO
         "dartaotruntime": "File: The `dartaotruntime` executable for running AOT snapshots.",
         "dart_module_compiler": "File or None: the module compiler of the Flutter-bundled Dart SDK (`DartSdkInfo.module_compiler` of that SDK's Dart toolchain), which `dartaotruntime` runs to compile kernel modules against Flutter's platform. None when the toolchain names no `dart_toolchain`, or the bundled Dart SDK's version has no pinned module compiler sources; a debug build then fails at analysis.",
         "dart_sdk_version": "str or None: the version of the Flutter-bundled Dart SDK, from its `dart_toolchain`; None when the toolchain names none.",
+        "assets_tool": "FlutterAssetsToolInfo or None: the asset tool of this release, which runs the Flutter tool's own asset, licence, web bootstrap and gen-l10n code (`snapshot`, run by `dartaotruntime`), and the source files it reads. None when the toolchain names none.",
         "gen_snapshot": "File or None: The `gen_snapshot` AOT compiler binary (resolved via `@rules_flutter//flutter:aot_toolchain_type` and `resolve_flutter_sdk_info`).",
         "flutter_tester": "File or None: The `flutter_tester` binary — a headless Flutter engine " +
                           "used to run widget tests (`flutter_test` rule). None if the host SDK " +

@@ -1,0 +1,9 @@
+# The asset tool: the Flutter tool's own asset, licence, web bootstrap and
+# gen-l10n code, run as one action. It is compiled against the flutter_tools
+# of the Flutter release in use, by `flutter_assets_tool` in that release's
+# engine repository (see //flutter/private:flutter_assets_tool.bzl), so it is
+# not a `dart_binary`.
+exports_files(
+    ["flutter_assets_tool.dart"],
+    visibility = ["//visibility:public"],
+)

@@ -7,6 +7,12 @@ load(
     _resolve_exec_dart = "resolve_exec_dart",
     _resolve_flutter_sdk_info = "resolve_flutter_sdk_info",
 )
+load(
+    "//flutter/private:flutter_assets_tool.bzl",
+    "FlutterAssetsToolInfo",
+    _flutter_assets_tool = "flutter_assets_tool",
+    _flutter_assets_tool_sources = "flutter_assets_tool_sources",
+)
 load("//flutter/private:flutter_sdk_binary.bzl", _flutter_sdk_binary = "flutter_sdk_binary")
 load(
     "//flutter/private:xtool_darwin_sdk_repo.bzl",
@@ -18,6 +24,8 @@ load(
 visibility("public")
 
 # Re-exported so generated repositories and `//dart` load them from a public file.
+flutter_assets_tool = _flutter_assets_tool
+flutter_assets_tool_sources = _flutter_assets_tool_sources
 flutter_sdk_binary = _flutter_sdk_binary
 xtool_darwin_cc_toolchain_config = _xtool_darwin_cc_toolchain_config
 xtool_darwin_sdk_status = _xtool_darwin_sdk_status
@@ -48,6 +56,7 @@ def _flutter_toolchain_impl(ctx):
         dartaotruntime = ctx.file.dartaotruntime,
         dart_module_compiler = _dart_module_compiler(ctx),
         dart_sdk_version = ctx.attr.dart_toolchain[platform_common.ToolchainInfo].dart_sdk_info.version if ctx.attr.dart_toolchain else None,
+        assets_tool = ctx.attr.assets_tool[FlutterAssetsToolInfo] if ctx.attr.assets_tool else None,
         gen_snapshot = ctx.file.gen_snapshot,
         flutter_tester = ctx.file.flutter_tester,
         frontend_server = ctx.file.frontend_server,
@@ -122,6 +131,11 @@ flutter_toolchain = rule(
         "dart_toolchain": attr.label(
             doc = "The `dart_toolchain` of the Flutter-bundled Dart SDK (`declare_dart_sdk_toolchains` declares it beside this toolchain). Its module compiler, built from that Dart SDK's own tag, compiles Flutter's kernel modules whichever Dart SDK the build resolves for its other tools.",
             providers = [platform_common.ToolchainInfo],
+        ),
+        "assets_tool": attr.label(
+            doc = "The asset tool of this release (a `flutter_assets_tool` target), built in the exec configuration. Without it no asset bundle can be built.",
+            cfg = "exec",
+            providers = [FlutterAssetsToolInfo],
         ),
         "gen_snapshot": attr.label(
             doc = "The `gen_snapshot` AOT compiler binary.",

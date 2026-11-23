@@ -606,6 +606,7 @@ def _write_engine_artifacts_build(
     )
 
     build_content = _BUILD_TEMPLATE.format(
+        user_repo_name = user_repo_name,
         flutter_version = flutter_version,
         engine_revision = engine_revision,
         dart_bin = dart_bin,
@@ -631,6 +632,7 @@ load(
     "flutter_aot_toolchain",
     "flutter_desktop_engine_toolchain",
     "flutter_font_subset_toolchain",
+    "flutter_assets_tool",
     "flutter_product_tools_toolchain",
     "flutter_toolchain",
 )
@@ -755,6 +757,18 @@ filegroup(
 
 {engine_aliases}
 
+# The asset tool of this release: the Flutter tool's own asset, licence, web
+# bootstrap and gen-l10n code, compiled against this release's flutter_tools
+# by the bundled Dart SDK.
+flutter_assets_tool(
+    name = "assets_tool",
+    compile_files = ":compile_files",
+    dart = "dart-sdk/bin/{dart_bin}",
+    sources = "@{user_repo_name}_assets_tool//:sources",
+    version = "{flutter_version}",
+    visibility = ["//visibility:public"],
+)
+
 flutter_toolchain(
     name = "flutter_toolchain",
     const_finder = ":font-subset-tools/const_finder.dart.snapshot",
@@ -766,6 +780,7 @@ flutter_toolchain(
     dart2js_files = ":dart2js_files",
     dartaotruntime = "dart-sdk/bin/{dartaotruntime_bin}",
     dart_toolchain = ":dart_toolchain",
+    assets_tool = ":assets_tool",
 {engine_library_attr}
     engine_revision = "{engine_revision}",
     flutter_tester = "host-tools/flutter_tester{exe_suffix}",

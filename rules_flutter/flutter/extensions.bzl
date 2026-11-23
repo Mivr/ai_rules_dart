@@ -32,6 +32,7 @@ load(
 )
 load("@rules_dart//dart/pub:yaml.bzl", "lock_packages", "yaml_to_json")
 load("//flutter/private:artifact_urls.bzl", "source_strip_prefix")
+load("//flutter/private:flutter_assets_tool_repo.bzl", "flutter_assets_tool_repo")
 load("//flutter/private:flutter_gen_l10n_repo.bzl", "flutter_gen_l10n_repo")
 load("//flutter/private:flutter_pub_android_package.bzl", "android_package_repo_name", "flutter_pub_android_package")
 load("//flutter/private:flutter_pub_apple_pods.bzl", "hub_cocoapods_attrs")
@@ -366,6 +367,10 @@ def _register_local_toolchain(name, local_path, lock_flutter_constraints, darwin
         hub_name = "gen_l10n_deps",
         local_path = local_path,
     )
+    flutter_assets_tool_repo(
+        name = name + "_assets_tool",
+        local_path = local_path,
+    )
     return struct(version = "", local_path = local_path, source_label = "")
 
 def _register_download_toolchain(name, selected, merged, darwin_sdk, llvm_tool_repos):
@@ -406,6 +411,11 @@ def _register_download_toolchain(name, selected, merged, darwin_sdk, llvm_tool_r
         flutter_version = selected,
         sdk_source = source_label,
         hub_name = "gen_l10n_deps",
+    )
+    flutter_assets_tool_repo(
+        name = name + "_assets_tool",
+        flutter_version = selected,
+        sdk_source = source_label,
     )
     return struct(version = selected, local_path = "", source_label = source_label)
 

@@ -261,6 +261,7 @@ bzl_library(
     deps = [
         ":repositories",
         "//flutter/private:artifact_urls",
+        "//flutter/private:flutter_assets_tool_repo",
         "//flutter/private:flutter_gen_l10n_repo",
         "//flutter/private:flutter_pub_android_package",
         "//flutter/private:flutter_pub_apple_pods",
@@ -412,6 +413,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":providers",
+        "//flutter/private:flutter_assets_tool",
         "//flutter/private:flutter_sdk_binary",
         "//flutter/private:xtool_darwin_sdk_repo",
     ],

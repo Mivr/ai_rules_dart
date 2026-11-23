@@ -596,6 +596,31 @@ bzl_library(
 )
 
 bzl_library(
+    name = "flutter_assets_tool",
+    srcs = ["flutter_assets_tool.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_assets_tool_repo",
+    srcs = ["flutter_assets_tool_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":download",
+        ":flutter_assets_tool_versions",
+        ":flutter_sky_engine_repo",
+        ":local_sdk",
+        ":repo_metadata",
+    ],
+)
+
+bzl_library(
+    name = "flutter_assets_tool_versions",
+    srcs = ["flutter_assets_tool_versions.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
     name = "flutter_gen_l10n_repo",
     srcs = ["flutter_gen_l10n_repo.bzl"],
     visibility = ["//visibility:public"],
