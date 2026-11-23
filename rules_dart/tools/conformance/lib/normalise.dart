@@ -103,7 +103,7 @@ const dexClassSet = Normaliser(
 const elfExports = Normaliser(
   'elf-exports',
   {Kind.apk, Kind.linux},
-  'native libraries that differ in bytes are compared by exported dynamic symbols (build ids and link order differ)',
+  'native libraries are compared by their exported dynamic symbols, not their bytes: build ids, link order and debug sections differ between linkers',
 );
 
 /// Every normaliser, in the order the report lists them.
