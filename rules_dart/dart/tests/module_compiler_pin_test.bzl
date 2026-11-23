@@ -19,15 +19,6 @@ visibility(["//dart/..."])
 
 _UNPINNED_VERSION = "9.9.9"
 
-# Listed SDK versions that have no module compiler, with the reason. A version
-# in `TOOL_VERSIONS` is either pinned in `MODULE_COMPILER_SOURCES` or named
-# here, so a listed version cannot lose its module compiler unnoticed. An entry
-# goes when its version is pinned or removed from the table.
-_LISTED_WITHOUT_MODULE_COMPILER = {
-    "3.12.2": "the 3.12 front end names `TargetFlags.trackWidgetCreation`, which the tool spells `trackCreationLocations`; the rules' own tools (`analyze_runner`, `format_runner`, `link_check`, ...) also use Dart 3.13 syntax",
-    "3.11.5": "the 3.11 front end names `TargetFlags.trackWidgetCreation`, which the tool spells `trackCreationLocations`; the rules' own tools (`analyze_runner`, `format_runner`, `link_check`, ...) also use Dart 3.13 syntax",
-}
-
 def _unpinned_sdk_toolchain_impl(ctx):
     files = [
         ctx.actions.declare_file(ctx.label.name + "/" + path)
@@ -91,12 +82,7 @@ def _pin_table_test_impl(ctx):
         asserts.equals(env, 64, len(pin.sha256), "%s pins a sha256" % version)
         asserts.equals(env, 40, len(pin.revision), "%s pins the SDK commit" % version)
     for version in TOOL_VERSIONS:
-        if version in MODULE_COMPILER_SOURCES:
-            asserts.false(env, version in _LISTED_WITHOUT_MODULE_COMPILER, "%s is pinned: drop it from _LISTED_WITHOUT_MODULE_COMPILER" % version)
-        else:
-            asserts.true(env, version in _LISTED_WITHOUT_MODULE_COMPILER, "%s is listed in TOOL_VERSIONS and has no module compiler: pin it in MODULE_COMPILER_SOURCES, or remove the version" % version)
-    for version in _LISTED_WITHOUT_MODULE_COMPILER:
-        asserts.true(env, version in TOOL_VERSIONS, "%s is named as listed without a module compiler but is not listed: drop it" % version)
+        asserts.true(env, version in MODULE_COMPILER_SOURCES, "%s is listed in TOOL_VERSIONS and has no module compiler: pin it in MODULE_COMPILER_SOURCES, or remove the version" % version)
     return unittest.end(env)
 
 _pin_table_test = unittest.make(_pin_table_test_impl)

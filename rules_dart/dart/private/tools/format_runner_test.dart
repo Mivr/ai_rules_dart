@@ -20,7 +20,7 @@ late Directory _tmp;
 
 void main(List<String> args) {
   final r = Runfiles.create();
-  if (args.length >= 3) {
+  if (args.length >= 2) {
     _toolDillPath = r.rlocation(args.first);
     _sdkDartPaths = [for (final a in args.sublist(1)) r.rlocation(a)];
   } else {
@@ -96,8 +96,8 @@ void main(List<String> args) {
     },
   );
 
-  test('format_runner agrees with SDK dart format on accepted and rewritten files across two supported SDKs', () async {
-    expect(_sdkDartPaths.length, greaterThanOrEqualTo(2));
+  test('format_runner agrees with SDK dart format on accepted and rewritten files across every listed SDK', () async {
+    expect(_sdkDartPaths, isNotEmpty);
     final seenSdkVersions = <String>{};
 
     for (final String dartBin in _sdkDartPaths) {
@@ -309,9 +309,8 @@ void main(List<String> args) {
 
     expect(
       seenSdkVersions.length,
-      greaterThanOrEqualTo(2),
-      reason:
-          'Expected at least two distinct supported SDK versions, got $seenSdkVersions',
+      _sdkDartPaths.length,
+      reason: 'Expected one distinct SDK version per SDK, got $seenSdkVersions',
     );
   });
 

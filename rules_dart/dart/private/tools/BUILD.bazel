@@ -2,6 +2,7 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
+load("//dart/private:versions.bzl", "TOOL_VERSIONS")
 load("//dart/tests:module_compiler_tools.bzl", "module_compiler_tools")
 
 dart_binary(
@@ -920,30 +921,25 @@ dart_test(
 )
 
 # The comma-splitting patch's unit tests: byte patterns, the fail-closed
-# helpers, the file and CLI entry points against the SDKs listed below, and the
-# no-shared-state regression guard. They are the rules' default SDK (3.13.5)
-# and 3.12.2, which pins the patch against the next-older SDK in the version
-# table. 3.11.5 is not listed: each entry downloads an SDK per CI platform, and
-# the byte patterns are compiler-codegen-specific, so an older SDK whose
-# snapshot no longer matches needs its own pattern, not silent inclusion here.
-# The arm64 pattern runs against real snapshots only on arm64 CI hosts;
-# elsewhere synthetic buffers cover its shape, and no macOS-built snapshot is
-# ever executed off macOS.
+# helpers, the file and CLI entry points against every SDK the rules list
+# (`TOOL_VERSIONS`), and the no-shared-state regression guard. The byte patterns
+# are compiler-codegen-specific, so a listed SDK whose snapshot no longer
+# matches needs its own pattern, and the test fails until it has one. The arm64
+# pattern runs against real snapshots only on arm64 CI hosts; elsewhere
+# synthetic buffers cover its shape, and no macOS-built snapshot is ever
+# executed off macOS.
 dart_test(
     name = "comma_patch_test",
     size = "medium",
     srcs = ["comma_patch.dart"],
-    args = [
-        "$(rlocationpath :comma_patch.dart)",
-        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
-        "$(rlocationpath @dart_toolchains//sdk/3.12.2:dart)",
+    args = ["$(rlocationpath :comma_patch.dart)"] + [
+        "$(rlocationpath @dart_toolchains//sdk/%s:dart)" % version
+        for version in TOOL_VERSIONS
     ],
-    data = [
-        ":comma_patch.dart",
-        "@dart_toolchains//sdk/3.12.2:compile_files",
-        "@dart_toolchains//sdk/3.12.2:dart",
-        "@dart_toolchains//sdk/3.13.5:compile_files",
-        "@dart_toolchains//sdk/3.13.5:dart",
+    data = [":comma_patch.dart"] + [
+        "@dart_toolchains//sdk/%s:%s" % (version, target)
+        for version in TOOL_VERSIONS
+        for target in ["compile_files", "dart"]
     ],
     main = "comma_patch_test.dart",
     deps = [
@@ -996,17 +992,14 @@ dart_test(
         "private_home.dart",
         "project_layout.dart",
     ],
-    args = [
-        "$(rlocationpath :format_runner)",
-        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
-        "$(rlocationpath @dart_toolchains//sdk/3.12.2:dart)",
+    args = ["$(rlocationpath :format_runner)"] + [
+        "$(rlocationpath @dart_toolchains//sdk/%s:dart)" % version
+        for version in TOOL_VERSIONS
     ],
-    data = [
-        ":format_runner",
-        "@dart_toolchains//sdk/3.12.2:compile_files",
-        "@dart_toolchains//sdk/3.12.2:dart",
-        "@dart_toolchains//sdk/3.13.5:compile_files",
-        "@dart_toolchains//sdk/3.13.5:dart",
+    data = [":format_runner"] + [
+        "@dart_toolchains//sdk/%s:%s" % (version, target)
+        for version in TOOL_VERSIONS
+        for target in ["compile_files", "dart"]
     ],
     main = "format_runner_test.dart",
     deps = [

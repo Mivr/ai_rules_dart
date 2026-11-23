@@ -16,8 +16,7 @@ file at runtime — keep file lists current as the repo evolves.
   `MODULE_COMPILER_SOURCES` (the checksum of the SDK tag's source archive, the
   tag's commit, the language version of the five SDK packages). A version listed
   in `versions.bzl` without a row has no module compiler, and
-  `//dart/tests:module_compiler_pin_test` fails until it has one or is named
-  there as an exception
+  `//dart/tests:module_compiler_pin_test` fails until it has one
 - `MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/hello_world/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/library_deps/MODULE.bazel` — `dart.toolchain(dart_version = "...")`

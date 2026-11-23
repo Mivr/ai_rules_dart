@@ -39,7 +39,7 @@ Run a read-only audit of all maintenance chores. Do NOT make any changes — onl
 3. Present findings as a checklist:
 
    ```
-   - [x] Dart SDK: current (3.11.0)
+   - [x] Dart SDK: current (3.13.5)
    - [ ] Bazel: stale (have 8.2.1, latest is 8.3.0) → /bump-bazel 8.3.0
    - [x] bazel_dep versions: all current
    - [x] Multitool: all current

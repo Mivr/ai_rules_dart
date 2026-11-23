@@ -12,11 +12,9 @@ bazel_dep(name = "bazel_skylib", version = "1.9.2")
 # Register two Dart SDK toolchains:
 # - `exec_dart` (3.13.5) for `//dart:exec_tools_toolchain_type`
 # - `target_dart` (3.13.5) for `//dart:toolchain_type`
-# Both are 3.13.5. 3.12.2 and 3.11.5 are listed too, but as the target next to
-# a 3.13.5 exec SDK the build fails: a tool snapshot built by the exec SDK does
-# not load in the older runtime (`Failed to resolve symbol
-# '_kDartIsolateSnapshotData'`). So this workspace proves that the two
-# registrations stay separate, not that their versions differ.
+# Both are 3.13.5, the only version the rules list at this commit, so this
+# workspace proves that the two registrations stay separate, not that their
+# versions differ.
 # Every internal kernel tool (`copy_tree`, `analyzer_summary`,
 # `analyze_runner`, `format_runner`, `fix_runner`, `kernel_link`)
 # must compile with `exec_dart` so it matches the VM that executes it, while
