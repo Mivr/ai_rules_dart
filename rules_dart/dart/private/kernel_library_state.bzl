@@ -362,7 +362,8 @@ def lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records, pkgs):
       `edges_list`, `need_graph`, and `has_upstream_cross_pkg`.
     """
     closures = lib_kernel_closures(ctx, deps, dep_kernels, own_srcs)
-    has_upstream_cross_pkg = any([bool(k.cross_pkg_srcs.to_list()) for k in dep_kernels])
+    # Depset truthiness is O(1); it does not flatten.
+    has_upstream_cross_pkg = any([bool(k.cross_pkg_srcs) for k in dep_kernels])
     need_graph = len(pkgs) < len(records)
     return struct(
         dep_closure = closures.dep_closure,
@@ -563,7 +564,7 @@ def direct_packages(deps):
         if DartInfo not in dep:
             continue
         owned = owned_package_records(dep[DartInfo])
-        has_sources = bool(dep[DefaultInfo].files.to_list())
+        has_sources = bool(dep[DefaultInfo].files)
         records = owned if owned and has_sources else dep[DartInfo].transitive_packages.to_list()
         for record in records:
             names[record.package_name] = True

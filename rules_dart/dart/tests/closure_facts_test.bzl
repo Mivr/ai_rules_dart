@@ -113,8 +113,8 @@ def _clean_test_impl(ctx):
     asserts.true(env, owners_unique(top.closure_facts), "a diamond reaches each owner twice but owns each key once")
     clean = clean_closure(top.closure_facts)
     asserts.true(env, clean != None)
-    asserts.true(env, name_key("base") in clean.index)
-    asserts.equals(env, "//base", owner_fields(clean.index[name_key("base")]).label)
+    asserts.true(env, name_key("base") in clean.keys)
+    asserts.equals(env, "//base", owner_fields(owner_index(top.closure_facts).index[name_key("base")]).label)
 
     base = _lib("//base", [_rec("base", "base")])
     split = _lib("//base:top", [_rec("base", "base")], [_lib("//mid", [_rec("mid", "mid")], [base])])

@@ -233,8 +233,8 @@ def executable_package(ctx, own_srcs):
       When the executable states no package and its closure is clean (see
       `clean_closure`), the closure's records need no merging and are not
       flattened here: `packages` is None and `closure` is
-      `struct(records, index, facts)`, the record depset, the `owner_index`
-      and the closure facts. Read the list through `executable_packages()`.
+      `struct(records, keys, facts)`, the record depset, the closure's owner
+      keys (see `owner_keys`) and the closure facts. Read the list through `executable_packages()`.
       Otherwise `closure` is None.
     """
     if not _states_identity(ctx):
@@ -247,7 +247,7 @@ def executable_package(ctx, own_srcs):
                 packages = None,
                 closure = struct(
                     records = analyzable.dart_info.transitive_packages,
-                    index = clean.index,
+                    keys = clean.keys,
                     facts = facts,
                 ),
                 analyzable = analyzable,
@@ -367,7 +367,7 @@ def executable_has_package(own, package_name):
       A bool.
     """
     if own.closure != None:
-        return name_key(package_name) in own.closure.index
+        return name_key(package_name) in own.closure.keys
     return any([pkg.package_name == package_name for pkg in own.packages])
 
 def executable_hook_error(label, own):

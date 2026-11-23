@@ -200,14 +200,31 @@ def facts_of(info):
     """
     return getattr(info, "closure_facts", None)
 
+def owner_keys(facts):
+    """The closure's owner keys, one per distinct name and root, if each has one owner.
+
+    Whether every package name and root has one owner is not a property that
+    composes, so the two depsets are expanded and their lengths compared, in
+    Java: each key has one owner exactly when there are as many distinct
+    owner entries as distinct keys. The list then answers `name_key`/
+    `root_key` membership with `in`, also in Java.
+
+    Args:
+      facts: A facts struct from `facts_of`.
+
+    Returns:
+      The list of keys, or None when some key has two owners.
+    """
+    keys = facts.owner_keys.to_list()
+    if len(facts.owners.to_list()) != len(keys):
+        return None
+    return keys
+
 def owners_unique(facts):
     """Whether every package name and every root of the closure has one owner.
 
-    Not a property that composes, so the two depsets are expanded and their
-    lengths compared, in Java: each key has one owner exactly when there are
-    as many distinct owner entries as distinct keys. This is the one walk the
-    summary aspect still does per target; see `closure_owner_index` in
-    `dart_analyzer_summary.bzl`.
+    This is the one closure-sized step the summary aspect still takes per
+    target; see `closure_owner_index` in `dart_analyzer_summary.bzl`.
 
     Args:
       facts: A facts struct from `facts_of`.
@@ -215,7 +232,7 @@ def owners_unique(facts):
     Returns:
       A bool.
     """
-    return len(facts.owners.to_list()) == len(facts.owner_keys.to_list())
+    return owner_keys(facts) != None
 
 def owner_index(facts):
     """Expands the owners once and indexes them by name and by root.
@@ -250,15 +267,16 @@ def clean_closure(facts):
       facts: A facts struct from `facts_of`, or None.
 
     Returns:
-      The `owner_index` struct, or None when the closure is not clean or the
+      `struct(keys)`, the `owner_keys` list, which answers membership of a
+      `name_key` or `root_key`; or None when the closure is not clean or the
       facts are missing.
     """
     if facts == None or facts.nested_roots or facts.code_assets or len(facts.root_names) > 1:
         return None
-    owners = owner_index(facts)
-    if not owners.unique:
+    keys = owner_keys(facts)
+    if keys == None:
         return None
-    return owners
+    return struct(keys = keys)
 
 def lib_roots_of(short_path):
     """Every root whose package's `lib/` would contain a file, innermost first.

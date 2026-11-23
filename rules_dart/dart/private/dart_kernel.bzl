@@ -1291,7 +1291,7 @@ def modular_executable_tools(
         consistent = kernel_packages_consistent(records)
 
     own_paths = [f.short_path for f in own_files]
-    if closure != None and not _clean_own_in_lib(own_paths, closure.index):
+    if closure != None and not _clean_own_in_lib(own_paths, closure.keys):
         # Nothing to scan: see `_clean_own_in_lib`.
         scan = None
         duplicate = None
@@ -1327,7 +1327,7 @@ def _struct_fields(value):
         if name not in ("to_json", "to_proto", "closure_scan", "clean_closure")
     }
 
-def _clean_own_in_lib(own_paths, index):
+def _clean_own_in_lib(own_paths, keys):
     """Whether one of an executable's own files lies in a clean closure package's `lib/`.
 
     In a clean closure every root has one owner and no root sits inside
@@ -1341,18 +1341,18 @@ def _clean_own_in_lib(own_paths, index):
 
     Args:
       own_paths: The `short_path` of each of the executable's own sources.
-      index: The `owner_index` of the clean closure.
+      keys: The `owner_keys` of the clean closure.
 
     Returns:
       True when some own file lies under a closure package's `lib/`.
     """
     for path in own_paths:
         for root in lib_roots_of(path):
-            if root_key(root) in index:
+            if root_key(root) in keys:
                 return True
     return False
 
-def _clean_entry_needs_scan(sources, index):
+def _clean_entry_needs_scan(sources, keys):
     """Whether a clean closure's entry still needs the cross-package scan.
 
     `_cyclic_source_paths` finds nothing to add for a clean closure when the
@@ -1363,14 +1363,14 @@ def _clean_entry_needs_scan(sources, index):
 
     Args:
       sources: The entry's `struct(uri, file)` list.
-      index: The `owner_index` of the clean closure.
+      keys: The `owner_keys` of the clean closure.
 
     Returns:
       True when the scan has to run.
     """
     if len(sources) != 1:
         return True
-    return _clean_own_in_lib([sources[0].file.short_path], index)
+    return _clean_own_in_lib([sources[0].file.short_path], keys)
 
 def _closure_scan(dep_kernels):
     """The closure ownership an executable checks, flattened once.
@@ -1413,7 +1413,7 @@ def _exec_entry_inputs(ctx, dep_kernels, packages, sources, closure = None, clea
         order = "postorder",
         transitive = [k.transitive_koutlines for k in dep_kernels],
     )
-    if clean != None and not _clean_entry_needs_scan(sources, clean.index):
+    if clean != None and not _clean_entry_needs_scan(sources, clean.keys):
         return dep_closure, dep_outline_closure, depset(transitive = [k.cross_pkg_srcs for k in dep_kernels])
     if packages == None:
         packages = clean.records.to_list()
@@ -1495,7 +1495,7 @@ def modular_executable_kernel(
         # would have, so the worker gets the same `--record` arguments from
         # the depset that it would from the list. A clean closure with no
         # record has an empty index.
-        entry_packages = ([], clean.records) if clean.index else []
+        entry_packages = ([], clean.records) if clean.keys else []
     else:
         entry_packages = (packages, depset()) if packages else packages
     entry = ctx.actions.declare_directory(ctx.label.name + ".entry.kmod")
