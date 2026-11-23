@@ -89,9 +89,12 @@ def _defines_files_test_impl(ctx):
         for define in [_VISIBLE_DEFINE, _OVERRIDDEN_DEFINE]:
             asserts.true(env, "-D" + define in argv, "expected -D%s in kernel argv, got %s" % (define, argv))
         if flagfiles and "@" + flagfiles[0] in argv:
+            # Behaviour, not layout: the JSON file and `defines` both set
+            # OVERRIDDEN, and the front end takes the last `-D` of a key, so
+            # this order is what makes the explicit value win.
             asserts.true(
                 env,
-                argv.index("@" + flagfiles[0]) < argv.index("-D" + _VISIBLE_DEFINE),
+                argv.index("@" + flagfiles[0]) < argv.index("-D" + _OVERRIDDEN_DEFINE),
                 "the defines file must come before the explicit defines, which win",
             )
         else:
@@ -174,9 +177,13 @@ def _android_it_defines_files_test_impl(ctx):
                 "secret_from_json" in arg,
                 "secret value leaked into Android app kernel argv %s" % arg,
             )
+
+        # Behaviour, not layout: the JSON file and `defines` both set
+        # OVERRIDDEN, and the front end takes the last `-D` of a key, so this
+        # order is what makes the explicit value win.
         asserts.true(
             env,
-            argv.index("@" + generated_flagfile) < argv.index("-D" + _VISIBLE_DEFINE),
+            argv.index("@" + generated_flagfile) < argv.index("-D" + _OVERRIDDEN_DEFINE),
             "expected the generated flagfile before the explicit define in Android app kernel argv",
         )
     return analysistest.end(env)
@@ -253,7 +260,7 @@ def defines_files_test_suite(name):
         package_name = _PACKAGE,
         platform = "android",
         srcs = [_MAIN],
-        defines = [_VISIBLE_DEFINE],
+        defines = [_VISIBLE_DEFINE, _OVERRIDDEN_DEFINE],
         defines_files = [":_defines_files_fixture_json"],
         deps = ["//flutter/tests/linux_integration_dep:flutter_test_dep"],
         tags = ["manual"],

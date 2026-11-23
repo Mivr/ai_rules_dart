@@ -1,0 +1,10 @@
+load("//dart:defs.bzl", "dart_library")
+
+# Its own package, so the closure of the executables above has one owner per
+# package name and root: a clean closure (see `clean_closure`).
+dart_library(
+    name = "base_lib",
+    package_name = "executable_defines_base",
+    srcs = ["lib/base_lib.dart"],
+    visibility = ["//dart/tests:__subpackages__"],
+)

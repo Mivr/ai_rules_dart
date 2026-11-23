@@ -14,11 +14,15 @@ actions. The tests pin:
 - a test with other `defines`, or none, compiles the same number of modules,
   none shared with the first;
 - an `exe` binary, which compiles from sources, leaves its closure in the
-  configuration of a binary without `defines`.
+  configuration of a binary without `defines`;
+- the closure facts a test with `defines` reads through its `deps` edge are
+  those of the transitioned configuration, and still clean, so it keeps the
+  clean-closure fast path (`clean_closure`, `executable_package`).
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
-load("//dart:providers.bzl", "DartKernelInfo")
+load("//dart:providers.bzl", "DartInfo", "DartKernelInfo")
+load("//dart/private:closure_facts.bzl", "clean_closure", "facts_of")
 
 visibility(["//dart/tests/..."])
 
@@ -29,6 +33,7 @@ _ModulesInfo = provider(
     fields = {
         "kmods": "depset of module directory paths.",
         "argv": "depset of (label, its `-D`s joined by spaces) for each library's module compile.",
+        "clean": "Whether every direct dependency's closure facts are clean, as `executable_package` reads them.",
     },
 )
 
@@ -41,7 +46,9 @@ def _modules_aspect_impl(target, ctx):
         for action in target.actions:
             if action.mnemonic == "DartKernel":
                 argv.append((str(target.label), " ".join([a for a in action.argv if a.startswith("-D") and not a.startswith("-Ddart.vm.")])))
+    clean = all([DartInfo in d and clean_closure(facts_of(d[DartInfo])) != None for d in deps])
     return [_ModulesInfo(
+        clean = clean,
         kmods = depset(kmods, transitive = [d[_ModulesInfo].kmods for d in deps if _ModulesInfo in d]),
         argv = depset(argv, transitive = [d[_ModulesInfo].argv for d in deps if _ModulesInfo in d]),
     )]
@@ -56,6 +63,7 @@ _CompareInfo = provider(doc = "Each executable's modules, by target name.", fiel
 def _compare_impl(ctx):
     return [_CompareInfo(executables = {
         t.label.name: struct(
+            clean = t[_ModulesInfo].clean,
             kmods = sorted(t[_ModulesInfo].kmods.to_list()),
             argv = t[_ModulesInfo].argv.to_list(),
         )
@@ -82,6 +90,8 @@ def _shares_test_impl(ctx):
         asserts.equals(env, "", defines, "%s: a test without defines adds none" % label)
     for label, defines in e["kernel_a"].argv:
         asserts.equals(env, "-DA=1 -DB=2", defines, "%s: the module must take the binary's defines" % label)
+    for name in ["test_a", "test_b", "test_plain", "kernel_a"]:
+        asserts.true(env, e[name].clean, "%s: the closure facts behind its deps edge must stay clean" % name)
     asserts.equals(
         env,
         e["exe_plain"].kmods,

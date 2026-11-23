@@ -8,16 +8,10 @@ load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 package(default_visibility = ["//dart/tests:__pkg__"])
 
 dart_library(
-    name = "base_lib",
-    package_name = "executable_defines_fixture",
-    srcs = ["lib/base_lib.dart"],
-)
-
-dart_library(
     name = "env_lib",
     package_name = "executable_defines_fixture",
     srcs = ["lib/env_lib.dart"],
-    deps = [":base_lib"],
+    deps = ["//dart/tests/executable_defines_fixture/base:base_lib"],
 )
 
 [
