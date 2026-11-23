@@ -57,7 +57,8 @@ void main() {
 
   expect(
     'APP_DEV_DILL',
-    ['DEFCFG_FOO_DEV/DEFCFG_FILE_DEV/defcfgdev'],
+    // The define's value holds a comma, and the module took it whole.
+    ['DEFCFG_FOO_DEV,comma/DEFCFG_FILE_DEV/defcfgdev'],
     ['DEFCFG_FOO_PROD', 'DEFCFG_FILE_PROD'],
   );
   expect(

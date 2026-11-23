@@ -190,7 +190,8 @@ flutter_application(
     name = "app_defines_dev",
     package_name = "linux_example",
     dart_defines = "//defines_config:dev",
-    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV"],
+    # The value holds a comma: a module takes a define whole.
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
     flavor = "defcfgdev",
     main = "lib/main_defines.dart",
     tags = ["manual"],
@@ -207,7 +208,8 @@ flutter_application(
     name = "app_defines_dev_twin",
     package_name = "linux_example",
     dart_defines = "//defines_config:dev",
-    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV"],
+    # The value holds a comma: a module takes a define whole.
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
     flavor = "defcfgdev",
     main = "lib/main_defines.dart",
     tags = ["manual"],
@@ -239,7 +241,8 @@ flutter_application(
 flutter_application(
     name = "app_defines_files",
     package_name = "linux_example",
-    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV"],
+    # The value holds a comma: a module takes a define whole.
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
     defines_files = ["//defines_config:dev.json"],
     flavor = "defcfgdev",
     main = "lib/main_defines.dart",
