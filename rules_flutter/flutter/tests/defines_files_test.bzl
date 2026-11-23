@@ -4,9 +4,11 @@ Pins that:
 - `defines_files` and `define_flagfiles` become one `dart_defines` target,
   `<name>_dart_defines`, whose `FlutterDartDefines` action reads the declared
   files and writes one `.dart_defines` file;
-- the `FlutterKernelCompile` action takes that file as an input and carries
-  `@<file>` on its command line before the explicit `-D` defines, so those win,
-  while secret values from the files stay out of the argv;
+- the compile of the app's sources takes that file as an input and names it on
+  its command line (`@<file>` before the explicit `-D` defines in a
+  whole-program compile, `--define-file` in a debug entry module, whose
+  compiler puts the file's defines first), so the explicit ones win, while
+  secret values from the files stay out of the argv;
 - without `defines_files`, no defines file reaches the compile and the argv is
   unchanged from the baseline;
 - the Android integration-test app still runs its own `FlutterDefinesFiles`
@@ -40,17 +42,17 @@ _VISIBLE_DEFINE = "EXPLICIT_DEFINE=visible_val"
 _OVERRIDDEN_DEFINE = "OVERRIDDEN=explicit_wins"
 
 def _kernel_action(env):
-    """The target's one whole-program kernel compile action."""
+    """The action that compiles the target's own sources: the whole-program compile, or a debug entry module."""
     actions = [
         action
         for action in analysistest.target_actions(env)
-        if action.mnemonic == "FlutterKernelCompile"
+        if action.mnemonic == "FlutterKernelCompile" or (action.mnemonic == "DartKernel" and "--no-drop" in action.argv)
     ]
     asserts.equals(
         env,
         1,
         len(actions),
-        "expected one FlutterKernelCompile, got %s" %
+        "expected one kernel compile of the app's sources, got %s" %
         [action.mnemonic for action in actions],
     )
     return actions[0] if actions else None
@@ -97,8 +99,12 @@ def _defines_files_test_impl(ctx):
                 argv.index("@" + flagfiles[0]) < argv.index("-D" + _OVERRIDDEN_DEFINE),
                 "the defines file must come before the explicit defines, which win",
             )
+        elif flagfiles and flagfiles[0] in argv:
+            # A debug entry module reads the file with `--define-file`; the
+            # module compiler puts its defines before every `-D`, which win.
+            asserts.equals(env, "--define-file", argv[argv.index(flagfiles[0]) - 1])
         else:
-            asserts.true(env, False, "expected @<dart_defines> in kernel argv, got %s" % argv)
+            asserts.true(env, False, "expected the dart_defines file in kernel argv, got %s" % argv)
     return analysistest.end(env)
 
 def _dart_defines_action_test_impl(ctx):

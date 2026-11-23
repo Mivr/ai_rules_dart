@@ -204,9 +204,8 @@ def _own_kernel_providers(ctx, info):
     The rule compiles its module once, and every aspect evaluation shares it:
     the aspect returns no providers of its own for a target that already
     carries this one, so the one registration serves them all. A library with
-    no module — opaque, disabled, or unresolvable against its dependencies —
-    provides nothing, and the aspect falls back to its historical behavior
-    for it.
+    no module — opaque, or unresolvable against its dependencies — provides
+    nothing, and the aspect states why for it (`DartKernelInfo.not_modular`).
     """
     module_inputs = library_module_inputs(ctx.attr, ctx.files, info)
     kernel_info = library_kernel_info(
@@ -220,7 +219,7 @@ def _own_kernel_providers(ctx, info):
         ),
         kernel_compile_settings(product = library_vm_product(ctx)),
         library_kernel_options(
-            opaque = module_inputs.opaque,
+            opaque = module_inputs.opaque_reason,
             rule_deps = module_inputs.rule_deps,
             unused_inputs = True,
         ),

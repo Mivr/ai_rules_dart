@@ -187,9 +187,7 @@ addition is `meta.bazel_flags: []`. With flags, `ios-sol.json`
 `summary.md` line) records the accepted tokens.
 
 Use it for A/B runs of flags that change how a build runs but not which
-rules it uses: the opt-in incremental kernel worker
-(`--@rules_flutter//flutter:incremental_kernel`, a persistent worker
-whose effect only the warm-server edit flows of sol mode can show), or
+rules it uses, such as
 `--host_compilation_mode=fastbuild` on the debug clean build, where the
 host-tool builds may dominate (they are an exec-configuration C++ build of
 the Swift worker, among others; the share is measured, not assumed:

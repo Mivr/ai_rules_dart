@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
-load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_source_set", "dart_test")
 load("//dart:toolchain.bzl", "dart_toolchain")
 load("//dart/pub/tests:language_version_test.bzl", "language_version_test_suite")
 load("//dart/pub/tests:link_hook_test.bzl", "link_hook_test_suite")
@@ -56,6 +56,7 @@ load(":library_test.bzl", "library_test_suite")
 load(":modular_chain_test.bzl", "modular_chain_test_suite")
 load(":module_compiler_pin_test.bzl", "module_compiler_pin_test_suite")
 load(":native_assets_test.bzl", "native_assets_test_suite")
+load(":one_debug_path_test.bzl", "refused_unpinned_sdk_test", "source_dir_module_test")
 load(":pinned_sources_test.bzl", "pinned_sources_test_suite")
 load(":project_staging_test.bzl", "project_staging_test_suite")
 load(":provider_shape_test.bzl", "provider_shape_probe")
@@ -153,9 +154,13 @@ analyzer_summary_test_suite(name = "analyzer_summary_version_test")
 
 analyzer_summary_tool_test_suite(name = "analyzer_summary_tool")
 
+# A library under an SDK without a module compiler fails at analysis, so the
+# synthetic SDK names a stand-in one: these toolchains serve analysis tests
+# only, which run no module compile.
 dart_toolchain(
     name = "synthetic_3_12_dart_toolchain",
     dart = "//dart/tests/analyze_mode_parity_fixture/sdk_3_12:dart-sdk/bin/dart",
+    module_compiler = "//dart/tests/analyze_mode_parity_fixture/sdk_3_12:dart-sdk/bin/dart",
     sdk_root = "//dart/tests/analyze_mode_parity_fixture/sdk_3_12:sdk_root",
     tags = ["manual"],
     version = "3.12.0",
@@ -173,9 +178,13 @@ toolchain(
     toolchain_type = "//dart:toolchain_type",
 )
 
+# A library under an SDK without a module compiler fails at analysis, so the
+# synthetic SDK names a stand-in one: these toolchains serve analysis tests
+# only, which run no module compile.
 dart_toolchain(
     name = "synthetic_3_15_dart_toolchain",
     dart = "//dart/tests/analyze_mode_parity_fixture/sdk:dart-sdk/bin/dart",
+    module_compiler = "//dart/tests/analyze_mode_parity_fixture/sdk:dart-sdk/bin/dart",
     sdk_root = "//dart/tests/analyze_mode_parity_fixture/sdk:sdk_root",
     tags = ["manual"],
     version = "3.15.0",
@@ -191,6 +200,44 @@ toolchain(
     name = "synthetic_3_15_target_toolchain",
     toolchain = ":synthetic_3_15_dart_toolchain",
     toolchain_type = "//dart:toolchain_type",
+)
+
+# An SDK whose version has no module compiler: a library under it fails at
+# analysis, naming the version.
+dart_toolchain(
+    name = "synthetic_no_compiler_dart_toolchain",
+    dart = "//dart/tests/analyze_mode_parity_fixture/sdk_3_12:dart-sdk/bin/dart",
+    sdk_root = "//dart/tests/analyze_mode_parity_fixture/sdk_3_12:sdk_root",
+    tags = ["manual"],
+    version = "3.12.0",
+)
+
+toolchain(
+    name = "synthetic_no_compiler_exec_toolchain",
+    toolchain = ":synthetic_no_compiler_dart_toolchain",
+    toolchain_type = "//dart:exec_tools_toolchain_type",
+)
+
+toolchain(
+    name = "synthetic_no_compiler_target_toolchain",
+    toolchain = ":synthetic_no_compiler_dart_toolchain",
+    toolchain_type = "//dart:toolchain_type",
+)
+
+dart_library(
+    name = "unpinned_sdk_library",
+    package_name = "unpinned_sdk_library",
+    srcs = ["lib/direct_model.dart"],
+    tags = ["manual"],
+)
+
+refused_unpinned_sdk_test(
+    name = "unpinned_sdk_library_test",
+    size = "small",
+    messages = [
+        "//dart/tests:unpinned_sdk_library compiles as kernel modules, but the module compiler cannot be built for Dart SDK 3.12.0",
+    ],
+    target_under_test = ":unpinned_sdk_library",
 )
 
 analyze_mode_parity_test_suite(name = "analyze_mode_parity_test")
@@ -278,6 +325,28 @@ instrumented_files_test(
         "data_lib.dart",
     ],
     target_under_test = "//dart/tests/instrumented_files_fixture:lib",
+)
+
+# A `srcs_dir` library compiles a module: the compiler finds the directory's
+# files when it runs.
+dart_source_set(
+    name = "source_dir_set",
+    srcs = ["lib/direct_model.dart"],
+    tags = ["manual"],
+)
+
+dart_library(
+    name = "source_dir_library",
+    package_name = "source_dir_fixture",
+    srcs_dir = ":source_dir_set",
+    tags = ["manual"],
+)
+
+source_dir_module_test(
+    name = "srcs_dir_module_test",
+    size = "small",
+    target_under_test = ":source_dir_library",
+    uri = "package:source_dir_fixture/",
 )
 
 instrumented_files_test(
@@ -370,14 +439,16 @@ dart_test(
 # `//dart:refused_dart_libraries`: the check actions of an executable and of a
 # source-set library carry `--refused-library` only when the setting is set, and
 # a malformed entry fails analysis.
+# A binary that compiles from sources (`modular_kernel = False`) checks its
+# closure with `DartImportCheck` actions; a modular one checks inside its modules.
 dart_binary(
     name = "refused_subject",
     main = "bin/refused_main.dart",
+    modular_kernel = False,
     tags = ["manual"],
 )
 
-# A library that states no package is opaque: it compiles no
-# module, so the aspect gives it its own `DartImportCheck` action.
+# A library checks its imports inside its module compile.
 dart_library(
     name = "refused_library_subject",
     srcs = ["lib/direct_model.dart"],

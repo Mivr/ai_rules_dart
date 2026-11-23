@@ -7,8 +7,12 @@ flutter_application.bzl). Supports macOS/iOS (Mach-O .dylib) and other
 platforms (ELF .so).
 """
 
-load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "KERNEL_COMPILE_ATTRS", "PLATFORM_CONSTRAINT_ATTRS", "flutter_build_mode", "flutter_compile_kernel", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
+load("@rules_dart//dart:providers.bzl", "DartInfo")
+load("@rules_dart//dart:utils.bzl", "MODULAR_KERNEL_ATTRS")
+load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "FLUTTER_DEPS_DOC", "KERNEL_COMPILE_ATTRS", "PLATFORM_CONSTRAINT_ATTRS", "flutter_build_mode", "flutter_compile_kernel", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
 load("//flutter/private:flutter_aot_compile.bzl", "flutter_aot_elf_action", "flutter_aot_gen_snapshot_flags", "flutter_aot_macho_action", "macho_snapshot_options")
+load("//flutter/private:flutter_defines_files.bzl", "debug_defines_transition")
+load("//flutter/private:flutter_kernel_module.bzl", "flutter_kernel_module_aspect")
 load("//flutter/private:platform_constraints.bzl", "target_platform_from_constraints")
 
 visibility(["//flutter/..."])
@@ -141,7 +145,14 @@ _AOT_ATTRS = KERNEL_COMPILE_ATTRS | {k: v for k, v in FLUTTER_APPLICATION_ATTRS.
     "split_debug_info",
     "extra_gen_snapshot_options",
     "min_os_version",
-)} | {
+)} | MODULAR_KERNEL_ATTRS | {
+    # A debug build returns the JIT kernel, which is the entry module linked with these modules.
+    "deps": attr.label_list(
+        doc = FLUTTER_DEPS_DOC,
+        providers = [DartInfo],
+        aspects = [flutter_kernel_module_aspect],
+        cfg = debug_defines_transition,
+    ),
     "analyze_size": attr.bool(
         default = False,
         doc = (

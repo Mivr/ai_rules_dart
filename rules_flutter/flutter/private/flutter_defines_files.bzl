@@ -216,7 +216,6 @@ dart_defines = rule(
 # Defines as configuration.
 
 _MODE = "//command_line_option:compilation_mode"
-_MODULAR_APP = str(Label("//flutter/private:debug_modular_app"))
 _SETTINGS = [EXECUTABLE_DEFINES_SETTING, EXECUTABLE_DEFINES_FILE_SETTING]
 
 def own_dart_env(defines, flavor):
@@ -242,19 +241,6 @@ def _target_settings(attr):
     dart_defines = getattr(attr, "dart_defines", None)
     return executable_defines_settings(own_dart_env(attr.defines, _attr_flavor(attr)), dart_defines)
 
-def _app_defines_impl(settings, attr):
-    # An application compiles modules only in a debug build with the modular flag on; otherwise its `deps`
-    # keep the default configuration and the whole-program compile reads the attributes itself.
-    if str(settings[_MODE]) == "dbg" and settings[_MODULAR_APP]:
-        return _target_settings(attr)
-    return executable_defines_settings()
-
-app_defines_transition = transition(
-    implementation = _app_defines_impl,
-    inputs = [_MODE, _MODULAR_APP],
-    outputs = _SETTINGS,
-)
-
 def _debug_defines_impl(settings, attr):
     if str(settings[_MODE]) == "dbg":
         return _target_settings(attr)
@@ -266,6 +252,11 @@ debug_defines_transition = transition(
     inputs = [_MODE],
     outputs = _SETTINGS,
 )
+
+# `flutter_application`: a debug build compiles modules, so the app's defines, flavor and `dart_defines` are the
+# configuration of its `deps`; in profile and release its `deps` keep the default configuration and the
+# whole-program compile reads the attributes itself.
+app_defines_transition = debug_defines_transition
 
 def _defines_impl(_settings, attr):
     return _target_settings(attr)

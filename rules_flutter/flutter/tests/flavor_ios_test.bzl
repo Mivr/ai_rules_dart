@@ -98,6 +98,14 @@ def _by_mnemonic(actions, mnemonic):
     """Filters `actions` to those matching `mnemonic`."""
     return [a for a in actions if a.mnemonic == mnemonic]
 
+def _app_compiles(actions):
+    """The compiles of the application's own sources: a whole-program compile, or a debug entry module."""
+    return [
+        a
+        for a in actions
+        if a.mnemonic == "FlutterKernelCompile" or (a.mnemonic == "DartKernel" and "--no-drop" in a.argv)
+    ]
+
 def _input_paths(action):
     """Short paths of all inputs to `action`."""
     return [f.short_path for f in action.inputs.to_list()]
@@ -111,8 +119,8 @@ def _written_content(env, actions, suffix):
 def _assert_compile_defines(env, actions, flavor, mode):
     """Checks the single Dart kernel (and AOT) compile in the iOS target's graph."""
     other = _other(flavor)
-    compiles = _by_mnemonic(actions, "FlutterKernelCompile")
-    asserts.equals(env, 1, len(compiles), "expected exactly one FlutterKernelCompile")
+    compiles = _app_compiles(actions)
+    asserts.equals(env, 1, len(compiles), "expected exactly one compile of the application's sources")
     argv = compiles[0].argv if compiles else []
     asserts.true(env, "-DFLUTTER_APP_FLAVOR=" + flavor in argv, "missing %s define in %s" % (flavor, argv))
     asserts.false(env, "-DFLUTTER_APP_FLAVOR=" + other in argv, "unexpected %s define in %s" % (other, argv))
@@ -248,7 +256,7 @@ def _ios_slice_test_impl(ctx):
     flavor = ctx.attr.flavor
     mode = ctx.attr.mode
 
-    asserts.equals(env, 1, len(_by_mnemonic(actions, "FlutterKernelCompile")), "expected one FlutterKernelCompile")
+    asserts.equals(env, 1, len(_app_compiles(actions)), "expected one compile of the application's sources")
     _assert_no_own_dart_or_assets(env)
     _assert_own_flavor_files(env, tut, ctx.attr.prefix, flavor)
     _assert_compile_defines(env, actions, flavor, mode)
@@ -466,7 +474,8 @@ def _declare_fixtures(name):
     flutter_library(
         name = name + "_fixture_lib",
         package_name = _PACKAGE,
-        srcs = [_MAIN],
+        # Not the application's `main`: one source belongs to one target.
+        srcs = ["lib/web_fixture_main.dart"],
         pkg_assets = {":%s_%s.txt" % (name, s): "assets/%s.txt" % s for s in _FLAVORS + ["any"]},
         pkg_shaders = {":%s_%s.frag" % (name, s): "shaders/%s.frag" % s for s in _FLAVORS + ["any"]},
         pkg_asset_flavors = dict(
@@ -491,7 +500,8 @@ def _declare_flavor_targets(name, flavor):
         flavor = flavor,
         main = _MAIN,
         package_name = _PACKAGE,
-        deps = [":%s_fixture_lib" % name, ":%s_plugin_%s" % (name, flavor)],
+        # The plugin registrant replaces the SDK `flutter` module's lookup, so the closure holds `flutter`.
+        deps = [":%s_fixture_lib" % name, ":%s_plugin_%s" % (name, flavor), "//flutter/tests/registrant_twin_fixture/app"],
         tags = ["manual"],
     )
     flutter_ios_app(

@@ -11,7 +11,7 @@ load(
     "generate_stable_package_config",
     "target_dart_abi",
 )
-load("//dart/private:dart_compile.bzl", "dart_compile_action", "get_compilation_mode_flags")
+load("//dart/private:dart_compile.bzl", "dart_compile_action", "get_compilation_mode_flags", "split_compile_flags")
 load(
     "//dart/private:dart_kernel.bzl",
     "DartKernelInfo",
@@ -26,6 +26,51 @@ load("//dart/private:source_set.bzl", "executable_inputs")
 load("//dart/private/tools:compile_wrapper.bzl", "compile_wrapper_inputs")
 
 visibility(["//dart/..."])
+
+def kernel_flag_defines(flags):
+    """Splits a kernel binary's `dart_compile_flags` into its defines and the rest.
+
+    A `-D` or `--define` flag is a define like those in `defines`: the binary's
+    `deps` edge makes it the environment of every module (see
+    `_binary_defines_transition`), and the entry compiles with it. No other
+    flag can be given to a module compile.
+
+    Args:
+      flags: The `dart_compile_flags` list.
+
+    Returns:
+      `(defines, rest)`: the `KEY=VALUE` defines, in order, and every other flag.
+    """
+    split = split_compile_flags(flags)
+    if split.error != None:
+        fail(split.error)
+    defines = [f[len("-D"):] for f in split.front_end if f.startswith("-D")]
+    rest = [f for f in split.front_end if not f.startswith("-D")] + split.backend
+    return defines, rest
+
+def _kernel_native_assets(ctx, run):
+    """Writes a kernel binary's code-asset mapping.
+
+    The entry module embeds the mapping, and the VM resolves each `relative`
+    path in it against the linked kernel, which is `run.output`.
+
+    Args:
+      ctx: The rule context.
+      run: The `struct` `binary_compile` takes.
+
+    Returns:
+      `(native_assets_yaml, libs)`: the mapping File (None without code assets)
+      and the libraries it names.
+    """
+    if not run.resolved_assets:
+        return None, []
+    entries, libs = code_asset_entries(ctx.label, run.resolved_assets, run.output.dirname)
+    native_assets_yaml = ctx.actions.declare_file(ctx.label.name + ".native_assets.yaml")
+    ctx.actions.write(
+        output = native_assets_yaml,
+        content = generate_native_assets_yaml(target_dart_abi(ctx), entries),
+    )
+    return native_assets_yaml, libs
 
 def _modular_kernel_mode(ctx, compile_mode):
     """Whether `compile_mode` may take the modular path, before the eligibility facts.
@@ -193,7 +238,13 @@ def _linked_compile(ctx, run, kernel_tools):
     )
 
 def binary_compile(ctx, run):
-    """Compiles a binary, modularly when eligible. Returns the code-asset libs.
+    """Compiles a binary. Returns the code-asset libs.
+
+    A `kernel` binary compiles as modules and links them: that is its one path,
+    and a shape it cannot take fails here. `modular_kernel = False` compiles
+    from sources (only the rule set's own tools set it). `exe` and
+    `aot-snapshot` compile from sources, or link their modules with
+    `link_modules` when they can.
 
     Args:
       ctx: The rule context.
@@ -207,21 +258,25 @@ def binary_compile(ctx, run):
     Returns:
       The list of code-asset library Files.
     """
+    kernel = run.compile_mode == "kernel"
+    flag_defines, other_flags = kernel_flag_defines(ctx.attr.dart_compile_flags) if kernel else ([], ctx.attr.dart_compile_flags)
     kernel_tools = modular_executable_tools(
         ctx,
         run.own_files,
         run.own.record,
         kernel_mode = _modular_kernel_mode(ctx, run.compile_mode),
         resolved_assets = run.resolved_assets,
-        compile_flags = ctx.attr.dart_compile_flags,
+        compile_flags = other_flags,
         target_sdk = run.dart_sdk_info,
         closure = run.own.closure,
+        aot_link = not kernel,
     )
     if kernel_tools == None:
         return _source_compile(ctx, run)
-    if run.compile_mode != "kernel":
+    if not kernel:
         _linked_compile(ctx, run, kernel_tools)
         return []
+    native_assets_yaml, code_asset_libs = _kernel_native_assets(ctx, run)
     modular_executable_kernel(
         ctx,
         kernel_tools,
@@ -231,6 +286,7 @@ def binary_compile(ctx, run):
         run.output,
         kernel_compile_settings(),
         kernel_link_options(),
-        own_defines = ctx.attr.defines,
+        own_defines = ctx.attr.defines + flag_defines,
+        native_assets = native_assets_yaml,
     )
-    return []
+    return code_asset_libs

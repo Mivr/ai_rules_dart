@@ -47,6 +47,7 @@ def _flutter_toolchain_impl(ctx):
         dart = ctx.file.dart,
         dartaotruntime = ctx.file.dartaotruntime,
         dart_module_compiler = _dart_module_compiler(ctx),
+        dart_sdk_version = ctx.attr.dart_toolchain[platform_common.ToolchainInfo].dart_sdk_info.version if ctx.attr.dart_toolchain else None,
         gen_snapshot = ctx.file.gen_snapshot,
         flutter_tester = ctx.file.flutter_tester,
         frontend_server = ctx.file.frontend_server,

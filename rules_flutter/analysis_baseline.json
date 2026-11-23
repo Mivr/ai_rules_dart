@@ -114,26 +114,6 @@
     "process_requires_environment": 1,
     "unintended_html_in_doc_comment": 2
   },
-  "flutter/private/tools/incr_fkc_scratch.dart": {
-    "avoid_redundant_argument_values": 2
-  },
-  "flutter/private/tools/incr_fkc_server.dart": {
-    "async_return_with_no_await": 3,
-    "avoid_catching_errors": 3,
-    "comment_references": 3,
-    "discarded_futures": 1,
-    "process_requires_environment": 1,
-    "unnecessary_async": 1,
-    "unnecessary_raw_strings": 1
-  },
-  "flutter/private/tools/incr_fkc_worker.dart": {
-    "avoid_catches_without_on_clauses": 2,
-    "avoid_catching_errors": 1,
-    "no_wall_clock_in_actions": 1,
-    "unintended_html_in_doc_comment": 3,
-    "unnecessary_raw_strings": 1,
-    "unreachable_from_main": 1
-  },
   "flutter/private/tools/ios_simulator_boot.dart": {
     "avoid_dynamic_calls": 2,
     "avoid_print": 1,
@@ -277,14 +257,6 @@
   "flutter/private/tools/test/generate_asset_manifest_test.dart": {
     "leading_newlines_in_multiline_strings": 6,
     "use_raw_strings": 4
-  },
-  "flutter/private/tools/test/incr_fkc_scratch_test.dart": {
-    "avoid_redundant_argument_values": 1,
-    "no_dynamic_casts": 10,
-    "unnecessary_raw_strings": 2
-  },
-  "flutter/private/tools/test/incr_fkc_worker_test.dart": {
-    "prefer_if_elements_to_conditional_expressions": 1
   },
   "flutter/private/tools/test/ios_simulator_boot_test.dart": {
     "async_return_with_no_await": 1,
@@ -1682,23 +1654,6 @@
   },
   "tools/e2e_runner/lib/staging.dart": {
     "process_requires_environment": 1
-  },
-  "tools/incr_kernel_identity/identity.dart": {
-    "avoid_catching_errors": 1,
-    "avoid_print": 11,
-    "comment_references": 2,
-    "no_wall_clock_in_actions": 1,
-    "prefer_single_quotes": 2,
-    "process_requires_environment": 3,
-    "unnecessary_raw_strings": 2,
-    "use_raw_strings": 4
-  },
-  "tools/incr_kernel_identity/incr_kernel_identity.dart": {
-    "avoid_print": 1
-  },
-  "tools/incr_kernel_identity/test/identity_test.dart": {
-    "comment_references": 1,
-    "prefer_const_declarations": 1
   },
   "tools/ios_screenshot/lib/python_host.dart": {
     "async_return_with_no_await": 1,

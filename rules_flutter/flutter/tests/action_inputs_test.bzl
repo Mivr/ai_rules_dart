@@ -275,9 +275,9 @@ def _aot_target_inputs_test_impl(ctx):
     return analysistest.end(env)
 
 def _aot_target_dbg_inputs_test_impl(ctx):
-    """In `-c dbg`, `flutter_aot_target` skips `gen_snapshot` and returns the kernel `.dill`."""
+    """In `-c dbg`, `flutter_aot_target` skips `gen_snapshot` and returns the linked kernel `.dill`."""
     env = analysistest.begin(ctx)
-    compile_action = _find_action(env, ["FlutterKernelCompile"])
+    compile_action = _find_action(env, ["DartKernel"])
     aot_actions = [
         a
         for a in analysistest.target_actions(env)
@@ -285,20 +285,26 @@ def _aot_target_dbg_inputs_test_impl(ctx):
     ]
     asserts.equals(env, [], aot_actions, "debug flutter_aot_target must not run gen_snapshot")
 
-    # Whole-program fallback: with modular builds off, the debug compile
-    # consumes the app sources directly and never stages modular artifacts.
-    compile_inputs = _input_paths(compile_action)
+    # The debug kernel is the entry module, which compiles the app's own
+    # sources against its dependencies' outlines, linked with their modules.
+    entry_inputs = _input_paths(compile_action)
     _assert_some_path_contains(
         env,
-        compile_inputs,
+        entry_inputs,
         ["language_version_main.dart"],
-        "debug flutter_aot_target FlutterKernelCompile",
+        "debug flutter_aot_target entry module",
     )
-    _assert_no_path_contains(
+    asserts.equals(
         env,
-        compile_inputs,
-        [".kmod", ".koutline"],
-        "debug flutter_aot_target FlutterKernelCompile",
+        [],
+        [a for a in analysistest.target_actions(env) if a.mnemonic == "FlutterKernelCompile"],
+        "debug flutter_aot_target runs no whole-program compile",
+    )
+    asserts.equals(
+        env,
+        1,
+        len([a for a in analysistest.target_actions(env) if a.mnemonic == "DartKernelLink"]),
+        "debug flutter_aot_target links its modules",
     )
     outputs = [f.basename for f in analysistest.target_under_test(env)[DefaultInfo].files.to_list()]
     asserts.equals(env, ["_inputs_aot_target.dill"], outputs)
@@ -720,6 +726,9 @@ def _synthetic_dart_sdk_toolchain_impl(ctx):
         dart = dart,
         sdk_root = None,
         version = "3.0.0-synthetic",
+        # A library under an SDK without a module compiler fails at analysis; these
+        # analysis tests run no module compile, so an empty file stands in for it.
+        module_compiler = gen_kernel,
         tool_files = compile_files,
         compile_files = compile_files,
         runtime_files = runtime_files,

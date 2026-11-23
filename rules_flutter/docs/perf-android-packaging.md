@@ -114,7 +114,7 @@ Reading the table:
 To measure them, run perf-linux.yaml with `ab=flags` and `bazel_flags` set to:
 
 ```text
---@rules_flutter//flutter/private:debug_modular_app=true --output_groups=payload_apk --experimental_profile_include_primary_output
+--output_groups=payload_apk --experimental_profile_include_primary_output
 ```
 
 Then run the tool on the downloaded traces, with the APK directory and the

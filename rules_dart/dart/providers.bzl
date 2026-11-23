@@ -239,14 +239,16 @@ DartKernelInfo = provider(
     doc = """A library's module, and the modules its closure links against.
 
 Read off any `dart_library`, and forwarded by a target that wraps one (see
-`dart_test_package`). A target that does not provide it, or whose closure is not
-modular, makes every executable that depends on it compile whole-program.""",
+`dart_test_package`). A kernel executable compiles only as modules: one that
+depends on a target that does not provide it, or whose closure is not modular,
+fails, naming the library and `not_modular`.""",
     fields = {
         "kmod": "File or None: this library's module, a directory of one kernel per component of its sources and an `index.json` that lists them. None for a façade with no sources of its own, and when no module is compiled.",
         "koutline": "File or None: this library's outline directory: `outline.dill` (the module without executable code, which a dependent compiles against), the sources the module left out under `sources/`, and an `index.json` naming both. None for a façade with no sources of its own, and when no module is compiled.",
         "transitive_kmods": "depset[File], postorder: the module directories of this library and every transitive dependency, dependencies first. An executable's link reads their indexes.",
         "transitive_koutlines": "depset[File], postorder: the outline module directories of this library and every transitive dependency, dependencies first. A dependent module or entry module names them as `--input-kmod`.",
-        "modular": "bool: Whether this closure compiles and links module by module. False when anything in it cannot, and the consumer then compiles whole-program.",
+        "modular": "bool: Whether this closure compiles and links module by module. False when anything in it cannot; a kernel executable that reaches it then fails with `not_modular`.",
+        "not_modular": "str or None: why the closure is not modular, naming the library that compiles no module. None when it is modular.",
         "closure_excluded": "depset[File]: the `.vm_excluded.txt` sidecar of this library's module and of every module it links against: each lists the sources its module left out for the target, and why. A report; no compile reads it.",
         "cross_pkg_srcs": "depset[File]: transitive `.dart` sources needed only when a cross-package cycle excludes sources from modular compilation.",
         "owned": "depset[(str, str)]: a `(label, short_path)` for each source of this library and of every library it depends on. An executable finds a source that two libraries list, see `duplicated_source`.",

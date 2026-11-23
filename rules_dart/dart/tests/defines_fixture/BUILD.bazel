@@ -7,6 +7,12 @@ load(
     "with_dbg_compilation_mode",
     "with_extra_dart_defines",
 )
+load(
+    "//dart/tests:one_debug_path_test.bzl",
+    "modular_code_asset_test",
+    "modular_define_flag_test",
+    "refused_kernel_test",
+)
 
 # Two `dart_binary` targets differing only in whether they carry a code asset,
 # which adds a mapping to the kernel step. Both declare `defines`, and one a
@@ -246,4 +252,48 @@ dart_test(
     main = "aot_asserts_test.dart",
     visibility = ["//dart/tests:__pkg__"],
     deps = ["//dart/runfiles"],
+)
+
+# A kernel executable compiles modules and links them; nothing else builds its
+# kernel. Code assets ride the entry module, a `-D` in `dart_compile_flags` is
+# a define, and any other front-end flag fails the build.
+modular_code_asset_test(
+    name = "code_asset_modular_test",
+    size = "small",
+    target_under_test = ":test_defines_with_code_asset_test",
+)
+
+dart_binary(
+    name = "kernel_define_flag",
+    compile_mode = "kernel",
+    dart_compile_flags = ["-DFLAG=fe"],
+    main = "assert_channel.dart",
+    tags = ["manual"],
+    deps = [":comma_lib"],
+)
+
+modular_define_flag_test(
+    name = "kernel_define_flag_test",
+    size = "small",
+    define = "-DFLAG=fe",
+    target_under_test = ":kernel_define_flag",
+)
+
+dart_binary(
+    name = "kernel_asserts_flag",
+    compile_mode = "kernel",
+    dart_compile_flags = ["--enable-asserts"],
+    main = "assert_channel.dart",
+    tags = ["manual"],
+    deps = [":comma_lib"],
+)
+
+refused_kernel_test(
+    name = "kernel_asserts_flag_test",
+    size = "small",
+    messages = [
+        "//dart/tests/defines_fixture:kernel_asserts_flag compiles as kernel modules, and cannot",
+        "`dart_compile_flags` entry `--enable-asserts` cannot be given to a kernel module compile",
+    ],
+    target_under_test = ":kernel_asserts_flag",
 )

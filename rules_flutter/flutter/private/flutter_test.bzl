@@ -52,7 +52,6 @@ load(
     "MODULAR_KERNEL_ATTRS",
     "MODULAR_KERNEL_TOOLCHAINS",
     "collect_packages",
-    "collect_transitive_srcs",
     "dart_analyzable_info_with_package",
     "dart_package_identity",
     "derive_lib_root",
@@ -61,8 +60,6 @@ load("//flutter:providers.bzl", "FlutterInfo")
 load(
     "//flutter/private:app_entrypoint.bzl",
     "app_main_location",
-    "app_scheme_location",
-    "compile_kernel_package_config",
     "synthesize_app_package",
 )
 load(
@@ -80,22 +77,13 @@ load(
     "flutter_tester_shader_aspect",
     "host_target_arch",
     "make_bundle_inputs",
-    "merge_dart_defines",
-)
-load(
-    "//flutter/private:flutter_compile.bzl",
-    "flutter_kernel_compile_action",
-    "flutter_kernel_dills",
-    "flutter_kernel_options",
-    "flutter_kernel_outputs",
-    "flutter_kernel_sources",
 )
 load("//flutter/private:flutter_defines_files.bzl", "defines_transition")
 load(
     "//flutter/private:flutter_kernel_module.bzl",
     "compile_flutter_modular_test_kernel",
     "flutter_kernel_module_aspect",
-    "flutter_modular_test_tools",
+    "flutter_module_tools",
 )
 load("//flutter/private:flutter_native_assets.bzl", "bridge_dart_code_assets", "collect_bundled_code_asset_files", "write_native_assets_manifest")
 load(
@@ -217,70 +205,24 @@ def _flutter_test_sources(ctx):
     )
 
 def _flutter_test_kernel(ctx, flutter_sdk_info, sources, native_assets):
-    # Compile bootstrap+test to kernel modularly when eligible, falling back
-    # to whole-program compilation otherwise (e.g. per-test defines or code assets).
-    # Both paths compile against the debug platform dill with assertions enabled
-    # (`--enable-asserts` on `frontend_server`, and `AssertStatement` /
-    # `AssertInitializer` preservation in `.flutter.kmod` / `.flutter_entry.kmod`
-    # under `flutter_tester --enable-checked-mode`).
+    # The test's kernel is its entry module linked with its closure's modules, compiled against the
+    # debug platform dill with assertions kept (`AssertStatement` / `AssertInitializer` preserved in
+    # `.flutter.kmod` / `.flutter_entry.kmod`, run under `flutter_tester --enable-checked-mode`).
+    # A shape the modules cannot take fails at analysis; the code assets ride the entry module.
     kernel_dill = ctx.actions.declare_file(ctx.label.name + ".dill")
     own_files = [ctx.file.main] + [f for f in ctx.files.srcs if f != ctx.file.main]
-    modular_tools = flutter_modular_test_tools(
+    modular_tools = flutter_module_tools(ctx, flutter_sdk_info, own_files, sources.packages)
+    base_dill = compile_flutter_modular_test_kernel(
         ctx,
         flutter_sdk_info,
-        own_files,
+        modular_tools,
+        sources.bootstrap,
+        sources.staged_comparator,
+        sources.lib_root,
         sources.packages,
-        native_assets.list,
+        kernel_dill,
+        native_assets = native_assets.manifest if native_assets.list else None,
     )
-    base_dill = None
-    if modular_tools != None:
-        base_dill = compile_flutter_modular_test_kernel(
-            ctx,
-            flutter_sdk_info,
-            modular_tools,
-            sources.bootstrap,
-            sources.staged_comparator,
-            sources.lib_root,
-            sources.packages,
-            kernel_dill,
-        )
-    else:
-        all_srcs = list(ctx.files.srcs) + collect_transitive_srcs(ctx.attr.deps).to_list() + [
-            ctx.file.main,
-            sources.bootstrap,
-        ]
-        if sources.staged_comparator:
-            all_srcs.append(sources.staged_comparator)
-        pc = compile_kernel_package_config(
-            ctx,
-            sources.packages,
-            all_srcs,
-            roots = {ctx.attr.package_name: True} if ctx.attr.package_name else None,
-        )
-        flutter_kernel_compile_action(
-            ctx,
-            struct(
-                dartaotruntime = flutter_sdk_info.dartaotruntime,
-                kernel_filter_tool = ctx.executable._kernel_filter_tool,
-                frontend_server = flutter_sdk_info.frontend_server,
-                platform_dill = flutter_sdk_info.platform_kernel_dill,
-            ),
-            flutter_kernel_sources(
-                main = sources.bootstrap,
-                entrypoint_uri = app_scheme_location(sources.bootstrap).uri,
-                srcs = pc.srcs,
-                package_config = pc.config_file,
-                native_assets_manifest = native_assets.manifest,
-            ),
-            flutter_kernel_outputs(output = kernel_dill),
-            flutter_kernel_options(
-                aot = False,
-                defines = merge_dart_defines(ctx),
-                target = "flutter",
-            ),
-            flutter_kernel_dills(),
-        )
-
     return struct(
         kernel_dill = kernel_dill,
         base_dill = base_dill,
@@ -512,10 +454,6 @@ _TEST_ATTRS = {
         "shader_includes",
         "require_sksl_shaders",
         "_shader_compile_tool",
-        "_kernel_filter_tool",
-        "_incremental_kernel",
-        "_dev_incremental_serialization",
-        "_incr_worker_tool",
         "license_files",
         "tree_shake_icons",
         "_asset_bundle_tool",

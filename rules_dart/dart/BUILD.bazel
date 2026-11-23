@@ -132,20 +132,6 @@ label_flag(
     visibility = ["//visibility:public"],
 )
 
-# Whether kernel-mode executables (`dart_test` and `dart_binary(compile_mode = "kernel")`,
-# including `package:test`'s `test_runner`) compile modularly by default: each
-# `dart_library` compiles its own sources once into `.kmod`/`.koutline`, and the
-# executable compiles only its entry module and links reachable `.kmod` kernels.
-# Enabled by default (`build_setting_default = True`; `dart_binary.modular_kernel`
-# also defaults to `True`). When off, each kernel executable compiles its whole
-# closure into one kernel with `gen_kernel`:
-#   bazel test //... --@rules_dart//dart:modular_kernel=false
-bool_flag(
-    name = "modular_kernel",
-    build_setting_default = True,
-    visibility = ["//visibility:public"],
-)
-
 # This is the target rule authors should put in their "toolchains"
 # attribute in order to get a runtime for the correct platform.
 # See https://docs.bazel.build/versions/main/toolchains.html#writing-rules-that-use-toolchains

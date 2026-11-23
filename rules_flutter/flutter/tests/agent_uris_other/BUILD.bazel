@@ -8,4 +8,6 @@ flutter_kernel_target(
     main = "main.dart",
     tags = ["manual"],
     visibility = ["//flutter/tests:__pkg__"],
+    # The agent imports `flutter`: a program without it stages no agent.
+    deps = ["//flutter/tests/registrant_twin_fixture/app"],
 )

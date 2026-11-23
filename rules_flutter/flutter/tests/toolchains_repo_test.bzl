@@ -671,8 +671,8 @@ def _apple_debug_cross_succeeds_test_impl(ctx):
     mnemonics = [a.mnemonic for a in actions]
     asserts.true(
         env,
-        "FlutterKernelCompile" in mnemonics,
-        "Expected FlutterKernelCompile in debug mode, got: %s" % mnemonics,
+        "DartKernelLink" in mnemonics and "FlutterKernelCompile" not in mnemonics,
+        "Expected the debug kernel linked from modules, got: %s" % mnemonics,
     )
     asserts.false(
         env,

@@ -1,4 +1,4 @@
-"""A debug whole-program kernel compile names the agent files by constant URIs."""
+"""A debug kernel names the agent files by constant URIs; a release one has no agent."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//flutter/private:app_entrypoint.bzl", "app_scheme_rel_path")
@@ -26,13 +26,14 @@ def _sources(argv):
     return [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--source"]
 
 def _constant_uris_impl(ctx):
+    """A debug kernel's entry module compiles the registrant under the constant URI the SDK twin names."""
     env = analysistest.begin(ctx)
-    argv = _compile_argv(env)
-    asserts.true(env, _DEFINE + _REGISTRANT_URI in argv, "the define is the constant registrant URI: %r" % argv)
+    entries = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartKernel" and "--no-drop" in a.argv]
+    asserts.equals(env, 1, len(entries), "expected one entry module compile")
+    argv = entries[0].argv if entries else []
     sources = _sources(argv)
     asserts.true(env, _REGISTRANT_URI in sources, "the registrant must be a --source: %r" % sources)
-    kernels = [a for a in analysistest.target_actions(env) if a.mnemonic == "FlutterKernelCompile"]
-    paths = [f.path for a in kernels for f in a.inputs.to_list()]
+    paths = [f.path for a in entries for f in a.inputs.to_list()]
     for name in ["agent_extensions.dart", "native_agent_extensions.dart", "plugin_registrant.dart"]:
         asserts.true(
             env,
@@ -77,6 +78,8 @@ def agent_uris_test_suite(name):
         package_name = "inputs_fixture",
         main = "lib/language_version_main.dart",
         tags = ["manual"],
+        # The agent imports `flutter`: a program without it stages no agent.
+        deps = ["//flutter/tests/registrant_twin_fixture/app"],
     )
     flutter_kernel_target(
         name = "_agent_uris_kernel_aot",

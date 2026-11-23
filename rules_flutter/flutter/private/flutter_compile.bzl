@@ -5,7 +5,6 @@ Flutter compilation differs from vanilla Dart in that it uses:
 - The frontend_server_aot.dart.snapshot instead of `dart compile kernel`
 """
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//flutter:providers.bzl", "resolve_flutter_sdk_info")
 load("//flutter/private:app_entrypoint.bzl", "APP_SCHEME", "app_scheme_location", "app_scheme_rel_path", "stage_generated_inputs", "validate_filesystem_roots")
 load(
@@ -127,11 +126,10 @@ def _is_uint(value):
 def _reject_line_break(label, param, value):
     """Fails when an argv-bound caller string holds a line break.
 
-    The compile's argv reaches the worker through a `multiline` param file,
-    where one entry containing `\\n` becomes several argv elements — a
-    `_check_extra_flags` refusal the check never saw. Every caller-supplied
-    string on that path (flags, defines, roots, URIs, the target) must be
-    single-line, on the stock path and the worker path alike.
+    A line break in an argv entry splits into several argv elements once the
+    argv passes through a `multiline` param file — a `_check_extra_flags`
+    refusal the check never saw. Every caller-supplied string (flags,
+    defines, roots, URIs, the target) must be single-line.
 
     Args:
         label: The calling target's label, for the message.
@@ -200,51 +198,6 @@ def _check_extra_flags(label, extra_flags):
         else:
             fail("%s: extra_flags %r is not allowed: only %s may be passed; flags naming files or side effects (`--packages`, `--*-dill`, `--platform`, `--filesystem-root`, `--initialize-from-dill`, `--far-manifest` and similar) are refused" % (label, flag, ", ".join(["--" + f for f in sorted(_EXTRA_FLAGS_ALLOWED.keys())])))
 
-def _is_incr_worker(ctx, aot, target, from_dill, import_dill, recorded_uses):
-    """Whether the compile runs through the incremental worker.
-
-    On by default for debug builds (`-c dbg`) and off in every other
-    compilation mode; `--@rules_flutter//flutter:incremental_kernel=false`
-    restores the one-shot action. JIT whole-program compiles only
-    (`target == "flutter"`, non-AOT) — never AOT, web (`dartdevc`),
-    `from_dill`, `import_dill` or `recorded_uses` compiles.
-    """
-    return (
-        ctx.attr._incremental_kernel[BuildSettingInfo].value and
-        ctx.var["COMPILATION_MODE"] == "dbg" and
-        not aot and target == "flutter" and
-        from_dill == None and import_dill == None and recorded_uses == None
-    )
-
-def _is_dev_incremental(ctx, incr_worker):
-    """Whether this worker compile keeps `frontend_server`'s incremental serialization.
-
-    Only together with the worker route: the setting has no effect on a compile
-    that runs through `kernel_filter`.
-    """
-    return incr_worker and ctx.attr._dev_incremental_serialization[BuildSettingInfo].value
-
-def _apply_incr_worker(ctx, run_kwargs, args, manifest, direct_inputs, dartaotruntime, frontend_server):
-    """Routes the compile through `incr_fkc_worker` instead of `kernel_filter`.
-
-    The worker takes exactly `kernel_filter`'s argv after argv[0]:
-    `--declared-inputs <manifest> -- <executable> <arguments>`, built into the
-    one args object so the action's argv reads the same. Sandboxed, local and
-    remote strategies run the worker's one-shot path (a fresh process per
-    action); the worker strategy keeps its `frontend_server` warm across
-    actions. The worker strategy keys the worker process on its tool files.
-    """
-    run_kwargs["executable"] = ctx.executable._incr_worker_tool
-    run_kwargs["arguments"] = [args]
-    run_kwargs["inputs"] = depset(
-        direct = direct_inputs + [dartaotruntime, ctx.executable._incr_worker_tool, manifest],
-    )
-    run_kwargs["tools"] = depset([dartaotruntime, frontend_server])
-    run_kwargs["execution_requirements"] = {
-        "supports-workers": "1",
-        "requires-worker-protocol": "json",
-    }
-
 def _kernel_action_env(output, dartaotruntime):
     """The sandboxed environment for the `FlutterKernelCompile` action.
 
@@ -281,13 +234,7 @@ def _run_kernel_action(ctx, run):
             `_kernel_action_inputs`), `env` (the sandboxed environment),
             `dartaotruntime`, `kernel_filter_tool` and `frontend_server` (the
             executables), `resource_set` (host-resource constraints, or None to
-            keep byte-identical actions), `incr_worker` (whether to route
-            through the persistent worker instead) and `dev_incremental`
-            (whether that worker keeps incremental serialization: dev only,
-            kept off remote caches and executors).
-
-    With the incremental flag on a debug JIT compile, the action runs through
-    the persistent worker instead.
+            keep byte-identical actions).
     """
     run_kwargs = dict(
         executable = run.kernel_filter_tool,
@@ -303,42 +250,12 @@ def _run_kernel_action(ctx, run):
     )
     if run.resource_set != None:
         run_kwargs["resource_set"] = run.resource_set
-    if run.incr_worker:
-        _apply_incr_worker(
-            ctx,
-            run_kwargs,
-            run.args,
-            run.manifest,
-            run.direct_inputs,
-            run.dartaotruntime,
-            run.frontend_server,
-        )
-        if run.dev_incremental:
-            # A dev dill differs from a one-shot compile: keep it off shared
-            # caches and remote executors.
-            run_kwargs["execution_requirements"] = run_kwargs["execution_requirements"] | {
-                "no-remote-cache": "1",
-                "no-remote-exec": "1",
-            }
     ctx.actions.run(**run_kwargs)
 
 # Private tool labels a downstream rule merges into its own `attrs` to call
 # `flutter_kernel_compile_action` — the Flutter half of what rules_dart
 # publishes as `KERNEL_MODULE_ATTRS`. Carries no user-facing attrs: the
 # caller's rule declares its own `main`, `srcs` and `deps`.
-# The incremental kernel settings every kernel rule reads, shared so the
-# rules that spread it declare both together.
-INCREMENTAL_KERNEL_ATTRS = {
-    "_incremental_kernel": attr.label(
-        default = Label("//flutter:incremental_kernel"),
-        doc = "Opt-in incremental kernel worker flag (a BuildSettingInfo).",
-    ),
-    "_dev_incremental_serialization": attr.label(
-        default = Label("//flutter:dev_incremental_serialization"),
-        doc = "Opt-in dev-only incremental serialization flag (a BuildSettingInfo).",
-    ),
-}
-
 FLUTTER_KERNEL_COMPILE_ATTRS = {
     "_kernel_filter_tool": attr.label(
         doc = "The kernel-filter guard the compile runs through (checks " +
@@ -347,13 +264,7 @@ FLUTTER_KERNEL_COMPILE_ATTRS = {
         executable = True,
         cfg = "exec",
     ),
-    "_incr_worker_tool": attr.label(
-        default = Label("//flutter/private/tools:incr_fkc_worker"),
-        executable = True,
-        cfg = "exec",
-        doc = "Persistent incremental kernel compile worker tool.",
-    ),
-} | INCREMENTAL_KERNEL_ATTRS
+}
 
 # Toolchains a downstream rule declares to call `flutter_kernel_compile_action`
 # (via `flutter_kernel_compile_tools`) and `compile_package_config` — the
@@ -548,7 +459,7 @@ def _kernel_entrypoint_spellings(main, mount):
     """The entrypoint's declared spellings for the dependency-report check.
 
     The entrypoint's exec path, plus its stage twin when one was staged (a
-    generated entrypoint). `kernel_filter` and the incremental worker refuse a
+    generated entrypoint). `kernel_filter` refuses a
     compile whose report names none of these.
 
     Args:
@@ -650,25 +561,6 @@ def _check_kernel_request(ctx, sources, options):
         options.target,
     )
 
-def _add_worker_prefix(args, manifest, incr_worker, dev_incremental):
-    """Adds the incremental worker's argv prefix: param file, mode marker and manifest.
-
-    Does nothing when the compile does not run through the worker.
-
-    Args:
-        args: The action's args object.
-        manifest: The declared-inputs manifest file.
-        incr_worker: Whether the compile runs through the incremental worker.
-        dev_incremental: Whether to add the dev incremental serialization marker.
-    """
-    if not incr_worker:
-        return
-    args.use_param_file("@%s", use_always = True)
-    args.set_param_file_format("multiline")
-    if dev_incremental:
-        args.add("--dev-incremental-serialization")
-    args.add("--declared-inputs", manifest)
-
 def flutter_kernel_compile_action(ctx, tools, sources, outputs, options, dills, resource_set = None):
     """Creates a Flutter kernel compilation action.
 
@@ -707,25 +599,8 @@ def flutter_kernel_compile_action(ctx, tools, sources, outputs, options, dills, 
         main = sources.main,
     )
 
-    # Incremental compiles run the debug JIT whole-program compile through
-    # the persistent worker. Outside `-c dbg`, or with the flag off, every
-    # action below is unchanged.
-    incr_worker = _is_incr_worker(
-        ctx,
-        options.aot,
-        options.target,
-        dills.from_dill,
-        dills.import_dill,
-        outputs.recorded_uses,
-    )
-
-    # Declared here so the worker's `--declared-inputs` prefix joins the same
-    # args object the compiler argv is built into below: with `use_param_file`
-    # a nested args object would stringify instead of flattening.
     manifest = ctx.actions.declare_file(outputs.output.basename + ".flutter_inputs")
     args = ctx.actions.args()
-    dev_incremental = _is_dev_incremental(ctx, incr_worker)
-    _add_worker_prefix(args, manifest, incr_worker, dev_incremental)
     args.add("--")
     args.add(tools.dartaotruntime)
     args.add_all(options.vm_flags)
@@ -790,6 +665,4 @@ def flutter_kernel_compile_action(ctx, tools, sources, outputs, options, dills, 
         kernel_filter_tool = tools.kernel_filter_tool,
         frontend_server = tools.frontend_server,
         resource_set = resource_set,
-        incr_worker = incr_worker,
-        dev_incremental = dev_incremental,
     ))

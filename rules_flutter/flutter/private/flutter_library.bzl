@@ -1,12 +1,13 @@
 """Implementation of the flutter_library rule."""
 
 load("@rules_dart//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "dart_analyzable_info_with_package", "dart_info", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset")
+load("@rules_dart//dart:utils.bzl", "MODULAR_KERNEL_TOOLCHAINS", "dart_analyzable_info_with_package", "dart_info", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset")
 load("//flutter:providers.bzl", "FlutterInfo")
 load("//flutter/private:asset_keys.bzl", "library_asset_entries")
 load("//flutter/private:asset_uri.bzl", "normalize_asset_uri")
 load("//flutter/private:flutter_font_family.bzl", "FONTS_ATTR", "check_unclaimed_font_files", "font_family_contributions", "font_file_table", "font_json_contribution", _flutter_font_family = "flutter_font_family")
 load("//flutter/private:flutter_info.bzl", "LINK_HOOK_ATTR", "flutter_asset_channels", "flutter_info", "flutter_pub_channels")
+load("//flutter/private:flutter_kernel_tools.bzl", "check_library_module_compiler")
 
 visibility(["//flutter/..."])
 
@@ -648,6 +649,7 @@ def _library_pub_contributions(ctx, package_name, asset_pkg):
 
 def _flutter_library_impl(ctx):
     """Rule implementation for `flutter_library`."""
+    check_library_module_compiler(ctx)
     package_name = derive_package_name(
         ctx.attr.package_name,
         ctx.label.package,
@@ -836,6 +838,10 @@ flutter_library = rule(
             allow_files = True,
         ),
     },
+    # Optional: only to refuse a Flutter toolchain whose Dart SDK has no module compiler.
+    toolchains = [
+        config_common.toolchain_type("@rules_flutter//flutter:toolchain_type", mandatory = False),
+    ] + MODULAR_KERNEL_TOOLCHAINS,
     doc = "Collects Flutter sources and assets, propagates DartInfo and FlutterInfo. Does not compile.",
 )
 

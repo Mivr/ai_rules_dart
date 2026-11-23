@@ -15,7 +15,6 @@ load("//flutter/private:asset_uri.bzl", "encode_asset_key")
 load("//flutter/private:flutter_asset_bundle_action.bzl", "flutter_asset_bundle_action", "make_bundle_content", "make_tree_shake")
 load(
     "//flutter/private:flutter_compile.bzl",
-    "INCREMENTAL_KERNEL_ATTRS",
     "flutter_kernel_compile_action",
     "flutter_kernel_dills",
     "flutter_kernel_options",
@@ -36,7 +35,7 @@ load(
     "//flutter/private:flutter_kernel_module.bzl",
     "compile_flutter_modular_app_kernel",
     "flutter_closure_twins",
-    "flutter_modular_test_tools",
+    "flutter_module_tools",
 )
 load("//flutter/private:flutter_library.bzl", "aggregate_pub_contributions", "build_pub_contributions", "dedupe_shader_jobs", "pub_shader_matches_target", "resolve_font_subset_tools")
 load("//flutter/private:flutter_shader_compile.bzl", "flutter_shader_compile_action", "shader_compile_tools")
@@ -491,7 +490,8 @@ def make_kernel_inputs(
             `@RecordUse` uses, the input of package link hooks. Pass it for
             AOT compiles only.
         native_assets: The resolved native asset list the manifest was
-            written from; a non-empty list keeps the whole-program compile.
+            written from; a debug entry module embeds the manifest when it
+            is non-empty.
 
     Returns:
         A struct with `native_assets_manifest`, `track_widget_creation`,
@@ -508,33 +508,36 @@ def make_kernel_inputs(
 
 _CONSTANT_REGISTRANT_URI = "%s:///%s/plugin_registrant.dart" % (APP_SCHEME, AGENT_DIR)
 
-def _debug_registrant_modular(agent, reg, twins):
-    """Whether the staged agent, native agent and registrant can ride the modular entry module."""
-    if not (reg.registrant or agent.agent):
-        return True
-    staged = twins and agent.constant and agent.agent and agent.native_agent and reg.registrant
-    return bool(staged and reg.location and reg.location.uri == _CONSTANT_REGISTRANT_URI)
+def _debug_module_shape(ctx, agent, reg, flags, twins):
+    """Fails when a debug Flutter program's own shape cannot ride the entry module.
 
-def _use_modular_kernel(plan, agent, reg, flags, twins):
-    # Defines, the flavor and the `dart_defines` file are the `deps` configuration (see
-    # `flutter_defines_files.bzl`), so every module compiles with them and they keep nothing whole-program.
-    # Whole-program (FlutterKernelCompile) is kept for: a recorded use or native asset (the per-package
-    # modules are built without them), AOT, profile, web, any frontend flag other than
-    # `--track-widget-creation` (the application's aspect compiles every module with that one, and its
-    # registrant twin records that), and a closure with no registrant twin of the SDK `flutter` module (the
-    # SDK constant would not resolve to the registrant).
-    return (
-        not plan.aot and plan.mode != "profile" and
-        plan.frontend_server_target == "flutter" and
-        _debug_registrant_modular(agent, reg, twins) and
-        not plan.native_assets and not plan.recorded_uses and
-        flags.extra_frontend == (["--track-widget-creation"] if twins and twins[0].tracked else [])
-    )
-
-def _modular_tools_or_none(ctx, flutter_sdk_info, packages, native_assets):
-    """The modular kernel tools, or None when the target needs a whole-program compile."""
-    own_files = [ctx.file.main] + [f for f in ctx.files.srcs if f != ctx.file.main]
-    return flutter_modular_test_tools(ctx, flutter_sdk_info, own_files, packages, native_assets)
+    The staged agent, native agent and registrant compile into the entry module under their
+    constant URIs, and the SDK `flutter` module they replace is the closure's registrant twin.
+    Every frontend flag but `--track-widget-creation` has no module configuration, and that one
+    must match the twin's.
+    """
+    reasons = []
+    if reg.registrant or agent.agent:
+        if not agent.constant:
+            reasons.append("its plugin registrant or debug agent is not staged at the constant debug layout")
+        elif not twins:
+            reasons.append("its closure has no registrant twin of the SDK `flutter` module, which the plugin registrant needs: put `flutter` (or a library depending on it) under `deps`")
+        elif reg.registrant and not (reg.location and reg.location.uri == _CONSTANT_REGISTRANT_URI):
+            reasons.append("its plugin registrant is not at %s" % _CONSTANT_REGISTRANT_URI)
+    tracked = ["--track-widget-creation"] if twins and twins[0].tracked else []
+    other = [f for f in flags.extra_frontend if f != "--track-widget-creation"]
+    if other:
+        reasons.append("frontend flag(s) %s cannot be given to a kernel module compile" % ", ".join(other))
+    elif twins and flags.extra_frontend != tracked:
+        reasons.append("`track_widget_creation` is %s, and its closure's modules were compiled with it %s" % (
+            "on" if flags.extra_frontend else "off",
+            "on" if tracked else "off",
+        ))
+    if reasons:
+        fail("%s compiles as Flutter kernel modules in a debug build, and cannot:\n%s" % (
+            ctx.label,
+            "\n".join(["  - " + r for r in reasons]),
+        ))
 
 def _kernel_package_config(ctx, st):
     """The stable-URI `package_config.json` of the app's packages."""
@@ -610,29 +613,30 @@ def _registrant_lookup_anchor(ctx):
     return anchor
 
 def _run_kernel_compile(ctx, flutter_sdk_info, st, agent, reg, flags, plan):
-    # The closure holds a twin only for a `flutter_kernel_target`, or for a `flutter_application`
-    # with the private debug_modular_app flag on (the default) in a debug build; its `deps` aspect registers
-    # nothing otherwise.
+    # A JIT kernel (debug) is the entry module linked with the closure's modules: there is no other way
+    # to build it. AOT (profile, release, `aot = True`) compiles the whole program.
+    if plan.aot:
+        return _compile_full_kernel(ctx, flutter_sdk_info, st, agent, reg, flags, plan)
     twins = flutter_closure_twins(ctx)
-    if _use_modular_kernel(plan, agent, reg, flags, twins):
-        modular_tools = _modular_tools_or_none(ctx, flutter_sdk_info, st.packages, plan.native_assets)
-        if modular_tools != None:
-            files = [f for f in [agent.agent, agent.native_agent, reg.registrant] if f]
-            if reg.registrant:
-                files.append(_registrant_lookup_anchor(ctx))
-            compile_flutter_modular_app_kernel(
-                ctx,
-                modular_tools,
-                st.app_lib_root,
-                st.packages,
-                plan.kernel_dill,
-                plan.platform_dill,
-                struct(files = files, twins = twins, flags = flags.extra_frontend) if files else None,
-            )
+    _debug_module_shape(ctx, agent, reg, flags, twins)
+    own_files = [ctx.file.main] + [f for f in ctx.files.srcs if f != ctx.file.main]
+    modular_tools = flutter_module_tools(ctx, flutter_sdk_info, own_files, st.packages)
+    files = [f for f in [agent.agent, agent.native_agent, reg.registrant] if f]
+    if reg.registrant:
+        files.append(_registrant_lookup_anchor(ctx))
+    compile_flutter_modular_app_kernel(
+        ctx,
+        modular_tools,
+        st.app_lib_root,
+        st.packages,
+        plan.kernel_dill,
+        plan.platform_dill,
+        struct(files = files, twins = twins, flags = flags.extra_frontend) if files else None,
+        native_assets = plan.native_assets_manifest if plan.native_assets else None,
+    )
 
-            # An application still publishes its package config; a kernel target has none to give.
-            return _kernel_package_config(ctx, st).config_file if plan.assets_dir != None else None
-    return _compile_full_kernel(ctx, flutter_sdk_info, st, agent, reg, flags, plan)
+    # An application still publishes its package config; a kernel target has none to give.
+    return _kernel_package_config(ctx, st).config_file if plan.assets_dir != None else None
 
 def flutter_compile_kernel(ctx, flutter_sdk_info, target, inputs):
     """Run the shared kernel compilation step.
@@ -674,7 +678,9 @@ def flutter_compile_kernel(ctx, flutter_sdk_info, target, inputs):
     if aot == None:
         aot = mode != "debug"
     platform_dill = _resolve_kernel_platform_dill(target.platform_dill, aot, mode, flutter_sdk_info)
-    agent = stage_agent_extensions(ctx, aot, mode)
+    # A debug kernel's closure holds the registrant twin of the SDK `flutter` module exactly when it holds
+    # `flutter`, which the agent imports.
+    agent = stage_agent_extensions(ctx, aot, mode, has_flutter = aot or bool(flutter_closure_twins(ctx)))
     build_info = _build_info_json(ctx, struct(mode = mode, aot = aot), inputs, target.target_platform)
     reg = _kernel_registrant(ctx, target.target_platform, agent, dev.emit, build_info)
     flags = _kernel_compile_flags(ctx, inputs.track_widget_creation, mode, aot)
@@ -1547,12 +1553,6 @@ KERNEL_COMPILE_ATTRS = {
         executable = True,
         cfg = "exec",
     ),
-    "_incr_worker_tool": attr.label(
-        default = Label("//flutter/private/tools:incr_fkc_worker"),
-        executable = True,
-        cfg = "exec",
-        doc = "Persistent incremental kernel compile worker tool.",
-    ),
     "_web_guard_tool": attr.label(
         doc = "Guard tool that runs the web compile confined to its staged sources.",
         default = Label("//flutter/private/tools:web_guard"),
@@ -1611,7 +1611,7 @@ KERNEL_COMPILE_ATTRS = {
         providers = [DartInfo],
     ),
     "defines": attr.string_list(doc = "Dart environment defines (-D flags)."),
-} | EXTRA_DART_DEFINES_ATTR | BUILD_MODE_ATTR | INCREMENTAL_KERNEL_ATTRS
+} | EXTRA_DART_DEFINES_ATTR | BUILD_MODE_ATTR
 
 def _aspect_target_platform(ctx, fixed_platform):
     """The platform string the shader aspect compiles for."""

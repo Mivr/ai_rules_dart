@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:rules_dart_guard/directive_guard.dart';
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
-import '../../guard/lib/directive_guard.dart';
 import 'fix_runner.dart' as fix_runner;
 import 'staged_project_copy.dart' as staged;
 

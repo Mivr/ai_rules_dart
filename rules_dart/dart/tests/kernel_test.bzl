@@ -31,9 +31,6 @@ load(
     "library_source_uri",
     "modular_executable_kernel",
     "modular_executable_tools",
-    "modular_kernel_conditions",
-    "modular_kernel_eligible",
-    "modular_kernel_mode",
     "multi_root_uri",
     "no_kernel_module",
     "package_of_source",
@@ -349,44 +346,6 @@ def _duplicated_source_test_impl(ctx):
         ),
         "a source shared by a dependent and its dependency alone",
     )
-    return unittest.end(env)
-
-def _conditions(
-        mode = None,
-        dep_modular = True,
-        packages_consistent = True,
-        has_code_assets = False,
-        has_compile_flags = False,
-        has_duplicate_source = False,
-        same_sdk = True):
-    """The all-eligible `modular_kernel_conditions`, with per-fact overrides."""
-    return modular_kernel_conditions(
-        mode if mode != None else modular_kernel_mode(True, True),
-        dep_modular,
-        packages_consistent,
-        has_code_assets,
-        has_compile_flags,
-        has_duplicate_source,
-        same_sdk,
-    )
-
-def _eligible_test_impl(ctx):
-    env = unittest.begin(ctx)
-    asserts.true(env, modular_kernel_eligible(_conditions()), "every condition met")
-
-    # Each override is a reason to fall back to whole-program compilation.
-    fallbacks = {
-        "flag is off": _conditions(mode = modular_kernel_mode(False, True)),
-        "not a kernel": _conditions(mode = modular_kernel_mode(True, False)),
-        "a dependency is not modular": _conditions(dep_modular = False),
-        "the closure has a package at two roots": _conditions(packages_consistent = False),
-        "code assets are embedded": _conditions(has_code_assets = True),
-        "dart_compile_flags are set": _conditions(has_compile_flags = True),
-        "a source is compiled twice": _conditions(has_duplicate_source = True),
-        "the exec and target SDKs differ": _conditions(same_sdk = False),
-    }
-    for reason, conditions in fallbacks.items():
-        asserts.false(env, modular_kernel_eligible(conditions), reason)
     return unittest.end(env)
 
 def _modular_tools_off_test_impl(ctx):
@@ -1060,22 +1019,6 @@ _test_modular_product_test = analysistest.make(
     config_settings = pruned_inputs_settings(),
 )
 
-def _test_whole_program_product_test_impl(ctx):
-    env = analysistest.begin(ctx)
-    actions = analysistest.target_actions(env)
-    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
-    asserts.equals(env, 1, len(kernel_actions), "whole-program dart_test registers one DartKernel action")
-    _assert_vm_product(env, kernel_actions[0], False, "dart_test whole-program action")
-    platforms = _platform_arg(kernel_actions[0])
-    asserts.equals(env, 1, len(platforms), "dart_test whole-program action passes one --platform")
-    asserts.false(env, "product" in platforms[0], "dart_test whole-program action uses the non-product platform dill")
-    return analysistest.end(env)
-
-_test_whole_program_product_test = analysistest.make(
-    _test_whole_program_product_test_impl,
-    config_settings = pruned_inputs_settings({str(Label("//dart:modular_kernel")): False}),
-)
-
 def _binary_whole_program_product_test_impl(ctx):
     env = analysistest.begin(ctx)
     actions = analysistest.target_actions(env)
@@ -1277,7 +1220,6 @@ _package_prefix_index_test = unittest.make(_package_prefix_index_test_impl)
 _duplicated_source_lazy_edges_test = unittest.make(_duplicated_source_lazy_edges_test_impl)
 _split_without_direct_edge_test = unittest.make(_split_without_direct_edge_test_impl)
 _duplicated_source_test = unittest.make(_duplicated_source_test_impl)
-_eligible_test = unittest.make(_eligible_test_impl)
 _modular_tools_off_test = unittest.make(_modular_tools_off_test_impl)
 _has_cross_pkg_cycle_test = unittest.make(_has_cross_pkg_cycle_test_impl)
 _unused_inputs_wiring_test = unittest.make(_unused_inputs_wiring_test_impl)
@@ -1356,11 +1298,6 @@ def kernel_test_suite(name):
     )
     _test_modular_product_test(
         name = name + "_test_modular_product_test",
-        target_under_test = ":" + name + "_dart_test_fixture",
-        size = "small",
-    )
-    _test_whole_program_product_test(
-        name = name + "_test_whole_program_product_test",
         target_under_test = ":" + name + "_dart_test_fixture",
         size = "small",
     )
@@ -1459,7 +1396,6 @@ def kernel_test_suite(name):
         _duplicated_source_lazy_edges_test,
         _package_prefix_index_test,
         _split_without_direct_edge_test,
-        _eligible_test,
         _modular_tools_off_test,
         _has_cross_pkg_cycle_test,
         _unused_inputs_wiring_test,
@@ -1474,7 +1410,6 @@ def kernel_test_suite(name):
             ":" + name + "_library_in_binary_product_test",
             ":" + name + "_library_in_test_product_test",
             ":" + name + "_binary_whole_program_product_test",
-            ":" + name + "_test_whole_program_product_test",
             ":" + name + "_test_modular_product_test",
             ":" + name + "_user_test_runner_embeds_sources_test",
             ":" + name + "_generated_test_runner_omits_sources_test",

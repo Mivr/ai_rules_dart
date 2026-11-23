@@ -89,3 +89,55 @@ def flutter_kernel_tools_for(ctx, flutter_sdk_info):
     if flutter_sdk_info == None:
         return None
     return find_flutter_kernel_module_tools(flutter_sdk_info, exec_tools = kernel_tools_for(ctx))
+
+def no_flutter_module_compiler_error(label, flutter_sdk_info):
+    """The analysis error for a target whose Flutter toolchain has no module compiler.
+
+    Args:
+      label: The target's label.
+      flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
+
+    Returns:
+      The message.
+    """
+    return ("%s compiles Flutter kernel modules, but the module compiler cannot be built for the Dart SDK " +
+            "of Flutter %s (Dart %s): that Dart version has no pinned sources in `MODULE_COMPILER_SOURCES` " +
+            "(@rules_dart//dart/private:module_compiler_versions.bzl), or the Flutter toolchain names no " +
+            "`dart_toolchain`. Use a Flutter version whose Dart SDK that table lists.") % (
+        label,
+        flutter_sdk_info.version if flutter_sdk_info != None else "(none)",
+        getattr(flutter_sdk_info, "dart_sdk_version", None) or "unknown",
+    )
+
+def required_flutter_kernel_tools(ctx, flutter_sdk_info):
+    """The kernel module tools matching `flutter_sdk_info`, failing at analysis when there are none.
+
+    Args:
+      ctx: Rule context declaring `MODULAR_KERNEL_TOOLCHAINS`.
+      flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
+
+    Returns:
+      The kernel tools struct.
+    """
+    tools = flutter_kernel_tools_for(ctx, flutter_sdk_info)
+    if tools == None:
+        fail(no_flutter_module_compiler_error(ctx.label, flutter_sdk_info))
+    return tools
+
+def check_library_module_compiler(ctx):
+    """Fails a library whose Flutter toolchain's Dart SDK has no module compiler. Returns None.
+
+    A debug program compiles each library of its closure as a kernel module,
+    so a library under such a toolchain could never be built into one: it fails
+    at analysis, naming the version, as the executable does. A toolchain that
+    names no Dart toolchain, or has no debug platform kernel, is not judged here.
+
+    Args:
+      ctx: The library's rule context, declaring the Flutter toolchain (optional) and `MODULAR_KERNEL_TOOLCHAINS`.
+    """
+    toolchain = ctx.toolchains["@rules_flutter//flutter:toolchain_type"]
+    info = toolchain.flutter_sdk_info if toolchain else None
+    if info == None or info.platform_kernel_dill == None or getattr(info, "dart_sdk_version", None) == None:
+        return
+    if flutter_kernel_tools_for(ctx, info) == None:
+        fail(no_flutter_module_compiler_error(ctx.label, info))

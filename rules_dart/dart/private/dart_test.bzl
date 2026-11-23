@@ -15,7 +15,6 @@ load(
     "EXTRA_DART_DEFINES_ATTR",
     "REFUSED_DART_LIBRARIES_ATTR",
     "executable_defines_transition",
-    "merge_dart_defines",
 )
 load(
     "//dart/private:common.bzl",
@@ -26,13 +25,11 @@ load(
     "collect_transitive_srcs",
     "create_test_executable",
     "generate_native_assets_yaml",
-    "generate_stable_package_config",
     "resolve_code_assets",
     "runfiles_path",
     "target_dart_abi",
 )
 load("//dart/private:coverage_map.bzl", "COVERAGE_MAP_TOOLCHAINS", "write_coverage_map", "write_generated_list")
-load("//dart/private:dart_compile.bzl", "dart_compile_action")
 load("//dart/private:dart_import_check.bzl", "dart_import_check_aspect", "executable_import_check")
 load(
     "//dart/private:dart_kernel.bzl",
@@ -58,7 +55,6 @@ load(
 )
 load("//dart/private:kernel_params.bzl", "kernel_compile_settings", "kernel_link_options")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
-load("//dart/private:source_set.bzl", "executable_inputs")
 load("//dart/private:test_package_roots.bzl", "write_package_roots")
 load("//dart/private:test_runner_info.bzl", "DartTestRunnerInfo")
 
@@ -236,8 +232,6 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
       shared `base_dill` File (or `None`), and the code-asset libraries that
       ship in runfiles beside it.
     """
-    toolchain = ctx.toolchains["//dart:toolchain_type"]
-    dart_sdk_info = toolchain.dart_sdk_info
     if ctx.attr.code_assets_from_deps:
         hook_err = executable_hook_error(ctx.label, own)
         if hook_err != None:
@@ -253,84 +247,20 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
         transitive_assets,
         [dep[DartCodeAssetInfo] for dep in ctx.attr.code_assets],
     )
-    defines = merge_dart_defines(ctx)
-
     kernel_tools = modular_executable_tools(
         ctx,
         [ctx.file.main] + ctx.files.srcs,
         own.record,
         kernel_mode = True,
         resolved_assets = resolved_assets,
-        # The test's own `defines` do not stop it going modular: its `deps`
-        # edge makes them the environment of every module of its closure.
-        compile_flags = [],
         closure = own.closure,
     )
-    if kernel_tools != None:
-        return _compile_modular_test_kernel(ctx, own, bootstrap, kernel_tools, use_base_dill = use_base_dill)
-
-    # Nothing is copied (see `executable_inputs`). The one flatten per rule: the
-    # package lookup inspects per-file paths.
-    inputs = executable_inputs(
-        executable_packages(own),
-        collect_transitive_srcs(ctx.attr.deps).to_list(),
-        ctx.file.main,
-        ctx.files.srcs,
-        own.record,
-    )
-    packages = inputs.packages
-    main_input = inputs.main_input
-    main_arg = inputs.main_arg
-    compile_srcs = inputs.srcs
-    if bootstrap:
-        # Under the runner the compiled entrypoint is a bootstrap that hands
-        # `main` to `package:test`. The test file is among `compile_srcs`, so it
-        # is still an input.
-        main_input = _write_bootstrap(ctx, main_arg)
-        main_arg = main_input.path
-
-    # Root resolution must see the rule's own inputs too: a package whose
-    # metadata comes from a srcs-less façade library resolves only via the
-    # files this rule supplies itself.
-    package_config = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
-    ctx.actions.write(
-        output = package_config,
-        content = generate_stable_package_config(packages, compile_srcs, inputs.roots),
-    )
-
-    dill = _test_kernel_output(ctx, bootstrap)
-    native_assets_yaml, runtime_libs = _test_native_assets(ctx, resolved_assets, dill)
-    dart_compile_action(
-        ctx = ctx,
-        dart_sdk_info = dart_sdk_info,
-        cfg = struct(
-            main = main_input,
-            srcs = compile_srcs,
-            package_config = package_config,
-            output = dill,
-            compile_mode = "kernel",
-            target_os = "",
-            target_arch = "",
-            extra_flags = [],
-            defines = defines,
-            main_path = main_arg,
-            recorded_uses = None,
-            jit_tool = ctx.files._jit_tool,
-            comma_patch = ctx.file._comma_patch,
-            native_assets_yaml = native_assets_yaml,
-            # `dart test` runs on the non-product VM with `dart.vm.product` false.
-            vm_product = False,
-            embed_sources = True,
-            jit_snapshot_fallback = False,
-        ),
-        toolchain_type = "//dart:toolchain_type",
-    )
-    return struct(dill = dill, base_dill = None, runtime_libs = runtime_libs)
+    return _compile_modular_test_kernel(ctx, own, bootstrap, kernel_tools, resolved_assets, use_base_dill = use_base_dill)
 
 def _test_native_assets(ctx, resolved_assets, dill):
     """Writes the code-asset mapping a test's kernel embeds.
 
-    Embedding the mapping (`gen_kernel --native-assets`) resolves each
+    The entry module embeds the mapping, which resolves each
     `relative` path against the dill at run time — the same build-time path
     `dart_binary` uses. The `.so` libraries ship in runfiles.
 
@@ -377,8 +307,8 @@ def _test_kernel_output(ctx, bootstrap):
         )
     return ctx.actions.declare_file(ctx.label.name + ".dill")
 
-def _compile_modular_test_kernel(ctx, own, bootstrap, tools, use_base_dill = False):
-    """Compiles a test's entry module and links it, in place of the monolithic kernel.
+def _compile_modular_test_kernel(ctx, own, bootstrap, tools, resolved_assets, use_base_dill = False):
+    """Compiles a test's entry module and links it: the one way a test's kernel is built.
 
     The entry module holds only the test (or its bootstrap) and the test's own
     sources. Everything the test imports is in a dependency module, which the
@@ -390,13 +320,15 @@ def _compile_modular_test_kernel(ctx, own, bootstrap, tools, use_base_dill = Fal
       own: The `executable_package` result for the test's own sources.
       bootstrap: Whether the test runs under the `package:test` runner.
       tools: The exec kernel tools, from `modular_executable_tools`.
+      resolved_assets: The code assets resolved for the test. Their mapping
+        is embedded in the entry module, against the linked `dill`.
       use_base_dill: Whether to link `dill` as a delta against a shared `base_dill`.
 
     Returns:
       `struct(dill, base_dill, runtime_libs)`, as `_compile_test_kernel` returns.
-      Modular mode takes no code assets, so `runtime_libs` is empty.
     """
     dill = _test_kernel_output(ctx, bootstrap)
+    native_assets_yaml, runtime_libs = _test_native_assets(ctx, resolved_assets, dill)
     if bootstrap:
         entry_files = [_write_modular_bootstrap(ctx), ctx.file.main]
     else:
@@ -411,8 +343,9 @@ def _compile_modular_test_kernel(ctx, own, bootstrap, tools, use_base_dill = Fal
         kernel_compile_settings(product = False),
         kernel_link_options(use_base_dill = use_base_dill),
         own_defines = ctx.attr.defines,
+        native_assets = native_assets_yaml,
     )
-    return struct(dill = dill, base_dill = base_dill, runtime_libs = [])
+    return struct(dill = dill, base_dill = base_dill, runtime_libs = runtime_libs)
 
 def _write_modular_bootstrap(ctx):
     """Writes the modular entrypoint: the runner's bootstrap, importing the test by URI.
@@ -531,31 +464,6 @@ void main(List<String> _, SendPort sendPort) {{
 }}
 """
 
-def _write_bootstrap(ctx, main_path):
-    """Writes the entrypoint compiled in place of the test's own `main`.
-
-    The test file is imported by a path relative to the bootstrap, which is
-    what keeps its own relative imports and `part`s resolving exactly as they
-    do when it is compiled directly.
-
-    Args:
-      ctx: The rule context.
-      main_path: Exec-root-relative path of the test's main file, as compiled.
-
-    Returns:
-      The bootstrap File.
-    """
-    bootstrap = ctx.actions.declare_file(ctx.label.name + ".vm_test.dart")
-    depth = len(bootstrap.dirname.split("/"))
-    ctx.actions.write(
-        output = bootstrap,
-        content = _BOOTSTRAP.format(
-            test = ctx.file.main.short_path,
-            import_path = "../" * depth + main_path,
-        ),
-    )
-    return bootstrap
-
 def _test_code_assets_transition_impl(_settings, attr):
     return {
         "//dart/private:code_assets_enabled": getattr(attr, "code_assets_from_deps", True),
@@ -610,16 +518,6 @@ must provide `DartCodeAssetInfo` (see the `dart_code_asset` rule).""",
 Leave this on for a test that runs the native packages it depends on. Turn it off for a pure-Dart \
 `dart_test` that imports packages for their Dart API (such as `package:drift` with a mock or \
 custom executor) without loading their native libraries at runtime.""",
-    ),
-    "_jit_tool": attr.label(
-        doc = "Every source the JIT tool imports, staged beside its entry in the actions that run it from source.",
-        default = "//dart/private/tools:jit_tool_srcs",
-        allow_files = True,
-    ),
-    "_comma_patch": attr.label(
-        doc = "The `comma_patch.dart` source staged beside the JIT tool's entry so comma-containing `-D` values survive the front end. Defaults to `//dart/private/tools:comma_patch.dart`.",
-        default = "//dart/private/tools:comma_patch.dart",
-        allow_single_file = True,
     ),
     "_allowlist_function_transition": attr.label(
         doc = "Allowlist target permitting the Starlark function transition this rule applies. Defaults to `@bazel_tools//tools/allowlists/function_transition_allowlist`.",

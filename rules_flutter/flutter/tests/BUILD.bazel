@@ -34,7 +34,6 @@ load(":stock_dev_files_test.bzl", "stock_dev_files_test_suite")
 load(":define_flagfiles_test.bzl", "define_flagfiles_test_suite")
 load(":defines_config_test.bzl", "defines_config_test_suite")
 load(":defines_files_test.bzl", "defines_files_test_suite")
-load(":dev_incremental_serialization_test.bzl", "dev_incremental_serialization_test_suite")
 load(":facade_reexports_test.bzl", "facade_reexports_test_suite")
 load(":flavor_ios_test.bzl", "flavor_ios_test_suite")
 load(":flavor_test.bzl", "flavor_test_suite")
@@ -61,7 +60,6 @@ load(":flutter_test_bootstrap_test.bzl", "flutter_test_bootstrap_test_suite")
 load(":flutter_test_coverage_test.bzl", "flutter_test_coverage_test_suite")
 load(":gen_l10n_test.bzl", "gen_l10n_test_suite")
 load(":gradle_model_test.bzl", "gradle_model_test_suite")
-load(":incr_kernel_default_test.bzl", "incr_kernel_default_test_suite")
 load(":ios_integration_test_test.bzl", "ios_integration_test_test_suite")
 load(":ios_plugin_deps_test.bzl", "ios_plugin_deps_test_suite")
 load(":ios_split_debug_assets_test.bzl", "ios_split_debug_assets_test_suite")
@@ -108,6 +106,7 @@ load(":swiftpm_translate_test.bzl", "swiftpm_translate_test_suite")
 load(":toolchain_selection_test.bzl", "toolchain_selection_test_suite")
 load(":toolchain_test.bzl", "toolchain_test_suite")
 load(":toolchains_repo_test.bzl", "toolchains_repo_test_suite")
+load(":unpinned_sdk_test.bzl", "unpinned_sdk_test_suite")
 load(":unused_inputs_test.bzl", "unused_inputs_test_suite")
 load(":validation_test.bzl", "validation_test_suite")
 load(":versions_test.bzl", "versions_test_suite")
@@ -243,10 +242,6 @@ build_info_registrant_test_suite(name = "build_info_registrant_test")
 
 defines_files_test_suite(name = "defines_files_test")
 
-dev_incremental_serialization_test_suite(name = "dev_incremental_serialization_test")
-
-incr_kernel_default_test_suite(name = "incr_kernel_default_test")
-
 asset_bundle_test_suite(name = "asset_bundle_test")
 
 asset_keys_test_suite(name = "asset_keys_test")
@@ -330,6 +325,8 @@ kernel_target_modular_test_suite(name = "kernel_target_modular_test")
 debug_modular_app_test_suite(name = "debug_modular_app_test")
 
 stock_dev_files_test_suite(name = "stock_dev_files_test")
+
+unpinned_sdk_test_suite(name = "unpinned_sdk_test")
 
 # The twin and the plain module both link: the swapped dill holds the constant
 # registrant URI where the SDK constant is read, the plain one does not.

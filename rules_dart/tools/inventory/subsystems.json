@@ -95,10 +95,7 @@
         "rules_dart/dart/tests/kernel_*",
         "rules_flutter/flutter/private/flutter_kernel_*",
         "rules_flutter/flutter/private/tools/kernel_*",
-        "rules_flutter/flutter/private/tools/incr_fkc_*",
-        "rules_flutter/flutter/private/tools/test/incr_fkc_*",
-        "rules_flutter/flutter/private/tools/test/kernel_*",
-        "rules_flutter/tools/incr_kernel_identity/**"
+        "rules_flutter/flutter/private/tools/test/kernel_*"
       ]
     },
     {

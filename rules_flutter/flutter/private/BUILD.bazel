@@ -377,7 +377,11 @@ bzl_library(
     deps = [
         ":common",
         ":flutter_aot_compile",
+        ":flutter_defines_files",
+        ":flutter_kernel_module",
         ":platform_constraints",
+        "@rules_dart//dart:providers",
+        "@rules_dart//dart:utils",
     ],
 )
 
@@ -431,15 +435,6 @@ bzl_library(
         ":flutter_xtool_bundle",
         "@rules_apple//apple",
     ],
-)
-
-# A debug `flutter_application` compiles per-package kernel modules and links them (the default). #421 turned it off
-# because rules_dart's module strip left two disagreeing `org-dartlang-sdk:` Source entries that the VM refused; #422
-# fixed the strip and the default is back. Set to false for the whole-program compile. Private on purpose.
-bool_flag(
-    name = "debug_modular_app",
-    build_setting_default = True,
-    visibility = ["//visibility:public"],
 )
 
 bzl_library(
@@ -874,6 +869,7 @@ bzl_library(
         ":asset_uri",
         ":flutter_font_family",
         ":flutter_info",
+        ":flutter_kernel_tools",
         "//flutter:providers",
         "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",

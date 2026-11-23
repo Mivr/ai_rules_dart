@@ -2,7 +2,7 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartCompileInfo", "DartInfo", "DartRecordedUsesInfo")
-load("//dart/private:binary_compile.bzl", "binary_compile")
+load("//dart/private:binary_compile.bzl", "binary_compile", "kernel_flag_defines")
 load(
     "//dart/private:build_settings.bzl",
     "EXECUTABLE_DEFINES_FILE_SETTING",
@@ -514,7 +514,13 @@ def _binary_defines_transition_impl(_settings, attr):
         attr.compile_mode == "kernel" or
         (attr.compile_mode in ("exe", "aot-snapshot") and attr.link_modules)
     )
-    return executable_defines_settings(attr.defines if links else [])
+    if not links:
+        return executable_defines_settings([])
+
+    # A kernel binary's `-D` flags in `dart_compile_flags` are defines too,
+    # after `defines`, as the source compile orders them.
+    flag_defines = kernel_flag_defines(attr.dart_compile_flags)[0] if attr.compile_mode == "kernel" else []
+    return executable_defines_settings(attr.defines + flag_defines)
 
 _binary_defines_transition = transition(
     implementation = _binary_defines_transition_impl,
@@ -594,7 +600,7 @@ The `dart compile` mode. Determines the output format:
 
 - `exe` (default): Self-contained native machine code. No Dart SDK needed at runtime. Best for deployment.
 - `aot-snapshot`: AOT-compiled snapshot. Requires `dartaotruntime` to execute. Smaller than `exe`.
-- `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles modularly by default (`modular_kernel = True` and `//dart:modular_kernel = True`) against dependency `.kmod`/`.koutline` modules when eligible, or whole-program via `gen_kernel` when `modular_kernel = False` or when `dart_compile_flags` or `code_assets` are set. `defines` keep it modular: they are the environment every module of the closure compiles with.
+- `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles as kernel modules linked into one kernel: the entry module against the dependency `.koutline` outlines, then the link. `defines` and the `-D` entries of `dart_compile_flags` are the environment every module of the closure compiles with; code assets ride the entry module's native-assets mapping. A shape the modules cannot take (any other `dart_compile_flags` entry, a dependency with no module, a package at two roots, a source in two targets) fails at analysis, naming the target and the reason. `modular_kernel = False` compiles the whole program with `gen_kernel` instead: only the rule set's own tools do, because the link tool cannot link itself.
 - `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, at the keyed absolute path for its output (`/tmp/rules_dart_jit-<key>`, where `<key>` is 16 lowercase hex characters of a deterministic digest of the output's root-relative path) used as its working directory and with no `--packages` value, so the snapshot is byte-identical across builds. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build (see `app_jit_snapshot.dart`). The training runs from a copy of the SDK's `dart`, so the snapshot does not depend on where the SDK is installed or where the build runs. A training waits for the keyed lock up to `--@rules_dart//dart:jit_snapshot_lock_timeout` seconds (default 300), printing the holder's PID while it waits; when the keyed training path is blocked by an entry another user owns, or the lock stays held past the deadline, the action fails and names the entry rather than training elsewhere under the same action key; `--@rules_dart//dart:jit_snapshot_fallback=true` allows the non-reproducible private-scratch fallback instead. A fallback-trained snapshot stays cached under the same action key (in the local action cache and the output tree) until `bazel clean`, so a build after the host is fixed keeps the fallback bytes. With the flag on, both snapshot actions carry `no-cache`, so they are never uploaded to or served from a disk or remote cache.
 
 `exe` and `aot-snapshot` compile from sources by default: the whole-program front end reads every transitive `.dart` file, then `dart compile` runs, whatever `modular_kernel` says. Per-library modules are compiled against the JIT platform, so the default keeps the AOT answers to `dart.library.*`. With `link_modules = True` (an opt-in) they take the per-library kernel modules joined into one kernel instead, when the target is eligible for modular compilation (the `kernel` mode's rules, plus `dart.vm.product` true and not the `dbg` compilation mode): a body edit in one library recompiles that module only, then the whole-program steps (tree shaking, `gen_snapshot`) run over the joined kernel and no `.dart` source is an input of them. An ineligible target takes the source path silently. Opting in also runs a validation that refuses a closure using `dart:mirrors` or `dart.library.mirrors` (see `link_modules`). `jit-snapshot` always compiles from sources.
@@ -612,7 +618,7 @@ Each flag goes to the stage that consumes it. A source entrypoint is first compi
 - `-D<KEY=VALUE>`, `--define=<KEY=VALUE>`, or `-D <KEY=VALUE>`, `--define <KEY=VALUE>`
 - `--enable-asserts`
 
-Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_compile_flags` opts out of modular kernel compilation and passes all flags to `gen_kernel`. For a pre-built kernel, all flags go to `dart compile`. The `jit-snapshot` mode takes no `dart compile` flags, so any other flag there is an error. A comma-containing `-D`/`--define` value takes the same comma-safe path as `defines`: the compile runs the toolchain's patched `gen_kernel` snapshot.""",
+Every other flag goes to `dart compile`. In the `kernel` mode a `-D` entry is a define of the closure's modules, and any other entry fails the build: a module compile takes no other front-end flag (set `modular_kernel = False` to pass them to `gen_kernel`). For a pre-built kernel, all flags go to `dart compile`. The `jit-snapshot` mode takes no `dart compile` flags, so any other flag there is an error. A comma-containing `-D`/`--define` value takes the same comma-safe path as `defines`: the compile runs the toolchain's patched `gen_kernel` snapshot.""",
         ),
         "_jit_snapshot_fallback": attr.label(
             doc = "Whether `--fallback-allowed` is passed when the keyed training path is unavailable.",

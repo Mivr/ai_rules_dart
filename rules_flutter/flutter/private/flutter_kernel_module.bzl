@@ -25,10 +25,8 @@ load(
     "kernel_link_action",
     "kernel_package_config",
     "kernel_packages_consistent",
-    "library_source_uri",
-    "modular_kernel_conditions",
-    "modular_kernel_eligible",
-    "modular_kernel_mode",
+    "add_module_source_args",
+    "library_module_source",
     "no_kernel_module",
     _DART_MODULAR_KERNEL_ATTRS = "MODULAR_KERNEL_ATTRS",
 )
@@ -52,7 +50,8 @@ load(
 load(
     "//flutter/private:flutter_kernel_tools.bzl",
     "flutter_kernel_tools_for",
-    "is_same_sdk",
+    "no_flutter_module_compiler_error",
+    "required_flutter_kernel_tools",
 )
 load(
     "//flutter/private:flutter_test_common.bzl",
@@ -81,24 +80,14 @@ MODULAR_KERNEL_ATTRS = _DART_MODULAR_KERNEL_ATTRS | {
     ),
 }
 
-# The private //flutter/private:debug_modular_app flag, read by `flutter_application` and by the module aspect on its
-# `deps`. It exists for the bench A/B of the modular debug application path against the warm frontend_server
-# worker, until the default is decided.
-DEBUG_MODULAR_APP_ATTR = {
-    "_debug_modular_app": attr.label(
-        doc = "The private //flutter/private:debug_modular_app build setting.",
-        default = Label("//flutter/private:debug_modular_app"),
-        providers = [BuildSettingInfo],
-    ),
-}
-
 # The application's `track_widget_creation` value, as an aspect parameter: with True every module of the closure
 # compiles with `--track-widget-creation`. Only the application's aspect takes it; the `flutter_test` aspect does not.
 TRACK_WIDGET_CREATION_FLAG = "--track-widget-creation"
 _TRACK_ATTR = {"track_widget_creation": attr.bool(doc = "Whether the app tracks widget creation.", default = False)}
 
-def _no_flutter_kernel_module():
-    empty = no_kernel_module()
+def _no_flutter_kernel_module(reason = None):
+    """The provider of a target that compiles no module, saying why (`DartKernelInfo.not_modular`)."""
+    empty = no_kernel_module(reason)
     return [FlutterKernelModuleInfo(kernel_info = empty, product_kernel_info = empty)]
 
 def _own_package_record(info):
@@ -193,11 +182,7 @@ def _kernel_module_source_args(args, module, excluded, unused_inputs_list, optio
         options: struct with the compile options (`droppable`).
     """
     args.add_all(module.dep_kmods, before_each = "--input-kmod", expand_directories = False)
-    for s in module.sources:
-        args.add("--source", s.uri)
-        args.add("--input-source", s.file)
-        if unused_inputs_list != None:
-            args.add("--own-source-file", s.file)
+    add_module_source_args(args, module.sources, unused_inputs_list != None)
     args.add("--output", module.output.path)
     if module.koutline != None:
         args.add("--output-outline", module.koutline.path)
@@ -207,6 +192,8 @@ def _kernel_module_source_args(args, module, excluded, unused_inputs_list, optio
         args.add("--unused-inputs-list", unused_inputs_list)
     if not options.droppable:
         args.add("--no-drop")
+    if getattr(options, "native_assets", None) != None:
+        args.add("--native-assets", options.native_assets)
     if module.extra_inputs:
         args.add_all(module.extra_inputs, before_each = "--input-source")
 
@@ -237,7 +224,8 @@ def flutter_kernel_module_action(ctx, tools, module, options):
         `platform_dill` (platform kernel override; defaults to the
         toolchain's), `scheme` (package-config URI scheme for the module's
         sources), `extra_frontend_flags` (additional flags for the module
-        compiler) and `unused_inputs` (whether the compile writes its
+        compiler), `native_assets` (optional native-assets mapping an entry
+        embeds) and `unused_inputs` (whether the compile writes its
         unused-inputs list — the declared inputs no compile of this action
         read — and takes it as the action's `unused_inputs_list`, so Bazel
         skips the action when only an unread input changed. True at every
@@ -290,7 +278,11 @@ def flutter_kernel_module_action(ctx, tools, module, options):
     direct_inputs = [
         package_config,
         platform,
-    ] + [s.file for s in sources] + stage.files + [f for f in [getattr(options, "define_file", None)] if f != None]
+    ] + [s.file for s in sources] + stage.files + [
+        f
+        for f in [getattr(options, "define_file", None), getattr(options, "native_assets", None)]
+        if f != None
+    ]
 
     ctx.actions.run(
         # The module compiler of the Dart SDK inside Flutter, run by that SDK's `dartaotruntime`.
@@ -324,38 +316,41 @@ def _modular_gate_inputs(ctx, target):
         dart_info.package_name,
         dart_info.lib_root,
         _own_package_record(dart_info),
-        getattr(ctx.rule.files, "srcs", []),
+        getattr(ctx.rule.files, "srcs_dir", []) if getattr(ctx.rule.attr, "srcs_dir", None) else getattr(ctx.rule.files, "srcs", []),
         rule_deps,
     )
 
-def _is_opaque_module(ctx, dart_info, package_name, lib_root, own_record, own_srcs, rule_deps):
-    """Whether the target hides its sources, opting it out of modular kernel compilation."""
+def _opaque_reason(ctx, dart_info, package_name, lib_root, own_record, own_srcs, rule_deps):
+    """Why the target compiles no module because its sources cannot be named, or None."""
     srcs_dir = getattr(ctx.rule.attr, "srcs_dir", None)
-    has_srcs_attr = hasattr(ctx.rule.attr, "srcs")
-    opaque = bool(srcs_dir)
-    if not has_srcs_attr and dart_info.transitive_srcs.to_list() != [] and len(rule_deps) == 0:
-        opaque = True
+    if srcs_dir:
+        if not (len(own_srcs) == 1 and own_srcs[0].is_directory):
+            return "its `srcs_dir` is not one directory (a `dart_source_set`)"
+        if not package_name or own_record == None:
+            return "it names no Dart package (`package_name`), so its sources have no `package:` URI"
+        return None
+    # A depset is true when it is not empty; asking does not flatten it.
+    if not hasattr(ctx.rule.attr, "srcs") and dart_info.transitive_srcs and len(rule_deps) == 0:
+        return "its rule has no `srcs`, so its files are not known at analysis"
+    if not own_srcs:
+        return None
+    if not package_name or own_record == None:
+        return "it names no Dart package (`package_name`), so its sources have no `package:` URI"
     prefix = package_lib_prefix(lib_root)
-    outside_lib = any([not f.short_path.startswith(prefix) for f in own_srcs])
-    if own_srcs and (not package_name or own_record == None or outside_lib):
-        opaque = True
-    return opaque
-
-def _modular_gate_open(ctx, opaque, enabled, tools, same_sdk, flutter_sdk_info):
-    """Whether every modular-kernel precondition holds for this evaluation."""
-    if opaque or not enabled or tools == None or not same_sdk:
-        return False
-    return flutter_sdk_info != None and flutter_sdk_info.platform_kernel_dill != None
+    for f in own_srcs:
+        if not f.short_path.startswith(prefix):
+            return "its source %s is outside its package's `lib/`; move it there, or into the executable's own `srcs`" % f.short_path
+    return None
 
 def _collect_dep_mod_infos(rule_deps):
-    """The dep `FlutterKernelModuleInfo` values, or None when a dep opted out."""
+    """The dep `FlutterKernelModuleInfo` values, or the labels of the deps that carry none."""
     dep_mod_infos = [
         dep[FlutterKernelModuleInfo]
         for dep in rule_deps
         if type(dep) == "Target" and FlutterKernelModuleInfo in dep
     ]
     if len(dep_mod_infos) != len(rule_deps):
-        return None
+        return [str(dep.label) for dep in rule_deps if type(dep) != "Target" or FlutterKernelModuleInfo not in dep]
     return dep_mod_infos
 
 def _modular_consistency(own_record, rule_deps, dep_kernels):
@@ -467,7 +462,7 @@ def _header_only_module_info(product_modular, dep_product_kernels, closures, bas
         ),
     ]
 
-def _flutter_module_options(env, platform_dill, droppable, frontend_flags, extra_defines = []):
+def _flutter_module_options(env, platform_dill, droppable, frontend_flags, extra_defines = [], native_assets = None):
     """The `flutter_kernel_module_action` options of a Flutter-target module compile.
 
     Args:
@@ -476,6 +471,7 @@ def _flutter_module_options(env, platform_dill, droppable, frontend_flags, extra
         droppable: Whether the module is a dependency module the link may drop.
         frontend_flags: Extra frontend flags (`--track-widget-creation` for a tracking application).
         extra_defines: Defines after the environment's (the registrant twin's, the product ones).
+        native_assets: The native-assets mapping an entry embeds, or None.
 
     Returns:
         The `options` struct for `flutter_kernel_module_action`.
@@ -492,6 +488,7 @@ def _flutter_module_options(env, platform_dill, droppable, frontend_flags, extra
         extra_libraries = ["ui", "nativewrappers"],
         scheme = APP_SCHEME,
         extra_frontend_flags = frontend_flags,
+        native_assets = native_assets,
         unused_inputs = True,
     )
 
@@ -512,7 +509,7 @@ def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
     kmod = ctx.actions.declare_directory(stem + ".kmod")
     koutline = ctx.actions.declare_directory(stem + ".koutline")
     sources = [
-        struct(uri = library_source_uri(spec.package_name, spec.lib_root, f.short_path), file = f)
+        library_module_source(spec.package_name, spec.lib_root, f)
         for f in spec.own_srcs
     ]
     deduped_packages = first_per_package(spec.records)
@@ -619,31 +616,35 @@ def _compile_product_kmod(ctx, tools, flutter_sdk_info, spec):
         unseeded_base_kmods = depset(),
     )
 
-def _modular_dep_state(rule_deps, own_record, flutter_sdk_info):
-    """The validated dependency kernel state, or None when the target falls back.
+def _modular_dep_state(label, rule_deps, own_record, flutter_sdk_info):
+    """The validated dependency kernel state, or why the target compiles no module.
 
     Collects the deps' `FlutterKernelModuleInfo` values and checks the closure
-    agrees on one modular world — the checks that route a target to the
-    whole-program `frontend_server` compile when they fail.
+    agrees on one modular world. A debug program that reaches a target that
+    fails them fails, with the reason this returns.
 
     Args:
+        label: The target's label, for the reason.
         rule_deps: The target's dependency Targets.
         own_record: The `DartPackageInfo` for the target's own package.
         flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
 
     Returns:
         struct(dep_kernels, dep_product_kernels, records, product_modular, twins), or
-        None when a dep opted out or the closure disagrees.
+        a reason string when a dep compiles no module or the closure disagrees.
     """
     dep_mod_infos = _collect_dep_mod_infos(rule_deps)
-    if dep_mod_infos == None:
-        return None
+    if dep_mod_infos and type(dep_mod_infos[0]) == "string":
+        return "%s compiles no module: its dependencies %s carry no Flutter kernel module" % (label, ", ".join(dep_mod_infos))
     dep_kernels = [m.kernel_info for m in dep_mod_infos]
     dep_product_kernels = [m.product_kernel_info for m in dep_mod_infos]
 
+    for k in dep_kernels:
+        if not k.modular:
+            return getattr(k, "not_modular", None) or "%s compiles no module: a dependency compiles none" % label
     records, packages_ok, modular = _modular_consistency(own_record, rule_deps, dep_kernels)
     if not modular:
-        return None
+        return "%s compiles no module: one package of its closure has two roots, or two packages sit at the workspace root; a package config names one root per package" % label
     product_modular = (
         packages_ok and
         flutter_sdk_info.platform_kernel_dill_product != None and
@@ -765,29 +766,30 @@ def swap_flutter_registrant_twin(closure, twins):
     return depset([swap.get(f, f) for f in closure.to_list()], order = "postorder")
 
 def _flutter_kernel_module_aspect_impl(target, ctx):
-    # The application's aspect (it declares the flag) compiles modules only with the flag on in a debug build.
-    # Its outputs carry an `.app_debug` stem so they never collide with the `flutter_test` aspect's outputs for a
-    # library both reach in one configuration.
-    flag = getattr(ctx.attr, "_debug_modular_app", None)
+    # The application's aspect (it takes `track_widget_creation`) compiles modules only in a debug build: a profile
+    # or release app compiles whole-program AOT. Its outputs carry an `.app_debug` stem so they never collide with
+    # the `flutter_test` aspect's outputs for a library both reach in one configuration.
+    app = hasattr(ctx.attr, "track_widget_creation")
     tracked = getattr(ctx.attr, "track_widget_creation", False)
-    off = flag != None and not (flag[BuildSettingInfo].value and ctx.var["COMPILATION_MODE"] == "dbg")
-    if DartInfo not in target or off:
+    if DartInfo not in target or (app and ctx.var["COMPILATION_MODE"] != "dbg"):
         return _no_flutter_kernel_module()
 
-    enabled = ctx.attr._modular_kernel[BuildSettingInfo].value
     flutter_toolchain = ctx.toolchains["@rules_flutter//flutter:toolchain_type"]
     flutter_sdk_info = flutter_toolchain.flutter_sdk_info if flutter_toolchain else None
+    if flutter_sdk_info == None or flutter_sdk_info.platform_kernel_dill == None:
+        return _no_flutter_kernel_module("%s compiles no module: the Flutter toolchain has no debug platform kernel" % ctx.label)
     tools = flutter_kernel_tools_for(ctx, flutter_sdk_info)
-    same_sdk = is_same_sdk(tools, flutter_sdk_info)
+    if tools == None:
+        return _no_flutter_kernel_module(no_flutter_module_compiler_error(ctx.label, flutter_sdk_info))
 
     dart_info, package_name, lib_root, own_record, own_srcs, rule_deps = _modular_gate_inputs(ctx, target)
-    opaque = _is_opaque_module(ctx, dart_info, package_name, lib_root, own_record, own_srcs, rule_deps)
-    if not _modular_gate_open(ctx, opaque, enabled, tools, same_sdk, flutter_sdk_info):
-        return _no_flutter_kernel_module()
+    opaque = _opaque_reason(ctx, dart_info, package_name, lib_root, own_record, own_srcs, rule_deps)
+    if opaque != None:
+        return _no_flutter_kernel_module("%s compiles no module: %s" % (ctx.label, opaque))
 
-    dep = _modular_dep_state(rule_deps = rule_deps, own_record = own_record, flutter_sdk_info = flutter_sdk_info)
-    if dep == None:
-        return _no_flutter_kernel_module()
+    dep = _modular_dep_state(ctx.label, rule_deps = rule_deps, own_record = own_record, flutter_sdk_info = flutter_sdk_info)
+    if type(dep) == "string":
+        return _no_flutter_kernel_module(dep)
 
     dep_closure, dep_outline_closure, upstream_excluded, cross_pkg_srcs, owned, edges = _modular_dep_closures(
         target,
@@ -821,7 +823,7 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
         ctx = ctx,
         tools = tools,
         flutter_sdk_info = flutter_sdk_info,
-        target_name = target.label.name + (".app_debug" if flag != None else "") + (".tracked" if tracked else ""),
+        target_name = target.label.name + (".app_debug" if app else "") + (".tracked" if tracked else ""),
         package_name = package_name,
         job = struct(
             lib_root = lib_root,
@@ -847,8 +849,8 @@ def _module_aspect(extra_attrs):
     """Builds a module aspect over `deps`.
 
     Args:
-        extra_attrs: Attrs added to the aspect's own: `DEBUG_MODULAR_APP_ATTR` makes it a
-            `flutter_application` aspect, which registers nothing unless the flag is on in a debug build.
+        extra_attrs: Attrs added to the aspect's own: the `track_widget_creation` parameter makes it a
+            `flutter_application` aspect, which registers nothing outside a debug build.
 
     Returns:
         The aspect compiling each `DartInfo` library into a modular `.flutter.kmod` directory.
@@ -870,7 +872,7 @@ def _module_aspect(extra_attrs):
     )
 
 flutter_kernel_module_aspect = _module_aspect({})
-flutter_app_kernel_module_aspect = _module_aspect(DEBUG_MODULAR_APP_ATTR | _TRACK_ATTR)
+flutter_app_kernel_module_aspect = _module_aspect(_TRACK_ATTR)
 
 def _compile_flutter_entry_module(
         ctx,
@@ -880,7 +882,8 @@ def _compile_flutter_entry_module(
         dep_kernels,
         entry_name,
         platform_dill,
-        frontend_flags = []):
+        frontend_flags = [],
+        native_assets = None):
     """Compiles one Flutter entry module against dependency outlines.
 
     Shared by the built-in test/app compiles below and the public custom-kernel
@@ -890,7 +893,8 @@ def _compile_flutter_entry_module(
     frontend flags (`--track-widget-creation` for a tracking application).
 
     The entry compiles with the environment its `deps` were configured with (`entry_dart_env`), so it and every
-    dependency module see the same defines. A value may hold a comma.
+    dependency module see the same defines. A value may hold a comma. `native_assets` is the program's
+    native-assets mapping, which the entry embeds as `frontend_server --native-assets` embeds it in a whole program.
     """
     env = entry_dart_env(ctx)
     dep_outline_closure = depset(
@@ -915,7 +919,7 @@ def _compile_flutter_entry_module(
                 transitive = [k.closure_excluded for k in dep_kernels],
             ),
         ),
-        options = _flutter_module_options(env, platform_dill, False, frontend_flags),
+        options = _flutter_module_options(env, platform_dill, False, frontend_flags, native_assets = native_assets),
     )
     return entry
 
@@ -939,68 +943,49 @@ def _link_flutter_test_entry_module(ctx, dep_kernels, entry, output):
     )
     return base_dill
 
-def flutter_modular_test_tools(
-        ctx,
-        flutter_sdk_info,
-        own_files,
-        packages,
-        native_assets_list,
-        tools = None,
-        product = False):
-    """Decides whether a target compiles modularly, and with which tools.
+def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None):
+    """The kernel tools a debug Flutter program compiles its entry module with, failing when it cannot.
+
+    A debug `flutter_test`, `flutter_application` and `flutter_kernel_target`
+    compile their entry module against the closure's outlines and link the
+    modules; there is no other way to build their kernel. Every shape that
+    cannot fails here at analysis, naming the target and each reason.
 
     Args:
       ctx: The rule context.
       flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
       own_files: The target's own `.dart` files (`[ctx.file.main] + ctx.files.srcs`).
       packages: The synthesized `DartPackageInfo` list for the target.
-      native_assets_list: Resolved native code assets for the target.
-      tools: Optional pre-resolved kernel tools struct; defaults to
-        `flutter_kernel_tools_for(ctx, flutter_sdk_info)`.
-      product: When `True`, checks eligibility for `product_kernel_info`
-        (`-Ddart.vm.product=true` against `platform_kernel_dill_product`).
+      what: Optional name of the calling function, for a custom rule's message.
 
     Returns:
-      The kernel tools struct from `flutter_kernel_tools_for`, or `None` when the target
-      must fall back to whole-program `FlutterKernelCompile`.
+      The kernel tools struct from `flutter_kernel_tools_for`.
     """
-    enabled = ctx.attr._modular_kernel[BuildSettingInfo].value if hasattr(ctx.attr, "_modular_kernel") else False
-    platform_dill = None
-    if flutter_sdk_info != None:
-        platform_dill = flutter_sdk_info.platform_kernel_dill
-        if product:
-            platform_dill = flutter_sdk_info.platform_kernel_dill_product
-    if not enabled or platform_dill == None:
-        return None
-    if tools == None:
-        tools = flutter_kernel_tools_for(ctx, flutter_sdk_info)
-    if tools == None:
-        return None
-    same_sdk = is_same_sdk(tools, flutter_sdk_info)
+    who = "%s (%s)" % (ctx.label, what) if what else str(ctx.label)
+    if flutter_sdk_info == None or flutter_sdk_info.platform_kernel_dill == None:
+        fail("%s compiles Flutter kernel modules, which needs a Flutter toolchain with a debug platform kernel (`platform_kernel_dill`)." % who)
+    tools = required_flutter_kernel_tools(ctx, flutter_sdk_info)
 
-    dep_kernels = [
-        dep[FlutterKernelModuleInfo].product_kernel_info if product else dep[FlutterKernelModuleInfo].kernel_info
-        for dep in ctx.attr.deps
-        if FlutterKernelModuleInfo in dep
-    ]
-    dep_modular = len(dep_kernels) == len(ctx.attr.deps) and all([k.modular for k in dep_kernels])
-
+    reasons = []
+    infos = [dep[FlutterKernelModuleInfo] if FlutterKernelModuleInfo in dep else None for dep in ctx.attr.deps]
+    missing = [str(dep.label) for dep, info in zip(ctx.attr.deps, infos) if info == None]
+    if missing:
+        reasons.append("%s carry no Flutter kernel module: put them under `deps` with `flutter_kernel_module_aspect` applied" % ", ".join(missing))
+    dep_kernels = [info.kernel_info for info in infos if info != None]
+    for k in dep_kernels:
+        if not k.modular:
+            reasons.append(getattr(k, "not_modular", None) or "a dependency compiles no module")
+            break
+    if not kernel_packages_consistent(packages):
+        reasons.append("one package of its closure has two roots, or two packages sit at the workspace root: a package config names one root per package")
     owned = depset(transitive = [k.owned for k in dep_kernels]).to_list()
     edges = depset(transitive = [k.edges for k in dep_kernels]).to_list()
     duplicate = duplicated_source([f.short_path for f in own_files], owned, edges)
-
-    eligible = modular_kernel_eligible(
-        modular_kernel_conditions(
-            mode = modular_kernel_mode(enabled = enabled, kernel_mode = True),
-            dep_modular = dep_modular,
-            packages_consistent = kernel_packages_consistent(packages),
-            has_code_assets = len(native_assets_list) > 0,
-            has_compile_flags = False,
-            has_duplicate_source = duplicate != None,
-            same_sdk = same_sdk,
-        ),
-    )
-    return tools if eligible else None
+    if duplicate != None:
+        reasons.append("source %s belongs to two targets (the program and a library, or two libraries neither of which depends on the other): one source belongs to one target" % duplicate)
+    if reasons:
+        fail("%s compiles Flutter kernel modules, and cannot:\n%s" % (who, "\n".join(["  - " + r for r in reasons])))
+    return tools
 
 def compile_flutter_modular_test_kernel(
         ctx,
@@ -1010,7 +995,8 @@ def compile_flutter_modular_test_kernel(
         staged_comparator,
         lib_root,
         packages,
-        output):
+        output,
+        native_assets = None):
     """Compiles a `flutter_test`'s entry module and links it with dependency modules.
 
     Compiles against the debug `platform_kernel_dill` without product defines so
@@ -1022,12 +1008,13 @@ def compile_flutter_modular_test_kernel(
     Args:
       ctx: The `flutter_test` rule context.
       flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
-      tools: The kernel tools struct returned by `flutter_modular_test_tools`.
+      tools: The kernel tools struct returned by `flutter_module_tools`.
       bootstrap: The generated `<name>_bootstrap.dart` File (entry point).
       staged_comparator: Optional staged `<name>.golden_comparator.dart` File.
       lib_root: The test package's `lib_root` from `derive_lib_root`.
       packages: The synthesized `DartPackageInfo` list for the test.
       output: The linked `.dill` File to produce.
+      native_assets: The test's native-assets mapping (`native_assets.yaml`), embedded in the entry, or None.
 
     Returns:
       The `base_dill` File from the transitive SDK packages if present, or `None`.
@@ -1062,6 +1049,7 @@ def compile_flutter_modular_test_kernel(
         dep_kernels,
         ctx.label.name + ".flutter_entry.kmod",
         flutter_sdk_info.platform_kernel_dill,
+        native_assets = native_assets,
     )
     return _link_flutter_test_entry_module(ctx, dep_kernels, entry, output)
 
@@ -1077,12 +1065,13 @@ def compile_flutter_modular_app_kernel(
         packages,
         output,
         platform_dill,
-        debug = None):
+        debug = None,
+        native_assets = None):
     """Compiles a Flutter kernel target's entry module and links it with dependency modules and `platform_dill`.
 
     Args:
       ctx: The rule context (`flutter_kernel_target`, etc.).
-      tools: The kernel tools struct returned by `flutter_modular_test_tools`.
+      tools: The kernel tools struct returned by `flutter_module_tools`.
       lib_root: The app package's `lib_root` from `derive_lib_root`.
       packages: The synthesized `DartPackageInfo` list for the app.
       output: The linked `.dill` File to produce (with `platform_dill` prepended).
@@ -1091,6 +1080,7 @@ def compile_flutter_modular_app_kernel(
         Files compiled into the entry module under their constant URIs, the closure's
         registrant twins, which the link uses in place of the plain SDK `flutter` module, and the
         entry's extra frontend flags (`--track-widget-creation`, as the closure's modules carry).
+      native_assets: The program's native-assets mapping (`native_assets.yaml`), embedded in the entry, or None.
     """
     own = [ctx.file.main] + [f for f in ctx.files.srcs if f != ctx.file.main]
     sources = [struct(uri = app_main_location(ctx.attr.package_name, lib_root, f).uri, file = f) for f in own]
@@ -1111,6 +1101,7 @@ def compile_flutter_modular_app_kernel(
         ctx.label.name + ".flutter_entry.kmod",
         platform_dill,
         debug.flags if debug else [],
+        native_assets = native_assets,
     )
     dep_closure = swap_flutter_registrant_twin(
         depset(order = "postorder", transitive = [k.transitive_kmods for k in dep_kernels]),
@@ -1154,9 +1145,9 @@ FLUTTER_MODULAR_KERNEL_TOOLCHAINS = [
 def _flutter_modular_custom_tools(ctx, deps, own_files, packages, what):
     """Resolves the debug SDK and kernel tools for a custom modular kernel, or fails.
 
-    Unlike the built-in rules, a custom kernel has no whole-program fallback, so
-    every ineligibility the built-in rules would route to `FlutterKernelCompile`
-    fails here with the reason instead.
+    Every shape the built-in rules refuse fails here with the same reasons
+    (see `flutter_module_tools`). A custom kernel takes no native-assets
+    mapping, so native assets in its closure fail too.
 
     Args:
       ctx: The custom rule context. Must merge `FLUTTER_MODULAR_KERNEL_ATTRS`.
@@ -1170,19 +1161,14 @@ def _flutter_modular_custom_tools(ctx, deps, own_files, packages, what):
     """
     flutter_toolchain = ctx.toolchains["@rules_flutter//flutter:toolchain_type"]
     flutter_sdk_info = flutter_toolchain.flutter_sdk_info if flutter_toolchain else None
-    if flutter_sdk_info == None or flutter_sdk_info.platform_kernel_dill == None:
-        fail("%s: %s needs a Flutter SDK with a debug platform kernel dill" % (ctx.label, what))
     native_assets = depset(transitive = [
         dep[FlutterInfo].native_assets
         for dep in deps
         if FlutterInfo in dep
     ]).to_list()
     if native_assets:
-        fail("%s: %s does not support native assets (%s); the built-in rules fall back to a whole-program compile for targets with native assets, but a custom modular kernel has no fallback" % (ctx.label, what, native_assets))
-    tools = flutter_modular_test_tools(ctx, flutter_sdk_info, own_files, packages, [])
-    if tools == None:
-        fail("%s: %s is not eligible for modular compilation (duplicate sources or an unresolvable tool); the built-in rules fall back to a whole-program compile here, but a custom modular kernel has no fallback" % (ctx.label, what))
-    return flutter_sdk_info, tools
+        fail("%s: %s takes no native-assets mapping, and its closure has native assets (%s); build the program with `flutter_test` or `flutter_application`, whose entry module embeds the mapping" % (ctx.label, what, native_assets))
+    return flutter_sdk_info, flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = what)
 
 def _custom_dep_kernels(ctx, deps, what):
     """Returns the debug `DartKernelInfo` list for a custom kernel's deps, or fails."""

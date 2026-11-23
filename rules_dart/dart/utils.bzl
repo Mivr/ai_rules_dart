@@ -70,10 +70,11 @@ load(
     _kernel_packages_consistent = "kernel_packages_consistent",
     _kernel_tools_for = "kernel_tools_for",
     _library_kernel_info = "library_kernel_info",
+    _add_module_source_args = "add_module_source_args",
+    _library_module_source = "library_module_source",
     _library_source_uri = "library_source_uri",
     _modular_executable_kernel = "modular_executable_kernel",
     _modular_executable_tools = "modular_executable_tools",
-    _modular_kernel_eligible = "modular_kernel_eligible",
     _multi_root_uri = "multi_root_uri",
     _no_kernel_module = "no_kernel_module",
     _package_of_source = "package_of_source",
@@ -112,8 +113,6 @@ load(
     _kernel_module_outputs = "kernel_module_outputs",
     _library_kernel_options = "library_kernel_options",
     _library_kernel_sources = "library_kernel_sources",
-    _modular_kernel_conditions = "modular_kernel_conditions",
-    _modular_kernel_mode = "modular_kernel_mode",
 )
 load(
     "//dart/private:source_set.bzl",
@@ -219,8 +218,6 @@ kernel_module_options = _kernel_module_options
 kernel_module_outputs = _kernel_module_outputs
 library_kernel_sources = _library_kernel_sources
 library_kernel_options = _library_kernel_options
-modular_kernel_mode = _modular_kernel_mode
-modular_kernel_conditions = _modular_kernel_conditions
 dart_kernel_module_aspect = _dart_kernel_module_aspect
 find_kernel_module_tools = _find_kernel_module_tools
 kernel_tools_for = _kernel_tools_for
@@ -231,10 +228,11 @@ kernel_link_action = _kernel_link_action
 library_kernel_info = _library_kernel_info
 modular_executable_kernel = _modular_executable_kernel
 modular_executable_tools = _modular_executable_tools
-modular_kernel_eligible = _modular_kernel_eligible
 multi_root_uri = _multi_root_uri
 entry_source_uri = _entry_source_uri
 library_source_uri = _library_source_uri
+library_module_source = _library_module_source
+add_module_source_args = _add_module_source_args
 entry_sources = _entry_sources
 kernel_package_config = _kernel_package_config
 kernel_packages_consistent = _kernel_packages_consistent

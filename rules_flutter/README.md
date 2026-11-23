@@ -37,7 +37,6 @@ If `flutter build` works for you, here is what Bazel adds:
 - [Dependencies](#dependencies): pub packages, build hooks, native code
 - [Building for each platform](#building-for-each-platform): macOS, iOS, Android, Linux, Windows, web, cross-compiling, release permissions
 - [Rules reference](#rules-reference): libraries, applications, tests, plugins, code generation, providers
-- [Incremental kernel compiles](docs/incremental-kernel.md): the warm `frontend_server` worker, on by default for debug (`-c dbg`) JIT compiles (opt out with `--@rules_flutter//flutter:incremental_kernel=false`); `dev_incremental_serialization` stays opt-in because its dill is not byte-identical to a one-shot compile and its compiles carry `no-remote-cache` and `no-remote-exec`
 - [The dev tool](#the-dev-tool): running apps, hot reload, driving an app from a script
 - [Examples](#examples)
 

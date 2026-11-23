@@ -150,16 +150,19 @@ repository, and `package:test` is compiled once rather than once per test.
 A library's module compiles the sources it declares that compile for the VM.
 The compiler's own result decides which those are. A library that does not
 compile, because it imports a `dart:` library the VM lacks such as `dart:html`,
-is left out, and so is every library that imports one that is left out. A
-conditional import takes its VM alternative. Each module's `.vm_excluded.txt`
-sidecar lists the sources it left out, and why. An executable that reaches one
-compiles it from source along with its own code, so if the VM cannot run it,
-the compile fails as it would under a whole-program compile.
-Modular kernel compilation is on by default (`//dart:modular_kernel` defaults to
-`True`, and `dart_binary.modular_kernel` defaults to `True`); set
-`--@rules_dart//dart:modular_kernel=false` build-wide or `modular_kernel = False`
-on an individual `dart_binary` to opt out and restore whole-program kernel
-compiles.
+is left out, and so is every library that imports one that is left out. So is a
+library that imports or parts a file the module does not declare: another target
+of a package split across targets may declare it. A conditional import takes its
+VM alternative. Each module's `.vm_excluded.txt` sidecar lists the sources it left
+out, and why. An executable that reaches one compiles it from source along with
+its own code; if it still cannot, the compile fails naming the library, the
+import and the module that left it out.
+A kernel executable (`dart_test`, `dart_binary(compile_mode = "kernel")`) has no
+other way to build its kernel: a shape the modules cannot take fails at analysis,
+naming the target and the reason, and so does a library under an SDK whose
+version has no module compiler. `modular_kernel = False` on a `dart_binary`
+compiles the whole program with `gen_kernel` instead; only the rule set's own
+tools need it.
 
 `exe` and `aot-snapshot` binaries compile from sources by default, whatever
 `modular_kernel` says: modules compile against the JIT platform, and at SDK
@@ -171,9 +174,8 @@ which only `dart_test` does. `dart_binary(link_modules = True)` opts an
 individual `exe` or `aot-snapshot` target into the linked per-library kernel
 path (modules, one link, then the whole-program steps over the linked kernel
 with no `.dart` source as an input), so a body edit recompiles one module. It
-applies to a target eligible for modular compilation, with `dart.vm.product`
-true and not the `dbg` compilation mode; any other target takes the source path
-silently. An opted-in target also runs one validation action over every `.dart`
+applies to a target whose closure compiles as modules, with `dart.vm.product`
+true and not the `dbg` compilation mode; any other target takes the source path. An opted-in target also runs one validation action over every `.dart`
 file of its dependency closure, other repositories' packages included. The build
 fails with one `<path>:<line>: <what>` line per `import` or `export` of
 `dart:mirrors`, per `dart.library.mirrors` key of an `if (...)` configuration and
@@ -181,12 +183,13 @@ per `bool.fromEnvironment` call naming it; comments are skipped and a name built
 at run time is out of reach. Unset `link_modules` to compile such a closure from
 sources. The default stays the source path; revisit at the next SDK pin.
 
-A `dart_test` or kernel-mode `dart_binary` falls back to a whole-program compile
-on its own when `modular_kernel = False`, when its `dart_compile_flags`
-attribute is set, or when its closure embeds native code assets. Its own
-`defines` do not cause a fallback: they are the configuration of its `deps`, so
-every module of its closure and its entry compile with them, followed by the
-`//dart:extra_dart_defines` flag. Executables with equal `defines` share every
+A `dart_test` or kernel-mode `dart_binary` embeds its closure's native code
+assets in its entry module, as `gen_kernel --native-assets` does in a whole
+program. Its own `defines`, and the `-D` entries of a kernel binary's
+`dart_compile_flags`, are the configuration of its `deps`, so every module of its
+closure and its entry compile with them, followed by the
+`//dart:extra_dart_defines` flag; any other `dart_compile_flags` entry fails the
+build, naming the target and the flag. Executables with equal `defines` share every
 module; another set compiles the closure's modules once more. A `dart_binary`
 carries its `defines` this way only when it can link modules (`kernel`, or
 `link_modules = True`).

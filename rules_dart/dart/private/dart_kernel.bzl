@@ -4,10 +4,10 @@ Whole-program compilation puts every package in an executable's closure into tha
 executable's own kernel. With 30 tests, `package:test` is compiled 30 times, and a
 one-line edit in a leaf library recompiles every test that reaches it.
 
-Modular compilation is on by default (`//dart:modular_kernel = True`, and
-`dart_binary.modular_kernel = True`) for every `dart_test` and
-`dart_binary(compile_mode = "kernel")` (including `package:test`'s `test_runner`),
-and splits the work along `dart_library` boundaries. Each library
+Every `dart_test` and `dart_binary(compile_mode = "kernel")` (including
+`package:test`'s `test_runner`) compiles this way, splitting the work along
+`dart_library` boundaries; only a `dart_binary` with `modular_kernel = False`
+(the rule set's own tools) compiles from sources. Each library
 compiles its own sources into a module: a `.kmod` directory of one kernel per
 component of its sources (without the source text), a `.koutline` directory
 holding the module's outline, which is what a dependant compiles against, and an
@@ -30,15 +30,18 @@ The module compiler decides which those are from the front end's own result: a
 library that does not compile (it imports a `dart:` library the VM lacks, say),
 one that imports a library no dependency module defines, and every library that
 imports one of those are left out, and the module compiles once more with exactly
-the libraries it keeps. The sources left out are listed in the module's
-`.vm_excluded.txt` sidecar and staged in its outline directory. An executable
-whose entry module reaches one compiles it from source, so it fails exactly as a
-whole-program compile would when the VM cannot run it.
+the libraries it keeps. The sources left out are listed, with the reason, in the
+module's `.vm_excluded.txt` sidecar and in its outline directory, which stages
+them. An executable whose entry module reaches one compiles it from source, so it
+fails exactly as a whole-program compile would when the VM cannot run it, and
+names the module that left it out and why. An import of a file that is not a
+declared input is not a reason to leave a library out: it fails the module.
 
-Every decision that can send an executable back to whole-program compilation is a
-pure function here, so each can be unit tested. The actions are built only when a
-consumer needs them, so a library used only by AOT binaries never compiles its
-module.
+A kernel executable has one path: its entry module and the link. A shape that
+path cannot take fails the build where it is found, naming the target and the
+reason, rather than compiling the program another way. The actions are built
+only when a consumer needs them, so a library used only by AOT binaries never
+compiles its module.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
@@ -48,6 +51,7 @@ load(
     "//dart/private:build_settings.bzl",
     "EXECUTABLE_DEFINES_ATTRS",
     "EXTRA_DART_DEFINES_ATTR",
+    "REFUSED_DART_LIBRARIES_ATTR",
     "canonical_dart_defines",
     "executable_dart_defines",
     "validate_dart_defines",
@@ -91,8 +95,6 @@ load(
     "kernel_module_outputs",
     "library_kernel_options",
     "library_kernel_sources",
-    "modular_kernel_conditions",
-    "modular_kernel_mode",
 )
 
 visibility(["//dart/..."])
@@ -112,36 +114,30 @@ def _kernel_link_for_mode(compile_mode, modular_kernel):
         return Label("//dart/private/tools:kernel_link")
     return None
 
-# The build setting and the link tool. `dart_library` takes these (its
-# module), `dart_test` takes `MODULAR_KERNEL_ATTRS`, and `dart_binary` takes
-# `BINARY_MODULAR_KERNEL_ATTRS` (which resolves the link tool only for the modes
-# that link modules, `kernel`, `exe` and `aot-snapshot`, and only when
-# `modular_kernel` is on: the tools set it to `False`, so none depends on itself).
+# The link tool. `dart_library` takes these (its module), `dart_test` takes
+# `MODULAR_KERNEL_ATTRS`, and `dart_binary` takes `BINARY_MODULAR_KERNEL_ATTRS`
+# (which resolves the link tool only for the modes that link modules, `kernel`,
+# `exe` and `aot-snapshot`, and only when `modular_kernel` is on: the tools set
+# it to `False`, so none depends on itself).
 #
 # The module compiler is not an attribute: it is built per SDK and comes with the
 # exec tools toolchain (`DartSdkInfo.module_compiler`).
 KERNEL_MODULE_ATTRS = {
-    "_modular_kernel": attr.label(
-        doc = "The `//dart:modular_kernel` build setting (`True` by default). When off, kernel-mode executables compile whole-program as before.",
-        default = Label("//dart:modular_kernel"),
-        providers = [BuildSettingInfo],
-    ),
     "_kernel_link": attr.label(
         doc = "The tool that links an executable's kernel from the kernels its entry reaches. See `kernel_link.dart`.",
         default = Label("//dart/private/tools:kernel_link"),
         executable = True,
         cfg = "exec",
     ),
-} | VM_PRODUCT_ATTR | EXECUTABLE_DEFINES_ATTRS
+} | VM_PRODUCT_ATTR | EXECUTABLE_DEFINES_ATTRS | REFUSED_DART_LIBRARIES_ATTR
 
 MODULAR_KERNEL_ATTRS = dict(KERNEL_MODULE_ATTRS)
 
 BINARY_MODULAR_KERNEL_ATTRS = {
     "modular_kernel": attr.bool(
         default = True,
-        doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible (`exe` and `aot-snapshot` compile from sources unless `link_modules = True` opts them in, see `compile_mode`). Enabled (`True`) by default (including for `package:test`'s `test_runner`); set `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false` for whole-program compilation.",
+        doc = "Whether `compile_mode = \"kernel\"` compiles as kernel modules linked into one kernel (`exe` and `aot-snapshot` compile from sources unless `link_modules = True` opts them in, see `compile_mode`). `True` by default; a shape the modules cannot take then fails the build, naming the reason. `False` compiles the whole program from sources with `gen_kernel`: only the rule set's own tools do, because the link tool cannot link itself.",
     ),
-    "_modular_kernel": KERNEL_MODULE_ATTRS["_modular_kernel"],
     "_kernel_link": attr.label(
         doc = "The tool that links an executable's kernel from the kernels its entry reaches, when `compile_mode` is `kernel`, `exe` or `aot-snapshot`.",
         default = _kernel_link_for_mode,
@@ -150,9 +146,10 @@ BINARY_MODULAR_KERNEL_ATTRS = {
     ),
 }
 
-# Optional, so a build that registers no exec tools toolchain keeps compiling
-# whole-program rather than failing. One that registers an SDK whose version has
-# no pinned module compiler sources fails instead. See `kernel_tools_for`.
+# Optional, so a rule that compiles no module (an AOT binary, a library only AOT
+# binaries reach) builds without it. A kernel executable, and a library, whose
+# exec tools toolchain is absent or names an SDK version with no pinned module
+# compiler sources fail at analysis. See `kernel_tools_for`.
 MODULAR_KERNEL_TOOLCHAINS = [
     config_common.toolchain_type(EXEC_TOOLS_TOOLCHAIN, mandatory = False),
 ]
@@ -232,6 +229,45 @@ def library_source_uri(package_name, lib_root, short_path):
     """
     prefix = package_lib_prefix(lib_root)
     return "package:%s/%s" % (package_name, short_path[len(prefix):])
+
+def library_module_source(package_name, lib_root, f):
+    """One source of a single-package library's module, as `kernel_module_inputs` takes it.
+
+    A source directory (a `srcs_dir`, assembled by `dart_source_set`) is the
+    package root: the module compiler compiles each `.dart` file under its
+    `lib/`, under `package:<name>/` plus the file's path, finding the files when
+    it runs. A file is named by `library_source_uri`.
+
+    Args:
+      package_name: The package the library declares.
+      lib_root: The package's `lib_root`; for a source directory, its short path.
+      f: The source File, or the source directory.
+
+    Returns:
+      A `struct(uri, file)`, with `dir` (the directory whose files are the sources) for a directory.
+    """
+    if f.is_directory:
+        return struct(uri = "package:%s/" % package_name, file = f, dir = f.path + "/lib")
+    return struct(uri = library_source_uri(package_name, lib_root, f.short_path), file = f)
+
+def add_module_source_args(args, sources, own_files):
+    """Adds a module's sources to its compile request. Returns None.
+
+    Args:
+      args: The request `Args`.
+      sources: The `struct(uri, file)` sources (`dir` set for a source directory).
+      own_files: Whether to name each source file as the module's own (`--own-source-file`), which the
+        unused-inputs list never names.
+    """
+    for s in sources:
+        if getattr(s, "dir", None) != None:
+            args.add("--source-dir", s.uri)
+            args.add(s.dir)
+            continue
+        args.add("--source", s.uri)
+        args.add("--input-source", s.file)
+        if own_files:
+            args.add("--own-source-file", s.file)
 
 def kernel_package_config(packages, scheme = STABLE_SCHEME):
     """The package config a module or an entry compiles against.
@@ -618,32 +654,6 @@ def _has_no_analyze_tag(ctx):
                 return True
     return False
 
-def modular_kernel_eligible(conditions):
-    """Whether one executable compiles modularly, given every fact that decides it.
-
-    Each `False` (each `True` of the `has_*` facts) is a reason the executable
-    falls back to whole-program compilation, which is always correct, only
-    slower.
-
-    Args:
-      conditions: The struct from `modular_kernel_conditions()`, nesting the
-        struct from `modular_kernel_mode()`.
-
-    Returns:
-      True when the executable compiles modularly.
-    """
-    mode = conditions.mode
-    return (
-        mode.enabled and
-        mode.kernel_mode and
-        conditions.dep_modular and
-        conditions.packages_consistent and
-        not conditions.has_code_assets and
-        not conditions.has_compile_flags and
-        not conditions.has_duplicate_source and
-        conditions.same_sdk
-    )
-
 def find_kernel_module_tools(dart_sdk_info):
     """Locates the files a module compile runs from, in an SDK.
 
@@ -742,13 +752,18 @@ def dep_kernels_or_none(deps):
         out.append(dep[DartKernelInfo])
     return out
 
-def no_kernel_module():
+def no_kernel_module(reason = None):
     """The `DartKernelInfo` of a library that compiles no module and is not modular.
+
+    Args:
+      reason: Why, naming the library: what a kernel executable that reaches
+        it reports when it fails.
 
     Returns:
       A `DartKernelInfo` whose `modular` is False.
     """
     return DartKernelInfo(
+        not_modular = reason,
         kmod = None,
         koutline = None,
         transitive_kmods = depset(order = "postorder"),
@@ -818,11 +833,7 @@ def _kmod_args(ctx, args, request):
 
     # A module directory is one argument, not its files: `expand_directories` is off.
     args.add_all(request.dep_kmods, before_each = "--input-kmod", expand_directories = False)
-    for s in request.sources:
-        args.add("--source", s.uri)
-        args.add("--input-source", s.file)
-        if request.unused_inputs_list != None:
-            args.add("--own-source-file", s.file)
+    add_module_source_args(args, request.sources, request.unused_inputs_list != None)
     args.add("--output", request.output.path)
     if request.koutline != None:
         args.add("--output-outline", request.koutline.path)
@@ -831,6 +842,8 @@ def _kmod_args(ctx, args, request):
         args.add("--unused-inputs-list", request.unused_inputs_list)
     if not request.droppable:
         args.add("--no-drop")
+    if request.native_assets != None:
+        args.add("--native-assets", request.native_assets)
     if request.extra_inputs:
         args.add_all(request.extra_inputs, before_each = "--input-source")
     if request.check_imports:
@@ -839,6 +852,7 @@ def _kmod_args(ctx, args, request):
             args.add("--target-label", request.target_label)
         args.add_all(request.own_packages, before_each = "--own-package")
         args.add_all(request.direct_packages, before_each = "--direct-package")
+        args.add_all(request.refused_libraries, before_each = "--refused-library")
 
 def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
     """Compiles one module with the SDK's module compiler.
@@ -897,16 +911,20 @@ def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
         excluded = excluded,
         unused_inputs_list = unused_inputs_list,
         droppable = options.droppable,
+        native_assets = options.native_assets,
         extra_inputs = inputs.extra_inputs,
         check_imports = options.check_imports,
         target_label = options.target_label,
         own_packages = options.own_packages,
         direct_packages = options.direct_packages,
+        refused_libraries = getattr(options, "refused_libraries", ()),
     ))
 
     direct_inputs = [platform] + [s.file for s in inputs.sources]
     if options.define_file != None:
         direct_inputs.append(options.define_file)
+    if options.native_assets != None:
+        direct_inputs.append(options.native_assets)
     if package_records == None:
         # An inline-written config is an input; a worker-written one is an output.
         direct_inputs.append(package_config)
@@ -1055,30 +1073,111 @@ def entry_sources(files, scheme = STABLE_SCHEME):
 
 global_dart_defines = _global_dart_defines
 
+def _inconsistent_package(records):
+    """The package name a closure's records give two roots, or the root packages there are two of.
+
+    Args:
+      records: `DartPackageInfo` records, duplicates kept.
+
+    Returns:
+      A message fragment, or None when the records are consistent.
+    """
+    root_of = {}
+    roots = []
+    for pkg in records:
+        seen = root_of.get(pkg.package_name)
+        if seen == None:
+            root_of[pkg.package_name] = pkg.lib_root
+        elif seen != pkg.lib_root:
+            return "package `%s` has two roots in its closure (`%s` and `%s`): a package config names one" % (
+                pkg.package_name,
+                seen or ".",
+                pkg.lib_root or ".",
+            )
+        if not pkg.lib_root and pkg.package_name not in roots:
+            roots.append(pkg.package_name)
+    if len(roots) > 1:
+        return "packages %s all sit at the workspace root: a package config holds one root package" % ", ".join(["`%s`" % r for r in roots])
+    return None
+
+def _not_modular_reasons(ctx, tools, target_sdk, closure, own_files, own_record, kernels):
+    """Why an executable's closure cannot compile and link as modules: a list of messages, empty when it can.
+
+    Args:
+      ctx: The executable's rule context.
+      tools: The struct from `find_kernel_module_tools`.
+      target_sdk: The `DartSdkInfo` that runs the linked kernel.
+      closure: The clean closure of `executable_package`, or None.
+      own_files: The executable's own `.dart` files.
+      own_record: The executable's own `DartPackageInfo`, or None.
+      kernels: The `DartKernelInfo` of each dependency, or None when one has none.
+
+    Returns:
+      `(reasons, scan)`: the messages, and the flattened closure scan (or None).
+    """
+    reasons = []
+    if tools.version != target_sdk.version:
+        reasons.append(
+            "the exec SDK (%s) and the target SDK (%s) differ: the module compiler of one writes kernels the VM of the other refuses; register one Dart SDK version for both" %
+            (tools.version, target_sdk.version),
+        )
+    if kernels == None:
+        missing = [str(dep.label) for dep in ctx.attr.deps if DartKernelInfo not in dep]
+        reasons.append("%s provide no kernel module (`DartKernelInfo`)" % ", ".join(missing))
+    else:
+        for k in kernels:
+            if not k.modular:
+                reasons.append(getattr(k, "not_modular", None) or "a dependency's closure compiles no module")
+                break
+    if closure == None:
+        records = depset(transitive = [dep[DartInfo].transitive_packages for dep in ctx.attr.deps]).to_list()
+        if own_record != None:
+            records = [own_record] + records
+        inconsistent = _inconsistent_package(records)
+        if inconsistent != None:
+            reasons.append(inconsistent)
+    own_paths = [f.short_path for f in own_files]
+    scan = None
+    if closure == None or _clean_own_in_lib(own_paths, closure.keys):
+        scan = _closure_scan(kernels or [])
+        duplicate = duplicated_source(own_paths, scan.owned, scan.edges)
+        if duplicate != None:
+            reasons.append(
+                "source %s belongs to two targets (the executable and a library, or two libraries neither of which depends on the other): one source belongs to one target" % duplicate,
+            )
+    return reasons, scan
+
 def modular_executable_tools(
         ctx,
         own_files,
         own_record,
         kernel_mode,
-        resolved_assets,
-        compile_flags,
+        resolved_assets = [],
+        compile_flags = [],
         target_sdk = None,
         closure = None,
-        own_defines = []):
-    """Decides whether an executable compiles modularly, and with which tools.
+        own_defines = [],
+        aot_link = False):
+    """The tools an executable compiles its entry module with, or None when it compiles from sources.
 
-    Reads the flag and gathers each fact of the `modular_kernel_conditions`
-    struct `modular_kernel_eligible` takes. The
-    caller then compiles modularly only when this returns tools.
+    A kernel executable (`dart_test`, `dart_binary(compile_mode = "kernel")`)
+    has one path: it compiles its entry module against the outlines of its
+    closure and links the modules. A shape that path cannot take fails the
+    build here, naming the target and every reason; nothing compiles the
+    program another way. The caller compiles with `modular_executable_kernel`.
 
     Args:
       ctx: The executable's rule context, carrying `MODULAR_KERNEL_ATTRS` and
         `deps`.
       own_files: The executable's own `.dart` files, its entry point first.
       own_record: The executable's own `DartPackageInfo`, or None.
-      kernel_mode: Whether the executable is compiled as a kernel.
-      resolved_assets: The code assets resolved for the executable.
-      compile_flags: The executable's `dart_compile_flags`.
+      kernel_mode: Whether the executable links modules at all. False returns
+        None: the program compiles from sources (an AOT binary).
+      resolved_assets: The code assets resolved for the executable. A kernel
+        executable embeds their mapping in its entry module
+        (`modular_executable_kernel(native_assets = ...)`).
+      compile_flags: The `dart_compile_flags` that no module compile takes.
+        Each fails a kernel executable, naming the flag.
       target_sdk: Optional `DartSdkInfo` that will execute the output kernel;
         defaults to `ctx.toolchains["//dart:toolchain_type"].dart_sdk_info`.
       closure: Optional `executable_package`'s `closure`: the closure's
@@ -1087,64 +1186,47 @@ def modular_executable_tools(
         name with one root each, so they are consistent without a walk, and
         `modular_executable_kernel` takes `packages = None`.
       own_defines: Defines of the executable that its `deps` edge does NOT
-        carry as configuration. Any selects whole-program compilation, since
-        no module took them. The built-in rules pass none: their `deps` edge
-        sets `executable_defines_transition`, and they hand their `defines`
-        to `modular_executable_kernel` instead. A custom rule does the same
-        to stay modular.
+        carry as configuration. No module took them, so any fails the build.
+        The built-in rules pass none: their `deps` edge sets
+        `executable_defines_transition`, and they hand their `defines` to
+        `modular_executable_kernel` instead. A custom rule does the same.
+      aot_link: Whether this is an `exe` or `aot-snapshot` binary that opted
+        into linking its modules (`link_modules`). That is a release path: a
+        shape it cannot link (code assets, `dart_compile_flags`, any reason
+        above) takes the program's sources instead, and this returns None.
 
     Returns:
       The struct from `find_kernel_module_tools`, or None.
     """
-    enabled = ctx.attr._modular_kernel[BuildSettingInfo].value if hasattr(ctx.attr, "_modular_kernel") else True
-    if not enabled or not kernel_mode or own_defines:
+    if not kernel_mode:
         return None
+    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN]
     tools = kernel_tools_for(ctx)
     if tools == None:
-        exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN]
+        if aot_link:
+            return None
         if exec_tc != None:
-            # One path per mode: an SDK that cannot compile modules is an
-            # error, not a silent whole-program compile.
             fail(no_module_compiler_error(ctx.label, exec_tc.dart_sdk_info))
-        return None
+        fail(("%s compiles as kernel modules, which the module compiler of the exec tools toolchain " +
+              "(`@rules_dart//dart:exec_tools_toolchain_type`) builds, but the build registers none. " +
+              "Register the Dart toolchains (`dart.toolchain()` in MODULE.bazel).") % ctx.label)
     if target_sdk == None:
         target_sdk = ctx.toolchains[_TOOLCHAIN_TYPE].dart_sdk_info
 
     kernels = dep_kernels_or_none(ctx.attr.deps)
-    dep_modular = kernels != None and all([k.modular for k in kernels])
-
-    if closure != None:
-        # A clean closure has one record per name, one name per root and at
-        # most one root package: consistent by construction.
-        consistent = True
-    else:
-        records = depset(transitive = [dep[DartInfo].transitive_packages for dep in ctx.attr.deps]).to_list()
-        if own_record != None:
-            records = [own_record] + records
-        consistent = kernel_packages_consistent(records)
-
-    own_paths = [f.short_path for f in own_files]
-    if closure != None and not _clean_own_in_lib(own_paths, closure.keys):
-        # Nothing to scan: see `_clean_own_in_lib`.
-        scan = None
-        duplicate = None
-    else:
-        scan = _closure_scan(kernels or [])
-        duplicate = duplicated_source(own_paths, scan.owned, scan.edges)
-
-    eligible = modular_kernel_eligible(
-        modular_kernel_conditions(
-            modular_kernel_mode(enabled, kernel_mode),
-            dep_modular,
-            consistent,
-            len(resolved_assets) > 0,
-            len(compile_flags) > 0,
-            duplicate != None,
-            tools.version == target_sdk.version,
-        ),
-    )
-    if not eligible:
-        return None
+    reasons, scan = _not_modular_reasons(ctx, tools, target_sdk, closure, own_files, own_record, kernels)
+    for flag in compile_flags:
+        reasons.append("`dart_compile_flags` entry `%s` cannot be given to a kernel module compile; only `-D` defines can, as `defines`" % flag)
+    if own_defines:
+        reasons.append("its `defines` (%s) reach no module: give its `deps` edge `executable_defines_transition` and pass them to `modular_executable_kernel`" % ", ".join(own_defines))
+    if aot_link:
+        if reasons or resolved_assets:
+            return None
+    elif reasons:
+        fail("%s compiles as kernel modules, and cannot:\n%s" % (
+            ctx.label,
+            "\n".join(["  - " + r for r in reasons]),
+        ))
 
     # The executable's entry compile reads the same closure: hand the one
     # flattened copy over with the tools, so `modular_executable_kernel` does
@@ -1286,7 +1368,8 @@ def modular_executable_kernel(
         output,
         compile,
         link,
-        own_defines = []):
+        own_defines = [],
+        native_assets = None):
     """Compiles an executable's entry module, then links it to `output`.
 
     The entry compiles from source whatever it reaches that no dependency module
@@ -1313,6 +1396,9 @@ def modular_executable_kernel(
         (`executable_defines_transition`). The entry compiles with the same
         canonical list, then the `//dart:extra_dart_defines` flag, exactly as
         the modules did.
+      native_assets: The code-asset mapping (`native_assets.yaml`) the entry
+        embeds, or None. The VM resolves each `@Native` asset of the linked
+        program through it, as through a whole program's `--native-assets`.
 
     Returns:
       The shared `base_dill` File if `link.use_base_dill` is True and a dependency
@@ -1361,6 +1447,7 @@ def modular_executable_kernel(
         kernel_module_options(
             defines = canonical_dart_defines(own_defines) + global_dart_defines(ctx),
             droppable = False,
+            native_assets = native_assets,
         ),
         compile,
     )
@@ -1402,38 +1489,42 @@ def _kmod_pkg_name(kmod):
     return name[:-len(".kmod")] if name.endswith(".kmod") else name
 
 def _lib_kernel_gate(ctx, opaque, rule_deps):
-    """Returns (tools, deps, dep_kernels, env), or None when no module is built.
+    """Returns (tools, deps, dep_kernels, env), or a reason string when no module is built.
 
     `env` is `struct(defines, define_file)`: the environment of the executable
     whose closure this is (the `executable_dart_defines` settings), then the
-    `//dart:extra_dart_defines` flag.
+    `//dart:extra_dart_defines` flag. An exec SDK with no module compiler fails
+    here, as it fails a kernel executable: the library would compile no module.
     """
-    enabled = ctx.attr._modular_kernel[BuildSettingInfo].value if hasattr(ctx.attr, "_modular_kernel") else True
     exe_env = executable_dart_defines(ctx)
     env = struct(
         defines = exe_env.defines + global_dart_defines(ctx),
         define_file = exe_env.flagfile,
     )
-    if opaque or not enabled:
-        return None
+    if opaque:
+        return "%s compiles no module: %s" % (ctx.label, opaque if type(opaque) == "string" else "its sources are not known at analysis")
     tools = kernel_tools_for(ctx)
     if tools == None:
-        return None
+        exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN]
+        if exec_tc != None:
+            fail(no_module_compiler_error(ctx.label, exec_tc.dart_sdk_info))
+        return "%s compiles no module: the build registers no exec tools toolchain (`@rules_dart//dart:exec_tools_toolchain_type`)" % ctx.label
     deps = rule_deps if rule_deps != None else ctx.attr.deps
     dep_kernels = dep_kernels_or_none(deps)
     if dep_kernels == None:
-        return None
+        missing = [str(dep.label) for dep in deps if DartKernelInfo not in dep]
+        return "%s compiles no module: its dependencies %s provide none (`DartKernelInfo`)" % (ctx.label, ", ".join(missing))
     return tools, deps, dep_kernels, env
 
 def _lib_kernel_records(deps, dep_kernels, own_record, own_records):
-    """Returns (records, raw, own_records), or None when the closure is not modular."""
+    """Returns (records, raw, own_records), or why the closure is not modular (a string)."""
     raw = depset(transitive = [dep[DartInfo].transitive_packages for dep in deps if DartInfo in dep]).to_list()
     if own_records == None:
         own_records = [own_record] if own_record != None else []
     records = own_records + raw
-    modular = kernel_packages_consistent(records) and all([k.modular for k in dep_kernels])
-    if not modular:
-        return None
+    inconsistent = _inconsistent_package(records)
+    if inconsistent != None:
+        return inconsistent
     return records, raw, own_records
 
 def _lib_kernel_has_cycle(single_package_name, raw, owned_list, edges_list, pkgs, non_standalone):
@@ -1479,10 +1570,7 @@ def _lib_kernel_cyclic_srcs(deps, dep_kernels, own_srcs, single_package_name, ra
 def _lib_kernel_sources(package_name, lib_root, own_srcs, own_records, pkgs):
     """Returns the module's `struct(uri, file)` sources, named per owning member."""
     if len(own_records) == 1:
-        return [
-            struct(uri = library_source_uri(package_name, lib_root, f.short_path), file = f)
-            for f in own_srcs
-        ]
+        return [library_module_source(package_name, lib_root, f) for f in own_srcs]
 
     # A merged library's sources span its members' roots: each file is
     # named by the member package whose `lib/` holds it.
@@ -1539,12 +1627,12 @@ def _lib_kernel_slow_state(ctx, library, options, deps, dep_kernels):
       dep_kernels: The `DartKernelInfo` of each direct dependency.
 
     Returns:
-      The state struct `library_kernel_info` compiles from, or None when the
-      precise records do not stay modular.
+      The state struct `library_kernel_info` compiles from, or why the precise
+      records do not stay modular (a string).
     """
     recs = _lib_kernel_records(deps, dep_kernels, library.own_record, library.own_records)
-    if recs == None:
-        return None
+    if type(recs) == "string":
+        return recs
     records, raw, own_records = recs
     pkgs = first_per_package(records)
     graph = lib_kernel_graph(ctx, deps, dep_kernels, library.own_srcs, records, pkgs)
@@ -1600,18 +1688,21 @@ def library_kernel_info(ctx, library, compile, options):
       A `DartKernelInfo`.
     """
     gated = _lib_kernel_gate(ctx, options.opaque, options.rule_deps)
-    if gated == None:
-        return no_kernel_module()
+    if type(gated) == "string":
+        return no_kernel_module(gated)
     tools, deps, dep_kernels, env = gated
-    if not all([k.modular for k in dep_kernels]):
-        return no_kernel_module()
+    for k in dep_kernels:
+        if not k.modular:
+            return no_kernel_module(getattr(k, "not_modular", None))
     if not lib_owns_compatible(library.own_records, deps):
-        return no_kernel_module()
+        return no_kernel_module(
+            "%s compiles no module: one of its packages has another root, or it is a second root package, among its direct dependencies' packages: a package config names one root per package" % ctx.label,
+        )
 
     if lib_kernel_needs_graph(library, options, deps):
         state = _lib_kernel_slow_state(ctx, library, options, deps, dep_kernels)
-        if state == None:
-            return no_kernel_module()
+        if type(state) == "string":
+            return no_kernel_module("%s compiles no module: %s" % (ctx.label, state))
     else:
         state = lib_kernel_fast_state(ctx, library, options, deps, dep_kernels)
     graph = state.graph
@@ -1648,6 +1739,7 @@ def library_kernel_info(ctx, library, compile, options):
             target_label = "//%s:%s" % (ctx.label.package, ctx.label.name),
             own_packages = own_packages(own_records, library.package_name),
             direct_packages = direct_packages(deps),
+            refused_libraries = ctx.attr._refused_dart_libraries[BuildSettingInfo].value if hasattr(ctx.attr, "_refused_dart_libraries") else (),
         ),
         compile,
     )
@@ -1694,7 +1786,7 @@ def _dart_kernel_module_aspect_impl(target, ctx):
         ),
         kernel_compile_settings(product = ctx.attr._vm_product[BuildSettingInfo].value),
         library_kernel_options(
-            opaque = inputs.opaque,
+            opaque = inputs.opaque_reason,
             rule_deps = inputs.rule_deps,
             non_standalone = non_standalone,
         ),
@@ -1705,11 +1797,6 @@ dart_kernel_module_aspect = aspect(
     implementation = _dart_kernel_module_aspect_impl,
     attr_aspects = ["deps", "library"],
     attrs = KERNEL_MODULE_ATTRS | EXTRA_DART_DEFINES_ATTR | {
-        "_modular_kernel": attr.label(
-            doc = "The `//dart:modular_kernel` build setting, disabled when `--allow_analysis_failures` is active.",
-            default = Label("//dart/private:aspect_modular_kernel"),
-            providers = [BuildSettingInfo],
-        ),
         "compile_mode": attr.string(
             doc = "The originating executable's `compile_mode` (`kernel` for `dart_test`). Defaults to `kernel`.",
             default = "kernel",

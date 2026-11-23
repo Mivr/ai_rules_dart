@@ -6,8 +6,9 @@ stored action, while the compiler still receives the value when the guard
 expands the file. These tests pin both halves of that contract:
 
 - with a declared flagfile (which the `flutter_application` macro turns into a
-  `dart_defines` target) the `FlutterKernelCompile` argv contains `@<path>` of
-  that target's output and none of the file's `-D` lines, and the output is an
+  `dart_defines` target) the argv of the compile of the app's sources (a debug
+  entry module's `--define-file`, a whole-program `@<path>`) names that
+  target's output and none of the file's `-D` lines, and the output is an
   action input;
 - without one the argv is the base one: the ordinary `-D` flags are still
   there and no flagfile argument appears.
@@ -31,17 +32,17 @@ _VISIBLE_DEFINE = "VISIBLE=attr-value"
 _BASE_DEFINE = "BASE=attr-value"
 
 def _kernel_action(env):
-    """The target's one whole-program kernel compile action."""
+    """The action that compiles the target's own sources: the whole-program compile, or a debug entry module."""
     actions = [
         action
         for action in analysistest.target_actions(env)
-        if action.mnemonic == "FlutterKernelCompile"
+        if action.mnemonic == "FlutterKernelCompile" or (action.mnemonic == "DartKernel" and "--no-drop" in action.argv)
     ]
     asserts.equals(
         env,
         1,
         len(actions),
-        "expected one FlutterKernelCompile, got %s" %
+        "expected one kernel compile of the app's sources, got %s" %
         [action.mnemonic for action in actions],
     )
     return actions[0] if actions else None
@@ -69,8 +70,8 @@ def _flagfile_expands_test_impl(ctx):
     if flagfiles:
         asserts.true(
             env,
-            "@" + flagfiles[0] in argv,
-            "expected @%s in the kernel argv, got %s" % (flagfiles[0], argv),
+            "@" + flagfiles[0] in argv or flagfiles[0] in argv,
+            "expected the flagfile %s in the kernel argv, got %s" % (flagfiles[0], argv),
         )
     asserts.true(
         env,
@@ -99,7 +100,7 @@ def _no_flagfiles_test_impl(ctx):
     asserts.equals(
         env,
         [],
-        [a for a in argv if a.startswith("@")],
+        [a for a in argv if a.endswith(".dart_defines")],
         "a target without define_flagfiles must pass no flagfile",
     )
     asserts.equals(

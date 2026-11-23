@@ -162,42 +162,6 @@ dart_defines_flag(
     visibility = ["//visibility:public"],
 )
 
-# Incremental Flutter kernel compiles: when true (the default), non-AOT
-# whole-program (`target == "flutter"`) `FlutterKernelCompile` actions of a
-# debug build (`-c dbg`) run through a persistent `frontend_server`
-# worker (`//flutter/private/tools:incr_fkc_worker`) instead of a batch
-# compile behind `kernel_filter`. Opt out with:
-#
-#   bazel build --@rules_flutter//flutter:incremental_kernel=false //app
-#
-# Scope: debug (`-c dbg`) non-AOT whole-program `target == "flutter"`
-# compiles — never other compilation modes (fastbuild, opt), AOT, web
-# (`dartdevc`), `from_dill`, `import_dill` or `recorded_uses` compiles. Outside
-# its scope, or with the flag false, a build runs byte-identical actions to the
-# base. One warm server holds about 1.75 GiB; bound worker processes with
-# `--worker_max_instances=FlutterKernelCompile=N` (each worker keeps at most
-# one warm server by default).
-bool_flag(
-    name = "incremental_kernel",
-    build_setting_default = True,
-    visibility = ["//visibility:public"],
-)
-
-# Development only, and deliberately NOT the default: lets the incremental
-# kernel worker keep `frontend_server`'s incremental serialization, so a warm
-# edit does not rewrite the full dill from scratch. The resulting dill is NOT
-# byte-identical to a one-shot compile, and the compiles that use it carry
-# `no-remote-cache` and `no-remote-exec`, so a default-on setting would take
-# every debug build off shared caches and remote executors. Do not use it in CI
-# or remote-cache configurations. Only has an effect together with
-# `//flutter:incremental_kernel`, on the compiles that flag routes through the
-# worker. Off by default; with it off every action is unchanged.
-bool_flag(
-    name = "dev_incremental_serialization",
-    build_setting_default = False,
-    visibility = ["//visibility:public"],
-)
-
 # Apps that use Material widgets list this in their flutter_application(
 # deps = [...]) to bundle MaterialIcons-Regular.otf into flutter_assets/.
 # Backed by the active flutter toolchain — the file ships with every

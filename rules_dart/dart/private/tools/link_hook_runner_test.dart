@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:rules_dart_guard/directive_guard.dart';
 import 'package:test/test.dart';
 
-import '../../guard/lib/directive_guard.dart';
 import 'link_hook_runner.dart' as runner;
 
 void main() {

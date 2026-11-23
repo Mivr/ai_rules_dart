@@ -265,33 +265,31 @@ A test closure and an application compile differently. Both go through the same
 dependency is compiled once into a `<name>.flutter.kmod` directory by
 `flutter_kernel_module_aspect`, and the entry module links them with
 `DartKernelLink` (`flutter/private/flutter_kernel_module.bzl:1-14`). The closure
-is modular only when `flutter_modular_test_tools`
-(`flutter/private/flutter_kernel_module.bzl:1093`) returns tools: the mode is
-enabled, every dependency is modular, the packages are consistent, the target
-has no code assets, no source is duplicated, and the SDK is the same
-(`flutter/private/flutter_kernel_module.bzl:1135-1147`). The test's own
-`defines` are the configuration of its `deps`, so they keep it modular
-(`flutter/private/flutter_defines_files.bzl`). Otherwise
-`flutter_test` falls back to one whole-program compile of its sources
-(`flutter/private/flutter_test.bzl:209-240`).
+is the only way to build a test's kernel: `flutter_module_tools`
+(`flutter/private/flutter_kernel_module.bzl`) fails at analysis, naming each
+reason, when a dependency has no module, the packages are inconsistent, a
+source is duplicated, or the Flutter toolchain's Dart SDK has no module
+compiler. The test's own `defines` are the configuration of its `deps`
+(`flutter/private/flutter_defines_files.bzl`), and its native assets ride the
+entry module's native-assets mapping.
 
 **Applications.** `flutter_application`
 (`flutter/private/flutter_application.bzl:113-115`), the standalone
 `flutter_kernel_target` (`flutter/private/flutter_kernel_target.bzl:13`) and
 `flutter_aot_target` (`flutter/private/flutter_aot_target.bzl:44`) all call
-`flutter_compile_kernel` (`flutter/private/common.bzl:979`). It chooses the path
-in `_run_kernel_compile` (`flutter/private/common.bzl:971`). The modular path is
-taken only for a non-AOT, non-profile compile of the `flutter` frontend target
-with no registrant, agent, native-assets manifest, recorded uses or extra frontend
-flags (`flutter/private/common.bzl:892-900`); defines, the flavor and
-`dart_defines` are the configuration of the `deps` and keep nothing
-whole-program; and
-only when modular tools exist. Every other build, including AOT and profile,
-takes the whole-program `flutter_kernel_compile_action`
-(`flutter/private/flutter_compile.bzl:602`). An opt-in incremental worker
-applies to JIT whole-program compiles only
-(`flutter/private/flutter_compile.bzl:199-214`, and
-[`docs/incremental-kernel.md`](incremental-kernel.md)).
+`flutter_compile_kernel` (`flutter/private/common.bzl:979`). A debug (JIT)
+kernel is always the entry module linked with the closure's modules
+(`_run_kernel_compile` in `flutter/private/common.bzl`): defines, the flavor
+and `dart_defines` are the configuration of the `deps`, the native-assets
+manifest rides the entry module, `--track-widget-creation` is a module
+configuration, and the staged agent, native agent and registrant compile into
+the entry under constant URIs with the closure's registrant twin of the SDK
+`flutter` module. A debug program whose shape cannot be modular fails at
+analysis, naming the target and the reason (another front-end flag, a
+registrant with no twin, a dependency without a module). AOT, profile and
+release take the whole-program `flutter_kernel_compile_action`
+(`flutter/private/flutter_compile.bzl`), behind the `kernel_filter` read
+guard; so do the integration-test apps and a custom rule that calls it.
 
 A custom kernel built from `flutter_modular_test_kernel` or
 `flutter_modular_app_kernel` (`flutter/utils.bzl:198` and
@@ -451,8 +449,6 @@ These are true of the tree and are not yet fixed. Do not describe them as done.
 
 ## Related documents
 
-- [`incremental-kernel.md`](incremental-kernel.md): the opt-in incremental
-  worker for JIT compiles.
 - [`pub-assets.md`](pub-assets.md): how a pub package's `flutter.assets` become
   bundle keys.
 - [`dependencies.md`](dependencies.md): dependency floors and the Maven lock

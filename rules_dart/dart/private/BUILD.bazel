@@ -13,27 +13,6 @@ analyzer_sdk_summary(
     visibility = ["//visibility:public"],
 )
 
-config_setting(
-    name = "allow_analysis_failures",
-    values = {"allow_analysis_failures": "true"},
-)
-
-bool_setting(
-    name = "modular_kernel_off",
-    build_setting_default = False,
-    tags = ["manual"],
-)
-
-alias(
-    name = "aspect_modular_kernel",
-    actual = select({
-        ":allow_analysis_failures": ":modular_kernel_off",
-        "//conditions:default": "//dart:modular_kernel",
-    }),
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
 # The aspects' analyzer attributes point at these aliases, which route
 # unconditionally to `//dart:analyzer_summary_tool` and `:analyzer_sdk_summary`.
 # `analyzer_summary` is the sole analysis engine on supported SDKs (3.13 to 3.14,

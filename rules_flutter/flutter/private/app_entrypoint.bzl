@@ -65,7 +65,7 @@ def agent_layout_path(ctx, name):
     """
     return "%s.debug_agent/%s/%s" % (ctx.label.name, AGENT_DIR, name)
 
-def stage_agent_extensions(ctx, aot, mode):
+def stage_agent_extensions(ctx, aot, mode, has_flutter = True):
     """Stage the debug-agent sources next to the registrant in debug builds.
 
     In debug builds (non-AOT), if the rule carries an `_agent_extensions_src`
@@ -79,6 +79,8 @@ def stage_agent_extensions(ctx, aot, mode):
         ctx: The rule context.
         aot: Whether the compile is AOT.
         mode: The build mode.
+        has_flutter: Whether the program's closure holds the `flutter` package. The
+            agent imports it, so a program without it has no agent to stage.
 
     Returns:
         struct(agent, native_agent, constant, dev_agent, dev_native_agent):
@@ -89,7 +91,7 @@ def stage_agent_extensions(ctx, aot, mode):
     agent_src_attr = getattr(ctx.attr, "_agent_extensions_src", None)
     staged_agent = None
     staged_native_agent = None
-    if constant and agent_src_attr != None:
+    if constant and agent_src_attr != None and has_flutter:
         staged_agent = ctx.actions.declare_file(agent_layout_path(ctx, "agent_extensions.dart"))
         ctx.actions.symlink(output = staged_agent, target_file = ctx.file._agent_extensions_src)
 

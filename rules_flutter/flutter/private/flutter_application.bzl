@@ -23,7 +23,7 @@ load("//flutter/private:flutter_aot_compile.bzl", "flutter_aot_elf_action", "flu
 load("//flutter/private:flutter_defines_files.bzl", "DART_DEFINES_DOC", "app_defines_transition", "effective_flavor")
 load("//flutter/private:flutter_font_family.bzl", "FONTS_ATTR")
 load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
-load("//flutter/private:flutter_kernel_module.bzl", "DEBUG_MODULAR_APP_ATTR", "flutter_app_kernel_module_aspect")
+load("//flutter/private:flutter_kernel_module.bzl", "flutter_app_kernel_module_aspect")
 load("//flutter/private:flutter_native_assets.bzl", "collect_application_native_assets", "collect_bundled_code_asset_files", "write_native_assets_manifest")
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "layering_check_for", "layering_toolchains")
 load("//flutter/private:native_sources.bzl", "collect_native_source_pairs")
@@ -669,7 +669,7 @@ def _flutter_application_impl(ctx):
 flutter_application = rule(
     implementation = _flutter_application_impl,
     attrs = dicts.add(
-        FLUTTER_APPLICATION_ATTRS | MODULAR_KERNEL_ATTRS | DEBUG_MODULAR_APP_ATTR,
+        FLUTTER_APPLICATION_ATTRS | MODULAR_KERNEL_ATTRS,
         {
             "analyze_size": attr.bool(
                 default = False,
@@ -679,8 +679,7 @@ flutter_application = rule(
                 ),
             ),
             "fonts": FONTS_ATTR,
-            # The module aspect registers nothing unless the private debug_modular_app flag is on in a debug build.
-            # Then the app's defines, flavor and `dart_defines` are the configuration of its `deps`, so every
+            # The module aspect registers nothing outside a debug build. There the app's defines, flavor and `dart_defines` are the configuration of its `deps`, so every
             # module compiles with them and the app stays modular (see `app_defines_transition`).
             "deps": attr.label_list(
                 doc = FLUTTER_DEPS_DOC,

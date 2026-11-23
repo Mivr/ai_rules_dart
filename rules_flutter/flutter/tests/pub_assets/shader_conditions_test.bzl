@@ -335,7 +335,8 @@ def _declare_probe_tests(name):
     """
     flutter_library(
         name = name + "_probe_lib",
-        srcs = ["stub.dart"],
+        # Its shaders are the point; the application owns `stub.dart` (one source belongs to one target).
+        srcs = [],
         package_name = "shader_probe",
         pkg_shaders = {
             ":shaders/web_only.frag": "shaders/web_only.frag",

@@ -19,7 +19,6 @@
 @rules_flutter//flutter/private/tools:defines_files	exec build tool (AOT); outputs only, no CLI spawn
 @rules_flutter//flutter/private/tools:extract_library_tags	exec build tool (AOT); outputs only, no CLI spawn
 @rules_flutter//flutter/private/tools:generate_asset_manifest	exec build tool (AOT); outputs only, no CLI spawn
-@rules_flutter//flutter/private/tools:incr_fkc_worker	exec build tool (AOT persistent worker); outputs only, no CLI spawn
 @rules_flutter//flutter/private/tools:kernel_filter	exec build tool (AOT); outputs only, no CLI spawn
 @rules_flutter//flutter/private/tools:macho_edit	exec build tool (AOT); outputs only, no CLI spawn
 @rules_flutter//flutter/private/tools:macho_fat_archive_test	unit test of the fat-archive writer; runs on the host, spawns no CLI
@@ -56,10 +55,6 @@
 @rules_flutter//flutter/private/tools:flutter_integration_test_runner_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:flutter_test_runner_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:generate_asset_manifest_test	Dart unit test; no CLI spawn
-@rules_flutter//flutter/private/tools:incr_fkc_define_flagfiles_test	Dart unit test; no CLI spawn
-@rules_flutter//flutter/private/tools:incr_fkc_scratch_test	lifecycle test driving the worker binary over pipes; TMPDIR only
-@rules_flutter//flutter/private/tools:incr_fkc_staging_test	Dart unit test; no CLI spawn
-@rules_flutter//flutter/private/tools:incr_fkc_worker_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:ios_simulator_boot_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:kernel_define_flagfiles_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:kernel_filter_test	Dart unit test; no CLI spawn
@@ -98,7 +93,6 @@
 @rules_flutter//tools/dev_tool:flutter_bazel_binary_test	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/dev_tool:loose_sources	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/dev_tool:process_group_exec	dev tooling outside this task's paths; needs a follow-up for CLI spawns
-@rules_flutter//tools/incr_kernel_identity:incr_kernel_identity	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/ios_screenshot:screenshot	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/ios_screenshot:tunneld	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/repo_contents_cache:repo_contents_cache	dev tooling outside this task's paths; spawns only `bazel fetch` into temporary output bases

@@ -60,10 +60,6 @@ package_config_probe_test = analysistest.make(
         "expected_package_name": attr.string(),
         "expected_language_version": attr.string(),
     },
-    # Resolved here: `analysistest` reads a bare label against its own repository.
-    config_settings = {
-        str(Label("//dart:modular_kernel")): False,
-    },
 )
 
 def _executable_package_refused_test_impl(ctx):

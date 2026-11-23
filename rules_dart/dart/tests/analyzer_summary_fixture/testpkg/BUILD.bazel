@@ -142,42 +142,13 @@ dart_analysis_test(
     targets = [":testpkg_no_pkg_gen_lib_test"],
 )
 
-# Executables that omit `package_name` and list `lib/testpkg.dart` in `srcs`
+# An executable that omits `package_name` and lists `lib/testpkg.dart` in `srcs`
 # alongside a relative `../lib/testpkg.dart` import. Staging `lib/testpkg.dart`
 # alongside `:testpkg_lib`'s summary would collide with the summary's
 # `package:testpkg_fixture/testpkg.dart` URI (`NotPathOfUriResult`), so summary
-# mode must fall back to source analysis and agree with non-summary mode.
-dart_test(
-    name = "testpkg_no_pkg_rel_lib_srcs_test",
-    size = "small",
-    srcs = [
-        "lib/testpkg.dart",
-        "test/testpkg_rel_test.dart",
-    ],
-    main = "test/testpkg_rel_test.dart",
-    deps = [":testpkg_lib"],
-)
-
-default_mode_test(
-    name = "testpkg_no_pkg_rel_lib_srcs_mode_test",
-    size = "small",
-    expect_summaries = False,
-    target_under_test = ":testpkg_no_pkg_rel_lib_srcs_test",
-)
-
-summaries_off_mode_test(
-    name = "testpkg_no_pkg_rel_lib_srcs_off_mode_test",
-    size = "small",
-    expect_summaries = False,
-    target_under_test = ":testpkg_no_pkg_rel_lib_srcs_test",
-)
-
-dart_analysis_test(
-    name = "testpkg_no_pkg_rel_lib_srcs_analysis_test",
-    size = "small",
-    targets = [":testpkg_no_pkg_rel_lib_srcs_test"],
-)
-
+# mode must fall back to source analysis and agree with non-summary mode. A
+# `dart_test` of this shape is refused: one source belongs to one target, and
+# its kernel is modules. A `dart_binary` (`exe`) compiles from sources.
 dart_binary(
     name = "testpkg_no_pkg_bin_with_lib_srcs",
     srcs = [

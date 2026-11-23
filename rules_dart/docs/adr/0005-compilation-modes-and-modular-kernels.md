@@ -22,12 +22,12 @@ on where it was built.
 - `dart_binary` compiles with `dart compile exe` by default, or as
   `aot-snapshot`, `kernel` or `jit-snapshot`; `dart_js_binary` and
   `dart_wasm_binary` compile for the web.
-- `dart_test` and `dart_binary(compile_mode = "kernel")` compile modularly by
-  default (`//dart:modular_kernel = True`, `dart_binary.modular_kernel =
-True`): each library's `.kmod`/`.koutline` is built once and only the
-  reachable modules are linked. They fall back to a single `gen_kernel`
-  action when `modular_kernel = False` or when target-specific flags, defines
-  or code assets apply. Modules are compiled against the JIT platform, so
+- `dart_test` and `dart_binary(compile_mode = "kernel")` compile as modules:
+  each library's `.kmod`/`.koutline` is built once and only the reachable
+  modules are linked. There is no fallback: defines, `-D` compile flags and
+  code assets ride the modules, and a shape they cannot take fails at
+  analysis (amended by T27; `dart_binary.modular_kernel = False` remains for
+  the rule set's own tools, and `//dart:modular_kernel` is gone). Modules are compiled against the JIT platform, so
   `exe` and `aot-snapshot` use them only when a target sets `link_modules =
 True` (default `False`); otherwise they take the source path whatever
   `modular_kernel` says. At SDK 3.13.5 a module compile has no AOT target, so

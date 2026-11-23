@@ -674,12 +674,6 @@ jobs:
         uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/codegen
-      # Real-compiler proof that a warm incremental worker's dill is
-      # byte-for-byte the one-shot compile's, over an edit sequence on
-      # e2e/hello_world. Fails the job on any difference. Timed so the
-      # job's 60-minute budget stays visible.
-      - name: Incremental kernel identity check
-        run: bazel run //tools/incr_kernel_identity
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true

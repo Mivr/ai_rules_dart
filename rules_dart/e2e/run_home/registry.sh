@@ -81,7 +81,7 @@ RUN_HOME_ENTRIES=(
   '@rules_dart//dart:kernel_module||caller-home|nonzero'
   # --- public but not runnable: `bazel run` must refuse each one ---
   '@rules_dart//dart/private:analyzer_sdk_summary_input||n/a|refuse'
-  '@rules_dart//dart/private:aspect_modular_kernel||n/a|refuse'
+  '@rules_dart//dart/ext/tools:check_dual_build_collisions_lib||n/a|refuse'
   '@rules_dart//dart/guard:directive_guard||n/a|refuse'
   '@rules_dart//dart/lints:rules_dart_project_lints||n/a|refuse'
   '@rules_dart//dart/runfiles:runfiles||n/a|refuse'

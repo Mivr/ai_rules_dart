@@ -1,7 +1,7 @@
 """Analysis tests: a debug app's build record travels in the registrant, not a define.
 
 - a debug `flutter_application` passes no `rules_flutter.build_info` define to
-  its `FlutterKernelCompile`, and its registrant hands the record to the agent;
+  its kernel compile, and its registrant hands the record to the agent;
 - a release application and a rule without an assets dir carry no record.
 """
 
@@ -17,8 +17,13 @@ _DEFINE = "USER_DEFINE=user-value"
 _SETTER = "setRulesFlutterBuildInfo"
 
 def _kernel_argv(env):
-    actions = [a for a in analysistest.target_actions(env) if a.mnemonic == "FlutterKernelCompile"]
-    asserts.equals(env, 1, len(actions), "expected one FlutterKernelCompile")
+    """The argv of the compile of the app's sources: a debug entry module, or the whole-program compile."""
+    actions = [
+        a
+        for a in analysistest.target_actions(env)
+        if a.mnemonic == "FlutterKernelCompile" or (a.mnemonic == "DartKernel" and "--no-drop" in a.argv)
+    ]
+    asserts.equals(env, 1, len(actions), "expected one kernel compile of the app's sources")
     return actions[0].argv if actions else []
 
 def _registrant_source(env, optional = False):
@@ -89,6 +94,8 @@ def build_info_registrant_test_suite(name):
         srcs = [_MAIN],
         defines = [_DEFINE],
         tags = ["manual"],
+        # The agent imports `flutter`: a program without it stages no agent and no registrant.
+        deps = ["//flutter/tests/registrant_twin_fixture/app"],
     )
     flutter_kernel_target(
         name = "_build_info_no_assets_target",
@@ -96,6 +103,7 @@ def build_info_registrant_test_suite(name):
         main = _MAIN,
         srcs = [_MAIN],
         tags = ["manual"],
+        deps = ["//flutter/tests/registrant_twin_fixture/app"],
     )
     _no_define_test(name = name + "_no_define", target_under_test = ":_build_info_debug_app", target_compatible_with = HOST_COMPATIBLE)
     _record_test(name = name + "_registrant_record", target_under_test = ":_build_info_debug_app", target_compatible_with = HOST_COMPATIBLE)

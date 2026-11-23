@@ -122,43 +122,21 @@ def _assert_multi_root_and_package_config(env, action):
     copy_actions = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartCopyTree"]
     asserts.equals(env, [], copy_actions, "FlutterKernelCompile must not emit DartCopyTree actions")
 
-def _assert_registrant_on_app_scheme(env, action):
-    """The registrant's `--source`, its define and its root agree."""
-    argv = action.argv if action else []
-    defines = [
-        a[len("-Dflutter.dart_plugin_registrant="):]
-        for a in argv
-        if a.startswith("-Dflutter.dart_plugin_registrant=")
-    ]
-    asserts.equals(env, 1, len(defines), "a dbg app compiles a plugin registrant")
-    if not defines:
-        return
-    registrant = defines[0]
-
-    # The engine looks the define up as a library URI by exact string, so the
-    # source it names has to be compiled under that same string.
-    asserts.true(
-        env,
-        registrant in _flag_values(argv, "--source"),
-        "the registrant define %r must be a --source" % registrant,
-    )
-    asserts.true(
-        env,
-        registrant == "org-dartlang-app:///_flutter_debug_agent/plugin_registrant.dart",
-        "the registrant is named by a constant URI under the app scheme, got %r" % registrant,
-    )
-    _assert_multi_root_and_package_config(env, action)
+def _entry_module(env):
+    """A debug app's entry module compile: the target's `DartKernel` action that may leave nothing out."""
+    entries = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartKernel" and "--no-drop" in a.argv]
+    asserts.equals(env, 1, len(entries), "expected one entry module compile")
+    return entries[0] if entries else None
 
 def _outside_lib_test_impl(ctx):
     env = analysistest.begin(ctx)
-    action = _kernel_action(env)
+    action = _entry_module(env)
     argv = action.argv if action else []
 
-    # The compilation root. A `main` outside lib/ has no `package:` URI, so it
-    # compiles under the app scheme — resolved in place through the mounted
-    # exec root by its workspace path.
-    asserts.equals(env, _OUTSIDE_LIB_URI, argv[-1] if argv else None)
-    _assert_registrant_on_app_scheme(env, action)
+    # The entry point. A `main` outside lib/ has no `package:` URI, so it
+    # compiles under the app scheme by its workspace path.
+    sources = _flag_values(argv, "--source")
+    asserts.equals(env, _OUTSIDE_LIB_URI, sources[0] if sources else None)
 
     # The dev loop names it the same way, from the same root — `""` is the
     # exec root in the dev config's exec-root-relative convention.
@@ -184,19 +162,14 @@ def _outside_lib_test_impl(ctx):
 
 def _in_lib_test_impl(ctx):
     env = analysistest.begin(ctx)
-    action = _kernel_action(env)
+    action = _entry_module(env)
     argv = action.argv if action else []
+    sources = _flag_values(argv, "--source")
     asserts.equals(
         env,
         "package:%s/web_fixture_main.dart" % _PACKAGE,
-        argv[-1] if argv else None,
+        sources[0] if sources else None,
     )
-    asserts.false(
-        env,
-        "--no-embed-source-text" in argv,
-        "JIT FlutterKernelCompile must keep embedded source text, got %r" % argv,
-    )
-    _assert_registrant_on_app_scheme(env, action)
 
     # Nothing for the dev loop to mount: the entrypoint resolves through the
     # package config, and the dev tool compiles its own registrant as a file.

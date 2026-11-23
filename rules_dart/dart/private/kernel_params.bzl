@@ -118,7 +118,9 @@ def kernel_module_options(
         target_label = None,
         own_packages = (),
         direct_packages = (),
-        define_file = None):
+        define_file = None,
+        native_assets = None,
+        refused_libraries = ()):
     """How a module compile treats its sources.
 
     Args:
@@ -140,6 +142,11 @@ def kernel_module_options(
       direct_packages: Package names this target's direct dependencies provide.
       define_file: A File of `-DKEY=VALUE` lines whose defines go before
         `defines` (a Flutter app's `dart_defines`), or None.
+      native_assets: The native-assets mapping (`native_assets.yaml`) an
+        executable's entry module embeds, or None. Only an entry (`droppable`
+        False) takes one.
+      refused_libraries: The `dart:` libraries (`//dart:refused_dart_libraries`) the
+        import check refuses in the module's own sources.
 
     Returns:
       A struct with those fields.
@@ -147,11 +154,13 @@ def kernel_module_options(
     return struct(
         defines = defines,
         define_file = define_file,
+        native_assets = native_assets,
         droppable = droppable,
         check_imports = check_imports,
         target_label = target_label,
         own_packages = own_packages,
         direct_packages = direct_packages,
+        refused_libraries = refused_libraries,
     )
 
 def kernel_module_outputs(output, koutline = None, unused_inputs = False):
@@ -221,8 +230,10 @@ def library_kernel_options(
     """How `library_kernel_info()` reaches the module's dependencies.
 
     Args:
-      opaque: True when the sources arrive as one directory (`srcs_dir`),
-        whose files are not known here.
+      opaque: None when the library can compile a module; otherwise why it
+        cannot (a string, see `library_module_inputs`'s `opaque_reason`),
+        such as sources that arrive as one directory (`srcs_dir`), whose
+        files are not known here.
       rule_deps: Optional list of dependency targets (defaults to
         `ctx.attr.deps`).
       unused_inputs: Whether `kernel_module_action` writes an unused-inputs
@@ -240,63 +251,4 @@ def library_kernel_options(
         rule_deps = rule_deps,
         unused_inputs = unused_inputs,
         non_standalone = non_standalone,
-    )
-
-def modular_kernel_mode(enabled, kernel_mode):
-    """Whether modular compilation is switched on for an executable.
-
-    Args:
-      enabled: The `//dart:modular_kernel` flag.
-      kernel_mode: Whether the executable is a kernel (`dart_test` always is).
-
-    Returns:
-      A struct with those fields.
-    """
-    return struct(
-        enabled = enabled,
-        kernel_mode = kernel_mode,
-    )
-
-def modular_kernel_conditions(
-        mode,
-        dep_modular,
-        packages_consistent,
-        has_code_assets,
-        has_compile_flags,
-        has_duplicate_source,
-        same_sdk):
-    """Every fact that decides whether an executable compiles modularly.
-
-    Each `False` (each `True` of the `has_*` facts) is a reason the executable
-    falls back to whole-program compilation, which is always correct, only
-    slower.
-
-    Args:
-      mode: The struct from `modular_kernel_mode()`.
-      dep_modular: Whether every dependency's closure is modular.
-      packages_consistent: `kernel_packages_consistent` over the executable's
-        closure.
-      has_code_assets: Whether native code assets are embedded in the kernel.
-        The embedding runs the front end over the whole program at once.
-      has_compile_flags: Whether `dart_compile_flags` are set. They reach
-        `dart compile`, which the modular path does not run. Unlike `defines`
-        they are not configuration: a flag can change how every library
-        compiles (an experiment, a target option), and no module compile takes
-        them.
-      has_duplicate_source: Whether `duplicated_source` found a repeat.
-      same_sdk: Whether the exec and target SDKs report the same version. A
-        kernel compiled by one is loaded by the other, and the VM accepts only
-        its own kernel format.
-
-    Returns:
-      A struct with those fields.
-    """
-    return struct(
-        mode = mode,
-        dep_modular = dep_modular,
-        packages_consistent = packages_consistent,
-        has_code_assets = has_code_assets,
-        has_compile_flags = has_compile_flags,
-        has_duplicate_source = has_duplicate_source,
-        same_sdk = same_sdk,
     )

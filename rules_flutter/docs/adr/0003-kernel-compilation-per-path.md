@@ -89,3 +89,18 @@ A new kernel input such as a define, a registrant or a native asset must be
 added to the eligibility conditions in both
 `flutter/private/flutter_kernel_module.bzl` and `flutter/private/common.bzl`. An
 input that is missing from them takes the modular path without the input.
+
+## Amendment (T27): one debug path
+
+A debug kernel is always modules and a link, for `flutter_test`, debug
+`flutter_application`, `flutter_kernel_target` and debug
+`flutter_aot_target` alike. The private flag
+`//flutter/private:debug_modular_app`, `//flutter:incremental_kernel`, its
+`incr_fkc_worker` and `//flutter:dev_incremental_serialization` are deleted.
+The native-assets manifest rides the entry module, `--track-widget-creation`
+is a module configuration, and a shape that cannot be modular (another
+front-end flag, a registrant whose closure has no twin, a dependency without
+a module, a Flutter toolchain whose Dart SDK has no module compiler) fails at
+analysis, naming the target and the reason. A program whose closure holds no
+`flutter` package stages no debug agent, which imports `flutter`. AOT,
+profile and release keep the whole-program compile.

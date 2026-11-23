@@ -49,8 +49,8 @@ def library_module_inputs(rule_attr, rule_files, dart_info):
 
     Returns:
       A struct with `own_record`, `package_name`, `lib_root`, `own_srcs`,
-      `opaque`, `rule_deps`, and `own_records`, as `library_kernel_info` takes
-      them.
+      `opaque` (and `opaque_reason`, why it is), `rule_deps`, and
+      `own_records`, as `library_kernel_info` takes them.
     """
     package_name = dart_info.package_name
     lib_root = dart_info.lib_root
@@ -62,7 +62,7 @@ def library_module_inputs(rule_attr, rule_files, dart_info):
             own_record = only
     srcs_dir = getattr(rule_attr, "srcs_dir", None)
     has_srcs_attr = hasattr(rule_attr, "srcs")
-    own_srcs = list(getattr(rule_files, "srcs", []))
+    own_srcs = list(getattr(rule_files, "srcs_dir", []) if srcs_dir else getattr(rule_files, "srcs", []))
     rule_deps = getattr(rule_attr, "deps", [])
     if type(rule_deps) != "list":
         rule_deps = [rule_deps]
@@ -77,15 +77,18 @@ def library_module_inputs(rule_attr, rule_files, dart_info):
             if f.extension == "dart"
         ])
 
-    opaque = bool(srcs_dir)
-    if not has_srcs_attr and own_srcs != [] and len(rule_deps) == 0:
-        opaque = True
-    if own_srcs and not own_records:
-        opaque = True
-    else:
+    # Why the library compiles no module, or None when it can.
+    opaque_reason = None
+    if srcs_dir and not (len(own_srcs) == 1 and own_srcs[0].is_directory):
+        opaque_reason = "its `srcs_dir` is not one directory (a `dart_source_set`)"
+    elif not srcs_dir and not has_srcs_attr and own_srcs != [] and len(rule_deps) == 0:
+        opaque_reason = "its rule has no `srcs`, so its files are not known at analysis"
+    elif own_srcs and not own_records:
+        opaque_reason = "it names no Dart package (`package_name`), so its sources have no `package:` URI"
+    elif not srcs_dir:
         for f in own_srcs:
             if not any([f.short_path.startswith(package_lib_prefix(record.lib_root)) for record in own_records]):
-                opaque = True
+                opaque_reason = "its source %s is outside its package's `lib/`; move it there, or into the executable's own `srcs`" % f.short_path
                 break
 
     return struct(
@@ -93,7 +96,8 @@ def library_module_inputs(rule_attr, rule_files, dart_info):
         package_name = package_name,
         lib_root = lib_root,
         own_srcs = own_srcs,
-        opaque = opaque,
+        opaque = opaque_reason != None,
+        opaque_reason = opaque_reason,
         rule_deps = rule_deps,
         own_records = own_records,
     )

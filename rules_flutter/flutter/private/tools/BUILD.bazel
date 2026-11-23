@@ -21,10 +21,6 @@ exports_files(
         "directive_guard.dart",
         "defines_files.dart",
         "kernel_filter.dart",
-        "incr_fkc_guard_cache.dart",
-        "incr_fkc_scratch.dart",
-        "incr_fkc_server.dart",
-        "incr_fkc_worker.dart",
         "sha256.dart",
         "macho_cli.dart",
         "macho_codesign.dart",
@@ -264,27 +260,6 @@ dart_binary(
     deps = ["@rules_dart//dart/guard:directive_guard"],
 )
 
-dart_binary(
-    name = "incr_fkc_worker",
-    srcs = [
-        "directive_guard.dart",
-        "incr_fkc_guard_cache.dart",
-        "incr_fkc_scratch.dart",
-        "incr_fkc_server.dart",
-        "kernel_filter.dart",
-        "sha256.dart",
-    ],
-    compile_mode = "exe",
-    main = "incr_fkc_worker.dart",
-    modular_kernel = False,
-    target_compatible_with = HOST_COMPATIBLE,
-    # Public like `kernel_filter`: a rule in another module composing over
-    # `@rules_flutter//flutter:utils.bzl` reaches it through
-    # `FLUTTER_KERNEL_COMPILE_ATTRS`.
-    visibility = ["//visibility:public"],
-    deps = ["@rules_dart//dart/guard:directive_guard"],
-)
-
 # Native executable (`exe`): runs on every edit, so no VM start or JIT warm-up. Builds
 # on every HOST_COMPATIBLE host from the SDK the other `exe` tools use; no extra download.
 dart_binary(
@@ -417,10 +392,6 @@ _UNIT_TESTS = {
     "copy_local_file_test": ("copy_local_file.dart", []),
     "kernel_filter_test": (
         "kernel_filter.dart",
-        ["@rules_dart//dart/guard:directive_guard"],
-    ),
-    "incr_fkc_worker_test": (
-        "incr_fkc_worker.dart",
         ["@rules_dart//dart/guard:directive_guard"],
     ),
     "macho_edit_test": ("macho_edit.dart", []),
@@ -615,15 +586,6 @@ _TOOL_SRCS = {
         "sha256.dart",
         "test/macho_test_support.dart",
     ],
-    "incr_fkc_worker.dart": [
-        "directive_guard.dart",
-        "incr_fkc_guard_cache.dart",
-        "incr_fkc_scratch.dart",
-        "incr_fkc_server.dart",
-        "kernel_filter.dart",
-        "sha256.dart",
-        "test/incr_fkc_test_support.dart",
-    ],
     "web_guard.dart": ["directive_guard.dart"],
     "bundle_app.dart": ["chmod.dart"],
     "strip_native_libs.dart": ["chmod.dart"],
@@ -713,9 +675,6 @@ dart_test(
     deps = ["@dev_tool_deps//:test"],
 )
 
-# Suites split out of `incr_fkc_worker_test` and `kernel_filter_test` to keep
-# each test library under the file-size ceiling. They share the tool's sources
-# (and, for the worker, `test/incr_fkc_test_support.dart` via `_TOOL_SRCS`).
 dart_test(
     name = "defines_files_test",
     size = "small",
@@ -725,30 +684,8 @@ dart_test(
     deps = ["@dev_tool_deps//:test"],
 )
 
-dart_test(
-    name = "incr_fkc_define_flagfiles_test",
-    size = "small",
-    srcs = ["incr_fkc_worker.dart"] + _TOOL_SRCS["incr_fkc_worker.dart"],
-    main = "test/incr_fkc_define_flagfiles_test.dart",
-    target_compatible_with = HOST_COMPATIBLE,
-    deps = [
-        "@dev_tool_deps//:test",
-        "@rules_dart//dart/guard:directive_guard",
-    ],
-)
-
-dart_test(
-    name = "incr_fkc_staging_test",
-    size = "small",
-    srcs = ["incr_fkc_worker.dart"] + _TOOL_SRCS["incr_fkc_worker.dart"],
-    main = "test/incr_fkc_staging_test.dart",
-    target_compatible_with = HOST_COMPATIBLE,
-    deps = [
-        "@dev_tool_deps//:test",
-        "@rules_dart//dart/guard:directive_guard",
-    ],
-)
-
+# Suites split out of `kernel_filter_test` to keep each test library under the
+# file-size ceiling. They share the tool's sources via `_TOOL_SRCS`.
 dart_test(
     name = "kernel_read_set_test",
     size = "small",
@@ -771,22 +708,6 @@ dart_test(
         "@dev_tool_deps//:test",
         "@rules_dart//dart/guard:directive_guard",
     ],
-)
-
-# Lifecycle tests for the incremental worker's crash-safe scratch: they drive
-# the built worker binary the way Bazel does (persistent protocol over
-# pipes, TMPDIR plus SIGKILL and stdin EOF), so the target carries the
-# binary as data and a longer timeout for its process spawns.
-dart_test(
-    name = "incr_fkc_scratch_test",
-    size = "medium",
-    timeout = "moderate",
-    srcs = ["incr_fkc_scratch.dart"],
-    data = [":incr_fkc_worker"],
-    env = {"INCR_FKC_WORKER_BIN": "$(rlocationpath :incr_fkc_worker)"},
-    main = "test/incr_fkc_scratch_test.dart",
-    target_compatible_with = HOST_COMPATIBLE,
-    deps = ["@dev_tool_deps//:test"],
 )
 
 bzl_library(

@@ -12,17 +12,17 @@ _PACKAGE = "flavor_test_fixture"
 _MAIN = "lib/language_version_main.dart"
 
 def _kernel_compile_action(env):
-    """The target's one whole-program kernel compile action."""
+    """The action that compiles the target's own sources: the whole-program compile, or a debug entry module."""
     actions = [
         action
         for action in analysistest.target_actions(env)
-        if action.mnemonic == "FlutterKernelCompile"
+        if action.mnemonic == "FlutterKernelCompile" or (action.mnemonic == "DartKernel" and "--no-drop" in action.argv)
     ]
     asserts.equals(
         env,
         1,
         len(actions),
-        "expected one FlutterKernelCompile action, got: %s" % [a.mnemonic for a in actions],
+        "expected one kernel compile of the app's sources, got: %s" % [a.mnemonic for a in actions],
     )
     return actions[0] if actions else None
 
@@ -539,7 +539,8 @@ def _declare_bundle_files(name):
     flutter_library(
         name = name + "_fixture_lib",
         package_name = _PACKAGE,
-        srcs = [_MAIN],
+        # Not the applications' `main`: one source belongs to one target.
+        srcs = ["lib/web_fixture_main.dart"],
         pkg_assets = {
             ":" + name + "_prod.txt": "assets/prod.txt",
             ":" + name + "_any.txt": "assets/any.txt",

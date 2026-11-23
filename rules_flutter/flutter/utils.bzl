@@ -186,8 +186,7 @@ flutter_kernel_module_aspect = _flutter_kernel_module_aspect
 FlutterKernelModuleInfo = _FlutterKernelModuleInfo
 
 # The attrs a custom modular-kernel rule merges into its own. `deps` (with the
-# aspect applied), `defines`, the kernel tools (`_modular_kernel`,
-# `_kernel_link`) and the transition allowlist are all
+# aspect applied), `defines`, the kernel tool (`_kernel_link`) and the transition allowlist are all
 # provided, so the calling rule declares only its own entry attrs
 # (`main`/`srcs` stay the caller's). No private-named attribute needs a
 # caller-set value. The `deps` edge makes the kernel's `defines` the
