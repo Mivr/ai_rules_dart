@@ -1,0 +1,28 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 1
+  # A git entry that is not pinned to a commit names the tag that read it.
+  - name: unpinned_git_package
+    run: bazel build //:sources_test
+    replace_in_files:
+      - path: pubspec.lock
+        from: 'resolved-ref: "56f97d516e642f41dd628107d95f87a3c05e0678"'
+        to: 'resolved-ref: "main"'
+    expect:
+      non_zero: true
+      output_contains: 'flutter.pub "args" (2.8.0-wip) requires a full 40-hex resolved-ref, got "main".'
+
+  # Runs last (edits accumulate in the staged copy; this check runs before
+  # planning): an SDK package flutter.pub does not serve fails the evaluation,
+  # naming it.
+  - name: unserved_sdk_package
+    run: bazel build //:sources_test
+    replace_in_files:
+      - path: pubspec.lock
+        from: "  flutter_test:\n    dependency: \"direct dev\""
+        to: "  flutter_tools:\n    dependency: \"direct dev\""
+    expect:
+      non_zero: true
+      output_contains: 'flutter.pub hub "deps": package "flutter_tools" comes from the "flutter" SDK (source: sdk), which flutter.pub does not serve'

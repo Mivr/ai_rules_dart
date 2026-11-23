@@ -1,0 +1,27 @@
+"""Dependency sources as `flutter pub get` resolved them: a git package from a
+subdirectory at a branch the lock pins to a commit, and a path plugin."""
+
+module(name = "rules_flutter_pub_sources")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.toolchain(flutter_version = "3.47.7")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_toolchains")
+
+register_toolchains("@flutter_toolchains//:all")

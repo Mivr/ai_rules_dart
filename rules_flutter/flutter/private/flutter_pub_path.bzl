@@ -12,6 +12,12 @@ load("//flutter/private:flutter_pub_mirror.bzl", "detect_case_insensitive_host",
 
 visibility(["//flutter/..."])
 
+# What a user does about a path package Bazel cannot see.
+_OUTSIDE_REMEDY = (
+    " Bazel builds only what is inside the workspace: move the package into it (as a pub workspace " +
+    "member, say) and run `flutter pub get`, or depend on it from a pub server or a git repository."
+)
+
 def is_relative_path_dependency(relative_value):
     """Whether a lock `description.relative` value counts as `relative: true`.
 
@@ -120,7 +126,8 @@ def workspace_relative_lock_path(hub_name, package_name, lock_label, entry_path)
         The workspace-relative package directory.
     """
     if is_absolute_lock_path(entry_path):
-        fail("flutter.pub hub \"{hub}\": path dependency \"{pkg}\" has absolute path {path} in the lock. Re-resolve the lock with a relative `path:` dependency inside the workspace.".format(
+        fail(("flutter.pub hub \"{hub}\": path dependency \"{pkg}\" has absolute path {path} in the lock." +
+              _OUTSIDE_REMEDY).format(
             hub = hub_name,
             pkg = package_name,
             path = repr(entry_path),
@@ -138,9 +145,11 @@ def workspace_relative_lock_path(hub_name, package_name, lock_label, entry_path)
             continue
         if part == "..":
             if not out:
-                fail("flutter.pub hub \"{hub}\": path dependency \"{pkg}\" resolves outside the workspace. Refusing it rather than reaching outside the workspace.".format(
+                fail(("flutter.pub hub \"{hub}\": path dependency \"{pkg}\" on {path} resolves outside the workspace." +
+                      _OUTSIDE_REMEDY).format(
                     hub = hub_name,
                     pkg = package_name,
+                    path = repr(entry_path),
                 ))
             out.pop()
         else:

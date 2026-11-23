@@ -66,9 +66,21 @@ visibility("public")
 
 _DEFAULT_NAME = "flutter"
 
-# Flutter SDK packages that exist as source under packages/ in the Flutter repo.
-# sky_engine is excluded — it provides dart:ui which is already in platform_strong.dill.
-_FLUTTER_SDK_PACKAGES = {"flutter": True, "flutter_test": True, "flutter_driver": True, "flutter_localizations": True, "flutter_web_plugins": True, "integration_test": True}
+# Flutter SDK packages that exist as source under packages/ in the Flutter repo
+# and that an app can depend on (`flutter_driver` depends on
+# `fuchsia_remote_debug_protocol`). sky_engine is excluded — it provides dart:ui
+# which is already in platform_strong.dill.
+_FLUTTER_SDK_PACKAGES = {"flutter": True, "flutter_test": True, "flutter_driver": True, "flutter_goldens": True, "flutter_localizations": True, "flutter_web_plugins": True, "fuchsia_remote_debug_protocol": True, "integration_test": True}
+
+def _unserved_sdk_package_error(hub_name, name, info):
+    """The error for a `source: sdk` lock entry no SDK spoke serves (sky_engine aside)."""
+    desc = info.get("description", {})
+    sdk = desc.get("name", "") if type(desc) == "dict" else ""
+    return (
+        "flutter.pub hub \"{hub}\": package \"{pkg}\" comes from the \"{sdk}\" SDK (source: sdk), which " +
+        "flutter.pub does not serve: it serves {served} from the Flutter SDK. Remove the dependency, " +
+        "run `flutter pub get`, and commit the lock."
+    ).format(hub = hub_name, pkg = name, sdk = sdk, served = ", ".join(sorted(_FLUTTER_SDK_PACKAGES.keys())))
 
 def _fail_on_invalid_maven_deps(hub_name, android_maven_deps):
     """Refuse an `android_maven_deps` value that is not a Bazel label.
@@ -527,11 +539,15 @@ def _classify_lock_packages(hub_name, lock_label, lock_pkgs):
             if name in _FLUTTER_SDK_PACKAGES:
                 sdk_flutter[name] = info
                 all_package_names.append(name)
+            elif name != "sky_engine":
+                fail(_unserved_sdk_package_error(hub_name, name, info))
         else:
-            # Reason for print: warn the user that a locked package is
-            # silently unsupported (not an error; the build proceeds).
-            # buildifier: disable=print
-            print("flutter.pub: skipping package \"{}\" (source: {}). Only hosted, git, path, and Flutter SDK packages are supported.".format(name, source))
+            fail((
+                "flutter.pub hub \"{hub}\": package \"{pkg}\" {version} has source \"{source}\", which " +
+                "flutter.pub cannot serve: it serves hosted, git, path and sdk entries. Depend on the package " +
+                "from a pub server, a git repository or a path inside the workspace, run `flutter pub get`, " +
+                "and commit the lock."
+            ).format(hub = hub_name, pkg = name, version = info.get("version", ""), source = source))
     return hosted, git, path_pkgs, sdk_flutter, all_package_names
 
 def _workspace_root_of_lock(module_ctx, lock_label):
@@ -988,6 +1004,7 @@ def _register_pub_hubs(module_ctx, selected_info, root_overlay_roots, pub_yaml):
         [hub.scope for hub in hubs],
         recorded,
         read_pub_plans(module_ctx, plan_files),
+        rule = "flutter.pub",
     )
     for hub, plans in zip(hubs, scope_plans):
         _emit_pub_hub(module_ctx, hub, plans)
