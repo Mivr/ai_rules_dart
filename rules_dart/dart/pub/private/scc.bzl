@@ -249,3 +249,51 @@ def rewrite_vanished_spoke(dep, vanished):
         fixed = vanished[repo] + (sep + rest if sep else "")
         return ("@" if dep.startswith("@") else "") + fixed
     return dep
+
+def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, package_deps):
+    """Plans the merges of one lock scope from its packages' dependency names.
+
+    Args:
+      scope_names: Every package name in scope (hosted plus explicit).
+      explicit_deps: Dict of explicit package name to user-declared deps.
+      hub_names: All hub repository names in scope.
+      spoke_prefix: The scope's spoke repo name prefix.
+      package_deps: Dict of package name to its sorted dependency names — the
+        names planning consumes, from the lockfile facts, the server's
+        listing or one pubspec read each. Each name is one edge: names are
+        never rendered back into pubspec text, so quotes, newlines or colons
+        in a name cannot split it into several.
+
+    Returns:
+      `struct(members, merged, package_deps)`: `members` maps every merged
+      package name to its merged repository name; `merged` maps each merged
+      repository name to its sorted member names; `package_deps` carries the
+      sorted names planning used, so every repository records what was
+      planned for later verification against the real pubspecs. Cycles
+      touching an explicit `pub.package()` are left alone — that repository
+      is user-managed, so nothing can be merged into it, and the target cycle
+      fails as it does today.
+    """
+    graph = package_dep_graph(
+        package_deps,
+        explicit_deps,
+        scope_names,
+        hub_names,
+        [spoke_prefix],
+    )
+    members = {}
+    merged = {}
+    for component in compute_sccs(graph):
+        if len(component) < 2:
+            continue
+        if any([m in explicit_deps for m in component]):
+            continue
+        repo = scc_repo_name(spoke_prefix, component)
+        merged[repo] = component
+        for member in component:
+            members[member] = repo
+    return struct(
+        members = members,
+        merged = merged,
+        package_deps = {name: sorted(package_deps[name]) for name in package_deps.keys()},
+    )

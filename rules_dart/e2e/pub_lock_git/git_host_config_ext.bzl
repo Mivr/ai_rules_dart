@@ -26,8 +26,6 @@ def _impl(mctx):
         url = str(mctx.path(Label("//:fmtpkg.bundle"))),
         resolved_ref = "08da52a5f5ee8530fcffaa7b4a6aecdc09a0e9cc",
         path = ".",
-        hub_name = "hub",
-        lock_packages = ["fmtpkg"],
     )
     return mctx.extension_metadata(reproducible = True)
 

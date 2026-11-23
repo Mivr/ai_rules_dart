@@ -105,8 +105,25 @@ bzl_library(
         ":pub_lock_hub",
         ":pub_lock_package",
         ":pub_repository",
+        ":pub_scc_entries",
         ":scc",
         "//dart/private:curated_registry",
+        "//dart/pub:pub_lock_scc",
+    ],
+)
+
+bzl_library(
+    name = "pub_plan",
+    srcs = ["pub_plan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pinned_sources",
+        ":pub_lock_package",
+        ":pub_scan",
+        ":pub_scc_facts",
+        ":pubspec_data",
+        ":yq",
+        "//dart/private:download",
     ],
 )
 

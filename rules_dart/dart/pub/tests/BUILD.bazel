@@ -1,3 +1,4 @@
+load(":pub_plan_test.bzl", "pub_plan_test_suite")
 load(":pub_workspace_test.bzl", "pub_workspace_test_suite")
 
 # Sources of the Starlark unit-test suites that load `//dart/pub/private:*`.
@@ -12,6 +13,7 @@ exports_files(
         "pin_checks_test.bzl",
         "propagation_test.bzl",
         "pub_archive_scan_test.bzl",
+        "pub_plan_test.bzl",
         "pub_root_pin_test.bzl",
         "pub_scc_facts_test.bzl",
         "pub_scc_test.bzl",
@@ -25,5 +27,7 @@ exports_files(
     ],
     visibility = ["//dart:__subpackages__"],
 )
+
+pub_plan_test_suite(name = "pub_plan_test")
 
 pub_workspace_test_suite(name = "pub_workspace_test")

@@ -19,7 +19,7 @@ wrong one must not plan a bogus merge).
 
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
-load("//dart/pub:pub_lock_package.bzl", "pub_lock_spoke_dep_labels", "trim_gzip_trailing_nulls")
+load("//dart/pub:pub_lock_package.bzl", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
@@ -48,11 +48,7 @@ def _fetch_hosted_member(ctx, member, name):
     )
     if err:
         fail(err)
-    url = "{base}/packages/{name}/versions/{version}.tar.gz".format(
-        base = member["url"],
-        name = name,
-        version = member["version"],
-    )
+    url = member["url"]
     archive = "_" + name + ".tar.gz"
 
     # Same padded-tarball workaround as `pub_lock_package`: pub.dev serves
@@ -113,9 +109,11 @@ def _parsed_scc_members(ctx, members):
         its subdirectory.
 
     Returns:
-      One struct(name, version, code_assets, planned, real_deps,
-      sdk_constraint, package_files) per member, in member order: the member
-      name, its version and code assets, its entry's `planned_deps` value
+      One struct(name, version, code_assets, ignore_hook, dep_labels,
+      planned, real_deps, sdk_constraint, package_files) per member, in
+      member order: the member name, its version, code assets and hook
+      suppression, the labels of its dependencies outside the cycle, its
+      entry's `planned_deps` value
       (None when the entry carries none), its real sorted dependency names,
       its `environment.sdk` ("" when it has none or ships no pubspec), and
       its runtime-file globs.
@@ -140,6 +138,8 @@ def _parsed_scc_members(ctx, members):
             name = name,
             version = member["version"],
             code_assets = member.get("code_assets", []),
+            ignore_hook = member.get("ignore_hook", False),
+            dep_labels = member.get("deps", []),
             planned = member.get("planned_deps", None),
             real_deps = sorted(pubspec_deps(pubspec)),
             sdk_constraint = pubspec_sdk_constraint(pubspec),
@@ -172,42 +172,18 @@ def _verify_scc_plan(repo_name, parsed_members):
     if err:
         fail(err)
 
-def _scc_member_outside_labels(parsed, config):
-    """Builds one member's dependency labels on targets outside the cycle.
-
-    Args:
-      parsed: The member's `_parsed_scc_members` struct.
-      config: struct(available, own_names, hub_name, explicit_packages,
-        scc_targets) describing the scope the merged repository joins.
-
-    Returns:
-      The spoke dep labels for the member's real deps that leave the cycle.
-    """
-    bazel_deps = sorted([
-        d
-        for d in parsed.real_deps
-        if d in config.available and d not in config.own_names and d != parsed.name
-    ])
-    return pub_lock_spoke_dep_labels(
-        bazel_deps,
-        config.hub_name,
-        config.explicit_packages,
-        config.scc_targets,
-    )
-
-def _write_scc_member_build(ctx, parsed, config):
+def _write_scc_member_build(ctx, parsed):
     """Writes one fetched member's BUILD file (phase three: plan verified).
 
     Args:
       ctx: The repository rule context.
       parsed: The member's `_parsed_scc_members` struct.
-      config: struct(ignore_hooks) with the rule's hook suppressions.
     """
     name = parsed.name
     hooks = _classify_pub_hooks(
         has_build_hook = ctx.path(name + "/hook/build.dart").exists,
         has_link_hook = ctx.path(name + "/hook/link.dart").exists,
-        build_hook_handled = bool(parsed.code_assets) or name in config.ignore_hooks,
+        build_hook_handled = bool(parsed.code_assets) or parsed.ignore_hook,
     )
     ctx.file(name + "/BUILD.bazel", _make_dart_package_member_build_content(
         name = name,
@@ -220,46 +196,38 @@ def _write_scc_member_build(ctx, parsed, config):
         package_files = parsed.package_files,
     ))
 
-def _write_scc_build_files(ctx, parsed_members, config):
+def _write_scc_build_files(ctx, parsed_members, repo_name):
     """Writes the merged BUILD file and every member's BUILD file.
 
-    Runs only after `_verify_scc_plan` accepted the whole plan.
+    Runs only after `_verify_scc_plan` accepted the whole plan, so each
+    member's dependency labels, computed by the extension from the planned
+    names, are those of its real pubspec.
 
     Args:
       ctx: The repository rule context.
       parsed_members: The `_parsed_scc_members` structs, in member order.
-      config: struct(repo_name, own_names) plus the fields
-        `_scc_member_outside_labels` and `_write_scc_member_build` take.
+      repo_name: The merged repository's name.
     """
     merged_deps = {}
     for parsed in parsed_members:
-        for label in _scc_member_outside_labels(parsed, config):
+        for label in parsed.dep_labels:
             merged_deps[label] = True
     for parsed in parsed_members:
-        _write_scc_member_build(ctx, parsed, config)
+        _write_scc_member_build(ctx, parsed)
     ctx.file("BUILD.bazel", _make_scc_merged_build_content(
-        members = sorted(config.own_names.keys()),
+        members = sorted([parsed.name for parsed in parsed_members]),
         dep_labels = sorted(merged_deps.keys()),
-        repo_name = config.repo_name,
+        repo_name = repo_name,
     ))
 
 def _pub_lock_scc_package_impl(ctx):
     members = json.decode(ctx.attr.members_json)
-    config = struct(
-        repo_name = ctx.attr.repo_name,
-        hub_name = ctx.attr.hub_name,
-        explicit_packages = ctx.attr.explicit_packages,
-        scc_targets = ctx.attr.scc_targets,
-        ignore_hooks = ctx.attr.ignore_hooks,
-        available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages},
-        own_names = {member["name"]: True for member in members},
-    )
 
     # Phase one: fetch and parse every member. Phase two verifies the whole
     # plan before anything is generated; phase three writes every BUILD file.
     parsed_members = _parsed_scc_members(ctx, members)
-    _verify_scc_plan(config.repo_name, parsed_members)
-    _write_scc_build_files(ctx, parsed_members, config)
+    _verify_scc_plan(ctx.attr.repo_name, parsed_members)
+    _write_scc_build_files(ctx, parsed_members, ctx.attr.repo_name)
     return ctx.repo_metadata(reproducible = True)
 
 pub_lock_scc_package = repository_rule(
@@ -273,37 +241,16 @@ pub_lock_scc_package = repository_rule(
         ),
         "members_json": attr.string(
             doc = "JSON list of member packages. Hosted members carry `{source: \"hosted\", name, version, " +
-                  "sha256, url, code_assets}`; git members carry `{source: \"git\", name, version, url, " +
-                  "resolved_ref, path, code_assets}`. A git member's `resolved_ref` must be a full 40-hex " +
+                  "sha256, url (the archive URL), code_assets}`; git members carry `{source: \"git\", name, " +
+                  "version, url, resolved_ref, path, code_assets}`. Every member also carries `deps`, the labels " +
+                  "of its dependencies outside the cycle, and `ignore_hook`, which suppresses the unreplaced-hook " +
+                  "error for it. A git member's `resolved_ref` must be a full 40-hex " +
                   "commit SHA; anything else fails the build. Every member also carries `planned_deps`, the " +
                   "sorted dependency names cycle planning used for it: the fetch fails when a member's real " +
                   "pubspec lists other names, when a member entry carries no `planned_deps` list of strings, " +
                   "or when the members are not strongly connected through their " +
                   "real dependencies. Encoded by the `pub` extension; decoded here.",
             mandatory = True,
-        ),
-        "hub_name": attr.string(
-            doc = "Prefix for sibling spoke repo names (for constructing cross-spoke dep labels).",
-            mandatory = True,
-        ),
-        "lock_packages": attr.string_list(
-            doc = "All hosted package names in the lock scope (for dep filtering).",
-            default = [],
-        ),
-        "explicit_packages": attr.string_list(
-            doc = "Every name declared with `pub.package()`. A dependency on one of these " +
-                  "points at that explicit repository, not a spoke.",
-            default = [],
-        ),
-        "scc_targets": attr.string_dict(
-            doc = "Package name to merged repository target, for dependencies on members of " +
-                  "other merged cycles in the same scope.",
-            default = {},
-        ),
-        "ignore_hooks": attr.string_list(
-            doc = "Pub package names whose `hook/build.dart` is knowingly irrelevant to this " +
-                  "build. Suppresses the unreplaced-hook error for them.",
-            default = [],
         ),
     },
     doc = "Downloads every package of one merged dependency cycle into subdirectories and generates one multi-package `dart_library`.",

@@ -1,264 +1,250 @@
 """Repository emission for the pub module extension.
 
-Creates the spoke, merged and hub repositories that `extensions.bzl`
-resolves. The cycle planning stays in the extension; this module only turns
-its result into repository rules.
+Turns the extension's resolution and plan into one spec per repository —
+which rule, which attributes — and then instantiates them. Building the
+specs is pure, so a test can show what one lock change does to them.
+
+A package repository's attributes are what that package needs: its name,
+version, archive URL and hash (or git coordinates), the dependency names
+planning used for it, and the labels of its own dependencies. Nothing about
+the rest of the graph: a change to one lock entry changes the attributes of
+that entry's repository only, plus the repositories whose own dependency
+labels name it when it joins or leaves a merged cycle, and the hubs that
+list it.
 """
 
 load("//dart/private:curated_registry.bzl", "curated_code_assets")
+load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub/private:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub/private:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
-load("//dart/pub/private:scc.bzl", "rewrite_vanished_spoke")
+load("//dart/pub/private:pub_scc_entries.bzl", "scc_member_entries")
+load("//dart/pub/private:scc.bzl", "plan_scope_sccs", "rewrite_vanished_spoke")
 
 visibility(["//dart/..."])
 
 SPOKE_PREFIX = "dart_pub"
 
-def pub_emit_explicit(explicit, vanished_spokes):
-    """Creates the explicit `pub.package()` repositories.
+_RULES = {
+    "pub_lock_git_package": pub_lock_git_package,
+    "pub_lock_hub": pub_lock_hub,
+    "pub_lock_package": pub_lock_package,
+    "pub_lock_scc_package": pub_lock_scc_package,
+    "pub_package": pub_package,
+}
 
-    Each package's dependencies are rewritten to the merged repository when the lock
-    spoke they named has vanished into one.
+def pub_scopes(resolution):
+    """Splits a resolution into its planning scopes.
+
+    The shared scope holds every non-isolated lock's packages; each isolated
+    hub is a scope of its own, its spokes prefixed by the hub's name.
 
     Args:
-      explicit: The explicit packages by name; each carries `version`, `sha256`, `deps` and `package_files`.
-      vanished_spokes: The spoke labels that merged into a repository, mapped to that repository.
+      resolution: The `resolve_pub_packages` result.
+
+    Returns:
+      List of `struct(prefix, hub_names, hosted, git, explicit_names,
+      label_explicit)`, the shared scope first, then the isolated hubs in
+      name order. `explicit_names` are the `pub.package()` names cycle
+      planning sees; `label_explicit` are those a dependency label points at
+      the explicit repository for.
     """
-    for name, pkg in explicit.items():
-        pub_package(
-            name = name,
+    explicit_names = sorted(resolution.explicit.keys())
+    isolated = resolution.isolated_packages
+    isolated_git = resolution.isolated_git_packages
+    shared_hubs = sorted([
+        hub
+        for hub in resolution.hub_packages.keys()
+        if hub not in isolated and hub not in isolated_git
+    ])
+    scopes = [struct(
+        prefix = SPOKE_PREFIX,
+        hub_names = shared_hubs,
+        hosted = resolution.resolved,
+        git = resolution.resolved_git,
+        explicit_names = explicit_names,
+        label_explicit = explicit_names,
+    )]
+    for hub in sorted(set(isolated.keys()) | set(isolated_git.keys())):
+        hosted = isolated.get(hub, {})
+        git = isolated_git.get(hub, {})
+        scopes.append(struct(
+            prefix = hub,
+            hub_names = [hub],
+            hosted = hosted,
+            git = git,
+            explicit_names = explicit_names,
+            label_explicit = [n for n in explicit_names if n not in hosted and n not in git],
+        ))
+    return scopes
+
+def _merged_label(repo, member):
+    return "@{repo}//:{member}".format(repo = repo, member = member)
+
+def _scope_labels(scope, sccs):
+    """Maps every package name a scope's repositories may depend on to its label."""
+    labels = {}
+    for name in list(scope.hosted.keys()) + list(scope.git.keys()):
+        labels[name] = "@{prefix}__{name}//:{name}".format(prefix = scope.prefix, name = name)
+    for name in scope.label_explicit:
+        labels[name] = "@{name}//:{name}".format(name = name)
+    for member, repo in sccs.members.items():
+        labels[member] = _merged_label(repo, member)
+    return labels
+
+def own_dep_labels(name, deps, labels):
+    """The labels of one package's own dependencies.
+
+    Args:
+      name: The package.
+      deps: Its dependency names, as planned.
+      labels: The scope's name-to-label map.
+
+    Returns:
+      The labels, in dependency-name order; names outside the scope (an SDK
+      package, a dev-only name) and the package itself are dropped.
+    """
+    return [labels[d] for d in sorted(deps) if d in labels and d != name]
+
+def _add(specs, name, rule, attrs):
+    if name in specs:
+        fail("pub: the repository \"%s\" would be generated twice (as %s and as %s); rename the hub or the `pub.package()` that collides." % (name, specs[name].rule, rule))
+    specs[name] = struct(rule = rule, attrs = attrs)
+
+def _scope_package_specs(specs, scope, plans, sccs, labels, ignore_hooks):
+    """Adds one scope's spokes and merged repositories."""
+    for name in sorted(scope.hosted.keys()):
+        if name in sccs.members:
+            continue
+        pkg = scope.hosted[name]
+        err = pub_lock_package_sha256_error(name, pkg.version, pkg.sha256)
+        if err:
+            fail(err)
+        _add(specs, scope.prefix + "__" + name, "pub_lock_package", dict(
             package_name = name,
             version = pkg.version,
             sha256 = pkg.sha256,
-            deps = [rewrite_vanished_spoke(dep, vanished_spokes) for dep in pkg.deps],
+            url = plans[name]["archive_url"],
+            planned_deps = plans[name]["deps"],
+            deps = own_dep_labels(name, plans[name]["deps"], labels),
+            code_assets = curated_code_assets(name, pkg.version),
+            ignore_hook = name in ignore_hooks,
             package_files = pkg.package_files,
-        )
+        ))
+    for name in sorted(scope.git.keys()):
+        if name in sccs.members:
+            continue
+        pkg = scope.git[name]
+        _add(specs, scope.prefix + "__" + name, "pub_lock_git_package", dict(
+            package_name = name,
+            version = pkg.version,
+            url = pkg.url,
+            resolved_ref = pkg.resolved_ref,
+            path = pkg.path,
+            planned_deps = plans[name]["deps"],
+            deps = own_dep_labels(name, plans[name]["deps"], labels),
+            code_assets = curated_code_assets(name, pkg.version),
+            ignore_hook = name in ignore_hooks,
+            package_files = pkg.package_files,
+        ))
+    for repo in sorted(sccs.merged.keys()):
+        members = sccs.merged[repo]
+        _add(specs, repo, "pub_lock_scc_package", dict(
+            repo_name = repo,
+            members_json = json.encode(scc_member_entries(members, scope.hosted, scope.git, plans, labels, ignore_hooks)),
+        ))
 
-def pub_emit_aliased(aliases, vanished_spokes):
-    """Creates one alias repository per lock-pinned `pub.package()` name.
+def _hub_specs(specs, resolution, scopes, scope_sccs):
+    """Adds one hub per `from_lock` name."""
+    by_prefix = {scope.prefix: sccs for scope, sccs in zip(scopes, scope_sccs)}
+    for hub_name in sorted(resolution.hub_packages.keys()):
+        packages = resolution.hub_packages[hub_name]
+        names = sorted(packages)
+        isolated = hub_name in resolution.isolated_packages or hub_name in resolution.isolated_git_packages
+        prefix = hub_name if isolated else SPOKE_PREFIX
+        sccs = by_prefix[prefix]
+        _add(specs, hub_name, "pub_lock_hub", dict(
+            hub_name = hub_name,
+            spoke_prefix = prefix,
+            packages = names,
+            explicit_packages = [] if isolated else [n for n in names if n in resolution.explicit],
+            scc_targets = {
+                member: _merged_label(repo, member)
+                for member, repo in sccs.members.items()
+                if member in packages
+            },
+        ))
 
-    A dependency may import the package by its `pub.package()` name even
-    when a root lock pin resolves it, so the name must exist as a
-    repository. The lock spoke stays the single materialization: the alias
-    names its spoke, or the merged repository holding the whole cycle when
-    the spoke merged away.
+def pub_repo_specs(resolution, scope_plans, ignore_hooks):
+    """Builds every repository the extension generates, as specs.
 
     Args:
-      aliases: The alias names mapped to their pinned records.
-      vanished_spokes: The spoke labels that merged into a repository.
+      resolution: The `resolve_pub_packages` result.
+      scope_plans: Per scope of `pub_scopes(resolution)`, in order, a dict of
+        package name to its plan (`deps`, `sdk`, and `archive_url` for a
+        hosted package).
+      ignore_hooks: Dict of package names whose hooks are ignored.
+
+    Returns:
+      Dict of repository name to `struct(rule, attrs)`.
     """
-    for name in sorted(aliases.keys()):
+    scopes = pub_scopes(resolution)
+    explicit = resolution.explicit
+    explicit_deps = {name: pkg.deps for name, pkg in explicit.items()}
+
+    # Dependency cycles become one merged repository each. Merged-away
+    # spokes vanish, so an explicit `pub.package()` naming one must name its
+    # merged repository instead.
+    scope_sccs = []
+    vanished = {}
+    for scope, plans in zip(scopes, scope_plans):
+        names = sorted(set(scope.hosted.keys()) | set(scope.git.keys())) + scope.explicit_names
+        sccs = plan_scope_sccs(
+            names,
+            explicit_deps,
+            scope.hub_names,
+            scope.prefix,
+            {name: plans[name]["deps"] for name in plans.keys()},
+        )
+        for member, repo in sccs.members.items():
+            vanished[scope.prefix + "__" + member] = repo
+        scope_sccs.append(sccs)
+
+    specs = {}
+    for name in sorted(explicit.keys()):
+        pkg = explicit[name]
+        _add(specs, name, "pub_package", dict(
+            package_name = name,
+            version = pkg.version,
+            sha256 = pkg.sha256,
+            deps = [rewrite_vanished_spoke(dep, vanished) for dep in pkg.deps],
+            package_files = pkg.package_files,
+        ))
+
+    # A dependency may import a lock-pinned package by its `pub.package()`
+    # name, so that name exists as a repository aliasing the lock spoke (or
+    # the merged repository holding it).
+    for name in sorted(resolution.aliases.keys()):
         spoke = SPOKE_PREFIX + "__" + name
-        scc_targets = {}
-        if spoke in vanished_spokes:
-            repo = vanished_spokes[spoke]
-            scc_targets = {name: "@{repo}//:{member}".format(repo = repo, member = name)}
-        pub_lock_hub(
-            name = name,
+        _add(specs, name, "pub_lock_hub", dict(
             hub_name = SPOKE_PREFIX,
             spoke_prefix = SPOKE_PREFIX,
             packages = [name],
             explicit_packages = [],
-            scc_targets = scc_targets,
-        )
+            scc_targets = {name: _merged_label(vanished[spoke], name)} if spoke in vanished else {},
+        ))
 
-def pub_emit_shared_spokes(
-        resolved,
-        shared_sccs,
-        all_package_names,
-        explicit_package_names,
-        ignore_hooks,
-        shared_scc_targets):
-    """Creates shared hosted spoke repos. Cycle members get no spoke of their own: the merged repository holds the whole cycle.
+    for scope, plans, sccs in zip(scopes, scope_plans, scope_sccs):
+        _scope_package_specs(specs, scope, plans, sccs, _scope_labels(scope, sccs), ignore_hooks)
+    _hub_specs(specs, resolution, scopes, scope_sccs)
+    return specs
 
-    Args:
-      resolved: The resolved hosted packages by name.
-      shared_sccs: The shared scope's cycle plan.
-      all_package_names: Every package name the hub aliases.
-      explicit_package_names: The names `pub.package()` declares explicitly.
-      ignore_hooks: The package names whose hooks are ignored.
-      shared_scc_targets: The merged labels shared cycles point at.
-    """
-    for name, pkg in resolved.items():
-        if name in shared_sccs.members:
-            continue
-        err = pub_lock_package_sha256_error(name, pkg.version, pkg.sha256)
-        if err:
-            fail(err)
-        pub_lock_package(
-            name = SPOKE_PREFIX + "__" + name,
-            package_name = name,
-            version = pkg.version,
-            sha256 = pkg.sha256,
-            base_url = pkg.url,
-            hub_name = SPOKE_PREFIX,
-            lock_packages = all_package_names,
-            # A spoke whose pubspec depends on an explicit package depends on
-            # that package's repo, which is what every hub aliases it to.
-            explicit_packages = explicit_package_names,
-            code_assets = curated_code_assets(name, pkg.version),
-            ignore_hook = name in ignore_hooks,
-            scc_targets = shared_scc_targets,
-            planned_deps = shared_sccs.package_deps.get(name, []),
-            plan_covers_package = name in shared_sccs.package_deps,
-            package_files = pkg.package_files,
-        )
-
-def pub_emit_shared_git(
-        resolved_git,
-        shared_sccs,
-        all_package_names,
-        explicit_package_names,
-        ignore_hooks,
-        shared_scc_targets):
-    """Creates shared git spoke repos.
+def instantiate_pub_repos(specs):
+    """Generates the repositories `pub_repo_specs` describes.
 
     Args:
-      resolved_git: The resolved git packages by name.
-      shared_sccs: The shared scope's cycle plan.
-      all_package_names: Every package name the hub aliases.
-      explicit_package_names: The names `pub.package()` declares explicitly.
-      ignore_hooks: The package names whose hooks are ignored.
-      shared_scc_targets: The merged labels shared cycles point at.
+      specs: Dict of repository name to `struct(rule, attrs)`.
     """
-    for name, pkg in resolved_git.items():
-        if name in shared_sccs.members:
-            continue
-        pub_lock_git_package(
-            name = SPOKE_PREFIX + "__" + name,
-            package_name = name,
-            version = pkg.version,
-            url = pkg.url,
-            resolved_ref = pkg.resolved_ref,
-            path = pkg.path,
-            hub_name = SPOKE_PREFIX,
-            lock_packages = all_package_names,
-            explicit_packages = explicit_package_names,
-            code_assets = curated_code_assets(name, pkg.version),
-            ignore_hook = name in ignore_hooks,
-            scc_targets = shared_scc_targets,
-            planned_deps = shared_sccs.package_deps.get(name, []),
-            plan_covers_package = name in shared_sccs.package_deps,
-            package_files = pkg.package_files,
-        )
-
-def pub_emit_isolated_spokes(
-        hub_name,
-        hosted,
-        hub_sccs,
-        package_names,
-        hub_explicit,
-        hub_scc_targets,
-        ignore_hooks):
-    """Creates one isolated hub's hosted spoke repos.
-
-    Args:
-      hub_name: The isolated hub's name.
-      hosted: The hub's hosted packages by name.
-      hub_sccs: The hub's cycle plan.
-      package_names: Every package name the hub holds.
-      hub_explicit: The names `pub.package()` declares explicitly.
-      hub_scc_targets: The merged labels the hub's cycles point at.
-      ignore_hooks: The package names whose hooks are ignored.
-    """
-    for pkg_name, pkg in hosted.items():
-        if pkg_name in hub_sccs.members:
-            continue
-        err = pub_lock_package_sha256_error(pkg_name, pkg.version, pkg.sha256)
-        if err:
-            fail(err)
-        pub_lock_package(
-            name = hub_name + "__" + pkg_name,
-            package_name = pkg_name,
-            version = pkg.version,
-            sha256 = pkg.sha256,
-            base_url = pkg.url,
-            hub_name = hub_name,
-            lock_packages = package_names,
-            explicit_packages = hub_explicit,
-            code_assets = curated_code_assets(pkg_name, pkg.version),
-            ignore_hook = pkg_name in ignore_hooks,
-            scc_targets = hub_scc_targets,
-            planned_deps = hub_sccs.package_deps.get(pkg_name, []),
-            plan_covers_package = pkg_name in hub_sccs.package_deps,
-            package_files = pkg.package_files,
-        )
-
-def pub_emit_isolated_git(
-        hub_name,
-        git_pkgs,
-        hub_sccs,
-        package_names,
-        hub_explicit,
-        hub_scc_targets,
-        ignore_hooks):
-    """Creates one isolated hub's git spoke repos.
-
-    Args:
-      hub_name: The isolated hub's name.
-      git_pkgs: The hub's git packages by name.
-      hub_sccs: The hub's cycle plan.
-      package_names: Every package name the hub holds.
-      hub_explicit: The names `pub.package()` declares explicitly.
-      hub_scc_targets: The merged labels the hub's cycles point at.
-      ignore_hooks: The package names whose hooks are ignored.
-    """
-    for pkg_name, pkg in git_pkgs.items():
-        if pkg_name in hub_sccs.members:
-            continue
-        pub_lock_git_package(
-            name = hub_name + "__" + pkg_name,
-            package_name = pkg_name,
-            version = pkg.version,
-            url = pkg.url,
-            resolved_ref = pkg.resolved_ref,
-            path = pkg.path,
-            hub_name = hub_name,
-            lock_packages = package_names,
-            explicit_packages = hub_explicit,
-            code_assets = curated_code_assets(pkg_name, pkg.version),
-            ignore_hook = pkg_name in ignore_hooks,
-            scc_targets = hub_scc_targets,
-            planned_deps = hub_sccs.package_deps.get(pkg_name, []),
-            plan_covers_package = pkg_name in hub_sccs.package_deps,
-            package_files = pkg.package_files,
-        )
-
-def pub_emit_hubs(hub_packages, isolated_hub_names, isolated_sccs, shared_sccs, explicit):
-    """Creates the per-from_lock hub repos.
-
-    Args:
-      hub_packages: Each hub's package names.
-      isolated_hub_names: The hubs that resolve their own versions.
-      isolated_sccs: Each isolated hub's cycle plan.
-      shared_sccs: The shared scope's cycle plan.
-      explicit: The names `pub.package()` declares explicitly.
-    """
-    for hub_name, packages in hub_packages.items():
-        package_names = sorted(packages)
-        isolated = hub_name in isolated_hub_names
-        if isolated:
-            spoke_prefix = hub_name
-            hub_explicit = []
-            hub_scc_targets = {
-                member: "@{repo}//:{member}".format(repo = repo, member = member)
-                for member, repo in isolated_sccs[hub_name].members.items()
-                if member in packages
-            }
-        else:
-            spoke_prefix = SPOKE_PREFIX
-            hub_explicit = [n for n in package_names if n in explicit]
-            hub_scc_targets = {
-                member: "@{repo}//:{member}".format(repo = repo, member = member)
-                for member, repo in shared_sccs.members.items()
-                if member in packages
-            }
-        pub_lock_hub(
-            name = hub_name,
-            hub_name = hub_name,
-            spoke_prefix = spoke_prefix,
-            packages = package_names,
-            explicit_packages = hub_explicit,
-            scc_targets = hub_scc_targets,
-        )
+    for name in sorted(specs.keys()):
+        spec = specs[name]
+        _RULES[spec.rule](name = name, **spec.attrs)

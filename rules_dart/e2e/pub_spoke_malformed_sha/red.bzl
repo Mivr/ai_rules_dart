@@ -14,8 +14,7 @@ def _red_impl(_ctx):
         package_name = "collection",
         version = "1.18.0",
         sha256 = "not-hex",
-        base_url = "https://pub.dev",
-        hub_name = "deps",
+        url = "https://pub.dev/api/archives/collection-1.18.0.tar.gz",
     )
 
 red = module_extension(implementation = _red_impl)

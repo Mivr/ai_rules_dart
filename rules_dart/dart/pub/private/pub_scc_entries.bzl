@@ -2,42 +2,48 @@
 
 The `pub` module extension resolves a lock, plans its cycles, and hands each
 merged repository the member coordinates it needs in `members_json`. Building
-those entries is pure given the resolved packages, so it lives here rather
-than beside the extension's state machine: the extension file is already over
-its size limit, and a new field on each entry should not make it grow.
+those entries is pure given the resolved packages and their plans, so it lives
+here rather than beside the extension's state machine.
 """
 
 load("//dart/private:curated_registry.bzl", "curated_code_assets")
 
 visibility(["//dart/..."])
 
-def scc_member_entries(members, hosted, git_pkgs, package_deps):
+def scc_member_entries(members, hosted, git_pkgs, plans, labels, ignore_hooks):
     """Builds the merged repository's member entries for `members_json`.
 
-    Pure given the resolved packages: hosted members carry their tarball
-    coordinates, git members their remote, resolved ref and in-repo path, so
-    the merged repository fetches each member the way its spoke would. Each
-    entry also carries the sorted dependency names planning used for that
-    member — the same unfiltered names the facts record — so the merged
-    repository verifies the plan against the real pubspecs.
+    Pure given the resolved packages: hosted members carry their archive
+    URL and hash, git members their remote, resolved ref and in-repo path,
+    so the merged repository fetches each member the way its spoke would.
+    Each entry also carries the sorted dependency names planning used for
+    that member, so the merged repository verifies the plan against the
+    real pubspecs, and the labels of the member's dependencies outside the
+    cycle. Nothing else of the graph: the entries change only when a member
+    does.
 
     Args:
       members: Sorted member package names.
       hosted: Dict of hosted package name to
-        `struct(version, sha256, url)`.
+        `struct(version, sha256, url, package_files)`.
       git_pkgs: Dict of git package name to
-        `struct(version, url, resolved_ref, path)`.
-      package_deps: Dict of package name to the sorted dependency names
-        planning used.
+        `struct(version, url, resolved_ref, path, package_files)`.
+      plans: Dict of package name to its plan (`deps`, and `archive_url`
+        for a hosted package).
+      labels: The scope's package-name-to-label map.
+      ignore_hooks: Dict of package names whose hooks are ignored.
 
     Returns:
       List of structs, each with `source` (`"hosted"` or `"git"`), the
-      coordinates the merged repository rule reads, `planned_deps`, and the
-      member's runtime `package_files` globs.
+      coordinates the merged repository rule reads, `planned_deps`, `deps`
+      (labels outside the cycle), `ignore_hook`, and the member's runtime
+      `package_files` globs.
     """
+    in_cycle = {m: True for m in members}
     entries = []
     for member in members:
-        planned = sorted(package_deps[member])
+        planned = sorted(plans[member]["deps"])
+        outside = [labels[d] for d in planned if d in labels and d not in in_cycle]
         if member in hosted:
             pkg = hosted[member]
             entries.append(struct(
@@ -45,9 +51,11 @@ def scc_member_entries(members, hosted, git_pkgs, package_deps):
                 name = member,
                 version = pkg.version,
                 sha256 = pkg.sha256,
-                url = pkg.url,
+                url = plans[member]["archive_url"],
                 code_assets = curated_code_assets(member, pkg.version),
                 planned_deps = planned,
+                deps = outside,
+                ignore_hook = member in ignore_hooks,
                 package_files = getattr(pkg, "package_files", ["pubspec.yaml", "LICENSE*"]),
             ))
         else:
@@ -61,6 +69,8 @@ def scc_member_entries(members, hosted, git_pkgs, package_deps):
                 path = pkg.path,
                 code_assets = curated_code_assets(member, pkg.version),
                 planned_deps = planned,
+                deps = outside,
+                ignore_hook = member in ignore_hooks,
                 package_files = getattr(pkg, "package_files", ["pubspec.yaml", "LICENSE*"]),
             ))
     return entries

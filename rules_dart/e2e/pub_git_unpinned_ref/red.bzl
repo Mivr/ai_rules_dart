@@ -16,7 +16,6 @@ def _red_impl(_ctx):
         url = "file:///nonexistent-red-path",
         resolved_ref = "main",
         path = ".",
-        hub_name = "deps",
     )
 
 red = module_extension(implementation = _red_impl)

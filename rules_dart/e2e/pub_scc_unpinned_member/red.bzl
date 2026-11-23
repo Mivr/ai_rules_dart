@@ -13,8 +13,7 @@ def _red_impl(_ctx):
     pub_lock_scc_package(
         name = "bad_scc",
         repo_name = "bad_scc",
-        members_json = "[{\"source\": \"hosted\", \"name\": \"collection\", \"version\": \"1.18.0\", \"sha256\": \"\", \"url\": \"https://pub.dev\", \"code_assets\": []}]",
-        hub_name = "deps",
+        members_json = "[{\"source\": \"hosted\", \"name\": \"collection\", \"version\": \"1.18.0\", \"sha256\": \"\", \"url\": \"https://pub.dev/api/archives/collection-1.18.0.tar.gz\", \"code_assets\": []}]",
     )
 
 red = module_extension(implementation = _red_impl)

@@ -94,58 +94,30 @@ def trim_gzip_trailing_nulls(data):
         return stripped + "\0\0"
     return stripped
 
-def pub_lock_spoke_dep_labels(bazel_deps, hub_name, explicit_packages, scc_targets = {}):
-    """Maps a spoke's pubspec dependencies to Bazel labels.
-
-    Pure so the label layout can be tested without downloading anything. With
-    no merged cycle (`scc_targets` empty) the labels are exactly what spokes
-    have always generated.
-
-    Args:
-      bazel_deps: Sorted dependency package names (already filtered to the
-        lock's packages).
-      hub_name: The hub repo name, for constructing cross-spoke labels.
-      explicit_packages: Every name declared with `pub.package()`.
-      scc_targets: Dict of package name to merged repository target, for
-        dependencies merged over a cycle. Empty when nothing is merged.
-
-    Returns:
-      List of fully-qualified Bazel label strings.
-    """
-    explicit = {p: True for p in explicit_packages}
-    labels = []
-    for dep in bazel_deps:
-        if dep in scc_targets:
-            labels.append(scc_targets[dep])
-        elif dep in explicit:
-            labels.append("@{dep}//:{dep}".format(dep = dep))
-        else:
-            labels.append("@{hub}__{dep}//:{dep}".format(hub = hub_name, dep = dep))
-    return labels
-
 def _pub_lock_write_build(ctx, rule_name):
     """Reads the staged `pubspec.yaml` and writes the spoke `BUILD.bazel`.
 
     Shared by the hosted and git spokes: both lay out the package's files and
-    then derive the same `dart_library` from its pubspec — its dependencies
-    (filtered to the lock and explicit packages, as sibling labels), its SDK
-    constraint (as the Dart language version), and its hooks (recorded for
+    then derive the same `dart_library` from its pubspec — its SDK
+    constraint (as the Dart language version) and its hooks (recorded for
     the consuming binary to complain about, or for `dart_link_hook` to run).
+    Its dependencies are the `deps` labels the extension computed from the
+    planned names.
 
     Before writing anything it checks the unfiltered dependency names the
-    fetched pubspec lists against the sorted names cycle planning used (the
-    spoke's `planned_deps` attribute, when `plan_covers_package` says planning
-    covered the package): a fact that drops a real edge would otherwise hide
-    a cycle that then fails analysis bare, and a fact that gains a fake edge
+    fetched pubspec lists against the sorted names planning used (the
+    spoke's `planned_deps` attribute, from the server's listing, a lockfile
+    fact or the archive): planning metadata that drops a real edge would
+    otherwise hide a dependency or a cycle, and one that gains a fake edge
     would pass silently. A mismatch fails the fetch naming the package, so
-    the failure surfaces here and never as a target cycle.
+    the failure surfaces here and never as a missing dependency or a target
+    cycle.
 
     Args:
       ctx: The repository rule context.
       rule_name: The spoke rule (`"pub_lock_package"` or
         `"pub_lock_git_package"`), for diagnostics.
     """
-    bazel_deps = []
     language_version = ""
     real_deps = []
     if ctx.path("pubspec.yaml").exists:
@@ -154,27 +126,12 @@ def _pub_lock_write_build(ctx, rule_name):
         sdk_err = pubspec_environment_error(pubspec, pubspec_label)
         if sdk_err:
             fail(sdk_err)
-        all_deps = pubspec_deps(pubspec)
-        real_deps = sorted(all_deps)
-        available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages}
-        bazel_deps = sorted([d for d in all_deps if d in available and d != ctx.attr.package_name])
+        real_deps = sorted(pubspec_deps(pubspec))
         language_version = _derive_language_version(pubspec_sdk_constraint(pubspec))
 
-    planned = ctx.attr.planned_deps if ctx.attr.plan_covers_package else None
-    err = spoke_planned_deps_error(rule_name, ctx.name, ctx.attr.package_name, planned, real_deps)
+    err = spoke_planned_deps_error(rule_name, ctx.name, ctx.attr.package_name, ctx.attr.planned_deps, real_deps)
     if err:
         fail(err)
-
-    # Build full label strings for sibling repos: a dependency on a cycle
-    # member points at the merged repository holding the cycle; a dependency
-    # declared with `pub.package()` is that explicit repo, every other one is
-    # its spoke.
-    dep_labels = pub_lock_spoke_dep_labels(
-        bazel_deps,
-        ctx.attr.hub_name,
-        ctx.attr.explicit_packages,
-        ctx.attr.scc_targets,
-    )
 
     # A package that builds native code declares a build hook. rules_dart
     # cannot run it, so unless a curated `dart_code_asset` replaces it — or the
@@ -190,7 +147,7 @@ def _pub_lock_write_build(ctx, rule_name):
 
     build_content = make_dart_library_build_content(
         name = ctx.attr.package_name,
-        deps = dep_labels,
+        deps = ctx.attr.deps,
         language_version = language_version,
         code_assets = ctx.attr.code_assets,
         has_unreplaced_hook = hooks.unreplaced_hook,
@@ -210,11 +167,7 @@ def _pub_lock_package_impl(ctx):
     if err:
         fail(err)
 
-    url = "{base}/packages/{name}/versions/{version}.tar.gz".format(
-        base = ctx.attr.base_url,
-        name = ctx.attr.package_name,
-        version = ctx.attr.version,
-    )
+    url = ctx.attr.url
 
     # pub.dev serves some tarballs padded with trailing NUL bytes past the
     # 8-byte RFC 1952 gzip trailer (observed as of 2026-04 on `nested@1.0.0`,
@@ -262,41 +215,21 @@ pub_lock_package = repository_rule(
             doc = "SHA256 hash of the package archive for integrity verification.",
             mandatory = True,
         ),
-        "base_url": attr.string(
-            doc = "Base URL for the pub repository.",
-            default = "https://pub.dev",
-        ),
-        "hub_name": attr.string(
-            doc = "Name of the hub repo (for constructing cross-spoke dep labels).",
+        "url": attr.string(
+            doc = "The archive URL: the server's `archive_url` for the version, or " +
+                  "`<base>/packages/<name>/versions/<version>.tar.gz` when it lists none.",
             mandatory = True,
         ),
-        "lock_packages": attr.string_list(
-            doc = "All hosted package names in the lock file (for dep filtering).",
-            default = [],
-        ),
-        "explicit_packages": attr.string_list(
-            doc = "Every name declared with `pub.package()`. A dependency on one of these " +
-                  "points at that explicit repository, not a spoke, and is kept even when " +
-                  "no lock file lists it.",
-            default = [],
-        ),
-        "scc_targets": attr.string_dict(
-            doc = "Package name to merged repository target, for dependencies merged over a " +
-                  "dependency cycle. A dependency on a cycle member points at the merged " +
-                  "repository instead of a spoke. Empty when nothing is merged.",
-            default = {},
-        ),
         "planned_deps": attr.string_list(
-            doc = "The sorted dependency names cycle planning used for this package, " +
-                  "recorded by the `pub` extension from the lockfile's cycle-planning facts. " +
-                  "Checked against the fetched pubspec when `plan_covers_package` is True.",
+            doc = "The sorted dependency names planning used for this package (its whole " +
+                  "`dependencies:`, unfiltered). The fetch fails when the fetched pubspec " +
+                  "lists other names.",
             default = [],
         ),
-        "plan_covers_package": attr.bool(
-            doc = "True when cycle planning covered this package, so `planned_deps` carries " +
-                  "the names planning used and the fetch fails when the fetched pubspec " +
-                  "lists other names. False when planning did not cover it, skipping the check.",
-            default = False,
+        "deps": attr.string_list(
+            doc = "Labels of this package's own dependencies: a sibling spoke, the merged " +
+                  "repository holding a dependency cycle, or a `pub.package()` repository.",
+            default = [],
         ),
         "ignore_hook": attr.bool(
             doc = "Suppress the unreplaced-hook diagnostic for this package. Set by " +
@@ -387,35 +320,16 @@ pub_lock_git_package = repository_rule(
             doc = "Subdirectory inside the git repo holding the package; '.' means repo root.",
             default = ".",
         ),
-        "hub_name": attr.string(
-            doc = "Name of the hub repo (for constructing cross-spoke dep labels).",
-            mandatory = True,
-        ),
-        "lock_packages": attr.string_list(
-            doc = "All package names in the lock file (for dep filtering).",
-            default = [],
-        ),
-        "explicit_packages": attr.string_list(
-            doc = "Every name declared with `pub.package()`.",
-            default = [],
-        ),
-        "scc_targets": attr.string_dict(
-            doc = "Package name to merged repository target, for dependencies on packages merged over a " +
-                  "dependency cycle. A dependency on a cycle member points at the merged " +
-                  "repository instead of a spoke. Empty when nothing is merged.",
-            default = {},
-        ),
         "planned_deps": attr.string_list(
-            doc = "The sorted dependency names cycle planning used for this package, " +
-                  "recorded by the `pub` extension from the lockfile's cycle-planning facts. " +
-                  "Checked against the fetched pubspec when `plan_covers_package` is True.",
+            doc = "The sorted dependency names planning used for this package (its whole " +
+                  "`dependencies:`, unfiltered). The fetch fails when the fetched pubspec " +
+                  "lists other names.",
             default = [],
         ),
-        "plan_covers_package": attr.bool(
-            doc = "True when cycle planning covered this package, so `planned_deps` carries " +
-                  "the names planning used and the fetch fails when the fetched pubspec " +
-                  "lists other names. False when planning did not cover it, skipping the check.",
-            default = False,
+        "deps": attr.string_list(
+            doc = "Labels of this package's own dependencies: a sibling spoke, the merged " +
+                  "repository holding a dependency cycle, or a `pub.package()` repository.",
+            default = [],
         ),
         "ignore_hook": attr.bool(
             doc = "Suppress the unreplaced-hook diagnostic for this package.",
