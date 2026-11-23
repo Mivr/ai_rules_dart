@@ -88,7 +88,22 @@ load(
 load("//dart/private:project_layout.bzl", "add_layout_args", "layout_directory", "project_layout")
 load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "owned_package_records", "writable_home_env")
 load("//dart/private:dart_analyze_summary_fallback.bzl", "analyze_summaries", "fallback_summary_ready")
-load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "closure_attrs", "dart_analyzer_summary", "own_lib_sources", "package_key", "unbacked_embedder_in_closure")
+load("//dart/private:closure_facts.bzl", "facts_of", "lib_roots_of", "owner_fields", "owner_index", "root_key", "roots_containing")
+load(
+    "//dart/private:dart_analyzer_summary.bzl",
+    "CONFLICT_PREFIX",
+    "DartAnalyzerSummaryInfo",
+    "analyzer_summaries_supported",
+    "closure_attrs",
+    "closure_owner_index",
+    "dart_analyzer_summary",
+    "deps_cover_closure",
+    "files_in_dep_lib",
+    "own_lib_sources",
+    "package_key",
+    "summary_empty_key",
+    "unbacked_embedder_in_closure",
+)
 load("//dart/private:format_mode.bzl", _resolve_format_mode = "resolve_format_mode")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 
@@ -304,7 +319,55 @@ def _staged_files_conflict(staged_files, covered_lib_prefixes):
                         return True
     return False
 
-def _summaries_ready(ctx, info, has_own_lib, staged_files = []):
+def _known_ready(ctx, info, has_own_lib, staged_files, deps_complete):
+    """Whether the target can be analyzed from summaries, when the closure facts say so.
+
+    Every dependency's summary covers its whole closure and no package name
+    or root in the closure has two owners (`closure_owner_index`): then no
+    summary conflicts, none covers the target's own package, and every other
+    package is covered. What is left is whether a staged file lies in a
+    covered package's `lib/`. A library reads all of it from its own summary
+    provider (`deps_complete`), which the summary aspect computed; an
+    executable, which has none, expands the owners itself, once.
+
+    Args:
+      ctx: The aspect context.
+      info: The target's `DartInfo` closure.
+      has_own_lib: Whether the target stages `lib/` files of its own package.
+      staged_files: The target's own and generated files staged in summary mode.
+      deps_complete: The target's own `DartAnalyzerSummaryInfo.deps_complete`,
+        or None.
+
+    Returns:
+      True when the facts show the target ready, or None when they do not
+      decide it and `_summaries_ready` has to walk the closure.
+    """
+    deps = closure_attrs(ctx)
+    empty = any([summary_empty_key(d) for d in deps if DartAnalyzerSummaryInfo in d])
+    if has_own_lib and empty and not owned_package_records(info):
+        # The empty key is the own key of a target owning no package.
+        return None
+    if deps_complete != None:
+        return None if deps_complete.own_in_dep_lib else True
+    if not deps_cover_closure(info, deps):
+        return None
+
+    # The owners are needed only to rule out a dependency covering the
+    # target's own package, or a staged file in a covered package's `lib/`.
+    # An executable that states no package and stages nothing under a `lib/`
+    # needs neither.
+    if not owned_package_records(info) and not any([
+        lib_roots_of(f.short_path)
+        for f in staged_files
+        if f.extension == "dart" or f.is_directory
+    ]):
+        return True
+    owners = closure_owner_index(info, deps)
+    if owners == None or files_in_dep_lib(staged_files, owners, owned_package_records(info), deps):
+        return None
+    return True
+
+def _summaries_ready(ctx, info, has_own_lib, staged_files = [], deps_complete = None):
     """Whether the target can be analyzed from summaries.
 
     That is so when every package in its closure, but its own, has a summary,
@@ -319,12 +382,15 @@ def _summaries_ready(ctx, info, has_own_lib, staged_files = []):
       info: The target's `DartInfo` closure.
       has_own_lib: Whether the target stages `lib/` files of its own package.
       staged_files: The target's own and generated files staged in summary mode.
+      deps_complete: See `_known_ready`.
 
     Returns:
       True when the closure can be analyzed from summaries.
     """
     if unbacked_embedder_in_closure(info, _embedder_sdk_summary(ctx)):
         return False
+    if _known_ready(ctx, info, has_own_lib, staged_files, deps_complete):
+        return True
     collected = _collect_covered(ctx)
     if collected == None:
         return False
@@ -389,6 +455,19 @@ def _closure_version_groups(roots, own_paths):
         groups.setdefault(version, []).append(path)
     return groups
 
+def _indexed_version_groups(index, own_paths):
+    """`_closure_version_groups` over an owner index whose roots are unique."""
+    groups = {}
+    for path in own_paths:
+        version = ""
+        for root in roots_containing(path):
+            owner = index.get(root_key(root))
+            if owner != None and not root.startswith("../"):
+                version = owner_fields(owner).language_version
+                break
+        groups.setdefault(version, []).append(path)
+    return groups
+
 def _format_language_versions(info, own_paths):
     """Groups a target's own files by the language version to format them at.
 
@@ -416,6 +495,12 @@ def _format_language_versions(info, own_paths):
         # A merged multi-package target: each file formats at the version of
         # the member package whose root directory contains it.
         return _merged_version_groups(own_records, own_paths)
+    facts = facts_of(info)
+    owners = owner_index(facts) if facts != None else None
+    if owners != None and owners.unique:
+        # The innermost root containing each file, looked up rather than
+        # searched for: every root has one owner, so there is no tie to break.
+        return _indexed_version_groups(owners.index, own_paths)
     roots = [
         p
         for p in info.transitive_packages.to_list()
@@ -521,7 +606,7 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
     summary_mode = (
         ctx.attr._summaries[BuildSettingInfo].value and
         analyzer_summaries_supported(opts.sdk_version) and
-        _summaries_ready(ctx, info, has_own_lib, summary_files)
+        _summaries_ready(ctx, info, has_own_lib, summary_files, srcs.deps_complete)
     )
     baseline = slice_target_baseline(ctx, srcs.name, opts.config, srcs.own_paths)
     sdk_summary = _embedder_sdk_summary(ctx) or ctx.file._sdk_summary
@@ -767,6 +852,13 @@ def _dart_analyze_aspect_impl(target, ctx):
         own = own,
         generated = generated,
         own_paths = own_paths,
+        # What the summary aspect learned about this library's closure; an
+        # executable has no summary provider of its own.
+        deps_complete = (
+            target[DartAnalyzerSummaryInfo].deps_complete if (
+                DartAnalyzableInfo not in target and DartAnalyzerSummaryInfo in target
+            ) else None
+        ),
     )
     analyze_opts = struct(
         sdk_inputs = sdk_inputs,
