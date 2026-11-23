@@ -59,6 +59,17 @@ ANDROID_PLATFORMS_FLAG = "@rules_android//flags:android_platforms"
 # then comes from the pin, and the Dart packages' own Android libraries are left out of the graph.
 PLUGINS_FROM_MODEL_FLAG = "//flutter/private/android_model:plugins_from_model"
 
+# Flutter's profile mode (see //flutter:profile).
+_PROFILE_FLAG = "//flutter:profile"
+
+# What a Gradle variant's build mode means for the Dart payload, whatever `-c` the command line has:
+# the variant names the mode, as `flutter build apk --release` does.
+_MODE_SETTINGS = {
+    "debug": ("dbg", False),
+    "profile": ("opt", True),
+    "release": ("opt", False),
+}
+
 def _android_platform_transition_platforms(settings, attr):
     abi = getattr(attr, "android_abi", "")
     if abi in ANDROID_ABIS:
@@ -114,6 +125,13 @@ def _android_platform_transition_impl(settings, attr):
         features.append("analyze_size")
     result["//command_line_option:features"] = features
     result[PLUGINS_FROM_MODEL_FLAG] = settings[PLUGINS_FROM_MODEL_FLAG] or bool(getattr(attr, "plugins_from_model", False))
+    mode = getattr(attr, "flutter_mode", "")
+    if mode:
+        result["//command_line_option:compilation_mode"] = _MODE_SETTINGS[mode][0]
+        result[_PROFILE_FLAG] = _MODE_SETTINGS[mode][1]
+    else:
+        result["//command_line_option:compilation_mode"] = settings["//command_line_option:compilation_mode"]
+        result[_PROFILE_FLAG] = settings[_PROFILE_FLAG]
     return result
 
 # Builds the bundle and everything behind it (the flutter_application, its
@@ -130,13 +148,17 @@ _android_platform_transition = transition(
         "//command_line_option:cpu",
         "//command_line_option:dynamic_mode",
         "//command_line_option:features",
+        "//command_line_option:compilation_mode",
         PLUGINS_FROM_MODEL_FLAG,
+        _PROFILE_FLAG,
     ],
     outputs = [
         "//command_line_option:platforms",
         "//command_line_option:dynamic_mode",
         "//command_line_option:features",
+        "//command_line_option:compilation_mode",
         PLUGINS_FROM_MODEL_FLAG,
+        _PROFILE_FLAG,
     ],
 )
 
@@ -363,6 +385,9 @@ def _flutter_android_bundle_impl(ctx):
         outputs.extend(mobile_install_files)
 
     output_groups = {
+        # The AOT library alone (packaged as libapp.so), and the other native libraries alone.
+        "aot": depset([aot_output] if aot_output else []),
+        "plugin_native_libs": depset(native_libs),
         "native_libs": depset(all_native_libs),
         "native_libs_jar": depset([native_libs_jar]),
         "flutter_assets": depset([flutter_assets]),
@@ -404,6 +429,13 @@ provided for selective fetching.
 
 Set to False if you only build release APKs and do not need mobile-install.""",
             default = True,
+        ),
+        "flutter_mode": attr.string(
+            doc = """Flutter's build mode of the payload: `debug` (the kernel), `profile` or `release`
+(AOT). Empty: what the command line says (`-c dbg`, `-c opt`, `--//flutter:profile`).
+An app built from the Gradle model sets it from the variant, as `flutter build`
+picks the mode from its flag.""",
+            values = ["", "debug", "profile", "release"],
         ),
         "plugins_from_model": attr.bool(
             doc = """Whether the app's Android side is built from the pinned Gradle model

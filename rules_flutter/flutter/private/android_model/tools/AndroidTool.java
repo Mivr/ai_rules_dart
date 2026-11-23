@@ -122,6 +122,9 @@ public final class AndroidTool {
         case "dex": Dexing.dex(rest, err); return 0;
         case "dexmerge": Dexing.merge(rest, err); return 0;
         case "l8": Dexing.l8(rest, err); return 0;
+        case "r8": return Release.r8(rest, err);
+        case "artprofile": return Release.artProfile(rest, err);
+        case "bundle": return Bundle.run(rest, err);
         case "manifest": return Resources.manifest(rest, err);
         case "rescompile": return Resources.rescompile(rest, err);
         case "symbols": Resources.symbols(rest); return 0;

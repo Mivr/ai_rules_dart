@@ -3,6 +3,7 @@
         "androidx/activity/activity/1.8.1/activity-1.8.1.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": true,
                 "classes": true,
                 "jni": [
                     
@@ -25,6 +26,7 @@
         "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -63,6 +65,7 @@
         "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -101,6 +104,7 @@
         "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -123,6 +127,7 @@
         "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -145,6 +150,7 @@
         "androidx/core/core/1.13.1/core-1.13.1.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -167,6 +173,7 @@
         "androidx/customview/customview/1.0.0/customview-1.0.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -189,6 +196,7 @@
         "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -211,6 +219,7 @@
         "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": true,
                 "classes": true,
                 "jni": [
                     
@@ -233,6 +242,7 @@
         "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -271,6 +281,7 @@
         "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -293,6 +304,7 @@
         "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": true,
                 "classes": true,
                 "jni": [
                     
@@ -315,6 +327,7 @@
         "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": true,
                 "classes": true,
                 "jni": [
                     
@@ -337,6 +350,7 @@
         "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": true,
                 "classes": true,
                 "jni": [
                     
@@ -359,6 +373,7 @@
         "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": true,
                 "classes": true,
                 "jni": [
                     
@@ -381,6 +396,7 @@
         "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -403,6 +419,7 @@
         "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": true,
                 "classes": true,
                 "jni": [
                     
@@ -425,6 +442,7 @@
         "androidx/loader/loader/1.0.0/loader-1.0.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -447,6 +465,7 @@
         "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -469,6 +488,7 @@
         "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -491,6 +511,7 @@
         "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": true,
                 "classes": true,
                 "jni": [
                     
@@ -513,6 +534,7 @@
         "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -535,6 +557,7 @@
         "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -557,6 +580,7 @@
         "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -579,6 +603,7 @@
         "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -601,6 +626,7 @@
         "androidx/window/window-java/1.2.0/window-java-1.2.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -623,6 +649,7 @@
         "androidx/window/window/1.2.0/window-1.2.0.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -664,6 +691,14 @@
             "size": 10680,
             "urls": [
                 "https://dl.google.com/dl/android/maven2/com/android/tools/annotations/32.1.0/annotations-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/build/aapt2-proto/7.3.0-alpha07-8248216/aapt2-proto-7.3.0-alpha07-8248216.jar": {
+            "coordinate": "com.android.tools.build:aapt2-proto:7.3.0-alpha07-8248216",
+            "sha256": "6e45503a965ec00acd7c3b15df3c0fdad2a25d87d00b4ae380030c3ce6b526f4",
+            "size": 747666,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2-proto/7.3.0-alpha07-8248216/aapt2-proto-7.3.0-alpha07-8248216.jar"
             ]
         },
         "com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar": {
@@ -720,6 +755,22 @@
             "size": 15839059,
             "urls": [
                 "https://dl.google.com/dl/android/maven2/com/android/tools/build/builder/9.1.0/builder-9.1.0.jar"
+            ]
+        },
+        "com/android/tools/build/bundletool/1.18.3/bundletool-1.18.3.jar": {
+            "coordinate": "com.android.tools.build:bundletool:1.18.3",
+            "sha256": "ccad18514fd97db010856b2bbed40f481f8ba9349368c97ae54d72e3567d0171",
+            "size": 13371507,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/bundletool/1.18.3/bundletool-1.18.3.jar"
+            ]
+        },
+        "com/android/tools/build/gradle/9.1.0/gradle-9.1.0.jar": {
+            "coordinate": "com.android.tools.build:gradle:9.1.0",
+            "sha256": "74b47a2a57349371273fb0893f61977a68dc40d5fb5e012a71d9e00c76ad728d",
+            "size": 12671948,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/9.1.0/gradle-9.1.0.jar"
             ]
         },
         "com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar": {
@@ -797,6 +848,7 @@
         "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar": {
             "aar": {
                 "assets": false,
+                "baseline_prof": false,
                 "classes": true,
                 "jni": [
                     
@@ -816,6 +868,14 @@
                 "https://repo.maven.apache.org/maven2/com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar"
             ]
         },
+        "com/google/auto/value/auto-value-annotations/1.6.2/auto-value-annotations-1.6.2.jar": {
+            "coordinate": "com.google.auto.value:auto-value-annotations:1.6.2",
+            "sha256": "b48b04ddba40e8ac33bf036f06fc43995fc5084bd94bdaace807ce27d3bea3fb",
+            "size": 5889,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/auto/value/auto-value-annotations/1.6.2/auto-value-annotations-1.6.2.jar"
+            ]
+        },
         "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar": {
             "coordinate": "com.google.code.findbugs:jsr305:3.0.2",
             "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7",
@@ -832,6 +892,30 @@
                 "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar"
             ]
         },
+        "com/google/code/gson/gson/2.8.9/gson-2.8.9.jar": {
+            "coordinate": "com.google.code.gson:gson:2.8.9",
+            "sha256": "d3999291855de495c94c743761b8ab5176cfeabe281a5ab0d8e8d45326fd703e",
+            "size": 258075,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.8.9/gson-2.8.9.jar"
+            ]
+        },
+        "com/google/dagger/dagger/2.28.3/dagger-2.28.3.jar": {
+            "coordinate": "com.google.dagger:dagger:2.28.3",
+            "sha256": "f1dd23f8ae34a8e91366723991ead0d6499d1a3e9163ce550c200b02d76a872b",
+            "size": 34413,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/dagger/dagger/2.28.3/dagger-2.28.3.jar"
+            ]
+        },
+        "com/google/errorprone/error_prone_annotations/2.18.0/error_prone_annotations-2.18.0.jar": {
+            "coordinate": "com.google.errorprone:error_prone_annotations:2.18.0",
+            "sha256": "9e6814cb71816988a4fd1b07a993a8f21bb7058d522c162b1de849e19bea54ae",
+            "size": 16017,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.18.0/error_prone_annotations-2.18.0.jar"
+            ]
+        },
         "com/google/errorprone/error_prone_annotations/2.28.0/error_prone_annotations-2.28.0.jar": {
             "coordinate": "com.google.errorprone:error_prone_annotations:2.28.0",
             "sha256": "f3fc8a3a0a4020706a373b00e7f57c2512dd26d1f83d28c7d38768f8682b231e",
@@ -840,12 +924,28 @@
                 "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.28.0/error_prone_annotations-2.28.0.jar"
             ]
         },
+        "com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar": {
+            "coordinate": "com.google.guava:failureaccess:1.0.1",
+            "sha256": "a171ee4c734dd2da837e4b16be9df4661afab72a41adaf31eb84dfdaf936ca26",
+            "size": 4617,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar"
+            ]
+        },
         "com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar": {
             "coordinate": "com.google.guava:failureaccess:1.0.2",
             "sha256": "8a8f81cf9b359e3f6dfa691a1e776985c061ef2f223c9b2c80753e1b458e8064",
             "size": 4740,
             "urls": [
                 "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar"
+            ]
+        },
+        "com/google/guava/guava/32.0.1-jre/guava-32.0.1-jre.jar": {
+            "coordinate": "com.google.guava:guava:32.0.1-jre",
+            "sha256": "bd7fa227591fb8509677d0d1122cf95158f3b8a9f45653f58281d879f6dc48c5",
+            "size": 3037368,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/guava/32.0.1-jre/guava-32.0.1-jre.jar"
             ]
         },
         "com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar": {
@@ -872,6 +972,14 @@
                 "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar"
             ]
         },
+        "com/google/j2objc/j2objc-annotations/2.8/j2objc-annotations-2.8.jar": {
+            "coordinate": "com.google.j2objc:j2objc-annotations:2.8",
+            "sha256": "f02a95fa1a5e95edb3ed859fd0fb7df709d121a35290eff8b74dce2ab7f4d6ed",
+            "size": 9301,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/j2objc/j2objc-annotations/2.8/j2objc-annotations-2.8.jar"
+            ]
+        },
         "com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar": {
             "coordinate": "com.google.j2objc:j2objc-annotations:3.0.0",
             "sha256": "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64",
@@ -886,6 +994,22 @@
             "size": 206691,
             "urls": [
                 "https://repo.maven.apache.org/maven2/com/google/jimfs/jimfs/1.1/jimfs-1.1.jar"
+            ]
+        },
+        "com/google/protobuf/protobuf-java-util/3.22.3/protobuf-java-util-3.22.3.jar": {
+            "coordinate": "com.google.protobuf:protobuf-java-util:3.22.3",
+            "sha256": "c615f76879dc5c303e4df5b94a6afa39534058c7545db2d483fd95d9f63c8bfe",
+            "size": 72117,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/protobuf/protobuf-java-util/3.22.3/protobuf-java-util-3.22.3.jar"
+            ]
+        },
+        "com/google/protobuf/protobuf-java/3.22.3/protobuf-java-3.22.3.jar": {
+            "coordinate": "com.google.protobuf:protobuf-java:3.22.3",
+            "sha256": "59d388ea6a2d2d76ae8efff7fd4d0c60c6f0f464c3d3ab9be8e5add092975708",
+            "size": 1676712,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/protobuf/protobuf-java/3.22.3/protobuf-java-3.22.3.jar"
             ]
         },
         "com/google/protobuf/protobuf-java/3.25.5/protobuf-java-3.25.5.jar": {
@@ -948,6 +1072,29 @@
                 "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
             ]
         },
+        "io/flutter/arm64_v8a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:arm64_v8a_profile:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "native_libs": [
+                "lib/arm64-v8a/libflutter.so",
+                "lib/arm64-v8a/libvmservice_snapshot.so"
+            ],
+            "sha256": "fccf3c5eb43e3387f3e2b1dd72cf55cea2232f79c96514f0a98ba0bac0cee5ba",
+            "size": 45337718,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "io/flutter/arm64_v8a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:arm64_v8a_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "native_libs": [
+                "lib/arm64-v8a/libflutter.so"
+            ],
+            "sha256": "d940eba5aca3b58c785ef7f093cb351c871e1410c6b122c7eb1b31a9ca18225f",
+            "size": 42168220,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
         "io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
             "coordinate": "io.flutter:armeabi_v7a_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
             "native_libs": [
@@ -959,12 +1106,51 @@
                 "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
             ]
         },
+        "io/flutter/armeabi_v7a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:armeabi_v7a_profile:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "native_libs": [
+                "lib/armeabi-v7a/libflutter.so",
+                "lib/armeabi-v7a/libvmservice_snapshot.so"
+            ],
+            "sha256": "40cc1b562598dd448ee5a70bd42b85fb21123ed663438811ccd0a0449e669bae",
+            "size": 44494012,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "io/flutter/armeabi_v7a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:armeabi_v7a_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "native_libs": [
+                "lib/armeabi-v7a/libflutter.so"
+            ],
+            "sha256": "3909e6467c1fe6202bbf64f377f158171d6b83a86d9cbc39f67f748b217e55ad",
+            "size": 41264533,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
         "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
             "coordinate": "io.flutter:flutter_embedding_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
             "sha256": "dc61d3cce023b28d0da84817bff4edcc6a72f9e8cfba93063e117292af855708",
             "size": 1589924,
             "urls": [
                 "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:flutter_embedding_profile:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "sha256": "8edb4e4d1430959fecb100438da02ddc3c6a52846780882995b476b1d1f0ae36",
+            "size": 1584153,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:flutter_embedding_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "sha256": "395504a17bbc944fb69089792a70bff1bc281d302fe736341220957bddf39b6a",
+            "size": 1584072,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
             ]
         },
         "io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
@@ -976,6 +1162,29 @@
             "size": 119914282,
             "urls": [
                 "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "io/flutter/x86_64_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:x86_64_profile:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "native_libs": [
+                "lib/x86_64/libflutter.so",
+                "lib/x86_64/libvmservice_snapshot.so"
+            ],
+            "sha256": "dee981868c773a7554b7f89f61f156d0eddfebe318a7300dbe6e96da1c7e4d94",
+            "size": 45670948,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "io/flutter/x86_64_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:x86_64_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "native_libs": [
+                "lib/x86_64/libflutter.so"
+            ],
+            "sha256": "75b8ec46ceb0a3813a78efd4dc631b188a2e507c6f10655c217d4ac761320347",
+            "size": 42484349,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
             ]
         },
         "jakarta/activation/jakarta.activation-api/1.2.1/jakarta.activation-api-1.2.1.jar": {
@@ -1066,6 +1275,14 @@
                 "https://repo.maven.apache.org/maven2/org/apache/httpcomponents/httpmime/4.5.6/httpmime-4.5.6.jar"
             ]
         },
+        "org/bitbucket/b_c/jose4j/0.9.5/jose4j-0.9.5.jar": {
+            "coordinate": "org.bitbucket.b_c:jose4j:0.9.5",
+            "sha256": "808fb3166f3e67dad9811c331029ab1681242fd52b735bc3f33f281167fcc72e",
+            "size": 298683,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/bitbucket/b_c/jose4j/0.9.5/jose4j-0.9.5.jar"
+            ]
+        },
         "org/bouncycastle/bcpkix-jdk18on/1.79/bcpkix-jdk18on-1.79.jar": {
             "coordinate": "org.bouncycastle:bcpkix-jdk18on:1.79",
             "sha256": "3639a24ddf9ba4b7eba0659b44770e91eba816421888e571f285aadefe532cd6",
@@ -1088,6 +1305,14 @@
             "size": 705999,
             "urls": [
                 "https://repo.maven.apache.org/maven2/org/bouncycastle/bcutil-jdk18on/1.79/bcutil-jdk18on-1.79.jar"
+            ]
+        },
+        "org/checkerframework/checker-qual/3.33.0/checker-qual-3.33.0.jar": {
+            "coordinate": "org.checkerframework:checker-qual:3.33.0",
+            "sha256": "e316255bbfcd9fe50d165314b85abb2b33cb2a66a93c491db648e498a82c2de1",
+            "size": 223979,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/checkerframework/checker-qual/3.33.0/checker-qual-3.33.0.jar"
             ]
         },
         "org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar": {
@@ -1241,9 +1466,195 @@
             "urls": [
                 "https://repo.maven.apache.org/maven2/org/ow2/asm/asm/9.9/asm-9.9.jar"
             ]
+        },
+        "org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.jar": {
+            "coordinate": "org.slf4j:slf4j-api:1.7.30",
+            "sha256": "cdba07964d1bb40a0761485c6b1e8c2f8fd9eb1d19c53928ac0d7f9510105c57",
+            "size": 41472,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.jar"
+            ]
         }
     },
     "classpaths": {
+        "cp_032a90fb23f6": [
+            "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar",
+            "androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar",
+            "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+            "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+        ],
+        "cp_03cdbba8a058": [
+            "project::jni_flutter@release",
+            "project::jni@release",
+            "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar",
+            "androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar",
+            "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "io/flutter/armeabi_v7a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/arm64_v8a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/x86_64_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+            "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+        ],
+        "cp_2143be43fb51": [
+            "project::jni@profile",
+            "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+        ],
+        "cp_31676c8af273": [
+            "project::jni@profile",
+            "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar",
+            "androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar",
+            "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+            "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+        ],
         "cp_3e47ec8e1e3c": [
             "project::jni@debug",
             "project::jni_flutter@debug",
@@ -1281,6 +1692,89 @@
             "io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
             "io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
             "io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+        ],
+        "cp_4c391740415d": [
+            "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+        ],
+        "cp_53315fdc09f7": [
+            "project::jni@profile",
+            "project::jni_flutter@profile",
+            "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "io/flutter/armeabi_v7a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/arm64_v8a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/x86_64_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
             "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
             "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
             "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
@@ -1417,6 +1911,85 @@
             "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
             "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
         ],
+        "cp_9280d6b1e237": [
+            "project::jni@release",
+            "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+        ],
+        "cp_97374e220e52": [
+            "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+        ],
         "cp_ac0d81ce5975": [
             "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
             "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
@@ -1449,6 +2022,50 @@
             "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
             "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
             "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+        ],
+        "cp_ae273eefdfdc": [
+            "project::jni@release",
+            "project::jni_flutter@release",
+            "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "io/flutter/armeabi_v7a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/arm64_v8a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/x86_64_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
             "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
             "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
             "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
@@ -1504,6 +2121,144 @@
             "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
             "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
             "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+        ],
+        "cp_bc61055d8c91": [
+            "project::jni@release",
+            "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar",
+            "androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar",
+            "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+            "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+        ],
+        "cp_e575b475ac18": [
+            "project::jni_flutter@profile",
+            "project::jni@profile",
+            "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar",
+            "androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar",
+            "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "io/flutter/armeabi_v7a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/arm64_v8a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/x86_64_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+            "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+        ],
+        "cp_f36b4ec49849": [
+            "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar",
+            "androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar",
+            "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+            "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
         ]
     },
     "generated_sources": {
@@ -1516,6 +2271,10 @@
         "android/gradle/wrapper/gradle-wrapper.properties": "b690d26223576fe4e63889fad9a00df81945cb870b9476cc5a563152a1a88a74",
         "android/settings.gradle.kts": "016759283e88ade6eba92910583feeef88b962839b957aa414296afd2952d122",
         "pubspec.lock": "6ca292e8c2371f712b04dbf919693914fbe7808743767ba51f89656af915f44a"
+    },
+    "proguard_texts": {
+        "flutter_proguard_rules.pro": "# Build the ephemeral app in a module project.\n# Prevents: Warning: library class <plugin-package> depends on program class io.flutter.plugin.**\n# This is due to plugins (libraries) depending on the embedding (the program jar)\n-dontwarn io.flutter.plugin.**\n\n# The android.** package is provided by the OS at runtime.\n-dontwarn android.**\n\n# In some cases, R8 is incorrectly stripping plugin classes. Keep\n# all implementations of FlutterPlugin until we can determine\n# why this is the case.\n# See https://github.com/flutter/flutter/issues/154580.\n-if class * implements io.flutter.embedding.engine.plugins.FlutterPlugin\n-keep,allowshrinking,allowobfuscation class <1>\n",
+        "proguard-android-optimize.txt": "# This is a configuration file for ProGuard.\n# http://proguard.sourceforge.net/index.html#manual/usage.html\n#\n# Starting with version 2.2 of the Android plugin for Gradle, this file is distributed together with\n# the plugin and unpacked at build-time. The files in $ANDROID_HOME are no longer maintained and\n# will be ignored by new version of the Android plugin for Gradle.\n\n# Optimizations: If you don't want to optimize, use the proguard-android.txt configuration file\n# instead of this one, which turns off the optimization flags.\n-allowaccessmodification\n\n# Preserve some attributes that may be required for reflection.\n-keepattributes AnnotationDefault,\n                EnclosingMethod,\n                InnerClasses,\n                RuntimeVisibleAnnotations,\n                RuntimeVisibleParameterAnnotations,\n                RuntimeVisibleTypeAnnotations,\n                Signature\n\n-keep public class com.google.vending.licensing.ILicensingService\n-keep public class com.android.vending.licensing.ILicensingService\n-keep public class com.google.android.vending.licensing.ILicensingService\n-dontnote com.android.vending.licensing.ILicensingService\n-dontnote com.google.vending.licensing.ILicensingService\n-dontnote com.google.android.vending.licensing.ILicensingService\n\n# For native methods, see https://www.guardsquare.com/manual/configuration/examples#native\n-keepclasseswithmembernames,includedescriptorclasses class * {\n    native <methods>;\n}\n\n# Keep setters in Views so that animations can still work.\n-keepclassmembers public class * extends android.view.View {\n    void set*(***);\n    *** get*();\n}\n\n# We want to keep methods in Activity that could be used in the XML attribute onClick.\n-keepclassmembers class * extends android.app.Activity {\n    public void *(android.view.View);\n}\n\n# For enumeration classes, see https://www.guardsquare.com/manual/configuration/examples#enumerations\n-keepclassmembers enum * {\n    public static **[] values();\n    public static ** valueOf(java.lang.String);\n}\n\n-keepclassmembers class * implements android.os.Parcelable {\n    public static final ** CREATOR;\n}\n\n# Preserve annotated Javascript interface methods.\n-keepclassmembers class * {\n    @android.webkit.JavascriptInterface <methods>;\n}\n\n# The support libraries contains references to newer platform versions.\n# Don't warn about those in case this app is linking against an older\n# platform version. We know about them, and they are safe.\n-dontnote android.support.**\n-dontnote androidx.**\n-dontwarn android.support.**\n-dontwarn androidx.**\n\n# Understand the @Keep support annotation.\n-keep class android.support.annotation.Keep\n\n-keep @android.support.annotation.Keep class * {*;}\n\n-keepclasseswithmembers class * {\n    @android.support.annotation.Keep <methods>;\n}\n\n-keepclasseswithmembers class * {\n    @android.support.annotation.Keep <fields>;\n}\n\n-keepclasseswithmembers class * {\n    @android.support.annotation.Keep <init>(...);\n}\n\n# These classes are duplicated between android.jar and org.apache.http.legacy.jar.\n-dontnote org.apache.http.**\n-dontnote android.net.http.**\n\n# These classes are duplicated between android.jar and core-lambda-stubs.jar.\n-dontnote java.lang.invoke.**\n"
     },
     "projects": {
         ":app": {
@@ -1566,6 +2325,12 @@
             },
             "namespace": "dev.rdf.counter",
             "ndk_version": "28.2.13676358",
+            "non_final_res_ids": true,
+            "r8": {
+                "full_mode": true,
+                "optimized_resource_shrinking": true,
+                "strict_full_mode_for_keep_rules": true
+            },
             "type": "application",
             "variants": {
                 "debug": {
@@ -1577,6 +2342,48 @@
                         
                     },
                     "build_type": "debug",
+                    "bundle": {
+                        "abi_split": true,
+                        "density_split": true,
+                        "language_split": true,
+                        "store_archive": true,
+                        "uncompressed_globs": [
+                            "**.3[gG]2",
+                            "**.3[gG][pP]",
+                            "**.3[gG][pP][pP]",
+                            "**.3[gG][pP][pP]2",
+                            "**.[aA][aA][cC]",
+                            "**.[aA][mM][rR]",
+                            "**.[aA][wW][bB]",
+                            "**.[gG][iI][fF]",
+                            "**.[iI][mM][yY]",
+                            "**.[jJ][eE][tT]",
+                            "**.[jJ][pP][eE][gG]",
+                            "**.[jJ][pP][gG]",
+                            "**.[mM]4[aA]",
+                            "**.[mM]4[vV]",
+                            "**.[mM][iI][dD]",
+                            "**.[mM][iI][dD][iI]",
+                            "**.[mM][kK][vV]",
+                            "**.[mM][pP]2",
+                            "**.[mM][pP]3",
+                            "**.[mM][pP]4",
+                            "**.[mM][pP][eE][gG]",
+                            "**.[mM][pP][gG]",
+                            "**.[oO][gG][gG]",
+                            "**.[oO][pP][uU][sS]",
+                            "**.[pP][nN][gG]",
+                            "**.[rR][tT][tT][tT][lL]",
+                            "**.[sS][mM][fF]",
+                            "**.[tT][fF][lL][iI][tT][eE]",
+                            "**.[wW][aA][vV]",
+                            "**.[wW][eE][bB][mM]",
+                            "**.[wW][eE][bB][pP]",
+                            "**.[wW][mM][aA]",
+                            "**.[wW][mM][vV]",
+                            "**.[xX][mM][fF]"
+                        ]
+                    },
                     "compile": "cp_3e47ec8e1e3c",
                     "consumer_proguard_files": [
                         
@@ -1634,6 +2441,7 @@
                     },
                     "max_sdk": null,
                     "min_sdk": 24,
+                    "minify": false,
                     "namespace": "dev.rdf.counter",
                     "ndk_abi_filters": [
                         "arm64-v8a",
@@ -1693,18 +2501,24 @@
                         ]
                     },
                     "proguard_files": [
-                        
+                        "text:proguard-android-optimize.txt"
                     ],
                     "res_values": {
                         
                     },
                     "runtime": "cp_babb3e08ef33",
-                    "signing": "debug-or-configured",
+                    "shrink_resources": false,
+                    "signing": {
+                        "name": "debug"
+                    },
                     "sources": {
                         "aidl": [
                             
                         ],
                         "assets": [
+                            
+                        ],
+                        "baseline_profiles": [
                             
                         ],
                         "java": [
@@ -1728,6 +2542,447 @@
                             "app:android/app/src/main/res"
                         ],
                         "shaders": [
+                            
+                        ],
+                        "startup_profiles": [
+                            
+                        ]
+                    },
+                    "target_sdk": 36,
+                    "version_code": 1073741823,
+                    "version_name": "@pubspec.version@"
+                },
+                "profile": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "application_id": "dev.rdf.counter",
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "profile",
+                    "bundle": {
+                        "abi_split": true,
+                        "density_split": true,
+                        "language_split": true,
+                        "store_archive": true,
+                        "uncompressed_globs": [
+                            "**.3[gG]2",
+                            "**.3[gG][pP]",
+                            "**.3[gG][pP][pP]",
+                            "**.3[gG][pP][pP]2",
+                            "**.[aA][aA][cC]",
+                            "**.[aA][mM][rR]",
+                            "**.[aA][wW][bB]",
+                            "**.[gG][iI][fF]",
+                            "**.[iI][mM][yY]",
+                            "**.[jJ][eE][tT]",
+                            "**.[jJ][pP][eE][gG]",
+                            "**.[jJ][pP][gG]",
+                            "**.[mM]4[aA]",
+                            "**.[mM]4[vV]",
+                            "**.[mM][iI][dD]",
+                            "**.[mM][iI][dD][iI]",
+                            "**.[mM][kK][vV]",
+                            "**.[mM][pP]2",
+                            "**.[mM][pP]3",
+                            "**.[mM][pP]4",
+                            "**.[mM][pP][eE][gG]",
+                            "**.[mM][pP][gG]",
+                            "**.[oO][gG][gG]",
+                            "**.[oO][pP][uU][sS]",
+                            "**.[pP][nN][gG]",
+                            "**.[rR][tT][tT][tT][lL]",
+                            "**.[sS][mM][fF]",
+                            "**.[tT][fF][lL][iI][tT][eE]",
+                            "**.[wW][aA][vV]",
+                            "**.[wW][eE][bB][mM]",
+                            "**.[wW][eE][bB][pP]",
+                            "**.[wW][mM][aA]",
+                            "**.[wW][mM][vV]",
+                            "**.[xX][mM][fF]"
+                        ]
+                    },
+                    "compile": "cp_53315fdc09f7",
+                    "consumer_proguard_files": [
+                        
+                    ],
+                    "debuggable": true,
+                    "external_native_build": {
+                        "abi_filters": [
+                            
+                        ],
+                        "arguments": [
+                            "-Wno-dev",
+                            "--no-warn-unused-cli",
+                            "-DCMAKE_BUILD_TYPE=profile"
+                        ],
+                        "c_flags": [
+                            
+                        ],
+                        "cpp_flags": [
+                            
+                        ],
+                        "targets": [
+                            
+                        ]
+                    },
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline"
+                    ],
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            "-Xuse-inline-scopes-numbers"
+                        ],
+                        "jvm_target": "17",
+                        "language_version": null,
+                        "module_name": "android:app_profile",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "manifest_placeholders": {
+                        "applicationName": "android.app.Application"
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 24,
+                    "minify": false,
+                    "namespace": "dev.rdf.counter",
+                    "ndk_abi_filters": [
+                        "arm64-v8a",
+                        "armeabi-v7a",
+                        "x86_64"
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": true,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/*.kotlin_module",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": false,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        "text:proguard-android-optimize.txt"
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_e575b475ac18",
+                    "shrink_resources": false,
+                    "signing": {
+                        "name": "debug"
+                    },
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            
+                        ],
+                        "baseline_profiles": [
+                            
+                        ],
+                        "java": [
+                            "app:android/app/src/main/java"
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "app:android/app/src/main/kotlin",
+                            "app:android/app/src/main/java"
+                        ],
+                        "manifests": [
+                            "app:android/app/src/main/AndroidManifest.xml",
+                            "app:android/app/src/profile/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            "app:android/app/src/main/res"
+                        ],
+                        "shaders": [
+                            
+                        ],
+                        "startup_profiles": [
+                            
+                        ]
+                    },
+                    "target_sdk": 36,
+                    "version_code": 1073741823,
+                    "version_name": "@pubspec.version@"
+                },
+                "release": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "application_id": "dev.rdf.counter",
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "release",
+                    "bundle": {
+                        "abi_split": true,
+                        "density_split": true,
+                        "language_split": true,
+                        "store_archive": true,
+                        "uncompressed_globs": [
+                            "**.3[gG]2",
+                            "**.3[gG][pP]",
+                            "**.3[gG][pP][pP]",
+                            "**.3[gG][pP][pP]2",
+                            "**.[aA][aA][cC]",
+                            "**.[aA][mM][rR]",
+                            "**.[aA][wW][bB]",
+                            "**.[gG][iI][fF]",
+                            "**.[iI][mM][yY]",
+                            "**.[jJ][eE][tT]",
+                            "**.[jJ][pP][eE][gG]",
+                            "**.[jJ][pP][gG]",
+                            "**.[mM]4[aA]",
+                            "**.[mM]4[vV]",
+                            "**.[mM][iI][dD]",
+                            "**.[mM][iI][dD][iI]",
+                            "**.[mM][kK][vV]",
+                            "**.[mM][pP]2",
+                            "**.[mM][pP]3",
+                            "**.[mM][pP]4",
+                            "**.[mM][pP][eE][gG]",
+                            "**.[mM][pP][gG]",
+                            "**.[oO][gG][gG]",
+                            "**.[oO][pP][uU][sS]",
+                            "**.[pP][nN][gG]",
+                            "**.[rR][tT][tT][tT][lL]",
+                            "**.[sS][mM][fF]",
+                            "**.[tT][fF][lL][iI][tT][eE]",
+                            "**.[wW][aA][vV]",
+                            "**.[wW][eE][bB][mM]",
+                            "**.[wW][eE][bB][pP]",
+                            "**.[wW][mM][aA]",
+                            "**.[wW][mM][vV]",
+                            "**.[xX][mM][fF]"
+                        ]
+                    },
+                    "compile": "cp_ae273eefdfdc",
+                    "consumer_proguard_files": [
+                        
+                    ],
+                    "debuggable": false,
+                    "external_native_build": {
+                        "abi_filters": [
+                            
+                        ],
+                        "arguments": [
+                            "-Wno-dev",
+                            "--no-warn-unused-cli",
+                            "-DCMAKE_BUILD_TYPE=release"
+                        ],
+                        "c_flags": [
+                            
+                        ],
+                        "cpp_flags": [
+                            
+                        ],
+                        "targets": [
+                            
+                        ]
+                    },
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline"
+                    ],
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            
+                        ],
+                        "jvm_target": "17",
+                        "language_version": null,
+                        "module_name": "android:app_release",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "manifest_placeholders": {
+                        "applicationName": "android.app.Application"
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 24,
+                    "minify": true,
+                    "namespace": "dev.rdf.counter",
+                    "ndk_abi_filters": [
+                        "arm64-v8a",
+                        "armeabi-v7a",
+                        "x86_64"
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": true,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/*.kotlin_module",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": false,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        "text:proguard-android-optimize.txt",
+                        "text:flutter_proguard_rules.pro"
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_03cdbba8a058",
+                    "shrink_resources": true,
+                    "signing": {
+                        "name": "debug"
+                    },
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            
+                        ],
+                        "baseline_profiles": [
+                            
+                        ],
+                        "java": [
+                            "app:android/app/src/main/java"
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "app:android/app/src/main/kotlin",
+                            "app:android/app/src/main/java"
+                        ],
+                        "manifests": [
+                            "app:android/app/src/main/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            "app:android/app/src/main/res"
+                        ],
+                        "shaders": [
+                            
+                        ],
+                        "startup_profiles": [
                             
                         ]
                     },
@@ -1784,6 +3039,7 @@
             },
             "namespace": "com.github.dart_lang.jni",
             "ndk_version": "28.2.13676358",
+            "non_final_res_ids": true,
             "type": "library",
             "variants": {
                 "debug": {
@@ -1918,6 +3174,9 @@
                         "assets": [
                             
                         ],
+                        "baseline_profiles": [
+                            
+                        ],
                         "java": [
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
                             "pub:hosted/pub.dev/jni-1.2.1/java/src/main/java"
@@ -1939,6 +3198,337 @@
                             
                         ],
                         "shaders": [
+                            
+                        ],
+                        "startup_profiles": [
+                            
+                        ]
+                    },
+                    "target_sdk": 35
+                },
+                "profile": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "profile",
+                    "compile": "cp_4c391740415d",
+                    "consumer_proguard_files": [
+                        "pub:hosted/pub.dev/jni-1.2.1/android/consumer-rules.pro"
+                    ],
+                    "debuggable": true,
+                    "external_native_build": {
+                        "abi_filters": [
+                            
+                        ],
+                        "arguments": [
+                            
+                        ],
+                        "c_flags": [
+                            
+                        ],
+                        "cpp_flags": [
+                            
+                        ],
+                        "targets": [
+                            
+                        ]
+                    },
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline"
+                    ],
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            
+                        ],
+                        "jvm_target": "21",
+                        "language_version": null,
+                        "module_name": "com.github.dart_lang.jni:jni_profile",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "manifest_placeholders": {
+                        
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 21,
+                    "namespace": "com.github.dart_lang.jni",
+                    "ndk_abi_filters": [
+                        
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": null,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": null,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_f36b4ec49849",
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            
+                        ],
+                        "baseline_profiles": [
+                            
+                        ],
+                        "java": [
+                            "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
+                            "pub:hosted/pub.dev/jni-1.2.1/java/src/main/java"
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
+                            "pub:hosted/pub.dev/jni-1.2.1/java/src/main/java"
+                        ],
+                        "manifests": [
+                            "pub:hosted/pub.dev/jni-1.2.1/android/src/main/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            
+                        ],
+                        "shaders": [
+                            
+                        ],
+                        "startup_profiles": [
+                            
+                        ]
+                    },
+                    "target_sdk": 35
+                },
+                "release": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "release",
+                    "compile": "cp_97374e220e52",
+                    "consumer_proguard_files": [
+                        "pub:hosted/pub.dev/jni-1.2.1/android/consumer-rules.pro"
+                    ],
+                    "debuggable": false,
+                    "external_native_build": {
+                        "abi_filters": [
+                            
+                        ],
+                        "arguments": [
+                            
+                        ],
+                        "c_flags": [
+                            
+                        ],
+                        "cpp_flags": [
+                            
+                        ],
+                        "targets": [
+                            
+                        ]
+                    },
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline"
+                    ],
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            
+                        ],
+                        "jvm_target": "21",
+                        "language_version": null,
+                        "module_name": "com.github.dart_lang.jni:jni_release",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "manifest_placeholders": {
+                        
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 21,
+                    "namespace": "com.github.dart_lang.jni",
+                    "ndk_abi_filters": [
+                        
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": null,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": null,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_032a90fb23f6",
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            
+                        ],
+                        "baseline_profiles": [
+                            
+                        ],
+                        "java": [
+                            "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
+                            "pub:hosted/pub.dev/jni-1.2.1/java/src/main/java"
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
+                            "pub:hosted/pub.dev/jni-1.2.1/java/src/main/java"
+                        ],
+                        "manifests": [
+                            "pub:hosted/pub.dev/jni-1.2.1/android/src/main/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            
+                        ],
+                        "shaders": [
+                            
+                        ],
+                        "startup_profiles": [
                             
                         ]
                     },
@@ -1990,6 +3580,7 @@
             },
             "namespace": "com.github.dart_lang.jni_flutter",
             "ndk_version": "28.2.13676358",
+            "non_final_res_ids": true,
             "type": "library",
             "variants": {
                 "debug": {
@@ -2107,6 +3698,9 @@
                         "assets": [
                             
                         ],
+                        "baseline_profiles": [
+                            
+                        ],
                         "java": [
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
                         ],
@@ -2126,6 +3720,299 @@
                             
                         ],
                         "shaders": [
+                            
+                        ],
+                        "startup_profiles": [
+                            
+                        ]
+                    },
+                    "target_sdk": 35
+                },
+                "profile": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "profile",
+                    "compile": "cp_2143be43fb51",
+                    "consumer_proguard_files": [
+                        "pub:hosted/pub.dev/jni_flutter-1.1.0/android/consumer-rules.pro"
+                    ],
+                    "debuggable": true,
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline"
+                    ],
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            
+                        ],
+                        "jvm_target": "21",
+                        "language_version": null,
+                        "module_name": "com.github.dart_lang.jni_flutter:jni_flutter_profile",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "manifest_placeholders": {
+                        
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 21,
+                    "namespace": "com.github.dart_lang.jni_flutter",
+                    "ndk_abi_filters": [
+                        
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": null,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": null,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_31676c8af273",
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            
+                        ],
+                        "baseline_profiles": [
+                            
+                        ],
+                        "java": [
+                            "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
+                        ],
+                        "manifests": [
+                            "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            
+                        ],
+                        "shaders": [
+                            
+                        ],
+                        "startup_profiles": [
+                            
+                        ]
+                    },
+                    "target_sdk": 35
+                },
+                "release": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "release",
+                    "compile": "cp_9280d6b1e237",
+                    "consumer_proguard_files": [
+                        "pub:hosted/pub.dev/jni_flutter-1.1.0/android/consumer-rules.pro"
+                    ],
+                    "debuggable": false,
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline"
+                    ],
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            
+                        ],
+                        "jvm_target": "21",
+                        "language_version": null,
+                        "module_name": "com.github.dart_lang.jni_flutter:jni_flutter_release",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "manifest_placeholders": {
+                        
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 21,
+                    "namespace": "com.github.dart_lang.jni_flutter",
+                    "ndk_abi_filters": [
+                        
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": null,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": null,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_bc61055d8c91",
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            
+                        ],
+                        "baseline_profiles": [
+                            
+                        ],
+                        "java": [
+                            "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
+                        ],
+                        "manifests": [
+                            "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            
+                        ],
+                        "shaders": [
+                            
+                        ],
+                        "startup_profiles": [
                             
                         ]
                     },
@@ -2153,7 +4040,7 @@
         "https://repo.maven.apache.org/maven2/",
         "https://storage.googleapis.com/download.flutter.io/"
     ],
-    "schema": 2,
+    "schema": 3,
     "tool_classpaths": {
         "aapt2_linux": [
             "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar"
@@ -2166,6 +4053,25 @@
         ],
         "apksig": [
             "com/android/tools/build/apksig/9.1.0/apksig-9.1.0.jar"
+        ],
+        "bundletool": [
+            "com/android/tools/build/bundletool/1.18.3/bundletool-1.18.3.jar",
+            "com/android/tools/build/aapt2-proto/7.3.0-alpha07-8248216/aapt2-proto-7.3.0-alpha07-8248216.jar",
+            "com/google/auto/value/auto-value-annotations/1.6.2/auto-value-annotations-1.6.2.jar",
+            "com/google/protobuf/protobuf-java-util/3.22.3/protobuf-java-util-3.22.3.jar",
+            "com/google/guava/guava/32.0.1-jre/guava-32.0.1-jre.jar",
+            "com/google/errorprone/error_prone_annotations/2.18.0/error_prone_annotations-2.18.0.jar",
+            "com/google/protobuf/protobuf-java/3.22.3/protobuf-java-3.22.3.jar",
+            "com/google/dagger/dagger/2.28.3/dagger-2.28.3.jar",
+            "javax/inject/javax.inject/1/javax.inject-1.jar",
+            "org/bitbucket/b_c/jose4j/0.9.5/jose4j-0.9.5.jar",
+            "org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.jar",
+            "com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar",
+            "com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+            "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar",
+            "org/checkerframework/checker-qual/3.33.0/checker-qual-3.33.0.jar",
+            "com/google/j2objc/j2objc-annotations/2.8/j2objc-annotations-2.8.jar",
+            "com/google/code/gson/gson/2.8.9/gson-2.8.9.jar"
         ],
         "manifest_merger": [
             "com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar",
@@ -2219,6 +4125,9 @@
             "jakarta/activation/jakarta.activation-api/1.2.1/jakarta.activation-api-1.2.1.jar",
             "commons-logging/commons-logging/1.2/commons-logging-1.2.jar"
         ],
+        "profgen": [
+            "com/android/tools/build/gradle/9.1.0/gradle-9.1.0.jar"
+        ],
         "r8": [
             "com/android/tools/r8/9.1.31/r8-9.1.31.jar"
         ],
@@ -2255,6 +4164,7 @@
         "aapt2": "9.1.0-14792394",
         "agp": "9.1.0",
         "agp_tools_base": "32.1.0",
+        "bundletool": "1.18.3",
         "gradle": "9.3.1",
         "kotlin": "2.4.0",
         "r8": "9.1.31"

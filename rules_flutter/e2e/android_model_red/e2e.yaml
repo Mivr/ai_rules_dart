@@ -11,7 +11,7 @@ commands:
     run: bazel build //schema:app
     expect:
       non_zero: true
-      output_contains: '//schema:android_model.json has schema 1 and these rules read schema 2. Pin again: `bazel run //schema:android_pin`'
+      output_contains: '//schema:android_model.json has schema 1 and these rules read schema 3. Pin again: `bazel run //schema:android_pin`'
   - name: a Gradle file changed after the pin fails the build and names the file
     run: bazel build //stale:app_pin_check
     expect:

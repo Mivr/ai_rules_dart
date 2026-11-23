@@ -13,6 +13,8 @@ build.
    `android_model.json` beside `pubspec.yaml`. Check it in.
 3. `bazel build //:app` builds the split APKs of the debug build; `bazel build //:app_apk` the same app
    as one APK; `bazel run //:app_install` sends the splits that changed to a device and starts the app.
+4. A release or profile build is another `flutter_android_app` with `variant = "release"` (or
+   `"profile"`); see "Release and profile builds" below.
 
 Pin again when `pubspec.lock`, a Gradle file of the app or the plugin set changes. A build whose files
 differ from what the pin was computed from fails and names the files and the command:
@@ -57,9 +59,10 @@ flutter_android_app(
 ```
 
 The pin step needs what a stock Flutter Android build needs: a JDK, the Android SDK, a Flutter SDK, and
-the network for what Gradle has not resolved before. A build needs the Android SDK for two things only
-(`android.jar` of the compile SDK and the NDK's `llvm-strip`; `ANDROID_HOME` names it); everything else
-is fetched by the hashes in the pin.
+the network for what Gradle has not resolved before. A build needs the Android SDK for the platform
+(`android.jar` of the compile SDK and, for a release build, the platform's optional libraries and its
+stubs of `java.lang.invoke`, which R8 links against) and the NDK's `llvm-strip`; `ANDROID_HOME` names
+it. Everything else is fetched by the hashes in the pin.
 
 ## What is built
 
@@ -91,10 +94,85 @@ sets its own values, those are used. A flavor's `versionNameSuffix` is kept.
 
 ## Variants and flavors
 
-By default the pin records every app variant of the `debug` build type. `flutter_android_pin(variants =
-["devDebug"])` chooses, and `flutter_android_app(variant = "devDebug")` builds one. Release variants (R8,
-resource shrinking, signing configurations, bundles) are not built from the model yet; asking for one
-is an error.
+The pin records every variant of the app (`debug`, `profile`, `release`, and with flavors `devDebug`,
+`devRelease`, ...); `flutter_android_pin(variants = ["debug", "devRelease"])` records fewer.
+`flutter_android_app(variant = "devRelease")` builds one. The variant decides the mode, as the flag of
+`flutter build apk` does, whatever `-c` the Bazel command line has: a debuggable build type is a debug
+build, the `profile` build type a profile build, any other a release build.
+
+## Release and profile builds
+
+```starlark
+flutter_android_app(
+    name = "app_release",
+    application = ":counter",
+    variant = "release",
+    abis = ["arm64-v8a", "x86_64"],
+    split_per_abi = True,
+)
+```
+
+`bazel build //:app_release_apk` is what `flutter build apk --release` gives; with `split_per_abi`,
+`//:app_release_apk_arm64_v8a` and `//:app_release_apk_x86_64` are what `--split-per-abi` gives, with
+Flutter's version codes (`1000 * <ABI number> + versionCode`). `//:app_release_mapping` is the mapping
+file that retraces a stack trace of that build.
+
+| Step | As the stock build | Actions |
+|---|---|---|
+| The Dart program | one AOT library per ABI, `lib/<abi>/libapp.so`; `flutter_assets` without the kernel | the Dart side's AOT compile |
+| Code | R8 over the whole program when the build type says `minifyEnabled` (Flutter's default for release): AGP's own driver and R8 by hash, full mode, with the rules of the app (AGP's default file and the Flutter tool's rules, carried in the pin; the app's own files), of the plugin projects (`consumerProguardFiles`) and of the Maven artifacts (`proguard.txt` of an AAR, `META-INF/com.android.tools/r8*` or `META-INF/proguard` of a jar) | `RdfR8` |
+| Resources | linked to the proto format, shrunk by R8 in the same run when the build type says `shrinkResources`, converted and optimized (`aapt2 optimize --shorten-resource-paths`) | `RdfAapt2Link`, `RdfAapt2Convert`, `RdfAapt2Optimize` |
+| Core library desugaring | the desugared library shrunk to what the app's final dex uses | `RdfL8` |
+| Baseline profiles | those of the app (`src/main/baseline-prof.txt`) and of the AARs merged, rewritten by R8 and L8, compiled into `assets/dexopt/` | `RdfArtProfile` |
+| Without `minifyEnabled` | D8 in release mode, no shrinking | `RdfDex`, `RdfDexMerge` |
+
+A profile or release build carries the Dart program as machine code, so it is built for the ABIs the
+rules have an AOT compiler for: `arm64-v8a` and `x86_64`. A stock app asks for `armeabi-v7a` too; say
+`abis = ["arm64-v8a", "x86_64"]`, or the build fails and tells you to. A release build has no split
+APKs (R8 works on the whole program); `//:app_release` is the APK.
+
+### App bundles
+
+`bazel build //:app_release_bundle` is what `flutter build appbundle` gives
+(`bazel-bin/app_release_bundle.aab`): one module, `base`, with the manifest and the (shrunk) resources
+in the proto format, the dex files, the native libraries, the assets and the Java resources, put
+together as AGP's module task does and built by bundletool at the version AGP uses (by hash, from the
+pin), with AGP's bundle configuration (`bundle { abi, density, language }` of the Gradle file,
+uncompressed native libraries at 16 KB boundaries). Under `BUNDLE-METADATA` it carries the mapping
+file, the baseline profile, R8's build record and AGP's marker file. Every variant has a bundle target
+(`//:app_bundle` is the debug one).
+
+### Signing
+
+A key store and its passwords are never in a checked-in file, an attribute, an action or a log.
+
+- A debug build, and a release build whose signing configuration is the debug one (what the Flutter
+  template writes: `signingConfig = signingConfigs.getByName("debug")`), are signed in the build with
+  the debug key, which is no secret.
+- A release build with any other signing configuration is built **unsigned**
+  (`bazel-bin/app_release_apk-unsigned.apk`), and `bazel run //:app_release_sign` signs it outside
+  the build, with AGP's signer and the schemes the signing configuration names. The pin records the
+  configuration's name and schemes only. The key comes from where the stock tools' users keep it:
+  - `android/key.properties` (the file Flutter's deployment guide has you write and keep out of
+    version control: `storeFile`, `storePassword`, `keyAlias`, `keyPassword`), or another such file
+    named with `-- --key-properties <file>`; or
+  - the environment, for CI: `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`,
+    `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`, set from the CI system's secret store.
+
+  The signed APKs are written to `build/app/outputs/flutter-apk/` of the app (where the stock tools
+  put theirs), or into `-- --out <directory>`. `bazel run //:app_release_bundle_sign` does the same
+  for the bundle (`build/app/outputs/bundle/release/app-release.aab`), signed as a jar.
+
+### What a release build has that differs from the stock one
+
+- `META-INF/version-control-info.textproto` (the commit of the checkout) and
+  `kotlin-tooling-metadata.json` (a record of the Kotlin Gradle plugin) are not written.
+- A bundle has no `BUNDLE-METADATA/com.android.tools.build.libraries/dependencies.pb` (the list of
+  Maven dependencies the Play Console reads) and no native debug symbols
+  (`com.android.tools.build.debugsymbols`).
+- The code is compiled by the Java and Kotlin compilers of the Bazel workspace, not by Gradle's, so
+  compiler-made names (lambda numbers, synthetic classes) can differ; R8 then names classes in
+  another order. Given the same class files, R8's output here is byte for byte the stock one.
 
 ## What is not built, and how it fails
 
@@ -104,8 +182,9 @@ pub cache and the Bazel workspace, and on an app variant with several outputs. G
 fails, naming the project and the feature, on: data binding, view binding, Compose, RenderScript, ML
 model binding, prefab; AIDL and shader sources; Java resource directories; a Kotlin compiler plugin
 other than kapt and KSP; a Kotlin compiler argument the rules do not know; annotation processor
-arguments in a Kotlin project; file dependencies (`libs/*.jar`); and native code built by CMake or
-ndk-build. For the last, `flutter_android_app(native_built_elsewhere = [":jni"])` says that Bazel builds
+arguments in a Kotlin project; file dependencies (`libs/*.jar`); a shrinker rules file outside the
+app; resource shrinking with `android.r8.optimizedResourceShrinking=false`; and native code built by
+CMake or ndk-build. For the last, `flutter_android_app(native_built_elsewhere = [":jni"])` says that Bazel builds
 that library on the Dart side.
 
 A plugin project the model cannot express can be built by Gradle itself, as one cached action:
@@ -121,7 +200,8 @@ project are not packaged yet.
 `flutter_android_apk_test` of the pin's `defs.bzl` builds an app's APKs and checks them: classes and
 entries that must (or must not) be there, which split holds what, the version, and always that no class
 is defined twice, that native libraries are stored uncompressed at 16 KB boundaries, that the APK is
-signed, and that the splits hold what the whole APK holds.
+signed, and that the splits hold what the whole APK holds. `abi = "x86_64"` checks that ABI's APK of
+an app built with `split_per_abi`.
 
 ## Hosts
 
@@ -131,9 +211,8 @@ directory. Only Linux x86_64 has been run.
 ## Moving from `flutter_android_app` of `@rules_flutter//flutter:android.bzl`
 
 That macro (an `android_binary` with the Flutter payload spliced in, plugins read from their Gradle
-files by a lexer) still exists beside this path and is the one release builds, bundles and AARs use
-until they are built from the model. An app is on one path or the other: built from a pin, its Dart
-packages bring no Android library of their own.
+files by a lexer) still exists beside this path until every workspace has moved. An app is on one
+path or the other: built from a pin, its Dart packages bring no Android library of their own.
 
 - Add the app's stock Android project if it has only `android/app/src/main`, run the pin and check
   `android_model.json` in.

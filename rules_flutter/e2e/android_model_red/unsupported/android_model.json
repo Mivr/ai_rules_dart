@@ -24,6 +24,14 @@
                 "https://dl.google.com/dl/android/maven2/com/android/tools/annotations/32.1.0/annotations-32.1.0.jar"
             ]
         },
+        "com/android/tools/build/aapt2-proto/7.3.0-alpha07-8248216/aapt2-proto-7.3.0-alpha07-8248216.jar": {
+            "coordinate": "com.android.tools.build:aapt2-proto:7.3.0-alpha07-8248216",
+            "sha256": "6e45503a965ec00acd7c3b15df3c0fdad2a25d87d00b4ae380030c3ce6b526f4",
+            "size": 747666,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2-proto/7.3.0-alpha07-8248216/aapt2-proto-7.3.0-alpha07-8248216.jar"
+            ]
+        },
         "com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar": {
             "coordinate": "com.android.tools.build:aapt2-proto:9.1.0-14792394",
             "sha256": "2335bab7fd8269ee98d3843410c4a5553d31dd71f9a22f49b21a676d3139c882",
@@ -78,6 +86,22 @@
             "size": 15839059,
             "urls": [
                 "https://dl.google.com/dl/android/maven2/com/android/tools/build/builder/9.1.0/builder-9.1.0.jar"
+            ]
+        },
+        "com/android/tools/build/bundletool/1.18.3/bundletool-1.18.3.jar": {
+            "coordinate": "com.android.tools.build:bundletool:1.18.3",
+            "sha256": "ccad18514fd97db010856b2bbed40f481f8ba9349368c97ae54d72e3567d0171",
+            "size": 13371507,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/bundletool/1.18.3/bundletool-1.18.3.jar"
+            ]
+        },
+        "com/android/tools/build/gradle/9.1.0/gradle-9.1.0.jar": {
+            "coordinate": "com.android.tools.build:gradle:9.1.0",
+            "sha256": "74b47a2a57349371273fb0893f61977a68dc40d5fb5e012a71d9e00c76ad728d",
+            "size": 12671948,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/9.1.0/gradle-9.1.0.jar"
             ]
         },
         "com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar": {
@@ -152,6 +176,14 @@
                 "https://dl.google.com/dl/android/maven2/com/android/tools/sdklib/32.1.0/sdklib-32.1.0.jar"
             ]
         },
+        "com/google/auto/value/auto-value-annotations/1.6.2/auto-value-annotations-1.6.2.jar": {
+            "coordinate": "com.google.auto.value:auto-value-annotations:1.6.2",
+            "sha256": "b48b04ddba40e8ac33bf036f06fc43995fc5084bd94bdaace807ce27d3bea3fb",
+            "size": 5889,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/auto/value/auto-value-annotations/1.6.2/auto-value-annotations-1.6.2.jar"
+            ]
+        },
         "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar": {
             "coordinate": "com.google.code.findbugs:jsr305:3.0.2",
             "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7",
@@ -168,6 +200,30 @@
                 "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar"
             ]
         },
+        "com/google/code/gson/gson/2.8.9/gson-2.8.9.jar": {
+            "coordinate": "com.google.code.gson:gson:2.8.9",
+            "sha256": "d3999291855de495c94c743761b8ab5176cfeabe281a5ab0d8e8d45326fd703e",
+            "size": 258075,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.8.9/gson-2.8.9.jar"
+            ]
+        },
+        "com/google/dagger/dagger/2.28.3/dagger-2.28.3.jar": {
+            "coordinate": "com.google.dagger:dagger:2.28.3",
+            "sha256": "f1dd23f8ae34a8e91366723991ead0d6499d1a3e9163ce550c200b02d76a872b",
+            "size": 34413,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/dagger/dagger/2.28.3/dagger-2.28.3.jar"
+            ]
+        },
+        "com/google/errorprone/error_prone_annotations/2.18.0/error_prone_annotations-2.18.0.jar": {
+            "coordinate": "com.google.errorprone:error_prone_annotations:2.18.0",
+            "sha256": "9e6814cb71816988a4fd1b07a993a8f21bb7058d522c162b1de849e19bea54ae",
+            "size": 16017,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.18.0/error_prone_annotations-2.18.0.jar"
+            ]
+        },
         "com/google/errorprone/error_prone_annotations/2.28.0/error_prone_annotations-2.28.0.jar": {
             "coordinate": "com.google.errorprone:error_prone_annotations:2.28.0",
             "sha256": "f3fc8a3a0a4020706a373b00e7f57c2512dd26d1f83d28c7d38768f8682b231e",
@@ -176,12 +232,28 @@
                 "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.28.0/error_prone_annotations-2.28.0.jar"
             ]
         },
+        "com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar": {
+            "coordinate": "com.google.guava:failureaccess:1.0.1",
+            "sha256": "a171ee4c734dd2da837e4b16be9df4661afab72a41adaf31eb84dfdaf936ca26",
+            "size": 4617,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar"
+            ]
+        },
         "com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar": {
             "coordinate": "com.google.guava:failureaccess:1.0.2",
             "sha256": "8a8f81cf9b359e3f6dfa691a1e776985c061ef2f223c9b2c80753e1b458e8064",
             "size": 4740,
             "urls": [
                 "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar"
+            ]
+        },
+        "com/google/guava/guava/32.0.1-jre/guava-32.0.1-jre.jar": {
+            "coordinate": "com.google.guava:guava:32.0.1-jre",
+            "sha256": "bd7fa227591fb8509677d0d1122cf95158f3b8a9f45653f58281d879f6dc48c5",
+            "size": 3037368,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/guava/32.0.1-jre/guava-32.0.1-jre.jar"
             ]
         },
         "com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar": {
@@ -200,6 +272,14 @@
                 "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar"
             ]
         },
+        "com/google/j2objc/j2objc-annotations/2.8/j2objc-annotations-2.8.jar": {
+            "coordinate": "com.google.j2objc:j2objc-annotations:2.8",
+            "sha256": "f02a95fa1a5e95edb3ed859fd0fb7df709d121a35290eff8b74dce2ab7f4d6ed",
+            "size": 9301,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/j2objc/j2objc-annotations/2.8/j2objc-annotations-2.8.jar"
+            ]
+        },
         "com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar": {
             "coordinate": "com.google.j2objc:j2objc-annotations:3.0.0",
             "sha256": "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64",
@@ -214,6 +294,22 @@
             "size": 206691,
             "urls": [
                 "https://repo.maven.apache.org/maven2/com/google/jimfs/jimfs/1.1/jimfs-1.1.jar"
+            ]
+        },
+        "com/google/protobuf/protobuf-java-util/3.22.3/protobuf-java-util-3.22.3.jar": {
+            "coordinate": "com.google.protobuf:protobuf-java-util:3.22.3",
+            "sha256": "c615f76879dc5c303e4df5b94a6afa39534058c7545db2d483fd95d9f63c8bfe",
+            "size": 72117,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/protobuf/protobuf-java-util/3.22.3/protobuf-java-util-3.22.3.jar"
+            ]
+        },
+        "com/google/protobuf/protobuf-java/3.22.3/protobuf-java-3.22.3.jar": {
+            "coordinate": "com.google.protobuf:protobuf-java:3.22.3",
+            "sha256": "59d388ea6a2d2d76ae8efff7fd4d0c60c6f0f464c3d3ab9be8e5add092975708",
+            "size": 1676712,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/protobuf/protobuf-java/3.22.3/protobuf-java-3.22.3.jar"
             ]
         },
         "com/google/protobuf/protobuf-java/3.25.5/protobuf-java-3.25.5.jar": {
@@ -352,6 +448,14 @@
                 "https://repo.maven.apache.org/maven2/org/apache/httpcomponents/httpmime/4.5.6/httpmime-4.5.6.jar"
             ]
         },
+        "org/bitbucket/b_c/jose4j/0.9.5/jose4j-0.9.5.jar": {
+            "coordinate": "org.bitbucket.b_c:jose4j:0.9.5",
+            "sha256": "808fb3166f3e67dad9811c331029ab1681242fd52b735bc3f33f281167fcc72e",
+            "size": 298683,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/bitbucket/b_c/jose4j/0.9.5/jose4j-0.9.5.jar"
+            ]
+        },
         "org/bouncycastle/bcpkix-jdk18on/1.79/bcpkix-jdk18on-1.79.jar": {
             "coordinate": "org.bouncycastle:bcpkix-jdk18on:1.79",
             "sha256": "3639a24ddf9ba4b7eba0659b44770e91eba816421888e571f285aadefe532cd6",
@@ -374,6 +478,14 @@
             "size": 705999,
             "urls": [
                 "https://repo.maven.apache.org/maven2/org/bouncycastle/bcutil-jdk18on/1.79/bcutil-jdk18on-1.79.jar"
+            ]
+        },
+        "org/checkerframework/checker-qual/3.33.0/checker-qual-3.33.0.jar": {
+            "coordinate": "org.checkerframework:checker-qual:3.33.0",
+            "sha256": "e316255bbfcd9fe50d165314b85abb2b33cb2a66a93c491db648e498a82c2de1",
+            "size": 223979,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/checkerframework/checker-qual/3.33.0/checker-qual-3.33.0.jar"
             ]
         },
         "org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar": {
@@ -478,6 +590,14 @@
             "size": 126122,
             "urls": [
                 "https://repo.maven.apache.org/maven2/org/ow2/asm/asm/9.9/asm-9.9.jar"
+            ]
+        },
+        "org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.jar": {
+            "coordinate": "org.slf4j:slf4j-api:1.7.30",
+            "sha256": "cdba07964d1bb40a0761485c6b1e8c2f8fd9eb1d19c53928ac0d7f9510105c57",
+            "size": 41472,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.jar"
             ]
         }
     },
@@ -636,7 +756,9 @@
                     "proguard_files": [],
                     "res_values": {},
                     "runtime": "cp_lib",
-                    "signing": "debug-or-configured",
+                    "signing": {
+                        "name": "debug"
+                    },
                     "sources": {
                         "aidl": [],
                         "assets": [],
@@ -839,7 +961,7 @@
         "https://repo.maven.apache.org/maven2/",
         "https://storage.googleapis.com/download.flutter.io/"
     ],
-    "schema": 2,
+    "schema": 3,
     "tool_classpaths": {
         "aapt2_linux": [
             "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar"
@@ -852,6 +974,25 @@
         ],
         "apksig": [
             "com/android/tools/build/apksig/9.1.0/apksig-9.1.0.jar"
+        ],
+        "bundletool": [
+            "com/android/tools/build/bundletool/1.18.3/bundletool-1.18.3.jar",
+            "com/android/tools/build/aapt2-proto/7.3.0-alpha07-8248216/aapt2-proto-7.3.0-alpha07-8248216.jar",
+            "com/google/auto/value/auto-value-annotations/1.6.2/auto-value-annotations-1.6.2.jar",
+            "com/google/protobuf/protobuf-java-util/3.22.3/protobuf-java-util-3.22.3.jar",
+            "com/google/guava/guava/32.0.1-jre/guava-32.0.1-jre.jar",
+            "com/google/errorprone/error_prone_annotations/2.18.0/error_prone_annotations-2.18.0.jar",
+            "com/google/protobuf/protobuf-java/3.22.3/protobuf-java-3.22.3.jar",
+            "com/google/dagger/dagger/2.28.3/dagger-2.28.3.jar",
+            "javax/inject/javax.inject/1/javax.inject-1.jar",
+            "org/bitbucket/b_c/jose4j/0.9.5/jose4j-0.9.5.jar",
+            "org/slf4j/slf4j-api/1.7.30/slf4j-api-1.7.30.jar",
+            "com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar",
+            "com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+            "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar",
+            "org/checkerframework/checker-qual/3.33.0/checker-qual-3.33.0.jar",
+            "com/google/j2objc/j2objc-annotations/2.8/j2objc-annotations-2.8.jar",
+            "com/google/code/gson/gson/2.8.9/gson-2.8.9.jar"
         ],
         "manifest_merger": [
             "com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar",
@@ -905,6 +1046,9 @@
             "jakarta/activation/jakarta.activation-api/1.2.1/jakarta.activation-api-1.2.1.jar",
             "commons-logging/commons-logging/1.2/commons-logging-1.2.jar"
         ],
+        "profgen": [
+            "com/android/tools/build/gradle/9.1.0/gradle-9.1.0.jar"
+        ],
         "r8": [
             "com/android/tools/r8/9.1.31/r8-9.1.31.jar"
         ],
@@ -941,6 +1085,7 @@
         "aapt2": "9.1.0-14792394",
         "agp": "9.1.0",
         "agp_tools_base": "32.1.0",
+        "bundletool": "1.18.3",
         "gradle": "9.3.1",
         "kotlin": "2.4.0",
         "r8": "9.1.31"

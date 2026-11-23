@@ -69,11 +69,15 @@ final class Dexing {
     public void finished(DiagnosticsHandler handler) {}
 
     void write(String out, boolean store) throws Exception {
+      write(out, store, Apk.DEFLATE_FAST);
+    }
+
+    void write(String out, boolean store, int level) throws Exception {
       try (Apk.ZipWriter z = new Apk.ZipWriter(Paths.get(out))) {
         int n = 0;
         for (byte[] dex : files.values()) {
           n++;
-          z.add(n == 1 ? "classes.dex" : "classes" + n + ".dex", dex, store ? Apk.STORE : Apk.DEFLATE_FAST, 4);
+          z.add(n == 1 ? "classes.dex" : "classes" + n + ".dex", dex, store ? Apk.STORE : level, 4);
         }
       }
     }
@@ -165,10 +169,40 @@ final class Dexing {
   static void l8(List<String> args, PrintStream err) throws Exception {
     AndroidTool.Args a = new AndroidTool.Args(args, List.of("--release", "--store"));
     DexOut out = new DexOut();
+    if (!a.all("--app-dex").isEmpty()) {
+      // A build that shrinks: the library reduced to what the app's final dex uses (AGP's own steps).
+      Path target = Paths.get(a.one("--output")).toAbsolutePath();
+      Path work = Files.createTempDirectory(target.getParent(), "l8");
+      try {
+        List<Path> jars = new ArrayList<>();
+        for (String in : a.rest) jars.add(Paths.get(in).toAbsolutePath());
+        List<Path> boot = new ArrayList<>();
+        for (String lib : a.all("--lib")) boot.add(Paths.get(lib).toAbsolutePath());
+        List<Path> appDex = new ArrayList<>();
+        for (String d : a.all("--app-dex")) appDex.add(Paths.get(d).toAbsolutePath());
+        Path dexDir = Files.createDirectories(work.resolve("out"));
+        Release.shrunkL8(jars, Files.readString(Paths.get(a.one("--desugared-lib-config")), StandardCharsets.UTF_8), boot,
+            Integer.parseInt(a.one("--min-api")), !a.has("--release"), appDex,
+            a.has("--mapping") ? Paths.get(a.one("--mapping")).toAbsolutePath() : null,
+            a.has("--out-mapping") ? Paths.get(a.one("--out-mapping")).toAbsolutePath() : null,
+            a.has("--profile") ? Paths.get(a.one("--profile")).toAbsolutePath() : null,
+            a.has("--out-profile") ? Paths.get(a.one("--out-profile")).toAbsolutePath() : null,
+            dexDir, work, err);
+        List<Path> files = new ArrayList<>();
+        try (java.util.stream.Stream<Path> s = Files.list(dexDir)) {
+          s.filter(p -> p.getFileName().toString().endsWith(".dex")).sorted().forEach(files::add);
+        }
+        for (int i = 0; i < files.size(); i++) out.files.put(i, Files.readAllBytes(files.get(i)));
+      } finally {
+        Release.deleteTree(work);
+      }
+      out.write(a.one("--output"), a.has("--store"), a.has("--release") ? Apk.DEFLATE_DEFAULT : Apk.DEFLATE_FAST);
+      return;
+    }
     L8Command.Builder b = L8Command.builder(new Quiet());
     for (String in : a.rest) b.addProgramFiles(Paths.get(in));
     b.addSpecialLibraryConfiguration(Files.readString(Paths.get(a.one("--desugared-lib-config")), StandardCharsets.UTF_8));
-    b.addLibraryFiles(Paths.get(a.one("--lib")));
+    for (String lib : a.all("--lib")) b.addLibraryFiles(Paths.get(lib));
     b.setMinApiLevel(Integer.parseInt(a.one("--min-api")));
     b.setMode(mode(a));
     b.setProgramConsumer(out);

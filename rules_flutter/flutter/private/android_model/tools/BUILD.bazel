@@ -5,10 +5,13 @@ load("@rules_java//java:defs.bzl", "java_library")
 exports_files([
     "AndroidTool.java",
     "Apk.java",
+    "Bundle.java",
     "Dexing.java",
     "GradleAar.java",
     "PinCheck.java",
+    "Release.java",
     "Resources.java",
+    "Sign.java",
     "model.init.gradle",
 ])
 

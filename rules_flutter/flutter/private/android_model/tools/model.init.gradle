@@ -5,7 +5,7 @@
 //       -Prdf.out=<file.json> [-Prdf.variants=debug,devDebug] [-Prdf.workspace=<dir>] [-Prdf.fallback=:a,:b]
 // from <app>/android, after `flutter pub get`.
 //
-// It writes one JSON file (schema 2) that describes every Android project of the build (the app, each
+// It writes one JSON file (schema 3) that describes every Android project of the build (the app, each
 // plugin's android/ project, library modules of the app) per variant, and the resolved Maven classpaths
 // with the sha256 of every artifact. Nothing is built: the work is configuration and dependency
 // resolution, plus the generator task of the google-services plugin when it is applied.
@@ -163,6 +163,7 @@ def rdfDescribeArchive(File f, Map rec) {
       c.libs = names.findAll { it.startsWith('libs/') && it.endsWith('.jar') }.sort()
       c.classes = names.contains('classes.jar')
       c.proguard = names.contains('proguard.txt')
+      c.baseline_prof = names.contains('baseline-prof.txt')
       def rt = zf.getEntry('R.txt')
       c.r_txt = rt != null && rt.size > 0
       def me = zf.getEntry('AndroidManifest.xml')
@@ -315,7 +316,7 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
   if (prop('rdf.workspace')) roots.ws = new File(prop('rdf.workspace')).absolutePath
 
   def model = new TreeMap()
-  model.schema = 2
+  model.schema = 3
   def tools = new TreeMap()
   tools.gradle = g.gradleVersion
   def agpCl = rdfTry({ app.plugins.findPlugin('com.android.application').class.classLoader })
@@ -335,7 +336,7 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
       logger.warn("rdf: repository ${n} (${u}) is not an http repository; artifacts taken from it cannot be fetched by Bazel")
   }
 
-  def ctx = [artifacts: new TreeMap(), classpaths: new TreeMap(), repoUrls: repoUrls, variants: rdfVariants, roots: roots]
+  def ctx = [artifacts: new TreeMap(), classpaths: new TreeMap(), repoUrls: repoUrls, variants: rdfVariants, roots: roots, proguardTexts: new TreeMap()]
   def projects = new TreeMap()
   def problems = []
   root.allprojects.findAll { it.extensions.findByName('android') != null }.sort { it.path }.each { p ->
@@ -364,6 +365,17 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
     }
     if (rdfTry({ a.dataBinding.enabled }) == true || rdfTry({ a.dataBinding.isEnabled() }) == true) bf.dataBinding = true
     pj.build_features = bf
+    // Whether R class fields are final (android.nonFinalResIds; AGP's default is that they are not).
+    pj.non_final_res_ids = (p.findProperty('android.nonFinalResIds') ?: 'true').toString() != 'false'
+    if (pj.type == 'application') {
+      // How AGP runs R8, where a Gradle property decides (the values are AGP 9's defaults).
+      def flag = { String n, boolean dflt -> def x = p.findProperty(n); x == null ? dflt : x.toString() == 'true' }
+      pj.r8 = new TreeMap([
+        full_mode: flag('android.enableR8.fullMode', true),
+        strict_full_mode_for_keep_rules: flag('android.r8.strictFullModeForKeepRules', true),
+        optimized_resource_shrinking: flag('android.r8.optimizedResourceShrinking', true),
+      ])
+    }
     def co = new TreeMap()
     co.source = rdfTry({ a.compileOptions.sourceCompatibility.toString() })
     co.target = rdfTry({ a.compileOptions.targetCompatibility.toString() })
@@ -380,8 +392,8 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
     (rdfVariants[p.path] ?: []).sort { it.name }.each { v ->
       def debuggable = rdfTry({ a.buildTypes.findByName(v.buildType)?.debuggable }, false)
       if (pj.type == 'application') {
-        // By default the variants of the `debug` build type; release builds are not built from the model yet.
-        if (want ? !want.contains(v.name) : v.buildType != 'debug') return
+        // Every variant of the app unless the pin target names some.
+        if (want && !want.contains(v.name)) return
       }
       def vj = new TreeMap()
       vj.build_type = v.buildType
@@ -393,7 +405,29 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
         def out = rdfTry({ v.outputs.first() })
         vj.version_code = rdfTry({ out.versionCode.getOrNull() })
         vj.version_name = rdfTry({ out.versionName.getOrNull() })
-        vj.signing = rdfTry({ v.signingConfig != null ? 'debug-or-configured' : null })
+        // Which signing configuration the variant uses and which schemes it signs with. Never the
+        // keystore, the alias or a password: those reach a build from outside (see docs/android-model.md).
+        def bt = rdfTry({ a.buildTypes.findByName(v.buildType) })
+        def sc = rdfTry({ bt?.signingConfig })
+        rdfTry({ v.productFlavors.collect { it.second } }, []).each { fn -> if (sc == null) sc = rdfTry({ a.productFlavors.findByName(fn)?.signingConfig }) }
+        if (sc == null) sc = rdfTry({ a.defaultConfig.signingConfig })
+        if (sc != null) {
+          vj.signing = new TreeMap([name: sc.name] + ['v1', 'v2', 'v3', 'v4'].collectEntries { n ->
+            [(n): rdfTry({ sc."enable${n.toUpperCase()}Signing" })] }.findAll { it.value != null })
+        }
+        vj.minify = rdfTry({ bt?.minifyEnabled }, false)
+        vj.shrink_resources = rdfTry({ bt?.shrinkResources }, false)
+        // App bundles: which dimensions Play may split the base module by.
+        vj.bundle = new TreeMap([
+          abi_split: rdfTry({ a.bundle.abi.enableSplit }, true),
+          density_split: rdfTry({ a.bundle.density.enableSplit }, true),
+          language_split: rdfTry({ a.bundle.language.enableSplit }, true),
+          store_archive: rdfTry({ a.bundle.storeArchive.enable }, true) != false,
+          // What bundletool leaves uncompressed, as AGP computes it from androidResources.noCompress.
+          uncompressed_globs: rdfTry({
+            p.plugins.findPlugin('com.android.application').class.classLoader.loadClass('com.android.builder.packaging.PackagingUtils')
+                .getMethod('getNoCompressGlobsForBundle', Collection).invoke(null, rdfTry({ a.androidResources.noCompress.toList() }, [])).toList() }, []),
+        ])
         if (rdfTry({ v.outputs.size() }, 1) > 1)
           problems << "project ${p.path}, variant ${v.name}: several outputs (APK splits by ABI or density)"
       }
@@ -458,11 +492,53 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
         })
       }
       vj.res_values = rv
-      vj.proguard_files = rdfDirs(rdfTry({ v.proguardFiles }), roots).findAll { !it.startsWith('abs:') }
+      // Shrinker rules, in AGP's order. A file of the app, the workspace or a pub package is read where
+      // it is; any other (AGP's default file, which AGP writes into the build directory, and the
+      // Flutter tool's own rules) is carried in the model as text, under `proguard_texts`.
+      def pgf = []
+      if (pj.type == 'application') {
+        rdfTry({ v.proguardFiles.get() }, []).each { rf ->
+          File f = rdfTry({ rf.asFile })
+          if (f == null) return
+          def r = rdfRel(f, roots)
+          def buildDir = p.layout.buildDirectory.get().asFile.absolutePath
+          def source = ['app:', 'ws:', 'pub:'].any { r.startsWith(it) } && !f.absolutePath.startsWith(buildDir + '/')
+          if (source) { if (f.exists()) pgf << r; return }
+          // AGP writes its default files into the build directory when it builds; here AGP writes
+          // the same text into a temporary file.
+          def text = f.exists() ? f.getText('UTF-8') : rdfTry({
+            def m = (f.name =~ /^(proguard-[a-z-]+\.txt)-/)
+            if (!m.find()) return null
+            def tmp = File.createTempFile('rdf-proguard', '.txt')
+            try {
+              p.plugins.findPlugin('com.android.application').class.classLoader.loadClass('com.android.build.gradle.ProguardFiles')
+                  .getMethod('createProguardFile', String, File).invoke(null, m.group(1), tmp)
+              return tmp.getText('UTF-8')
+            } finally { tmp.delete() }
+          })
+          if (text == null) { problems << "project ${p.path}, variant ${v.name}: the shrinker rules file ${f} does not exist and is not one of AGP's default files"; return }
+          def key = f.name.replaceAll(/-[0-9][0-9A-Za-z.-]*$/, '')
+          ctx.proguardTexts[key] = text
+          pgf << ('text:' + key)
+        }
+      }
+      vj.proguard_files = pgf
       def cpf = []
-      rdfTry({ a.defaultConfig.consumerProguardFiles }, []).each { f -> if (f.exists()) cpf << rdfRel(f, roots) }
-      rdfTry({ a.buildTypes.findByName(v.buildType)?.consumerProguardFiles }, []).each { f -> if (f.exists()) cpf << rdfRel(f, roots) }
+      def consumer = { c -> rdfTry({ c?.consumerProguardFiles }, []).each { f -> if (f.exists()) cpf << rdfRel(f, roots) } }
+      consumer(rdfTry({ a.defaultConfig }))
+      rdfTry({ v.productFlavors.collect { it.second } }, []).each { fn -> consumer(rdfTry({ a.productFlavors.findByName(fn) })) }
+      consumer(rdfTry({ a.buildTypes.findByName(v.buildType) }))
       vj.consumer_proguard_files = cpf.unique()
+      // Baseline and startup profiles of the project's own source sets (an AAR's is `aar.baseline_prof`).
+      def profiles = []
+      ssNames.each { n ->
+        def dir = new File(p.projectDir, "src/${n}")
+        ['baseline-prof.txt', 'startup-prof.txt'].each { fn -> def f = new File(dir, fn); if (f.isFile()) profiles << rdfRel(f, roots) }
+        def bp = new File(dir, 'baselineProfiles')
+        if (bp.isDirectory()) bp.listFiles().findAll { it.isFile() && it.name.endsWith('.txt') }.sort { it.name }.each { profiles << rdfRel(it, roots) }
+      }
+      src.baseline_profiles = profiles.findAll { !it.endsWith('/startup-prof.txt') && !it.endsWith('-startup-prof.txt') }
+      src.startup_profiles = profiles.findAll { it.endsWith('/startup-prof.txt') || it.endsWith('-startup-prof.txt') }
       def enb = rdfTry({ v.externalNativeBuild })
       if (enb != null) {
         vj.external_native_build = new TreeMap([
@@ -556,6 +632,7 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
   def usedArtifacts = ctx.classpaths.values().flatten() as Set
   ctx.pruneArtifacts = { extra -> ctx.artifacts.keySet().toList().each { if (!usedArtifacts.contains(it) && !extra.contains(it)) ctx.artifacts.remove(it) } }
   model.projects = projects
+  model.proguard_texts = ctx.proguardTexts
 
   // The plugin registrant the Flutter tool wrote at `flutter pub get`. It is not checked in by a
   // stock project, so the model carries it.
@@ -628,6 +705,11 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
     detached('r_class_writer', ["com.android.tools.build:builder:${tools.agp}"], ['builder', 'asm', 'asm-commons', 'asm-tree', 'asm-analysis', 'asm-util'])
     // AGP's resource compiler: XML resources are compiled in the JVM, not by the aapt2 binary.
     detached('resource_compiler', ["com.android.tools.build:aaptcompiler:${tools.agp}"])
+    // AGP's compiler of baseline profiles (profgen) is part of AGP's own jar; nothing else of it is used.
+    detached('profgen', ["com.android.tools.build:gradle:${tools.agp}"], ['gradle'])
+    // bundletool, at the version AGP itself builds bundles with.
+    tools.bundletool = rdfTry({ agpCl.loadClass('com.android.tools.build.bundletool.model.version.BundleToolVersion').getMethod('getCurrentVersion').invoke(null).toString() })
+    if (tools.bundletool) detached('bundletool', ["com.android.tools.build:bundletool:${tools.bundletool}"])
     def aapt2 = rdfTry({
       new File(g.gradleUserHomeDir, 'caches/modules-2/files-2.1/com.android.tools.build/aapt2').list().findAll { it.startsWith(tools.agp + '-') }.sort().last() })
     tools.aapt2 = aapt2

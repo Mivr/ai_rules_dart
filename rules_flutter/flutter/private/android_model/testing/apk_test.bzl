@@ -10,6 +10,7 @@ def android_apk_test(
         name,
         app,
         hub = "@android_model//:",
+        abi = None,
         splits = [],
         classes = [],
         absent_classes = [],
@@ -19,6 +20,7 @@ def android_apk_test(
         split_entries = {},
         version_name = None,
         version_code = None,
+        signed = True,
         **kwargs):
     """Builds `app`'s APKs and checks them.
 
@@ -30,6 +32,7 @@ def android_apk_test(
       name: test name.
       app: name of the `flutter_android_app` target in this package.
       hub: label prefix of the pin's repository, for aapt2.
+      abi: check the APK of this ABI (an app built with `split_per_abi`) instead of the whole one.
       splits: names of the app's splits besides `base` (`app`, `dart`, a project's target name).
       classes: class descriptors the app must define, for example `Lcom/example/Plugin;`.
       absent_classes: class descriptors it must not define.
@@ -39,9 +42,11 @@ def android_apk_test(
       split_entries: split name to an entry that must be in that split and in no other.
       version_name: the versionName of the manifest.
       version_code: the versionCode of the manifest.
+      signed: False for a release whose signing configuration is not the debug one: the build must
+        leave it unsigned.
       **kwargs: common test attributes.
     """
-    apk = ":%s_apk" % app
+    apk = ":%s_apk%s" % (app, ("_" + abi.replace("-", "_")) if abi else "")
     data = [apk, hub + "aapt2"]
     args = ["--apk", "$(rootpath %s)" % apk, "--aapt2", "$(rootpath %saapt2)" % hub]
     for split in (["base"] + splits) if splits else []:
@@ -64,6 +69,8 @@ def android_apk_test(
         args += ["--version-name", version_name]
     if version_code != None:
         args += ["--version-code", str(version_code)]
+    if not signed:
+        args += ["--signed", "false"]
     java_test(
         name = name,
         size = kwargs.pop("size", "small"),
@@ -71,6 +78,39 @@ def android_apk_test(
         use_testrunner = False,
         runtime_deps = [Label("//flutter/private/android_model/testing:apk_check")],
         data = data,
+        args = args,
+        **kwargs
+    )
+
+def android_bundle_test(name, app, entries = [], absent_entries = [], signed = True, **kwargs):
+    """Builds `app`'s app bundle and checks it.
+
+    Always checked: the bundle has a `base` module with a manifest, a resource table and dex files,
+    and a bundle configuration, and is signed as a jar (or, with `signed = False`, is not).
+
+    Args:
+      name: test name.
+      app: name of the `flutter_android_app` target in this package.
+      entries: entries the bundle must hold, for example `base/lib/arm64-v8a/libapp.so`.
+      absent_entries: glob patterns no entry may match.
+      signed: False for a release whose signing configuration is not the debug one.
+      **kwargs: common test attributes.
+    """
+    bundle = ":%s_bundle" % app
+    args = ["--bundle", "$(rootpath %s)" % bundle]
+    for e in entries:
+        args += ["--entry", e]
+    for e in absent_entries:
+        args += ["--no-entry", _quoted(e)]
+    if not signed:
+        args += ["--signed", "false"]
+    java_test(
+        name = name,
+        size = kwargs.pop("size", "small"),
+        main_class = "rules_flutter.android.testing.ApkCheck",
+        use_testrunner = False,
+        runtime_deps = [Label("//flutter/private/android_model/testing:apk_check")],
+        data = [bundle],
         args = args,
         **kwargs
     )

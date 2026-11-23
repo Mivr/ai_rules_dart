@@ -28,6 +28,9 @@ import java.util.zip.ZipFile;
 public final class ApkCheck {
   private static final List<String> failures = new ArrayList<>();
 
+  // False for a release left unsigned by the build (its key signs it outside the build).
+  private static boolean expectSigned = true;
+
   private static void check(boolean ok, String message) {
     if (!ok) failures.add(message);
   }
@@ -93,7 +96,8 @@ public final class ApkCheck {
         byte[] magic = new byte[16];
         raw.seek(cdOffset - 16);
         raw.readFully(magic);
-        check(new String(magic, StandardCharsets.US_ASCII).equals("APK Sig Block 42"), path + " has no APK signature block (v2)");
+        boolean signed = new String(magic, StandardCharsets.US_ASCII).equals("APK Sig Block 42");
+        check(signed == expectSigned, path + (expectSigned ? " has no APK signature block (v2)" : " is signed, and the build should have left it unsigned"));
         for (Enumeration<? extends ZipEntry> e = z.entries(); e.hasMoreElements();) {
           ZipEntry entry = e.nextElement();
           entries.put(entry.getName(), entry);
@@ -114,6 +118,11 @@ public final class ApkCheck {
   public static void main(String[] args) throws Exception {
     Map<String, List<String>> opt = new HashMap<>();
     for (int i = 0; i + 1 < args.length; i += 2) opt.computeIfAbsent(args[i], k -> new ArrayList<>()).add(args[i + 1]);
+    expectSigned = !opt.getOrDefault("--signed", List.of("true")).get(0).equals("false");
+    if (opt.containsKey("--bundle")) {
+      bundle(opt);
+      return;
+    }
     Apk apk = new Apk(opt.get("--apk").get(0));
     TreeSet<String> all = new TreeSet<>(apk.classes);
     check(all.size() == apk.classes.size(), apk.path + " defines " + (apk.classes.size() - all.size()) + " classes more than once");
@@ -194,6 +203,30 @@ public final class ApkCheck {
       System.exit(1);
     }
     System.out.println("ok: " + all.size() + " classes, " + apk.entries.size() + " entries, " + splits.size() + " splits");
+  }
+
+  /** An app bundle: one module, `base`, with what bundletool needs, the entries asked for, signed as a jar. */
+  private static void bundle(Map<String, List<String>> opt) throws Exception {
+    String path = opt.get("--bundle").get(0);
+    TreeSet<String> entries = new TreeSet<>();
+    try (ZipFile z = new ZipFile(path)) {
+      for (Enumeration<? extends ZipEntry> e = z.entries(); e.hasMoreElements();) entries.add(e.nextElement().getName());
+    }
+    for (String e : List.of("BundleConfig.pb", "base/manifest/AndroidManifest.xml", "base/resources.pb", "base/dex/classes.dex")) {
+      check(entries.contains(e), "entry " + e + " is not in " + path);
+    }
+    for (String e : opt.getOrDefault("--entry", List.of())) check(entries.contains(e), "entry " + e + " is not in " + path);
+    for (String g : opt.getOrDefault("--no-entry", List.of())) {
+      PathMatcher m = FileSystems.getDefault().getPathMatcher("glob:" + g);
+      for (String e : entries) check(!m.matches(Paths.get(e)), "entry " + e + " (" + g + ") is in " + path);
+    }
+    boolean signed = entries.stream().anyMatch(e -> e.startsWith("META-INF/") && e.endsWith(".SF"));
+    check(signed == expectSigned, path + (expectSigned ? " is not signed" : " is signed, and the build should have left it unsigned"));
+    if (!failures.isEmpty()) {
+      for (String f : failures) System.err.println("FAIL: " + f);
+      System.exit(1);
+    }
+    System.out.println("ok: " + entries.size() + " entries");
   }
 
   private static String symmetric(TreeSet<String> a, TreeSet<String> b) {

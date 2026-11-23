@@ -19,6 +19,8 @@ load(
     ":rules.bzl",
     "rdf_aapt2_link",
     "rdf_apk",
+    "rdf_art_profile",
+    "rdf_bundle",
     "rdf_dex",
     "rdf_dex_archive",
     "rdf_dex_merge",
@@ -28,16 +30,22 @@ load(
     "rdf_native_libs",
     "rdf_output_group",
     "rdf_pin_check",
+    "rdf_r8",
     "rdf_r_jar",
     "rdf_res_compile",
+    "rdf_res_finish",
     "rdf_symbols",
     "rdf_zip_part",
 )
 
-_TOOL_SOURCES = ["AndroidTool.java", "Apk.java", "Dexing.java", "GradleAar.java", "PinCheck.java", "Resources.java"]
+_TOOL_SOURCES = ["AndroidTool.java", "Apk.java", "Bundle.java", "Dexing.java", "GradleAar.java", "PinCheck.java", "Release.java", "Resources.java", "Sign.java"]
 
-# ABIs the Dart side can build native code for (FFI libraries, code assets).
+# ABIs the Dart side can build native code for (the AOT library of a profile or release build, FFI
+# libraries, code assets).
 _DART_ABIS = ["arm64-v8a", "x86_64"]
+
+# What Flutter's Gradle plugin adds to versionCode per ABI with `--split-per-abi`.
+_ABI_VERSION_CODE = {"armeabi-v7a": 1, "arm64-v8a": 2, "x86_64": 4}
 
 # Kotlin compiler arguments that change nothing in the classes (debug information only).
 _KOTLIN_ARGS_WITHOUT_EFFECT = ["-Xuse-inline-scopes-numbers"]
@@ -124,8 +132,31 @@ def _paths(rooted, local, info):
     return [p for p in [_path(r, local, info) for r in rooted] if p != None]
 
 def _dex_config(_model, v):
-    """How an app variant dexes: the minimum API level and whether the core library is desugared."""
-    return "m%s%s" % (v["min_sdk"], "d" if v.get("core_library_desugaring") else "")
+    """How an app variant dexes: the minimum API level, core library desugaring, debug or release."""
+    return "m%s%s%s" % (v["min_sdk"], "d" if v.get("core_library_desugaring") else "", "" if v["debuggable"] else "r")
+
+def _minified(v):
+    """Whether the variant's code goes through R8 (then nothing is dexed by D8)."""
+    return bool(v.get("minify")) and not v["debuggable"]
+
+def _flutter_mode(v):
+    """Flutter's build mode of a variant, as Flutter's Gradle plugin reads it from the build type."""
+    if v["build_type"] == "profile":
+        return "profile"
+    return "debug" if v["debuggable"] else "release"
+
+def _dashed(v):
+    """The variant as the stock tools name an output file: `release`, `dev-release`."""
+    return "-".join([f["name"] for f in v["flavors"]] + [v["build_type"]])
+
+def _camel(v):
+    """The variant as Gradle names it: `release`, `devRelease`."""
+    words = [f["name"] for f in v["flavors"]] + [v["build_type"]]
+    return words[0] + "".join([w[:1].upper() + w[1:] for w in words[1:]])
+
+def _boot(hub, p):
+    """android.jar, the platform's optional libraries and the lambda stubs: what R8 and L8 link against."""
+    return hub + "boot_" + p["compile_sdk"]
 
 def _needs_classpath(v):
     # AGP gives D8 the classpath only below API 24, where default and static interface methods are
@@ -427,7 +458,7 @@ def _project(name, path, p, v, model, info, hub, label_of, dex_variants, extra_s
     done = {}
     for av in dex_variants:
         config = _dex_config(model, av)
-        if config in done:
+        if config in done or _minified(av):
             continue
         done[config] = True
         needs_classpath = _needs_classpath(av)
@@ -478,6 +509,12 @@ def _project(name, path, p, v, model, info, hub, label_of, dex_variants, extra_s
         srcs = native.glob([d + "/**" for d in _paths(src["assets"], local, info)], allow_empty = True),
     )
 
+    # What a release build of the app reads: the resource files (for the keep rules XML carries),
+    # the rules the library hands to its consumers, its baseline profile.
+    native.filegroup(name = name + "_res_files", srcs = res_srcs)
+    native.filegroup(name = name + "_consumer_rules", srcs = _paths(v.get("consumer_proguard_files") or [], local, info))
+    native.filegroup(name = name + "_profiles", srcs = _paths(src.get("baseline_profiles") or [], local, info))
+
 def _res_dirs(p, v):
     # A project Gradle builds always has a symbol list (its AAR's R.txt, which may be empty).
     return bool(v["sources"]["res"]) or bool(v["res_values"]) or bool(p.get("gradle_fallback"))
@@ -502,10 +539,12 @@ def _gradle_project(name, path, variant, model, hub, android_dir, dex_variants, 
     rdf_res_compile(name = name + "_res", srcs = [":" + name + "_res_files"], aapt2 = hub + "aapt2", tool = hub + "tool")
     rdf_r_jar(name = name + "_r", mode = "external", deps = {":" + name + "_symbols": v["namespace"]}, tool = hub + "tool_once")
     native.filegroup(name = name + "_native", srcs = [])
+    native.filegroup(name = name + "_consumer_rules", srcs = [])
+    native.filegroup(name = name + "_profiles", srcs = [])
     done = {}
     for av in dex_variants:
         config = _dex_config(model, av)
-        if config in done:
+        if config in done or _minified(av):
             continue
         done[config] = True
         rdf_dex(
@@ -551,15 +590,35 @@ def android_model_hub_targets(name, model, info):
     for s in sdks:
         java_import(name = "android_jar_" + s, jars = ["sdk/platforms/%s/android.jar" % s], neverlink = True)
     native.exports_files(["sdk/platforms/%s/android.jar" % s for s in sdks])
+    for s in sdks:
+        native.filegroup(
+            name = "boot_" + s,
+            # As AGP: the platform's own stubs of java.lang.invoke where it has them, otherwise the
+            # build tools'.
+            srcs = ["sdk/platforms/%s/android.jar" % s] +
+                   native.glob(["sdk/platforms/%s/optional/*.jar" % s], allow_empty = True) +
+                   [info["lambda_stubs"][s]],
+        )
+
+        # What L8 links against in a build that shrinks: the same without the stubs.
+        native.filegroup(
+            name = "platform_" + s,
+            srcs = ["sdk/platforms/%s/android.jar" % s] +
+                   native.glob(["sdk/platforms/%s/optional/*.jar" % s], allow_empty = True),
+        )
     strip = "sdk/ndk/%s/toolchains/llvm/prebuilt/%s/bin/llvm-strip%s" % (app["ndk_version"], info["ndk_host"], info["exe"])
     native.exports_files([strip])
     native.alias(name = "llvm_strip", actual = strip)
 
     # AGP's own tools, from the pin, behind one program.
     tool_jars = []
-    for name in ("r8", "manifest_merger", "apksig", "r_class_writer", "resource_compiler"):
-        for a in model["tool_classpaths"][name]:
-            if _artifact_jar(a) not in tool_jars:
+    tool_modules = {}
+    for name in ("r8", "manifest_merger", "apksig", "r_class_writer", "resource_compiler", "profgen", "bundletool"):
+        for a in model["tool_classpaths"].get(name, []):
+            # One version of a library on the tools' classpath: the first set's, AGP's own first.
+            module = a.rsplit("/", 2)[0]
+            if module not in tool_modules:
+                tool_modules[module] = True
                 tool_jars.append(_artifact_jar(a))
     java_import(name = "tool_libs", jars = tool_jars)
     java_library(
@@ -590,14 +649,15 @@ def android_model_hub_targets(name, model, info):
     used = {}
     reached = {}
     configs = {}
+    shrunk = [v for v in variants if _minified(v)]
     for v in variants:
         for key in _reached(model, v):
             reached[key] = True
-        config = _dex_config(model, v)
-        configs.setdefault(config, []).append(v)
+        if not _minified(v):
+            configs.setdefault(_dex_config(model, v), []).append(v)
     for path, p in model["projects"].items():
         for v in p["variants"].values():
-            for which in ("runtime", "compile", "annotation_processors", "kapt_processors", "ksp_processors"):
+            for which in ("runtime", "compile", "annotation_processors", "kapt_processors", "ksp_processors", "core_library_desugaring"):
                 for a in _artifacts(model, v, which):
                     used[a] = True
 
@@ -615,8 +675,7 @@ def android_model_hub_targets(name, model, info):
             cfg = [a for a in cld if "desugar_jdk_libs_configuration" in a]
             if not cfg:
                 fail("android_model: core library desugaring without com.android.tools:desugar_jdk_libs_configuration in the model")
-            if not native.existing_rule("desugar_config"):
-                native.alias(name = "desugar_config", actual = "@%s//:x/META-INF/desugar/d8/desugar.json" % artifact_repo(cfg[0]))
+            _desugar_config(cfg[0])
             rdf_l8(
                 name = "desugared_lib_dex_" + config,
                 jars = [_artifact_jar(a) for a in cld],
@@ -627,6 +686,12 @@ def android_model_hub_targets(name, model, info):
                 android_jar = _sdk_jar(app),
                 tool = ":tool_once",
             )
+
+    for v in shrunk:
+        # R8 desugars the core library's uses itself and L8 runs on its result, in the app's package.
+        cfg = [a for a in _artifacts(model, v, "core_library_desugaring") if "desugar_jdk_libs_configuration" in a]
+        if cfg:
+            _desugar_config(cfg[0])
 
     r_deps = {}
     r_empty = []
@@ -655,10 +720,15 @@ def android_model_hub_targets(name, model, info):
         if aar:
             native.alias(name = t + "_manifest", actual = repo + "//:aar/AndroidManifest.xml")
             native.alias(name = t + "_rtxt", actual = repo + "//:aar/R.txt")
+            if aar.get("proguard"):
+                native.alias(name = t + "_rules", actual = repo + "//:aar/proguard.txt")
+            if aar.get("baseline_prof"):
+                native.alias(name = t + "_profile", actual = repo + "//:aar/baseline-prof.txt")
             if aar["assets"]:
                 native.alias(name = t + "_assets", actual = repo + "//:assets")
             if aar["res"]:
                 rdf_res_compile(name = t + "_res", srcs = [repo + "//:res"], aapt2 = ":aapt2", tool = ":tool")
+                native.alias(name = t + "_res_files", actual = repo + "//:res")
             if aar.get("namespace"):
                 if aar["r_txt"]:
                     r_deps[repo + "//:aar/R.txt"] = aar["namespace"]
@@ -709,6 +779,10 @@ def android_model_hub_targets(name, model, info):
             variants,
         )
 
+def _desugar_config(artifact):
+    if not native.existing_rule("desugar_config"):
+        native.alias(name = "desugar_config", actual = "@%s//:x/META-INF/desugar/d8/desugar.json" % artifact_repo(artifact))
+
 # ---------------------------------------------------------------------------------------------------
 # The app.
 
@@ -744,25 +818,38 @@ def android_model_app(
         application = None,
         variant = "debug",
         abis = None,
+        split_per_abi = False,
         native_built_elsewhere = [],
         visibility = None):
-    """The Android app of a pinned Gradle model.
+    """The Android app of a pinned Gradle model, one variant of it.
 
-    Makes `name` (the split APKs of a debug build: `base`, one per Gradle project, and the Dart
-    payload, so that an edit rewrites only its own split), `name_apk` (the same app as one APK, what
-    `flutter build apk` gives; built when asked for) and their parts.
+    The variant decides the mode, as `flutter build apk --debug|--profile|--release` does, whatever
+    `-c` the command line has: a debuggable build type is a debug build (the Dart kernel, D8), the
+    `profile` build type a profile build (the AOT library), any other a release build (the AOT
+    library; R8, resource shrinking and the signing configuration when the build type says so).
+
+    Makes `name_apk` (the whole app as one APK, what `flutter build apk` gives), `name_install`, and
+    for a debug build `name` as split APKs (`base`, one per Gradle project, and the Dart payload, so
+    that an edit rewrites only its own split); for other builds `name` is the APK. With
+    `split_per_abi`, also one APK per ABI, `name_apk_<abi>`, as `flutter build apk --split-per-abi`
+    gives. A release whose signing configuration is not the debug one is built unsigned
+    (`name_apk` is then `<name>_apk-unsigned.apk`) and signed outside the build by
+    `bazel run :name_sign`, which reads the key from the environment: no secret enters an action.
 
     Args:
-      name: target name of the split APKs.
+      name: target name.
       model: the decoded pin file (bound by the hub's `defs.bzl`).
       info: what the hub found on this host (bound by the hub's `defs.bzl`).
       hub: label prefix of the hub's root package (bound by the hub's `defs.bzl`).
       application: the `flutter_application` whose Dart payload the app carries.
-      variant: the app variant to build, for example `debug` or `devDebug`. It must be in the pin.
+      variant: the app variant to build, for example `debug`, `release` or `devRelease`. It must be
+        in the pin.
       abis: the ABIs whose native libraries are packaged; the model's `ndk.abiFilters` when None.
+      split_per_abi: also build one APK per ABI, with Flutter's version codes
+        (`1000 * <ABI number> + versionCode`).
       native_built_elsewhere: Gradle paths of projects whose CMake or ndk-build library Bazel builds on
         the Dart side (it then arrives with `application`), so the model's record of it is not an error.
-      visibility: visibility of `name` and `name_apk`.
+      visibility: visibility of `name`, `name_apk` and the per-ABI APKs.
     """
     app_path, p = _app_project(model)
     if variant not in p["variants"]:
@@ -775,13 +862,16 @@ def android_model_app(
     v = p["variants"][variant]
     version_code, version_name = _version(v, model, info)
     v = v | {"version_code": version_code, "version_name": version_name}
-    if not v["debuggable"]:
-        fail("android_model: variant `%s` is not debuggable. Release builds (R8, resource shrinking, signing configurations, bundles) are not built from the model yet." % variant)
     arts = model["artifacts"]
     sdk_jar = hub + _sdk_jar(p)
     min_sdk = int(v["min_sdk"])
     config = _dex_config(model, v)
     reached = _reached(model, v)
+    debuggable = v["debuggable"]
+    minified = _minified(v)
+    mode = _flutter_mode(v)
+    aot = mode != "debug"
+    shrink_resources = minified and bool(v.get("shrink_resources"))
 
     def label_of(q, qv):
         # In this package: the projects Gradle builds (the escape hatch). Every other is in the hub.
@@ -798,7 +888,30 @@ def android_model_app(
             # Everything at once, the libraries' too (the hub would say the same when it loads).
             problems += _problems(model, q, project, project["variants"][qv])
             problems += _native_problems(q, project, native_built_elsewhere)
+    for f in v.get("proguard_files") or []:
+        if not f.startswith("text:") and _path(f, True, info) == None:
+            problems.append("project %s: the shrinker rules file %s is outside the app" % (app_path, f))
+    r8_flags = p.get("r8") or {}
+    if shrink_resources and r8_flags.get("optimized_resource_shrinking") == False:
+        problems.append("project %s: android.r8.optimizedResourceShrinking=false (resources are shrunk by R8 itself, AGP's default)" % app_path)
     _fail_on(problems, info["pin_command"])
+
+    # The ABIs. A profile or release build carries the Dart program as one AOT library per ABI.
+    abis = list(abis or v["ndk_abi_filters"] or [])
+    if aot and application:
+        missing = [a for a in abis if a not in _DART_ABIS]
+        if missing or not abis:
+            fail(("android_model: variant `%s` is a %s build, whose Dart program is an AOT library per ABI, and these rules build " +
+                  "that library for %s only (the model asks for %s). Set `abis = %s` on `%s`.") % (
+                variant,
+                mode,
+                ", ".join(_DART_ABIS),
+                ", ".join(abis) or "every ABI",
+                repr([a for a in abis if a in _DART_ABIS] or _DART_ABIS),
+                name,
+            ))
+    if split_per_abi and not abis:
+        fail("android_model: `split_per_abi` needs the ABIs: set `abis` on `%s` (the model has no ndk.abiFilters)" % name)
 
     # The pin must describe these files: a build with other Gradle files or another lock fails.
     rdf_pin_check(
@@ -836,60 +949,72 @@ def android_model_app(
             )
             asset_trees[":" + target + "_assets_files"] = "assets"
 
-    # Manifest.
-    properties = {
-        "MIN_SDK_VERSION": str(v["min_sdk"]),
-        "PACKAGE": v["application_id"],
-        "TARGET_SDK_VERSION": str(v["target_sdk"]),
-    }
-    if version_code != None:
-        properties["VERSION_CODE"] = str(version_code)
-    if version_name != None:
-        properties["VERSION_NAME"] = str(version_name)
-    if v.get("max_sdk") != None:
-        properties["MAX_SDK_VERSION"] = str(v["max_sdk"])
+    # What is packaged: the whole app, and with `split_per_abi` one APK per ABI, whose version code
+    # is Flutter's. Each has its own manifest and so its own linked resources.
+    outputs = [struct(suffix = "", abis = abis, version_code = version_code)]
+    if split_per_abi:
+        for abi in abis:
+            outputs.append(struct(
+                suffix = "_" + abi.replace("-", "_"),
+                abis = [abi],
+                version_code = _ABI_VERSION_CODE[abi] * 1000 + (version_code or 1),
+            ))
 
-    # The features AGP's ProcessApplicationManifest passes for an application.
-    features = ["REMOVE_TOOLS_DECLARATIONS"] + (["DEBUGGABLE"] if v["debuggable"] else [])
+    # Manifest and linked resources, per output.
     legacy_jni = v["packaging"].get("jni_use_legacy")
     if legacy_jni == None:
         legacy_jni = min_sdk < 23
-    if not legacy_jni:
-        properties["EXTRACT_NATIVE_LIBS"] = "false"
-    rdf_manifest_merge(
-        name = name + "_manifest",
-        main = ":" + name + "_lib_manifest",
-        overlays = [":" + name + "_lib_manifest_overlays"],
-        libs = [
-            (label_of(e[1], e[2]) if e[0] == "p" else hub + artifact_target(e[1])) + "_manifest"
-            for e in runtime
-            if e[0] == "p" or (e[0] == "a" and arts[e[1]].get("aar"))
-        ],
-        properties = properties,
-        placeholders = v["manifest_placeholders"],
-        namespace = v["namespace"],
-        merger_features = features,
-        tool = hub + "tool_once",
-    )
-
-    # Resources: dependencies first, the app last, so that the app wins.
     compiled = []
     for e in reversed(runtime):
+        # Dependencies first, the app last, so that the app wins.
         if e[0] == "p":
             compiled.append(label_of(e[1], e[2]) + "_res")
         elif e[0] == "a" and arts[e[1]].get("aar") and arts[e[1]]["aar"]["res"]:
             compiled.append(hub + artifact_target(e[1]) + "_res")
     compiled.append(":" + name + "_lib_res")
-    rdf_aapt2_link(
-        name = name + "_res",
-        manifest = ":" + name + "_manifest",
-        compiled = compiled,
-        android_jar = sdk_jar,
-        min_sdk_version = str(v["min_sdk"]),
-        target_sdk_version = str(v["target_sdk"]),
-        aapt2 = hub + "aapt2",
-    )
-    rdf_output_group(name = name + "_rtxt", src = ":" + name + "_res", group = "rtxt")
+    for o in outputs:
+        properties = {
+            "MIN_SDK_VERSION": str(v["min_sdk"]),
+            "PACKAGE": v["application_id"],
+            "TARGET_SDK_VERSION": str(v["target_sdk"]),
+        }
+        if o.version_code != None:
+            properties["VERSION_CODE"] = str(o.version_code)
+        if version_name != None:
+            properties["VERSION_NAME"] = str(version_name)
+        if v.get("max_sdk") != None:
+            properties["MAX_SDK_VERSION"] = str(v["max_sdk"])
+        if not legacy_jni:
+            properties["EXTRACT_NATIVE_LIBS"] = "false"
+        rdf_manifest_merge(
+            name = name + o.suffix + "_manifest",
+            main = ":" + name + "_lib_manifest",
+            overlays = [":" + name + "_lib_manifest_overlays"],
+            libs = [
+                (label_of(e[1], e[2]) if e[0] == "p" else hub + artifact_target(e[1])) + "_manifest"
+                for e in runtime
+                if e[0] == "p" or (e[0] == "a" and arts[e[1]].get("aar"))
+            ],
+            properties = properties,
+            placeholders = v["manifest_placeholders"],
+            namespace = v["namespace"],
+            # The features AGP's ProcessApplicationManifest passes for an application.
+            merger_features = ["REMOVE_TOOLS_DECLARATIONS"] + (["DEBUGGABLE"] if debuggable else []),
+            tool = hub + "tool_once",
+        )
+        rdf_aapt2_link(
+            # With resource shrinking the link is to the proto format, which R8 shrinks.
+            name = name + o.suffix + ("_res_linked" if not debuggable else "_res"),
+            manifest = ":" + name + o.suffix + "_manifest",
+            compiled = compiled,
+            android_jar = sdk_jar,
+            min_sdk_version = str(v["min_sdk"]),
+            target_sdk_version = str(v["target_sdk"]),
+            proto = shrink_resources,
+            aapt2 = hub + "aapt2",
+        )
+    linked = name + ("_res_linked" if not debuggable else "_res")
+    rdf_output_group(name = name + "_rtxt", src = ":" + linked, group = "rtxt")
 
     # R classes: one per library from that library's own symbols, and the app's own, with final ids.
     r_deps = {}
@@ -917,16 +1042,8 @@ def android_model_app(
         local = ":" + name + "_lib_symbols",
         deps = r_deps,
         empty_packages = [e for e in r_empty if e not in r_deps.values()],
+        final_ids = p.get("non_final_res_ids") == False,
         tool = hub + "tool_once",
-    )
-    rdf_dex(
-        name = name + "_r_dex",
-        deps = [":" + name + "_r"],
-        min_sdk = min_sdk,
-        debuggable = v["debuggable"],
-        store = v["packaging"].get("dex_use_legacy") == False,
-        android_jar = sdk_jar,
-        tool = hub + "tool",
     )
 
     # The app's own code. The plugin registrant is the one the Flutter tool wrote when the model was
@@ -951,50 +1068,186 @@ def android_model_app(
         exclude = ["**/" + rel for rel in (model.get("generated_sources") or {}).keys()],
     )
 
-    # Dex, AGP's second step: one merge per scope (Maven libraries, plugin projects, the app).
-    ext = [hub + artifact_target(a) + "_dex_" + config for a in rt_artifacts if _has_jar(arts[a])]
-    libs = [label_of(q, qv) + "_dex_" + config for q, qv in rt_projects]
-    app_dex = ":%s_lib_dex_%s" % (name, config)
-    r_dex = ":" + name + "_r_dex"
-    merge = dict(
-        min_sdk = min_sdk,
-        debuggable = v["debuggable"],
-        store = v["packaging"].get("dex_use_legacy") == False,
-        android_jar = sdk_jar,
-        tool = hub + "tool",
-    )
-    rdf_dex_merge(name = name + "_dex_ext", archives = ext, **merge)
-    rdf_dex_merge(name = name + "_dex_libs", archives = libs, **merge)
-    rdf_dex_merge(name = name + "_dex_project", archives = [app_dex, r_dex], globals = ext + libs + [app_dex, r_dex], **merge)
+    packaging = v["packaging"]
+    ext_jars = [hub + artifact_target(a) + "_jar" for a in rt_artifacts if _has_jar(arts[a])]
+    project_libs = [label_of(q, qv) for q, qv in rt_projects]
+    dex_store = packaging.get("dex_use_legacy") == False
+    desugared = []
+    java_resources = dict(java_resource_deps = [":" + name + "_lib"] + project_libs, java_resource_jars = ext_jars)
+    res_of = {}  # output suffix to the resources its APK carries
 
-    # For the splits: R classes and the global synthetics go with the base; each project's archive is
-    # packaged as the first step left it.
-    rdf_dex_merge(name = name + "_dex_base", archives = [r_dex], globals = ext + libs + [app_dex, r_dex], **merge)
-    desugared = [hub + "desugared_lib_dex_" + config] if v.get("core_library_desugaring") else []
+    # Baseline profiles of the app, its library projects and the AARs: a release build carries them
+    # compiled, in `assets/dexopt/`.
+    profiles = []
+    if not debuggable:
+        if v["sources"].get("baseline_profiles"):
+            profiles.append(":" + name + "_lib_profiles")
+        for e in runtime:
+            if e[0] == "p" and model["projects"][e[1]]["variants"][e[2]]["sources"].get("baseline_profiles"):
+                profiles.append(label_of(e[1], e[2]) + "_profiles")
+            elif e[0] == "a" and arts[e[1]].get("aar") and arts[e[1]]["aar"].get("baseline_prof"):
+                profiles.append(hub + artifact_target(e[1]) + "_profile")
+    final_profiles = profiles  # the rules in the names of the final dex
 
-    # The Dart payload and the Dart side's native libraries.
-    abis = abis or v["ndk_abi_filters"] or []
+    if minified:
+        # A release build: the whole program through R8, as AGP's R8 task runs it.
+        rules = []
+        for i, f in enumerate(v.get("proguard_files") or []):
+            if f.startswith("text:"):
+                # AGP's default file and the Flutter tool's own rules: the pin carries their text.
+                key = f[len("text:"):]
+                write_file(name = "%s_rules_%d" % (name, i), out = "%s_gen/rules/%s" % (name, key), content = model["proguard_texts"][key].split("\n"))
+                rules.append(":%s_rules_%d" % (name, i))
+            else:
+                rules.append(_path(f, True, info))
+        rules += [label_of(q, qv) + "_consumer_rules" for q, qv in rt_projects]
+        rules += [hub + artifact_target(a) + "_rules" for a in rt_artifacts if arts[a].get("aar") and arts[a]["aar"].get("proguard")]
+        compile_only = [a for a in _artifacts(model, v, "compile") if a not in rt_artifacts and _has_jar(arts[a])]
+        resource_files = [":" + name + "_lib_res_files"]
+        for e in runtime:
+            if e[0] == "p":
+                resource_files.append(label_of(e[1], e[2]) + "_res_files")
+            elif e[0] == "a" and arts[e[1]].get("aar") and arts[e[1]]["aar"]["res"]:
+                resource_files.append(hub + artifact_target(e[1]) + "_res_files")
+        rdf_r8(
+            name = name + "_r8",
+            deps = [":" + name + "_lib", ":" + name + "_r"] + project_libs,
+            jars = ext_jars,
+            # A jar's own rules apply; an AAR's are its proguard.txt.
+            rules_jars = [hub + artifact_target(a) + "_jar" for a in rt_artifacts if _has_jar(arts[a]) and not arts[a].get("aar")],
+            classpath = [hub + artifact_target(a) + "_jar" for a in compile_only],
+            libraries = [_boot(hub, p)],
+            configs = rules,
+            min_sdk = min_sdk,
+            final_res_ids = p.get("non_final_res_ids") == False,
+            full_mode = r8_flags.get("full_mode") != False,
+            strict_keep_rules = r8_flags.get("strict_full_mode_for_keep_rules") != False,
+            desugared_lib_config = (hub + "desugar_config") if v.get("core_library_desugaring") else None,
+            resources = [":" + name + o.suffix + "_res_linked" for o in outputs] if shrink_resources else [],
+            resource_files = resource_files if shrink_resources else [],
+            excludes = packaging["excludes"],
+            pick_firsts = packaging["pick_firsts"],
+            merges = packaging["merges"],
+            profiles = profiles,
+            tool = hub + "tool",
+            **java_resources
+        )
+        if profiles:
+            # R8 rewrote the rules to the names it gave.
+            rdf_output_group(name = name + "_r8_profile", src = ":" + name + "_r8", group = "profile")
+            rdf_output_group(name = name + "_merged_profile", src = ":" + name + "_r8", group = "merged_profile")
+            final_profiles = [":" + name + "_r8_profile"]
+        rdf_output_group(name = name + "_r8_java_res", src = ":" + name + "_r8", group = "java_res")
+        rdf_output_group(name = name + "_r8_metadata", src = ":" + name + "_r8", group = "metadata")
+        rdf_output_group(name = name + "_r8_mapping", src = ":" + name + "_r8", group = "mapping")
+        mapping = ":" + name + "_r8_mapping"
+        dex = [":" + name + "_r8"]
+        if v.get("core_library_desugaring"):
+            # The desugared library, shrunk to what the app's final dex uses.
+            rdf_l8(
+                name = name + "_desugared_lib_dex",
+                jars = [hub + artifact_target(a) + "_jar" for a in _artifacts(model, v, "core_library_desugaring")],
+                min_sdk = min_sdk,
+                debuggable = False,
+                store = dex_store,
+                desugared_lib_config = hub + "desugar_config",
+                android_jar = sdk_jar,
+                libraries = [hub + "platform_" + p["compile_sdk"]],
+                app_dex = [":" + name + "_r8"],
+                mapping = ":" + name + "_r8_mapping",
+                profile = (":" + name + "_merged_profile") if profiles else None,
+                tool = hub + "tool",
+            )
+            desugared = [":" + name + "_desugared_lib_dex"]
+            rdf_output_group(name = name + "_l8_mapping", src = ":" + name + "_desugared_lib_dex", group = "mapping")
+            mapping = ":" + name + "_l8_mapping"
+            if profiles:
+                rdf_output_group(name = name + "_l8_profile", src = ":" + name + "_desugared_lib_dex", group = "profile")
+                final_profiles.append(":" + name + "_l8_profile")
+
+        # `name_mapping`: the file that retraces a stack trace of this build (upload it with the app).
+        native.filegroup(name = name + "_mapping", srcs = [mapping], visibility = visibility)
+
+        # R8 rewrote the Java resources (service files follow renamed classes): they are packaged
+        # as R8 left them.
+        java_resources = dict(java_resource_jars = [":" + name + "_r8_java_res"])
+        for i, o in enumerate(outputs):
+            if shrink_resources:
+                rdf_output_group(name = name + o.suffix + "_res_shrunk", src = ":" + name + "_r8", group = "resources_%d" % i)
+            rdf_res_finish(
+                name = name + o.suffix + "_res",
+                src = ":" + name + o.suffix + ("_res_shrunk" if shrink_resources else "_res_linked"),
+                convert = shrink_resources,
+                aapt2 = hub + "aapt2",
+            )
+            res_of[o.suffix] = ":" + name + o.suffix + "_res"
+    else:
+        # Dex, AGP's second step: one merge per scope (Maven libraries, plugin projects, the app).
+        rdf_dex(
+            name = name + "_r_dex",
+            deps = [":" + name + "_r"],
+            min_sdk = min_sdk,
+            debuggable = debuggable,
+            store = dex_store,
+            android_jar = sdk_jar,
+            tool = hub + "tool",
+        )
+        ext = [hub + artifact_target(a) + "_dex_" + config for a in rt_artifacts if _has_jar(arts[a])]
+        libs = [label_of(q, qv) + "_dex_" + config for q, qv in rt_projects]
+        app_dex = ":%s_lib_dex_%s" % (name, config)
+        r_dex = ":" + name + "_r_dex"
+        merge = dict(
+            min_sdk = min_sdk,
+            debuggable = debuggable,
+            store = dex_store,
+            android_jar = sdk_jar,
+            tool = hub + "tool",
+        )
+        rdf_dex_merge(name = name + "_dex_ext", archives = ext, **merge)
+        rdf_dex_merge(name = name + "_dex_libs", archives = libs, **merge)
+        rdf_dex_merge(name = name + "_dex_project", archives = [app_dex, r_dex], globals = ext + libs + [app_dex, r_dex], **merge)
+        desugared = [hub + "desugared_lib_dex_" + config] if v.get("core_library_desugaring") else []
+        dex = [":" + name + "_dex_project", ":" + name + "_dex_libs", ":" + name + "_dex_ext"]
+        for o in outputs:
+            if debuggable:
+                res_of[o.suffix] = ":" + name + o.suffix + "_res"
+            else:
+                # A release build without shrinking: the resources optimized as AGP's optimizeResources does.
+                rdf_res_finish(name = name + o.suffix + "_res", src = ":" + name + o.suffix + "_res_linked", convert = False, aapt2 = hub + "aapt2")
+                res_of[o.suffix] = ":" + name + o.suffix + "_res"
+
+    # Native libraries, per ABI: of the AARs, the plugin projects and the app, and the Dart side's
+    # (the AOT library of a profile or release build as libapp.so, FFI libraries, code assets).
     native_srcs = [hub + artifact_target(a) + "_native" for a in rt_artifacts if _has_native(arts[a])]
     native_srcs += [label_of(q, qv) + "_native" for q, qv in rt_projects] + [":" + name + "_lib_native"]
-    rdf_native_libs(name = name + "_native", srcs = native_srcs, abis = abis, strip = hub + "llvm_strip")
-    native_libs = [":" + name + "_native"]
+    native_of = {}
+    for abi in abis or [""]:
+        target = name + "_native" + ("_" + abi.replace("-", "_") if abi else "")
+        rdf_native_libs(name = target, srcs = native_srcs, abis = [abi] if abi else [], strip = hub + "llvm_strip")
+        native_of[abi] = [":" + target]
     dart_zip = []
     dart_zip_stored = []
     if application:
         dart_abis = [a for a in _DART_ABIS if not abis or a in abis] or _DART_ABIS[:1]
         for abi in dart_abis:
             bundle = "%s_bundle_%s" % (name, abi.replace("-", "_"))
-            flutter_android_bundle(name = bundle, application = application, android_abi = abi, mobile_install_compatible = False, plugins_from_model = True)
-            rdf_output_group(name = bundle + "_native", src = ":" + bundle, group = "native_libs")
+            flutter_android_bundle(name = bundle, application = application, android_abi = abi, mobile_install_compatible = False, plugins_from_model = True, flutter_mode = mode)
+            rdf_output_group(name = bundle + "_native", src = ":" + bundle, group = "plugin_native_libs")
             rdf_native_libs(name = bundle + "_native_stripped", srcs = [":" + bundle + "_native"], abi = abi, strip = hub + "llvm_strip")
-            native_libs.append(":" + bundle + "_native_stripped")
+            dart_libs = [":" + bundle + "_native_stripped"]
+            if aot:
+                rdf_output_group(name = bundle + "_aot", src = ":" + bundle, group = "aot")
+                rdf_native_libs(name = bundle + "_libapp", srcs = [":" + bundle + "_aot"], abi = abi, rename = "libapp.so", strip = hub + "llvm_strip")
+                dart_libs.append(":" + bundle + "_libapp")
+            native_of[abi if abis else ""] = native_of.get(abi if abis else "", []) + dart_libs
         first = "%s_bundle_%s" % (name, dart_abis[0].replace("-", "_"))
         rdf_output_group(name = name + "_flutter_assets", src = ":" + first, group = "flutter_assets")
         trees = {":" + name + "_flutter_assets": "assets/flutter_assets"}
-        rdf_zip_part(name = name + "_dart", trees = trees, tool = hub + "tool")
-        rdf_zip_part(name = name + "_dart_stored", trees = trees, store = True, tool = hub + "tool")
+        rdf_zip_part(name = name + "_dart", trees = trees, release = not debuggable, tool = hub + "tool")
         dart_zip = [":" + name + "_dart"]
-        dart_zip_stored = [":" + name + "_dart_stored"]
+        if debuggable:
+            rdf_zip_part(name = name + "_dart_stored", trees = trees, store = True, tool = hub + "tool")
+            dart_zip_stored = [":" + name + "_dart_stored"]
 
     # Assets of the app, its library projects and the AARs.
     asset_srcs = [":" + name + "_lib_assets"]
@@ -1010,7 +1263,7 @@ def android_model_app(
             asset_srcs.append(hub + artifact_target(e[1]) + "_assets")
             if "aar/assets" not in asset_roots:
                 asset_roots.append("aar/assets")
-    rdf_zip_part(name = name + "_assets", srcs = asset_srcs, roots = asset_roots, trees = asset_trees, tool = hub + "tool")
+    rdf_zip_part(name = name + "_assets", srcs = asset_srcs, roots = asset_roots, trees = asset_trees, release = not debuggable, tool = hub + "tool")
 
     # The marker file AGP puts in every APK.
     write_file(
@@ -1019,10 +1272,18 @@ def android_model_app(
         content = ["appMetadataVersion=1.1", "androidGradlePluginVersion=" + model["tools"]["agp"], ""],
     )
 
-    packaging = v["packaging"]
+    # Signing. A debug build, and a release whose signing configuration is the debug one (what the
+    # Flutter template writes), are signed here with the debug key. Any other release is left
+    # unsigned: its key is the user's and never enters an action.
+    signing = v.get("signing") or {}
+    sign_here = debuggable or signing.get("name") == "debug"
+
+    def flag(n):
+        return "" if signing.get(n) == None else str(bool(signing[n])).lower()
+
     common = dict(
         min_sdk = min_sdk,
-        dex_store = packaging.get("dex_use_legacy") == False,
+        dex_store = dex_store,
         native_compress = bool(legacy_jni),
         excludes = packaging["excludes"],
         pick_firsts = packaging["pick_firsts"],
@@ -1030,72 +1291,179 @@ def android_model_app(
         jni_excludes = packaging["jni_excludes"],
         jni_pick_firsts = packaging["jni_pick_firsts"],
         validations = [":" + name + "_pin_check"],
+        release = not debuggable,
+        signing = "debug" if sign_here else "none",
+        v1_signing = flag("v1"),
+        v2_signing = flag("v2"),
+        v3_signing = flag("v3"),
         tool = hub + "tool",
     )
-    ext_jars = [hub + artifact_target(a) + "_jar" for a in rt_artifacts if _has_jar(arts[a])]
-    project_libs = [label_of(q, qv) for q, qv in rt_projects]
+    metadata = {":" + name + "_app_metadata": "META-INF/com/android/build/gradle/app-metadata.properties"}
+    stored = {}
+    if profiles:
+        rdf_art_profile(name = name + "_art_profile", profiles = final_profiles, dex = dex + desugared, tool = hub + "tool_once")
+        rdf_output_group(name = name + "_art_prof", src = ":" + name + "_art_profile", group = "prof")
+        rdf_output_group(name = name + "_art_profm", src = ":" + name + "_art_profile", group = "profm")
 
-    # 1. The whole app as one APK, as `flutter build apk` gives.
-    rdf_apk(
-        name = name + "_apk",
-        entries = {":" + name + "_app_metadata": "META-INF/com/android/build/gradle/app-metadata.properties"},
-        resources = [":" + name + "_res"],
-        dex = [":" + name + "_dex_project", ":" + name + "_dex_libs", ":" + name + "_dex_ext"] + desugared,
-        native_libs = native_libs,
-        zips = dart_zip + [":" + name + "_assets"],
-        java_resource_deps = [":" + name + "_lib"] + project_libs,
-        java_resource_jars = ext_jars,
-        visibility = visibility,
-        **common
-    )
+        # Read by the installer through a file descriptor, so never compressed.
+        stored = {":" + name + "_art_prof": "assets/dexopt/baseline.prof", ":" + name + "_art_profm": "assets/dexopt/baseline.profm"}
 
-    # 2. The same app as split APKs: what an edit changes is its own small file.
-    #    base: manifest, resources, R classes, Maven code, native libraries, assets
-    #    one split per Gradle project (the app, each plugin): its dex and Java resources
-    #    dart: flutter_assets
-    rdf_apk(
-        name = name + "_base",
-        entries = {":" + name + "_app_metadata": "META-INF/com/android/build/gradle/app-metadata.properties"},
-        resources = [":" + name + "_res"],
-        dex = [":" + name + "_dex_base", ":" + name + "_dex_ext"] + desugared,
-        native_libs = native_libs,
-        zips = [":" + name + "_assets"],
-        java_resource_jars = ext_jars,
-        **common
-    )
-    splits = [":" + name + "_base"]
-    parts = {"app": dict(dex = [app_dex], java_resource_deps = [":" + name + "_lib"])}
-    for q, qv in rt_projects:
-        parts[project_target(q, qv)] = dict(dex = [label_of(q, qv) + "_dex_" + config], java_resource_deps = [label_of(q, qv)])
-    if dart_zip_stored:
-        parts["dart"] = dict(zips = dart_zip_stored)
-    for split, kwargs in parts.items():
-        sn = "%s_split_%s" % (name, split)
-        write_file(
-            name = sn + "_manifest",
-            out = sn + "_gen/AndroidManifest.xml",
-            content = [
-                '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="%s" split="%s" android:versionCode="%s">' % (v["application_id"], split, version_code or 1),
-                '  <application android:hasCode="%s"/>' % ("true" if "dex" in kwargs else "false"),
-                "</manifest>",
-                "",
-            ],
+    # 1. The whole app as one APK, as `flutter build apk` gives; with `split_per_abi`, one per ABI.
+    for o in outputs:
+        native_libs = []
+        for abi in o.abis or [""]:
+            native_libs += native_of.get(abi, [])
+        rdf_apk(
+            name = name + "_apk" + o.suffix,
+            entries = metadata,
+            stored_entries = stored,
+            resources = [res_of[o.suffix]],
+            dex = dex + desugared,
+            native_libs = native_libs,
+            zips = dart_zip + [":" + name + "_assets"],
+            visibility = visibility,
+            **(common | java_resources)
         )
-        rdf_aapt2_link(name = sn + "_res", manifest = ":" + sn + "_manifest", android_jar = sdk_jar, aapt2 = hub + "aapt2")
-        if "dex" in kwargs:
-            rdf_dex_archive(name = sn + "_dex", srcs = kwargs.pop("dex"))
-            kwargs["dex"] = [":" + sn + "_dex"]
-        rdf_apk(name = sn, resources = [":" + sn + "_res"], **(kwargs | common))
-        splits.append(":" + sn)
-    native.filegroup(name = name, srcs = splits, visibility = visibility)
+    all_native = []
+    for abi in abis or [""]:
+        all_native += native_of.get(abi, [])
 
-    # `bazel run :<name>_install`: sends the splits that changed to the device and starts the app.
-    java_binary(
-        name = name + "_install",
-        main_class = "rules_flutter.android.Install",
-        runtime_deps = [Label("//flutter/private/android_model/tools:install_lib")],
-        data = splits,
-        args = ["--package", v["application_id"], "--split", "base=$(rootpath :%s_base)" % name] +
-               [arg for split in parts for arg in ["--split", "%s=$(rootpath :%s_split_%s)" % (split, name, split)]],
+    # 1b. The app bundle, as `flutter build appbundle` gives: `name_bundle`. Its resources are in the
+    #     proto format: the ones R8 shrank, or the linked ones.
+    if shrink_resources:
+        bundle_res = ":" + name + "_res_shrunk"
+    else:
+        rdf_aapt2_link(
+            name = name + "_res_proto",
+            manifest = ":" + name + "_manifest",
+            compiled = compiled,
+            android_jar = sdk_jar,
+            min_sdk_version = str(v["min_sdk"]),
+            target_sdk_version = str(v["target_sdk"]),
+            proto = True,
+            aapt2 = hub + "aapt2",
+        )
+        bundle_res = ":" + name + "_res_proto"
+    bundle_metadata = {":" + name + "_app_metadata": "com.android.tools.build.gradle/app-metadata.properties"}
+    if minified:
+        bundle_metadata[":" + name + "_mapping"] = "com.android.tools.build.obfuscation/proguard.map"
+        bundle_metadata[":" + name + "_r8_metadata"] = "com.android.tools/r8.json"
+    if profiles:
+        bundle_metadata[":" + name + "_art_prof"] = "com.android.tools.build.profiles/baseline.prof"
+        bundle_metadata[":" + name + "_art_profm"] = "com.android.tools.build.profiles/baseline.profm"
+    bundle_options = v.get("bundle") or {}
+    rdf_bundle(
+        name = name + "_bundle",
+        resources = bundle_res,
+        root_entries = metadata,
+        metadata = bundle_metadata,
+        dex = dex + desugared,
+        native_libs = all_native,
+        native_compress = bool(legacy_jni),
+        zips = dart_zip + [":" + name + "_assets"],
+        no_splits = [d for d, key in (("ABI", "abi_split"), ("SCREEN_DENSITY", "density_split"), ("LANGUAGE", "language_split")) if bundle_options.get(key) == False],
+        store_archive = bundle_options.get("store_archive") != False,
+        uncompressed_globs = bundle_options.get("uncompressed_globs") or [],
+        min_sdk = min_sdk,
+        excludes = packaging["excludes"],
+        pick_firsts = packaging["pick_firsts"],
+        merges = packaging["merges"],
+        jni_excludes = packaging["jni_excludes"],
+        jni_pick_firsts = packaging["jni_pick_firsts"],
+        signing = "debug" if sign_here else "none",
+        validations = [":" + name + "_pin_check"],
+        tool = hub + "tool_once",
         visibility = visibility,
+        **java_resources
     )
+
+    install = ["--split", "base=$(rootpath :%s_apk)" % name]
+    install_data = [":" + name + "_apk"]
+    if not debuggable:
+        # R8 works on the whole program, so a release build has no per-project splits.
+        native.filegroup(name = name, srcs = [":" + name + "_apk"], visibility = visibility)
+    else:
+        # 2. The same app as split APKs: what an edit changes is its own small file.
+        #    base: manifest, resources, R classes, Maven code, native libraries, assets
+        #    one split per Gradle project (the app, each plugin): its dex and Java resources
+        #    dart: flutter_assets
+        # For the splits the R classes and the global synthetics go with the base; each project's
+        # archive is packaged as the first step left it.
+        rdf_dex_merge(name = name + "_dex_base", archives = [r_dex], globals = ext + libs + [app_dex, r_dex], **merge)
+        rdf_apk(
+            name = name + "_base",
+            entries = metadata,
+            resources = [":" + name + "_res"],
+            dex = [":" + name + "_dex_base", ":" + name + "_dex_ext"] + desugared,
+            native_libs = all_native,
+            zips = [":" + name + "_assets"],
+            java_resource_jars = ext_jars,
+            **common
+        )
+        splits = [":" + name + "_base"]
+        parts = {"app": dict(dex = [app_dex], java_resource_deps = [":" + name + "_lib"])}
+        for q, qv in rt_projects:
+            parts[project_target(q, qv)] = dict(dex = [label_of(q, qv) + "_dex_" + config], java_resource_deps = [label_of(q, qv)])
+        if dart_zip_stored:
+            parts["dart"] = dict(zips = dart_zip_stored)
+        for split, kwargs in parts.items():
+            sn = "%s_split_%s" % (name, split)
+            write_file(
+                name = sn + "_manifest",
+                out = sn + "_gen/AndroidManifest.xml",
+                content = [
+                    '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="%s" split="%s" android:versionCode="%s">' % (v["application_id"], split, version_code or 1),
+                    '  <application android:hasCode="%s"/>' % ("true" if "dex" in kwargs else "false"),
+                    "</manifest>",
+                    "",
+                ],
+            )
+            rdf_aapt2_link(name = sn + "_res", manifest = ":" + sn + "_manifest", android_jar = sdk_jar, aapt2 = hub + "aapt2")
+            if "dex" in kwargs:
+                rdf_dex_archive(name = sn + "_dex", srcs = kwargs.pop("dex"))
+                kwargs["dex"] = [":" + sn + "_dex"]
+            rdf_apk(name = sn, resources = [":" + sn + "_res"], **(kwargs | common))
+            splits.append(":" + sn)
+        native.filegroup(name = name, srcs = splits, visibility = visibility)
+        install = ["--split", "base=$(rootpath :%s_base)" % name] + [arg for split in parts for arg in ["--split", "%s=$(rootpath :%s_split_%s)" % (split, name, split)]]
+        install_data = splits
+
+    if sign_here:
+        # `bazel run :<name>_install`: sends the APKs that changed to the device and starts the app.
+        java_binary(
+            name = name + "_install",
+            main_class = "rules_flutter.android.Install",
+            runtime_deps = [Label("//flutter/private/android_model/tools:install_lib")],
+            data = install_data,
+            args = ["--package", v["application_id"]] + install,
+            visibility = visibility,
+        )
+    else:
+        # `bazel run :<name>_sign`: signs the APKs with the user's key, outside the build. The key
+        # store and its passwords come from the environment of that run (or a key.properties file
+        # that is not checked in), so they are in no action, no output of the build and no log.
+        sign_args = ["--app", native.package_name() or ".", "--min-sdk", str(min_sdk), "--config", signing.get("name") or "release"]
+        for n in ("v1", "v2", "v3"):
+            if signing.get(n) != None:
+                sign_args += ["--" + n, str(bool(signing[n])).lower()]
+        apk_args = []
+        for o in outputs:
+            apk_args += ["--apk", "%s=$(rootpath :%s_apk%s)" % ("app%s-%s.apk" % (("-" + o.abis[0]) if o.suffix else "", _dashed(v)), name, o.suffix)]
+        java_binary(
+            name = name + "_sign",
+            main_class = "rules_flutter.android.Sign",
+            runtime_deps = [hub + "tool_lib"],
+            data = [":" + name + "_apk" + o.suffix for o in outputs],
+            args = sign_args + apk_args,
+            visibility = visibility,
+        )
+
+        # `bazel run :<name>_bundle_sign`: the same for the app bundle.
+        java_binary(
+            name = name + "_bundle_sign",
+            main_class = "rules_flutter.android.Sign",
+            runtime_deps = [hub + "tool_lib"],
+            data = [":" + name + "_bundle"],
+            args = sign_args + ["--bundle", "%s/app-%s.aab=$(rootpath :%s_bundle)" % (_camel(v), _dashed(v), name)],
+            visibility = visibility,
+        )

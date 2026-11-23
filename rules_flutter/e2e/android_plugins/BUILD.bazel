@@ -1,4 +1,4 @@
-load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app")
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app", "flutter_android_bundle_test")
 load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application")
 
@@ -33,6 +33,32 @@ flutter_android_app(
     application = ":counter",
     # package:jni builds libdartjni.so with CMake in Gradle; here the Dart side builds it.
     native_built_elsewhere = [":jni"],
+)
+
+# The release build: R8, resource shrinking, the AOT library per ABI; `//:app_release_apk` is the whole
+# APK, `//:app_release_apk_arm64_v8a` and `//:app_release_apk_x86_64` are what `--split-per-abi` gives.
+flutter_android_app(
+    name = "app_release",
+    abis = [
+        "arm64-v8a",
+        "x86_64",
+    ],
+    application = ":counter",
+    native_built_elsewhere = [":jni"],
+    split_per_abi = True,
+    variant = "release",
+)
+
+# The profile build: the AOT library with the profile engine.
+flutter_android_app(
+    name = "app_profile",
+    abis = [
+        "arm64-v8a",
+        "x86_64",
+    ],
+    application = ":counter",
+    native_built_elsewhere = [":jni"],
+    variant = "profile",
 )
 
 # What was built: every plugin's code and its own R class, the engine for three ABIs, the Java
@@ -103,4 +129,93 @@ flutter_android_apk_test(
     ],
     version_code = 1,
     version_name = "1.0.0",
+)
+
+# What the release build holds: the app's entry points under their own names and the rest renamed or
+# removed by R8, the resources shrunk, the AOT library per ABI and no kernel, the baseline profile.
+flutter_android_apk_test(
+    name = "app_release_test",
+    absent_classes = [
+        # Renamed (a plugin is kept, not its name) or removed (nothing reads it).
+        "Lio/flutter/plugins/urllauncher/UrlLauncherPlugin;",
+        "Lio/flutter/plugins/urllauncher/BuildConfig;",
+        "Landroidx/browser/R$id;",
+    ],
+    absent_entries = [
+        "assets/flutter_assets/kernel_blob.bin",
+        "lib/armeabi-v7a/**",
+        "META-INF/*.kotlin_module",
+    ],
+    app = "app_release",
+    classes = [
+        "Ldev/rdf/counter/MainActivity;",
+        "Lio/flutter/plugins/GeneratedPluginRegistrant;",
+        # Kept by name: package:jni looks its classes up from native code.
+        "Lcom/github/dart_lang/jni/JniPlugin;",
+        "Lj$/time/Instant;",
+    ],
+    entries = [
+        "lib/arm64-v8a/libapp.so",
+        "lib/arm64-v8a/libflutter.so",
+        "lib/x86_64/libapp.so",
+        "lib/x86_64/libflutter.so",
+        "assets/dexopt/baseline.prof",
+        "assets/dexopt/baseline.profm",
+        "assets/flutter_assets/AssetManifest.bin",
+        "META-INF/com/android/build/gradle/app-metadata.properties",
+    ],
+    version_code = 1,
+    version_name = "1.0.0",
+)
+
+# `split_per_abi`: one ABI's libraries, and Flutter's version code for the ABI.
+flutter_android_apk_test(
+    name = "app_release_x86_64_test",
+    abi = "x86_64",
+    absent_entries = ["lib/arm64-v8a/**"],
+    app = "app_release",
+    entries = [
+        "lib/x86_64/libapp.so",
+        "lib/x86_64/libflutter.so",
+    ],
+    version_code = 4001,
+    version_name = "1.0.0",
+)
+
+# The profile build: the AOT library, the profile engine, code neither shrunk nor renamed.
+flutter_android_apk_test(
+    name = "app_profile_test",
+    absent_entries = ["assets/flutter_assets/kernel_blob.bin"],
+    app = "app_profile",
+    classes = [
+        "Lio/flutter/plugins/urllauncher/UrlLauncherPlugin;",
+        "Lio/flutter/plugins/urllauncher/BuildConfig;",
+    ],
+    entries = [
+        "lib/arm64-v8a/libapp.so",
+        "lib/x86_64/libapp.so",
+    ],
+    version_code = 1,
+    version_name = "1.0.0",
+)
+
+# The app bundle of the release build: the code and the Dart program in the base module, the baseline
+# profile and the mapping file as metadata, signed with the debug key as the stock build signs it.
+flutter_android_bundle_test(
+    name = "app_release_bundle_test",
+    absent_entries = [
+        "base/assets/flutter_assets/kernel_blob.bin",
+        "base/assets/dexopt/**",
+    ],
+    app = "app_release",
+    entries = [
+        "base/dex/classes2.dex",
+        "base/lib/arm64-v8a/libapp.so",
+        "base/lib/x86_64/libflutter.so",
+        "base/assets/flutter_assets/AssetManifest.bin",
+        "base/root/META-INF/com/android/build/gradle/app-metadata.properties",
+        "BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map",
+        "BUNDLE-METADATA/com.android.tools.build.profiles/baseline.prof",
+        "BUNDLE-METADATA/com.android.tools/r8.json",
+    ],
 )

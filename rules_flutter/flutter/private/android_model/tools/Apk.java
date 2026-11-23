@@ -41,6 +41,7 @@ import java.util.zip.Inflater;
 final class Apk {
   static final int STORE = 0;
   static final int DEFLATE_FAST = 1; // what a debug build of AGP packages with
+  static final int DEFLATE_DEFAULT = 6; // what a release build packages with
 
   // The timestamp AGP's packager writes on every entry: 1981-01-01 01:01:02.
   private static final int DOS_TIME = (1 << 11) | (1 << 5) | 1;
@@ -302,8 +303,9 @@ final class Apk {
 
   /** `zip --out part.zip [--store] name=path ...`: files, or whole directories under a prefix, as one zip part. */
   static void zip(List<String> args) throws Exception {
-    AndroidTool.Args a = new AndroidTool.Args(args, List.of("--store"));
+    AndroidTool.Args a = new AndroidTool.Args(args, List.of("--store", "--release"));
     boolean store = a.has("--store");
+    int level = a.has("--release") ? DEFLATE_DEFAULT : DEFLATE_FAST;
     try (ZipWriter z = new ZipWriter(Paths.get(a.one("--out")))) {
       for (String spec : a.rest) {
         int eq = spec.indexOf('=');
@@ -323,7 +325,7 @@ final class Apk {
           if (store || NO_COMPRESS.contains(extension(entry))) {
             z.store(entry, f, 4);
           } else {
-            z.add(entry, Files.readAllBytes(f), DEFLATE_FAST, 4);
+            z.add(entry, Files.readAllBytes(f), level, 4);
           }
         }
       }
@@ -331,7 +333,7 @@ final class Apk {
   }
 
   /** AGP's packaging rules: glob patterns matched against the entry path with a leading slash. */
-  private static final class Patterns {
+  static final class Patterns {
     final List<PathMatcher> matchers = new ArrayList<>();
 
     Patterns(List<String> globs) {
@@ -354,9 +356,71 @@ final class Apk {
     List<byte[]> merged; // set when the path is merged from several jars
   }
 
+  /**
+   * Java resources: everything in the runtime jars that is not a class, under the app's
+   * `packaging { resources { excludes, pickFirsts, merges } }`, in classpath order.
+   */
+  static void writeJavaResources(ZipWriter z, List<ZipIn> open, List<String> jars, Patterns excludes, Patterns pickFirsts, Patterns merges, int level, String prefix) throws IOException {
+    Map<String, JavaResource> resources = new LinkedHashMap<>();
+    for (String jar : jars) {
+      ZipIn in = new ZipIn(Paths.get(jar));
+      open.add(in);
+      for (Entry e : in.entries) {
+        String n = e.name;
+        if (n.endsWith("/") || n.endsWith(".class") || (n.startsWith("lib/") && n.endsWith(".so"))) continue;
+        if (excludes.matches(n)) continue;
+        JavaResource r = resources.get(n);
+        if (r == null) {
+          r = new JavaResource();
+          r.zip = in;
+          r.entry = e;
+          resources.put(n, r);
+        } else if (pickFirsts.matches(n)) {
+          continue;
+        } else if (merges.matches(n)) {
+          if (r.merged == null) {
+            r.merged = new ArrayList<>();
+            r.merged.add(r.zip.content(r.entry));
+          }
+          r.merged.add(in.content(e));
+        } else if (r.entry.crc != e.crc || r.entry.usize != e.usize || !Arrays.equals(r.zip.content(r.entry), in.content(e))) {
+          throw new IOException(n + " is in " + r.zip.path + " and in " + in.path + " with different content; "
+              + "choose with `packaging { resources { pickFirsts += \"" + n + "\" } }` (or `merges`, `excludes`) in the app's Gradle file and pin again");
+        }
+      }
+    }
+    for (Map.Entry<String, JavaResource> r : resources.entrySet()) {
+      JavaResource v = r.getValue();
+      String name = prefix + r.getKey();
+      if (z.has(name)) continue;
+      if (v.merged != null) {
+        ByteArrayOutputStream all = new ByteArrayOutputStream();
+        for (byte[] part : v.merged) {
+          if (all.size() > 0 && all.toByteArray()[all.size() - 1] != '\n') all.write('\n');
+          all.write(part);
+        }
+        z.add(name, all.toByteArray(), level, 4);
+      } else if (v.entry.method == 0 && v.entry.usize > 0) {
+        z.add(name, v.zip.content(v.entry), level, 4);
+      } else {
+        z.copy(v.zip, v.entry, name, 4);
+      }
+    }
+  }
+
+  /** The Java resources of the runtime jars as one jar, merged as AGP's mergeJavaResource merges them. */
+  static void mergeJavaResources(Path out, List<String> jars, List<String> excludes, List<String> pickFirsts, List<String> merges, int level) throws IOException {
+    List<ZipIn> open = new ArrayList<>();
+    try (ZipWriter z = new ZipWriter(out)) {
+      writeJavaResources(z, open, jars, new Patterns(excludes), new Patterns(pickFirsts), new Patterns(merges), level, "");
+    } finally {
+      for (ZipIn in : open) in.close();
+    }
+  }
+
   private static final Map<String, ApkSigner.SignerConfig> SIGNERS = new HashMap<>();
 
-  private static synchronized ApkSigner.SignerConfig signer(String keystore, String storePass, String alias, String keyPass) throws Exception {
+  static synchronized ApkSigner.SignerConfig signer(String keystore, String storePass, String alias, String keyPass) throws Exception {
     String key = keystore + "\n" + alias;
     ApkSigner.SignerConfig c = SIGNERS.get(key);
     if (c == null) {
@@ -376,7 +440,9 @@ final class Apk {
    * literal entries, dex, native libraries, zip parts (assets), the linked resources, Java resources.
    */
   static void pack(List<String> args) throws Exception {
-    AndroidTool.Args a = new AndroidTool.Args(args, List.of("--dex-store", "--native-compress", "--v1"));
+    AndroidTool.Args a = new AndroidTool.Args(args, List.of("--dex-store", "--native-compress", "--v1", "--no-v2", "--v3", "--release", "--unsigned"));
+    // A debug build packages fast; a release build with the default level, as AGP does.
+    int level = a.has("--release") ? DEFLATE_DEFAULT : DEFLATE_FAST;
     Path out = Paths.get(a.one("--out"));
     Path unsigned = Paths.get(a.one("--out") + ".unsigned");
     Patterns excludes = new Patterns(a.all("--exclude"));
@@ -389,7 +455,11 @@ final class Apk {
       try (ZipWriter z = new ZipWriter(unsigned)) {
         for (String spec : a.all("--entry")) {
           int eq = spec.indexOf('=');
-          z.add(spec.substring(0, eq), Files.readAllBytes(Paths.get(spec.substring(eq + 1))), DEFLATE_FAST, 4);
+          z.add(spec.substring(0, eq), Files.readAllBytes(Paths.get(spec.substring(eq + 1))), level, 4);
+        }
+        for (String spec : a.all("--stored-entry")) {
+          int eq = spec.indexOf('=');
+          z.add(spec.substring(0, eq), Files.readAllBytes(Paths.get(spec.substring(eq + 1))), STORE, 4);
         }
         int dex = 0;
         boolean dexStore = a.has("--dex-store");
@@ -409,7 +479,7 @@ final class Apk {
             if ((e.method == 0) == dexStore) {
               z.copy(in, e, name, 4);
             } else {
-              z.add(name, in.content(e), dexStore ? STORE : DEFLATE_FAST, 4);
+              z.add(name, in.content(e), dexStore ? STORE : level, 4);
             }
           }
         }
@@ -431,7 +501,7 @@ final class Apk {
         }
         for (Map.Entry<String, Path> n : natives.entrySet()) {
           if (nativeCompress) {
-            z.add(n.getKey(), Files.readAllBytes(n.getValue()), DEFLATE_FAST, 4);
+            z.add(n.getKey(), Files.readAllBytes(n.getValue()), level, 4);
           } else {
             z.store(n.getKey(), n.getValue(), pageAlign);
           }
@@ -450,69 +520,34 @@ final class Apk {
             if (!e.name.endsWith("/") && !z.has(e.name)) z.copy(in, e, e.name, 4);
           }
         }
-        // Java resources: everything in the runtime jars that is not a class, under the app's
-        // `packaging { resources { excludes, pickFirsts, merges } }`, in classpath order.
-        Map<String, JavaResource> resources = new LinkedHashMap<>();
-        for (String jar : a.all("--java-res")) {
-          ZipIn in = new ZipIn(Paths.get(jar));
-          open.add(in);
-          for (Entry e : in.entries) {
-            String n = e.name;
-            if (n.endsWith("/") || n.endsWith(".class") || (n.startsWith("lib/") && n.endsWith(".so"))) continue;
-            if (excludes.matches(n)) continue;
-            JavaResource r = resources.get(n);
-            if (r == null) {
-              r = new JavaResource();
-              r.zip = in;
-              r.entry = e;
-              resources.put(n, r);
-            } else if (pickFirsts.matches(n)) {
-              continue;
-            } else if (merges.matches(n)) {
-              if (r.merged == null) {
-                r.merged = new ArrayList<>();
-                r.merged.add(r.zip.content(r.entry));
-              }
-              r.merged.add(in.content(e));
-            } else if (r.entry.crc != e.crc || r.entry.usize != e.usize || !Arrays.equals(r.zip.content(r.entry), in.content(e))) {
-              throw new IOException(n + " is in " + r.zip.path + " and in " + in.path + " with different content; "
-                  + "choose with `packaging { resources { pickFirsts += \"" + n + "\" } }` (or `merges`, `excludes`) in the app's Gradle file and pin again");
-            }
-          }
-        }
-        for (Map.Entry<String, JavaResource> r : resources.entrySet()) {
-          JavaResource v = r.getValue();
-          if (z.has(r.getKey())) continue;
-          if (v.merged != null) {
-            ByteArrayOutputStream all = new ByteArrayOutputStream();
-            for (byte[] part : v.merged) {
-              if (all.size() > 0 && all.toByteArray()[all.size() - 1] != '\n') all.write('\n');
-              all.write(part);
-            }
-            z.add(r.getKey(), all.toByteArray(), DEFLATE_FAST, 4);
-          } else if (v.entry.method == 0 && v.entry.usize > 0) {
-            z.add(r.getKey(), v.zip.content(v.entry), DEFLATE_FAST, 4);
-          } else {
-            z.copy(v.zip, v.entry, r.getKey(), 4);
-          }
-        }
+        writeJavaResources(z, open, a.all("--java-res"), excludes, pickFirsts, merges, level, "");
       }
     } finally {
       for (ZipIn in : open) in.close();
     }
+    if (a.has("--unsigned")) {
+      // Signed outside the build (see Sign.java): the aligned, unsigned APK is the build's output.
+      Files.move(unsigned, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      return;
+    }
     ApkSigner.SignerConfig config = signer(a.one("--keystore"), a.one("--ks-pass"), a.one("--key-alias"), a.one("--key-pass"));
+    sign(config, unsigned, out, Integer.parseInt(a.one("--min-sdk")), a.has("--v1"), !a.has("--no-v2"), a.has("--v3"));
+    Files.delete(unsigned);
+  }
+
+  /** Signs an aligned APK with AGP's signer, keeping the alignment. */
+  static void sign(ApkSigner.SignerConfig config, Path unsigned, Path out, int minSdk, boolean v1, boolean v2, boolean v3) throws Exception {
     new ApkSigner.Builder(List.of(config))
         .setInputApk(unsigned.toFile())
         .setOutputApk(out.toFile())
-        .setMinSdkVersion(Integer.parseInt(a.one("--min-sdk")))
-        .setV1SigningEnabled(a.has("--v1"))
-        .setV2SigningEnabled(true)
-        .setV3SigningEnabled(false)
+        .setMinSdkVersion(minSdk)
+        .setV1SigningEnabled(v1)
+        .setV2SigningEnabled(v2)
+        .setV3SigningEnabled(v3)
         .setV4SigningEnabled(false)
         .setDebuggableApkPermitted(true)
         .setAlignmentPreserved(true)
         .build()
         .sign();
-    Files.delete(unsigned);
   }
 }

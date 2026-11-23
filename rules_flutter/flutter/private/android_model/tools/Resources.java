@@ -98,8 +98,10 @@ final class Resources {
         File file = new File(f);
         if (ResourceCompiler.canCompileResourceInJvm(file, crunch)) {
           // The options AGP's ResourceCompilerRunnable passes: legacy mode, the rest at their defaults.
+          // The source path a compiled file records is the path as given (relative to the execution
+          // root), never this machine's absolute one: it ends up in an app bundle's resource table.
           ResourceCompilerOptions options = new ResourceCompilerOptions(
-              d.getGenerateSymbolsPathData(), d.getVisibility(), d.getRequirePngCrunching(), false, null, true, d.getVerbose(), null);
+              d.getGenerateSymbolsPathData(), d.getVisibility(), d.getRequirePngCrunching(), false, null, true, d.getVerbose(), f);
           ResourceCompiler.compileResource(file, dir.toFile(), options, logger);
         } else {
           native_.add(f);
@@ -228,10 +230,12 @@ final class Resources {
    *     the same for the AARs of the model, in one jar.
    * `rjar --mode app --package p --rtxt R.txt --local R-def.txt --dep <package>=<file> ... --out r.jar`
    *     the R classes packaged in the app: one per library from that library's own symbol list, and the
-   *     app's own, with the final ids aapt2 assigned (AGP's LinkApplicationAndroidResourcesTask).
+   *     app's own, with the ids aapt2 assigned (AGP's LinkApplicationAndroidResourcesTask). The fields
+   *     are final only with `--final-ids` (android.nonFinalResIds=false): AGP's default leaves them
+   *     not final, so that code reads the field and a release build's shrinker sees the use.
    */
   static void rjar(List<String> args) throws Exception {
-    AndroidTool.Args a = new AndroidTool.Args(args, List.of());
+    AndroidTool.Args a = new AndroidTool.Args(args, List.of("--final-ids"));
     String mode = a.one("--mode");
     List<SymbolTable> deps = new ArrayList<>();
     for (String d : a.all("--dep")) deps.add(dep(d));
@@ -255,7 +259,7 @@ final class Resources {
       deps.add(SymbolIo.readRDef(Paths.get(a.one("--local"))).rename(pkg));
       List<SymbolTable> tables = new ArrayList<>();
       for (SymbolTable t : byPackage(deps)) tables.add(t.withValuesFrom(main));
-      export(tables, a.one("--out"), true);
+      export(tables, a.one("--out"), a.has("--final-ids"));
     } else {
       throw new IllegalArgumentException("unknown mode " + mode);
     }
