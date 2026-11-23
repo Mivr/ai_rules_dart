@@ -45,9 +45,6 @@ work out on its own how the new field merges.
 
 - A new `DartInfo` field is a change to one function, not to every producer.
 - Platform state lives in a provider of the rule set that needs it.
-- `//dart/tests:architecture_invariants_test` fails when a `DartInfo` field
-  name contains `flutter`, `android`, `ios` or `apple`, or when a production
-  `.bzl` outside `dart/private/dart_info.bzl` calls the constructor.
 - The same hazard applies to copying a `DartPackageInfo` with a field
   overridden, which is why that goes through one internal
   `derived_package_info()`.

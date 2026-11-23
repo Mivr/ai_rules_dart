@@ -637,11 +637,5 @@
   "dart/tests/test_protocol_fixture/protocol_test.dart": {
     "unnecessary_async": 1,
     "unnecessary_raw_strings": 1
-  },
-  "tool/readme_check/readme_check_test.dart": {
-    "dangling_library_doc_comments": 1,
-    "prefer_single_quotes": 1,
-    "unnecessary_raw_strings": 1,
-    "unnecessary_type_name_in_constructor": 2
   }
 }

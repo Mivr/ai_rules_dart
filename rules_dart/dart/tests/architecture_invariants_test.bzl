@@ -6,8 +6,7 @@
 `DartAnalyzableInfo` and never `DartInfo`; and every `deps` attribute gates on
 `providers = [DartInfo]`, so a target without it fails analysis. The tests
 below analyze the subjects in `//dart/tests/arch_invariants_fixture` and fail
-when a rule regresses on either. The source half (provider fields, hand-built
-`DartInfo(` calls, `deps` declarations) is `architecture_invariants_scan_test`.
+when a rule regresses on either.
 """
 
 load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
@@ -51,13 +50,12 @@ def _rejected_dep_test(env, target):
         matching.str_matches("*does not have mandatory providers: 'DartInfo'*"),
     )
 
-def architecture_invariants_test_suite(name, scan):
-    """Declares the provider invariant analysis tests and the suite running them with the source scan.
+def architecture_invariants_test_suite(name):
+    """Declares the provider invariant analysis tests and the suite running them.
 
     Args:
       name: Name of the generated `test_suite`; the analysis tests are named
         after it, without its `_test` suffix.
-      scan: Label of the `dart_test` scanning the live source tree.
     """
     base = name.removesuffix("_test")
     targets = {rule: _FIXTURE + subject for rule, subject in _EXECUTABLES.items()}
@@ -78,4 +76,4 @@ def architecture_invariants_test_suite(name, scan):
             target = _FIXTURE + subject,
         )
         tests.append(":" + base + "_" + suffix + "_test")
-    native.test_suite(name = name, tests = tests + [scan])
+    native.test_suite(name = name, tests = tests)

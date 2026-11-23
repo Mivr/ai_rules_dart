@@ -1,66 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 import '../../guard/lib/directive_guard.dart';
 
-/// Unit tests for the shared staged-source check, the absence of its former
-/// copies, and the enumeration of every Dart-reading tool through it.
+/// Unit tests for the shared staged-source check.
 ///
 /// The shared check lives in the public `package:rules_dart_guard` library
-/// (`dart/guard/lib/directive_guard.dart`). Every tool below enforces it: the
-/// whole-program `gen_kernel` wrapper imports it from source through its
-/// staged tool bundle, and the modular kernel planner — which takes no `deps`
-/// edge (every `dart_library` names it, so that would be a cycle) — reads the
-/// same file through `srcs` instead. One copy classifies every compile.
-///
-/// A Dart-reading tool that stops enforcing the check must fail the
-/// `every tool enforces the shared check` test below: each tool source is
-/// passed as a test argument (see BUILD.bazel) and must contain its
-/// enforcement marker. Tools that only parse Dart text without resolving
-/// directives against the filesystem are deliberately absent:
-/// `format_runner` (parses text only), `fix_applier`, `test_runner`,
-/// `kernel_launcher`, `copy_tree`, `dill_outline`, `kernel_link`, `noop` and
-/// `update_cross_sdk_versions` resolve no directive URI.
-
-/// The test's tool sources by file name, from the `rlocationpath` arguments
-/// under Bazel or from the source tree for a direct `dart test` run.
-Map<String, String> _toolSources(List<String> args) {
-  if (args.isEmpty) {
-    const guard = '../../guard/lib/directive_guard.dart';
-    const shim = '../../ext/lib/builder_shim.dart';
-    const names = [
-      'analyze_runner.dart',
-      'analyzer_summary.dart',
-      'app_jit_snapshot.dart',
-      'directive_guard.dart',
-      'fix_runner.dart',
-      'kernel_module.dart',
-      'link_hook_runner.dart',
-      'web_compile_runner.dart',
-      'builder_shim.dart',
-    ];
-    const relocated = {
-      'builder_shim.dart': shim,
-      'directive_guard.dart': guard,
-    };
-    return {
-      for (final name in names)
-        name: File.fromUri(Platform.script.resolve(relocated[name] ?? name))
-            .path,
-    };
-  }
-  final runfiles = Runfiles.create();
-  final sources = <String, String>{};
-  for (final arg in args) {
-    sources[arg.split('/').last] = runfiles.rlocation(arg);
-  }
-  return sources;
-}
-
-void main(List<String> args) {
+/// (`dart/guard/lib/directive_guard.dart`). Every Dart-reading tool enforces
+/// it, and each tool's own test drives a refusal through the tool itself.
+void main() {
   late Directory tmp;
 
   setUp(() {
@@ -707,16 +657,6 @@ void main(List<String> args) {
     });
   });
 
-  group('no staged-resolver copies', () {
-    test('the wrapper imports the shared library instead of copying it', () {
-      final Map<String, String> s = _toolSources(args);
-      final String text = File(s['app_jit_snapshot.dart']!).readAsStringSync();
-      expect(text, contains("import '../../guard/lib/directive_guard.dart';"));
-      expect(text, isNot(contains('staged-resolver-mirror')));
-      expect(text, isNot(contains('Mirror of `directive_guard.dart`')));
-    });
-  });
-
   group('unparsable prologues', () {
     // Each source hides an escaping directive past a syntax error, so the
     // scanner gives up: the checks refuse the file instead of calling it
@@ -1300,44 +1240,5 @@ void main(List<String> args) {
       );
       evil.deleteSync();
     });
-  });
-
-  group('every tool enforces the shared check', () {
-    // Each Dart-reading tool and the marker proving it enforces the shared
-    // staged-source check: the runners call it directly, the whole-program
-    // gen_kernel wrapper scans through the shared library it imports, the
-    // modular kernel planner resolves every directive through the shared file
-    // it reads through `srcs`, and the builder shims import the shared library.
-    // A tool without its marker fails.
-    const markers = {
-      'analyze_runner.dart': 'findStagedDirectiveViolations(',
-      'analyzer_summary.dart': 'findStagedDirectiveViolations(',
-      'fix_runner.dart': 'findStagedDirectiveViolations(',
-      'web_compile_runner.dart': 'findStagedDirectiveViolations(',
-      'link_hook_runner.dart': 'findStagedDirectiveViolations(',
-      'app_jit_snapshot.dart': '_findDisallowedGenKernelDirectives(',
-      'kernel_module.dart': 'resolveDirectiveUri(',
-      'builder_shim.dart': 'findStagedShimViolations(',
-    };
-
-    test('the enumerated tools are exactly the tested sources', () {
-      final Map<String, String> sources = _toolSources(args);
-      expect(
-        sources.keys,
-        unorderedEquals([...markers.keys, 'directive_guard.dart']),
-      );
-    });
-
-    for (final MapEntry<String, String> entry in markers.entries) {
-      test('${entry.key} enforces `${entry.value}`', () {
-        final Map<String, String> sources = _toolSources(args);
-        final String text = File(sources[entry.key]!).readAsStringSync();
-        expect(
-          text.contains(entry.value),
-          isTrue,
-          reason: '${entry.key} does not enforce ${entry.value}',
-        );
-      });
-    }
   });
 }

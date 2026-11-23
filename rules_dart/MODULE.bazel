@@ -62,9 +62,6 @@ bazel_dep(name = "hermetic_cc_toolchain", version = "4.3.0", dev_dependency = Tr
 
 # The buildifier release the `keith/pre-commit-buildifier` hook in
 # `.pre-commit-config.yaml` runs (prek is the only buildifier entry point).
-# `//dart/tests/buildifier_config` runs its `-config=example` to pin the root
-# `.buildifier.json` warning list, and checks that this version and the hook's
-# `rev` agree on the first three version components.
 bazel_dep(name = "buildifier_prebuilt", version = "10.1.0", dev_dependency = True)
 
 # The direct analysis tests under //dart/tests load

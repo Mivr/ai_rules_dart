@@ -13,7 +13,7 @@
 # No setting here relaxes a gate, a lockfile mode, sandboxing, hermeticity or
 # a checksum. Each line also appears, with the same value, in this
 # repository's own `.bazelrc` (through `tools/preset.bazelrc`) where it
-# carries one; //perf:consumer_preset_guard_test fails if they differ.
+# carries one.
 
 # Reuse sandbox directories between actions instead of deleting and recreating
 # them, which saves sandbox setup time when many actions of one kind run.

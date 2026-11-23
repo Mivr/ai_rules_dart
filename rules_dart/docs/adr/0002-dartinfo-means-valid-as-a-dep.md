@@ -42,5 +42,4 @@ analyzed, and their `main` lives outside every package's `lib/`, so no
 - `//dart/tests:architecture_invariants_test` fails when `dart_library` stops
   publishing `DartInfo`, when one of the four executable rules publishes it or
   stops publishing `DartAnalyzableInfo`, when a `dart_library`, `dart_binary`
-  or `dart_test` accepts a dependency without `DartInfo`, or when a production
-  label `deps` attribute drops `providers = [DartInfo]`.
+  or `dart_test` accepts a dependency without `DartInfo`.

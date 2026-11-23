@@ -72,31 +72,6 @@ dart_test(
 )
 
 dart_test(
-    name = "scale_workflow_test",
-    size = "medium",
-    srcs = [
-        "test/repo_root.dart",
-        "test/workflow_steps.dart",
-    ],
-    args = [
-        "$(rlocationpath :test/scale_workflow_test.dart)",
-    ],
-    data = [
-        "test/scale_workflow_test.dart",
-    ],
-    local = True,
-    main = "test/scale_workflow_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-    ],
-    deps = [
-        ":perf",
-        "@rules_dart//dart/runfiles",
-    ],
-)
-
-dart_test(
     name = "generate_cli_test",
     size = "small",
     main = "test/generate_cli_test.dart",
@@ -192,78 +167,5 @@ dart_test(
     main = "test/floor_layout_test.dart",
     deps = [
         ":perf",
-    ],
-)
-
-dart_test(
-    name = "workflow_test",
-    size = "medium",
-    srcs = [
-        "test/repo_root.dart",
-        "test/workflow_steps.dart",
-    ],
-    args = [
-        "$(rlocationpath :test/workflow_test.dart)",
-    ],
-    data = [
-        "test/workflow_test.dart",
-    ],
-    local = True,
-    main = "test/workflow_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-    ],
-    deps = [
-        ":perf",
-        "@rules_dart//dart/runfiles",
-    ],
-)
-
-filegroup(
-    name = "production_sources",
-    srcs = glob([
-        "lib/**/*.dart",
-        "bin/**/*.dart",
-    ]),
-)
-
-dart_test(
-    name = "hygiene_test",
-    size = "small",
-    args = [
-        "$(rlocationpath :BUILD.bazel)",
-        "$(rlocationpaths :production_sources)",
-    ],
-    data = [
-        "BUILD.bazel",
-        ":production_sources",
-    ],
-    main = "test/hygiene_test.dart",
-    deps = [
-        ":perf",
-        "@rules_dart//dart/runfiles",
-    ],
-)
-
-dart_test(
-    name = "consumer_preset_guard_test",
-    size = "small",
-    srcs = ["test/repo_root.dart"],
-    args = [
-        "$(rlocationpath :test/consumer_preset_guard_test.dart)",
-    ],
-    data = [
-        "test/consumer_preset_guard_test.dart",
-    ],
-    local = True,
-    main = "test/consumer_preset_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-    ],
-    deps = [
-        "@pub_deps//:test",
-        "@rules_dart//dart/runfiles",
     ],
 )

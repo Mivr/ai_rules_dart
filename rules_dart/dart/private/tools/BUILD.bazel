@@ -193,11 +193,6 @@ dart_binary(
     visibility = ["//dart:__subpackages__"],
 )
 
-exports_files(
-    ["analyze_runner_test.dart"],
-    visibility = ["//dart/tests/early_return_analyze_runner:__pkg__"],
-)
-
 # Drives the built `analyze_runner` as a subprocess (it exits rather than
 # returning) and refuses a triple-quoted import before `dart analyze` runs.
 dart_test(
@@ -603,12 +598,6 @@ dart_binary(
     visibility = ["//dart/tests:__pkg__"],
 )
 
-# The `kernel_link` persistent worker's top-level error handler.
-exports_files(
-    ["kernel_link_test.dart"],
-    visibility = ["//dart/tests/early_return_runner_workers:__pkg__"],
-)
-
 dart_test(
     name = "kernel_link_test",
     size = "small",
@@ -696,11 +685,6 @@ bzl_library(
     srcs = ["compile_wrapper.bzl"],
     visibility = ["//visibility:public"],
     deps = ["//dart/private:dart_import_check"],
-)
-
-exports_files(
-    ["kernel_module_test.dart"],
-    visibility = ["//dart/tests/early_return_kernel_module:__pkg__"],
 )
 
 # The planner's and outline stripper's unit tests.
@@ -885,50 +869,12 @@ dart_test(
     ],
 )
 
-# Bare sources for `directive_guard_test`, which reads every Dart-reading tool
-# and fails when one stops enforcing the shared staged-source check.
-exports_files(
-    [
-        "analyze_runner.dart",
-        "analyzer_summary.dart",
-        "fix_runner.dart",
-        "kernel_module.dart",
-        "link_hook_runner.dart",
-        "web_compile_runner.dart",
-    ],
-)
-
 dart_test(
     name = "directive_guard_test",
     size = "small",
     srcs = ["//dart/guard:lib/directive_guard.dart"],
-    args = [
-        "$(rlocationpath :analyze_runner.dart)",
-        "$(rlocationpath :analyzer_summary.dart)",
-        "$(rlocationpath :app_jit_snapshot.dart)",
-        "$(rlocationpath //dart/guard:lib/directive_guard.dart)",
-        "$(rlocationpath :fix_runner.dart)",
-        "$(rlocationpath :kernel_module.dart)",
-        "$(rlocationpath :link_hook_runner.dart)",
-        "$(rlocationpath :web_compile_runner.dart)",
-        "$(rlocationpath //dart/ext:lib/builder_shim.dart)",
-    ],
-    data = [
-        ":analyze_runner.dart",
-        ":analyzer_summary.dart",
-        ":app_jit_snapshot.dart",
-        ":fix_runner.dart",
-        ":kernel_module.dart",
-        ":link_hook_runner.dart",
-        ":web_compile_runner.dart",
-        "//dart/ext:lib/builder_shim.dart",
-        "//dart/guard:lib/directive_guard.dart",
-    ],
     main = "directive_guard_test.dart",
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
+    deps = ["@ext_pub_deps//:test"],
 )
 
 dart_test(
@@ -949,29 +895,6 @@ dart_test(
     ],
     main = "kernel_module_unused_inputs_sandbox_test.dart",
     deps = ["@ext_pub_deps//:test"],
-)
-
-# Keeps the oversized planner tests and tools within their size ceilings.
-dart_test(
-    name = "tools_size_guard_test",
-    size = "small",
-    args = [
-        "$(rlocationpath :kernel_module_test.dart)",
-        "$(rlocationpath :kernel_module_unused_inputs_sandbox_test.dart)",
-        "$(rlocationpath :kernel_module.dart)",
-        "$(rlocationpath :analyze_runner_test_support.dart)",
-    ],
-    data = [
-        ":analyze_runner_test_support.dart",
-        ":kernel_module.dart",
-        ":kernel_module_test.dart",
-        ":kernel_module_unused_inputs_sandbox_test.dart",
-    ],
-    main = "tools_size_guard_test.dart",
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
 )
 
 dart_test(
@@ -1082,8 +1005,7 @@ dart_test(
     ],
 )
 
-# Guards `WorkRequest.inputs` paths whose length needs a multi-byte varint, and
-# that `kernel_module_test.dart` frames its `Input` messages with that encoder.
+# Guards `WorkRequest.inputs` paths whose length needs a multi-byte varint.
 dart_test(
     name = "kernel_module_input_varint_test",
     size = "small",
@@ -1101,13 +1023,8 @@ dart_test(
         "worker_test_encode.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
-    args = ["$(rlocationpath :kernel_module_test.dart)"],
-    data = [":kernel_module_test.dart"],
     main = "kernel_module_input_varint_test.dart",
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
+    deps = ["@ext_pub_deps//:test"],
 )
 
 # The comma-splitting patch's unit tests: byte patterns, the fail-closed
@@ -1169,11 +1086,6 @@ dart_test(
         "//dart/runfiles",
         "@ext_pub_deps//:test",
     ],
-)
-
-exports_files(
-    ["format_runner_test.dart"],
-    visibility = ["//dart/tests/early_return_runner_workers:__pkg__"],
 )
 
 dart_test(

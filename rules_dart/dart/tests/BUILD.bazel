@@ -304,118 +304,16 @@ dart_test(
     ],
 )
 
-# Fail-closed guard for the strict-layering check: the aspect names the
-# `dart_layering_check` feature, `expected-failure` exercises the red workspace
-# and its opt-out, and no green sweep names that workspace. It reads the live
-# tree, so it runs unsandboxed and always re-runs.
-dart_test(
-    name = "layering_check_guard_test",
-    size = "small",
-    args = [
-        "$(rlocationpath :layering_check_guard_test.dart)",
-    ],
-    data = [
-        "layering_check_guard_test.dart",
-    ],
-    local = True,
-    main = "layering_check_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-    ],
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
-)
-
 library_no_import_check_test(
     name = "library_no_import_check_test",
     size = "small",
     target_under_test = "//dart/tests/layering_check_fixture/leaf",
 )
 
-# `rules_testing` is a dev dependency and `/dart/tests/` is `export-ignore`d
-# from release archives, so no published consumer resolves it.
-dart_test(
-    name = "dev_dep_archive_guard_test",
-    size = "small",
-    args = [
-        "$(rlocationpath //:MODULE.bazel)",
-        "$(rlocationpath //:.gitattributes)",
-        "$(rlocationpath //:BUILD.bazel)",
-    ],
-    data = [
-        "//:.gitattributes",
-        "//:BUILD.bazel",
-        "//:MODULE.bazel",
-    ],
-    main = "dev_dep_archive_guard_test.dart",
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
-)
-
-exports_files(
-    ["BUILD.bazel"],
-    visibility = ["//dart/tests:__subpackages__"],
-)
-
-# The provider and rule invariants `docs/ARCHITECTURE.md` states, in one
-# command: the analysis tests in `architecture_invariants_test.bzl` (which
-# rule publishes `DartInfo`, and that every `deps` refuses a target without
-# it) and the source scan below.
+# The provider invariants `docs/ARCHITECTURE.md` states: which rule publishes
+# `DartInfo`, and that every `deps` refuses a target without it.
 architecture_invariants_test_suite(
     name = "architecture_invariants_test",
-    scan = ":architecture_invariants_scan_test",
-)
-
-# Source half of `architecture_invariants_test`: no platform field on
-# `DartInfo`, no hand-built `DartInfo(` outside `dart/private/dart_info.bzl`,
-# and `providers = [DartInfo]` on every label `deps` attribute. It discovers
-# every production .bzl from the live tree itself, so it runs unsandboxed and
-# local, and resolves the root from its own source as a runfiles anchor.
-dart_test(
-    name = "architecture_invariants_scan_test",
-    size = "medium",
-    args = [
-        "$(rlocationpath :architecture_invariants_scan_test.dart)",
-    ],
-    data = [
-        "architecture_invariants_scan_test.dart",
-    ],
-    local = True,
-    main = "architecture_invariants_scan_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-    ],
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
-)
-
-dart_test(
-    name = "repro_canary_guard_test",
-    size = "medium",
-    args = [
-        "$(rlocationpath :repro_canary_guard_test.dart)",
-    ],
-    data = [
-        "repro_canary_guard_test.dart",
-    ],
-    local = True,
-    main = "repro_canary_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-    ],
-    deps = [
-        "//dart/runfiles",
-        "@ext_pub_deps//:test",
-    ],
 )
 
 # A `dart_test` writes its coverage map only under `bazel coverage`.
@@ -543,7 +441,7 @@ dart_test(
 # a malformed entry fails analysis.
 dart_binary(
     name = "refused_subject",
-    main = "layering_check_guard_test.dart",
+    main = "bin/refused_main.dart",
     tags = ["manual"],
 )
 

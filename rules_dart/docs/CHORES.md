@@ -204,8 +204,7 @@ reads nor checks the lock, so registry hashes are skipped, the `pub` planner
 never takes its recorded-facts path, and stale locks go unnoticed. If an `e2e/`
 workspace ever genuinely must run without a lockfile, list it below as
 ``- `e2e/<name>` — <reason>`` and remove its unused `MODULE.bazel.lock` rather
-than keeping it as dead data. The guard
-`//dart/tests/e2e_lockfile_guard:e2e_lockfile_guard_test` enforces this.
+than keeping it as dead data.
 
 (none)
 

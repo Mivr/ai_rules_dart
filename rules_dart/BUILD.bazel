@@ -18,43 +18,6 @@ license(
     text = "LICENSE",
 )
 
-# Exported for //tool/readme_check, which reads the install block.
-exports_files(
-    ["README.md"],
-    visibility = ["//visibility:public"],
-)
-
-# Exported for //dart/tests/buildifier_config, which pins the buildifier
-# warning list, the buildifier hooks and the `buildifier_prebuilt` version.
-exports_files(
-    [
-        ".buildifier.json",
-        ".pre-commit-config.yaml",
-    ],
-    visibility = ["//dart/tests/buildifier_config:__pkg__"],
-)
-
-# Also read by //dart/tests:dev_dep_archive_guard_test, which checks the
-# `rules_testing` dev dependency and the archive exclusion.
-exports_files(
-    [
-        ".gitattributes",
-        "BUILD.bazel",
-        "MODULE.bazel",
-    ],
-    visibility = [
-        "//dart/tests:__pkg__",
-        "//dart/tests/buildifier_config:__pkg__",
-    ],
-)
-
-# Exported for //dart/tests/nonobvious_local_types_baseline, which guards the
-# baseline against the evicted `specify_nonobvious_local_variable_types` rule.
-exports_files(
-    ["analysis_baseline.json"],
-    visibility = ["//dart/tests:__subpackages__"],
-)
-
 # Every `analysis_options.yaml` in this repository, for the `dart_analyze`
 # aspect `.bazelrc` applies under `bazel test`, and for `dart_format`.
 dart_analysis_options(

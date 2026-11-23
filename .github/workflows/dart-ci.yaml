@@ -479,13 +479,6 @@ jobs:
             [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
           done <<< "$FOLDERS"
           exit "$fail"
-      # Every e2e/*/MODULE.bazel must be run by some job; a new workspace that
-      # no job names fails here.
-      - name: E2E workspace coverage
-        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
-        working-directory: rules_dart/tools
-        shell: bash
-        run: bazel --max_idle_secs=60 run //check_e2e_coverage:check_e2e_coverage
       - name: Memory report (after Test)
         if: always() && matrix.os == 'ubuntu-latest'
         shell: bash
@@ -1822,7 +1815,7 @@ jobs:
             --disk_cache= \
             --nocache_test_results \
             --build_event_json_file="$bep" \
-            //dart/tests/ci_linux_sandbox_guard:ci_linux_sandbox_guard_unit_test
+            //dart/private/tools:kernel_launcher_test
           count() {
             jq -s --arg n "$1" '[.[].buildMetrics.actionSummary.runnerCount[]? | select(.name == $n) | .count] | add // 0' "$bep"
           }

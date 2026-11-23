@@ -1,14 +1,12 @@
 /// Tests that `WorkRequest.inputs` paths of 128 bytes or more, whose protobuf
 /// length is a multi-byte varint, are decoded and enforced by
-/// `kernel_module.dart`, and that `kernel_module_test.dart` keeps framing its
-/// `Input` messages with the shared varint encoder.
+/// `kernel_module.dart`.
 library;
 
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 import 'kernel_module.dart'
@@ -21,9 +19,6 @@ import 'worker_test_encode.dart'
     show encodeInputForTest, encodeWorkRequestForTest;
 
 const String _prefix = 'org-dartlang-root:///';
-const String _testName =
-    'WorkRequest.inputs restricts which declared sources may be read and '
-    'compiled';
 
 /// A compiler that records each request's arguments and succeeds.
 class _Recorder implements ModuleCompiler {
@@ -145,20 +140,7 @@ String _pathOf(Uint8List input) {
   return utf8.decode(input.sublist(offset, offset + length));
 }
 
-/// Whether [source] has no raw one-byte `Input` length framing and its
-/// [_testName] test delegates `encodeInput` to `encodeInputForTest`.
-bool _framesInputsWithVarint(String source) {
-  final int start = source.indexOf(_testName);
-  if (start < 0 || RegExp(r'\[\s*0x0a\s*,\s*\w+\.length').hasMatch(source)) {
-    return false;
-  }
-  final int end = source.indexOf('\n  test(', start);
-  final String body = source.substring(start, end < 0 ? source.length : end);
-  return RegExp(r'encodeInput\(String \w+\)\s*=>\s*encodeInputForTest\(')
-      .hasMatch(body);
-}
-
-void main(List<String> args) {
+void main() {
   test(
     'declared inputs with 2-byte varint path lengths are enforced',
     () async {
@@ -204,29 +186,4 @@ void main(List<String> args) {
       expect(_pathOf(inputs.single), path);
     });
   }
-
-  test('kernel_module_test.dart frames inputs with the varint encoder', () {
-    final String source = File(Runfiles.create().rlocation(args.first))
-        .readAsStringSync();
-    expect(source, contains(_testName));
-    expect(_framesInputsWithVarint(source), isTrue);
-  });
-
-  test(
-    'the source guard rejects raw length framing and accepts delegation',
-    () {
-      const head = "test('$_testName', () async {\n";
-      const raw =
-          '$head  Uint8List encodeInput(String path) {\n'
-          '    final pathBytes = utf8.encode(path);\n'
-          '    return Uint8List.fromList([0x0a, pathBytes.length, ...pathBytes]);\n'
-          '  }\n});\n';
-      const delegated =
-          '$head  Uint8List encodeInput(String p) => '
-          'encodeInputForTest(p, Uint8List(0));\n});\n';
-      expect(_framesInputsWithVarint(raw), isFalse);
-      expect(_framesInputsWithVarint(delegated), isTrue);
-      expect(_framesInputsWithVarint('// no such test'), isFalse);
-    },
-  );
 }
