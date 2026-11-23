@@ -112,7 +112,8 @@ def _compile_application_kernel(
         inputs = make_kernel_inputs(
             native_assets_manifest = assets.manifest_file,
             native_assets = assets.native_assets,
-            track_widget_creation = ctx.attr.track_widget_creation,
+            # As stock `flutter`: tracked in debug and profile, never in release.
+            track_widget_creation = ctx.attr.track_widget_creation and flutter_build_mode(ctx) != "release",
             assets_dir = flutter_assets,
             recorded_uses = recorded_uses,
             platform_build_args = launch_build_args(

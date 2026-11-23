@@ -1826,8 +1826,10 @@ FLUTTER_APPLICATION_ATTRS = KERNEL_COMPILE_ATTRS | {
         doc = "Extra gen_snapshot flags. Only the allow-list in `flutter/private/flutter_aot_compile.bzl` may be used: flags that read or write no file and change neither the snapshot kind, outputs, target nor debugging info. Anything else fails analysis; use `obfuscate` and `split_debug_info` for the obfuscation map and symbols. `--no-obfuscate` fails with `obfuscate = True` and `--no-dwarf-stack-traces` fails with `split_debug_info = True`; remove the flag or set the attribute to False.",
     ),
     "track_widget_creation": attr.bool(
-        doc = "If True, track widget creation locations for the DevTools widget inspector. Adds overhead; typically used only in debug/profile builds.",
-        default = False,
+        doc = "Track widget creation locations (`--track-widget-creation`), which the widget inspector and the stock tool's hot reload need. " +
+              "On by default, as in stock `flutter run` and `flutter build`; like there, it applies to debug and profile builds and never to release. " +
+              "Set False to compile a debug kernel without it.",
+        default = True,
     ),
     "shaders": attr.label_list(
         doc = "Fragment shader files (.frag) to compile with impellerc. Compiled shaders are included in the asset bundle.",

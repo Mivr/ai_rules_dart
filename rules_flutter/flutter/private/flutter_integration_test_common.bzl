@@ -369,7 +369,7 @@ def _integration_test_kernel_flags(ctx, mode, aot):
     elif aot:
         all_defines.append("dart.vm.product=true")
     frontend_flags = []
-    if ctx.attr.track_widget_creation:
+    if ctx.attr.track_widget_creation and mode != "release":
         frontend_flags.append("--track-widget-creation")
     return struct(
         defines = all_defines,

@@ -7,6 +7,8 @@
   configuration of the app's `deps`, and the entry compile carries them too;
 - a native asset keeps the whole-program compile, and so do tracking in a release build and any frontend flag other
   than tracking;
+- `track_widget_creation` is on by default, as in stock `flutter`: a debug app that does not set it tracks, and its
+  release build compiles without the flag; the fixtures below set it to False unless they name tracking;
 - `track_widget_creation` stays modular: every module of its closure (the SDK `flutter` module and its registrant
   twin, the entry) compiles with `--track-widget-creation`, and a plain app's modules carry none;
 - flag off explicitly (plain, tracking and registrant apps), and a release build: one `FlutterKernelCompile`, no
@@ -31,6 +33,8 @@ _DBG_ON_GLOBAL_DEFINE = _DBG_ON | {str(Label("//flutter:extra_dart_defines")): [
 _OPT_ON = {"//command_line_option:compilation_mode": "opt", str(Label("//flutter:profile")): False, _FLAG: True}
 _DEPS = ["//flutter/tests/registrant_twin_fixture/app"]
 _APP = {
+    # Off unless a fixture asks for tracking: the default (on) has its own fixture, `_modular_app_default`.
+    "track_widget_creation": False,
     "package_name": "inputs_fixture",
     "main": "lib/language_version_main.dart",
     "tags": ["manual"],
@@ -105,6 +109,16 @@ def _whole_program_impl(ctx):
     asserts.equals(env, [], _mnemonics(env, "DartKernel"), "no DartKernel")
     return analysistest.end(env)
 
+def _release_untracked_impl(ctx):
+    """A release build compiles whole-program without `--track-widget-creation`, whatever the attribute says."""
+    env = analysistest.begin(ctx)
+    compiles = _mnemonics(env, "FlutterKernelCompile")
+    asserts.equals(env, 1, len(compiles), "one FlutterKernelCompile")
+    for action in compiles:
+        asserts.false(env, "--track-widget-creation" in action.argv, "release tracks: %s" % action.argv)
+    return analysistest.end(env)
+
+_release_untracked_test = analysistest.make(_release_untracked_impl, config_settings = _OPT_ON)
 _tracking_modular_test = analysistest.make(_tracking_modular_impl, config_settings = _DBG_ON)
 _plain_untracked_test = analysistest.make(_plain_untracked_impl, config_settings = _DBG_ON)
 _modular_test = analysistest.make(_modular_impl, config_settings = _DBG_ON)
@@ -204,6 +218,15 @@ def debug_modular_app_test_suite(name):
     }
     for variant, extra in variants.items():
         flutter_application(name = "_modular_app_" + variant, **(_APP | {"deps": _DEPS} | extra))
+
+    # The attribute left unset: tracking is the default in debug, and release drops it.
+    flutter_application(
+        name = "_modular_app_default",
+        **({k: v for k, v in _APP.items() if k != "track_widget_creation"} | {"deps": _DEPS})
+    )
+    _default_tracking_test(name = name + "_unset_tracks", target_under_test = ":_modular_app_default")
+    _release_untracked_test(name = name + "_unset_release_untracked", target_under_test = ":_modular_app_default")
+    _release_untracked_test(name = name + "_set_release_untracked", target_under_test = ":_modular_app_widget_tracking")
     _modular_test(name = name + "_modular", target_under_test = ":_modular_app_plain")
     _default_modular_test(name = name + "_default_plain", target_under_test = ":_modular_app_plain")
     _default_tracking_test(name = name + "_default_tracking", target_under_test = ":_modular_app_widget_tracking")
@@ -226,6 +249,9 @@ def debug_modular_app_test_suite(name):
         name + "_plain_untracked",
         name + "_release_tracking",
         name + "_global_define_tracking",
+        name + "_unset_tracks",
+        name + "_unset_release_untracked",
+        name + "_set_release_untracked",
     ] + [
         name + "_modular",
         name + "_default_plain",

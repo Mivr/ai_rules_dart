@@ -50,7 +50,7 @@ def android_integration_app_kernel(ctx, setup, sources, native_assets):
         defines.append("dart.vm.profile=true")
     elif setup.aot:
         defines.append("dart.vm.product=true")
-    extra_flags = ["--track-widget-creation"] if ctx.attr.track_widget_creation else []
+    extra_flags = ["--track-widget-creation"] if ctx.attr.track_widget_creation and setup.mode != "release" else []
     registrant_uri = sources.registrant_location.uri if sources.registrant_location else None
     tools = struct(
         dartaotruntime = setup.sdk.dartaotruntime,
