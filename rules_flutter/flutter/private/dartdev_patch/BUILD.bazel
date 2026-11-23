@@ -18,5 +18,5 @@ dart_test(
     srcs = ["patch.dart"],
     main = "patch_test.dart",
     target_compatible_with = HOST_COMPATIBLE,
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )

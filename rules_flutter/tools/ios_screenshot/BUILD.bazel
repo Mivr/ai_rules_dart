@@ -43,7 +43,7 @@ dart_test(
     },
     main = "test/python_host_test.dart",
     deps = [
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
         "@rules_dart//dart/runfiles",
     ],
 )

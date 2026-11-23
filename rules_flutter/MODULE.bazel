@@ -419,6 +419,15 @@ pub.from_lock(
     plan = "//tools/dev_tool:pub_plan.json",
 )
 
+# Pub dependencies of the other tools and the tests (args, boolean_selector,
+# path, yaml, test). The test runners the rules run for users are among them.
+pub.from_lock(
+    name = "rules_flutter_tool_deps",
+    isolated = True,
+    lock = "//tools/tool_deps:pubspec.lock",
+    plan = "//tools/tool_deps:pub_plan.json",
+)
+
 # Generation-time dependencies of the vendored `flutter gen-l10n` generator.
 # Separate from anything a consuming app resolves: this `intl` is the one the
 # generator's own code imports, while an app *using* the generated
@@ -433,10 +442,11 @@ use_repo(
     pub,
     dev_tool_deps = "rules_flutter_dev_tool_deps",
     gen_l10n_deps = "rules_flutter_gen_l10n_deps",
+    tool_deps = "rules_flutter_tool_deps",
 )
 
 # Root-only (`dev_dependency = True`) registration on `flutter` so the root
-# workspace's repo-contents-cache check on `@@+flutter+dev_tool_deps__*` keeps
+# workspace's repo-contents-cache check on `@@+flutter+tool_deps__*` keeps
 # resolving a `flutter_pub_package` spoke while consumer graphs never see it.
 flutter_dev = use_extension(
     "//flutter:extensions.bzl",
@@ -444,9 +454,9 @@ flutter_dev = use_extension(
     dev_dependency = True,
 )
 flutter_dev.pub(
-    name = "dev_tool_deps",
-    lock = "//tools/dev_tool:pubspec.lock",
-    plan = "//tools/dev_tool:pub_plan.json",
+    name = "tool_deps",
+    lock = "//tools/tool_deps:pubspec.lock",
+    plan = "//tools/tool_deps:pub_plan.json",
 )
 
 # iOS device screenshots and the device tunnel deliberately use NO Python

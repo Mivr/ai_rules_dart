@@ -16,7 +16,7 @@ dart_test(
     size = "small",
     srcs = ["shader_flags.dart"],
     main = "test/shader_flags_test.dart",
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )
 
 dart_test(
@@ -27,7 +27,7 @@ dart_test(
         "pinned_checksums.dart",
     ],
     main = "test/artifact_list_test.dart",
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )
 
 dart_test(
@@ -38,5 +38,5 @@ dart_test(
         "version_update.dart",
     ],
     main = "test/version_update_test.dart",
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )

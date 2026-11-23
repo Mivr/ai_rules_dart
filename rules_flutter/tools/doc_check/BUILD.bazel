@@ -45,6 +45,6 @@ dart_test(
     ],
     main = "test/doc_check_test.dart",
     deps = [
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
     ],
 )

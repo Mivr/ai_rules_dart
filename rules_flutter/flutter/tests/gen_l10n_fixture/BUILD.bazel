@@ -141,5 +141,5 @@ dart_test(
     ],
     main = "gen_l10n_test.dart",
     target_compatible_with = HOST_COMPATIBLE,
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )

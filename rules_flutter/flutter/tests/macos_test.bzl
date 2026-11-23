@@ -825,7 +825,7 @@ def _bundling_tests(name):
         name = name + "_macos_framework_layout_test",
         main = "macos_framework_layout_test.dart",
         data = [":" + name + "_macos_arm64_release_targets"],
-        deps = ["@dev_tool_deps//:test"],
+        deps = ["@tool_deps//:test"],
         target_compatible_with = HOST_COMPATIBLE,
     )
 

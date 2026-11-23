@@ -148,7 +148,7 @@ dart_test(
     },
     main = "android_apk_overlay_test.dart",
     deps = [
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
         "@rules_dart//dart/runfiles",
     ],
 )
@@ -166,7 +166,7 @@ dart_test(
     },
     main = "android_split_apk_test.dart",
     deps = [
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
         "@rules_dart//dart/runfiles",
     ],
 )
@@ -187,7 +187,7 @@ dart_test(
     main = "android_aar_inspect_test.dart",
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
         "@rules_dart//dart/runfiles",
     ],
 )
@@ -330,7 +330,7 @@ dart_test(
     },
     main = "registrant_twin_link_test.dart",
     deps = [
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
         "@rules_dart//dart/runfiles",
     ],
 )

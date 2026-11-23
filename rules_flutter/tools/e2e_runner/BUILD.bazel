@@ -1,9 +1,9 @@
 load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 
 _LIB_DEPS = [
-    "@dev_tool_deps//:args",
-    "@dev_tool_deps//:path",
-    "@dev_tool_deps//:yaml",
+    "@tool_deps//:args",
+    "@tool_deps//:path",
+    "@tool_deps//:yaml",
 ]
 
 dart_library(
@@ -24,8 +24,8 @@ dart_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":lib",
-        "@dev_tool_deps//:args",
-        "@dev_tool_deps//:path",
+        "@tool_deps//:args",
+        "@tool_deps//:path",
     ],
 )
 
@@ -35,7 +35,7 @@ dart_test(
     main = "test/spec_test.dart",
     deps = [
         ":lib",
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
     ],
 )
 
@@ -45,8 +45,8 @@ dart_test(
     main = "test/staging_test.dart",
     deps = [
         ":lib",
-        "@dev_tool_deps//:path",
-        "@dev_tool_deps//:test",
+        "@tool_deps//:path",
+        "@tool_deps//:test",
     ],
 )
 
@@ -56,8 +56,8 @@ dart_test(
     main = "test/junit_test.dart",
     deps = [
         ":lib",
-        "@dev_tool_deps//:path",
-        "@dev_tool_deps//:test",
+        "@tool_deps//:path",
+        "@tool_deps//:test",
     ],
 )
 
@@ -67,7 +67,7 @@ dart_test(
     main = "test/runner_test.dart",
     deps = [
         ":lib",
-        "@dev_tool_deps//:path",
-        "@dev_tool_deps//:test",
+        "@tool_deps//:path",
+        "@tool_deps//:test",
     ],
 )

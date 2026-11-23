@@ -22,5 +22,5 @@ dart_test(
         "pins.dart",
     ],
     main = "test/pins_test.dart",
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )

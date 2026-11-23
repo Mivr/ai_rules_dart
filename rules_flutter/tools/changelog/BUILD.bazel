@@ -34,5 +34,5 @@ dart_test(
     size = "small",
     srcs = ["next_version.dart"],
     main = "next_version_test.dart",
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )

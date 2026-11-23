@@ -127,7 +127,7 @@ dart_binary(
     target_compatible_with = HOST_COMPATIBLE,
     visibility = ["//flutter:__subpackages__"],
     deps = [
-        "@dev_tool_deps//:boolean_selector",
+        "@tool_deps//:boolean_selector",
         "@rules_dart//dart/runfiles",
     ],
 )
@@ -153,7 +153,7 @@ dart_binary(
     target_compatible_with = HOST_COMPATIBLE,
     visibility = ["//flutter:__subpackages__"],
     deps = [
-        "@dev_tool_deps//:boolean_selector",
+        "@tool_deps//:boolean_selector",
         "@rules_dart//dart/runfiles",
     ],
 )
@@ -179,7 +179,7 @@ dart_binary(
     target_compatible_with = HOST_COMPATIBLE,
     visibility = ["//flutter:__subpackages__"],
     deps = [
-        "@dev_tool_deps//:boolean_selector",
+        "@tool_deps//:boolean_selector",
         "@rules_dart//dart/runfiles",
     ],
 )
@@ -351,10 +351,8 @@ dart_binary(
 #
 # A new test file needs an entry here, or nothing runs it.
 #
-# `@dev_tool_deps//:test` is `package:test` from the one pub hub this workspace
-# declares (MODULE.bazel `flutter.pub(name = "dev_tool_deps")`). These tools are
-# not part of the dev tool; they share its hub because a second hub would mean a
-# second pubspec to resolve and keep pinned for a single test-only dependency.
+# `@tool_deps//:test` is `package:test` from the hub of the repository's own
+# tools (MODULE.bazel `pub.from_lock(name = "rules_flutter_tool_deps")`).
 #
 # The value is the tool plus whatever that tool imports beyond `package:test`.
 _UNIT_TESTS = {
@@ -385,42 +383,42 @@ _UNIT_TESTS = {
     "flutter_test_runner_test": (
         "flutter_test_runner.dart",
         [
-            "@dev_tool_deps//:boolean_selector",
+            "@tool_deps//:boolean_selector",
             "@rules_dart//dart/runfiles",
         ],
     ),
     "flutter_integration_test_runner_test": (
         "flutter_integration_test_runner.dart",
         [
-            "@dev_tool_deps//:boolean_selector",
+            "@tool_deps//:boolean_selector",
             "@rules_dart//dart/runfiles",
         ],
     ),
     "flutter_drive_runner_test": (
         "flutter_drive_runner.dart",
         [
-            "@dev_tool_deps//:boolean_selector",
+            "@tool_deps//:boolean_selector",
             "@rules_dart//dart/runfiles",
         ],
     ),
     "flutter_integration_test_android_test": (
         "flutter_integration_test_android.dart",
         [
-            "@dev_tool_deps//:boolean_selector",
+            "@tool_deps//:boolean_selector",
             "@rules_dart//dart/runfiles",
         ],
     ),
     "flutter_integration_test_ios_test": (
         "flutter_integration_test_ios.dart",
         [
-            "@dev_tool_deps//:boolean_selector",
+            "@tool_deps//:boolean_selector",
             "@rules_dart//dart/runfiles",
         ],
     ),
     "ios_simulator_boot_test": ("ios_simulator_boot.dart", []),
     "bazel_test_protocol_test": (
         "bazel_test_protocol.dart",
-        ["@dev_tool_deps//:boolean_selector"],
+        ["@tool_deps//:boolean_selector"],
     ),
     "extract_library_tags_test": ("extract_library_tags.dart", []),
     # The run_home helper's own tests, including the Dart/shell flag
@@ -617,7 +615,7 @@ _MEDIUM_TESTS = [
     env = _TEST_ENV.get(name, {}),
     main = "test/%s.dart" % name,
     target_compatible_with = HOST_COMPATIBLE,
-    deps = ["@dev_tool_deps//:test"] + extra_deps,
+    deps = ["@tool_deps//:test"] + extra_deps,
 ) for name, (tool, extra_deps) in _UNIT_TESTS.items()]
 
 # Pins the bytes `android_bundle`, `kernel_filter` and `macho_edit` write as
@@ -638,7 +636,7 @@ dart_test(
     },
     main = "test/native_exe_output_test.dart",
     target_compatible_with = HOST_COMPATIBLE,
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )
 
 dart_test(
@@ -647,7 +645,7 @@ dart_test(
     srcs = ["defines_files.dart"],
     main = "defines_files_test.dart",
     target_compatible_with = HOST_COMPATIBLE,
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )
 
 # Suites split out of `kernel_filter_test` to keep each test library under the
@@ -659,7 +657,7 @@ dart_test(
     main = "test/kernel_read_set_test.dart",
     target_compatible_with = HOST_COMPATIBLE,
     deps = [
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
         "@rules_dart//dart/guard:directive_guard",
     ],
 )
@@ -671,7 +669,7 @@ dart_test(
     main = "test/kernel_define_flagfiles_test.dart",
     target_compatible_with = HOST_COMPATIBLE,
     deps = [
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
         "@rules_dart//dart/guard:directive_guard",
     ],
 )

@@ -15,5 +15,6 @@ pub_plan_test(
     locks = {
         "//flutter/private/gen_l10n:pubspec.lock": "//flutter/private/gen_l10n:pub_plan.json",
         "//tools/dev_tool:pubspec.lock": "//tools/dev_tool:pub_plan.json",
+        "//tools/tool_deps:pubspec.lock": "//tools/tool_deps:pub_plan.json",
     },
 )

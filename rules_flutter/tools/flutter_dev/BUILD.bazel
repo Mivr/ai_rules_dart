@@ -47,7 +47,7 @@ _NOT_WINDOWS = select({
     target_compatible_with = _NOT_WINDOWS if name == "flutter_dev_test" else [],
     deps = [
         ":lib",
-        "@dev_tool_deps//:test",
+        "@tool_deps//:test",
     ],
 ) for name in [
     "build_events_test",

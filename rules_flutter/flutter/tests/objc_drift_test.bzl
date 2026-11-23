@@ -141,7 +141,7 @@ def objc_drift_test_suite(name):
         ],
         main = "objc_registrant_drift_test.dart",
         deps = [
-            "@dev_tool_deps//:test",
+            "@tool_deps//:test",
             "@rules_dart//dart/runfiles",
         ],
     )

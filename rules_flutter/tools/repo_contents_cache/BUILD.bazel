@@ -18,5 +18,5 @@ dart_test(
     size = "small",
     srcs = ["cache_check.dart"],
     main = "test/cache_check_test.dart",
-    deps = ["@dev_tool_deps//:test"],
+    deps = ["@tool_deps//:test"],
 )
