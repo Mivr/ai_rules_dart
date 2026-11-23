@@ -135,6 +135,7 @@ exports_files(
         "pub_scan.bzl",
         "pub_scanner.bzl",
         "pub_scc.bzl",
+        "yaml.bzl",
     ],
     visibility = ["//visibility:public"],
 )

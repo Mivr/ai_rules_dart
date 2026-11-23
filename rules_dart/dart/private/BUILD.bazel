@@ -196,6 +196,7 @@ bzl_library(
         ":dart_analyze_summary_fallback",
         ":dart_analyzer_summary",
         ":format_mode",
+        ":project_layout",
         ":source_set",
         "//dart:providers",
         "@bazel_skylib//rules:common_settings",
@@ -220,6 +221,7 @@ bzl_library(
         ":aot_tool",
         ":common",
         ":dart_analyzer_summary",
+        ":project_layout",
     ],
 )
 
@@ -615,6 +617,12 @@ bzl_library(
     deps = [
         "//dart:providers",
     ],
+)
+
+bzl_library(
+    name = "project_layout",
+    srcs = ["project_layout.bzl"],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(
