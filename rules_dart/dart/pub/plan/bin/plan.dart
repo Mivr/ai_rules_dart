@@ -6,9 +6,10 @@
 /// `write` asks each hosted package's server for its listing
 /// (`<url>/api/packages/<name>`, what `dart pub` reads), one request at a time
 /// and at most four a second, and writes the plan the `pub` extension would
-/// record. `--server <url>` sends the requests to another server (a mirror)
-/// while the plan keeps naming the lock's own server. `check` exits non-zero
-/// when the plan does not plan exactly the lock's hosted entries.
+/// record, so it needs the network. `--server <url>` sends the requests to
+/// another server (a mirror) while the plan keeps naming the lock's own
+/// server. `check` exits non-zero when the plan does not plan exactly the
+/// lock's hosted entries; it reads no network.
 library;
 
 import 'dart:convert';

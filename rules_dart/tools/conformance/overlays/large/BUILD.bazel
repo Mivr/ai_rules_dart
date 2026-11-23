@@ -94,7 +94,17 @@ flutter_web_app(
     package_name = "wger",
     app_name = "wger",
     compiler = "dart2js",
-    deps = [":wger"],
+    # `lib/main.dart` is the web app's own entry point, so the packages it
+    # imports are its direct deps.
+    deps = [":wger"] + ["@deps//:" + d for d in [
+        "dynamic_color",
+        "extended_image",
+        "flutter",
+        "flutter_riverpod",
+        "logging",
+        "material_ui",
+        "timezone",
+    ]],
 )
 
 [

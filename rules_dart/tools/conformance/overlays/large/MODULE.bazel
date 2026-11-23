@@ -7,6 +7,11 @@ flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
 flutter.toolchain(flutter_version = "3.47.7")
 flutter.pub(
     name = "deps",
+    # Goes when build hooks run through the stock runner.
+    ignore_hooks = [
+        "powersync",
+        "sqlite3_connection_pool",
+    ],
     lock = "//:pubspec.lock",
 )
 use_repo(flutter, "deps", "flutter_toolchains", "flutter_web_sdk")

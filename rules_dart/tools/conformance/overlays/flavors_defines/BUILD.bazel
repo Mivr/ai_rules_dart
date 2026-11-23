@@ -56,7 +56,15 @@ flutter_web_app(
     app_name = "flavors_defines",
     compiler = "dart2js",
     defines = DEFINES,
-    deps = [":lib"] + PLUGINS,
+    # `lib/main.dart` is the web app's own entry point, so the packages it
+    # imports are its direct deps.
+    deps = [":lib"] + PLUGINS + [
+        "@deps//:flutter",
+        "@deps//:flutter_localizations",
+        "@deps//:path_provider",
+        "@deps//:shared_preferences",
+        "@deps//:url_launcher",
+    ],
 )
 
 flutter_application(
