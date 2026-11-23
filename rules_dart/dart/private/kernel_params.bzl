@@ -133,14 +133,17 @@ def kernel_module_options(
         check_imports = False,
         target_label = None,
         own_packages = (),
-        direct_packages = ()):
+        direct_packages = (),
+        define_file = None):
     """How a module compile treats its sources.
 
     Args:
-      defines: The `-D` declarations every compile of this module takes. The
-        `//dart:extra_dart_defines` flag, the same for the whole build. When
-        one contains a comma, the compile runs the toolchain's patched worker
-        snapshot; otherwise the pristine snapshot runs.
+      defines: The `-D` declarations every compile of this module takes: the
+        environment of the executable whose closure this is (the
+        `executable_dart_defines` setting; an entry module takes the
+        executable's own `defines`), then the `//dart:extra_dart_defines`
+        flag. When one contains a comma, the compile runs the toolchain's
+        patched worker snapshot; otherwise the pristine snapshot runs.
       exclude_non_sources: Whether to emit only the listed sources, and not
         the libraries reached through them. Both kinds pass True, so a module
         holds its own libraries and an entry holds its own sources, and
@@ -155,12 +158,15 @@ def kernel_module_options(
         imports.
       own_packages: Package names this target owns.
       direct_packages: Package names this target's direct dependencies provide.
+      define_file: A File of `-DKEY=VALUE` lines whose defines go before
+        `defines` (a Flutter app's `dart_defines`), or None.
 
     Returns:
       A struct with those fields.
     """
     return struct(
         defines = defines,
+        define_file = define_file,
         exclude_non_sources = exclude_non_sources,
         droppable = droppable,
         check_imports = check_imports,
@@ -276,7 +282,6 @@ def modular_kernel_conditions(
         dep_modular,
         packages_consistent,
         has_code_assets,
-        has_own_defines,
         has_compile_flags,
         has_duplicate_source,
         same_sdk):
@@ -293,13 +298,11 @@ def modular_kernel_conditions(
         closure.
       has_code_assets: Whether native code assets are embedded in the kernel.
         The embedding runs the front end over the whole program at once.
-      has_own_defines: Whether the executable's own `defines` attribute is
-        set. Modules compile with the `//dart:extra_dart_defines` flag, which
-        is the same for the whole build, so the flag's `-D`s are shared by
-        every module. Only a target's own `defines` cannot be shared, so only
-        they fall back.
       has_compile_flags: Whether `dart_compile_flags` are set. They reach
-        `dart compile`, which the modular path does not run.
+        `dart compile`, which the modular path does not run. Unlike `defines`
+        they are not configuration: a flag can change how every library
+        compiles (an experiment, a target option), and no module compile takes
+        them.
       has_duplicate_source: Whether `duplicated_source` found a repeat.
       same_sdk: Whether the exec and target SDKs report the same version. A
         kernel compiled by one is loaded by the other, and the VM accepts only
@@ -313,7 +316,6 @@ def modular_kernel_conditions(
         dep_modular = dep_modular,
         packages_consistent = packages_consistent,
         has_code_assets = has_code_assets,
-        has_own_defines = has_own_defines,
         has_compile_flags = has_compile_flags,
         has_duplicate_source = has_duplicate_source,
         same_sdk = same_sdk,

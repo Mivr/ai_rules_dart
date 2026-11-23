@@ -10,7 +10,13 @@ non-issue. The launcher does write a runtime package config for
 """
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
-load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "REFUSED_DART_LIBRARIES_ATTR", "merge_dart_defines")
+load(
+    "//dart/private:build_settings.bzl",
+    "EXTRA_DART_DEFINES_ATTR",
+    "REFUSED_DART_LIBRARIES_ATTR",
+    "executable_defines_transition",
+    "merge_dart_defines",
+)
 load(
     "//dart/private:common.bzl",
     "DART_ABI_CONSTRAINT_ATTRS",
@@ -255,9 +261,8 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
         own.record,
         kernel_mode = True,
         resolved_assets = resolved_assets,
-        # The test's own `defines` only: the `extra_dart_defines` flag is the same
-        # for every module, so it does not stop a test going modular.
-        own_defines = ctx.attr.defines,
+        # The test's own `defines` do not stop it going modular: its `deps`
+        # edge makes them the environment of every module of its closure.
         compile_flags = [],
         closure = own.closure,
     )
@@ -405,6 +410,7 @@ def _compile_modular_test_kernel(ctx, own, bootstrap, tools, use_base_dill = Fal
         dill,
         kernel_compile_settings(product = False),
         kernel_link_options(use_base_dill = use_base_dill),
+        own_defines = ctx.attr.defines,
     )
     return struct(dill = dill, base_dill = base_dill, runtime_libs = [])
 
@@ -630,9 +636,10 @@ dart_test = rule(
             allow_files = True,
         ),
         "deps": attr.label_list(
-            doc = "`dart_library` targets this test depends on.",
+            doc = "`dart_library` targets this test depends on. The test's `defines` are the environment every module of this closure compiles with, so two tests with equal `defines` share every module.",
             providers = [DartInfo],
             aspects = [dart_kernel_module_aspect, dart_import_check_aspect],
+            cfg = executable_defines_transition,
         ),
         "env": attr.string_dict(
             doc = """Environment variables set when the test runs. Values expand \
@@ -687,9 +694,10 @@ dart_test_kernel = rule(
     cfg = _test_code_assets_transition,
     attrs = _SHARED_TEST_ATTRS | {
         "deps": attr.label_list(
-            doc = "`dart_library` targets this test depends on.",
+            doc = "`dart_library` targets this test depends on, compiled with the test's `defines` as for `dart_test`.",
             providers = [DartInfo],
             aspects = [dart_kernel_module_aspect],
+            cfg = executable_defines_transition,
         ),
     },
     toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,

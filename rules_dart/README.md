@@ -179,10 +179,14 @@ at run time is out of reach. Unset `link_modules` to compile such a closure from
 sources. The default stays the source path; revisit at the next SDK pin.
 
 A `dart_test` or kernel-mode `dart_binary` falls back to a whole-program compile
-on its own when `modular_kernel = False`, when its own `defines` or
-`dart_compile_flags` attribute is set, or when its closure embeds native code
-assets. The `//dart:extra_dart_defines` flag does not cause a fallback: every
-module takes the same flag values.
+on its own when `modular_kernel = False`, when its `dart_compile_flags`
+attribute is set, or when its closure embeds native code assets. Its own
+`defines` do not cause a fallback: they are the configuration of its `deps`, so
+every module of its closure and its entry compile with them, followed by the
+`//dart:extra_dart_defines` flag. Executables with equal `defines` share every
+module; another set compiles the closure's modules once more. A `dart_binary`
+carries its `defines` this way only when it can link modules (`kernel`, or
+`link_modules = True`).
 
 ### Running snapshots and split debug info
 
@@ -574,6 +578,10 @@ Each setting, and what it saves:
   `bazel run`.
 - `--experimental_shrink_worker_pool` saves the memory idle persistent workers
   (analyzer, kernel, codegen) hold.
+- `--incompatible_exclude_starlark_flags_from_exec_config` saves rebuilding the
+  build tools for each set of `defines`: an executable's `defines` are the
+  configuration of its `deps`, and without this flag the exec configuration
+  inherits them.
 
 None of them relaxes a gate, the lockfile mode, sandboxing or a checksum.
 

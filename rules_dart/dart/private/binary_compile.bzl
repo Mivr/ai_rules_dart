@@ -156,7 +156,9 @@ def _linked_compile(ctx, run, kernel_tools):
     parsing a source. Nothing but the `.kmod` directories, the platform and the
     SDK is an input of those steps. The flags of the `dart compile` step are
     those of the source compile; `defines` are not among them, since every
-    module took the `//dart:extra_dart_defines` values when it compiled.
+    module and the entry took the binary's `defines` (its `deps` edge carries
+    them as configuration) and the `//dart:extra_dart_defines` values when
+    they compiled.
 
     Args:
       ctx: The rule context.
@@ -173,6 +175,7 @@ def _linked_compile(ctx, run, kernel_tools):
         linked,
         kernel_compile_settings(),
         kernel_link_options(platform_dill = find_sdk_kernel_tools(run.dart_sdk_info).product_platform_dill),
+        own_defines = ctx.attr.defines,
     )
     dart_compile_action(
         ctx = ctx,
@@ -210,7 +213,6 @@ def binary_compile(ctx, run):
         run.own.record,
         kernel_mode = _modular_kernel_mode(ctx, run.compile_mode),
         resolved_assets = run.resolved_assets,
-        own_defines = ctx.attr.defines,
         compile_flags = ctx.attr.dart_compile_flags,
         target_sdk = run.dart_sdk_info,
         closure = run.own.closure,
@@ -229,5 +231,6 @@ def binary_compile(ctx, run):
         run.output,
         kernel_compile_settings(),
         kernel_link_options(),
+        own_defines = ctx.attr.defines,
     )
     return []

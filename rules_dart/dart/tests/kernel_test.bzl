@@ -356,7 +356,6 @@ def _conditions(
         dep_modular = True,
         packages_consistent = True,
         has_code_assets = False,
-        has_own_defines = False,
         has_compile_flags = False,
         has_duplicate_source = False,
         same_sdk = True):
@@ -366,7 +365,6 @@ def _conditions(
         dep_modular,
         packages_consistent,
         has_code_assets,
-        has_own_defines,
         has_compile_flags,
         has_duplicate_source,
         same_sdk,
@@ -383,7 +381,6 @@ def _eligible_test_impl(ctx):
         "a dependency is not modular": _conditions(dep_modular = False),
         "the closure has a package at two roots": _conditions(packages_consistent = False),
         "code assets are embedded": _conditions(has_code_assets = True),
-        "the test sets its own `defines`": _conditions(has_own_defines = True),
         "dart_compile_flags are set": _conditions(has_compile_flags = True),
         "a source is compiled twice": _conditions(has_duplicate_source = True),
         "the exec and target SDKs differ": _conditions(same_sdk = False),
@@ -1394,6 +1391,7 @@ _package_config_test = unittest.make(_package_config_test_impl)
 _package_config_custom_scheme_test = unittest.make(_package_config_custom_scheme_test_impl)
 _packages_consistent_test = unittest.make(_packages_consistent_test_impl)
 _first_per_package_test = unittest.make(_first_per_package_test_impl)
+
 def _package_prefix_index_test_impl(ctx):
     env = unittest.begin(ctx)
     package_sets = {

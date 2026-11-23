@@ -18,6 +18,7 @@ load(
     _canonical_dart_defines = "canonical_dart_defines",
     _executable_dart_defines = "executable_dart_defines",
     _executable_defines_settings = "executable_defines_settings",
+    _executable_defines_transition = "executable_defines_transition",
     _native_defines_reset = "native_defines_reset",
 )
 load(
@@ -253,6 +254,7 @@ EXECUTABLE_DEFINES_FILE_SETTING = _EXECUTABLE_DEFINES_FILE_SETTING
 canonical_dart_defines = _canonical_dart_defines
 executable_dart_defines = _executable_dart_defines
 executable_defines_settings = _executable_defines_settings
+executable_defines_transition = _executable_defines_transition
 native_defines_reset = _native_defines_reset
 
 # Directory assembly: copy a package whose hand-written and generated files

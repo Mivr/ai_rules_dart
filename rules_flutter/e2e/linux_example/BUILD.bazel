@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_test")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
 load(
     "@rules_flutter//flutter:linux.bzl",
@@ -265,18 +265,38 @@ debug_kernel(
     target_compatible_with = ["@platforms//os:linux"],
 )
 
+# A Dart test and a kernel binary with `defines` over the same library: their
+# `deps` edge carries the defines, so they stay modular.
+dart_test(
+    name = "dart_defines_env_test",
+    size = "small",
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DART_TEST"],
+    main = "test/dart_defines_env_test.dart",
+    deps = ["//defines_env"],
+)
+
+dart_binary(
+    name = "dart_defines_env_bin",
+    compile_mode = "kernel",
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DART_BIN"],
+    main = "bin/defines_env_main.dart",
+    deps = ["//defines_env"],
+)
+
 # A dependency module of a debug app compiles with the app's define, defines
-# file and flavor.
+# file and flavor; one of a kernel binary with the binary's `defines`.
 dart_test(
     name = "defines_config_test",
     size = "small",
     data = [
         ":app_defines_dev_kernel",
         ":app_defines_prod_kernel",
+        ":dart_defines_env_bin",
     ],
     env = {
         "APP_DEV_DILL": "$(rlocationpath :app_defines_dev_kernel)",
         "APP_PROD_DILL": "$(rlocationpath :app_defines_prod_kernel)",
+        "DART_BIN_DILL": "$(rlocationpath :dart_defines_env_bin)",
     },
     main = "test/defines_config_test.dart",
     target_compatible_with = ["@platforms//os:linux"],

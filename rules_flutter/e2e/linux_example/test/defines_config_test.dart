@@ -7,6 +7,8 @@
 /// constant is evaluated where it is compiled, so each value is in a kernel
 /// only if `//defines_env`'s module compiled with it (the entry reads the
 /// library's outline, which holds the evaluated constants).
+/// `:dart_defines_env_bin` is a kernel `dart_binary` over the same library
+/// with its own `defines`.
 library;
 
 import 'dart:convert';
@@ -62,6 +64,11 @@ void main() {
     'APP_PROD_DILL',
     ['DEFCFG_FOO_PROD/DEFCFG_FILE_PROD/defcfgprod'],
     ['DEFCFG_FOO_DEV', 'DEFCFG_FILE_DEV'],
+  );
+  expect(
+    'DART_BIN_DILL',
+    ['DEFCFG_FOO_DART_BIN/unset/unset'],
+    ['DEFCFG_FOO_DEV', 'DEFCFG_FOO_PROD'],
   );
   if (failed) exit(1);
   stdout.writeln('PASS');

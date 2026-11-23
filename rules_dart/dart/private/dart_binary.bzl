@@ -3,7 +3,14 @@
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartCompileInfo", "DartInfo", "DartRecordedUsesInfo")
 load("//dart/private:binary_compile.bzl", "binary_compile")
-load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "REFUSED_DART_LIBRARIES_ATTR")
+load(
+    "//dart/private:build_settings.bzl",
+    "EXECUTABLE_DEFINES_FILE_SETTING",
+    "EXECUTABLE_DEFINES_SETTING",
+    "EXTRA_DART_DEFINES_ATTR",
+    "REFUSED_DART_LIBRARIES_ATTR",
+    "executable_defines_settings",
+)
 load(
     "//dart/private:common.bzl",
     "DART_ABI_CONSTRAINT_ATTRS",
@@ -498,6 +505,23 @@ _binary_code_assets_transition = transition(
     outputs = ["//dart/private:code_assets_enabled"],
 )
 
+def _binary_defines_transition_impl(_settings, attr):
+    # Only a binary that may link modules carries its `defines` to its
+    # closure: `kernel`, or `exe`/`aot-snapshot` with `link_modules`. Any other
+    # binary compiles from sources, and moving its closure to another
+    # configuration would only rebuild the libraries' own actions there.
+    links = attr.modular_kernel and (
+        attr.compile_mode == "kernel" or
+        (attr.compile_mode in ("exe", "aot-snapshot") and attr.link_modules)
+    )
+    return executable_defines_settings(attr.defines if links else [])
+
+_binary_defines_transition = transition(
+    implementation = _binary_defines_transition_impl,
+    inputs = [],
+    outputs = [EXECUTABLE_DEFINES_SETTING, EXECUTABLE_DEFINES_FILE_SETTING],
+)
+
 # The attributes `dart_binary` shares with the other executable rules, merged into one dict.
 _SHARED_BINARY_ATTRS = dict(
     DART_ABI_CONSTRAINT_ATTRS,
@@ -527,9 +551,10 @@ dart_binary = rule(
             allow_files = [".dart"],
         ),
         "deps": attr.label_list(
-            doc = "`dart_library` targets this binary depends on.",
+            doc = "`dart_library` targets this binary depends on. When the binary links modules, its `defines` are the environment every module of this closure compiles with, so binaries with equal `defines` share every module.",
             providers = [DartInfo],
             aspects = [dart_kernel_module_aspect, dart_import_check_aspect],
+            cfg = _binary_defines_transition,
         ),
         "_import_check": attr.label(
             doc = "The tool that checks this binary's imports against its direct `deps` (see the `dart_layering_check` feature). `None` for the tool itself, which cannot name itself.",
@@ -569,7 +594,7 @@ The `dart compile` mode. Determines the output format:
 
 - `exe` (default): Self-contained native machine code. No Dart SDK needed at runtime. Best for deployment.
 - `aot-snapshot`: AOT-compiled snapshot. Requires `dartaotruntime` to execute. Smaller than `exe`.
-- `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles modularly by default (`modular_kernel = True` and `//dart:modular_kernel = True`) against dependency `.kmod`/`.koutline` modules when eligible, or whole-program via `gen_kernel` when `modular_kernel = False` or when target `defines`, `dart_compile_flags`, or `code_assets` are set.
+- `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles modularly by default (`modular_kernel = True` and `//dart:modular_kernel = True`) against dependency `.kmod`/`.koutline` modules when eligible, or whole-program via `gen_kernel` when `modular_kernel = False` or when `dart_compile_flags` or `code_assets` are set. `defines` keep it modular: they are the environment every module of the closure compiles with.
 - `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, at the keyed absolute path for its output (`/tmp/rules_dart_jit-<key>`, where `<key>` is 16 lowercase hex characters of a deterministic digest of the output's root-relative path) used as its working directory and with no `--packages` value, so the snapshot is byte-identical across builds. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build (see `app_jit_snapshot.dart`). The training runs from a copy of the SDK's `dart`, so the snapshot does not depend on where the SDK is installed or where the build runs. A training waits for the keyed lock up to `--@rules_dart//dart:jit_snapshot_lock_timeout` seconds (default 300), printing the holder's PID while it waits; when the keyed training path is blocked by an entry another user owns, or the lock stays held past the deadline, the action fails and names the entry rather than training elsewhere under the same action key; `--@rules_dart//dart:jit_snapshot_fallback=true` allows the non-reproducible private-scratch fallback instead. A fallback-trained snapshot stays cached under the same action key (in the local action cache and the output tree) until `bazel clean`, so a build after the host is fixed keeps the fallback bytes. With the flag on, both snapshot actions carry `no-cache`, so they are never uploaded to or served from a disk or remote cache.
 
 `exe` and `aot-snapshot` compile from sources by default: the whole-program front end reads every transitive `.dart` file, then `dart compile` runs, whatever `modular_kernel` says. Per-library modules are compiled against the JIT platform, so the default keeps the AOT answers to `dart.library.*`. With `link_modules = True` (an opt-in) they take the per-library kernel modules joined into one kernel instead, when the target is eligible for modular compilation (the `kernel` mode's rules, plus `dart.vm.product` true and not the `dbg` compilation mode): a body edit in one library recompiles that module only, then the whole-program steps (tree shaking, `gen_snapshot`) run over the joined kernel and no `.dart` source is an input of them. An ineligible target takes the source path silently. Opting in also runs a validation that refuses a closure using `dart:mirrors` or `dart.library.mirrors` (see `link_modules`). `jit-snapshot` always compiles from sources.

@@ -44,7 +44,15 @@ module.
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", _DartKernelInfo = "DartKernelInfo")
 load("//dart/private:aot_tool.bzl", "aot_tool_launch")
-load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", _global_dart_defines = "global_dart_defines")
+load(
+    "//dart/private:build_settings.bzl",
+    "EXECUTABLE_DEFINES_ATTRS",
+    "EXTRA_DART_DEFINES_ATTR",
+    "canonical_dart_defines",
+    "executable_dart_defines",
+    "validate_dart_defines",
+    _global_dart_defines = "global_dart_defines",
+)
 load(
     "//dart/private:common.bzl",
     "STABLE_SCHEME",
@@ -137,7 +145,7 @@ KERNEL_MODULE_ATTRS = {
         executable = True,
         cfg = "exec",
     ),
-} | VM_PRODUCT_ATTR
+} | VM_PRODUCT_ATTR | EXECUTABLE_DEFINES_ATTRS
 
 MODULAR_KERNEL_ATTRS = dict(KERNEL_MODULE_ATTRS)
 
@@ -649,7 +657,6 @@ def modular_kernel_eligible(conditions):
         conditions.dep_modular and
         conditions.packages_consistent and
         not conditions.has_code_assets and
-        not conditions.has_own_defines and
         not conditions.has_compile_flags and
         not conditions.has_duplicate_source and
         conditions.same_sdk
@@ -829,6 +836,8 @@ def _kmod_common_args(ctx, args, request):
             "-Ddart.vm.msan=false",
             "-Ddart.vm.tsan=false",
         ])
+    if request.define_file != None:
+        args.add("--define-file", request.define_file)
     args.add_all(request.defines, format_each = "-D%s")
     args.add_all(request.extra_frontend_flags)
 
@@ -1045,6 +1054,7 @@ def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
         libraries_platform = settings.libraries_platform,
         extra_libraries = settings.extra_libraries,
         defines = options.defines,
+        define_file = options.define_file,
         extra_frontend_flags = settings.extra_frontend_flags,
         scheme = settings.scheme,
         sources = inputs.sources,
@@ -1090,6 +1100,8 @@ def _kmod_register(ctx, request, args, worker_snapshot, patched_marker):
         request.libraries,
         request.platform,
     ] + [s.file for s in request.sources]
+    if request.define_file != None:
+        direct_inputs.append(request.define_file)
     if request.package_records == None:
         # An inline-written config is an input; a worker-written one is an output.
         direct_inputs.append(request.package_config)
@@ -1237,10 +1249,10 @@ def modular_executable_tools(
         own_record,
         kernel_mode,
         resolved_assets,
-        own_defines,
         compile_flags,
         target_sdk = None,
-        closure = None):
+        closure = None,
+        own_defines = []):
     """Decides whether an executable compiles modularly, and with which tools.
 
     Reads the flag and gathers each fact of the `modular_kernel_conditions`
@@ -1254,8 +1266,6 @@ def modular_executable_tools(
       own_record: The executable's own `DartPackageInfo`, or None.
       kernel_mode: Whether the executable is compiled as a kernel.
       resolved_assets: The code assets resolved for the executable.
-      own_defines: The executable's own `defines` attribute. The
-        `//dart:extra_dart_defines` flag is not among them: every module takes it.
       compile_flags: The executable's `dart_compile_flags`.
       target_sdk: Optional `DartSdkInfo` that will execute the output kernel;
         defaults to `ctx.toolchains["//dart:toolchain_type"].dart_sdk_info`.
@@ -1264,12 +1274,18 @@ def modular_executable_tools(
         closure is clean (see `clean_closure`). Its records are then one per
         name with one root each, so they are consistent without a walk, and
         `modular_executable_kernel` takes `packages = None`.
+      own_defines: Defines of the executable that its `deps` edge does NOT
+        carry as configuration. Any selects whole-program compilation, since
+        no module took them. The built-in rules pass none: their `deps` edge
+        sets `executable_defines_transition`, and they hand their `defines`
+        to `modular_executable_kernel` instead. A custom rule does the same
+        to stay modular.
 
     Returns:
       The struct from `find_kernel_module_tools`, or None.
     """
     enabled = ctx.attr._modular_kernel[BuildSettingInfo].value if hasattr(ctx.attr, "_modular_kernel") else True
-    if not enabled or not kernel_mode:
+    if not enabled or not kernel_mode or own_defines:
         return None
     tools = kernel_tools_for(ctx)
     if tools == None:
@@ -1305,7 +1321,6 @@ def modular_executable_tools(
             dep_modular,
             consistent,
             len(resolved_assets) > 0,
-            len(own_defines) > 0,
             len(compile_flags) > 0,
             duplicate != None,
             tools.version == target_sdk.version,
@@ -1453,7 +1468,8 @@ def modular_executable_kernel(
         dep_kernels,
         output,
         compile,
-        link):
+        link,
+        own_defines = []):
     """Compiles an executable's entry module, then links it to `output`.
 
     The entry compiles from source whatever it reaches that no dependency module
@@ -1475,11 +1491,17 @@ def modular_executable_kernel(
         `output` as a delta against any shared `base_dill`/`base_keys` in
         `dep_kernels` and returns `base_dill`; `platform_dill` is prepended to
         `output`, so it is a whole program a front end can load with `--from-dill`.
+      own_defines: The executable's own `defines`, which its `deps` edge made
+        the environment of every dependency module
+        (`executable_defines_transition`). The entry compiles with the same
+        canonical list, then the `//dart:extra_dart_defines` flag, exactly as
+        the modules did.
 
     Returns:
       The shared `base_dill` File if `link.use_base_dill` is True and a dependency
       provides one, or None.
     """
+    validate_dart_defines(own_defines, "the `defines` attribute of %s" % ctx.label)
     clean = getattr(tools, "clean_closure", None) if packages == None else None
     if packages == None and clean == None:
         fail("modular_executable_kernel: `packages` is None, but the tools carry no clean closure.")
@@ -1521,7 +1543,7 @@ def modular_executable_kernel(
             unused_inputs = True,
         ),
         kernel_module_options(
-            defines = global_dart_defines(ctx),
+            defines = canonical_dart_defines(own_defines) + global_dart_defines(ctx),
             exclude_non_sources = True,
             droppable = False,
         ),
@@ -1565,9 +1587,18 @@ def _kmod_pkg_name(kmod):
     return name[:-len(".kmod")] if name.endswith(".kmod") else name
 
 def _lib_kernel_gate(ctx, opaque, rule_deps):
-    """Returns (tools, deps, dep_kernels, defines), or None when no module is built."""
+    """Returns (tools, deps, dep_kernels, env), or None when no module is built.
+
+    `env` is `struct(defines, define_file)`: the environment of the executable
+    whose closure this is (the `executable_dart_defines` settings), then the
+    `//dart:extra_dart_defines` flag.
+    """
     enabled = ctx.attr._modular_kernel[BuildSettingInfo].value if hasattr(ctx.attr, "_modular_kernel") else True
-    defines = global_dart_defines(ctx)
+    exe_env = executable_dart_defines(ctx)
+    env = struct(
+        defines = exe_env.defines + global_dart_defines(ctx),
+        define_file = exe_env.flagfile,
+    )
     if opaque or not enabled:
         return None
     tools = kernel_tools_for(ctx)
@@ -1577,7 +1608,7 @@ def _lib_kernel_gate(ctx, opaque, rule_deps):
     dep_kernels = dep_kernels_or_none(deps)
     if dep_kernels == None:
         return None
-    return tools, deps, dep_kernels, defines
+    return tools, deps, dep_kernels, env
 
 def _lib_kernel_records(deps, dep_kernels, own_record, own_records):
     """Returns (records, raw, own_records), or None when the closure is not modular."""
@@ -1756,7 +1787,7 @@ def library_kernel_info(ctx, library, compile, options):
     gated = _lib_kernel_gate(ctx, options.opaque, options.rule_deps)
     if gated == None:
         return no_kernel_module()
-    tools, deps, dep_kernels, defines = gated
+    tools, deps, dep_kernels, env = gated
     if not all([k.modular for k in dep_kernels]):
         return no_kernel_module()
     if not lib_owns_compatible(library.own_records, deps):
@@ -1796,7 +1827,8 @@ def library_kernel_info(ctx, library, compile, options):
             unused_inputs = options.unused_inputs,
         ),
         kernel_module_options(
-            defines = defines,
+            defines = env.defines,
+            define_file = env.define_file,
             exclude_non_sources = True,
             droppable = True,
             check_imports = LAYERING_FEATURE not in ctx.disabled_features and not ctx.label.workspace_name,

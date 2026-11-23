@@ -1089,8 +1089,6 @@ def flutter_modular_test_tools(
             dep_modular = dep_modular,
             packages_consistent = kernel_packages_consistent(packages),
             has_code_assets = len(native_assets_list) > 0,
-            # The target's own defines are its `deps` configuration (see `entry_dart_env`).
-            has_own_defines = False,
             has_compile_flags = False,
             has_duplicate_source = duplicate != None,
             same_sdk = same_sdk,

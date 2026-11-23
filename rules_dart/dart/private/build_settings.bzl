@@ -221,6 +221,19 @@ native_defines_reset = transition(
     outputs = [EXECUTABLE_DEFINES_SETTING, EXECUTABLE_DEFINES_FILE_SETTING],
 )
 
+def _executable_defines_transition_impl(_settings, attr):
+    return executable_defines_settings(getattr(attr, "defines", None) or [])
+
+# The `deps` edge of `dart_test`, `dart_test_kernel` and a custom executable
+# rule: the target's own `defines` become the environment of its closure.
+# `dart_binary` applies its own variant, which does this only when the binary
+# can link modules.
+executable_defines_transition = transition(
+    implementation = _executable_defines_transition_impl,
+    inputs = [],
+    outputs = [EXECUTABLE_DEFINES_SETTING, EXECUTABLE_DEFINES_FILE_SETTING],
+)
+
 EXECUTABLE_DEFINES_ATTRS = {
     "_executable_dart_defines": attr.label(
         doc = "The private //dart/private:executable_dart_defines setting: the environment of the executable whose closure this is.",

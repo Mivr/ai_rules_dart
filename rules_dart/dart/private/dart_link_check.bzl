@@ -60,7 +60,7 @@ LINK_MODULES_ATTRS = {
         default = False,
         doc = """Whether `compile_mode` `exe` and `aot-snapshot` link per-library kernel modules instead of compiling from sources. Off by default.
 
-On, an eligible target (the rules of `modular_kernel`: no `defines`, `dart_compile_flags` or \
+On, an eligible target (the rules of `modular_kernel`: no `dart_compile_flags` or \
 `code_assets`, no package split, not the `dbg` compilation mode, `dart.vm.product` true) \
 compiles each library to a module, links them, and runs the whole-program steps over the \
 linked kernel with no `.dart` source as an input: a body edit recompiles one module. An \

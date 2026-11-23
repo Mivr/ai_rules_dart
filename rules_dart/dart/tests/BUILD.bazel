@@ -44,6 +44,7 @@ load(":dart_test_tags_test.bzl", "dart_test_tags_test_suite")
 load(":dart_wasm_binary_direct_test.bzl", "dart_wasm_binary_direct_test_suite")
 load(":defines_test.bzl", "defines_test_suite")
 load(":drift_library_direct_test.bzl", "drift_library_direct_test_suite")
+load(":executable_defines_test.bzl", "executable_defines_test_suite")
 load(":freezed_library_direct_test.bzl", "freezed_library_direct_test_suite")
 load(":git_host_config_test.bzl", "git_host_config_test_suite")
 load(":go_router_library_direct_test.bzl", "go_router_library_direct_test_suite")
@@ -111,6 +112,8 @@ jit_fallback_test_suite(name = "jit_fallback_test")
 jit_lock_timeout_test_suite(name = "jit_lock_timeout_test")
 
 defines_test_suite(name = "defines_test")
+
+executable_defines_test_suite(name = "executable_defines_test")
 
 compile_flags_test_suite(name = "compile_flags_test")
 

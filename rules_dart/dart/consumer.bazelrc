@@ -27,3 +27,11 @@ common --nobuild_runfile_links
 # Shrink the pool of idle persistent workers (the analyzer, kernel and codegen
 # workers) when memory is tight, which saves the memory idle workers hold.
 common --experimental_shrink_worker_pool
+
+# Keep Starlark settings out of the exec configuration. A test, binary or
+# Flutter app with its own `defines` sets them as configuration on its `deps`
+# edge, so its modules compile once per set of defines and stay modular.
+# Without this flag the exec configuration inherits those settings too, and
+# each new set of defines rebuilds every build tool (the kernel compiler, the
+# analyzer, code generators) as well.
+common --incompatible_exclude_starlark_flags_from_exec_config
