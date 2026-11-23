@@ -19,31 +19,38 @@ git -C references/flutter tag -l '[0-9]*' | grep -v pre | sort -V | tail -5
 
 The latest tag is the current stable release.
 
-**Files**:
+**What a bump touches**: one table file, the default and three README places.
+The rules list only the current stable Flutter: the new release replaces the
+earlier ones, and a patch replaces its minor's earlier rows.
 
-- `flutter/private/versions.bzl` — `FLUTTER_VERSIONS` and `ARTIFACT_CHECKSUMS` dicts
+- `flutter/private/versions.bzl` — `FLUTTER_VERSIONS` and `ARTIFACT_CHECKSUMS`
 - The Dart SDK the release carries: read `dart-sdk/version` in the release's own
   Dart SDK archive (`dart-sdk-linux-x64.zip`), not from a table. That Dart
   version needs rows in `rules_dart`'s `dart/private/versions.bzl` and
-  `dart/private/module_compiler_versions.bzl` (see its `docs/CHORES.md`); a Flutter
-  release whose Dart SDK has no module compiler cannot compile debug modules
-- `MODULE.bazel` — `flutter_version` in `flutter.toolchain()` call
-- All `e2e/*/MODULE.bazel` — `flutter_version` in `flutter.toolchain()` calls
-- `e2e/_overlay_tests/*/MODULE.bazel` — same call, one directory deeper, so a
-  `e2e/*/MODULE.bazel` glob misses it, and no CI job runs it to notice
+  `dart/private/module_compiler_versions.bzl`: one run of
+  `bazel run //dart/private/tools:update_cross_sdk_versions -- <dart version>` in
+  `rules_dart` writes both (see its `docs/CHORES.md`). A Flutter release whose
+  Dart SDK has no module compiler cannot compile debug modules
+- `MODULE.bazel` — `flutter_version` in the `flutter.toolchain()` call. This is
+  the default: the `e2e/*` and `e2e/_overlay_tests/*` workspaces name no version
+  and inherit it, and tests take the newest version in `FLUTTER_VERSIONS`
 - `README.md` — the Flutter version in the Requirements table, the
   `MODULE.bazel` snippet under Getting started, and the `FlutterSdkInfo.version`
   example under Providers
+
+`e2e/smoke` names `3.47.70`, a custom release it registers itself, which is not
+in the table; a bump leaves it alone.
 
 **Procedure**:
 
 1. Fetch tags and identify the latest stable version (see above)
 2. Run `bazel run //tools/update_flutter_version -- <new-version>` (requires Flutter reference
-   repo at `references/flutter` with tags fetched)
-3. Copy the printed snippets into `flutter/private/versions.bzl`. Keep the latest
-   patch release of each minor: a new patch replaces the minor's earlier rows
-   (in both dicts) instead of adding to them
-4. Update `flutter_version` in `MODULE.bazel` and all `e2e/*/MODULE.bazel` files
+   repo at `references/flutter` with tags fetched; it computes every checksum
+   the release needs in one run)
+3. Copy the printed snippets into `flutter/private/versions.bzl`, replacing the
+   minor's earlier rows in both dicts
+4. Add the release's Dart SDK to `rules_dart` as above, then update
+   `flutter_version` in `MODULE.bazel` and the README places
 5. Regenerate lock files
 
 **Verification**: `bazel test //flutter/tests:all` and `cd e2e/smoke && bazel test //...`

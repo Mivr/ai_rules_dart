@@ -7,67 +7,68 @@ file at runtime — keep file lists current as the repo evolves.
 
 ## Dart SDK Version Bump
 
-**Trigger**: New stable Dart SDK release.
+**Trigger**: New stable Dart SDK release. The rules list only the current stable
+SDKs: the new release, plus the default while it stays the default. Keep the
+latest patch of each minor, so a new patch replaces the minor's earlier rows.
 
-**Files**:
+**What a bump touches**: two generated files, and two more only when the new
+version becomes the default.
 
-- `dart/private/versions.bzl` — add new version entry to `TOOL_VERSIONS`, `CROSS_GEN_SNAPSHOT_VERSIONS`, and `CROSS_DARTAOTRUNTIME_VERSIONS`
-- `dart/private/module_compiler_versions.bzl` — add the version's row to
-  `MODULE_COMPILER_SOURCES` (the checksum of the SDK tag's source archive, the
-  tag's commit, the language version of the five SDK packages). A version listed
-  in `versions.bzl` without a row has no module compiler, and
-  `//dart/tests:module_compiler_pin_test` fails until it has one
-- `MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/hello_world/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/library_deps/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/dart_test/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/dart_test_pkg/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/analysis/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/analysis_failure/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/web_app/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/pub_deps/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/pub_lock/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/gazelle/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/cross_compile/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/pub_lock_conflict/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/pub_lock_cross_module/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/pub_lock_dedup/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/pub_lock_upgrade/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/codegen/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/ext_exemplar/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/fix/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `README.md` — `dart.toolchain(dart_version = "...")` in installation snippet
-- `dart/tests/versions_test.bzl` — asserted version key in `_smoke_test_impl`
-- `dart/runfiles/pubspec.yaml` — `environment.sdk` constraint (published to
+- `dart/private/versions.bzl` and `dart/private/module_compiler_versions.bzl`,
+  written by one command (below): the five SDK archive checksums, the cross
+  `gen_snapshot` and `dartaotruntime` checksums, and the module compiler's
+  sources (the checksum of the SDK tag's source archive and its commit)
+- When the new version becomes the default: `MODULE.bazel`
+  (`dart.toolchain(dart_version = "...")`) and the installation snippet in
+  `README.md`. Nothing else names the default: e2e workspaces, `dev/` and
+  `tools/` inherit it, tests reach it through `@dart_toolchains//sdk/default`,
+  the comma-patch and format tests run against every version in `TOOL_VERSIONS`,
+  and `dart/tests/versions_test.bzl` checks the order, not a version
+- Not touched: `dart/runfiles/pubspec.yaml`'s `environment.sdk` (published to
   pub.dev; keep the lower bound as low as stays compatible rather than tracking
   the newest SDK)
 
+Three workspaces name versions because they exist to test one: `e2e/root_sdk_pin`
+pins a listed version, which proves that the root's pin wins over rules_dart's own
+request only while that version is not the default (when a bump makes it the
+default, pin another listed version in its `MODULE.bazel` and
+`test/version_test.dart`; with one version listed it can only pin the default),
+`e2e/sdk_coupling` registers an exec and a target SDK (the same version; the rules
+need the two to match, because a tool the exec SDK builds does not load in another
+SDK's runtime), and `e2e/sdk_unknown_version` names a version that is not listed.
+Change them only when the version they name leaves the table.
+
 **Procedure**:
 
-1. Run `dart run tool/fetch_sdk_hashes.dart {version}` and `bazel run //dart/private/tools:update_cross_sdk_versions -- {version}` to get SHA-256 hashes
-2. Add the new version entries to `dart/private/versions.bzl`. Keep the latest
-   patch release of each minor: a new patch replaces the minor's earlier rows
-   (and their module compiler row) instead of adding to them
-3. Pin the module compiler's sources for the version: download
-   `https://github.com/dart-lang/sdk/archive/refs/tags/{version}.tar.gz` and
-   `sha256sum` it; the commit is
-   `git ls-remote https://github.com/dart-lang/sdk 'refs/tags/{version}^{}'`
-   (it equals the `revision` file of the SDK's own archive); the language
-   versions are the `sdk:` lower bounds, as `major.minor`, in
+1. Confirm the release: `curl https://storage.googleapis.com/dart-archive/channels/stable/release/latest/VERSION`
+2. `bazel run //dart/private/tools:update_cross_sdk_versions -- [--drop=<older patch of the same minor>] <version>`
+   (one run, about half a minute): it adds the version to `TOOL_VERSIONS` (newest
+   first) with the checksums the Dart bucket publishes, hashes the 22 cross
+   binaries and the tag archive as it downloads them, reads the commit from the
+   release's `VERSION` file, and drops the pins of a version that is no longer
+   listed. A new `MODULE_COMPILER_SOURCES` row starts from the newest row's package
+   language versions; check them against the `sdk:` lower bounds in
    `pkg/{_fe_analyzer_shared,build_integration,front_end,kernel,vm}/pubspec.yaml`
-   of that archive. Then run `bazel test //dart/private/tools:module_compiler_test
-   //dart/private/tools:worker_protocol_test //dart/tests:modular_chain_test
-   //dart/tests:module_compiler_pin_test //dart/tests/defines_fixture:all` with the
-   version selected in `MODULE.bazel`. If the front end's API moved, the tool
-   does not compile, and that is a change to `module_compiler.dart`, not to the row
-4. Update `dart_version` in all MODULE.bazel files listed above
-5. Update version references in `README.md`
-6. Update `dart/tests/versions_test.bzl` (asserted version key)
-7. Regenerate lock files: `dart run tool/refresh_locks.dart`
-8. Run `bazel test //dart/tests/...` to verify unit tests pass
-9. Pick one e2e workspace and run `bazel build //...` to smoke-test
+   of the tag (a value below what the sources use fails the tool's build)
+3. Run the suites with each listed version selected: with the default, then
+   with `dart_version` in `MODULE.bazel` set to each other listed version:
+   `bazel test //dart/tests:all //dart/private/tools:all //dart/pub/... //docs/...`
+   (this covers the module compiler tests, the `package:test` closure and the
+   tool tests). If the front end's API moved, the module compiler does not
+   build for the version: that is a change to `module_compiler.dart`, and the
+   version stays unlisted until it builds on every listed SDK
+4. If the version becomes the default: set `dart_version` in `MODULE.bazel` and
+   the `README.md` snippet; check that `e2e/root_sdk_pin` still pins a version
+   other than the default
+5. `FORMATTER_SDK_SERIES` in `dart/private/format_mode.bzl` does not follow the
+   SDK: it names the series the vendored `package:dart_style` formats like.
+   `DartFormat` runs the SDK's own `dart format` for any other series, so a new
+   default works without a change, and moves to the in-process formatter when
+   `dart/ext` is re-vendored for it
+6. Regenerate lock files: `dart run tool/refresh_locks.dart`
 
-**Verification**: `bazel test //dart/tests/...` passes; at least one e2e workspace builds.
+**Verification**: the suites of step 3 pass for every listed version, and
+`cd e2e/root_sdk_pin && bazel test //...` passes.
 
 **Automation**: `/bump-dart-sdk {version}` slash command.
 
@@ -240,6 +241,9 @@ cannot, it is a cross-only target and costs no checksums.
 
 - `dart/private/toolchains_repo.bzl` — add to `TARGET_ONLY_PLATFORMS`, then add
   it to each `CROSS_TARGETS` value it is reachable from
+- `dart/private/tools/update_cross_sdk_versions.dart` — add to
+  `crossTargetPlatforms` and `crossTargets` (they mirror `toolchains_repo.bzl`),
+  then run it: it pins the new pairs' cross binaries for every listed version
 - `e2e/cross_compile/BUILD.bazel` — add to `_TARGETS`
 - `e2e/cross_compile/cross_compile_test.dart` — add its expected `EI_CLASS` and
   `e_machine` to the table; the suite asserts the architectures are pairwise
@@ -250,10 +254,11 @@ cannot, it is a cross-only target and costs no checksums.
   who bring their own cc toolchain
 - `docs/ARCHITECTURE.md` — platform list, toolchain counts, cross matrix
 
-Explicitly **not** needed: `versions.bzl`, `tool/fetch_sdk_hashes.dart`, and
-`.bcr/presubmit.yml`. A cross toolchain reuses the host SDK's `dart` binary, so
-no SDK is downloaded for the target and no checksum exists to fetch. BCR CI has
-no runner for these CPUs either.
+Explicitly **not** needed: a new key in each `TOOL_VERSIONS` entry (`hostPlatforms`
+in `update_cross_sdk_versions.dart` stays as it is) and `.bcr/presubmit.yml`. A
+cross toolchain reuses the host SDK's `dart` binary, so no SDK archive is
+downloaded for the target and no archive checksum exists to fetch. BCR CI has no
+runner for these CPUs either.
 
 Before hard-coding the ELF table, confirm the real header bytes:
 
@@ -270,8 +275,9 @@ file /tmp/x /tmp/x.aot
 - `dart/private/toolchains_repo.bzl` — `PLATFORMS` rather than `TARGET_ONLY_PLATFORMS`
 - `dart/private/versions.bzl` — add the platform key to **every** version entry;
   `repositories.bzl` hard-errors on a missing key
-- `tool/fetch_sdk_hashes.dart` — add to the `platforms` list, then re-run it for
-  every pinned version
+- `dart/private/tools/update_cross_sdk_versions.dart` — add to `hostPlatforms`
+  and `crossTargets`, then run it with `--force` (it hashes every artifact again)
+  and fill the new key of every `TOOL_VERSIONS` entry by hand
 - `.bcr/presubmit.yml` — add to the matrix if BCR has a runner
 
 **Verification**: `bazel test //dart/tests/...` — `toolchains_test.bzl` asserts

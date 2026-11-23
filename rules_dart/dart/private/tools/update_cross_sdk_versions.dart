@@ -1,10 +1,23 @@
-// Fetches and pins SHA-256 checksums for Dart cross-compilation SDK artifacts
-// (`gen_snapshot_<host>_<target>` and `dartaotruntime_<target>`) across all
-// versions in `TOOL_VERSIONS` and writes `dart/private/versions.bzl`.
+// Fetches and pins every SHA-256 checksum an SDK version needs, in one run:
 //
-// Run with:
-//   bazel run //dart/private/tools:update_cross_sdk_versions
+// - the SDK archive of each host platform (`TOOL_VERSIONS`), from the
+//   `.sha256sum` file the Dart bucket publishes next to it;
+// - the cross-compilation artifacts (`gen_snapshot_<host>_<target>` and
+//   `dartaotruntime_<target>`), hashed as they are downloaded;
+// - the module compiler's source archive, the tag archive of the SDK, hashed
+//   as it is downloaded, with the SDK's commit read from the bucket's
+//   `VERSION` file (`MODULE_COMPILER_SOURCES`).
+//
+// Usage:
+//   bazel run //dart/private/tools:update_cross_sdk_versions -- [--drop=<version>]... [<version>]...
+//
+// Each `<version>` is added to `TOOL_VERSIONS` when it is not there, newest
+// first; each `--drop=<version>` removes one. Every listed version then gets
+// the pins it lacks, and a version no longer listed loses its pins, so the
+// three tables always list the same versions. With no arguments it only
+// fills what is missing. `--force` hashes every cross artifact again.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -233,6 +246,264 @@ String renderVersionsBzl({
   return buf.toString();
 }
 
+const _tagArchiveBase = 'https://github.com/dart-lang/sdk/archive/refs/tags';
+
+/// The CDN URL of the SDK archive for [platform].
+String sdkArchiveUrl(String version, String platform) =>
+    '$_cdnReleaseBase/$version/sdk/dartsdk-$platform-release.zip';
+
+/// The URL of the `VERSION` file the bucket publishes for a release.
+String releaseVersionUrl(String version) => '$_cdnReleaseBase/$version/VERSION';
+
+/// The URL of the source archive of an SDK tag.
+String tagArchiveUrl(String version) => '$_tagArchiveBase/$version.tar.gz';
+
+/// The digest in the body of a `.sha256sum` file (`<hex>  <name>`), or null.
+String? parseSha256sum(String body) {
+  final String token = body.trim().split(RegExp(r'\s+')).first.toLowerCase();
+  return RegExp(r'^[0-9a-f]{64}$').hasMatch(token) ? token : null;
+}
+
+/// The commit the `VERSION` file in [body] names for [version].
+///
+/// Throws a [FormatException] when the file is not that release's.
+String parseReleaseRevision(String body, String version) {
+  final Object? json = jsonDecode(body);
+  if (json is Map && json['version'] == version) {
+    final Object? revision = json['revision'];
+    if (revision is String && RegExp(r'^[0-9a-f]{40}$').hasMatch(revision)) {
+      return revision;
+    }
+  }
+  throw FormatException('no commit for Dart SDK $version in its VERSION file');
+}
+
+List<int> _releaseParts(String version) {
+  final RegExpMatch? match = RegExp(r'^(\d+)\.(\d+)\.(\d+)$')
+      .firstMatch(version);
+  if (match == null) {
+    throw FormatException('not a release version (major.minor.patch)', version);
+  }
+  return [for (var i = 1; i <= 3; i++) int.parse(match.group(i)!)];
+}
+
+/// Orders two `<major>.<minor>.<patch>` release versions.
+int compareReleaseVersions(String a, String b) {
+  final List<int> left = _releaseParts(a);
+  final List<int> right = _releaseParts(b);
+  for (var i = 0; i < 3; i++) {
+    if (left[i] != right[i]) return left[i].compareTo(right[i]);
+  }
+  return 0;
+}
+
+/// The SDK archive checksums of one version, as a `TOOL_VERSIONS` entry.
+String renderToolVersionEntry(String version, Map<String, String> hashes) {
+  final buf = StringBuffer('    "$version": {\n');
+  for (final String platform in hostPlatforms.keys) {
+    final String? hash = hashes[platform];
+    if (hash == null) throw StateError('no $platform checksum for $version');
+    buf.writeln('        "$platform": "$hash",');
+  }
+  buf.writeln('    },');
+  return buf.toString();
+}
+
+/// The language versions of the five SDK packages in the first (newest) row of
+/// `MODULE_COMPILER_SOURCES`.
+Map<String, String> parseLanguageVersions(String moduleCompilerBzl) {
+  final RegExpMatch? block = RegExp(
+    r'language_versions = \{\n((?:            "[^"]+": "[^"]+",\n)+)        \},',
+  ).firstMatch(moduleCompilerBzl);
+  if (block == null) {
+    throw const FormatException(
+      'no language_versions in MODULE_COMPILER_SOURCES',
+    );
+  }
+  return {
+    for (final RegExpMatch m in RegExp(
+      '"([^"]+)": "([^"]+)"',
+    ).allMatches(block.group(1)!))
+      m.group(1)!: m.group(2)!,
+  };
+}
+
+/// One `MODULE_COMPILER_SOURCES` row.
+String renderModuleCompilerRow({
+  required String version,
+  required String sha256,
+  required String revision,
+  required Map<String, String> languageVersions,
+}) {
+  final buf = StringBuffer()
+    ..writeln('    "$version": struct(')
+    ..writeln('        sha256 = "$sha256",')
+    ..writeln('        revision = "$revision",')
+    ..writeln('        language_versions = {');
+  for (final String name in languageVersions.keys.toList()..sort()) {
+    buf.writeln('            "$name": "${languageVersions[name]}",');
+  }
+  buf
+    ..writeln('        },')
+    ..writeln('    ),');
+  return buf.toString();
+}
+
+/// The versions `MODULE_COMPILER_SOURCES` has a row for, newest first.
+List<String> parseModuleCompilerVersions(String moduleCompilerBzl) => [
+  for (final RegExpMatch m in RegExp(
+    r'^    "([^"]+)": struct\(',
+    multiLine: true,
+  ).allMatches(_dictBody(moduleCompilerBzl, 'MODULE_COMPILER_SOURCES')))
+    m.group(1)!,
+];
+
+const _toolVersionsTable = 'TOOL_VERSIONS';
+const _moduleCompilerTable = 'MODULE_COMPILER_SOURCES';
+
+/// `TOOL_VERSIONS` of [versionsBzl] with [entry] (from [renderToolVersionEntry])
+/// added in order, newest first.
+String insertToolVersion(String versionsBzl, String version, String entry) =>
+    _insertRow(versionsBzl, _toolVersionsTable, version, entry, r'\{');
+
+/// `TOOL_VERSIONS` of [versionsBzl] without [version].
+String removeToolVersion(String versionsBzl, String version) =>
+    _removeRow(versionsBzl, _toolVersionsTable, version, r'\{', '},');
+
+/// `MODULE_COMPILER_SOURCES` of [moduleCompilerBzl] with [row] added in order.
+String insertModuleCompilerRow(
+  String moduleCompilerBzl,
+  String version,
+  String row,
+) => _insertRow(
+  moduleCompilerBzl,
+  _moduleCompilerTable,
+  version,
+  row,
+  r'struct\(',
+);
+
+/// `MODULE_COMPILER_SOURCES` of [moduleCompilerBzl] without [version].
+String removeModuleCompilerRow(String moduleCompilerBzl, String version) =>
+    _removeRow(
+      moduleCompilerBzl,
+      _moduleCompilerTable,
+      version,
+      r'struct\(',
+      '),',
+    );
+
+/// The text between `<name> = {` and the closing brace of a top-level dict.
+String _dictBody(String content, String name) {
+  final int start = _dictStart(content, name);
+  return content.substring(start, _dictEnd(content, start));
+}
+
+/// The index just after `<name> = {`.
+int _dictStart(String content, String name) {
+  final marker = '$name = {';
+  final int at = content.indexOf(marker);
+  if (at < 0) throw FormatException('Could not find `$marker`');
+  return at + marker.length;
+}
+
+/// The index of the closing `}` of the dict whose body starts at [bodyStart].
+int _dictEnd(String content, int bodyStart) {
+  final int at = content.indexOf('\n}\n', bodyStart);
+  if (at < 0) throw const FormatException('Could not find the closing `}`');
+  return at + 1;
+}
+
+String _insertRow(
+  String content,
+  String table,
+  String version,
+  String row,
+  String opener,
+) {
+  final int bodyStart = _dictStart(content, table);
+  final int end = _dictEnd(content, bodyStart);
+  var at = end;
+  for (final RegExpMatch m in RegExp(
+    '^    "([^"]+)": $opener',
+    multiLine: true,
+  ).allMatches(content, bodyStart)) {
+    if (m.start >= end) break;
+    final int order = compareReleaseVersions(m.group(1)!, version);
+    if (order == 0) throw StateError('$version is already in $table');
+    if (order < 0) {
+      at = m.start;
+      break;
+    }
+  }
+  return content.substring(0, at) + row + content.substring(at);
+}
+
+String _removeRow(
+  String content,
+  String table,
+  String version,
+  String opener,
+  String closer,
+) {
+  final int bodyStart = _dictStart(content, table);
+  final int end = _dictEnd(content, bodyStart);
+  final RegExpMatch? header = RegExp(
+    '^    "${RegExp.escape(version)}": $opener\\s*\$',
+    multiLine: true,
+  ).firstMatch(content.substring(bodyStart, end));
+  if (header == null) throw StateError('$version is not in $table');
+  final int from = bodyStart + header.start;
+  final closing = '\n    $closer\n';
+  final int close = content.indexOf(closing, from);
+  if (close < 0 || close >= end) {
+    throw FormatException('Could not find the end of $version in $table');
+  }
+  return content.substring(0, from) + content.substring(close + closing.length);
+}
+
+Future<String> _fetchText(HttpClient client, Uri url) async {
+  for (var attempt = 1; attempt <= 3; attempt++) {
+    try {
+      final HttpClientRequest request = await client.getUrl(url);
+      final HttpClientResponse response = await request.close();
+      if (response.statusCode != HttpStatus.ok) {
+        await response.drain<void>();
+        throw HttpException(
+          'HTTP ${response.statusCode} fetching $url',
+          uri: url,
+        );
+      }
+      return await utf8.decodeStream(response);
+    } on Object {
+      if (attempt == 3) rethrow;
+      await Future<void>.delayed(Duration(milliseconds: 250 * attempt));
+    }
+  }
+  throw StateError('unreachable');
+}
+
+/// The digest of the SDK archive of [platform]: the one the bucket publishes
+/// in the `.sha256sum` file beside it, or, when there is none, the digest of
+/// the archive as downloaded.
+Future<String> _fetchSdkChecksum(
+  HttpClient client,
+  String version,
+  String platform,
+) async {
+  final Uri archive = Uri.parse(sdkArchiveUrl(version, platform));
+  try {
+    final String? published = parseSha256sum(
+      await _fetchText(client, Uri.parse('$archive.sha256sum')),
+    );
+    if (published != null) return published;
+  } on HttpException {
+    // Fall through to hashing the download.
+  }
+  stdout.writeln('No published checksum for $platform; hashing the download.');
+  return await _fetchSha256(client, archive);
+}
+
 Future<String> _fetchSha256(HttpClient client, Uri url) async {
   for (var attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -256,78 +527,216 @@ Future<String> _fetchSha256(HttpClient client, Uri url) async {
 }
 
 Future<void> main(List<String> args) async {
-  final _VersionsArgs parsed = _parseVersionsArgs(args);
-  final String versionsBzlPath = _resolveVersionsBzl(parsed.versionsBzlPath);
-
-  final file = File(versionsBzlPath);
-  if (!file.existsSync()) {
-    stderr.writeln(
-      'update_cross_sdk_versions: versions.bzl not found at $versionsBzlPath',
-    );
-    exit(1);
+  final _Args parsed = _parseArgs(args);
+  final String versionsBzlPath = _resolveWorkspaceFile(
+    parsed.versionsBzlPath,
+    'versions.bzl',
+  );
+  final String moduleCompilerBzlPath = _resolveWorkspaceFile(
+    parsed.moduleCompilerBzlPath,
+    'module_compiler_versions.bzl',
+  );
+  for (final path in [versionsBzlPath, moduleCompilerBzlPath]) {
+    if (!File(path).existsSync()) {
+      stderr.writeln('update_cross_sdk_versions: $path not found');
+      exit(1);
+    }
   }
 
-  final String existingContent = file.readAsStringSync();
-  final List<String> versions = parseToolVersions(existingContent);
-  final ({
-    Map<String, Map<String, String>> dartaotruntime,
-    Map<String, Map<String, String>> genSnapshot,
-  })
-  pins = _loadExistingPins(existingContent, force: parsed.force);
+  String versionsBzl = File(versionsBzlPath).readAsStringSync();
+  String moduleCompilerBzl = File(moduleCompilerBzlPath).readAsStringSync();
+  // Taken before any row goes: the newest row's package language versions are
+  // what a new row starts from.
+  final Map<String, String> languageVersions = parseLanguageVersions(
+    moduleCompilerBzl,
+  );
+  final String languageVersionsFrom = parseModuleCompilerVersions(
+    moduleCompilerBzl,
+  ).first;
+
+  for (final String version in parsed.drop) {
+    versionsBzl = removeToolVersion(versionsBzl, version);
+  }
 
   final client = HttpClient();
   try {
-    final List<Future<void> Function()> tasks = _planFetchTasks(
+    // 1. The SDK archives of every version asked for and not listed.
+    final List<String> listed = parseToolVersions(versionsBzl);
+    final List<String> added = [
+      for (final String version in parsed.add)
+        if (!listed.contains(version)) version,
+    ];
+    final sdkHashes = <String, Map<String, String>>{
+      for (final String version in added) version: {},
+    };
+    await _runFetchTasks([
+      for (final String version in added)
+        for (final String platform in hostPlatforms.keys)
+          () async {
+            final String digest = await _fetchSdkChecksum(
+              client,
+              version,
+              platform,
+            );
+            sdkHashes[version]![platform] = digest;
+            stdout.writeln('Pinned $version $platform -> $digest');
+          },
+    ]);
+    for (final version in added) {
+      versionsBzl = insertToolVersion(
+        versionsBzl,
+        version,
+        renderToolVersionEntry(version, sdkHashes[version]!),
+      );
+    }
+    final List<String> versions = parseToolVersions(versionsBzl);
+
+    // 2. The cross-compilation artifacts of every listed version.
+    final ({
+      Map<String, Map<String, String>> dartaotruntime,
+      Map<String, Map<String, String>> genSnapshot,
+    })
+    pins = _loadExistingPins(versionsBzl, force: parsed.force);
+    final List<Future<void> Function()> crossTasks = _planFetchTasks(
       versions: versions,
       genSnapshotPins: pins.genSnapshot,
       dartaotruntimePins: pins.dartaotruntime,
       client: client,
     );
-    await _runFetchTasks(tasks);
-    final String rendered = renderVersionsBzl(
-      existingContent: existingContent,
+    await _runFetchTasks(crossTasks);
+    versionsBzl = renderVersionsBzl(
+      existingContent: versionsBzl,
       versions: versions,
       genSnapshotVersions: pins.genSnapshot,
       dartaotruntimeVersions: pins.dartaotruntime,
     );
-    file.writeAsStringSync(rendered);
+
+    // 3. The module compiler's sources of every listed version.
+    for (final String version in parseModuleCompilerVersions(
+      moduleCompilerBzl,
+    )) {
+      if (!versions.contains(version)) {
+        moduleCompilerBzl = removeModuleCompilerRow(moduleCompilerBzl, version);
+      }
+    }
+    final List<String> pinned = parseModuleCompilerVersions(moduleCompilerBzl);
+    final List<String> unpinned = [
+      for (final String version in versions)
+        if (!pinned.contains(version)) version,
+    ];
+    final rows = <String, ({String sha256, String revision})>{};
+    await _runFetchTasks([
+      for (final String version in unpinned)
+        () async {
+          final String revision = parseReleaseRevision(
+            await _fetchText(client, Uri.parse(releaseVersionUrl(version))),
+            version,
+          );
+          final String digest = await _fetchSha256(
+            client,
+            Uri.parse(tagArchiveUrl(version)),
+          );
+          rows[version] = (sha256: digest, revision: revision);
+          stdout.writeln('Pinned $version module compiler sources -> $digest');
+        },
+    ]);
+    for (final version in unpinned) {
+      moduleCompilerBzl = insertModuleCompilerRow(
+        moduleCompilerBzl,
+        version,
+        renderModuleCompilerRow(
+          version: version,
+          sha256: rows[version]!.sha256,
+          revision: rows[version]!.revision,
+          languageVersions: languageVersions,
+        ),
+      );
+    }
+
+    // Everything was fetched: only now do the files change.
+    File(versionsBzlPath).writeAsStringSync(versionsBzl);
+    File(moduleCompilerBzlPath).writeAsStringSync(moduleCompilerBzl);
     stdout.writeln(
       'Updated $versionsBzlPath (${versions.length} SDK versions, '
-      '${tasks.length} artifacts fetched).',
+      '${added.length * hostPlatforms.length + crossTasks.length} '
+      'artifacts fetched) and $moduleCompilerBzlPath '
+      '(${unpinned.length} rows added).',
     );
+    if (unpinned.isNotEmpty) {
+      stdout.writeln(
+        'The language_versions of the new rows are those of '
+        '$languageVersionsFrom: they are the `sdk:` lower bounds in '
+        'pkg/{_fe_analyzer_shared,build_integration,front_end,kernel,vm}/'
+        'pubspec.yaml of the tag. If one moved, the module compiler does not '
+        'build until the row says so.',
+      );
+    }
   } finally {
     client.close(force: true);
   }
 }
 
 /// Parsed `update_cross_sdk_versions` command line.
-typedef _VersionsArgs = ({String? versionsBzlPath, bool force});
+typedef _Args = ({
+  List<String> add,
+  List<String> drop,
+  String? versionsBzlPath,
+  String? moduleCompilerBzlPath,
+  bool force,
+});
 
-/// Parses the command line, rejecting unknown arguments.
-_VersionsArgs _parseVersionsArgs(List<String> args) {
+/// Parses the command line, rejecting unknown arguments and versions that are
+/// not releases.
+_Args _parseArgs(List<String> args) {
+  final add = <String>[];
+  final drop = <String>[];
   String? versionsBzlPath;
+  String? moduleCompilerBzlPath;
   var force = false;
   for (final arg in args) {
     if (arg == '--force') {
       force = true;
     } else if (arg.startsWith('--versions-bzl=')) {
       versionsBzlPath = arg.substring('--versions-bzl='.length);
+    } else if (arg.startsWith('--module-compiler-bzl=')) {
+      moduleCompilerBzlPath = arg.substring('--module-compiler-bzl='.length);
+    } else if (arg.startsWith('--drop=')) {
+      drop.add(arg.substring('--drop='.length));
+    } else if (!arg.startsWith('-')) {
+      add.add(arg);
     } else {
       stderr.writeln('update_cross_sdk_versions: unknown argument: $arg');
       exit(64);
     }
   }
-  return (versionsBzlPath: versionsBzlPath, force: force);
+  for (final version in [...add, ...drop]) {
+    try {
+      compareReleaseVersions(version, version);
+    } on FormatException {
+      stderr.writeln(
+        'update_cross_sdk_versions: $version is not a release version '
+        '(major.minor.patch)',
+      );
+      exit(64);
+    }
+  }
+  return (
+    add: add,
+    drop: drop,
+    versionsBzlPath: versionsBzlPath,
+    moduleCompilerBzlPath: moduleCompilerBzlPath,
+    force: force,
+  );
 }
 
-/// The `versions.bzl` to update: the flag, or the workspace checkout's.
-String _resolveVersionsBzl(String? flagPath) {
+/// The `dart/private/<name>` to update: the flag, or the workspace checkout's.
+String _resolveWorkspaceFile(String? flagPath, String name) {
   if (flagPath != null) return flagPath;
   final String? workspace = Platform.environment['BUILD_WORKSPACE_DIRECTORY'];
   if (workspace != null && workspace.isNotEmpty) {
-    return '$workspace/dart/private/versions.bzl';
+    return '$workspace/dart/private/$name';
   }
-  return 'dart/private/versions.bzl';
+  return 'dart/private/$name';
 }
 
 /// Existing cross pins, or empty maps under `--force`.
