@@ -35,12 +35,6 @@ const _tool = 'import_check';
 
 final RegExp _refusableLibrary = RegExp(r'^dart:[a-z_]+$');
 
-/// The violation line for [path] naming the refused library [uri] in a
-/// [kind] (`import` or `export`) directive of [label].
-String refusedLine(String label, String path, String kind, String uri) =>
-    "$label: $path ${kind}s '$uri', which //dart:refused_dart_libraries "
-    'refuses. Remove the $kind, or take the library out of that setting.';
-
 /// The line for one directive [ref] of [path], or null when it is fine. The
 /// URI is judged as the front end reads it, for the refused set and for the
 /// layering check alike; the line shows it as written.

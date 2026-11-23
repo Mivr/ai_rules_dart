@@ -53,6 +53,14 @@ import 'dart:typed_data';
 
 import 'package:_fe_analyzer_shared/src/messages/diagnostic_message.dart'
     show getMessageUri;
+import 'package:_fe_analyzer_shared/src/parser/experimental_features.dart'
+    show DefaultExperimentalFeatures;
+import 'package:_fe_analyzer_shared/src/parser/listener.dart' show Listener;
+import 'package:_fe_analyzer_shared/src/parser/quote.dart' show unescapeString;
+import 'package:_fe_analyzer_shared/src/parser/top_level_parser.dart'
+    show TopLevelParser;
+import 'package:_fe_analyzer_shared/src/scanner/scanner.dart' show scan;
+import 'package:_fe_analyzer_shared/src/scanner/token.dart' show Token;
 import 'package:build_integration/file_system/multi_root.dart';
 import 'package:front_end/src/api_prototype/file_system.dart';
 import 'package:front_end/src/api_prototype/incremental_kernel_generator.dart'
@@ -63,6 +71,8 @@ import 'package:kernel/binary/ast_to_binary.dart';
 import 'package:kernel/target/targets.dart';
 import 'package:vm/modular/target/flutter.dart';
 import 'package:vm/modular/target/vm.dart';
+import 'package:vm/native_assets/json_to_kernel_constant.dart';
+import 'package:yaml/yaml.dart' show loadYaml;
 
 import 'lib/layering_message.dart';
 import 'lib/worker_protocol.dart';
@@ -101,6 +111,8 @@ class Request {
           sources.add(Uri.parse(value(++i)));
         case '--input-source':
           inputSources.add(value(++i));
+        case '--source-dir':
+          sourceDirs.add((uri: value(++i), dir: value(++i)));
         case '--own-source-file':
           ownSourceFiles.add(value(++i));
         case '--output':
@@ -113,6 +125,8 @@ class Request {
           unusedInputs = value(++i);
         case '--no-drop':
           entry = true;
+        case '--native-assets':
+          nativeAssets = value(++i);
         case '--track-widget-creation':
           trackWidgetCreation = true;
         case '--check-imports':
@@ -121,6 +135,8 @@ class Request {
           label = value(++i);
         case '--own-package' || '--direct-package':
           allowedPackages.add(value(++i));
+        case '--refused-library':
+          refusedLibraries.add(value(++i));
         case '--enable-experiment':
           experiments.add(value(++i));
         default:
@@ -140,6 +156,34 @@ class Request {
       );
     }
     if (roots.isEmpty) roots.add(Uri.base);
+    // A source directory (a `dart_library`'s `srcs_dir`) is one input whose
+    // files the analysis phase cannot name: each `.dart` file under it is a
+    // source of this module, under the URI prefix plus its relative path.
+    for (final (:String uri, :String dir) in sourceDirs) {
+      if (!uri.endsWith('/')) {
+        throw FormatException('--source-dir $uri: the URI prefix ends in /.');
+      }
+      final root = Directory(dir);
+      // A package with no `lib/` has no library to compile.
+      if (!root.existsSync()) continue;
+      final files = [
+        for (final e in root.listSync(recursive: true))
+          if (e is File && e.path.endsWith('.dart')) e.path,
+      ]..sort();
+      for (final String path in files) {
+        final String rel = path
+            .substring(root.path.length + 1)
+            .replaceAll(Platform.pathSeparator, '/');
+        sources.add(Uri.parse('$uri${Uri(path: rel)}'));
+        inputSources.add(path);
+        ownSourceFiles.add(path);
+      }
+    }
+    if (nativeAssets != null && !entry) {
+      throw const FormatException(
+        '--native-assets is an entry option: it needs --no-drop.',
+      );
+    }
     // A defines file states `-DKEY=VALUE` lines that come before every `-D`
     // of the request, so a `-D` of the same key wins. A value is everything
     // after the first `=`, commas included.
@@ -175,6 +219,9 @@ class Request {
   /// The URI each source compiles under. An entry's entry point comes first.
   final List<Uri> sources = [];
 
+  /// Source directories: a URI prefix and the directory its files sit in.
+  final List<({String uri, String dir})> sourceDirs = [];
+
   /// Every source file the compile may read, and those that are its own.
   final List<String> inputSources = [];
   final Set<String> ownSourceFiles = {};
@@ -183,11 +230,18 @@ class Request {
   String? excluded;
   String? unusedInputs;
 
+  /// The native-assets mapping an entry embeds, as `frontend_server
+  /// --native-assets` embeds it in a whole program.
+  String? nativeAssets;
+
   /// An executable's entry module: nothing is left out, any error fails.
   bool entry = false;
   bool checkImports = false;
   String label = '';
   final Set<String> allowedPackages = {};
+
+  /// The `dart:` libraries `//dart:refused_dart_libraries` refuses.
+  final Set<String> refusedLibraries = {};
 }
 
 Uri _fileUri(String path) => Uri.base.resolveUri(Uri.file(path));
@@ -286,6 +340,9 @@ class Compiler {
     final outlineOf = <String, Uri>{};
     final stagedOf = <String, List<Uri>>{};
     final stagedRoots = <Uri>[];
+    // Each source a dependency module left out, by its key: the module's
+    // directory and the reason it gave.
+    final depLeftOut = <String, ({String dir, String reason})>{};
     for (final String dir in r.inputModules) {
       final index = jsonDecode(
         File('$dir/index.json').readAsStringSync(),
@@ -296,6 +353,13 @@ class Compiler {
         inputDigests[uri] = _digest('$dir/$name', digests);
       }
       final List<String> staged = (index['excluded'] as List).cast<String>();
+      final reasons = (index['reasons'] as Map<String, dynamic>?) ?? const {};
+      for (final String key in staged) {
+        depLeftOut[key] = (
+          dir: dir,
+          reason: reasons[key] as String? ?? 'left out for the target',
+        );
+      }
       if (r.entry && staged.isNotEmpty) {
         stagedRoots.add(Uri.base.resolveUri(Uri.directory('$dir/sources')));
         stagedOf[dir] = [
@@ -401,8 +465,31 @@ class Compiler {
         misspelled.forEach(log.writeln);
         return 1;
       }
+      final Map<Library, String> undeclared = await _undeclared(
+        r,
+        own,
+        fromDill,
+        fileSystem,
+        (Uri uri) => translator.translate(uri, false),
+        depLeftOut,
+      );
+      // An entry may not leave anything out: an undeclared file fails it. A
+      // library module leaves the library out, naming the import (another
+      // target of a package split across targets may declare the file).
+      if (r.entry && undeclared.isNotEmpty) {
+        for (final MapEntry<Library, String> e in undeclared.entries) {
+          final ({String dir, String reason})? upstream =
+              depLeftOut[_key(e.key.fileUri, r)];
+          log.writeln(
+            '$_tool: cannot compile ${e.key.importUri}: ${e.value}'
+            '${upstream == null ? '' : ' The module of ${upstream.dir} left '
+                      'it out; this program reaches it.'}',
+          );
+        }
+        return 1;
+      }
       if (r.checkImports && leftOut.isEmpty) {
-        final List<String> violations = _layering(r, own);
+        final List<String> violations = await _layering(r, own, fileSystem);
         if (violations.isNotEmpty) {
           violations.forEach(log.writeln);
           return 1;
@@ -411,10 +498,18 @@ class Compiler {
       if (r.entry) {
         if (errors.isNotEmpty) {
           log.write(out);
+          _explainLeftOut(r, errors, depLeftOut).forEach(log.writeln);
           return 1;
         }
       } else {
-        final Map<Library, String>? bad = _unfit(compiled, ownSet, errors);
+        final Map<Library, String>? bad = _unfit(
+          r,
+          compiled,
+          ownSet,
+          errors,
+          depLeftOut,
+          undeclared,
+        );
         if (bad == null) {
           log.write(out);
           return 1;
@@ -545,27 +640,36 @@ class Compiler {
   /// The libraries of a library module that cannot stay, each with the
   /// reason, or null when an error belongs to none of them.
   Map<Library, String>? _unfit(
+    Request r,
     List<Library> compiled,
     Set<Library> own,
     List<fe.CfeDiagnosticMessage> errors,
+    Map<String, ({String dir, String reason})> depLeftOut,
+    Map<Library, String> undeclared,
   ) {
     final owner = <Uri, Library>{
       for (final Library library in compiled)
         for (final Uri file in _filesOf(library)) file: library,
     };
     final fromSource = compiled.toSet();
-    final bad = <Library, String>{};
+    final bad = <Library, String>{...undeclared};
     for (final Library library in own) {
       for (final LibraryDependency dependency in library.dependencies) {
         final Library target = dependency.targetLibrary;
         if (fromSource.contains(target) && !own.contains(target)) {
-          bad[library] ??=
-              'imports ${target.importUri}, which no dependency module defines';
+          final ({String dir, String reason})? upstream =
+              depLeftOut[_key(target.fileUri, r)];
+          bad[library] ??= upstream != null
+              ? 'imports ${target.importUri}, which its module left out '
+                    '(${upstream.reason})'
+              : 'imports ${target.importUri}, which no dependency module '
+                    'defines';
         }
       }
     }
     for (final fe.CfeDiagnosticMessage error in errors) {
       final Library? library = owner[getMessageUri(error)];
+      if (library == null && undeclared.isNotEmpty) continue;
       if (library == null) return null;
       // An error in a library that is not this module's is left to the
       // rule above: whatever imports that library is left out.
@@ -592,20 +696,126 @@ class Compiler {
   }
 
   /// The strict-layering violations of [own]: a `package:` import whose
-  /// package is neither the target's own nor a direct dependency's.
-  List<String> _layering(Request r, List<Library> own) {
+  /// package is neither the target's own nor a direct dependency's, and an
+  /// import or export of a refused `dart:` library.
+  ///
+  /// The front end resolves a conditional import to the one URI the target
+  /// takes, so the others are read from the directives of the module's own
+  /// sources: a branch the target does not take may not name an undeclared
+  /// package either.
+  Future<List<String>> _layering(
+    Request r,
+    List<Library> own,
+    FileSystem fileSystem,
+  ) async {
     final lines = <String>{};
     final List<Library> sorted = own.toList()
       ..sort((a, b) => '${a.fileUri}'.compareTo('${b.fileUri}'));
+    void check(Library library, String uri, {String kind = 'import'}) {
+      if (r.refusedLibraries.contains(uri)) {
+        lines.add(refusedLine(r.label, _key(library.fileUri, r), kind, uri));
+        return;
+      }
+      final String? name = packageOfUri(uri);
+      if (name == null || r.allowedPackages.contains(name)) return;
+      lines.add(violationLine(r.label, _key(library.fileUri, r), uri, name));
+    }
+
     for (final Library library in sorted) {
       for (final LibraryDependency dependency in library.dependencies) {
-        final uri = '${dependency.targetLibrary.importUri}';
-        final String? name = packageOfUri(uri);
-        if (name == null || r.allowedPackages.contains(name)) continue;
-        lines.add(violationLine(r.label, _key(library.fileUri, r), uri, name));
+        check(
+          library,
+          '${dependency.targetLibrary.importUri}',
+          kind: dependency.isExport ? 'export' : 'import',
+        );
+      }
+      final FileSystemEntity entity = fileSystem.entityForUri(library.fileUri);
+      if (!await entity.exists()) continue;
+      for (final String uri in _conditionalUris(await entity.readAsBytes())) {
+        check(library, '${library.importUri.resolve(uri)}');
       }
     }
     return lines.toList();
+  }
+
+  /// The imports and exports of [library] (and of its parts) that name a
+  /// file the request does not declare, each refused with the URI as written.
+  /// A library may still be left out for importing a `dart:` library the
+  /// target lacks, for an error of its own, or for importing a library its
+  /// dependency module left out; a file that is simply not an input is a
+  /// mistake in the build, and leaving the library out would hide it until
+  /// something reaches it. An import of a package the package config does not
+  /// name is left to the layering check.
+  Future<Map<Library, String>> _undeclared(
+    Request r,
+    List<Library> own,
+    Map<Uri, Uri> fromDill,
+    FileSystem fileSystem,
+    Uri? Function(Uri) translate,
+    Map<String, ({String dir, String reason})> depLeftOut,
+  ) async {
+    final exists = <Uri, bool>{};
+    Future<bool> present(Uri file) async =>
+        exists[file] ??= await fileSystem.entityForUri(file).exists();
+    final found = <Library, String>{};
+    final List<Library> sorted = own.toList()
+      ..sort((a, b) => '${a.fileUri}'.compareTo('${b.fileUri}'));
+    for (final Library library in sorted) {
+      if (!r.entry && !await present(library.fileUri)) {
+        found[library] =
+            'its file ${_key(library.fileUri, r)} is not an input of this '
+            'compile.';
+        continue;
+      }
+      for (final LibraryDependency dependency in library.dependencies) {
+        final Library target = dependency.targetLibrary;
+        final Uri uri = target.importUri;
+        if (uri.isScheme('dart') || fromDill.containsKey(uri)) continue;
+        if (uri.isScheme('package') && translate(uri) == null) continue;
+        if (depLeftOut.containsKey(_key(target.fileUri, r))) continue;
+        if (await present(target.fileUri)) continue;
+        final String written =
+            await _written(fileSystem, library, dependency) ?? '$uri';
+        found[library] ??=
+            "${dependency.isExport ? 'export' : 'import'} "
+            "'$written' names ${_key(target.fileUri, r)}, which is not an "
+            'input of this compile. Add it to the srcs of the target that '
+            'owns it, and that target to deps.';
+      }
+      for (final LibraryPart part in library.parts) {
+        final Uri file = _fileOf(library.fileUri.resolve(part.partUri));
+        if (await present(file)) continue;
+        found[library] ??=
+            "part '${part.partUri}' names "
+            '${_key(file, r)}, which is not an input of this compile. Add it '
+            'to the srcs of the target that owns the library.';
+      }
+    }
+    return found;
+  }
+
+  /// Why an entry that failed reached a source a dependency module left out:
+  /// the entry compiled it from source, and its error is the front end's own,
+  /// so each line names the module and the reason it gave.
+  List<String> _explainLeftOut(
+    Request r,
+    List<fe.CfeDiagnosticMessage> errors,
+    Map<String, ({String dir, String reason})> depLeftOut,
+  ) {
+    final lines = <String>{};
+    for (final fe.CfeDiagnosticMessage error in errors) {
+      final Uri? uri = getMessageUri(error);
+      if (uri == null) continue;
+      final String key = _key(uri, r);
+      final ({String dir, String reason})? upstream = depLeftOut[key];
+      if (upstream == null) continue;
+      lines.add(
+        '$_tool: $key is not in the module of ${upstream.dir}, which left it '
+        'out: ${upstream.reason}. This program reaches it, so it compiled it '
+        'from source.',
+      );
+    }
+    return lines.toList()..sort();
   }
 
   /// The file of [library] and of each of its parts.
@@ -635,9 +845,15 @@ class Compiler {
     }.toList()..sort();
     final List<Map<String, Object>> kernels;
     if (r.entry) {
-      // The entry keeps its source text.
-      File('$output/$_entryDill')
-          .writeAsBytesSync(_serialize(component, own.toSet().contains));
+      // The entry keeps its source text. A native-assets mapping follows it
+      // as a component of its own, as `frontend_server` writes it for a JIT
+      // program: the VM loads the concatenation as one program.
+      final bytes = BytesBuilder(copy: false)
+        ..add(_serialize(component, own.toSet().contains));
+      if (r.nativeAssets case final String path) {
+        bytes.add(_nativeAssetsKernel(path));
+      }
+      File('$output/$_entryDill').writeAsBytesSync(bytes.takeBytes());
       kernels = [
         {
           'dill': _entryDill,
@@ -697,6 +913,7 @@ class Compiler {
     if (outline == null) return;
     Directory(outline).createSync(recursive: true);
     final staged = <String>[];
+    final reasons = <String, String>{};
     for (final _LeftOut library in leftOut.values) {
       for (final Uri file in library.files) {
         final FileSystemEntity entity = fileSystem.entityForUri(file);
@@ -706,6 +923,7 @@ class Compiler {
           ..parent.createSync(recursive: true)
           ..writeAsBytesSync(await entity.readAsBytes());
         staged.add(key);
+        reasons[key] = library.reason;
       }
     }
     // From here the libraries are stripped in place; the next request
@@ -730,7 +948,12 @@ class Compiler {
       File('$outline/$_outlineDill').writeAsBytesSync(bytes.takeBytes());
     }
     File('$outline/index.json').writeAsStringSync(
-      '${json.convert({'version': 2, 'outline': own.isEmpty ? null : _outlineDill, 'excluded': staged..sort()})}\n',
+      '${json.convert({
+        'version': 2,
+        'outline': own.isEmpty ? null : _outlineDill,
+        'excluded': staged..sort(),
+        'reasons': {for (final String key in staged) key: reasons[key]},
+      })}\n',
     );
   }
 }
@@ -785,6 +1008,139 @@ List<List<Library>> _stronglyConnected(List<Library> own) {
     if (!index.containsKey(library)) visit(library);
   }
   return out;
+}
+
+/// The URIs of the conditional imports and exports in [source]: the default
+/// and each configuration's, as written. Parsed by the SDK's own parser,
+/// which skips every declaration body.
+List<String> _conditionalUris(Uint8List source) {
+  final listener = _ConditionalUris();
+  try {
+    TopLevelParser(
+      listener,
+      experimentalFeatures: const DefaultExperimentalFeatures(),
+    ).parseUnit(scan(source).tokens);
+  } catch (_) {
+    // A source the parser cannot read fails its compile on its own.
+    return const [];
+  }
+  return listener.uris;
+}
+
+class _ConditionalUris extends Listener {
+  final List<String> uris = [];
+  bool _inDirective = false;
+  bool _inCondition = false;
+  final List<String> _strings = [];
+  final List<String> _conditional = [];
+
+  @override
+  void beginImport(Token importKeyword) => _begin();
+
+  @override
+  void beginExport(Token token) => _begin();
+
+  void _begin() {
+    _inDirective = true;
+    _default = null;
+    _strings.clear();
+    _conditional.clear();
+  }
+
+  @override
+  void beginConditionalUri(Token ifKeyword) {
+    _inCondition = true;
+    _strings.clear();
+  }
+
+  @override
+  void endConditionalUri(Token ifKeyword, Token leftParen, Token? equalSign) {
+    // The last string of a configuration is its URI; one before it is the
+    // value the condition compares with.
+    if (_strings.isNotEmpty) _conditional.add(_strings.last);
+    _inCondition = false;
+    _strings.clear();
+  }
+
+  /// The directive's first string: its default URI.
+  String? _default;
+
+  @override
+  void beginLiteralString(Token token) {
+    if (!_inDirective) return;
+    final String value = unescapeString(token.lexeme, token, this);
+    if (_inCondition) {
+      _strings.add(value);
+    } else {
+      _default ??= value;
+    }
+  }
+
+  @override
+  void endImport(Token importKeyword, Token? semicolon) => _end();
+
+  @override
+  void endExport(Token exportKeyword, Token semicolon) => _end();
+
+  void _end() {
+    if (_conditional.isNotEmpty) {
+      uris.addAll([?_default, ..._conditional]);
+    }
+    _inDirective = false;
+    _default = null;
+    _strings.clear();
+    _conditional.clear();
+  }
+}
+
+/// The kernel `frontend_server --native-assets` appends to a JIT program for
+/// the mapping in [path]: one library, `vm:ffi:native-assets`, whose pragma
+/// carries the mapping the VM resolves `@Native` assets with. As the SDK's
+/// `NativeAssetsSynthesizer` writes it, against a stand-in `pragma` class: the
+/// reference is symbolic, so the kernel binds it to `dart:core`'s.
+Uint8List _nativeAssetsKernel(String path) {
+  final Object? yaml = loadYaml(File(path).readAsStringSync());
+  final Object? version = yaml is Map ? yaml['format-version'] : null;
+  final Object? assets = yaml is Map ? yaml['native-assets'] : null;
+  if (version is! List || version.isEmpty || version.first != 1) {
+    throw FormatException("$path: expected 'format-version: [1, ...]'.");
+  }
+  if (assets is! Map) {
+    throw FormatException("$path: expected a 'native-assets' map.");
+  }
+  final dummy = Uri.parse('dummy');
+  final dartCore = Uri.parse('dart:core');
+  final pragma = Class(
+    name: 'pragma',
+    fileUri: dartCore,
+    fields: [
+      Field.immutable(Name('name'), fileUri: dummy),
+      Field.immutable(Name('options'), fileUri: dummy),
+    ],
+  );
+  Component(
+    libraries: [
+      Library(dartCore, fileUri: dummy, classes: [pragma]),
+    ],
+  );
+  Expression annotation(String name, Constant options) => ConstantExpression(
+    InstanceConstant(pragma.reference, [], {
+      pragma.fields[0].fieldReference: StringConstant(name),
+      pragma.fields[1].fieldReference: options,
+    }),
+  );
+  final library = Library(
+    Uri.parse('vm:ffi:native-assets'),
+    name: 'vm:ffi:native-assets',
+    fileUri: dummy,
+    annotations: [
+      annotation('vm:entry-point', NullConstant()),
+      annotation('vm:ffi:native-assets', jsonToKernelConstant(assets)),
+    ],
+  );
+  final sink = _Bytes();
+  BinaryPrinter(sink).writeComponentFile(Component(libraries: [library]));
+  return sink.builder.takeBytes();
 }
 
 /// As `makeStable` in the SDK's `compute_kernel.dart`.

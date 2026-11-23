@@ -17,3 +17,9 @@ String violationLine(String label, String path, String uri, String name) =>
     "$label: $path imports '$uri', but package '$name' is not a direct "
     'dependency of $label, only of something it depends on. '
     "Add the target that provides package '$name' to $label's deps.";
+
+/// The violation line for [path] naming the refused library [uri] in a
+/// [kind] (`import` or `export`) directive of [label].
+String refusedLine(String label, String path, String kind, String uri) =>
+    "$label: $path ${kind}s '$uri', which //dart:refused_dart_libraries "
+    'refuses. Remove the $kind, or take the library out of that setting.';

@@ -525,7 +525,8 @@ String midWhere() => where();
       );
     });
 
-    test("fails an entry that reaches it, with the front end's own error", () {
+    test("fails an entry that reaches it, with the front end's own error "
+        'and the reason its module gave', () {
       _compile(_moduleArgs('leaf'));
       _write('app/main.dart', '''
 import 'package:leaf/uses_web.dart';
@@ -537,6 +538,34 @@ void main() => print(where());
       );
       expect(result.exitCode, 1);
       expect(result.stderr, contains("'dart:html' is not available"));
+      expect(
+        result.stderr,
+        contains(
+          'leaf/lib/web.dart is not in the module of out/leaf.koutline, which '
+          'left it out: compile error:',
+        ),
+      );
+    });
+
+    test('names the reason in the outline, for the modules that import it', () {
+      _compile(_moduleArgs('leaf'));
+      final index = jsonDecode(
+        _text('out/leaf.koutline/index.json'),
+      ) as Map<String, dynamic>;
+      expect(index['excluded'], [
+        'leaf/lib/uses_web.dart',
+        'leaf/lib/web.dart',
+      ]);
+      final reasons = index['reasons'] as Map<String, dynamic>;
+      expect(reasons['leaf/lib/web.dart'], contains("'dart:html'"));
+      _compile(_moduleArgs('mid', deps: ['leaf']));
+      expect(
+        _text('out/mid.excluded'),
+        contains(
+          'package:mid/mid_web.dart\timports package:leaf/uses_web.dart, '
+          'which its module left out (imports package:leaf/web.dart',
+        ),
+      );
     });
   });
 
@@ -550,11 +579,97 @@ void main() => print(where());
     expect(result.stderr, contains("can't be returned"));
   });
 
-  test('a file the request does not declare is not read', () {
-    // `shapes.dart` is on disk, and `leaf.dart` imports it, but the request
-    // does not name it: the library that needs it is left out.
-    _compile(_moduleArgs('leaf', undeclared: {'src/shapes.dart'}));
-    expect(_text('out/leaf.excluded'), contains('package:leaf/leaf.dart\t'));
+  group('an import of a file the request does not declare', () {
+    test('leaves the library out of a library module, naming the import, '
+        'and fails an entry that reaches it', () {
+      _write('leaf/lib/lost.dart', '''
+import 'gone.dart';
+
+String lost() => gone();
+''');
+      _compile(_moduleArgs('leaf'));
+      expect(
+        _text('out/leaf.excluded'),
+        contains(
+          "package:leaf/lost.dart\timport 'gone.dart' names "
+          'leaf/lib/gone.dart, which is not an input of this compile.',
+        ),
+      );
+      _write('app/main.dart', '''
+import 'package:leaf/lost.dart';
+
+void main() => print(lost());
+''');
+      final ProcessResult result = _run(
+        _entryArgs('app/main.dart', deps: ['leaf']),
+      );
+      expect(result.exitCode, 1);
+      expect(
+        result.stderr,
+        allOf(
+          contains(
+            "cannot compile package:leaf/lost.dart: import 'gone.dart' names "
+            'leaf/lib/gone.dart, which is not an input of this compile.',
+          ),
+          contains(
+            'The module of out/leaf.koutline left it out; this program '
+            'reaches it.',
+          ),
+        ),
+      );
+    });
+
+    test("leaves out a library naming a file a dependency's package does "
+        'not have', () {
+      _compile(_moduleArgs('leaf'));
+      _write('mid/lib/mid.dart', '''
+import 'package:leaf/absent.dart';
+
+String announce(String name) => name;
+''');
+      _compile(_moduleArgs('mid', deps: ['leaf']));
+      expect(
+        _text('out/mid.excluded'),
+        contains(
+          "package:mid/mid.dart\timport 'package:leaf/absent.dart' names "
+          'leaf/lib/absent.dart, which is not an input of this compile.',
+        ),
+      );
+    });
+
+    test('fails an entry whose own source imports it, naming the source and '
+        'the import', () {
+      _compile(_moduleArgs('leaf'));
+      _write('app/main.dart', '''
+import 'package:leaf/absent.dart';
+
+void main() {}
+''');
+      final ProcessResult result = _run(
+        _entryArgs('app/main.dart', deps: ['leaf']),
+      );
+      expect(result.exitCode, 1);
+      expect(
+        result.stderr,
+        contains(
+          'cannot compile org-dartlang-root:///app/main.dart: import '
+          "'package:leaf/absent.dart' names leaf/lib/absent.dart, which is "
+          'not an input of this compile.',
+        ),
+      );
+    });
+
+    test('fails the module when its package is not in the package config, '
+        "with the front end's own error", () {
+      _write('leaf/lib/stray.dart', '''
+import 'package:nowhere/nowhere.dart';
+
+String stray() => nowhere();
+''');
+      final ProcessResult result = _run(_moduleArgs('leaf'));
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains("Couldn't resolve the package 'nowhere'"));
+    });
   });
 
   group("an import that reaches a dependency's source by another URI", () {
@@ -653,6 +768,183 @@ void main() => print('$fromRequest|$fromFile|$overridden');
         "'mid' is not a direct dependency of //top",
       ),
     );
+  });
+
+  test('the layering check reads the branch of a conditional import the '
+      'target does not take', () {
+    _compile(_moduleArgs('leaf'));
+    _compile(_moduleArgs('mid', deps: ['leaf']));
+    _write('top/lib/top.dart', '''
+import 'package:leaf/leaf.dart'
+    if (dart.library.html) 'package:mid/mid.dart';
+
+String headline() => greet('top');
+''');
+    final ProcessResult result = _run(
+      _moduleArgs(
+        'top',
+        deps: ['leaf', 'mid'],
+        extra: [
+          '--check-imports',
+          '--target-label',
+          '//top',
+          '--own-package',
+          'top',
+          '--direct-package',
+          'leaf',
+        ],
+      ),
+    );
+    expect(result.exitCode, 1);
+    expect(
+      result.stderr,
+      contains(
+        "//top: top/lib/top.dart imports 'package:mid/mid.dart', but package "
+        "'mid' is not a direct dependency of //top",
+      ),
+    );
+    // With `mid` a direct dependency, the module compiles.
+    _compile(
+      _moduleArgs(
+        'top',
+        deps: ['leaf', 'mid'],
+        out: 'allowed',
+        inputs: {'leaf': 'out/leaf.koutline', 'mid': 'out/mid.koutline'},
+        extra: [
+          '--check-imports',
+          '--target-label',
+          '//top',
+          '--own-package',
+          'top',
+          '--direct-package',
+          'leaf',
+          '--direct-package',
+          'mid',
+        ],
+      ),
+    );
+  });
+
+  test('a module whose own source imports a refused dart: library is '
+      'refused under the layering check', () {
+    _write('leaf/lib/reflect.dart', "import 'dart:mirrors';\n");
+    final ProcessResult result = _run(
+      _moduleArgs(
+        'leaf',
+        extra: [
+          '--check-imports',
+          '--target-label',
+          '//leaf',
+          '--own-package',
+          'leaf',
+          '--refused-library',
+          'dart:mirrors',
+        ],
+      ),
+    );
+    expect(result.exitCode, 1);
+    expect(
+      result.stderr,
+      contains(
+        "//leaf: leaf/lib/reflect.dart imports 'dart:mirrors', which "
+        '//dart:refused_dart_libraries refuses.',
+      ),
+    );
+    // Without the setting the module compiles.
+    _compile(
+      _moduleArgs('leaf', extra: ['--check-imports', '--own-package', 'leaf']),
+    );
+  });
+
+  test('a source directory compiles every file under it, named by its '
+      'path under the URI prefix', () {
+    final List<String> args = _moduleArgs('leaf');
+    final request = <String>[
+      for (var i = 0; i < args.length; i++)
+        if (args[i] == '--source' || args[i] == '--input-source')
+          ...[]
+        else if (i > 0 &&
+            (args[i - 1] == '--source' || args[i - 1] == '--input-source'))
+          ...[]
+        else
+          args[i],
+      '--source-dir',
+      'package:leaf/',
+      'leaf/lib',
+    ];
+    _compile(request);
+    _compile(_moduleArgs('mid', deps: ['leaf']));
+    _compile(_moduleArgs('top', deps: ['leaf', 'mid']));
+    _compile(_entryArgs('app/main.dart', deps: ['leaf', 'mid', 'top']));
+    final ProcessResult result = _runLinked('out/entry.kmod', [
+      'out/leaf.kmod',
+      'out/mid.kmod',
+      'out/top.kmod',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stderr}');
+    expect(
+      const LineSplitter().convert(result.stdout as String).first,
+      'HELLO TOP! 8 0 1',
+    );
+  });
+
+  test('an entry embeds its native-assets mapping, which the linked program '
+      'resolves an @Native function by', () {
+    _write('app/main.dart', '''
+import 'dart:ffi';
+
+@Native<Int32 Function()>(symbol: 'getpid', assetId: 'package:app/pid')
+external int getpid();
+
+void main() => print(getpid() > 0 ? 'resolved' : 'zero');
+''');
+    _write(
+      'abi.dart',
+      'import "dart:ffi";\nvoid main() => print(Abi.current());\n',
+    );
+    final String abi =
+        (Process.runSync(_dart, ['abi.dart'], workingDirectory: _ws.path).stdout
+                as String)
+            .trim();
+    // The asset names a library that is nowhere: the VM only looks for it
+    // when the mapping is in the program. Without one it finds the symbol in
+    // the process.
+    final lost = '${_ws.path}/nowhere/libpid.so';
+    _write('native_assets.yaml', '''
+format-version: [1, 0, 0]
+native-assets:
+  $abi:
+    'package:app/pid': [absolute, '$lost']
+''');
+    _compile(_moduleArgs('leaf'));
+    _compile(_entryArgs('app/main.dart', deps: ['leaf']));
+    final ProcessResult unmapped = _runLinked('out/entry.kmod', []);
+    expect(unmapped.exitCode, 0, reason: '${unmapped.stderr}');
+    expect(unmapped.stdout, 'resolved\n');
+    _compile(_moduleArgs('leaf', out: 'mapped'));
+    _compile(
+      _entryArgs(
+        'app/main.dart',
+        deps: ['leaf'],
+        out: 'mapped',
+        extra: ['--native-assets', 'native_assets.yaml'],
+      ),
+    );
+    final ProcessResult mapped = _runLinked('mapped/entry.kmod', []);
+    expect(mapped.exitCode, isNot(0));
+    expect(mapped.stderr, contains(lost));
+  });
+
+  test('a library module refuses a native-assets mapping', () {
+    _write(
+      'native_assets.yaml',
+      'format-version: [1, 0, 0]\nnative-assets: {}\n',
+    );
+    final ProcessResult result = _run(
+      _moduleArgs('leaf', extra: ['--native-assets', 'native_assets.yaml']),
+    );
+    expect(result.exitCode, 64);
+    expect(result.stderr, contains('--native-assets is an entry option'));
   });
 
   test('the unused-inputs list names the dependencies the front end did '
