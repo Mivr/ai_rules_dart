@@ -260,9 +260,8 @@ _Header _parseHeader(_Cursor cursor) {
 /// Pax `path=`, `linkpath=` and `size=` overrides parsed from record data.
 typedef _PaxRecords = ({String? path, String? linkpath, int? size});
 
-/// Parses pax record data into its scan-relevant records. Only `path=`,
-/// `linkpath=` and `size=` affect the scan; the rest are ignored. A malformed
-/// record fails the scan closed.
+/// Parses a pax `size=` value: decimal digits only and bounded so it cannot
+/// overflow; anything else fails the scan closed.
 int _parsePaxSize(String val) {
   final String text = val.trim();
   if (text.isEmpty) _unscannable('a pax size is not a number');
@@ -277,25 +276,65 @@ int _parsePaxSize(String val) {
   return v;
 }
 
+/// Parses pax record data into its scan-relevant records. The format is a
+/// sequence of `<length> <key>=<value>\n` records, where `<length>` is the
+/// decimal byte count of the whole record, its own digits, the space and the
+/// newline included. A value may contain newlines, so records are cut by
+/// length and never by line: a reader that honours the length (the extractor)
+/// and a reader that splits lines would otherwise disagree about which
+/// `path=` applies. The text is Latin-1, so one character is one byte. Any
+/// record whose length is missing, not decimal, too short to hold its own
+/// framing, runs past the data, or does not end in a newline fails the scan
+/// closed. Only `path=`, `linkpath=` and `size=` affect the scan; the last
+/// occurrence of a key wins, as in the format.
 _PaxRecords _parsePaxRecords(String text) {
   String? path;
   String? linkpath;
   int? size;
-  for (final String line in text.split('\n')) {
-    if (line == '') continue;
-    final int space = line.indexOf(' ');
+  var pos = 0;
+  while (pos < text.length) {
+    final int space = text.indexOf(' ', pos);
     if (space < 0) _unscannable('a pax record has no length prefix');
-    final String record = line.substring(space + 1);
+    final String digits = text.substring(pos, space);
+    if (digits.isEmpty || digits.length > 8 || !_isDecimal(digits)) {
+      _unscannable('a pax record has no length prefix');
+    }
+    final int length = int.parse(digits);
+    // The shortest record is `<digits> k=\n`: the digits, a space, a one-byte
+    // key, `=` and the newline.
+    if (length < digits.length + 4 || pos + length > text.length) {
+      _unscannable('a pax record length is out of range');
+    }
+    final int end = pos + length - 1;
+    if (text.codeUnitAt(end) != 0x0a) {
+      _unscannable('a pax record does not end in a newline');
+    }
+    final String record = text.substring(space + 1, end);
+    pos += length;
     final int eq = record.indexOf('=');
-    if (eq < 0) _unscannable('a pax record has no key');
+    if (eq < 1) _unscannable('a pax record has no key');
     final String key = record.substring(0, eq);
     final String val = record.substring(eq + 1);
-    if (key == 'path') path = val;
-    if (key == 'linkpath') linkpath = val;
-    if (key == 'size') size = _parsePaxSize(val);
+    if (key == 'path' || key == 'linkpath') {
+      if (val.contains('\x00')) {
+        _unscannable('a pax $key contains a NUL byte');
+      }
+      if (key == 'path') {
+        if (val.isEmpty) _unscannable('a pax path is empty');
+        path = val;
+      } else {
+        linkpath = val;
+      }
+    } else if (key == 'size') {
+      size = _parsePaxSize(val);
+    }
   }
   return (path: path, linkpath: linkpath, size: size);
 }
+
+/// True when [text] is made only of ASCII decimal digits.
+bool _isDecimal(String text) =>
+    text.codeUnits.every((int u) => u >= 0x30 && u <= 0x39);
 
 /// The offset-walk tar scan state: the input cursor, and the pending and
 /// global name records. One instance scans one tar stream. The default

@@ -388,6 +388,211 @@ void main() {
     });
   });
 
+  group('pax records are cut by their length prefix', () {
+    // The fixture archives below are built byte by byte. Each one is a shape
+    // an extractor that honours pax lengths reads differently from a scanner
+    // that splits pax data on newlines, or a path an extractor would write
+    // outside the extraction directory.
+    const hiddenPrefix = '../../evil_d1\n';
+    final hiddenPath = '$hiddenPrefix${_paxRecord('path', 'ok.txt')}';
+    final hiddenLink = '../../evil\n${_paxRecord('linkpath', 'ok')}';
+    final List<int> shiftedData = [
+      ..._tar([
+        _entry('x', 'x', data: latin1.encode(_paxRecord('size', '0'))),
+        // The ustar size says 512, the pax size says 0: the next block is a
+        // header, not data.
+        _header('lib/a.dart', '0', size: 512),
+        _header('../evil_size.txt', '0'),
+      ]),
+    ];
+    // kind -> archive. Every one must be refused.
+    final Map<String, (List<int>, String, String)> hostile = {
+      'traversal with ..': (
+        _tar([_file('../evil.txt')]),
+        'path',
+        '../evil.txt',
+      ),
+      'traversal in a directory entry': (
+        _tar([_entry('../evil/', '5')]),
+        'path',
+        '../evil/',
+      ),
+      'absolute path': (
+        _tar([_file('/etc/evil.txt')]),
+        'path',
+        '/etc/evil.txt',
+      ),
+      'ustar prefix climbing out': (
+        _tar([_file('evil.txt', prefix: '../..')]),
+        'path',
+        '../../evil.txt',
+      ),
+      'GNU long name climbing out': (
+        _tar([
+          _entry(
+            '././@LongLink',
+            'L',
+            data: [...latin1.encode('../../${'d' * 120}.txt'), 0],
+          ),
+          _file('short.txt'),
+        ]),
+        'path',
+        '../../${'d' * 120}.txt',
+      ),
+      'hard link out of the root': (
+        _tar([_entry('lib/h', '1', linkname: '../../secret')]),
+        'hard-link',
+        'lib/h',
+      ),
+      'hard link then a write through its name': (
+        _tar([_entry('lib/h', '1', linkname: '../../secret'), _file('lib/h')]),
+        'hard-link',
+        'lib/h',
+      ),
+      'symlink out of the root then a write through it': (
+        _tar([
+          _entry('lib/link', '2', linkname: '../..'),
+          _file('lib/link/pwned.txt'),
+        ]),
+        'symlink',
+        'lib/link',
+      ),
+      'pax path climbing out': (
+        _pax([_file('lib/a.dart')], _paxRecord('path', '../../evil.txt')),
+        'path',
+        '../../evil.txt',
+      ),
+      'pax global path climbing out': (
+        _tar([
+          _entry('g', 'g', data: latin1.encode(_paxRecord('path', '../g'))),
+          _file('lib/a.dart'),
+        ]),
+        'path',
+        '../g',
+      ),
+      'pax path value hiding a second path=': (
+        _pax([_file('lib/a.dart')], _paxRecord('path', hiddenPath)),
+        'path',
+        hiddenPath,
+      ),
+      'pax linkpath value hiding a second linkpath=': (
+        _pax([_entry('lib/l', '2')], _paxRecord('linkpath', hiddenLink)),
+        'symlink',
+        'lib/l',
+      ),
+      'pax linkpath on a symlink': (
+        _pax([_entry('lib/l', '2')], _paxRecord('linkpath', '/etc/passwd')),
+        'symlink',
+        'lib/l',
+      ),
+      'pax linkpath on a hard link': (
+        _pax([_entry('lib/h', '1')], _paxRecord('linkpath', '../../secret')),
+        'hard-link',
+        'lib/h',
+      ),
+      'pax size shifting the next header': (
+        shiftedData,
+        'path',
+        '../evil_size.txt',
+      ),
+    };
+    for (final MapEntry<String, (List<int>, String, String)> e
+        in hostile.entries) {
+      test('refuses ${e.key}', () async {
+        final (List<int> tar, String kind, String path) = e.value;
+        for (final List<int> archive in [tar, _gz(tar)]) {
+          final Object? got = _verdict(archive)['refusal'];
+          expect(
+            got,
+            isA<Map<String, Object?>>(),
+            reason: '${_verdict(archive)}',
+          );
+          final refusal = got! as Map<String, Object?>;
+          expect(refusal['kind'], kind);
+          expect(refusal['path'], path);
+          expect(await _verdictChunked(archive, 7), _verdict(archive));
+        }
+      });
+    }
+
+    final longName = 'lib/${'n' * 300}.dart';
+    final String gitSha = 'a' * 40;
+    final Map<String, List<int>> benign = {
+      'a long path carried in a pax header': _pax([
+        _file('lib/short.dart'),
+      ], _paxRecord('path', longName)),
+      'a long link target carried in a pax header': _pax([
+        _entry('lib/l', '2'),
+      ], _paxRecord('linkpath', 'n' * 300)),
+      'a pax value holding a newline': _pax([
+        _file('lib/a.dart'),
+      ], _paxRecord('path', 'lib/a\nb.dart')),
+      'a pax comment embedding a path= line': _pax([
+        _file('lib/a.dart'),
+      ], _paxRecord('comment', 'x\n${_paxRecord('path', '../../evil')}')),
+      'a pax size that matches the data': _tar([
+        _entry('x', 'x', data: latin1.encode(_paxRecord('size', '3'))),
+        [..._header('lib/a.dart', '0'), 1, 2, 3, ...List<int>.filled(509, 0)],
+      ]),
+      'a git archive tar': _tar([
+        _entry(
+          'pax_global_header',
+          'g',
+          data: latin1.encode(_paxRecord('comment', gitSha)),
+        ),
+        _entry('pkg/', '5'),
+        _entry('pkg/lib/', '5'),
+        _entry('pkg/pubspec.yaml', '0', data: latin1.encode('name: pkg\n')),
+        _entry(
+          'PaxHeader',
+          'x',
+          data: latin1.encode(_paxRecord('path', 'pkg/lib/$longName')),
+        ),
+        _file('pkg/lib/trunc'),
+        _entry('pkg/lib/link.dart', '2', linkname: 'main.dart'),
+      ]),
+      'an ordinary pub package': _gz(
+        _tar([
+          _entry('lib/', '5'),
+          _entry('lib/src/', '5'),
+          _entry('pubspec.yaml', '0', data: latin1.encode('name: p\n')),
+          _file('lib/p.dart'),
+          _entry('././@LongLink', 'L', data: [...latin1.encode(longName), 0]),
+          _file('lib/trunc'),
+          _file('test/p_test.dart'),
+        ]),
+      ),
+    };
+    for (final MapEntry<String, List<int>> e in benign.entries) {
+      test('accepts ${e.key}', () async {
+        _expectOk(e.value);
+        expect(await _verdictChunked(e.value, 7), {'ok': true});
+      });
+    }
+
+    final Map<String, String> malformed = {
+      'a length that is not a number': 'zz path=lib/a.dart\n',
+      'an empty length': ' path=lib/a.dart\n',
+      'a length past the data': '99 path=lib/a.dart\n',
+      'a length too short for its own record': '3 path=lib/a.dart\n',
+      'a length ending inside the record': '10 path=lib/a.dart\n',
+      'a record with no newline': '20 path=lib/a.dart\nx',
+      'a record with no equals sign': '9 nopath\n',
+      'trailing bytes after the last record':
+          '${_paxRecord('path', 'lib/a.dart')}\n',
+      'a path with a NUL byte': _paxRecord('path', 'lib/a\x00../../b'),
+      'an empty path': _paxRecord('path', ''),
+    };
+    for (final MapEntry<String, String> e in malformed.entries) {
+      test('fails closed on ${e.key}', () {
+        final Map<String, Object?> verdict = _verdict(
+          _gz(_pax([_file('lib/a.dart')], e.value)),
+        );
+        expect(verdict.keys, ['unscannable'], reason: '$verdict');
+      });
+    }
+  });
+
   group('unreadable archives fail closed', () {
     test('an empty archive', () {
       _expectUnscannable([], 'the archive is empty');
@@ -424,7 +629,7 @@ void main() {
       ], "an entry's size is not a number");
     });
     test('an overflowing pax size fails closed', () {
-      const records = '35 size=99999999999999999999\n';
+      const records = '29 size=99999999999999999999\n';
       _expectUnscannable(
         _gz(
           _tar([
