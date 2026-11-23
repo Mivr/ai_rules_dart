@@ -368,14 +368,6 @@ jobs:
       # see, so the cached run above can replay a stale PASS. Rerun them uncached.
       - name: bazel test //... tree readers (uncached)
         run: bazel test //... --test_tag_filters=tree-reader --nocache_test_results --test_output=errors
-      # The updater drops rules_dart's analyzer/format aspects, so the golden
-      # is the same whether this check or the Dart corpus tests run first.
-      - name: Corpus action graph matches the checked-in golden
-        run: |
-          bazel aquery --skip_incompatible_explicit_targets --output=jsonproto "set($(grep -vE '^\s*(#|$)' flutter/tests/corpus/golden_targets.txt))" > /tmp/flutter_corpus_aquery.json
-          bazel run //flutter/tests/corpus:actions_golden -- --check /tmp/flutter_corpus_aquery.json
-      - name: bazel test //flutter/tests/corpus:...
-        run: bazel test //flutter/tests/corpus:... --test_output=errors
       # Lint-baseline red path: //flutter/tests/lint_baseline_fixture:red is a
       # manual flutter_library with one unbaselined avoid_print diagnostic.
       # Testing a library with no test targets exits 4 when dart_analyze

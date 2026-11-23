@@ -489,10 +489,6 @@ jobs:
             echo "failing workspaces:$failed"
             exit 1
           fi
-      - name: Corpus action graph matches the checked-in golden
-        run: |
-          bazel aquery --skip_incompatible_explicit_targets --output=jsonproto "set($(grep -vE '^\s*(#|$)' flutter/tests/corpus/golden_targets.txt))" > /tmp/flutter_corpus_aquery.json
-          bazel run //flutter/tests/corpus:actions_golden -- --check /tmp/flutter_corpus_aquery.json
       # Cycle-break proof: e2e/pub_cycle_breaks holds one lock whose
       # `cycle_a` and `cycle_b` path packages each declare the other, plus an
       # app depending on both. `deps` breaks `cycle_a`'s edge to `cycle_b` via

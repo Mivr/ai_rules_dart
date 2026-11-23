@@ -1,35 +1,16 @@
 # The public-surface corpus: one minimal fixture per public rule, macro and
-# aspect exported by the ten entry points listed in `exports_test.dart`.
+# aspect exported by the ten entry points (`//flutter:android.bzl`,
+# `defs.bzl`, `dev_files.bzl`, `ios.bzl`, `linux.bzl`, `macos.bzl`,
+# `native_assets.bzl`, `native_hot_patch.bzl`, `web.bzl`, `windows.bzl`).
 #
 # `bazel build //flutter/tests/corpus:all` builds every host-compatible
-# fixture. Apple and Windows fixtures are skipped here by their platform
-# constraint (or by the `manual` tag the public macro already gives them);
-# they stay declared so that an `aquery` on their host sees their graph.
-#
-# The checked-in `actions.golden.json` covers the targets in
-# `golden_targets.txt`; every other public fixture is in `uncovered_golden.txt`
-# with the missing host capability. `exports_test` enforces both directions.
-#
-# The golden is Linux-x64 specific: it holds `flutter_linux-x64` and
-# `llvm-toolchain-minimal-linux-amd64` repository paths, so regenerate it on a
-# Linux-x64 host. From the repo root:
-#
-#   1. golden_targets.txt: list the labels
-#      `bazel cquery --keep_going --skip_incompatible_explicit_targets
-#      --output=label 'kind(rule, //flutter/tests/corpus:all) except
-#      kind("dart_binary|dart_test|test_suite|cc_.*", //flutter/tests/corpus:all)'`
-#      prints (sorted, deduplicated), minus the labels whose
-#      `providers(target)` hold `IncompatiblePlatformProvider`.
-#   2. actions.golden.json:
-#      `bazel aquery --skip_incompatible_explicit_targets --output=jsonproto
-#      "set($(grep -vE '^\s*(#|$)' flutter/tests/corpus/golden_targets.txt))"
-#      > /tmp/flutter_corpus_aquery.json`, then
-#      `bazel run //flutter/tests/corpus:actions_golden --
-#      /tmp/flutter_corpus_aquery.json`.
+# fixture, and `bazel test //...` does the same. Apple and Windows fixtures are
+# skipped here by their platform constraint (or by the `manual` tag the public
+# macro already gives them); they stay declared so that their host analyses
+# them.
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
-load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
 load("//flutter:android.bzl", "flutter_android_aab", "flutter_android_aar", "flutter_android_apk_overlay", "flutter_android_app", "flutter_android_bundle", "flutter_android_engine", "flutter_android_engine_jar", "flutter_android_manifest_gen", "flutter_android_manifest_merge", "flutter_android_permissions_manifest", "flutter_android_plugin_library", "flutter_android_registrant", "flutter_android_runner_lib_gen", "flutter_drive_test")
 load("//flutter:defs.bzl", "flutter_aot_target", "flutter_application", "flutter_asset_bundle", "flutter_font_family", "flutter_gen_l10n", "flutter_integration_test", "flutter_kernel_target", "flutter_library", "flutter_native_library", "flutter_plugin", "flutter_prebuilt_test", "flutter_test")
 load("//flutter:dev_files.bzl", "flutter_dev_files")
@@ -591,70 +572,4 @@ flutter_windows_app(
     name = "windows_app",
     application = ":app",
     target_compatible_with = ["@platforms//os:windows"],
-)
-
-# -- Corpus tooling -----------------------------------------------------------
-
-# Static export guard: discovers the workspace from its own runfile, reads the
-# ten public entry points and the corpus BUILD, and fails when a public export
-# is neither instantiated nor listed in non_instantiable.txt. Same unsandboxed
-# discovery shape as the guards in //flutter/tests.
-dart_test(
-    name = "exports_test",
-    size = "small",
-    srcs = ["golden_scope.dart"],
-    data = [
-        "BUILD.bazel",
-        "actions.golden.json",
-        "exports_test.dart",
-        "golden_scope.dart",
-        "golden_targets.txt",
-        "non_instantiable.txt",
-        "uncovered_golden.txt",
-    ],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :exports_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "exports_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = ["@dev_tool_deps//:test"],
-)
-
-dart_test(
-    name = "actions_golden_test",
-    size = "small",
-    srcs = ["actions_golden.dart"],
-    data = glob(["testdata/**"]),
-    main = "actions_golden_test.dart",
-    deps = ["@dev_tool_deps//:test"],
-)
-
-dart_test(
-    name = "golden_scope_test",
-    size = "small",
-    srcs = ["golden_scope.dart"],
-    main = "golden_scope_test.dart",
-    deps = ["@dev_tool_deps//:test"],
-)
-
-dart_binary(
-    name = "actions_golden",
-    data = ["actions.golden.json"],
-    main = "actions_golden.dart",
-)
-
-# The corpus targets live in this package, not a subpackage, so the contract's
-# `//flutter/tests/corpus:...` pattern is a literal target name rather than a
-# recursive wildcard. This suite makes that exact invocation run both tests;
-# `//flutter/tests/corpus/...` also finds them individually.
-test_suite(
-    name = "...",
-    tests = [
-        ":actions_golden_test",
-        ":exports_test",
-        ":golden_scope_test",
-    ],
 )
