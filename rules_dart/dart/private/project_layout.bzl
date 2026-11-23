@@ -124,6 +124,12 @@ def layout_directory(ctx, layout, action_name):
     )
 
 def add_layout_args(args, staged):
-    """Adds `--layout` and `--project` for a `layout_directory` to `args`."""
+    """Adds `--layout` and `--project` for a `layout_directory` to `args`.
+
+    Args:
+      args: The `Args` of the action that reads the staged project.
+      staged: The struct `layout_directory` returned: its `manifest` File and
+        its `proj_path`.
+    """
     args.add("--layout", staged.manifest)
     args.add("--project", staged.proj_path)

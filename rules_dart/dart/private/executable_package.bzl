@@ -363,7 +363,7 @@ def executable_has_package(own, package_name):
 
     Args:
       own: The `executable_package` result.
-      package_name: The package name.
+      package_name: The name to look for among the packages of the closure.
 
     Returns:
       A bool.

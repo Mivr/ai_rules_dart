@@ -382,7 +382,8 @@ def _summaries_ready(ctx, info, has_own_lib, staged_files = [], deps_complete = 
       info: The target's `DartInfo` closure.
       has_own_lib: Whether the target stages `lib/` files of its own package.
       staged_files: The target's own and generated files staged in summary mode.
-      deps_complete: See `_known_ready`.
+      deps_complete: The target's summary provider's `deps_complete`, or None
+        for an executable, which has none (see `_known_ready`).
 
     Returns:
       True when the closure can be analyzed from summaries.

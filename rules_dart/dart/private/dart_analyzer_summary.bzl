@@ -221,11 +221,26 @@ def _summary_state(complete = False, empty_key = False, deps_complete = None):
 _NO_STATE = _summary_state()
 
 def summary_complete(dep):
-    """Whether a dependency's summary provider says its closure is fully covered."""
+    """Whether a dependency's summary provider says its closure is fully covered.
+
+    Args:
+      dep: A dependency target that provides `DartAnalyzerSummaryInfo`.
+
+    Returns:
+      True when every package of the dependency's closure has a summary.
+    """
     return getattr(dep[DartAnalyzerSummaryInfo], "complete", False)
 
 def summary_empty_key(dep):
-    """Whether a dependency's summary provider covers the empty package's key."""
+    """Whether a dependency's summary provider covers the empty package's key.
+
+    Args:
+      dep: A dependency target that provides `DartAnalyzerSummaryInfo`.
+
+    Returns:
+      True when the dependency's summary holds the libraries of the package
+      with no name.
+    """
     return getattr(dep[DartAnalyzerSummaryInfo], "empty_key", False)
 
 def aligned_closure(info, deps):
@@ -748,6 +763,14 @@ def _summary_stage_own(info, own_records, srcs, stage_root):
 
     Nothing is declared here: the summarize action links each path to its
     source when it runs (see `_summary_run_action`).
+
+    Args:
+      info: The target's `DartInfo`, for its package name and `lib_root`.
+      own_records: The target's own `DartPackageInfo` records, one per package
+        it owns.
+      srcs: The target's own `.dart` files.
+      stage_root: The exec path of the directory the libraries are laid out
+        under.
 
     Returns:
       `(staged, own_root, own_staged_roots, stage_root, prefix)`: `staged` the

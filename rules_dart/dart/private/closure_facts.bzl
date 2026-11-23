@@ -45,7 +45,7 @@ def is_embedder_yaml(short_path):
     """Whether a file is a package's `lib/_embedder.yaml`.
 
     Args:
-      short_path: A `File.short_path`.
+      short_path: The `File.short_path` of the file to test.
 
     Returns:
       A bool.
@@ -75,11 +75,25 @@ def _nests(lib_root):
     return "lib" in lib_root.split("/")
 
 def name_key(package_name):
-    """The `owners` key of a package name."""
+    """The `owners` key of a package name.
+
+    Args:
+      package_name: The package name a record states.
+
+    Returns:
+      The key string, which no root key equals.
+    """
     return _NAME + package_name
 
 def root_key(lib_root):
-    """The `owners` key of a package root (`lib_root`)."""
+    """The `owners` key of a package root (`lib_root`).
+
+    Args:
+      lib_root: The `lib_root` a record states; empty for the root package.
+
+    Returns:
+      The key string, which no name key equals.
+    """
     return _ROOT + lib_root
 
 def _owner(label, record):
@@ -193,7 +207,7 @@ def facts_of(info):
     """The closure facts of a `DartInfo`, or None when it carries none.
 
     Args:
-      info: A `DartInfo`.
+      info: The `DartInfo` whose `closure_facts` field is read.
 
     Returns:
       The facts struct, or None.
@@ -285,7 +299,7 @@ def lib_roots_of(short_path):
     """Every root whose package's `lib/` would contain a file, innermost first.
 
     Args:
-      short_path: A `File.short_path`.
+      short_path: The `File.short_path` of a file that may lie under a `lib/`.
 
     Returns:
       The candidate `lib_root`s, deepest first: `a/b` for `a/b/lib/x.dart`,
@@ -302,7 +316,7 @@ def roots_containing(short_path):
     """Every directory that could be a package root containing a file, innermost first.
 
     Args:
-      short_path: A `File.short_path`.
+      short_path: The `File.short_path` of the file whose enclosing directories are listed.
 
     Returns:
       The candidate roots, deepest first, ending with `""`.
