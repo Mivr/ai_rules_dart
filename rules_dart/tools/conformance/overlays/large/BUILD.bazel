@@ -1,4 +1,5 @@
-load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_font_family", "flutter_library", "flutter_test")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_font_family", "flutter_gen_l10n", "flutter_library", "flutter_test")
 load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
 load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
 
@@ -80,10 +81,80 @@ flutter_font_family(
     fonts = [{"asset": "assets/fonts/RobotoCondensed-VariableFont_wght.ttf"}],
 )
 
+# `generate: true` and `l10n.yaml`: the rules do not read l10n.yaml, so its
+# settings are restated here. `flutter_gen_l10n` writes its output beside its
+# arb files, and l10n.yaml names `output-dir: lib/l10n/generated`, so the arb
+# files are copied there first. No BUILD file sits inside `lib/`: one would
+# make its directory a Bazel package of its own and hide its Dart files from
+# the glob below.
+ARBS = [
+    "app_am.arb",
+    "app_ar.arb",
+    "app_ca.arb",
+    "app_cs.arb",
+    "app_de.arb",
+    "app_el.arb",
+    "app_en.arb",
+    "app_es.arb",
+    "app_fa.arb",
+    "app_fil.arb",
+    "app_fr.arb",
+    "app_gl.arb",
+    "app_he.arb",
+    "app_hi.arb",
+    "app_hr.arb",
+    "app_hu.arb",
+    "app_id.arb",
+    "app_it.arb",
+    "app_ja.arb",
+    "app_km.arb",
+    "app_ko.arb",
+    "app_mk.arb",
+    "app_nb.arb",
+    "app_nl.arb",
+    "app_pl.arb",
+    "app_pt.arb",
+    "app_pt_BR.arb",
+    "app_pt_PT.arb",
+    "app_ro.arb",
+    "app_ru.arb",
+    "app_sk.arb",
+    "app_sl.arb",
+    "app_sn.arb",
+    "app_sv.arb",
+    "app_ta.arb",
+    "app_th.arb",
+    "app_tr.arb",
+    "app_uk.arb",
+    "app_ur.arb",
+    "app_zh.arb",
+    "app_zh_Hant.arb",
+]
+
+[
+    copy_file(
+        name = "arb_" + arb[:-len(".arb")],
+        src = "lib/l10n/" + arb,
+        out = "lib/l10n/generated/" + arb,
+    )
+    for arb in ARBS
+]
+
+flutter_gen_l10n(
+    name = "l10n",
+    arbs = ["lib/l10n/generated/" + arb for arb in ARBS],
+    nullable_getter = False,
+    preferred_supported_locales = ["en"],
+)
+
 flutter_library(
     name = "wger",
     package_name = "wger",
-    srcs = glob(["lib/**/*.dart"]) + ["//lib/l10n/generated:l10n"],
+    # pubspec.yaml: `sdk: '>=3.10.0 <4.0.0'`. Stock reads the language version
+    # from there; the rules take it here, and default to the SDK's own.
+    language_version = "3.10",
+    # A stock run leaves its own output in lib/l10n/generated/; `:l10n` replaces it.
+    srcs = glob(["lib/**/*.dart"], exclude = ["lib/l10n/generated/**"]) + [":l10n"],
     assets = ASSETS,
     fonts = [":roboto_condensed"],
     deps = DEPS,
@@ -112,7 +183,7 @@ flutter_web_app(
         name = test[len("test/"):-len(".dart")],
         package_name = "wger",
         size = "medium",
-        srcs = glob(["test/**/*.dart"], exclude = ["test/**/*_test.dart"]),
+        srcs = glob(["test/**/*.dart", "test_data/**/*.dart"], exclude = ["test/**/*_test.dart"]),
         main = test,
         deps = [":wger"] + DEPS + TEST_DEPS,
     )
@@ -123,7 +194,16 @@ flutter_application(
     name = "app",
     package_name = "wger",
     main = "lib/main.dart",
-    deps = [":wger"],
+    # `lib/main.dart` imports these packages itself, so they are direct deps.
+    deps = [":wger"] + ["@deps//:" + d for d in [
+        "dynamic_color",
+        "extended_image",
+        "flutter",
+        "flutter_riverpod",
+        "logging",
+        "material_ui",
+        "timezone",
+    ]],
 )
 
 flutter_linux_app(

@@ -1,5 +1,0 @@
-filegroup(
-    name = "arbs",
-    srcs = glob(["*.arb"]),
-    visibility = ["//visibility:public"],
-)
