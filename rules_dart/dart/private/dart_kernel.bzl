@@ -1422,7 +1422,11 @@ def modular_executable_kernel(
         tools,
         kernel_module_inputs(
             sources = sources,
-            packages = packages,
+            # The worker writes the entry's package config from the records,
+            # as it does a library's, so analysis formats no closure-sized
+            # JSON. The bytes are those `kernel_package_config` writes. With
+            # no records the worker writes nothing, so that config stays inline.
+            packages = (packages, depset()) if packages else packages,
             dep_kmods = dep_outline_closure,
             extra_inputs = cross_pkg_srcs,
             closure_excluded = depset(transitive = [k.closure_excluded for k in dep_kernels]),
