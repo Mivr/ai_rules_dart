@@ -189,7 +189,10 @@ void main() {}
   w.check('lib/BUILD.bazel', '@path', 'default resolution for path');
   w.dispose();
 
-  // ---- @JsonSerializable -> convenience macro ---------------------------
+  // ---- annotated sources get a plain dart_library -----------------------
+  // Codegen belongs to `dart_build_runner`, which Gazelle does not emit: an
+  // annotated source is an ordinary library source, with no codegen rule, no
+  // per-builder macro and no load from `dart/ext` beside it.
   w = Workspace();
   w.markRoot(build: '# gazelle:dart_pub_deps_repo pub_deps\n');
   w.write('pubspec.yaml', 'name: my_models\nenvironment:\n  sdk: ^3.11.0\n');
@@ -204,95 +207,28 @@ class User {
 }
 ''');
   w.gazelle();
-  // A single-annotation file emits the macro, which wires the shard and
-  // combining stages itself, not the primitive chain.
   w.check(
     'lib/BUILD.bazel',
-    'json_serializable_library(',
-    'json_serializable_library macro call',
+    'dart_library(',
+    'dart_library for annotated source',
   );
-  w.check('lib/BUILD.bazel', 'name = "user"', 'macro target name');
+  w.check('lib/BUILD.bazel', 'user.dart', 'annotated source in srcs');
   w.check(
     'lib/BUILD.bazel',
-    'package_name = "my_models"',
-    'package_name propagated to macro',
+    '@pub_deps//:json_annotation',
+    'annotation package resolved as a dep',
   );
-  w.check(
-    'lib/BUILD.bazel',
-    'language_version = ',
-    'language_version propagated to macro',
-  );
-  w.check(
-    'lib/BUILD.bazel',
-    'load("@rules_dart//dart/ext/json_serializable:defs.bzl"',
-    'json_serializable_library load',
-  );
-  final macroBuild = w.read('lib/BUILD.bazel');
-  if ([
-    '_user_json_serializable_gen',
-    '_user_combined',
-    'combining_shim:bin',
-  ].any(macroBuild.contains)) {
-    fail('single-annotation file emitted primitive chain instead of macro');
-  } else {
-    stdout.writeln('PASS: primitive chain suppressed (macro used)');
-  }
-  w.dispose();
-
-  // ---- multi-annotation cascade: @Freezed + @JsonSerializable -----------
-  w = Workspace();
-  w.markRoot(build: '# gazelle:dart_pub_deps_repo pub_deps\n');
-  w.write('pubspec.yaml', 'name: my_events\n');
-  w.write('lib/event.dart', '''
-import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:json_annotation/json_annotation.dart';
-part 'event.freezed.dart';
-part 'event.g.dart';
-@Freezed()
-@JsonSerializable()
-abstract class Event with _\$Event {
-  const factory Event({required String type, required int sequence}) = _Event;
-  factory Event.fromJson(Map<String, Object?> json) => _\$EventFromJson(json);
-}
-''');
-  w.gazelle();
-  // Freezed (PartBuilder) runs before JsonSerializable (SharedPart), then a
-  // combining stage on the JsonSerializable shard.
-  w.check('lib/BUILD.bazel', '_event_freezed_gen', 'freezed stage');
-  w.check(
-    'lib/BUILD.bazel',
-    '_event_json_serializable_gen',
-    'json shard stage',
-  );
-  w.check('lib/BUILD.bazel', '_event_combined', 'combining stage');
-  w.dispose();
-
-  // ---- generated files are suppressed -----------------------------------
-  w = Workspace();
-  w.markRoot();
-  w.write('pubspec.yaml', 'name: my_skip\n');
-  w.write('lib/keep.dart', 'class Keep {}\n');
-  w.write('lib/keep.g.dart', 'class GoneG {}\n');
-  w.write('lib/keep.freezed.dart', 'class GoneFreezed {}\n');
-  w.write('lib/keep.mocks.dart', 'class GoneMocks {}\n');
-  w.gazelle();
-  final skipBuild = w.read('lib/BUILD.bazel');
-  if ([
-    'keep.g.dart',
-    'keep.freezed.dart',
-    'keep.mocks.dart',
-  ].any(skipBuild.contains)) {
-    fail('lib/BUILD.bazel mentions a generated-file extension\n$skipBuild');
-  } else {
-    stdout.writeln(
-      'PASS: generated files (.g.dart/.freezed.dart/.mocks.dart) '
-      'suppressed',
+  for (final emitted in [
+    'dart_codegen',
+    'dart_aggregate_codegen',
+    'json_serializable_library',
+    'dart/ext/',
+  ]) {
+    w.checkAbsent(
+      'lib/BUILD.bazel',
+      emitted,
+      'annotated source emitted $emitted',
     );
-  }
-  if (skipBuild.contains('keep.dart')) {
-    stdout.writeln('PASS: real source kept');
-  } else {
-    fail('lib/BUILD.bazel missing keep.dart (the real source)');
   }
   w.dispose();
 

@@ -10,25 +10,14 @@ import (
 	"github.com/bazelbuild/bazel-gazelle/rule"
 )
 
-// indexedKinds is the set of rule kinds that provide a Dart package for
-// import resolution: the dart_library primitive plus every convenience
-// macro (each wraps a dart_library under the hood).
-var indexedKinds = func() map[string]bool {
-	m := map[string]bool{"dart_library": true}
-	for _, k := range macroKinds {
-		m[k] = true
-	}
-	return m
-}()
-
 // Imports returns the import specifications for a rule.
 // These are used to build the import index for dependency resolution.
 func (d *dartLang) Imports(c *config.Config, r *rule.Rule, f *rule.File) []resolve.ImportSpec {
-	// A dart_library (or macro wrapping one) provides its rule name as an
-	// import, plus its `package_name` attr when that differs — imports use
-	// the Dart package name (`package:<package_name>/...`), which need not
-	// match the Bazel target name.
-	if !indexedKinds[r.Kind()] {
+	// A dart_library provides its rule name as an import, plus its
+	// `package_name` attr when that differs — imports use the Dart package
+	// name (`package:<package_name>/...`), which need not match the Bazel
+	// target name.
+	if r.Kind() != "dart_library" {
 		return nil
 	}
 	specs := []resolve.ImportSpec{

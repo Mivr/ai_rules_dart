@@ -1,9 +1,9 @@
 # dart_root_pkg_no_pubspec
 
-Annotated sources in the workspace ROOT directory with no `pubspec.yaml` and
-no `# gazelle:dart_package_name` directive — the one arrangement where the
-codegen rules and the wrapping `dart_library` could name different packages.
-The codegen sites take the name from `libraryName`, which falls back to `"lib"`
-at the root; the library omits `package_name` entirely and `dart_library`
-derives it from the label instead. `codegen_identity_error` fails a build whose
-two halves disagree, so what Gazelle emits here has to be self-consistent.
+Dart sources in the workspace ROOT directory with no `pubspec.yaml` and no
+`# gazelle:dart_package_name` directive. `libraryName` falls back to `"lib"`
+at the root, and with no pubspec or directive naming the package the library
+carries no `package_name`: `dart_library` derives it from the label.
+
+`event.dart` carries `@freezed` and `@JsonSerializable()`. Annotations do not
+change what Gazelle emits: the file is an ordinary source of the library.
