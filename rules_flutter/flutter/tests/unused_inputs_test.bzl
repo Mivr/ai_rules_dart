@@ -84,7 +84,7 @@ def _fake_args(added):
 def _compile(added, runs, **kw):
     """Runs `flutter_kernel_module_action` against a fake context, capturing the action."""
     fake_actions = struct(
-        declare_file = lambda name: _fake_file("bazel-out/bin/fake/" + name),
+        declare_file = lambda name, **_kw: _fake_file("bazel-out/bin/fake/" + name),
         symlink = lambda **_kw: None,
         write = lambda **_kw: None,
         args = lambda: _fake_args(added),

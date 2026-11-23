@@ -788,15 +788,15 @@ def _kmod_declare_outputs(ctx, output, packages, scheme, unused_inputs):
     arguments, so analysis never flattens the closure or formats the JSON in
     Starlark and no action of its own runs).
     """
-    package_config = ctx.actions.declare_file(output.basename + ".package_config.json")
+    package_config = ctx.actions.declare_file(output.basename + ".package_config.json", sibling = output)
     if type(packages) != "tuple":
         ctx.actions.write(output = package_config, content = kernel_package_config(packages, scheme = scheme))
-    excluded = ctx.actions.declare_file(output.basename + ".vm_excluded.txt")
+    excluded = ctx.actions.declare_file(output.basename + ".vm_excluded.txt", sibling = output)
     if unused_inputs:
         # Written by the module compiler alongside the module. Declared here, where
         # the one registering action is, so the declaration and the action
         # that generates the file can never part ways.
-        unused_inputs_list = ctx.actions.declare_file(output.basename + ".unused_inputs")
+        unused_inputs_list = ctx.actions.declare_file(output.basename + ".unused_inputs", sibling = output)
     else:
         unused_inputs_list = None
     return package_config, excluded, unused_inputs_list

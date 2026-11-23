@@ -123,7 +123,7 @@ def _dedup_module_sources(sources):
 def _kernel_module_staged_inputs(ctx, sources, output, extra_inputs, packages, scheme):
     """Dedup sources and stage every generated input; returns `(package_config, stage)`."""
     sources = _dedup_module_sources(sources)
-    package_config = ctx.actions.declare_file(output.basename + ".package_config.json")
+    package_config = ctx.actions.declare_file(output.basename + ".package_config.json", sibling = output)
     ctx.actions.write(
         output = package_config,
         content = kernel_package_config(packages, scheme = scheme),
@@ -246,12 +246,12 @@ def flutter_kernel_module_action(ctx, tools, module, options):
         options.scheme,
     )
     platform = options.platform_dill if options.platform_dill != None else tools.platform_dill
-    excluded = ctx.actions.declare_file(module.output.basename + ".vm_excluded.txt")
+    excluded = ctx.actions.declare_file(module.output.basename + ".vm_excluded.txt", sibling = module.output)
     if options.unused_inputs:
         # Written by the module compiler alongside the module. Declared here, where
         # the one registering action is, so the declaration and the action
         # that generates the file can never part ways.
-        unused_inputs_list = ctx.actions.declare_file(module.output.basename + ".unused_inputs")
+        unused_inputs_list = ctx.actions.declare_file(module.output.basename + ".unused_inputs", sibling = module.output)
     else:
         unused_inputs_list = None
 

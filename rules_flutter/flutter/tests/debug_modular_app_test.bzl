@@ -12,7 +12,7 @@
   twin, the entry) compiles with `--track-widget-creation`, and a plain app's modules carry none;
 - a release build (plain or tracking): one `FlutterKernelCompile`, no link;
 - a tracking app, a plain app and a `flutter_test` over one library in one debug configuration analyse without
-  conflicting actions.
+  conflicting actions, and so do two `flutter_test` targets whose names differ only in their directory.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -194,6 +194,32 @@ def _shared_lib_cases(name):
         tests.append(test)
     return tests
 
+def _same_basename_cases(name):
+    """Two `flutter_test` targets whose names differ only in their directory, analysed together.
+
+    A project that names each test target by its file's path (`a/x_test`, `b/x_test`) gives two targets one
+    basename; every file of their entry modules is declared beside its module, so no two actions write one.
+
+    Args:
+        name: The test_suite name.
+
+    Returns:
+        The test names.
+    """
+    tests = []
+    for directory in ["one", "two"]:
+        flutter_test(
+            name = "_same_basename/%s/x_test" % directory,
+            package_name = "same_basename_test",
+            main = "lib/web_fixture_main.dart",
+            deps = _DEPS + ["//flutter/tests/flutter_test_analyze_fixture/fake_test_api"],
+            tags = ["manual"],
+        )
+        test = "%s_same_basename_%s" % (name, directory)
+        _shared_lib_test(name = test, target_under_test = ":_same_basename/%s/x_test" % directory)
+        tests.append(test)
+    return tests
+
 def debug_modular_app_test_suite(name):
     """Declares the fixture applications and the analysis tests.
 
@@ -240,7 +266,7 @@ def debug_modular_app_test_suite(name):
         target_under_test = ":_modular_app_widget_tracking",
         expected = ["-DGLOBAL=1", "--track-widget-creation"],
     )
-    tests = _shared_lib_cases(name) + _tracking_shared_cases(name) + [
+    tests = _shared_lib_cases(name) + _tracking_shared_cases(name) + _same_basename_cases(name) + [
         name + "_widget_tracking",
         name + "_plain_untracked",
         name + "_release_tracking",

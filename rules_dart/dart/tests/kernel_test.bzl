@@ -782,7 +782,7 @@ def _worker_execution_requirements_test_impl(ctx):
     env = unittest.begin(ctx)
     runs = []
 
-    def _declare_file(name):
+    def _declare_file(name, sibling = None):  # The real one places the file beside `sibling`.
         return struct(basename = name, path = "out/" + name, short_path = name)
 
     def _args():
@@ -863,7 +863,7 @@ def _unused_inputs_wiring_test_impl(ctx):
     runs = []
     added = []
 
-    def _declare_file(name):
+    def _declare_file(name, sibling = None):  # The real one places the file beside `sibling`.
         return struct(basename = name, path = "out/" + name, short_path = name)
 
     def _args():

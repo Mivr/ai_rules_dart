@@ -18,3 +18,22 @@ dart_test(
         "@ext_pub_deps//:test",
     ],
 )
+
+# Two tests whose names differ only in their directory share a basename. Each
+# file of an entry module is declared beside its module, so no two actions
+# write one file and both build and run.
+[
+    dart_test(
+        name = "same_basename/%s/main_test" % directory,
+        size = "small",
+        main = "main_test.dart",
+        deps = [
+            ":cli",
+            "@ext_pub_deps//:test",
+        ],
+    )
+    for directory in [
+        "one",
+        "two",
+    ]
+]
