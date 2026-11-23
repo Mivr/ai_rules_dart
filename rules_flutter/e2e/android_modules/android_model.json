@@ -1,0 +1,2613 @@
+{
+    "artifacts": {
+        "androidx/activity/activity/1.8.1/activity-1.8.1.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.activity",
+                "proguard": false,
+                "r_txt": true,
+                "res": true
+            },
+            "coordinate": "androidx.activity:activity:1.8.1",
+            "sha256": "66bc2c13bd91fb8ea09e445b21f784d3e5d3a9ec9b180cd07e0e9208c2f939c6",
+            "size": 169669,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/activity/activity/1.8.1/activity-1.8.1.aar"
+            ]
+        },
+        "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.annotation.experimental",
+                "proguard": false,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.annotation:annotation-experimental:1.4.0",
+            "sha256": "c6eb7e676011ec65b32428373d450debdfc45179c4f8b3a752174fb87c17b08a",
+            "size": 39811,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar"
+            ]
+        },
+        "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar": {
+            "coordinate": "androidx.annotation:annotation-jvm:1.8.1",
+            "sha256": "9aab326d9492800991854360ac248f493ce7f7c3183519309b78ace9e240f6f6",
+            "size": 56126,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar"
+            ]
+        },
+        "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar": {
+            "coordinate": "androidx.arch.core:core-common:2.2.0",
+            "sha256": "65308a06b1c00ee186cb9e19321383f043b993813f1522c47f4a3e3303bdba41",
+            "size": 11657,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar"
+            ]
+        },
+        "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.arch.core",
+                "proguard": false,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.arch.core:core-runtime:2.2.0",
+            "sha256": "a1be5e0caa2b07623862af6ae21b3ab0718123245184d0e30dea81b53f990a47",
+            "size": 7577,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar"
+            ]
+        },
+        "androidx/collection/collection/1.1.0/collection-1.1.0.jar": {
+            "coordinate": "androidx.collection:collection:1.1.0",
+            "sha256": "632a0e5407461de774409352940e292a291037724207a787820c77daf7d33b72",
+            "size": 42953,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/collection/collection/1.1.0/collection-1.1.0.jar"
+            ]
+        },
+        "androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar": {
+            "coordinate": "androidx.concurrent:concurrent-futures:1.1.0",
+            "sha256": "0ce067c514a0d1049d1bebdf709e344ed3266fe9744275682937cdcb13334e9e",
+            "size": 25987,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar"
+            ]
+        },
+        "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.core.ktx",
+                "proguard": false,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.core:core-ktx:1.13.1",
+            "sha256": "19ba50d094c7368ede1b4ccf1195ceb83e35970736593f823e5af716f8d05d70",
+            "size": 171581,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar"
+            ]
+        },
+        "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.core.ktx",
+                "proguard": false,
+                "r_txt": true,
+                "res": false
+            },
+            "coordinate": "androidx.core:core-ktx:1.2.0",
+            "sha256": "dcb74d510d552b35eff73b0dd27b829649535f3902e5b5a1f26040383c10a940",
+            "size": 159137,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar"
+            ]
+        },
+        "androidx/core/core/1.13.1/core-1.13.1.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.core",
+                "proguard": true,
+                "r_txt": true,
+                "res": true
+            },
+            "coordinate": "androidx.core:core:1.13.1",
+            "sha256": "2c27de199535675005553066597a4b20fa1eea7c228ab4ef6b32b5fe39ca1f59",
+            "size": 1270406,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/core/core/1.13.1/core-1.13.1.aar"
+            ]
+        },
+        "androidx/customview/customview/1.0.0/customview-1.0.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.customview",
+                "proguard": false,
+                "r_txt": true,
+                "res": false
+            },
+            "coordinate": "androidx.customview:customview:1.0.0",
+            "sha256": "20e5b8f6526a34595a604f56718da81167c0b40a7a94a57daa355663f2594df2",
+            "size": 33238,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/customview/customview/1.0.0/customview-1.0.0.aar"
+            ]
+        },
+        "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.exifinterface",
+                "proguard": true,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.exifinterface:exifinterface:1.4.1",
+            "sha256": "17e17a6b86bb54074d3a7ecfa695ab920eaff4cf667a8371ed82e377580cfcf6",
+            "size": 75523,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar"
+            ]
+        },
+        "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.fragment",
+                "proguard": true,
+                "r_txt": true,
+                "res": true
+            },
+            "coordinate": "androidx.fragment:fragment:1.7.1",
+            "sha256": "7ddebe9d830a04963733dcb340cab4bac1e69dfca797a6d59aa7bc56282150af",
+            "size": 381295,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar"
+            ]
+        },
+        "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.interpolator",
+                "proguard": false,
+                "r_txt": false,
+                "res": false
+            },
+            "coordinate": "androidx.interpolator:interpolator:1.0.0",
+            "sha256": "33193135a64fe21fa2c35eec6688f1a76e512606c0fc83dc1b689e37add7732a",
+            "size": 7669,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar"
+            ]
+        },
+        "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar": {
+            "coordinate": "androidx.lifecycle:lifecycle-common-java8:2.7.0",
+            "sha256": "c6deada2fac53b8ea6523dbda77597b128006674616f140f04df23264c6d1aa3",
+            "size": 261,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar"
+            ]
+        },
+        "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar": {
+            "coordinate": "androidx.lifecycle:lifecycle-common:2.7.0",
+            "sha256": "533ded8ee0645a18f6653da53fe1ec5a15430e7f36a737d45e410531f30f3318",
+            "size": 56617,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar"
+            ]
+        },
+        "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.lifecycle.livedata.core.ktx",
+                "proguard": false,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.lifecycle:lifecycle-livedata-core-ktx:2.7.0",
+            "sha256": "a97f4c2191ebdd32f99ac229597bd1a92446b01cd1a088d13494cc05cabf0def",
+            "size": 20190,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar"
+            ]
+        },
+        "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.lifecycle.livedata.core",
+                "proguard": false,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.lifecycle:lifecycle-livedata-core:2.7.0",
+            "sha256": "af8e11b87e030d6e3107ed39adcf01fa10d6259eb15c43cba6e7b4e3ffaedf27",
+            "size": 11311,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar"
+            ]
+        },
+        "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.lifecycle.livedata",
+                "proguard": false,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.lifecycle:lifecycle-livedata:2.7.0",
+            "sha256": "9affa24c6160dc8cadaac9422d4f714e5009537d0243afc4bc74b5b7cf0de4ad",
+            "size": 57786,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar"
+            ]
+        },
+        "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.lifecycle.process",
+                "proguard": true,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.lifecycle:lifecycle-process:2.7.0",
+            "sha256": "6fb33d9473a4933da9d98a0b12b606127e80681bd9b90309ccd2c2230863b939",
+            "size": 16079,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar"
+            ]
+        },
+        "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.lifecycle.runtime",
+                "proguard": true,
+                "r_txt": true,
+                "res": true
+            },
+            "coordinate": "androidx.lifecycle:lifecycle-runtime:2.7.0",
+            "sha256": "81c6fb1dbb6a3cd7dc827d7b08e1c8142ed3a400a3422441108480e22f8937c4",
+            "size": 21940,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar"
+            ]
+        },
+        "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.lifecycle.viewmodel.savedstate",
+                "proguard": true,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.lifecycle:lifecycle-viewmodel-savedstate:2.7.0",
+            "sha256": "57c578862e219e360c6957ff0bca6f169707b1e5582d4fa593e284f7f63e33f6",
+            "size": 39363,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar"
+            ]
+        },
+        "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.lifecycle.viewmodel",
+                "proguard": true,
+                "r_txt": true,
+                "res": true
+            },
+            "coordinate": "androidx.lifecycle:lifecycle-viewmodel:2.7.0",
+            "sha256": "4e1d92e289920cd7b50e3671b9191bd413407349cda6f602b0285464f41c1c82",
+            "size": 39819,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar"
+            ]
+        },
+        "androidx/loader/loader/1.0.0/loader-1.0.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.loader",
+                "proguard": false,
+                "r_txt": true,
+                "res": false
+            },
+            "coordinate": "androidx.loader:loader:1.0.0",
+            "sha256": "11f735cb3b55c458d470bed9e25254375b518b4b1bad6926783a7026db0f5025",
+            "size": 33445,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/loader/loader/1.0.0/loader-1.0.0.aar"
+            ]
+        },
+        "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.profileinstaller",
+                "proguard": false,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.profileinstaller:profileinstaller:1.3.1",
+            "sha256": "d0e402ec31f24028a1dc7eb6a0a3f9d9635c1459392cd734396343b73d673948",
+            "size": 47619,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar"
+            ]
+        },
+        "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.savedstate",
+                "proguard": true,
+                "r_txt": true,
+                "res": true
+            },
+            "coordinate": "androidx.savedstate:savedstate:1.2.1",
+            "sha256": "21a7d4bcf6bdb94ad7b9283801529300b4fbb8808ca4f191e0cdce6fd8e4705a",
+            "size": 20217,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar"
+            ]
+        },
+        "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.startup",
+                "proguard": true,
+                "r_txt": true,
+                "res": true
+            },
+            "coordinate": "androidx.startup:startup-runtime:1.1.1",
+            "sha256": "e0a6329a371262fe4c450372b70fdaf33b769ef6917094723787cfce896b1dd3",
+            "size": 19371,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar"
+            ]
+        },
+        "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.tracing",
+                "proguard": false,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.tracing:tracing:1.2.0",
+            "sha256": "6faa90390d1fdbf0adb9a99bf99de67b94c6c6f35aea9510593a9d17973736a2",
+            "size": 6060,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar"
+            ]
+        },
+        "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.versionedparcelable",
+                "proguard": true,
+                "r_txt": false,
+                "res": false
+            },
+            "coordinate": "androidx.versionedparcelable:versionedparcelable:1.1.1",
+            "sha256": "57e8d93260d18d5b9007c9eed3c64ad159de90c8609ebfc74a347cbd514535a4",
+            "size": 31061,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar"
+            ]
+        },
+        "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.viewpager",
+                "proguard": false,
+                "r_txt": true,
+                "res": false
+            },
+            "coordinate": "androidx.viewpager:viewpager:1.0.0",
+            "sha256": "147af4e14a1984010d8f155e5e19d781f03c1d70dfed02a8e0d18428b8fc8682",
+            "size": 53513,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar"
+            ]
+        },
+        "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.window.extensions.core",
+                "proguard": true,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.window.extensions.core:core:1.0.0",
+            "sha256": "3100854b2dc0de5c4d88b47e1c5db30801770c821dca28189443b7624f4008ae",
+            "size": 3737,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar"
+            ]
+        },
+        "androidx/window/window-java/1.2.0/window-java-1.2.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.window.java",
+                "proguard": false,
+                "r_txt": false,
+                "res": true
+            },
+            "coordinate": "androidx.window:window-java:1.2.0",
+            "sha256": "e3defb5ee3857757505d7ad66275dc3a0b014169301b89d6e4eec03b0e45bcab",
+            "size": 11547,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/window/window-java/1.2.0/window-java-1.2.0.aar"
+            ]
+        },
+        "androidx/window/window/1.2.0/window-1.2.0.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "androidx.window",
+                "proguard": true,
+                "r_txt": true,
+                "res": true
+            },
+            "coordinate": "androidx.window:window:1.2.0",
+            "sha256": "a834c217d973112777533daf1281dab33bd778fadd2d66bebc39b5fe81a890ac",
+            "size": 347924,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/androidx/window/window/1.2.0/window-1.2.0.aar"
+            ]
+        },
+        "com/android/tools/analytics-library/protos/32.1.0/protos-32.1.0.jar": {
+            "coordinate": "com.android.tools.analytics-library:protos:32.1.0",
+            "sha256": "b2fa8773cfba157b70f76685227ad465db5ce2e2d4ba61b12444e42ba4ee2da1",
+            "size": 10110081,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/analytics-library/protos/32.1.0/protos-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/analytics-library/shared/32.1.0/shared-32.1.0.jar": {
+            "coordinate": "com.android.tools.analytics-library:shared:32.1.0",
+            "sha256": "d82051937b390056af6dadc242923e2cd7794bdee217d276501f8aee151af446",
+            "size": 128420,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/analytics-library/shared/32.1.0/shared-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/annotations/32.1.0/annotations-32.1.0.jar": {
+            "coordinate": "com.android.tools:annotations:32.1.0",
+            "sha256": "3b4bb9620c17d19e5bd91ac1988080553573b4c3b739fdd92416f42f2daf3e78",
+            "size": 10680,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/annotations/32.1.0/annotations-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar": {
+            "coordinate": "com.android.tools.build:aapt2-proto:9.1.0-14792394",
+            "sha256": "2335bab7fd8269ee98d3843410c4a5553d31dd71f9a22f49b21a676d3139c882",
+            "size": 721157,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar"
+            ]
+        },
+        "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar": {
+            "coordinate": "com.android.tools.build:aapt2:9.1.0-14792394",
+            "sha256": "e7ae17af6e4093c771243e82d66462353de87befaac206bfb43e557ac1c34440",
+            "size": 2331128,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar"
+            ]
+        },
+        "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-osx.jar": {
+            "coordinate": "com.android.tools.build:aapt2:9.1.0-14792394",
+            "sha256": "b58cb80ac24aa343d02316fa50a662e2710b2f9ea14fc7da6d08d9cd801cafa3",
+            "size": 4383242,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-osx.jar"
+            ]
+        },
+        "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-windows.jar": {
+            "coordinate": "com.android.tools.build:aapt2:9.1.0-14792394",
+            "sha256": "e27e3c895bfb9698c956d5e35c514570a0f084874c081d95a690181a606dbe10",
+            "size": 2116862,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-windows.jar"
+            ]
+        },
+        "com/android/tools/build/aaptcompiler/9.1.0/aaptcompiler-9.1.0.jar": {
+            "coordinate": "com.android.tools.build:aaptcompiler:9.1.0",
+            "sha256": "05a74fd429ff802c42309a54fba9a4397bd3385793260f4bcb1fc7ad43ebba7f",
+            "size": 493982,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aaptcompiler/9.1.0/aaptcompiler-9.1.0.jar"
+            ]
+        },
+        "com/android/tools/build/apksig/9.1.0/apksig-9.1.0.jar": {
+            "coordinate": "com.android.tools.build:apksig:9.1.0",
+            "sha256": "562cd0a88890960d2ece48e116c61f12872222f1dcc306890799382bc019b201",
+            "size": 506620,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/apksig/9.1.0/apksig-9.1.0.jar"
+            ]
+        },
+        "com/android/tools/build/builder/9.1.0/builder-9.1.0.jar": {
+            "coordinate": "com.android.tools.build:builder:9.1.0",
+            "sha256": "0670034adae63a4fabc25d42c1173d11b4e083021ff95c4bcee6f9e3945f9ae9",
+            "size": 15839059,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/builder/9.1.0/builder-9.1.0.jar"
+            ]
+        },
+        "com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar": {
+            "coordinate": "com.android.tools.build:manifest-merger:32.1.0",
+            "sha256": "ab66e82f8656f884e13559deb7137c744db499c42cc27e71f9057a62d6984324",
+            "size": 267239,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/common/32.1.0/common-32.1.0.jar": {
+            "coordinate": "com.android.tools:common:32.1.0",
+            "sha256": "2fce68ff4ffb953aa84d1d9ab12e7f935e335b979bbc8e552986eb2c0b46294a",
+            "size": 595404,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/common/32.1.0/common-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/ddms/ddmlib/32.1.0/ddmlib-32.1.0.jar": {
+            "coordinate": "com.android.tools.ddms:ddmlib:32.1.0",
+            "sha256": "0db6316457073eaa41422a106737672559e7ce0e703427ee09bf99459e007b7f",
+            "size": 683153,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/ddms/ddmlib/32.1.0/ddmlib-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/dvlib/32.1.0/dvlib-32.1.0.jar": {
+            "coordinate": "com.android.tools:dvlib:32.1.0",
+            "sha256": "8abf798174efbf6bc282ee5c7791182e73712ccf98de053f8a8a7fb9a36b8542",
+            "size": 68121,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/dvlib/32.1.0/dvlib-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/layoutlib/layoutlib-api/32.1.0/layoutlib-api-32.1.0.jar": {
+            "coordinate": "com.android.tools.layoutlib:layoutlib-api:32.1.0",
+            "sha256": "1b37af4dc07dda96ecddae553a97d3053402db2c4b420ab937ab41c4e2597f51",
+            "size": 122402,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-api/32.1.0/layoutlib-api-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/r8/9.1.31/r8-9.1.31.jar": {
+            "coordinate": "com.android.tools:r8:9.1.31",
+            "sha256": "3b4de3053885da105e39c15212261d22653d6d1b5eb92323dd04ae913cc8286f",
+            "size": 18963189,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/r8/9.1.31/r8-9.1.31.jar"
+            ]
+        },
+        "com/android/tools/repository/32.1.0/repository-32.1.0.jar": {
+            "coordinate": "com.android.tools:repository:32.1.0",
+            "sha256": "ef3691e582cd8f9901502b679bb8f709a095cecb44b64fffdcb266a03df6b690",
+            "size": 267516,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/repository/32.1.0/repository-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/sdk-common/32.1.0/sdk-common-32.1.0.jar": {
+            "coordinate": "com.android.tools:sdk-common:32.1.0",
+            "sha256": "0a0513fac4388e0ff2d61a92b5b3ffb435f97fcce4b557a4455f3e217d012b32",
+            "size": 1806017,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/sdk-common/32.1.0/sdk-common-32.1.0.jar"
+            ]
+        },
+        "com/android/tools/sdklib/32.1.0/sdklib-32.1.0.jar": {
+            "coordinate": "com.android.tools:sdklib:32.1.0",
+            "sha256": "99924e2f3e78070429da20e40050779e564db6efc00bee03841574dbc7475c5e",
+            "size": 1795950,
+            "urls": [
+                "https://dl.google.com/dl/android/maven2/com/android/tools/sdklib/32.1.0/sdklib-32.1.0.jar"
+            ]
+        },
+        "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar": {
+            "aar": {
+                "assets": false,
+                "classes": true,
+                "jni": [
+                    
+                ],
+                "libs": [
+                    
+                ],
+                "namespace": "com.getkeepsafe.relinker",
+                "proguard": false,
+                "r_txt": false,
+                "res": false
+            },
+            "coordinate": "com.getkeepsafe.relinker:relinker:1.4.5",
+            "sha256": "b03b4d113a9fef79400ae854c17757c2915725e6ffd1d61116eadaeb5613374a",
+            "size": 27284,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar"
+            ]
+        },
+        "com/google/auto/service/auto-service-annotations/1.0/auto-service-annotations-1.0.jar": {
+            "coordinate": "com.google.auto.service:auto-service-annotations:1.0",
+            "sha256": "44752893119fdaf01b4c5ee74e46e5dab86f2dcda18114c562f877355c6ed26e",
+            "size": 3171,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/auto/service/auto-service-annotations/1.0/auto-service-annotations-1.0.jar"
+            ]
+        },
+        "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar": {
+            "coordinate": "com.google.code.findbugs:jsr305:3.0.2",
+            "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7",
+            "size": 19936,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar"
+            ]
+        },
+        "com/google/code/gson/gson/2.11.0/gson-2.11.0.jar": {
+            "coordinate": "com.google.code.gson:gson:2.11.0",
+            "sha256": "57928d6e5a6edeb2abd3770a8f95ba44dce45f3b23b7a9dc2b309c581552a78b",
+            "size": 298435,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.11.0/gson-2.11.0.jar"
+            ]
+        },
+        "com/google/dagger/dagger-compiler/2.60.1/dagger-compiler-2.60.1.jar": {
+            "coordinate": "com.google.dagger:dagger-compiler:2.60.1",
+            "ksp_providers": [
+                "dagger.internal.codegen.KspComponentProcessor$Provider"
+            ],
+            "processors": [
+                "dagger.internal.codegen.ComponentProcessor"
+            ],
+            "sha256": "5894b1d5acfbfd11a9ef4cbbe3471a6697d50549b967576e123bd9cd397575a6",
+            "size": 2730429,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/dagger/dagger-compiler/2.60.1/dagger-compiler-2.60.1.jar"
+            ]
+        },
+        "com/google/dagger/dagger-spi/2.60.1/dagger-spi-2.60.1.jar": {
+            "coordinate": "com.google.dagger:dagger-spi:2.60.1",
+            "sha256": "a101f27e6c6348fbb3198778970624b3ba2214ecc738b2146c7a1244cb42c417",
+            "size": 224586,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/dagger/dagger-spi/2.60.1/dagger-spi-2.60.1.jar"
+            ]
+        },
+        "com/google/dagger/dagger/2.60.1/dagger-2.60.1.jar": {
+            "coordinate": "com.google.dagger:dagger:2.60.1",
+            "sha256": "b012d0df527b51bfcd8953d5fcb4d022a45ebe66010d6f181ede68d1572b5cb2",
+            "size": 55476,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/dagger/dagger/2.60.1/dagger-2.60.1.jar"
+            ]
+        },
+        "com/google/devtools/ksp/symbol-processing-api/2.3.7/symbol-processing-api-2.3.7.jar": {
+            "coordinate": "com.google.devtools.ksp:symbol-processing-api:2.3.7",
+            "sha256": "bc5c7eca84d8142504f28bb1892bb4d1979feffcdbd6061924ef895510480a02",
+            "size": 101721,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/devtools/ksp/symbol-processing-api/2.3.7/symbol-processing-api-2.3.7.jar"
+            ]
+        },
+        "com/google/errorprone/error_prone_annotations/2.28.0/error_prone_annotations-2.28.0.jar": {
+            "coordinate": "com.google.errorprone:error_prone_annotations:2.28.0",
+            "sha256": "f3fc8a3a0a4020706a373b00e7f57c2512dd26d1f83d28c7d38768f8682b231e",
+            "size": 19370,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.28.0/error_prone_annotations-2.28.0.jar"
+            ]
+        },
+        "com/google/errorprone/error_prone_annotations/2.47.0/error_prone_annotations-2.47.0.jar": {
+            "coordinate": "com.google.errorprone:error_prone_annotations:2.47.0",
+            "sha256": "5364bc6f22e72e98195e406a58d3ba1c09ffa11dea0729592cb870dc2de4056d",
+            "size": 20254,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.47.0/error_prone_annotations-2.47.0.jar"
+            ]
+        },
+        "com/google/errorprone/error_prone_annotations/2.5.1/error_prone_annotations-2.5.1.jar": {
+            "coordinate": "com.google.errorprone:error_prone_annotations:2.5.1",
+            "sha256": "ff80626baaf12a09342befd4e84cba9d50662f5fcd7f7a9b3490a6b7cf87e66c",
+            "size": 13854,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.5.1/error_prone_annotations-2.5.1.jar"
+            ]
+        },
+        "com/google/googlejavaformat/google-java-format/1.33.0/google-java-format-1.33.0.jar": {
+            "coordinate": "com.google.googlejavaformat:google-java-format:1.33.0",
+            "sha256": "1265aa761ec2908535324b114995a1c6debaedc8a9e2e8553127babcdb58567f",
+            "size": 281073,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/googlejavaformat/google-java-format/1.33.0/google-java-format-1.33.0.jar"
+            ]
+        },
+        "com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar": {
+            "coordinate": "com.google.guava:failureaccess:1.0.1",
+            "sha256": "a171ee4c734dd2da837e4b16be9df4661afab72a41adaf31eb84dfdaf936ca26",
+            "size": 4617,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar"
+            ]
+        },
+        "com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar": {
+            "coordinate": "com.google.guava:failureaccess:1.0.2",
+            "sha256": "8a8f81cf9b359e3f6dfa691a1e776985c061ef2f223c9b2c80753e1b458e8064",
+            "size": 4740,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar"
+            ]
+        },
+        "com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar": {
+            "coordinate": "com.google.guava:failureaccess:1.0.3",
+            "sha256": "cbfc3906b19b8f55dd7cfd6dfe0aa4532e834250d7f080bd8d211a3e246b59cb",
+            "size": 10763,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar"
+            ]
+        },
+        "com/google/guava/guava/30.1.1-jre/guava-30.1.1-jre.jar": {
+            "coordinate": "com.google.guava:guava:30.1.1-jre",
+            "sha256": "44ce229ce26d880bf3afc362bbfcec34d7e6903d195bbb1db9f3b6e0d9834f06",
+            "size": 2874025,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/guava/30.1.1-jre/guava-30.1.1-jre.jar"
+            ]
+        },
+        "com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar": {
+            "coordinate": "com.google.guava:guava:33.3.1-jre",
+            "sha256": "4bf0e2c5af8e4525c96e8fde17a4f7307f97f8478f11c4c8e35a0e3298ae4e90",
+            "size": 3079289,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar"
+            ]
+        },
+        "com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar": {
+            "coordinate": "com.google.guava:guava:33.6.0-jre",
+            "sha256": "dc573e1fca4fd5454f4a5fd3d7da2df03002876a4175bafc14a95980dd7713b3",
+            "size": 3064793,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar"
+            ]
+        },
+        "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar": {
+            "coordinate": "com.google.guava:listenablefuture:1.0",
+            "sha256": "e4ad7607e5c0477c6f890ef26a49cb8d1bb4dffb650bab4502afee64644e3069",
+            "size": 3149,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+            ]
+        },
+        "com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar": {
+            "coordinate": "com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava",
+            "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99",
+            "size": 2199,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar"
+            ]
+        },
+        "com/google/j2objc/j2objc-annotations/1.3/j2objc-annotations-1.3.jar": {
+            "coordinate": "com.google.j2objc:j2objc-annotations:1.3",
+            "sha256": "21af30c92267bd6122c0e0b4d20cccb6641a37eaf956c6540ec471d584e64a7b",
+            "size": 8781,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/j2objc/j2objc-annotations/1.3/j2objc-annotations-1.3.jar"
+            ]
+        },
+        "com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar": {
+            "coordinate": "com.google.j2objc:j2objc-annotations:3.0.0",
+            "sha256": "88241573467ddca44ffd4d74aa04c2bbfd11bf7c17e0c342c94c9de7a70a7c64",
+            "size": 12467,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar"
+            ]
+        },
+        "com/google/j2objc/j2objc-annotations/3.1/j2objc-annotations-3.1.jar": {
+            "coordinate": "com.google.j2objc:j2objc-annotations:3.1",
+            "sha256": "84d3a150518485f8140ea99b8a985656749629f6433c92b80c75b36aba3b099b",
+            "size": 16762,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/j2objc/j2objc-annotations/3.1/j2objc-annotations-3.1.jar"
+            ]
+        },
+        "com/google/jimfs/jimfs/1.1/jimfs-1.1.jar": {
+            "coordinate": "com.google.jimfs:jimfs:1.1",
+            "sha256": "c4828e28d7c0a930af9387510b3bada7daa5c04d7c25a75c7b8b081f1c257ddd",
+            "size": 206691,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/jimfs/jimfs/1.1/jimfs-1.1.jar"
+            ]
+        },
+        "com/google/protobuf/protobuf-java/3.25.5/protobuf-java-3.25.5.jar": {
+            "coordinate": "com.google.protobuf:protobuf-java:3.25.5",
+            "sha256": "8540247fad9e06baefa8fb45eb313802d019f485f14300e0f9d6b556ed88e753",
+            "size": 1875414,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/google/protobuf/protobuf-java/3.25.5/protobuf-java-3.25.5.jar"
+            ]
+        },
+        "com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar": {
+            "coordinate": "com.squareup:javapoet:1.13.0",
+            "sha256": "4c7517e848a71b36d069d12bb3bf46a70fd4cda3105d822b0ed2e19c00b69291",
+            "size": 106068,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar"
+            ]
+        },
+        "com/squareup/kotlinpoet-ksp/1.13.2/kotlinpoet-ksp-1.13.2.jar": {
+            "coordinate": "com.squareup:kotlinpoet-ksp:1.13.2",
+            "sha256": "d1de5e3d6f7405dc10cb14a43f39400ba75604e1cf86da1fe08e9007a8a17d08",
+            "size": 36530,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/squareup/kotlinpoet-ksp/1.13.2/kotlinpoet-ksp-1.13.2.jar"
+            ]
+        },
+        "com/squareup/kotlinpoet/1.11.0/kotlinpoet-1.11.0.jar": {
+            "coordinate": "com.squareup:kotlinpoet:1.11.0",
+            "sha256": "2887ada1ca03dd83baa2758640d87e840d1907564db0ef88d2289c868a980492",
+            "size": 308192,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/squareup/kotlinpoet/1.11.0/kotlinpoet-1.11.0.jar"
+            ]
+        },
+        "com/squareup/kotlinpoet/1.13.2/kotlinpoet-1.13.2.jar": {
+            "coordinate": "com.squareup:kotlinpoet:1.13.2",
+            "sha256": "7cbf7f4330170f9459d15c105fae6e13784cb37855fd68cf2826dfa0b5deb676",
+            "size": 344369,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/squareup/kotlinpoet/1.13.2/kotlinpoet-1.13.2.jar"
+            ]
+        },
+        "com/squareup/moshi/moshi-kotlin-codegen/1.15.2/moshi-kotlin-codegen-1.15.2.jar": {
+            "coordinate": "com.squareup.moshi:moshi-kotlin-codegen:1.15.2",
+            "ksp_providers": [
+                "com.squareup.moshi.kotlin.codegen.ksp.JsonClassSymbolProcessorProvider"
+            ],
+            "processors": [
+                "com.squareup.moshi.kotlin.codegen.apt.JsonClassCodegenProcessor"
+            ],
+            "sha256": "949ce943e0ee135bd41ba4abf08b3a1608d4378671de12388690b5432b4e8a3b",
+            "size": 1682882,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/squareup/moshi/moshi-kotlin-codegen/1.15.2/moshi-kotlin-codegen-1.15.2.jar"
+            ]
+        },
+        "com/squareup/moshi/moshi/1.15.2/moshi-1.15.2.jar": {
+            "coordinate": "com.squareup.moshi:moshi:1.15.2",
+            "sha256": "767f7592c6c61eb693549a26d333c121f5383826bd287b899867aa326dae55e4",
+            "size": 162258,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/squareup/moshi/moshi/1.15.2/moshi-1.15.2.jar"
+            ]
+        },
+        "com/squareup/okio/okio-jvm/3.7.0/okio-jvm-3.7.0.jar": {
+            "coordinate": "com.squareup.okio:okio-jvm:3.7.0",
+            "sha256": "d8b35adc28768f43ae5afe6a7d1aa2a878ba51e0b96a4f308811f3b1f5b13e55",
+            "size": 360630,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/squareup/okio/okio-jvm/3.7.0/okio-jvm-3.7.0.jar"
+            ]
+        },
+        "com/sun/istack/istack-commons-runtime/3.0.8/istack-commons-runtime-3.0.8.jar": {
+            "coordinate": "com.sun.istack:istack-commons-runtime:3.0.8",
+            "sha256": "4ffabb06be454a05e4398e20c77fa2b6308d4b88dfbef7ca30a76b5b7d5505ef",
+            "size": 27156,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/sun/istack/istack-commons-runtime/3.0.8/istack-commons-runtime-3.0.8.jar"
+            ]
+        },
+        "com/sun/xml/fastinfoset/FastInfoset/1.2.16/FastInfoset-1.2.16.jar": {
+            "coordinate": "com.sun.xml.fastinfoset:FastInfoset:1.2.16",
+            "sha256": "056f3a1e144409f21ed16afc26805f58e9a21f3fce1543c42d400719d250c511",
+            "size": 317195,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/com/sun/xml/fastinfoset/FastInfoset/1.2.16/FastInfoset-1.2.16.jar"
+            ]
+        },
+        "commons-codec/commons-codec/1.17.1/commons-codec-1.17.1.jar": {
+            "coordinate": "commons-codec:commons-codec:1.17.1",
+            "sha256": "f9f6cb103f2ddc3c99a9d80ada2ae7bf0685111fd6bffccb72033d1da4e6ff23",
+            "size": 372687,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/commons-codec/commons-codec/1.17.1/commons-codec-1.17.1.jar"
+            ]
+        },
+        "commons-io/commons-io/2.16.1/commons-io-2.16.1.jar": {
+            "coordinate": "commons-io:commons-io:2.16.1",
+            "sha256": "f41f7baacd716896447ace9758621f62c1c6b0a91d89acee488da26fc477c84f",
+            "size": 508826,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/commons-io/commons-io/2.16.1/commons-io-2.16.1.jar"
+            ]
+        },
+        "commons-logging/commons-logging/1.2/commons-logging-1.2.jar": {
+            "coordinate": "commons-logging:commons-logging:1.2",
+            "sha256": "daddea1ea0be0f56978ab3006b8ac92834afeefbd9b7e4e6316fca57df0fa636",
+            "size": 61829,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/commons-logging/commons-logging/1.2/commons-logging-1.2.jar"
+            ]
+        },
+        "io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:arm64_v8a_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "native_libs": [
+                "lib/arm64-v8a/libVkLayer_khronos_validation.so",
+                "lib/arm64-v8a/libflutter.so"
+            ],
+            "sha256": "e58ef2523b336de488f6d19df27a63c032cfe6c09e1d55c26b6a4f22dc735695",
+            "size": 180591679,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:armeabi_v7a_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "native_libs": [
+                "lib/armeabi-v7a/libflutter.so"
+            ],
+            "sha256": "19a46f3af532f4d67214ba8591d941a16e12238061230cd28c7d8985321767c2",
+            "size": 114678094,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:flutter_embedding_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "sha256": "dc61d3cce023b28d0da84817bff4edcc6a72f9e8cfba93063e117292af855708",
+            "size": 1589924,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
+            "coordinate": "io.flutter:x86_64_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+            "native_libs": [
+                "lib/x86_64/libflutter.so"
+            ],
+            "sha256": "4b7b223efcf023dc3b91d736c429b6be9821fe92798dc40e28c807075b32c7bf",
+            "size": 119914282,
+            "urls": [
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+            ]
+        },
+        "jakarta/activation/jakarta.activation-api/1.2.1/jakarta.activation-api-1.2.1.jar": {
+            "coordinate": "jakarta.activation:jakarta.activation-api:1.2.1",
+            "sha256": "8b0a0f52fa8b05c5431921a063ed866efaa41dadf2e3a7ee3e1961f2b0d9645b",
+            "size": 44399,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/jakarta/activation/jakarta.activation-api/1.2.1/jakarta.activation-api-1.2.1.jar"
+            ]
+        },
+        "jakarta/inject/jakarta.inject-api/2.0.1/jakarta.inject-api-2.0.1.jar": {
+            "coordinate": "jakarta.inject:jakarta.inject-api:2.0.1",
+            "sha256": "f7dc98062fccf14126abb751b64fab12c312566e8cbdc8483598bffcea93af7c",
+            "size": 10681,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/jakarta/inject/jakarta.inject-api/2.0.1/jakarta.inject-api-2.0.1.jar"
+            ]
+        },
+        "jakarta/xml/bind/jakarta.xml.bind-api/2.3.2/jakarta.xml.bind-api-2.3.2.jar": {
+            "coordinate": "jakarta.xml.bind:jakarta.xml.bind-api:2.3.2",
+            "sha256": "69156304079bdeed9fc0ae3b39389f19b3cc4ba4443bc80508995394ead742ea",
+            "size": 115498,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/jakarta/xml/bind/jakarta.xml.bind-api/2.3.2/jakarta.xml.bind-api-2.3.2.jar"
+            ]
+        },
+        "javax/inject/javax.inject/1/javax.inject-1.jar": {
+            "coordinate": "javax.inject:javax.inject:1",
+            "sha256": "91c77044a50c481636c32d916fd89c9118a72195390452c81065080f957de7ff",
+            "size": 2497,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/javax/inject/javax.inject/1/javax.inject-1.jar"
+            ]
+        },
+        "net/java/dev/jna/jna-platform/5.6.0/jna-platform-5.6.0.jar": {
+            "coordinate": "net.java.dev.jna:jna-platform:5.6.0",
+            "sha256": "9ecea8bf2b1b39963939d18b70464eef60c508fed8820f9dcaba0c35518eabf7",
+            "size": 2735878,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/net/java/dev/jna/jna-platform/5.6.0/jna-platform-5.6.0.jar"
+            ]
+        },
+        "net/java/dev/jna/jna/5.6.0/jna-5.6.0.jar": {
+            "coordinate": "net.java.dev.jna:jna:5.6.0",
+            "sha256": "5557e235a8aa2f9766d5dc609d67948f2a8832c2d796cea9ef1d6cbe0b3b7eaf",
+            "size": 1509440,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/net/java/dev/jna/jna/5.6.0/jna-5.6.0.jar"
+            ]
+        },
+        "net/ltgt/gradle/incap/incap/0.2/incap-0.2.jar": {
+            "coordinate": "net.ltgt.gradle.incap:incap:0.2",
+            "sha256": "b625b9806b0f1e4bc7a2e3457119488de3cd57ea20feedd513db070a573a4ffd",
+            "size": 2268,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/net/ltgt/gradle/incap/incap/0.2/incap-0.2.jar"
+            ]
+        },
+        "net/sf/kxml/kxml2/2.3.0/kxml2-2.3.0.jar": {
+            "coordinate": "net.sf.kxml:kxml2:2.3.0",
+            "sha256": "f264dd9f79a1fde10ce5ecc53221eff24be4c9331c830b7d52f2f08a7b633de2",
+            "size": 43858,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/net/sf/kxml/kxml2/2.3.0/kxml2-2.3.0.jar"
+            ]
+        },
+        "org/apache/commons/commons-compress/1.27.1/commons-compress-1.27.1.jar": {
+            "coordinate": "org.apache.commons:commons-compress:1.27.1",
+            "sha256": "293d80f54b536b74095dcd7ea3cf0a29bbfc3402519281332495f4420d370d16",
+            "size": 1087319,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/apache/commons/commons-compress/1.27.1/commons-compress-1.27.1.jar"
+            ]
+        },
+        "org/apache/commons/commons-lang3/3.16.0/commons-lang3-3.16.0.jar": {
+            "coordinate": "org.apache.commons:commons-lang3:3.16.0",
+            "sha256": "08709dd74d602b705ce4017d26544210056a4ba583d5b20c09373406fe7a00f8",
+            "size": 674238,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/apache/commons/commons-lang3/3.16.0/commons-lang3-3.16.0.jar"
+            ]
+        },
+        "org/apache/httpcomponents/httpclient/4.5.6/httpclient-4.5.6.jar": {
+            "coordinate": "org.apache.httpcomponents:httpclient:4.5.6",
+            "sha256": "c03f813195e7a80e3608d0ddd8da80b21696a4c92a6a2298865bf149071551c7",
+            "size": 767140,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/apache/httpcomponents/httpclient/4.5.6/httpclient-4.5.6.jar"
+            ]
+        },
+        "org/apache/httpcomponents/httpcore/4.4.16/httpcore-4.4.16.jar": {
+            "coordinate": "org.apache.httpcomponents:httpcore:4.4.16",
+            "sha256": "6c9b3dd142a09dc468e23ad39aad6f75a0f2b85125104469f026e52a474e464f",
+            "size": 327891,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/apache/httpcomponents/httpcore/4.4.16/httpcore-4.4.16.jar"
+            ]
+        },
+        "org/apache/httpcomponents/httpmime/4.5.6/httpmime-4.5.6.jar": {
+            "coordinate": "org.apache.httpcomponents:httpmime:4.5.6",
+            "sha256": "0b2b1102c18d3c7e05a77214b9b7501a6f6056174ae5604e0e256776eda7553e",
+            "size": 41794,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/apache/httpcomponents/httpmime/4.5.6/httpmime-4.5.6.jar"
+            ]
+        },
+        "org/bouncycastle/bcpkix-jdk18on/1.79/bcpkix-jdk18on-1.79.jar": {
+            "coordinate": "org.bouncycastle:bcpkix-jdk18on:1.79",
+            "sha256": "3639a24ddf9ba4b7eba0659b44770e91eba816421888e571f285aadefe532cd6",
+            "size": 1134345,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/bouncycastle/bcpkix-jdk18on/1.79/bcpkix-jdk18on-1.79.jar"
+            ]
+        },
+        "org/bouncycastle/bcprov-jdk18on/1.79/bcprov-jdk18on-1.79.jar": {
+            "coordinate": "org.bouncycastle:bcprov-jdk18on:1.79",
+            "sha256": "0d81ecc3124536b539bce9aa3fe9621b7f84c9cee371b635a5b31c78b79ab1da",
+            "size": 8575537,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/bouncycastle/bcprov-jdk18on/1.79/bcprov-jdk18on-1.79.jar"
+            ]
+        },
+        "org/bouncycastle/bcutil-jdk18on/1.79/bcutil-jdk18on-1.79.jar": {
+            "coordinate": "org.bouncycastle:bcutil-jdk18on:1.79",
+            "sha256": "c70b88ada58938cbc2f005d40329054078bcfa1149e6ffc03e9242eb6ab21836",
+            "size": 705999,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/bouncycastle/bcutil-jdk18on/1.79/bcutil-jdk18on-1.79.jar"
+            ]
+        },
+        "org/checkerframework/checker-compat-qual/2.5.3/checker-compat-qual-2.5.3.jar": {
+            "coordinate": "org.checkerframework:checker-compat-qual:2.5.3",
+            "sha256": "d76b9afea61c7c082908023f0cbc1427fab9abd2df915c8b8a3e7a509bccbc6d",
+            "size": 5816,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/checkerframework/checker-compat-qual/2.5.3/checker-compat-qual-2.5.3.jar"
+            ]
+        },
+        "org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar": {
+            "coordinate": "org.checkerframework:checker-qual:3.43.0",
+            "sha256": "3fbc2e98f05854c3df16df9abaa955b91b15b3ecac33623208ed6424640ef0f6",
+            "size": 231525,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar"
+            ]
+        },
+        "org/checkerframework/checker-qual/3.8.0/checker-qual-3.8.0.jar": {
+            "coordinate": "org.checkerframework:checker-qual:3.8.0",
+            "sha256": "c88c2e6a5fdaeb9f26fcf879264042de8a9ee9d376e2477838feaabcfa44dda6",
+            "size": 230905,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/checkerframework/checker-qual/3.8.0/checker-qual-3.8.0.jar"
+            ]
+        },
+        "org/glassfish/jaxb/jaxb-runtime/2.3.2/jaxb-runtime-2.3.2.jar": {
+            "coordinate": "org.glassfish.jaxb:jaxb-runtime:2.3.2",
+            "sha256": "e6e0a1e89fb6ff786279e6a0082d5cef52dc2ebe67053d041800737652b4fd1b",
+            "size": 1013367,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/glassfish/jaxb/jaxb-runtime/2.3.2/jaxb-runtime-2.3.2.jar"
+            ]
+        },
+        "org/glassfish/jaxb/txw2/2.3.2/txw2-2.3.2.jar": {
+            "coordinate": "org.glassfish.jaxb:txw2:2.3.2",
+            "sha256": "4a6a9f483388d461b81aa9a28c685b8b74c0597993bf1884b04eddbca95f48fe",
+            "size": 72080,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/glassfish/jaxb/txw2/2.3.2/txw2-2.3.2.jar"
+            ]
+        },
+        "org/jetbrains/annotations/13.0/annotations-13.0.jar": {
+            "coordinate": "org.jetbrains:annotations:13.0",
+            "sha256": "ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478",
+            "size": 17536,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/13.0/annotations-13.0.jar"
+            ]
+        },
+        "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar": {
+            "coordinate": "org.jetbrains:annotations:23.0.0",
+            "sha256": "7b0f19724082cbfcbc66e5abea2b9bc92cf08a1ea11e191933ed43801eb3cd05",
+            "size": 29371,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-metadata-jvm/2.3.21/kotlin-metadata-jvm-2.3.21.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-metadata-jvm:2.3.21",
+            "sha256": "00590f26a5a768777f04252c6cf93c016a3361a6bc93636df67375ad4d19557d",
+            "size": 902765,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-metadata-jvm/2.3.21/kotlin-metadata-jvm-2.3.21.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-reflect/1.6.10/kotlin-reflect-1.6.10.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-reflect:1.6.10",
+            "sha256": "3277ac102ae17aad10a55abec75ff5696c8d109790396434b496e75087854203",
+            "size": 3038560,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-reflect/1.6.10/kotlin-reflect-1.6.10.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-reflect/1.8.21/kotlin-reflect-1.8.21.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-reflect:1.8.21",
+            "sha256": "8a6cd5a3cf092acee274ce2c444dc36eefdb631579859dd4d857b3309a529c91",
+            "size": 3180995,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-reflect/1.8.21/kotlin-reflect-1.8.21.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-reflect/2.2.10/kotlin-reflect-2.2.10.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-reflect:2.2.10",
+            "sha256": "c48db4f8cd1bfd67f72d59255065fb41bfda43ca2942dac4d9deb897aa126ba4",
+            "size": 3298629,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-reflect/2.2.10/kotlin-reflect-2.2.10.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.0/kotlin-stdlib-jdk7-1.8.0.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.0",
+            "sha256": "4c889d1d9803f5f2eb6c1592a6b7e62369ac7660c9eee15aba16fec059163666",
+            "size": 963,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.0/kotlin-stdlib-jdk7-1.8.0.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.20",
+            "sha256": "af1ec40c3b951afdcc0c2a0173c7b81763c5281c2d5bafbf0a8544a24c5dcc0c",
+            "size": 963,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.21/kotlin-stdlib-jdk7-1.8.21.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.21",
+            "sha256": "33d148db0e11debd0d90677d28242bced907f9c77730000fd597867089039d86",
+            "size": 963,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.21/kotlin-stdlib-jdk7-1.8.21.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib-jdk7/2.2.10/kotlin-stdlib-jdk7-2.2.10.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.2.10",
+            "sha256": "cf95eccc6cc784dff479dee0b8834f3584b93292cc5d91972e82f5d7b9e13e3b",
+            "size": 945,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk7/2.2.10/kotlin-stdlib-jdk7-2.2.10.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.0/kotlin-stdlib-jdk8-1.8.0.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.0",
+            "sha256": "05b62804441b0c9a1920b6b7d5cf7329a4e24b6258478e32b1f046ca01900946",
+            "size": 968,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.0/kotlin-stdlib-jdk8-1.8.0.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.20",
+            "sha256": "e398b67977622718bf18ff99b739c7d9da060f33fb458a2e25203221c16af010",
+            "size": 969,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.21/kotlin-stdlib-jdk8-1.8.21.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.21",
+            "sha256": "3db752a30074f06ee6c57984aa6f27da44f4d2bbc7f5442651f6988f1cb2b7d7",
+            "size": 968,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.21/kotlin-stdlib-jdk8-1.8.21.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.2.10/kotlin-stdlib-jdk8-2.2.10.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.10",
+            "sha256": "8974bfdd08b1d81843fe8d11f0729ab6e5b3c1f88d671ebe0c006358129ce149",
+            "size": 951,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.2.10/kotlin-stdlib-jdk8-2.2.10.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib/1.9.21/kotlin-stdlib-1.9.21.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:1.9.21",
+            "sha256": "3b479313ab6caea4e5e25d3dee8ca80c302c89ba73e1af4dafaa100f6ef9296a",
+            "size": 1718945,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.21/kotlin-stdlib-1.9.21.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib/2.2.10/kotlin-stdlib-2.2.10.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:2.2.10",
+            "sha256": "9c67cc79efd6b9215b49d2a4308f5f3433537376c7c88e89bdd6729bd096e61a",
+            "size": 1750374,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.2.10/kotlin-stdlib-2.2.10.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib/2.3.21/kotlin-stdlib-2.3.21.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:2.3.21",
+            "sha256": "6f64eac736db9434dd6925b4a518b9d1d17177652320c37916cf9ba3ce7d7d7a",
+            "size": 1804721,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.3.21/kotlin-stdlib-2.3.21.jar"
+            ]
+        },
+        "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:2.4.0",
+            "sha256": "ccb14ff83fabcb11458b798dbc9824748ccdffeec79c9aba789e6ed1cda86b1c",
+            "size": 1841929,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar"
+            ]
+        },
+        "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar": {
+            "coordinate": "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1",
+            "sha256": "107313760c18f8da174e8d8103504a468e806e88f7b55a84bd1c0eaeea118e9a",
+            "size": 20637,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar"
+            ]
+        },
+        "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar": {
+            "coordinate": "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.7.1",
+            "sha256": "7496cffdd3eb10109acdda1c3212f6ac7815789e09380dc9e2ccdec496dba3fc",
+            "size": 1548432,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar"
+            ]
+        },
+        "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar": {
+            "coordinate": "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.9.0",
+            "sha256": "ad89c2892235e670f222d819cb3d81188143cb19a05b59df9889ae4269f5c70a",
+            "size": 1463587,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar"
+            ]
+        },
+        "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar": {
+            "coordinate": "org.jspecify:jspecify:1.0.0",
+            "sha256": "1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab",
+            "size": 3819,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+            ]
+        },
+        "org/jvnet/staxex/stax-ex/1.8.1/stax-ex-1.8.1.jar": {
+            "coordinate": "org.jvnet.staxex:stax-ex:1.8.1",
+            "sha256": "20522549056e9e50aa35ef0b445a2e47a53d06be0b0a9467d704e2483ffb049a",
+            "size": 38099,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/jvnet/staxex/stax-ex/1.8.1/stax-ex-1.8.1.jar"
+            ]
+        },
+        "org/ow2/asm/asm-commons/9.9/asm-commons-9.9.jar": {
+            "coordinate": "org.ow2.asm:asm-commons:9.9",
+            "sha256": "db2f6f26150bbe7c126606b4a1151836bcc22a1e05a423b3585698bece995ff8",
+            "size": 74348,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/ow2/asm/asm-commons/9.9/asm-commons-9.9.jar"
+            ]
+        },
+        "org/ow2/asm/asm-tree/9.9/asm-tree-9.9.jar": {
+            "coordinate": "org.ow2.asm:asm-tree:9.9",
+            "sha256": "42178f3775c9c63f9e5e1446747d29b4eca4d91bd6e75e5c43cfa372a47d38c6",
+            "size": 51947,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/ow2/asm/asm-tree/9.9/asm-tree-9.9.jar"
+            ]
+        },
+        "org/ow2/asm/asm/9.3/asm-9.3.jar": {
+            "coordinate": "org.ow2.asm:asm:9.3",
+            "sha256": "1263369b59e29c943918de11d6d6152e2ec6085ce63e5710516f8c67d368e4bc",
+            "size": 122176,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/ow2/asm/asm/9.3/asm-9.3.jar"
+            ]
+        },
+        "org/ow2/asm/asm/9.9/asm-9.9.jar": {
+            "coordinate": "org.ow2.asm:asm:9.9",
+            "sha256": "03d99a74ad1ee5c71334ef67437f4ef4fe3488caa7c96d8645abc73c8e2017d4",
+            "size": 126122,
+            "urls": [
+                "https://repo.maven.apache.org/maven2/org/ow2/asm/asm/9.9/asm-9.9.jar"
+            ]
+        }
+    },
+    "classpaths": {
+        "cp_28a6ae22a2c8": [
+            "com/squareup/moshi/moshi-kotlin-codegen/1.15.2/moshi-kotlin-codegen-1.15.2.jar",
+            "com/squareup/moshi/moshi/1.15.2/moshi-1.15.2.jar",
+            "com/squareup/kotlinpoet-ksp/1.13.2/kotlinpoet-ksp-1.13.2.jar",
+            "com/squareup/kotlinpoet/1.13.2/kotlinpoet-1.13.2.jar",
+            "org/jetbrains/kotlin/kotlin-reflect/1.8.21/kotlin-reflect-1.8.21.jar",
+            "com/google/guava/guava/30.1.1-jre/guava-30.1.1-jre.jar",
+            "org/ow2/asm/asm/9.3/asm-9.3.jar",
+            "com/google/auto/service/auto-service-annotations/1.0/auto-service-annotations-1.0.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.21/kotlin-stdlib-jdk7-1.8.21.jar",
+            "com/squareup/okio/okio-jvm/3.7.0/okio-jvm-3.7.0.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/1.9.21/kotlin-stdlib-1.9.21.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.21/kotlin-stdlib-jdk8-1.8.21.jar",
+            "com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar",
+            "com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+            "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar",
+            "org/checkerframework/checker-qual/3.8.0/checker-qual-3.8.0.jar",
+            "com/google/errorprone/error_prone_annotations/2.5.1/error_prone_annotations-2.5.1.jar",
+            "com/google/j2objc/j2objc-annotations/1.3/j2objc-annotations-1.3.jar",
+            "org/jetbrains/annotations/13.0/annotations-13.0.jar"
+        ],
+        "cp_4b02c48b9e0f": [
+            "project::ksp_lib@debug",
+            "project::kapt_lib@debug",
+            "project::java_lib@debug",
+            "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+        ],
+        "cp_65ed13334b34": [
+            "project::ksp_lib@debug",
+            "project::kapt_lib@debug",
+            "project::java_lib@debug",
+            "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar",
+            "androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar",
+            "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "com/squareup/moshi/moshi/1.15.2/moshi-1.15.2.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.21/kotlin-stdlib-jdk8-1.8.21.jar",
+            "com/squareup/okio/okio-jvm/3.7.0/okio-jvm-3.7.0.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.21/kotlin-stdlib-jdk7-1.8.21.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "com/google/dagger/dagger/2.60.1/dagger-2.60.1.jar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+            "jakarta/inject/jakarta.inject-api/2.0.1/jakarta.inject-api-2.0.1.jar",
+            "javax/inject/javax.inject/1/javax.inject-1.jar",
+            "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+        ],
+        "cp_cd85d3b07669": [
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "com/google/dagger/dagger/2.60.1/dagger-2.60.1.jar",
+            "org/jetbrains/annotations/13.0/annotations-13.0.jar",
+            "jakarta/inject/jakarta.inject-api/2.0.1/jakarta.inject-api-2.0.1.jar",
+            "javax/inject/javax.inject/1/javax.inject-1.jar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+        ],
+        "cp_cfc7dcd119a6": [
+            "com/google/dagger/dagger-compiler/2.60.1/dagger-compiler-2.60.1.jar",
+            "com/google/dagger/dagger-spi/2.60.1/dagger-spi-2.60.1.jar",
+            "com/google/dagger/dagger/2.60.1/dagger-2.60.1.jar",
+            "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar",
+            "com/google/devtools/ksp/symbol-processing-api/2.3.7/symbol-processing-api-2.3.7.jar",
+            "com/google/googlejavaformat/google-java-format/1.33.0/google-java-format-1.33.0.jar",
+            "com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar",
+            "com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar",
+            "com/squareup/javapoet/1.13.0/javapoet-1.13.0.jar",
+            "com/squareup/kotlinpoet/1.11.0/kotlinpoet-1.11.0.jar",
+            "javax/inject/javax.inject/1/javax.inject-1.jar",
+            "net/ltgt/gradle/incap/incap/0.2/incap-0.2.jar",
+            "org/checkerframework/checker-compat-qual/2.5.3/checker-compat-qual-2.5.3.jar",
+            "org/jetbrains/kotlin/kotlin-metadata-jvm/2.3.21/kotlin-metadata-jvm-2.3.21.jar",
+            "org/jetbrains/kotlin/kotlin-reflect/1.6.10/kotlin-reflect-1.6.10.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.0/kotlin-stdlib-jdk8-1.8.0.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.0/kotlin-stdlib-jdk7-1.8.0.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.3.21/kotlin-stdlib-2.3.21.jar",
+            "jakarta/inject/jakarta.inject-api/2.0.1/jakarta.inject-api-2.0.1.jar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+            "com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+            "com/google/errorprone/error_prone_annotations/2.47.0/error_prone_annotations-2.47.0.jar",
+            "com/google/j2objc/j2objc-annotations/3.1/j2objc-annotations-3.1.jar",
+            "org/jetbrains/annotations/13.0/annotations-13.0.jar"
+        ],
+        "cp_d7d3f6924a82": [
+            "com/squareup/moshi/moshi/1.15.2/moshi-1.15.2.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.21/kotlin-stdlib-jdk8-1.8.21.jar",
+            "com/squareup/okio/okio-jvm/3.7.0/okio-jvm-3.7.0.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.21/kotlin-stdlib-jdk7-1.8.21.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
+            "org/jetbrains/annotations/13.0/annotations-13.0.jar"
+        ]
+    },
+    "generated_sources": {
+        "io/flutter/plugins/GeneratedPluginRegistrant.java": "package io.flutter.plugins;\n\nimport androidx.annotation.Keep;\nimport androidx.annotation.NonNull;\nimport io.flutter.Log;\n\nimport io.flutter.embedding.engine.FlutterEngine;\n\n/**\n * Generated file. Do not edit.\n * This file is generated by the Flutter tool based on the\n * plugins that support the Android platform.\n */\n@Keep\npublic final class GeneratedPluginRegistrant {\n  private static final String TAG = \"GeneratedPluginRegistrant\";\n  public static void registerWith(@NonNull FlutterEngine flutterEngine) {\n  }\n}\n"
+    },
+    "inputs": {
+        "android/app/build.gradle.kts": "1f834564b6893064579b15278fbd843b62431e81a5243cca54dd1a62ffb2ec23",
+        "android/build.gradle.kts": "6a26dba2cb8dfba1e74f540b0d17a89d96c1301d3c3bfda14348bed257fddcba",
+        "android/gradle.properties": "0f82b18017fba6bb5ce3aa4b2d1a00c9382fc8aae7b1d9326e44b18abd66d80b",
+        "android/gradle/wrapper/gradle-wrapper.properties": "b690d26223576fe4e63889fad9a00df81945cb870b9476cc5a563152a1a88a74",
+        "android/java_lib/build.gradle.kts": "ea9da31352e441a48ef882202c10f48df28fa20cbb60d2bb7a154de3f9ae0dde",
+        "android/kapt_lib/build.gradle.kts": "8ad0a32a68b779222eb34fcb9d3a320914913869c46ec2308cdaa21aa676d5de",
+        "android/ksp_lib/build.gradle.kts": "7001435fa1b76e2981df22270f370632cf7b84267c44c95a69893915bb07fcec",
+        "android/settings.gradle.kts": "c6dceb95ff0bcc4f94fd6a19ac74d588501c817913c8efe7324c407cde8de429",
+        "pubspec.lock": "c4354fb4312abfcc5274701fc2025565e8abd17d58027768c131cb43156f6401"
+    },
+    "projects": {
+        ":app": {
+            "build_features": {
+                
+            },
+            "build_tools": "36.0.0",
+            "build_types": [
+                {
+                    "crunch_pngs": false,
+                    "debuggable": true,
+                    "minify": false,
+                    "name": "debug",
+                    "shrink_resources": false
+                },
+                {
+                    "crunch_pngs": false,
+                    "debuggable": true,
+                    "minify": false,
+                    "name": "profile",
+                    "shrink_resources": false
+                },
+                {
+                    "crunch_pngs": true,
+                    "debuggable": false,
+                    "minify": true,
+                    "name": "release",
+                    "shrink_resources": true
+                }
+            ],
+            "compile_sdk": "android-36",
+            "dir": "app:android/app",
+            "external_native_build": {
+                "cmake": "flutter:packages/flutter_tools/gradle/src/main/scripts/CMakeLists.txt"
+            },
+            "gradle_plugins": [
+                "com.android.build.gradle.AppPlugin",
+                "com.android.build.gradle.api.AndroidBasePlugin",
+                "com.android.build.gradle.internal.plugins.AppPlugin",
+                "com.android.build.gradle.internal.plugins.VersionCheckPlugin",
+                "com.flutter.gradle.FlutterPlugin",
+                "org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper"
+            ],
+            "java": {
+                "core_library_desugaring": false,
+                "source": "17",
+                "target": "17"
+            },
+            "namespace": "dev.rdf.counter",
+            "ndk_version": "28.2.13676358",
+            "type": "application",
+            "variants": {
+                "debug": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "application_id": "dev.rdf.counter",
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "debug",
+                    "compile": "cp_4b02c48b9e0f",
+                    "consumer_proguard_files": [
+                        
+                    ],
+                    "debuggable": true,
+                    "external_native_build": {
+                        "abi_filters": [
+                            
+                        ],
+                        "arguments": [
+                            "-Wno-dev",
+                            "--no-warn-unused-cli",
+                            "-DCMAKE_BUILD_TYPE=debug"
+                        ],
+                        "c_flags": [
+                            
+                        ],
+                        "cpp_flags": [
+                            
+                        ],
+                        "targets": [
+                            
+                        ]
+                    },
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline"
+                    ],
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            "-Xuse-inline-scopes-numbers"
+                        ],
+                        "jvm_target": "17",
+                        "language_version": null,
+                        "module_name": "android:app_debug",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "manifest_placeholders": {
+                        "applicationName": "android.app.Application"
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 24,
+                    "namespace": "dev.rdf.counter",
+                    "ndk_abi_filters": [
+                        "arm64-v8a",
+                        "armeabi-v7a",
+                        "x86_64"
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": true,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/*.kotlin_module",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": false,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_65ed13334b34",
+                    "signing": "debug-or-configured",
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            "app:android/app/src/main/assets"
+                        ],
+                        "java": [
+                            "app:android/app/src/main/java"
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "app:android/app/src/main/kotlin",
+                            "app:android/app/src/main/java"
+                        ],
+                        "manifests": [
+                            "app:android/app/src/main/AndroidManifest.xml",
+                            "app:android/app/src/debug/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            "app:android/app/src/main/res"
+                        ],
+                        "shaders": [
+                            
+                        ]
+                    },
+                    "target_sdk": 36,
+                    "version_code": 1073741823,
+                    "version_name": "@pubspec.version@"
+                }
+            }
+        },
+        ":java_lib": {
+            "build_features": {
+                
+            },
+            "build_tools": "36.0.0",
+            "build_types": [
+                {
+                    "crunch_pngs": false,
+                    "debuggable": true,
+                    "minify": false,
+                    "name": "debug",
+                    "shrink_resources": false
+                },
+                {
+                    "crunch_pngs": true,
+                    "debuggable": false,
+                    "minify": false,
+                    "name": "release",
+                    "shrink_resources": false
+                }
+            ],
+            "compile_sdk": "android-36",
+            "dir": "app:android/java_lib",
+            "gradle_plugins": [
+                "com.android.build.gradle.LibraryPlugin",
+                "com.android.build.gradle.api.AndroidBasePlugin",
+                "com.android.build.gradle.internal.plugins.LibraryPlugin",
+                "com.android.build.gradle.internal.plugins.VersionCheckPlugin",
+                "org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper"
+            ],
+            "java": {
+                "core_library_desugaring": false,
+                "source": "17",
+                "target": "17"
+            },
+            "namespace": "dev.rdf.javalib",
+            "ndk_version": "28.2.13676358",
+            "type": "library",
+            "variants": {
+                "debug": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "annotation_processors": "cp_cfc7dcd119a6",
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "debug",
+                    "compile": "cp_cd85d3b07669",
+                    "consumer_proguard_files": [
+                        
+                    ],
+                    "debuggable": true,
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline"
+                    ],
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            
+                        ],
+                        "jvm_target": "21",
+                        "language_version": null,
+                        "module_name": "android:java_lib_debug",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "manifest_placeholders": {
+                        
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 24,
+                    "namespace": "dev.rdf.javalib",
+                    "ndk_abi_filters": [
+                        
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": null,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": null,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_cd85d3b07669",
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            
+                        ],
+                        "java": [
+                            "app:android/java_lib/src/main/java"
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "app:android/java_lib/src/main/java"
+                        ],
+                        "manifests": [
+                            "app:android/java_lib/src/main/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            
+                        ],
+                        "shaders": [
+                            
+                        ]
+                    },
+                    "target_sdk": 36
+                }
+            }
+        },
+        ":kapt_lib": {
+            "build_features": {
+                
+            },
+            "build_tools": "36.0.0",
+            "build_types": [
+                {
+                    "crunch_pngs": false,
+                    "debuggable": true,
+                    "minify": false,
+                    "name": "debug",
+                    "shrink_resources": false
+                },
+                {
+                    "crunch_pngs": true,
+                    "debuggable": false,
+                    "minify": false,
+                    "name": "release",
+                    "shrink_resources": false
+                }
+            ],
+            "compile_sdk": "android-36",
+            "dir": "app:android/kapt_lib",
+            "gradle_plugins": [
+                "com.android.build.gradle.LibraryPlugin",
+                "com.android.build.gradle.api.AndroidBasePlugin",
+                "com.android.build.gradle.internal.plugins.LibraryPlugin",
+                "com.android.build.gradle.internal.plugins.VersionCheckPlugin",
+                "org.jetbrains.kotlin.gradle.internal.Kapt3GradleSubplugin",
+                "org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper"
+            ],
+            "java": {
+                "core_library_desugaring": false,
+                "source": "17",
+                "target": "17"
+            },
+            "namespace": "dev.rdf.kaptlib",
+            "ndk_version": "28.2.13676358",
+            "type": "library",
+            "variants": {
+                "debug": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "annotation_processors": "cp_cfc7dcd119a6",
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "debug",
+                    "compile": "cp_cd85d3b07669",
+                    "consumer_proguard_files": [
+                        
+                    ],
+                    "debuggable": true,
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline",
+                        "-proc:none"
+                    ],
+                    "kapt_processors": "cp_cfc7dcd119a6",
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            
+                        ],
+                        "jvm_target": "17",
+                        "language_version": null,
+                        "module_name": "android:kapt_lib_debug",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            "kotlin-annotation-processing-gradle-2.4.0.jar"
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "manifest_placeholders": {
+                        
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 24,
+                    "namespace": "dev.rdf.kaptlib",
+                    "ndk_abi_filters": [
+                        
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": null,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": null,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_cd85d3b07669",
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            "app:android/kapt_lib/src/main/assets"
+                        ],
+                        "java": [
+                            
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "app:android/kapt_lib/src/main/kotlin"
+                        ],
+                        "manifests": [
+                            "app:android/kapt_lib/src/main/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            
+                        ],
+                        "shaders": [
+                            
+                        ]
+                    },
+                    "target_sdk": 36
+                }
+            }
+        },
+        ":ksp_lib": {
+            "build_features": {
+                
+            },
+            "build_tools": "36.0.0",
+            "build_types": [
+                {
+                    "crunch_pngs": false,
+                    "debuggable": true,
+                    "minify": false,
+                    "name": "debug",
+                    "shrink_resources": false
+                },
+                {
+                    "crunch_pngs": true,
+                    "debuggable": false,
+                    "minify": false,
+                    "name": "release",
+                    "shrink_resources": false
+                }
+            ],
+            "compile_sdk": "android-36",
+            "dir": "app:android/ksp_lib",
+            "gradle_plugins": [
+                "com.android.build.gradle.LibraryPlugin",
+                "com.android.build.gradle.api.AndroidBasePlugin",
+                "com.android.build.gradle.internal.plugins.LibraryPlugin",
+                "com.android.build.gradle.internal.plugins.VersionCheckPlugin",
+                "com.google.devtools.ksp.gradle.KspGradleSubplugin",
+                "org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper"
+            ],
+            "java": {
+                "core_library_desugaring": false,
+                "source": "17",
+                "target": "17"
+            },
+            "namespace": "dev.rdf.ksplib",
+            "ndk_version": "28.2.13676358",
+            "type": "library",
+            "variants": {
+                "debug": {
+                    "annotation_processor_args": {
+                        
+                    },
+                    "build_config_fields": {
+                        
+                    },
+                    "build_type": "debug",
+                    "compile": "cp_d7d3f6924a82",
+                    "consumer_proguard_files": [
+                        
+                    ],
+                    "debuggable": true,
+                    "flavors": [
+                        
+                    ],
+                    "javac_args": [
+                        "-XDstringConcat=inline"
+                    ],
+                    "kotlin": {
+                        "all_warnings_as_errors": false,
+                        "api_version": null,
+                        "free_compiler_args": [
+                            
+                        ],
+                        "jvm_target": "17",
+                        "language_version": null,
+                        "module_name": "android:ksp_lib_debug",
+                        "opt_in": [
+                            
+                        ],
+                        "plugin_jars": [
+                            "annotations-13.0.jar",
+                            "kotlin-stdlib-2.4.0.jar",
+                            "symbol-processing-api-2.3.14.jar"
+                        ],
+                        "plugin_options": [
+                            
+                        ]
+                    },
+                    "ksp_args": {
+                        
+                    },
+                    "ksp_processors": "cp_28a6ae22a2c8",
+                    "manifest_placeholders": {
+                        
+                    },
+                    "max_sdk": null,
+                    "min_sdk": 24,
+                    "namespace": "dev.rdf.ksplib",
+                    "ndk_abi_filters": [
+                        
+                    ],
+                    "packaging": {
+                        "dex_use_legacy": null,
+                        "excludes": [
+                            "**/*.kotlin_metadata",
+                            "**/*~",
+                            "**/.*",
+                            "**/.*/**",
+                            "**/.svn/**",
+                            "**/CVS/**",
+                            "**/SCCS/**",
+                            "**/_*",
+                            "**/_*/**",
+                            "**/about.html",
+                            "**/overview.html",
+                            "**/package.html",
+                            "**/picasa.ini",
+                            "**/protobuf.meta",
+                            "**/thumbs.db",
+                            "/LICENSE",
+                            "/LICENSE.txt",
+                            "/META-INF/**/MANIFEST.MF",
+                            "/META-INF/*.DSA",
+                            "/META-INF/*.EC",
+                            "/META-INF/*.RSA",
+                            "/META-INF/*.SF",
+                            "/META-INF/LICENSE",
+                            "/META-INF/LICENSE.txt",
+                            "/META-INF/MANIFEST.MF",
+                            "/META-INF/NOTICE",
+                            "/META-INF/NOTICE.txt",
+                            "/META-INF/com.android.tools/**",
+                            "/META-INF/maven/**",
+                            "/META-INF/proguard/*",
+                            "/NOTICE",
+                            "/NOTICE.txt"
+                        ],
+                        "jni_excludes": [
+                            
+                        ],
+                        "jni_pick_firsts": [
+                            
+                        ],
+                        "jni_use_legacy": null,
+                        "merges": [
+                            "/META-INF/services/**",
+                            "jacoco-agent.properties"
+                        ],
+                        "pick_firsts": [
+                            
+                        ]
+                    },
+                    "proguard_files": [
+                        
+                    ],
+                    "res_values": {
+                        
+                    },
+                    "runtime": "cp_d7d3f6924a82",
+                    "sources": {
+                        "aidl": [
+                            
+                        ],
+                        "assets": [
+                            
+                        ],
+                        "java": [
+                            
+                        ],
+                        "java_resources": [
+                            
+                        ],
+                        "jni_libs": [
+                            
+                        ],
+                        "kotlin": [
+                            "app:android/ksp_lib/src/main/kotlin"
+                        ],
+                        "manifests": [
+                            "app:android/ksp_lib/src/main/AndroidManifest.xml"
+                        ],
+                        "res": [
+                            "app:android/ksp_lib/src/main/res"
+                        ],
+                        "shaders": [
+                            
+                        ]
+                    },
+                    "target_sdk": 36
+                }
+            }
+        }
+    },
+    "pub_packages": {
+        
+    },
+    "pubspec_version_markers": {
+        "code": 1073741823,
+        "name": "@pubspec.version@"
+    },
+    "repositories": [
+        "https://dl.google.com/dl/android/maven2/",
+        "https://repo.maven.apache.org/maven2/",
+        "https://storage.googleapis.com/download.flutter.io/"
+    ],
+    "schema": 2,
+    "tool_classpaths": {
+        "aapt2_linux": [
+            "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar"
+        ],
+        "aapt2_osx": [
+            "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-osx.jar"
+        ],
+        "aapt2_windows": [
+            "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-windows.jar"
+        ],
+        "apksig": [
+            "com/android/tools/build/apksig/9.1.0/apksig-9.1.0.jar"
+        ],
+        "manifest_merger": [
+            "com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar",
+            "com/android/tools/sdk-common/32.1.0/sdk-common-32.1.0.jar",
+            "com/android/tools/sdklib/32.1.0/sdklib-32.1.0.jar",
+            "com/android/tools/repository/32.1.0/repository-32.1.0.jar",
+            "com/android/tools/dvlib/32.1.0/dvlib-32.1.0.jar",
+            "com/android/tools/layoutlib/layoutlib-api/32.1.0/layoutlib-api-32.1.0.jar",
+            "com/android/tools/analytics-library/shared/32.1.0/shared-32.1.0.jar",
+            "com/android/tools/ddms/ddmlib/32.1.0/ddmlib-32.1.0.jar",
+            "com/android/tools/common/32.1.0/common-32.1.0.jar",
+            "com/google/code/gson/gson/2.11.0/gson-2.11.0.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.2.10/kotlin-stdlib-jdk8-2.2.10.jar",
+            "org/jetbrains/kotlin/kotlin-reflect/2.2.10/kotlin-reflect-2.2.10.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/2.2.10/kotlin-stdlib-jdk7-2.2.10.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.2.10/kotlin-stdlib-2.2.10.jar",
+            "com/android/tools/annotations/32.1.0/annotations-32.1.0.jar",
+            "com/google/jimfs/jimfs/1.1/jimfs-1.1.jar",
+            "com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar",
+            "net/java/dev/jna/jna-platform/5.6.0/jna-platform-5.6.0.jar",
+            "org/apache/commons/commons-compress/1.27.1/commons-compress-1.27.1.jar",
+            "org/apache/httpcomponents/httpmime/4.5.6/httpmime-4.5.6.jar",
+            "org/apache/httpcomponents/httpclient/4.5.6/httpclient-4.5.6.jar",
+            "org/apache/httpcomponents/httpcore/4.4.16/httpcore-4.4.16.jar",
+            "org/glassfish/jaxb/jaxb-runtime/2.3.2/jaxb-runtime-2.3.2.jar",
+            "com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar",
+            "com/android/tools/analytics-library/protos/32.1.0/protos-32.1.0.jar",
+            "com/google/protobuf/protobuf-java/3.25.5/protobuf-java-3.25.5.jar",
+            "javax/inject/javax.inject/1/javax.inject-1.jar",
+            "net/sf/kxml/kxml2/2.3.0/kxml2-2.3.0.jar",
+            "org/bouncycastle/bcpkix-jdk18on/1.79/bcpkix-jdk18on-1.79.jar",
+            "org/bouncycastle/bcutil-jdk18on/1.79/bcutil-jdk18on-1.79.jar",
+            "org/bouncycastle/bcprov-jdk18on/1.79/bcprov-jdk18on-1.79.jar",
+            "com/google/errorprone/error_prone_annotations/2.28.0/error_prone_annotations-2.28.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar",
+            "com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+            "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar",
+            "org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar",
+            "com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar",
+            "net/java/dev/jna/jna/5.6.0/jna-5.6.0.jar",
+            "commons-codec/commons-codec/1.17.1/commons-codec-1.17.1.jar",
+            "commons-io/commons-io/2.16.1/commons-io-2.16.1.jar",
+            "org/apache/commons/commons-lang3/3.16.0/commons-lang3-3.16.0.jar",
+            "org/jvnet/staxex/stax-ex/1.8.1/stax-ex-1.8.1.jar",
+            "jakarta/xml/bind/jakarta.xml.bind-api/2.3.2/jakarta.xml.bind-api-2.3.2.jar",
+            "org/glassfish/jaxb/txw2/2.3.2/txw2-2.3.2.jar",
+            "com/sun/istack/istack-commons-runtime/3.0.8/istack-commons-runtime-3.0.8.jar",
+            "com/sun/xml/fastinfoset/FastInfoset/1.2.16/FastInfoset-1.2.16.jar",
+            "jakarta/activation/jakarta.activation-api/1.2.1/jakarta.activation-api-1.2.1.jar",
+            "commons-logging/commons-logging/1.2/commons-logging-1.2.jar"
+        ],
+        "r8": [
+            "com/android/tools/r8/9.1.31/r8-9.1.31.jar"
+        ],
+        "r_class_writer": [
+            "com/android/tools/build/builder/9.1.0/builder-9.1.0.jar",
+            "org/ow2/asm/asm-commons/9.9/asm-commons-9.9.jar",
+            "org/ow2/asm/asm-tree/9.9/asm-tree-9.9.jar",
+            "org/ow2/asm/asm/9.9/asm-9.9.jar"
+        ],
+        "resource_compiler": [
+            "com/android/tools/build/aaptcompiler/9.1.0/aaptcompiler-9.1.0.jar",
+            "com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar",
+            "com/android/tools/layoutlib/layoutlib-api/32.1.0/layoutlib-api-32.1.0.jar",
+            "com/android/tools/common/32.1.0/common-32.1.0.jar",
+            "com/google/protobuf/protobuf-java/3.25.5/protobuf-java-3.25.5.jar",
+            "com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.2.10/kotlin-stdlib-jdk8-2.2.10.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/2.2.10/kotlin-stdlib-jdk7-2.2.10.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.2.10/kotlin-stdlib-2.2.10.jar",
+            "com/android/tools/annotations/32.1.0/annotations-32.1.0.jar",
+            "net/sf/kxml/kxml2/2.3.0/kxml2-2.3.0.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "net/java/dev/jna/jna-platform/5.6.0/jna-platform-5.6.0.jar",
+            "com/google/guava/failureaccess/1.0.2/failureaccess-1.0.2.jar",
+            "com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+            "com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar",
+            "org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar",
+            "com/google/errorprone/error_prone_annotations/2.28.0/error_prone_annotations-2.28.0.jar",
+            "com/google/j2objc/j2objc-annotations/3.0.0/j2objc-annotations-3.0.0.jar",
+            "net/java/dev/jna/jna/5.6.0/jna-5.6.0.jar"
+        ]
+    },
+    "tools": {
+        "aapt2": "9.1.0-14792394",
+        "agp": "9.1.0",
+        "agp_tools_base": "32.1.0",
+        "gradle": "9.3.1",
+        "kotlin": "2.4.0",
+        "r8": "9.1.31"
+    }
+}

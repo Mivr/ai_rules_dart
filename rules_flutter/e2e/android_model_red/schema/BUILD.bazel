@@ -1,0 +1,5 @@
+load("@red_schema//:defs.bzl", "flutter_android_app")
+
+flutter_android_app(
+    name = "app",
+)

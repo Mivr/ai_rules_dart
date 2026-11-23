@@ -1,0 +1,57 @@
+"""The stock `counter` app with nine plugins, its Android side built from the pinned Gradle model.
+
+`android_model.json` is written by `bazel run //:android_pin` (Gradle, once) and checked in. The plugins
+are the list of spike S8: path_provider, shared_preferences, webview_flutter, url_launcher, camera,
+flutter_local_notifications, google_maps_flutter, firebase_core and firebase_messaging.
+"""
+
+module(name = "android_plugins")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.toolchain(flutter_version = "3.47.7")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_toolchains")
+
+register_toolchains("@flutter_toolchains//:all")
+
+# The NDK C toolchain, for the native code the Dart side builds (libdartjni.so of package:jni, which
+# path_provider uses).
+bazel_dep(name = "rules_android_ndk", version = "0.1.5")
+archive_override(
+    module_name = "rules_android_ndk",
+    sha256 = "0f566314be1257379d42630e068618169e410e4ecf964b28e0c72559e2196658",
+    strip_prefix = "rules_android_ndk-987213e7f982de48696f3b9cd031ff4e3e065c7c",
+    urls = ["https://github.com/bazelbuild/rules_android_ndk/archive/987213e7f982de48696f3b9cd031ff4e3e065c7c.tar.gz"],
+)
+
+android_ndk_repository_extension = use_extension(
+    "@rules_android_ndk//:extension.bzl",
+    "android_ndk_repository_extension",
+)
+use_repo(android_ndk_repository_extension, "androidndk")
+
+register_toolchains("@androidndk//:all")
+
+# Android from the Gradle model.
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
+
+register_toolchains("@android_model//:kotlin_toolchain")
