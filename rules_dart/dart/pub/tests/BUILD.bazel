@@ -20,6 +20,8 @@ exports_files(
         "semver_test.bzl",
         "yaml_parser_test.bzl",
         "yaml_subset_test.bzl",
+        "yq_probe.bzl",
+        "yq_test.bzl",
     ],
     visibility = ["//dart:__subpackages__"],
 )

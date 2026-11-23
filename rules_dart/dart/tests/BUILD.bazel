@@ -12,6 +12,7 @@ load("//dart/pub/tests:pubspec_guard_test.bzl", "pubspec_guard_test_suite")
 load("//dart/pub/tests:semver_test.bzl", "semver_test_suite")
 load("//dart/pub/tests:yaml_parser_test.bzl", "yaml_parser_test_suite")
 load("//dart/pub/tests:yaml_subset_test.bzl", "yaml_subset_test_suite")
+load("//dart/pub/tests:yq_test.bzl", "yq_test_suite")
 load(":analyze_mode_parity_test.bzl", "analyze_mode_parity_test_suite")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
 load(":analyzer_summary_tool_test.bzl", "analyzer_summary_tool_test_suite")
@@ -137,6 +138,8 @@ project_staging_test_suite(name = "project_staging_test")
 yaml_parser_test_suite(name = "yaml_parser_test")
 
 yaml_subset_test_suite(name = "yaml_subset_test")
+
+yq_test_suite(name = "yq_test")
 
 codegen_test_suite(name = "codegen_test")
 

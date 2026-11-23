@@ -110,6 +110,15 @@ use_repo(
 
 register_toolchains("@dart_toolchains//:all")
 
+# Runs the pubspec reader over fixed documents with the pinned `yq`, for the
+# behaviour tests in `//dart/pub/tests:yq_test.bzl`.
+yq_probe = use_repo_rule("//dart/pub/tests:yq_probe.bzl", "yq_probe")
+
+yq_probe(
+    name = "yq_probe",
+    dev_dependency = True,
+)
+
 # Copies files into one directory for `dart_source_set` and the staging rules.
 register_toolchains("//dart:copy_toolchain")
 
