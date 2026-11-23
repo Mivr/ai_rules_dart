@@ -1,0 +1,11 @@
+name: counter_lib
+description: A library in another Bazel package (a path dependency of the stock project).
+publish_to: none
+version: 0.0.1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter

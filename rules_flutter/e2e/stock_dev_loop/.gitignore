@@ -1,0 +1,16 @@
+.dart_tool/
+build/
+.flutter-plugins-dependencies
+.packages
+*.iml
+.gradle/
+local.properties
+# Written by stock `flutter gen-l10n`, or linked into bazel-out by `flutter_dev`.
+/lib/l10n/app_localizations*.dart
+# Launch configurations `flutter_dev ide` writes.
+/.vscode/
+/.run/
+/bazel-*
+.bazelrc.user
+# Not committed (the program never commits a MODULE.bazel.lock).
+/MODULE.bazel.lock

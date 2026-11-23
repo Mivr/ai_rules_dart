@@ -1,0 +1,9 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_library")
+
+flutter_library(
+    name = "counter_lib",
+    package_name = "counter_lib",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+    deps = ["@deps//:flutter"],
+)

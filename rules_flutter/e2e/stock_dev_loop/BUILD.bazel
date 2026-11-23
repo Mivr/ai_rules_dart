@@ -1,0 +1,99 @@
+load("@rules_flutter//flutter:android.bzl", "flutter_android_app", "flutter_android_engine")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_gen_l10n")
+load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
+load(
+    "@rules_flutter//flutter:linux.bzl",
+    "flutter_linux_bundle",
+    "flutter_linux_engine",
+    "flutter_linux_registrant_gen",
+    "flutter_linux_runner_lib_gen",
+)
+
+exports_files(["pubspec.lock"])
+
+# The generated source: gen-l10n output exists only under bazel-bin, at the
+# path stock `flutter gen-l10n` would write it to (lib/l10n/).
+flutter_gen_l10n(
+    name = "l10n",
+    arbs = glob(["lib/l10n/*.arb"]),
+)
+
+flutter_application(
+    name = "app_flutter",
+    package_name = "counter",
+    srcs = glob(
+        ["lib/**/*.dart"],
+        exclude = ["lib/l10n/app_localizations*.dart"],
+    ) + [":l10n"],
+    main = "lib/main.dart",
+    deps = [
+        "//packages/counter_lib",
+        "//packages/counter_plugin",
+        "@deps//:flutter",
+        "@deps//:flutter_localizations",
+        "@deps//:intl",
+        "@deps//:path_provider",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The app's own Kotlin code (MainActivity with a method channel). Spelled out
+# rather than discovered, because `manifest` below turns discovery off.
+flutter_android_engine(
+    name = "engine_x64_compile_only",
+    android_abi = "x64",
+    neverlink = True,
+)
+
+kt_android_library(
+    name = "runner",
+    srcs = glob(["android/app/src/main/kotlin/**/*.kt"]),
+    custom_package = "dev.rdf.counter",
+    deps = [":engine_x64_compile_only"],
+)
+
+# x86_64, for the emulator image on this host.
+flutter_android_app(
+    name = "app_x64",
+    package_name = "dev.rdf.counter",
+    android_abi = "x64",
+    application = ":app_flutter",
+    # Stock `flutter run --use-application-binary` refuses an APK without
+    # android:versionCode ("Manifest versionCode not found"). Gradle takes it
+    # from `version:` in pubspec.yaml; until the rules do, this copy of the
+    # main manifest carries it.
+    manifest = "android/app/src/bazel/AndroidManifest.xml",
+    permissions = ["android.permission.INTERNET"],
+    resources = glob(["android/app/src/main/res/**"]),
+    deps = [":runner"],
+)
+
+# Linux desktop bundle with the rules' own runner and sysroot. The flutter-create
+# runner in `linux/` (3.47.7) includes <gdk/gdkx.h>, which needs X11 headers the
+# rules' sysroot does not ship, so `flutter_linux_app` cannot build it here.
+flutter_linux_engine(
+    name = "linux_engine",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+flutter_linux_registrant_gen(
+    name = "linux_registrant",
+    application = ":app_flutter",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+flutter_linux_runner_lib_gen(
+    name = "linux_runner",
+    engine = ":linux_engine",
+    gtk_app_id = "dev.rdf.counter",
+    registrant = ":linux_registrant",
+    target_compatible_with = ["@platforms//os:linux"],
+    window_title = "counter",
+)
+
+flutter_linux_bundle(
+    name = "app_linux",
+    application = ":app_flutter",
+    runner = ":linux_runner",
+    target_compatible_with = ["@platforms//os:linux"],
+)
