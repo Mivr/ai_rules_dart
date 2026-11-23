@@ -3,6 +3,7 @@ load("@rules_java//java:defs.bzl", "java_library")
 # The build-side tool of the Android model is compiled in the hub repository, against AGP's own
 # libraries at the versions the pin file names; the pin step's init script is run by Gradle.
 exports_files([
+    "Aar.java",
     "AndroidTool.java",
     "Apk.java",
     "Bundle.java",

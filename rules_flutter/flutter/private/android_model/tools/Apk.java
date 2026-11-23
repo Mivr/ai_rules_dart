@@ -506,11 +506,17 @@ final class Apk {
             z.store(n.getKey(), n.getValue(), pageAlign);
           }
         }
+        List<String> abis = a.all("--abi");
         for (String part : a.all("--zip")) {
           ZipIn in = new ZipIn(Paths.get(part));
           open.add(in);
           for (Entry e : in.entries) {
-            if (!e.name.endsWith("/") && !z.has(e.name)) z.copy(in, e, e.name, 4);
+            if (e.name.endsWith("/") || z.has(e.name)) continue;
+            // A part can carry native libraries (an AAR of the build): only this APK's ABIs, and a
+            // stored library at a page boundary like any other.
+            boolean lib = e.name.startsWith("lib/") && e.name.endsWith(".so");
+            if (lib && (jniExcludes.matches(e.name) || (!abis.isEmpty() && !abis.contains(e.name.split("/")[1])))) continue;
+            z.copy(in, e, e.name, lib && e.method == 0 ? pageAlign : 4);
           }
         }
         for (String ap : a.all("--resources")) {

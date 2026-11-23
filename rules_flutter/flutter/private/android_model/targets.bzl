@@ -18,6 +18,7 @@ load(":names.bzl", "artifact_repo", "artifact_target", "project_target")
 load(
     ":rules.bzl",
     "rdf_aapt2_link",
+    "rdf_aar_parts",
     "rdf_apk",
     "rdf_art_profile",
     "rdf_bundle",
@@ -38,7 +39,7 @@ load(
     "rdf_zip_part",
 )
 
-_TOOL_SOURCES = ["AndroidTool.java", "Apk.java", "Bundle.java", "Dexing.java", "GradleAar.java", "PinCheck.java", "Release.java", "Resources.java", "Sign.java"]
+_TOOL_SOURCES = ["Aar.java", "AndroidTool.java", "Apk.java", "Bundle.java", "Dexing.java", "GradleAar.java", "PinCheck.java", "Release.java", "Resources.java", "Sign.java"]
 
 # ABIs the Dart side can build native code for (the AOT library of a profile or release build, FFI
 # libraries, code assets).
@@ -115,7 +116,8 @@ def _path(rooted, local, info):
 
     The app is built in its own package. Every other project is built in the hub: a plugin of the pub
     cache from its archive (`pub/`), a project of the workspace (a library module of the app, a
-    plugin under development) through a link to its directory (`ws/`).
+    plugin under development) through a link to its directory (`ws/`), a plugin of the Flutter SDK
+    (integration_test) through a link to the SDK's package (`flutter/`).
     """
     root, _, rest = rooted.partition(":")
     if local:
@@ -124,6 +126,8 @@ def _path(rooted, local, info):
         return "pub/" + rest
     if root == "ws":
         return "ws/" + rest
+    if root == "flutter" and rest.startswith("packages/"):
+        return "flutter/" + rest
     if root == "app":
         return "ws/" + (info["app_dir"] + "/" if info["app_dir"] else "") + rest
     return None
@@ -820,6 +824,7 @@ def android_model_app(
         abis = None,
         split_per_abi = False,
         native_built_elsewhere = [],
+        aars = [],
         visibility = None):
     """The Android app of a pinned Gradle model, one variant of it.
 
@@ -849,7 +854,15 @@ def android_model_app(
         (`1000 * <ABI number> + versionCode`).
       native_built_elsewhere: Gradle paths of projects whose CMake or ndk-build library Bazel builds on
         the Dart side (it then arrives with `application`), so the model's record of it is not an error.
+      aars: AARs made in this build that the app carries: a Flutter module packaged by
+        `flutter_android_aar` in a native host app (add-to-app). Each gives its manifest to the merge,
+        its classes to the dex and its native libraries and assets to the APK. Maven AARs are not
+        named here: they are in the pin.
       visibility: visibility of `name`, `name_apk` and the per-ABI APKs.
+
+    Returns:
+      A struct with `apk` (the label of `name_apk`) and `application_id`, for a macro that runs the
+      app (`flutter_integration_test`).
     """
     app_path, p = _app_project(model)
     if variant not in p["variants"]:
@@ -929,6 +942,19 @@ def android_model_app(
     rt_artifacts = [e[1] for e in runtime if e[0] == "a"]
     rt_projects = [(e[1], e[2]) for e in runtime if e[0] == "p"]
 
+    # AARs of this build (a Flutter module in a native host app), taken apart.
+    aar_manifests = []
+    aar_classes = []
+    aar_parts = []
+    for i, aar in enumerate(aars):
+        parts = "%s_aar%d" % (name, i)
+        rdf_aar_parts(name = parts, aar = aar, tool = hub + "tool_once")
+        for group in ("manifest", "classes", "part"):
+            rdf_output_group(name = "%s_%s" % (parts, group), src = ":" + parts, group = group)
+        aar_manifests.append(":%s_manifest" % parts)
+        aar_classes.append(":%s_classes" % parts)
+        aar_parts.append(":%s_part" % parts)
+
     # The projects Gradle itself builds (the escape hatch).
     asset_trees = {}
     for q, qv in reached:
@@ -994,7 +1020,7 @@ def android_model_app(
                 (label_of(e[1], e[2]) if e[0] == "p" else hub + artifact_target(e[1])) + "_manifest"
                 for e in runtime
                 if e[0] == "p" or (e[0] == "a" and arts[e[1]].get("aar"))
-            ],
+            ] + aar_manifests,
             properties = properties,
             placeholders = v["manifest_placeholders"],
             namespace = v["namespace"],
@@ -1069,7 +1095,7 @@ def android_model_app(
     )
 
     packaging = v["packaging"]
-    ext_jars = [hub + artifact_target(a) + "_jar" for a in rt_artifacts if _has_jar(arts[a])]
+    ext_jars = [hub + artifact_target(a) + "_jar" for a in rt_artifacts if _has_jar(arts[a])] + aar_classes
     project_libs = [label_of(q, qv) for q, qv in rt_projects]
     dex_store = packaging.get("dex_use_legacy") == False
     desugared = []
@@ -1193,6 +1219,20 @@ def android_model_app(
             tool = hub + "tool",
         )
         ext = [hub + artifact_target(a) + "_dex_" + config for a in rt_artifacts if _has_jar(arts[a])]
+        for i, classes in enumerate(aar_classes):
+            rdf_dex(
+                name = "%s_aar%d_dex" % (name, i),
+                jars = [classes],
+                min_sdk = min_sdk,
+                debuggable = debuggable,
+                store = dex_store,
+                desugared_lib_config = (hub + "desugar_config") if v.get("core_library_desugaring") else None,
+                classpath = [hub + "ext_jars_" + config] if _needs_classpath(v) else [],
+                with_platform = _needs_platform(v),
+                android_jar = sdk_jar,
+                tool = hub + "tool",
+            )
+            ext.append(":%s_aar%d_dex" % (name, i))
         libs = [label_of(q, qv) + "_dex_" + config for q, qv in rt_projects]
         app_dex = ":%s_lib_dex_%s" % (name, config)
         r_dex = ":" + name + "_r_dex"
@@ -1315,12 +1355,14 @@ def android_model_app(
             native_libs += native_of.get(abi, [])
         rdf_apk(
             name = name + "_apk" + o.suffix,
+            application_id = v["application_id"],
             entries = metadata,
             stored_entries = stored,
             resources = [res_of[o.suffix]],
             dex = dex + desugared,
             native_libs = native_libs,
-            zips = dart_zip + [":" + name + "_assets"],
+            zips = dart_zip + [":" + name + "_assets"] + aar_parts,
+            abis = o.abis,
             visibility = visibility,
             **(common | java_resources)
         )
@@ -1360,7 +1402,7 @@ def android_model_app(
         dex = dex + desugared,
         native_libs = all_native,
         native_compress = bool(legacy_jni),
-        zips = dart_zip + [":" + name + "_assets"],
+        zips = dart_zip + [":" + name + "_assets"] + aar_parts,
         no_splits = [d for d, key in (("ABI", "abi_split"), ("SCREEN_DENSITY", "density_split"), ("LANGUAGE", "language_split")) if bundle_options.get(key) == False],
         store_archive = bundle_options.get("store_archive") != False,
         uncompressed_globs = bundle_options.get("uncompressed_globs") or [],
@@ -1396,7 +1438,8 @@ def android_model_app(
             resources = [":" + name + "_res"],
             dex = [":" + name + "_dex_base", ":" + name + "_dex_ext"] + desugared,
             native_libs = all_native,
-            zips = [":" + name + "_assets"],
+            zips = [":" + name + "_assets"] + aar_parts,
+            abis = abis,
             java_resource_jars = ext_jars,
             **common
         )
@@ -1467,3 +1510,4 @@ def android_model_app(
             args = sign_args + ["--bundle", "%s/app-%s.aab=$(rootpath :%s_bundle)" % (_camel(v), _dashed(v), name)],
             visibility = visibility,
         )
+    return struct(apk = ":" + name + "_apk", application_id = v["application_id"])

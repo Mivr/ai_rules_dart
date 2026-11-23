@@ -133,6 +133,7 @@ public final class AndroidTool {
         case "zip": Apk.zip(rest); return 0;
         case "pincheck": return PinCheck.run(rest, err);
         case "gradle-aar": return GradleAar.run(rest, err);
+        case "aarparts": return Aar.parts(rest, err);
         default:
           err.println("unknown command " + tool);
           return 2;

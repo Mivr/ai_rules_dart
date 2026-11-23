@@ -23,6 +23,7 @@ load("@rules_flutter//flutter/private/android_model:rules.bzl", "rdf_unsupported
 def flutter_android_app(name, visibility = None, **kwargs):
     for target in (name, name + "_apk", name + "_bundle", name + "_install", name + "_sign", name + "_bundle_sign"):
         rdf_unsupported(name = target, message = {message}, visibility = visibility)
+    return struct(apk = ":" + name + "_apk", application_id = "")
 
 def flutter_android_apk_test(name, **kwargs):
     rdf_unsupported(name = name, message = {message}, testonly = True)
@@ -126,6 +127,22 @@ def _drop_build_files(ctx, root):
             elif child.basename in ("BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel", "MODULE.bazel", "REPO.bazel"):
                 ctx.delete(child)
 
+def _has_build_files(ctx, root):
+    """Whether a BUILD file lies under `root` (a linked directory that must not be changed)."""
+    todo = [ctx.path(root)]
+    for _ in range(100000):
+        if not todo:
+            break
+        d = todo.pop()
+        if not d.exists or not d.is_dir:
+            continue
+        for child in d.readdir():
+            if child.is_dir:
+                todo.append(child)
+            elif child.basename in ("BUILD", "BUILD.bazel"):
+                return True
+    return False
+
 def _pubspec_version(ctx):
     """The `version` of the app's pubspec.yaml, or None."""
     if not ctx.attr.pubspec:
@@ -217,6 +234,22 @@ def _hub_impl(ctx):
         if not ctx.path("ws/" + rel).exists:
             ctx.symlink(ctx.path(str(ctx.workspace_root) + "/" + rel), "ws/" + rel)
 
+    # Plugin projects of the Flutter SDK itself (integration_test): linked from the SDK's packages,
+    # which the Flutter toolchain of the build already has. Only an app with such a plugin reads them.
+    for p in model["projects"].values():
+        root, _, rel = p["dir"].partition(":")
+        parts = rel.split("/")
+        if root != "flutter" or len(parts) < 2 or parts[0] != "packages":
+            continue
+        link = "flutter/packages/" + parts[1]
+        if not ctx.path(link).exists:
+            source = ctx.path(Label("@flutter_sdk_source//:BUILD.bazel")).dirname.get_child("packages").get_child(parts[1])
+            if not source.exists:
+                fail("android_model: the Flutter SDK of this build has no packages/%s, which the pin names as a plugin project. Pin again with the Flutter version the build uses: `%s`." % (parts[1], pin))
+            ctx.symlink(source, link)
+        if _has_build_files(ctx, "flutter/" + rel):
+            fail("android_model: %s of the Flutter SDK holds BUILD files; its sources cannot be read as one package" % rel)
+
     info = {
         "app_dir": app_dir,
         "exe": host.exe,
@@ -242,7 +275,7 @@ load(":model.bzl", "INFO", "MODEL")
 _HUB = str(Label("//:BUILD.bazel")).removesuffix("BUILD.bazel")
 
 def flutter_android_app(name, **kwargs):
-    android_model_app(name = name, model = MODEL, info = INFO, hub = _HUB, **kwargs)
+    return android_model_app(name = name, model = MODEL, info = INFO, hub = _HUB, **kwargs)
 
 def flutter_android_apk_test(name, **kwargs):
     android_apk_test(name = name, hub = _HUB, **kwargs)

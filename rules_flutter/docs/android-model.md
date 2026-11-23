@@ -163,6 +163,27 @@ A key store and its passwords are never in a checked-in file, an attribute, an a
   put theirs), or into `-- --out <directory>`. `bazel run //:app_release_bundle_sign` does the same
   for the bundle (`build/app/outputs/bundle/release/app-release.aab`), signed as a jar.
 
+### A Flutter module in a native app (add-to-app)
+
+`flutter_android_aar` packages a `flutter_application` as an AAR: the AOT library
+(`jni/<abi>/libapp.so`), `assets/flutter_assets/` and a manifest. A native Android app that is built
+from its own pin carries it with `aars`:
+
+```starlark
+flutter_android_aar(name = "module_aar", application = ":module", package_name = "com.example.module", android_abi = "x86_64")
+
+flutter_android_app(name = "host_app", variant = "release", aars = [":module_aar"])
+```
+
+The host's Gradle file names the Flutter engine and its Java embedding itself
+(`io.flutter:flutter_embedding_release:1.0.0-<engine revision>` and `io.flutter:<abi>_release` from
+`https://storage.googleapis.com/download.flutter.io`), as the pom of a stock `flutter build aar`
+names them, so they are in the pin. An AAR of the build gives its manifest to the merge, its classes
+to the dex and its native libraries and assets to the APK; it cannot carry resources or bundled jars
+(the build fails and says so). `e2e/aar_host` is such an app. Not built: the Maven repository layout
+of `flutter build aar` (the pom, one AAR per plugin); a module with plugins needs the plugins'
+Android projects in the host's Gradle build.
+
 ### What a release build has that differs from the stock one
 
 - `META-INF/version-control-info.textproto` (the commit of the checkout) and

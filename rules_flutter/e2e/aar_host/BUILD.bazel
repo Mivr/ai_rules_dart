@@ -1,8 +1,7 @@
-load("@rules_android//android:rules.bzl", "aar_import", "android_binary", "android_library")
+load("@android_model//:defs.bzl", "flutter_android_app")
 load("@rules_dart//dart:defs.bzl", "dart_test")
-load("@rules_flutter//flutter:android.bzl", "flutter_android_aar")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_aar", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application")
-load("@rules_java//java:java_import.bzl", "java_import")
 
 exports_files(["pubspec.lock"])
 
@@ -15,6 +14,7 @@ flutter_application(
     ],
 )
 
+# The Flutter module as an AAR: the AOT library and flutter_assets.
 flutter_android_aar(
     name = "module_aar",
     package_name = "com.example.module",
@@ -22,51 +22,17 @@ flutter_android_aar(
     application = ":module",
 )
 
-filegroup(
-    name = "module_engine",
-    srcs = [":module_aar"],
-    output_group = "engine_maven",
+# `bazel run //:android_pin` writes android_model.json from the host's Gradle project.
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["release"],
 )
 
-aar_import(
-    name = "module_import",
-    aar = ":module_aar",
-)
-
-_ANDROIDX_EMBEDDING_DEPS = [
-    "@rules_android_maven//:androidx_annotation_annotation",
-    "@rules_android_maven//:androidx_core_core",
-    "@rules_android_maven//:androidx_exifinterface_exifinterface",
-    "@rules_android_maven//:androidx_fragment_fragment",
-    "@rules_android_maven//:androidx_lifecycle_lifecycle_common",
-    "@rules_android_maven//:androidx_lifecycle_lifecycle_runtime",
-    "@rules_android_maven//:androidx_tracing_tracing",
-    "@rules_android_maven//:androidx_window_window",
-    "@rules_android_maven//:androidx_window_window_java",
-    "@rules_android_maven//:com_getkeepsafe_relinker_relinker",
-]
-
-java_import(
-    name = "module_engine_import",
-    jars = [":module_engine"],
-    deps = _ANDROIDX_EMBEDDING_DEPS,
-)
-
-android_library(
-    name = "host_lib",
-    srcs = ["src/com/example/aarhost/MainActivity.java"],
-    manifest = "AndroidManifest.xml",
-    deps = [
-        ":module_engine_import",
-        ":module_import",
-    ] + _ANDROIDX_EMBEDDING_DEPS,
-)
-
-android_binary(
+# The native host app, built from the pin, carrying the module's AAR.
+flutter_android_app(
     name = "host_app",
-    custom_package = "com.example.aarhost",
-    manifest = "AndroidManifest.xml",
-    deps = [":host_lib"],
+    aars = [":module_aar"],
+    variant = "release",
 )
 
 dart_test(
@@ -74,7 +40,7 @@ dart_test(
     size = "medium",
     srcs = ["test/verify_aar_host_test.dart"],
     data = [
-        ":host_app",
+        ":host_app_apk",
         "@flutter_android_headless_runtime//:adb",
         "@flutter_android_headless_runtime//:all_files",
         "@flutter_android_headless_runtime//:emulator",
@@ -82,7 +48,7 @@ dart_test(
     env = {
         "ADB_RLOCATION": "$(rlocationpath @flutter_android_headless_runtime//:adb)",
         "EMULATOR_RLOCATION": "$(rlocationpath @flutter_android_headless_runtime//:emulator)",
-        "HOST_APK_RLOCATIONS": "$(rlocationpaths :host_app)",
+        "HOST_APK_RLOCATIONS": "$(rlocationpaths :host_app_apk)",
     },
     main = "test/verify_aar_host_test.dart",
     tags = [

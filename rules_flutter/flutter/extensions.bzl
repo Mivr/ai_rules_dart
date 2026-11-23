@@ -55,7 +55,7 @@ load("//flutter/private:flutter_pub_plugin_deps.bzl", "ios_plugin_deps_lock_erro
 load("//flutter/private:flutter_pub_scc_spoke.bzl", "flutter_pub_scc_package")
 load("//flutter/private:flutter_pub_tag.bzl", "flutter_pub_tag", "validate_swift_package_product_deps")
 load("//flutter/private:flutter_pubspec.bzl", "parse_flutter_plugin_block")
-load("//flutter/private:flutter_sdk_package.bzl", "declare_sdk_source", "declare_sdk_spokes")
+load("//flutter/private:flutter_sdk_package.bzl", "declare_sdk_source", "declare_sdk_spokes", "flutter_sdk_local_source_repo")
 load("//flutter/private:pub_lock_sdks.bzl", "hosted_package_sha256", "lock_flutter_constraint", "version_below_lower_bound")
 load("//flutter/private:swiftpm_package.bzl", "swiftpm_package")
 load("//flutter/private:swiftpm_resolved.bzl", "check_swiftpm_config_present", "check_swiftpm_dicts", "classify_swiftpm_pin", "pub_spoke_swiftpm_attrs", "read_swiftpm_pins", "swiftpm_spoke_attrs")
@@ -365,6 +365,13 @@ def _register_local_toolchain(name, local_path, lock_flutter_constraints, darwin
     )
     flutter_assets_tool_repo(
         name = name + "_assets_tool",
+        local_path = local_path,
+    )
+
+    # The SDK's packages under the name a downloaded SDK's source has: the Android model links a
+    # plugin of the SDK (integration_test) from there.
+    flutter_sdk_local_source_repo(
+        name = name + "_sdk_source",
         local_path = local_path,
     )
     return struct(version = "", local_path = local_path, source_label = "")

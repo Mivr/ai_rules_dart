@@ -330,7 +330,7 @@ register_toolchains("@local_config_apple_cc_toolchains//:all")
 
 flutter = use_extension("//flutter:extensions.bzl", "flutter")
 flutter.toolchain(flutter_version = "3.47.7")
-use_repo(flutter, "flutter_android_engine_arm64", "flutter_android_engine_arm64_profile", "flutter_android_engine_x64", "flutter_android_engine_x64_profile", "flutter_android_headless_runtime", "flutter_chrome_headless_shell", "flutter_dev_root", "flutter_ios_engine", "flutter_ios_engine_profile", "flutter_l10n", "flutter_linux_headless_runtime", "flutter_macos_engine", "flutter_material_fonts", "flutter_pub_hubs", "flutter_sky_engine", "flutter_toolchains", "flutter_web_sdk", "flutter_xtool_darwin_sdk")
+use_repo(flutter, "flutter_android_engine_arm64", "flutter_android_engine_arm64_profile", "flutter_android_engine_x64", "flutter_android_engine_x64_profile", "flutter_android_headless_runtime", "flutter_chrome_headless_shell", "flutter_dev_root", "flutter_ios_engine", "flutter_ios_engine_profile", "flutter_l10n", "flutter_linux_headless_runtime", "flutter_macos_engine", "flutter_material_fonts", "flutter_pub_hubs", "flutter_sdk_source", "flutter_sky_engine", "flutter_toolchains", "flutter_web_sdk", "flutter_xtool_darwin_sdk")
 
 register_toolchains("@flutter_toolchains//:all")
 

@@ -15,6 +15,14 @@ RdfDexInfo = provider(
     },
 )
 
+RdfApkInfo = provider(
+    doc = "An APK of an app built from the pinned Gradle model, as a test runner needs it.",
+    fields = {
+        "apk": "File: the signed APK.",
+        "application_id": "string: the application id the APK installs under.",
+    },
+)
+
 _WORKER = {
     "requires-worker-protocol": "json",
     "supports-workers": "1",
@@ -689,6 +697,7 @@ def _rdf_apk_impl(ctx):
     if ctx.attr.native_compress:
         args.add("--native-compress")
     args.add_all(ctx.files.zips, before_each = "--zip")
+    args.add_all(ctx.attr.abis, before_each = "--abi")
     args.add_all(ctx.files.resources, before_each = "--resources")
     args.add_all(res_jars, before_each = "--java-res")
     args.add_all(ctx.attr.excludes, before_each = "--exclude")
@@ -719,14 +728,19 @@ def _rdf_apk_impl(ctx):
             args.add("--v3")
         inputs.append(ctx.file._debug_keystore)
     _tool(ctx, args, depset(inputs, transitive = entries), [out], "RdfApk", "Packaging and signing %{label}", worker = True)
-    return [
+    providers = [
         DefaultInfo(files = depset([out])),
         OutputGroupInfo(_validation = depset(ctx.files.validations)),
     ]
+    if ctx.attr.application_id and not unsigned:
+        providers.append(RdfApkInfo(apk = out, application_id = ctx.attr.application_id))
+    return providers
 
 rdf_apk = rule(
     implementation = _rdf_apk_impl,
     attrs = {
+        "abis": attr.string_list(doc = "The ABIs of this APK: native libraries of other ABIs in `zips` are left out. All when empty."),
+        "application_id": attr.string(doc = "The application id, for an APK a test runner installs (the whole app)."),
         "dex": attr.label_list(allow_files = True),
         "dex_store": attr.bool(doc = "Package dex files uncompressed."),
         "entries": attr.label_keyed_string_dict(allow_files = True, doc = "File to its name in the APK."),
@@ -926,6 +940,34 @@ rdf_gradle_aar = rule(
         "srcs": attr.label_list(allow_files = True, doc = "What the result depends on: the project's files, the app's Gradle files, the pin."),
         "tool": attr.label(executable = True, cfg = "exec", mandatory = True),
         "variant": attr.string(mandatory = True),
+    },
+)
+
+# ---------------------------------------------------------------------------------------------------
+# An AAR made in this build (a Flutter module, `flutter_android_aar`), taken apart for the app.
+
+def _rdf_aar_parts_impl(ctx):
+    manifest = ctx.actions.declare_file(ctx.label.name + "/AndroidManifest.xml")
+    classes = ctx.actions.declare_file(ctx.label.name + "/classes.jar")
+    part = ctx.actions.declare_file(ctx.label.name + "/part.zip")
+    args = _tool_args(ctx, "aarparts")
+    args.add("--aar", ctx.file.aar)
+    args.add("--manifest", manifest)
+    args.add("--classes", classes)
+    args.add("--part", part)
+    _tool(ctx, args, [ctx.file.aar], [manifest, classes, part], "RdfAarParts", "Taking %{label} apart")
+    return [
+        DefaultInfo(files = depset([manifest, classes, part])),
+        OutputGroupInfo(manifest = depset([manifest]), classes = depset([classes]), part = depset([part])),
+    ]
+
+rdf_aar_parts = rule(
+    doc = """The parts of an AAR that the build made: `manifest`, `classes` (a jar) and `part` (a zip
+    of its native libraries as `lib/<abi>/` and its assets), as output groups.""",
+    implementation = _rdf_aar_parts_impl,
+    attrs = {
+        "aar": attr.label(allow_single_file = [".aar"], mandatory = True),
+        "tool": attr.label(executable = True, cfg = "exec", mandatory = True),
     },
 )
 

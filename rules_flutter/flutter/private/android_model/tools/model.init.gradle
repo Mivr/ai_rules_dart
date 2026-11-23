@@ -344,7 +344,8 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
     def pj = new TreeMap()
     pj.dir = rdfRel(p.projectDir, roots)
     pj.type = p.pluginManager.hasPlugin('com.android.application') ? 'application' : 'library'
-    pj.gradle_plugins = p.plugins.collect { it.class.name }.findAll { !it.startsWith('org.gradle.') }.sort().unique()
+    // Gradle instantiates some plugin classes through a generated subclass, `<class>_Decorated`.
+    pj.gradle_plugins = p.plugins.collect { it.class.name.replaceAll(/_Decorated$/, '') }.findAll { !it.startsWith('org.gradle.') }.sort().unique()
     if (fallback.contains(p.path)) {
       pj.gradle_fallback = true
     } else {
