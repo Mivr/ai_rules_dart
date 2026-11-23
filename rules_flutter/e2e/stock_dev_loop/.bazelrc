@@ -4,3 +4,6 @@ common --tool_java_language_version=25
 common --tool_java_runtime_version=remotejdk_25
 
 try-import %workspace%/.bazelrc.user
+
+# The debug agent's `package:flutter` is this app's (@rules_flutter//flutter/debug_agent).
+build --@rules_flutter//flutter/debug_agent:flutter=@deps//:flutter

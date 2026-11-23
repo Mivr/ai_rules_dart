@@ -1,0 +1,10 @@
+schema: mivr-e2e-spec/1
+# The Linux side of the stock dev loop example: the bundle `flutter_dev run -d linux` hands to the
+# stock tool (debug agent included), and the widget test. The Android APK needs the Android SDK
+# and NDK (`.bazelrc.user`), so it is left to hosts that have them.
+commands:
+  - name: the Linux debug bundle builds
+    run: bazel build -c dbg //:app_linux //:app_flutter
+  - name: the widget test passes
+    run: bazel test //:widget_test --test_output=errors
+    min_tests_executed: 1

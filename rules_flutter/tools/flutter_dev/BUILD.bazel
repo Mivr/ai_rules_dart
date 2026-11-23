@@ -3,7 +3,6 @@ load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load(":repo_name.bzl", "RULES_FLUTTER_REPO")
 
 # flutter_dev: Bazel builds the app, the stock `flutter` tool runs it (README.md).
-# It replaces `//tools/dev_tool:flutter_bazel` once that is deleted.
 
 # The canonical name of this repository, by which the tool names the rules' aspect.
 write_file(
@@ -18,11 +17,14 @@ write_file(
 
 _SRCS = glob(["lib/**/*.dart"]) + [":repo_name"]
 
+_DEPS = ["@tool_deps//:yaml"]
+
 dart_library(
     name = "lib",
     package_name = "flutter_dev",
     srcs = _SRCS,
     visibility = ["//visibility:private"],
+    deps = _DEPS,
 )
 
 dart_binary(
@@ -32,6 +34,17 @@ dart_binary(
     compile_mode = "exe",
     main = "bin/flutter_dev.dart",
     visibility = ["//visibility:public"],
+    deps = _DEPS,
+)
+
+# The end-to-end check of the dev loop with the debug agent: drives an app started with
+# `flutter_dev run --machine` through every `ext.rules_flutter.*` command, before and after a hot
+# restart (README.md, "Driving the app from a script"). Needs a device and the stock tool:
+#   bazel run //tools/flutter_dev:agent_e2e -- --cwd=e2e/stock_dev_loop -- <flutter_dev> run --machine ...
+dart_binary(
+    name = "agent_e2e",
+    compile_mode = "exe",
+    main = "tool/agent_e2e.dart",
 )
 
 _NOT_WINDOWS = select({

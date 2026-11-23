@@ -45,6 +45,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _counter = 0;
+  String _name = '';
   String _tempDir = '?';
   String _native = '?';
 
@@ -92,8 +93,31 @@ class _MyHomePageState extends State<MyHomePage> {
           mainAxisAlignment: .center,
           children: [
             Text(describeCount(_counter),
+                key: const ValueKey<String>('count'),
                 style: Theme.of(context).textTheme.headlineMedium),
             Text('temp: $_tempDir'),
+            // What a script types into and reads back (ext.rules_flutter.enterText, getText).
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: TextField(
+                key: const ValueKey<String>('name'),
+                onChanged: (String value) => setState(() => _name = value),
+              ),
+            ),
+            Text('hello $_name', key: const ValueKey<String>('greeting')),
+            TextButton(
+              key: const ValueKey<String>('details'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (BuildContext context) => const Scaffold(
+                    body: Center(
+                      child: Text('details', key: ValueKey<String>('details_page')),
+                    ),
+                  ),
+                ),
+              ),
+              child: const Text('Details'),
+            ),
           ],
         ),
       ),

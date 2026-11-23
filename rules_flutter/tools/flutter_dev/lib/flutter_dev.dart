@@ -142,10 +142,18 @@ Future<int> _session(
     allowMismatch: options.allowVersionMismatch,
   );
 
-  // 2. The files the stock tool and the IDE read.
-  final bazelConfig = jsonDecode(
+  // 2. The files the stock tool and the IDE read: the app's packages, plus its dev dependencies,
+  // which no application depends on, as `pub get` lists them.
+  var bazelConfig = jsonDecode(
     File(app.packageConfig).readAsStringSync(),
   ) as Map<String, Object?>;
+  final List<String> devDependencies = pubspecDevDependencies(
+    File('$projectDir/pubspec.yaml').readAsStringSync(),
+  );
+  bazelConfig = withPackages(
+    bazelConfig,
+    await _devPackages(bazel, state, target, bazelConfig, devDependencies, out),
+  );
   final Map<String, Object?> config = idePackageConfig(
     bazelConfig,
     workspace: workspace,
@@ -162,7 +170,9 @@ Future<int> _session(
   );
   writeIfChanged(
     '$projectDir/.dart_tool/package_graph.json',
-    const JsonEncoder.withIndent('  ').convert(packageGraph(config, package)),
+    const JsonEncoder.withIndent('  ').convert(
+      packageGraph(config, package, devDependencies: devDependencies),
+    ),
   );
   linkGeneratedSources(
     workspace: workspace,
@@ -244,6 +254,80 @@ Future<int> _session(
           restart: restart,
           environment: environment,
         ));
+}
+
+/// The package config entries of the dev dependencies the app's config lacks: from the last run
+/// when they are the same and still on disk, otherwise built (their packages only, nothing
+/// compiled) from the hub the app's `flutter` comes from. A dev dependency that cannot be built
+/// costs a warning, not the session.
+Future<List<Map<String, Object?>>> _devPackages(
+  Bazel bazel,
+  State state,
+  String target,
+  Map<String, Object?> bazelConfig,
+  List<String> devDependencies,
+  BuildOutputs out,
+) async {
+  final have = <Object?>{
+    for (final p in (bazelConfig['packages']! as List<Object?>))
+      (p! as Map<String, Object?>)['name'],
+  };
+  final missing = <String>[
+    for (final n in devDependencies)
+      if (!have.contains(n)) n,
+  ];
+  if (missing.isEmpty) return const <Map<String, Object?>>[];
+  final cached = state.devPackages[target] as Map<String, Object?>?;
+  if (cached != null &&
+      (cached['names'] as List<Object?>?)?.join(',') == missing.join(',')) {
+    final packages = <Map<String, Object?>>[
+      for (final Object? p
+          in (cached['packages'] as List<Object?>?) ?? const <Object?>[])
+        (p! as Map<String, Object?>).cast<String, Object?>(),
+    ];
+    if (packages.every((Map<String, Object?> p) => _onDisk(p, out))) {
+      return packages;
+    }
+  }
+  final String? hub = pubHubOf(bazelConfig);
+  if (hub == null) {
+    stderr.writeln(
+      'flutter_dev: the app takes `flutter` from no pub hub, so its dev_dependencies '
+      '(${missing.join(', ')}) are not in the package config.',
+    );
+    return const <Map<String, Object?>>[];
+  }
+  try {
+    final BuildOutputs built = await bazel.build(
+      <String>[for (final n in missing) '@@$hub//:$n'],
+      groups: const <String>[devPackagesGroup],
+      withDefault: false,
+      aspect: devPackagesAspect,
+    );
+    final List<Map<String, Object?>> packages = devPackageEntries(built);
+    state.devPackages[target] = <String, Object?>{
+      'names': missing,
+      'packages': packages,
+    };
+    return packages;
+  } on BuildFailure catch (e) {
+    stderr.writeln(
+      'flutter_dev: the dev_dependencies are not in the package config: $e',
+    );
+    return const <Map<String, Object?>>[];
+  }
+}
+
+bool _onDisk(Map<String, Object?> entry, BuildOutputs out) {
+  const scheme = 'org-dartlang-app:///';
+  final root = entry['rootUri'] as String?;
+  if (root == null || !root.startsWith(scheme)) return false;
+  final String rel = root.substring(scheme.length);
+  return Directory(
+    rel.startsWith('external/')
+        ? '${out.outputBase}/$rel'
+        : '${out.execRoot}/$rel',
+  ).existsSync();
 }
 
 int _ide(

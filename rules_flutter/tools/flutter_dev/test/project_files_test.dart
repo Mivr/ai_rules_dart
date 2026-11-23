@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_dev/src/bazel.dart';
+import 'package:flutter_dev/src/build_events.dart';
 import 'package:flutter_dev/src/options.dart';
 import 'package:flutter_dev/src/project_files.dart';
 import 'package:test/test.dart';
@@ -87,6 +88,96 @@ void main() {
       'flutter',
       'other',
     ]);
+  });
+
+  group('dev dependencies', () {
+    test('are the keys of dev_dependencies in the pubspec', () {
+      expect(
+        pubspecDevDependencies('''
+name: counter
+dependencies:
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+'''),
+        <String>['flutter_lints', 'flutter_test'],
+      );
+      expect(pubspecDevDependencies('name: counter\n'), isEmpty);
+    });
+
+    test("come from the hub of the app's flutter", () {
+      expect(pubHubOf(bazelConfig), 'hub');
+      expect(
+        pubHubOf(<String, Object?>{
+          'packages': <Object?>[
+            <String, Object?>{
+              'name': 'flutter',
+              'rootUri': 'org-dartlang-app:///external/a++flutter+deps__flutter/packages/flutter/',
+            },
+          ],
+        }),
+        'a++flutter+deps',
+      );
+      expect(
+        pubHubOf(<String, Object?>{'packages': <Object?>[]}),
+        isNull,
+      );
+    });
+
+    test('are added as package config entries, each once, and the graph names them', () {
+      final dir = Directory('${tmp.path}/bin')..createSync();
+      File('${dir.path}/a.flutter_stock_dev_packages.json').writeAsStringSync(
+        '{"packages":[{"name":"flutter_test","root":"external/hub__flutter_test",'
+        '"languageVersion":"3.8"}]}',
+      );
+      File('${dir.path}/b.flutter_stock_dev_packages.json').writeAsStringSync(
+        '{"packages":[{"name":"flutter","root":"external/hub__flutter","languageVersion":""},'
+        '{"name":"flutter_test","root":"external/hub__flutter_test","languageVersion":"3.8"}]}',
+      );
+      final outputs = BuildOutputs(
+        tmp.path,
+        <String, Map<String, List<String>>>{
+          '@@hub//:flutter_test': <String, List<String>>{
+            devPackagesGroup: <String>[
+              'bin/a.flutter_stock_dev_packages.json',
+              'bin/b.flutter_stock_dev_packages.json',
+            ],
+          },
+        },
+      );
+      final List<Map<String, Object?>> entries = devPackageEntries(outputs);
+      expect(entries, hasLength(2));
+      expect(entries.first, <String, Object?>{
+        'name': 'flutter_test',
+        'rootUri': 'org-dartlang-app:///external/hub__flutter_test/',
+        'packageUri': 'lib/',
+        'languageVersion': '3.8',
+      });
+      final Map<String, Object?> merged = withPackages(bazelConfig, entries);
+      final names = <Object?>[
+        for (final p in (merged['packages']! as List<Object?>))
+          (p! as Map<String, Object?>)['name'],
+      ];
+      expect(names, <Object?>[
+        'flutter',
+        'counter_lib',
+        'counter',
+        'other',
+        'flutter_test',
+      ]);
+      final Map<String, Object?> graph = packageGraph(
+        merged,
+        'counter',
+        devDependencies: <String>['flutter_test', 'absent'],
+      );
+      final root =
+          (graph['packages']! as List<Object?>).first! as Map<String, Object?>;
+      expect(root['devDependencies'], <String>['flutter_test']);
+      expect(root['dependencies'], isNot(contains('flutter_test')));
+    });
   });
 
   test('writeIfChanged leaves an equal file alone', () {

@@ -17,6 +17,10 @@ String get _rules =>
 /// The aspect that brings the application's files onto disk.
 String get devFilesAspect => '$_rules//flutter:dev_files.bzl%flutter_dev_files';
 
+/// The aspect that names the packages below the app's dev dependencies.
+String get devPackagesAspect =>
+    '$_rules//flutter:dev_files.bzl%flutter_dev_packages';
+
 /// The profile-mode flag of the rules.
 String get profileFlag => '--$_rules//flutter:profile';
 
@@ -25,6 +29,9 @@ const String stockDevGroup = 'flutter_stock_dev';
 
 /// The output group with the generated Dart sources and their generators.
 const String generatedGroup = 'flutter_stock_dev_generated';
+
+/// The output group of [devPackagesAspect]: one JSON file per package.
+const String devPackagesGroup = 'flutter_stock_dev_packages';
 
 /// A `bazel build` the tool runs.
 class Bazel {
@@ -67,13 +74,15 @@ class Bazel {
     Mode.release => const <String>['-c', 'opt'],
   };
 
-  /// Builds [targets] with the aspect, asking for [groups] (with a `+`, on top of the default
-  /// outputs, when [withDefault]; no aspect when [groups] is empty), and returns what the build event file says it produced. Throws a [BuildFailure]
-  /// when the build fails.
+  /// Builds [targets] with [aspect] (the `flutter_dev_files` aspect by default), asking for
+  /// [groups] (with a `+`, on top of the default outputs, when [withDefault]; no aspect when
+  /// [groups] is empty), and returns what the build event file says it produced. Throws a
+  /// [BuildFailure] when the build fails.
   Future<BuildOutputs> build(
     List<String> targets, {
     required List<String> groups,
     required bool withDefault,
+    String? aspect,
   }) async {
     Directory(scratch).createSync(recursive: true);
     final events = File('$scratch/build_events.json');
@@ -82,7 +91,7 @@ class Bazel {
         'build',
         ..._modeArgs,
         if (groups.isNotEmpty) ...<String>[
-          '--aspects=$devFilesAspect',
+          '--aspects=${aspect ?? devFilesAspect}',
           '--output_groups=${groups.map((String g) => withDefault ? '+$g' : g).join(',')}',
         ],
         '--build_event_json_file=${events.path}',

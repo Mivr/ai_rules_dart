@@ -7,7 +7,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_dev/src/bazel.dart';
+import 'package:flutter_dev/src/build_events.dart';
 import 'package:flutter_dev/src/options.dart';
+import 'package:yaml/yaml.dart';
 
 const String _appScheme = 'org-dartlang-app:///';
 
@@ -52,29 +54,106 @@ Map<String, Object?> idePackageConfig(
   return config;
 }
 
+/// The names under `dev_dependencies` in the pubspec [text], sorted.
+List<String> pubspecDevDependencies(String text) {
+  final Object? doc = loadYaml(text);
+  final Object? dev = doc is Map ? doc['dev_dependencies'] : null;
+  return dev is Map
+      ? (<String>[for (final Object? k in dev.keys) '$k']..sort())
+      : <String>[];
+}
+
+/// The canonical name of the pub hub the app's `flutter` package comes from, read off its root in
+/// the Bazel package config ([bazelConfig]): a hub's packages live in repositories named
+/// `<hub>__<package>`. Null when there is no such `flutter`.
+String? pubHubOf(Map<String, Object?> bazelConfig) {
+  for (final p in (bazelConfig['packages']! as List<Object?>)) {
+    final package = p! as Map<String, Object?>;
+    if (package['name'] != 'flutter') continue;
+    final root = package['rootUri']! as String;
+    final Match? m = RegExp(
+      '^${RegExp.escape(_appScheme)}external/([^/]+)__flutter(/|\$)',
+    ).firstMatch(root);
+    return m?.group(1);
+  }
+  return null;
+}
+
+/// The dev dependency packages the build event files of [devPackagesAspect] list, as package
+/// config entries in the Bazel config's form (`org-dartlang-app:///<root>/`).
+List<Map<String, Object?>> devPackageEntries(BuildOutputs outputs) {
+  final entries = <String, Map<String, Object?>>{};
+  for (final String f in outputs.allFiles(devPackagesGroup)) {
+    if (!f.endsWith('.flutter_stock_dev_packages.json')) continue;
+    final json = jsonDecode(
+      File(outputs.absolute(f)).readAsStringSync(),
+    ) as Map<String, Object?>;
+    for (final p in (json['packages']! as List<Object?>)) {
+      final package = p! as Map<String, Object?>;
+      final name = package['name']! as String;
+      final version = package['languageVersion'] as String?;
+      entries[name] ??= <String, Object?>{
+        'name': name,
+        'rootUri': '$_appScheme${package['root']}/',
+        'packageUri': 'lib/',
+        if (version != null && version.isNotEmpty) 'languageVersion': version,
+      };
+    }
+  }
+  return entries.values.toList();
+}
+
+/// [bazelConfig] with the [extra] entries whose package it does not hold yet.
+Map<String, Object?> withPackages(
+  Map<String, Object?> bazelConfig,
+  List<Map<String, Object?>> extra,
+) {
+  final packages = <Object?>[...(bazelConfig['packages']! as List<Object?>)];
+  final names = <Object?>{
+    for (final p in packages) (p! as Map<String, Object?>)['name'],
+  };
+  return <String, Object?>{
+    ...bazelConfig,
+    'packages': <Object?>[
+      ...packages,
+      for (final e in extra)
+        if (!names.contains(e['name'])) e,
+    ],
+  };
+}
+
 /// The dependency graph pub writes, which the stock tool's plugin discovery walks. A flat graph,
 /// the root depending on every package, finds the same plugins: the app's whole closure is what
-/// Bazel compiled.
+/// Bazel compiled. The names in [devDependencies] the config holds are the root's dev
+/// dependencies, as in the pubspec.
 Map<String, Object?> packageGraph(
   Map<String, Object?> packageConfig,
-  String rootPackage,
-) {
-  final names = <String>[
+  String rootPackage, {
+  List<String> devDependencies = const <String>[],
+}) {
+  final all = <String>[
     for (final p in (packageConfig['packages']! as List<Object?>))
       if ((p! as Map<String, Object?>)['name'] case final String n
           when n != rootPackage && n != 'sky_engine')
         n,
   ]..sort();
+  final dev = <String>[
+    for (final n in all)
+      if (devDependencies.contains(n)) n,
+  ];
   return <String, Object?>{
     'roots': <String>[rootPackage],
     'packages': <Object?>[
       <String, Object?>{
         'name': rootPackage,
         'version': '0.0.0',
-        'dependencies': names,
-        'devDependencies': <String>[],
+        'dependencies': <String>[
+          for (final n in all)
+            if (!dev.contains(n)) n,
+        ],
+        'devDependencies': dev,
       },
-      for (final n in names)
+      for (final n in all)
         <String, Object?>{
           'name': n,
           'version': '0.0.0',
@@ -97,13 +176,19 @@ bool writeIfChanged(String path, String content) {
 /// What the tool remembers between runs, in `.dart_tool/flutter_dev/state.json`.
 class State {
   /// A state kept in [file].
-  new(this.file, this.generators, this.links);
+  new(
+    this.file,
+    this.generators,
+    this.links, [
+    Map<String, Object?>? devPackages,
+  ]) : devPackages = devPackages ?? <String, Object?>{};
 
   /// Reads the state of the project in [projectDir], or an empty one.
   factory load(String projectDir) {
     final file = File('$projectDir/.dart_tool/flutter_dev/state.json');
     var generators = <String, List<String>>{};
     var links = <String>[];
+    var devPackages = <String, Object?>{};
     if (file.existsSync()) {
       try {
         final json =
@@ -117,11 +202,14 @@ class State {
         };
         links = ((json['links'] as List<Object?>?) ?? const <Object?>[])
             .cast<String>();
+        devPackages =
+            (json['devPackages'] as Map<String, Object?>?) ??
+            <String, Object?>{};
       } on FormatException {
         // A damaged state only costs one more build.
       }
     }
-    return State(file, generators, links);
+    return State(file, generators, links, devPackages);
   }
 
   /// Where it is kept.
@@ -134,11 +222,18 @@ class State {
   /// The links the tool made, as workspace paths, so it can remove those no longer generated.
   List<String> links;
 
+  /// Per `--bazel-target`, the dev dependencies found last time (`names`) and their packages'
+  /// entries (`packages`), so the next run need not build them again.
+  final Map<String, Object?> devPackages;
+
   /// Writes it back.
   void save() => writeIfChanged(
     file.path,
-    const JsonEncoder.withIndent('  ')
-        .convert(<String, Object?>{'generators': generators, 'links': links}),
+    const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+      'generators': generators,
+      'links': links,
+      'devPackages': devPackages,
+    }),
   );
 }
 

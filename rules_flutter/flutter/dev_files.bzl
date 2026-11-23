@@ -27,8 +27,14 @@ to the stock `flutter` tool and needs only what that tool and the IDE read:
   each source into the source tree, where the stock generator would write it,
   and builds the generating targets in the top-level configuration, so that
   rebuilding one of them after an input edit updates what the link names.
+
+A second aspect, `flutter_dev_packages`, names the packages below the app's
+`dev_dependencies`, so that the package config `flutter_dev` writes holds them
+as `pub get`'s does (`flutter_lints`, `flutter_test` and their closure).
 """
 
+load("@rules_dart//dart:providers.bzl", "DartInfo")
+load("@rules_dart//dart:utils.bzl", "owned_package_records")
 load("//flutter:providers.bzl", "FlutterApplicationInfo")
 
 visibility("public")
@@ -41,6 +47,9 @@ DEV_FILES_GROUP = "flutter_dev_files"
 # The groups `flutter_dev` requests (see the module docstring).
 STOCK_DEV_GROUP = "flutter_stock_dev"
 STOCK_DEV_GENERATED_GROUP = "flutter_stock_dev_generated"
+
+# The group of `flutter_dev_packages` (below).
+STOCK_DEV_PACKAGES_GROUP = "flutter_stock_dev_packages"
 
 _FLUTTER_TOOLCHAIN = "@rules_flutter//flutter:toolchain_type"
 
@@ -129,5 +138,45 @@ Applied by the dev tool, not by users:
 
 Requesting the group is what makes those files top-level, so bazel writes them
 to this machine even when a cache served the actions that produced them.
+""",
+)
+
+def _app_scheme_root(lib_root):
+    """A package root as the package config's `org-dartlang-app:///` path: `external/<repo>/...`."""
+    return "external/" + lib_root[len("../"):] if lib_root.startswith("../") else lib_root
+
+def _flutter_dev_packages_aspect_impl(target, ctx):
+    files = []
+    if DartInfo in target:
+        records = [r for r in owned_package_records(target[DartInfo]) if r.package_name]
+        if records:
+            out = ctx.actions.declare_file(ctx.label.name + ".flutter_stock_dev_packages.json")
+            ctx.actions.write(out, json.encode({"packages": [
+                {
+                    "languageVersion": r.language_version,
+                    "name": r.package_name,
+                    "root": _app_scheme_root(r.lib_root),
+                }
+                for r in records
+            ]}))
+            files.append(depset([out]))
+    for attr_name in dir(ctx.rule.attr):
+        attr = getattr(ctx.rule.attr, attr_name)
+        for dep in (attr if type(attr) == "list" else [attr]):
+            if type(dep) == "Target" and OutputGroupInfo in dep:
+                group = getattr(dep[OutputGroupInfo], STOCK_DEV_PACKAGES_GROUP, None)
+                if group != None:
+                    files.append(group)
+    return [OutputGroupInfo(**{STOCK_DEV_PACKAGES_GROUP: depset(transitive = files)})]
+
+flutter_dev_packages = aspect(
+    implementation = _flutter_dev_packages_aspect_impl,
+    attr_aspects = ["*"],
+    doc = """Names the Dart packages below a target and where each one's root is.
+
+`flutter_dev` applies it to the app's `dev_dependencies` (`@<hub>//:flutter_test`, ...), which no
+application depends on, so that the package config it writes for the stock tool and the IDE lists
+them as `pub get`'s does: one small JSON file per package, in the `flutter_stock_dev_packages`
+group.
 """,
 )

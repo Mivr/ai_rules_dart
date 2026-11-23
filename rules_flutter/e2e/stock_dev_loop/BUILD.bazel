@@ -1,6 +1,6 @@
 load("@android_model//:defs.bzl", "flutter_android_app")
 load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
-load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_gen_l10n")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_gen_l10n", "flutter_test")
 load(
     "@rules_flutter//flutter:linux.bzl",
     "flutter_linux_bundle",
@@ -28,12 +28,30 @@ flutter_application(
     main = "lib/main.dart",
     pub_packages = "@deps//packages",
     deps = [
+        # The debug agent (`ext.rules_flutter.*`): scripts drive the running app with it through
+        # the stock tool's `app.callServiceExtension`. It registers in debug builds only; its
+        # `package:flutter` is named in .bazelrc.
+        "@rules_flutter//flutter/debug_agent",
         "//packages/counter_lib",
         "//packages/counter_plugin",
         "@deps//:flutter",
         "@deps//:flutter_localizations",
         "@deps//:intl",
         "@deps//:path_provider",
+    ],
+)
+
+# The same test `flutter test` runs.
+flutter_test(
+    name = "widget_test",
+    package_name = "counter",
+    size = "small",
+    main = "test/widget_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//packages/counter_lib",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
     ],
 )
 
