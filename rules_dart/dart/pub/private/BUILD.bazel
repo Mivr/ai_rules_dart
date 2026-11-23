@@ -98,18 +98,6 @@ bzl_library(
 )
 
 bzl_library(
-    name = "yaml_parser",
-    srcs = ["yaml_parser.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":pin_checks",
-        ":yaml_lock",
-        ":yaml_sdk_constraint",
-        ":yaml_subset",
-    ],
-)
-
-bzl_library(
     name = "pub_emit",
     srcs = ["pub_emit.bzl"],
     visibility = ["//visibility:public"],
@@ -231,151 +219,9 @@ bzl_library(
 )
 
 bzl_library(
-    name = "yaml_block",
-    srcs = ["yaml_block.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_block_scalar",
-        ":yaml_chars",
-        ":yaml_flow",
-        ":yaml_flow_scan",
-        ":yaml_fold",
-        ":yaml_printable",
-        ":yaml_scalar",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_block_scalar",
-    srcs = ["yaml_block_scalar.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_chars",
-    srcs = ["yaml_chars.bzl"],
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
-    name = "yaml_document",
-    srcs = ["yaml_document.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_block",
-        ":yaml_chars",
-        ":yaml_scalar",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_escape",
-    srcs = ["yaml_escape.bzl"],
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
-    name = "yaml_flow",
-    srcs = ["yaml_flow.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_scalar",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_flow_scan",
-    srcs = ["yaml_flow_scan.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_fold",
-    srcs = ["yaml_fold.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_chars",
-        ":yaml_flow",
-        ":yaml_flow_scan",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_lock",
-    srcs = ["yaml_lock.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_lock_fast",
-        ":yaml_subset",
-    ],
-)
-
-bzl_library(
-    name = "yaml_lock_fast",
-    srcs = ["yaml_lock_fast.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_chars",
-    ],
-)
-
-bzl_library(
-    name = "yaml_printable",
-    srcs = ["yaml_printable.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_scalar",
-    srcs = ["yaml_scalar.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_chars",
-        ":yaml_escape",
-        ":yaml_printable",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
     name = "yaml_sdk_constraint",
     srcs = ["yaml_sdk_constraint.bzl"],
     visibility = ["//visibility:public"],
-)
-
-bzl_library(
-    name = "yaml_subset",
-    srcs = ["yaml_subset.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_chars",
-        ":yaml_document",
-        ":yaml_flow",
-        ":yaml_flow_scan",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_text",
-    srcs = ["yaml_text.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":yaml_chars",
-    ],
 )
 
 # Bare scanner sources for `//dart/pub:pub_scan_test`, which imports the
@@ -401,7 +247,5 @@ exports_files(
         "pub_symlink.bzl",
         "scc.bzl",
         "version.bzl",
-        "yaml_parser.bzl",
-        "yaml_subset.bzl",
     ],
 )

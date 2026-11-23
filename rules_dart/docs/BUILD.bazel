@@ -30,7 +30,7 @@ _DOC_EXTRACTS = [
     ":pub_scan.doc_extract",
     ":pub_scanner.doc_extract",
     ":pub_scc.doc_extract",
-    ":pub_yaml_parser.doc_extract",
+    ":pub_yaml.doc_extract",
 ]
 
 filegroup(
@@ -202,9 +202,9 @@ starlark_doc_extract(
 )
 
 starlark_doc_extract(
-    name = "pub_yaml_parser.doc_extract",
-    src = "//dart/pub:yaml_parser.bzl",
-    deps = ["//dart/pub:yaml_parser"],
+    name = "pub_yaml.doc_extract",
+    src = "//dart/pub:yaml.bzl",
+    deps = ["//dart/pub:yaml"],
 )
 
 _DECLARED_EXTRACTS = [

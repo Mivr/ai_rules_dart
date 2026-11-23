@@ -13,7 +13,7 @@ load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/pub:extensions.bzl", "plan_scope_sccs", "resolve_pub_packages", "scc_member_entries")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub_content")
 load("//dart/pub:pub_scc.bzl", "compute_sccs", "package_dep_graph", "scc_repo_name")
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
+load("//dart/pub:yaml.bzl", "pubspec_deps")
 load("//dart/pub/private:build_content.bzl", "make_dart_package_member_build_content", "make_scc_merged_build_content")
 load("//dart/pub/private:scc.bzl", "normalize_pub_dep", "rewrite_vanished_spoke")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
@@ -456,25 +456,26 @@ def _plan_scope_sccs_explicit_left_alone_test_impl(ctx):
     asserts.equals(env, {}, plan.merged)
     return unittest.end(env)
 
-# Dependency names `parse_pubspec_deps` legitimately returns, carrying a
+# Dependency names `pubspec_deps` legitimately returns, carrying a
 # double quote, a colon and a newline (`_TRICKY_B`) and a `#` and a space
-# (`_TRICKY_C`). Planning consumes names directly, so each stays one edge;
-# rendering them back into pubspec text and parsing again used to split them
-# into several names and corrupted the cycle plan.
+# (`_TRICKY_C`), here as the decoded pubspecs. Planning consumes names
+# directly, so each stays one edge; rendering them back into pubspec text and
+# parsing again used to split them into several names and corrupted the
+# cycle plan.
 _TRICKY_A = 'a"x'
 _TRICKY_B = "b:y\nz"
 _TRICKY_C = "h#i j"
 
-_TRICKY_A_PUBSPEC = "name: \"a\\\"x\"\ndependencies:\n  \"b:y\\nz\": any\n  \"h#i j\": any\n"
-_TRICKY_B_PUBSPEC = "name: \"b:y\\nz\"\ndependencies:\n  \"a\\\"x\": any\n"
-_TRICKY_C_PUBSPEC = "name: \"h#i j\"\n"
+_TRICKY_A_PUBSPEC = {"name": "a\"x", "dependencies": {"b:y\nz": "any", "h#i j": "any"}}
+_TRICKY_B_PUBSPEC = {"name": "b:y\nz", "dependencies": {"a\"x": "any"}}
+_TRICKY_C_PUBSPEC = {"name": "h#i j"}
 
 def _tricky_names_cycle_test_impl(ctx):
     env = unittest.begin(ctx)
     names = {
-        _TRICKY_A: parse_pubspec_deps(_TRICKY_A_PUBSPEC),
-        _TRICKY_B: parse_pubspec_deps(_TRICKY_B_PUBSPEC),
-        _TRICKY_C: parse_pubspec_deps(_TRICKY_C_PUBSPEC),
+        _TRICKY_A: pubspec_deps(_TRICKY_A_PUBSPEC),
+        _TRICKY_B: pubspec_deps(_TRICKY_B_PUBSPEC),
+        _TRICKY_C: pubspec_deps(_TRICKY_C_PUBSPEC),
     }
     asserts.equals(env, [_TRICKY_B, _TRICKY_C], sorted(names[_TRICKY_A]), "quoted, colon and hash names parse back whole")
     asserts.equals(env, [_TRICKY_A], names[_TRICKY_B], "the quoted name parses back whole")

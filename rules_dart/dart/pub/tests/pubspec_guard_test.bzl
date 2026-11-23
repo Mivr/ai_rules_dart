@@ -1,34 +1,36 @@
-"""Unit tests for the pubspec guard: SDK-constraint refusal and `%` tails.
+"""Unit tests for the pubspec guard: the SDK-constraint and `environment` refusals.
 
 Every fetch (`pub_lock_package` / `pub_lock_git_package` spokes, the
 `pub_lock_scc_package` merge, `pub_package`) fails a pubspec whose present,
-non-null `environment.sdk` is not a version constraint pub reads, or that
-carries a `%YAML` / `%TAG` line after its `...` end marker. The production
-check is `pubspec_sdk_constraint_error` plus the document parse, which the
-`_pubspec_probe` rule below runs in the same order the spokes do, so the
-`expect_failure` analysis tests exercise the fetch-level refusal path.
+non-null `environment.sdk` is not a version constraint pub reads, or whose
+`environment` pub's `_parseEnvironment` refuses. The production check is
+`pubspec_environment_error` over the decoded pubspec, which the
+`_pubspec_probe` rule below runs as the spokes do, so the `expect_failure`
+analysis tests exercise the fetch-level refusal path. Each pubspec is the
+mapping `yaml_to_json` decodes: a bare YAML number reads as its text.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load(
-    "//dart/pub:yaml_parser.bzl",
-    "is_valid_sdk_constraint",
-    "parse_pubspec_document",
-    "parse_pubspec_document_error",
-    "parse_pubspec_sdk_constraint",
-    "pubspec_lock_error",
-    "pubspec_sdk_constraint_error",
+    "//dart/pub:yaml.bzl",
+    "pubspec_environment_error",
+    "pubspec_sdk_constraint",
 )
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
+load("//dart/pub/private:yaml_sdk_constraint.bzl", "is_valid_sdk_constraint")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
 visibility(["//dart/..."])
 
 _LABEL = "probe_pkg/pubspec.yaml"
 
-def _sdk_pubspec(sdk_line):
-    """Returns a `probe_pkg` pubspec with the given `environment:` block lines."""
-    return "name: probe_pkg\n" + sdk_line
+def _env_pubspec(environment):
+    """Returns a decoded `probe_pkg` pubspec with the given `environment` value."""
+    return {"name": "probe_pkg", "environment": environment}
+
+def _sdk_pubspec(sdk):
+    """Returns a decoded `probe_pkg` pubspec whose `environment.sdk` is `sdk`."""
+    return _env_pubspec({"sdk": sdk})
 
 # Strings pub_semver 2.2.0 `VersionConstraint.parse` refuses: empty text,
 # `*`, bare words, partial versions (with and without `^`), `=` versions,
@@ -75,7 +77,7 @@ _ACCEPTED_CASES = [
 ]
 
 # The 26 blanks Dart's `String.trim` removes, as the UTF-8 byte sequences the
-# YAML layer carries them in (see `yaml_sdk_constraint.bzl`). The ASCII six
+# decoded text carries them in (see `yaml_sdk_constraint.bzl`). The ASCII six
 # read on the base too; the other twenty fail every fetch there while pub
 # accepts them. Oracles: package:pub_semver 2.2.0 `VersionConstraint.parse`.
 _SDK_BLANKS = [
@@ -161,16 +163,16 @@ def _blanks_test_impl(ctx):
             ("<" + blank + "4.0.0", "2.7"),
         ]:
             asserts.true(env, is_valid_sdk_constraint(value), "blank reads: %r" % value)
-            content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
+            content = _sdk_pubspec(value)
             asserts.true(
                 env,
-                pubspec_sdk_constraint_error(content, _LABEL) == None,
+                pubspec_environment_error(content, _LABEL) == None,
                 "blank reads: %r" % value,
             )
             asserts.equals(
                 env,
                 expected,
-                derive_language_version(parse_pubspec_sdk_constraint(content)),
+                derive_language_version(pubspec_sdk_constraint(content)),
                 "blank derives the ASCII twin's version: %r" % value,
             )
     return unittest.end(env)
@@ -186,10 +188,10 @@ def _non_blanks_test_impl(ctx):
             ">=" + mark + "2.12.0",
         ]:
             asserts.false(env, is_valid_sdk_constraint(value), "non-blank is refused: %r" % value)
-            content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
+            content = _sdk_pubspec(value)
             asserts.true(
                 env,
-                pubspec_sdk_constraint_error(content, _LABEL) != None,
+                pubspec_environment_error(content, _LABEL) != None,
                 "non-blank is refused: %r" % value,
             )
     return unittest.end(env)
@@ -198,24 +200,24 @@ def _caret_edges_test_impl(ctx):
     env = unittest.begin(ctx)
     for value in _CARET_REFUSED:
         asserts.false(env, is_valid_sdk_constraint(value), "overflowing caret is refused: %r" % value)
-        content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
+        content = _sdk_pubspec(value)
         asserts.true(
             env,
-            pubspec_sdk_constraint_error(content, _LABEL) != None,
+            pubspec_environment_error(content, _LABEL) != None,
             "overflowing caret is refused: %r" % value,
         )
     for value, expected in _CARET_ACCEPTED:
         asserts.true(env, is_valid_sdk_constraint(value), "edge caret reads: %r" % value)
-        content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
+        content = _sdk_pubspec(value)
         asserts.true(
             env,
-            pubspec_sdk_constraint_error(content, _LABEL) == None,
+            pubspec_environment_error(content, _LABEL) == None,
             "edge caret reads: %r" % value,
         )
         asserts.equals(
             env,
             expected,
-            derive_language_version(parse_pubspec_sdk_constraint(content)),
+            derive_language_version(pubspec_sdk_constraint(content)),
             "edge caret derives: %r" % value,
         )
     return unittest.end(env)
@@ -224,8 +226,8 @@ def _refused_strings_test_impl(ctx):
     env = unittest.begin(ctx)
     for value in _REFUSED_STRINGS:
         asserts.false(env, is_valid_sdk_constraint(value), "sdk %r is refused" % value)
-        content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
-        err = pubspec_sdk_constraint_error(content, _LABEL)
+        content = _sdk_pubspec(value)
+        err = pubspec_environment_error(content, _LABEL)
         asserts.true(env, err != None, "sdk %r is refused" % value)
         asserts.true(env, "probe_pkg" in err, "refusal names the package: %s" % err)
         asserts.true(env, "pubspec.yaml" in err, "refusal names pubspec.yaml: %s" % err)
@@ -234,15 +236,16 @@ def _refused_strings_test_impl(ctx):
 
 def _refused_values_test_impl(ctx):
     env = unittest.begin(ctx)
-    for sdk_line, quoted in [
-        ("environment:\n  sdk: 3.5\n", "\"3.5\""),
-        ("environment:\n  sdk: 3\n", "\"3\""),
-        ("environment:\n  sdk: true\n", "\"True\""),
-        ("environment:\n  sdk:\n    - \">=2.12.0\"\n", ">=2.12.0"),
-        ("environment:\n  sdk:\n    min: 2.12.0\n", "environment.sdk"),
+    for sdk, quoted in [
+        # `sdk: 3.5` and `sdk: 3` read as their text.
+        ("3.5", "\"3.5\""),
+        ("3", "\"3\""),
+        (True, "\"True\""),
+        ([">=2.12.0"], ">=2.12.0"),
+        ({"min": "2.12.0"}, "environment.sdk"),
     ]:
-        err = pubspec_sdk_constraint_error(_sdk_pubspec(sdk_line), _LABEL)
-        asserts.true(env, err != None, "sdk block is refused:\n%s" % sdk_line)
+        err = pubspec_environment_error(_sdk_pubspec(sdk), _LABEL)
+        asserts.true(env, err != None, "sdk value is refused: %r" % sdk)
         asserts.true(env, "probe_pkg" in err, "refusal names the package: %s" % err)
         asserts.true(env, "pubspec.yaml" in err, "refusal names pubspec.yaml: %s" % err)
         asserts.true(env, quoted in err, "refusal quotes the value: %s" % err)
@@ -252,91 +255,78 @@ def _accepted_test_impl(ctx):
     env = unittest.begin(ctx)
     for value, expected in _ACCEPTED_CASES:
         asserts.true(env, is_valid_sdk_constraint(value), "sdk %r reads" % value)
-        content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
+        content = _sdk_pubspec(value)
         asserts.true(
             env,
-            pubspec_sdk_constraint_error(content, _LABEL) == None,
+            pubspec_environment_error(content, _LABEL) == None,
             "sdk %r reads" % value,
         )
         asserts.equals(
             env,
             expected,
-            derive_language_version(parse_pubspec_sdk_constraint(content)),
+            derive_language_version(pubspec_sdk_constraint(content)),
             "sdk %r derives base version" % value,
         )
     return unittest.end(env)
 
 def _absent_test_impl(ctx):
     env = unittest.begin(ctx)
-    for sdk_line in [
-        "",
-        "environment:\n",
-        "environment:\n  sdk:\n",
+    for content in [
+        {"name": "probe_pkg"},
+        _env_pubspec(None),
+        _sdk_pubspec(None),
     ]:
-        content = _sdk_pubspec(sdk_line)
         asserts.true(
             env,
-            pubspec_sdk_constraint_error(content, _LABEL) == None,
-            "block reads as before:\n%s" % sdk_line,
+            pubspec_environment_error(content, _LABEL) == None,
+            "environment reads as before: %r" % content,
         )
-        asserts.equals(env, "", parse_pubspec_sdk_constraint(content), "no constraint")
+        asserts.equals(env, "", pubspec_sdk_constraint(content), "no constraint")
     return unittest.end(env)
 
 # Environment shapes pub's `_parseEnvironment` refuses at tag SDK-3.13.5:
-# a present, non-null `environment` that is not a map, an SDK name that
-# is not a string, a key named `dart`, and a non-null constraint for any
-# SDK that is not a string pub_semver 2.2.0 parses. Each entry pairs the
-# `environment:` block lines with the reason the refusal names.
+# a present, non-null `environment` that is not a map, a key named `dart`,
+# and a non-null constraint for any SDK that is not a string pub_semver
+# 2.2.0 parses. Each entry pairs the `environment` value with the reasons
+# the refusal names. pub also refuses an SDK name that is not a string
+# (`3:`, `true:`); decoded keys are always text, so that check cannot be
+# made and such a name reads like any other SDK (see `_ENVIRONMENT_READS`).
 _REFUSED_ENVIRONMENT = [
-    ("environment: 3\n", ["\"environment\" field must be a map."]),
-    ("environment: \"sdk\"\n", ["\"environment\" field must be a map."]),
-    ("environment: true\n", ["\"environment\" field must be a map."]),
-    ("environment:\n  - sdk\n", ["\"environment\" field must be a map."]),
-    ("environment:\n  3: \"^3.0.0\"\n", ["SDK names must be strings."]),
-    ("environment:\n  true: \"^3.0.0\"\n", ["SDK names must be strings."]),
-    ("environment:\n  dart: \"^3.0.0\"\n", ["Use \"sdk\" to for Dart SDK constraints."]),
-    (
-        "environment:\n  sdk: \"^3.0.0\"\n  dart: \"^3.0.0\"\n",
-        ["Use \"sdk\" to for Dart SDK constraints."],
-    ),
-    (
-        "environment:\n  sdk: \"foo\"\n  flutter: \"foo\"\n",
-        ["invalid environment.sdk constraint"],
-    ),
-    ("environment:\n  sdk: \"^3.0.0\"\n  flutter: 3\n", ["invalid environment.flutter constraint", "\"3\""]),
-    ("environment:\n  sdk: \"^3.0.0\"\n  flutter: true\n", ["invalid environment.flutter constraint", "\"True\""]),
-    (
-        "environment:\n  sdk: \"^3.0.0\"\n  flutter:\n    - \">=2.12.0\"\n",
-        ["invalid environment.flutter constraint", ">=2.12.0"],
-    ),
-    (
-        "environment:\n  sdk: \"^3.0.0\"\n  flutter:\n    min: 2.12.0\n",
-        ["invalid environment.flutter constraint", "environment.flutter"],
-    ),
-    ("environment:\n  sdk: \"^3.0.0\"\n  flutter: \"foo\"\n", ["invalid environment.flutter constraint", "\"foo\""]),
-    ("environment:\n  sdk: \"^3.0.0\"\n  flutter: \"*\"\n", ["invalid environment.flutter constraint", "\"*\""]),
-    ("environment:\n  sdk: \"^3.0.0\"\n  fuchsia: \"1.2.3.4\"\n", ["invalid environment.fuchsia constraint", "\"1.2.3.4\""]),
-    (
-        "environment:\n  sdk: \"^3.0.0\"\n  3: \"^3.0.0\"\n",
-        ["SDK names must be strings."],
-    ),
+    ("3", ["\"environment\" field must be a map."]),
+    ("sdk", ["\"environment\" field must be a map."]),
+    (True, ["\"environment\" field must be a map."]),
+    (["sdk"], ["\"environment\" field must be a map."]),
+    ({"dart": "^3.0.0"}, ["Use \"sdk\" to for Dart SDK constraints."]),
+    ({"sdk": "^3.0.0", "dart": "^3.0.0"}, ["Use \"sdk\" to for Dart SDK constraints."]),
+    ({"sdk": "foo", "flutter": "foo"}, ["invalid environment.sdk constraint"]),
+    ({"sdk": "^3.0.0", "flutter": "3"}, ["invalid environment.flutter constraint", "\"3\""]),
+    ({"sdk": "^3.0.0", "flutter": True}, ["invalid environment.flutter constraint", "\"True\""]),
+    ({"sdk": "^3.0.0", "flutter": [">=2.12.0"]}, ["invalid environment.flutter constraint", ">=2.12.0"]),
+    ({"sdk": "^3.0.0", "flutter": {"min": "2.12.0"}}, ["invalid environment.flutter constraint", "environment.flutter"]),
+    ({"sdk": "^3.0.0", "flutter": "foo"}, ["invalid environment.flutter constraint", "\"foo\""]),
+    ({"sdk": "^3.0.0", "flutter": "*"}, ["invalid environment.flutter constraint", "\"*\""]),
+    ({"sdk": "^3.0.0", "fuchsia": "1.2.3.4"}, ["invalid environment.fuchsia constraint", "\"1.2.3.4\""]),
 ]
 
-# Environment shapes that read as before: a null `environment`, a null
-# constraint for any SDK, and string constraints pub_semver parses.
+# Environment shapes that read as before: a null constraint for any SDK,
+# string constraints pub_semver parses, and SDK names written as numbers or
+# booleans, which read as their text.
 _ENVIRONMENT_READS = [
-    "environment:\n  sdk: \"^3.0.0\"\n  flutter:\n",
-    "environment:\n  sdk: \"^3.0.0\"\n  flutter: \"any\"\n",
-    "environment:\n  sdk: \"^3.0.0\"\n  flutter: \">=2.12.0 <4.0.0\"\n",
-    "environment:\n  sdk: \"^3.0.0\"\n  fuchsia: \"^1.0.0\"\n",
-    "environment:\n  flutter: \"^3.0.0\"\n",
+    {"sdk": "^3.0.0", "flutter": None},
+    {"sdk": "^3.0.0", "flutter": "any"},
+    {"sdk": "^3.0.0", "flutter": ">=2.12.0 <4.0.0"},
+    {"sdk": "^3.0.0", "fuchsia": "^1.0.0"},
+    {"flutter": "^3.0.0"},
+    {"3": "^3.0.0"},
+    {"true": "^3.0.0"},
+    {"sdk": "^3.0.0", "3": "^3.0.0"},
 ]
 
 def _refused_environment_test_impl(ctx):
     env = unittest.begin(ctx)
-    for sdk_line, reasons in _REFUSED_ENVIRONMENT:
-        err = pubspec_sdk_constraint_error(_sdk_pubspec(sdk_line), _LABEL)
-        asserts.true(env, err != None, "environment block is refused:\n%s" % sdk_line)
+    for environment, reasons in _REFUSED_ENVIRONMENT:
+        err = pubspec_environment_error(_env_pubspec(environment), _LABEL)
+        asserts.true(env, err != None, "environment is refused: %r" % environment)
         asserts.true(env, "probe_pkg" in err, "refusal names the package: %s" % err)
         asserts.true(env, "pubspec.yaml" in err, "refusal names pubspec.yaml: %s" % err)
         for reason in reasons:
@@ -345,48 +335,12 @@ def _refused_environment_test_impl(ctx):
 
 def _environment_reads_test_impl(ctx):
     env = unittest.begin(ctx)
-    for sdk_line in _ENVIRONMENT_READS:
-        content = _sdk_pubspec(sdk_line)
+    for environment in _ENVIRONMENT_READS:
         asserts.true(
             env,
-            pubspec_sdk_constraint_error(content, _LABEL) == None,
-            "environment block reads:\n%s" % sdk_line,
+            pubspec_environment_error(_env_pubspec(environment), _LABEL) == None,
+            "environment reads: %r" % environment,
         )
-    return unittest.end(env)
-
-def _tail_fails_test_impl(ctx):
-    env = unittest.begin(ctx)
-    for tail in [
-        "%YAML 1.2\n",
-        "%YAML 1.2\n---\nname: other\n",
-        "%TAG ! e:\n",
-        "%TAG ! e:\n---\nname: other\n",
-    ]:
-        content = "name: probe_pkg\n...\n" + tail
-        asserts.equals(
-            env,
-            "probe_pkg in probe_pkg/pubspec.yaml: directive after document end (...) at line 3",
-            parse_pubspec_document_error(content, "probe_pkg/pubspec.yaml"),
-            "tail refusal names the directive line:\n%s" % tail,
-        )
-    return unittest.end(env)
-
-def _tail_reads_test_impl(ctx):
-    env = unittest.begin(ctx)
-    unknown = "name: probe_pkg\n...\n%FOO bar\n"
-    asserts.true(
-        env,
-        parse_pubspec_document_error(unknown, "probe_pkg/pubspec.yaml") == None,
-        "unknown directive tail reads",
-    )
-    asserts.equals(env, "probe_pkg", parse_pubspec_document(unknown)["name"], "name reads")
-    comment = "name: probe_pkg\n...\n# trailing comment\n"
-    asserts.true(
-        env,
-        parse_pubspec_document_error(comment, "probe_pkg/pubspec.yaml") == None,
-        "comment tail reads",
-    )
-    asserts.equals(env, "probe_pkg", parse_pubspec_document(comment)["name"], "name reads")
     return unittest.end(env)
 
 _refused_strings_test = unittest.make(_refused_strings_test_impl)
@@ -398,38 +352,15 @@ _caret_edges_test = unittest.make(_caret_edges_test_impl)
 _refused_values_test = unittest.make(_refused_values_test_impl)
 _accepted_test = unittest.make(_accepted_test_impl)
 _absent_test = unittest.make(_absent_test_impl)
-_tail_fails_test = unittest.make(_tail_fails_test_impl)
-_tail_reads_test = unittest.make(_tail_reads_test_impl)
-
-def _lock_tail_test_impl(ctx):
-    env = unittest.begin(ctx)
-
-    # The lock path reads exactly as before: a `%YAML` line after `...`
-    # reads past, so the second `---` document is refused naming the `---`
-    # line, byte for byte the message the base gives.
-    asserts.equals(
-        env,
-        "test.lock: second document marker (---) at line 5",
-        pubspec_lock_error(
-            "packages:\n  foo: 1\n...\n%YAML 1.2\n---\npackages: {}\n",
-            "test.lock",
-        ),
-        "lock tail keeps the base message",
-    )
-    return unittest.end(env)
-
-_lock_tail_test = unittest.make(_lock_tail_test_impl)
 
 def _pubspec_probe_impl(ctx):
-    """Runs the fetch's pubspec guard over a `pubspec` string attribute.
+    """Runs the fetch's pubspec guard over a decoded pubspec, given as JSON.
 
-    Mirrors the spoke order: the SDK-constraint check first, then the full
-    document parse, failing analysis with the production message.
+    Fails analysis with the production message, as the spoke fails its fetch.
     """
-    err = pubspec_sdk_constraint_error(ctx.attr.pubspec, ctx.label.name + "/pubspec.yaml")
+    err = pubspec_environment_error(json.decode(ctx.attr.pubspec), ctx.label.name + "/pubspec.yaml")
     if err:
         fail(err)
-    parse_pubspec_document(ctx.attr.pubspec, ctx.label.name + "/pubspec.yaml")
     out = ctx.actions.declare_file(ctx.label.name + ".ok")
     ctx.actions.write(out, "ok\n")
     return [DefaultInfo(files = depset([out]))]
@@ -445,13 +376,6 @@ def _bad_sdk_probe_impl(ctx):
     return analysistest.end(env)
 
 _bad_sdk_probe_test = analysistest.make(_bad_sdk_probe_impl, expect_failure = True)
-
-def _tail_probe_impl(ctx):
-    env = analysistest.begin(ctx)
-    asserts.expect_failure(env, "directive after document end (...) at line 3")
-    return analysistest.end(env)
-
-_tail_probe_test = analysistest.make(_tail_probe_impl, expect_failure = True)
 
 def _bad_env_probe_impl(ctx):
     env = analysistest.begin(ctx)
@@ -477,33 +401,20 @@ def pubspec_guard_test_suite(name):
         _refused_values_test,
         _accepted_test,
         _absent_test,
-        _tail_fails_test,
-        _tail_reads_test,
-        _lock_tail_test,
     )
 
-    # Each probe fails analysis by design, so all three are `manual`: a
+    # Each probe fails analysis by design, so both are `manual`: a
     # `//dart/tests/...` wildcard would otherwise analyze them as top-level
     # targets and fail the build. The `expect_failure` tests below still
     # analyze them as `target_under_test`, where the failure is the Pass.
     _pubspec_probe(
         name = name + "_bad_sdk_probe",
-        pubspec = "name: probe_pkg\nenvironment:\n  sdk: 3\n",
-        tags = ["manual"],
-    )
-    _pubspec_probe(
-        name = name + "_yaml_tail_probe",
-        pubspec = "name: probe_pkg\n...\n%YAML 1.2\n",
-        tags = ["manual"],
-    )
-    _pubspec_probe(
-        name = name + "_tag_tail_probe",
-        pubspec = "name: probe_pkg\n...\n%TAG ! e:\n",
+        pubspec = json.encode(_sdk_pubspec("3")),
         tags = ["manual"],
     )
     _pubspec_probe(
         name = name + "_bad_env_probe",
-        pubspec = "name: probe_pkg\nenvironment: 3\n",
+        pubspec = json.encode(_env_pubspec("3")),
         tags = ["manual"],
     )
     _bad_sdk_probe_test(
@@ -516,23 +427,11 @@ def pubspec_guard_test_suite(name):
         size = "small",
         target_under_test = ":" + name + "_bad_env_probe",
     )
-    _tail_probe_test(
-        name = name + "_yaml_tail_test",
-        size = "small",
-        target_under_test = ":" + name + "_yaml_tail_probe",
-    )
-    _tail_probe_test(
-        name = name + "_tag_tail_test",
-        size = "small",
-        target_under_test = ":" + name + "_tag_tail_probe",
-    )
     native.test_suite(
         name = name,
         tests = [
             ":" + name + "_unit",
             ":" + name + "_bad_sdk_test",
             ":" + name + "_bad_env_test",
-            ":" + name + "_yaml_tail_test",
-            ":" + name + "_tag_tail_test",
         ],
     )

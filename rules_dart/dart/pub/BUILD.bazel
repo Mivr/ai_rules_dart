@@ -122,15 +122,6 @@ bzl_library(
     ],
 )
 
-bzl_library(
-    name = "yaml_parser",
-    srcs = ["yaml_parser.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//dart/pub/private:yaml_parser",
-    ],
-)
-
 # Bare sources, so that other packages can name them (the doc extracts, the
 # tests of the pub rules).
 exports_files(
@@ -144,7 +135,6 @@ exports_files(
         "pub_scan.bzl",
         "pub_scanner.bzl",
         "pub_scc.bzl",
-        "yaml_parser.bzl",
     ],
     visibility = ["//visibility:public"],
 )

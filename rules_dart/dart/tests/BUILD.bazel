@@ -4,14 +4,14 @@ load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load("//dart:toolchain.bzl", "dart_toolchain")
 load("//dart/pub/tests:language_version_test.bzl", "language_version_test_suite")
 load("//dart/pub/tests:link_hook_test.bzl", "link_hook_test_suite")
+load("//dart/pub/tests:pin_checks_test.bzl", "pin_checks_test_suite")
 load("//dart/pub/tests:propagation_test.bzl", "propagation_test_suite")
 load("//dart/pub/tests:pub_archive_scan_test.bzl", "pub_archive_scan_test_suite")
 load("//dart/pub/tests:pub_scc_test.bzl", "pub_scc_test_suite")
 load("//dart/pub/tests:pub_symlink_test.bzl", "pub_symlink_test_suite")
+load("//dart/pub/tests:pubspec_data_test.bzl", "pubspec_data_test_suite")
 load("//dart/pub/tests:pubspec_guard_test.bzl", "pubspec_guard_test_suite")
 load("//dart/pub/tests:semver_test.bzl", "semver_test_suite")
-load("//dart/pub/tests:yaml_parser_test.bzl", "yaml_parser_test_suite")
-load("//dart/pub/tests:yaml_subset_test.bzl", "yaml_subset_test_suite")
 load("//dart/pub/tests:yq_test.bzl", "yq_test_suite")
 load(":analyze_mode_parity_test.bzl", "analyze_mode_parity_test_suite")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
@@ -127,6 +127,8 @@ pub_archive_scan_test_suite(name = "pub_archive_scan_test")
 
 pub_scc_test_suite(name = "pub_scc_test")
 
+pubspec_data_test_suite(name = "pubspec_data_test")
+
 pubspec_guard_test_suite(name = "pubspec_guard_test")
 
 pub_symlink_test_suite(name = "pub_symlink_test")
@@ -135,9 +137,7 @@ registry_test_suite(name = "registry_test")
 
 project_staging_test_suite(name = "project_staging_test")
 
-yaml_parser_test_suite(name = "yaml_parser_test")
-
-yaml_subset_test_suite(name = "yaml_subset_test")
+pin_checks_test_suite(name = "pin_checks_test")
 
 yq_test_suite(name = "yq_test")
 
