@@ -3,7 +3,7 @@
 Gate 13 section D (FF6) says every Dart-library `deps` attribute requires
 `DartInfo`, and that each rule repository holds that invariant as an analysis
 test. `//flutter/tests:architecture_invariants_test` is the one command that
-runs it all: these cases plus the production-`.bzl` source scan.
+runs it.
 
 The subjects are the `manual` fixtures declared by
 `//flutter/tests:architecture_fixtures.bzl`. Each case fails when its invariant

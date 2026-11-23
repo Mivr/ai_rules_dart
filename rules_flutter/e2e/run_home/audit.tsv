@@ -73,7 +73,6 @@
 @rules_flutter//flutter/private/tools:run_home_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:sha256_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:strip_native_libs_test	Dart unit test; no CLI spawn
-@rules_flutter//flutter/private/tools:tool_test_library_sloc_guard_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:web_guard_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:web_template_test	Dart unit test; no CLI spawn
 @rules_flutter//flutter/private/tools:xtool_pack_test	Dart unit test; no CLI spawn
@@ -95,7 +94,6 @@
 #   spawn the toolchain `dart` executable (DevTools/DDS serving); any HOME
 #   writes there need a follow-up task with access to tools/**.
 @rules_flutter//tools/changelog:check	dev tooling outside this task's paths; needs a follow-up for CLI spawns
-@rules_flutter//tools/check_e2e_coverage:check_e2e_coverage	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/dev_tool:flutter_bazel	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/dev_tool:flutter_bazel_binary_test	dev tooling outside this task's paths; needs a follow-up for CLI spawns
 @rules_flutter//tools/dev_tool:loose_sources	dev tooling outside this task's paths; needs a follow-up for CLI spawns

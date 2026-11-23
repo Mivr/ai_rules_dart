@@ -20,10 +20,6 @@ load("@rules_dart//dart:defs.bzl", "dart_test")
 #   at the pinned rules_dart v0.28.3. (`version.bzl` and `pub_scc_verify.bzl`
 #   have targets, with restricted visibility.)
 #
-# `flutter/tests/bzl_library_guard` derives the expected extracts from the
-# `flutter/*.bzl` files minus this exemption list and checks the Android
-# reasons against the load closures.
-#
 # Each of the five keeps its `bzl_library` and its `exports_files` entry in
 # `flutter/BUILD.bazel`; only the doc extract is omitted here.
 

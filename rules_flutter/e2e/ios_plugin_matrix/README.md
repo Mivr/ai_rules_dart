@@ -143,6 +143,4 @@ toolchain and the sha256 of every archive.
 
 This workspace is export-ignored in `.gitattributes`
 (`/e2e/ios_plugin_matrix/ export-ignore`), so it does not ship in the release
-archive. The export-ignore guard
-(`//flutter/tests:e2e_export_ignore_guard_test`) finds it through its regular
-`MODULE.bazel` and checks that line.
+archive.

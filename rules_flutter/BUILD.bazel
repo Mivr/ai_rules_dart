@@ -47,18 +47,5 @@ license(
     text = "LICENSE",
 )
 
-# Exported for //tools/readme_check, which reads the install block.
-exports_files(["README.md"])
-
 # Exported for the dependency-floor test, which reads the declared minimums.
 exports_files(["MODULE.bazel"])
-
-# Exported for //flutter/tests/buildifier_config, which pins the buildifier
-# warning set and the pre-commit buildifier hooks.
-exports_files(
-    [
-        ".buildifier.json",
-        ".pre-commit-config.yaml",
-    ],
-    visibility = ["//flutter/tests/buildifier_config:__pkg__"],
-)

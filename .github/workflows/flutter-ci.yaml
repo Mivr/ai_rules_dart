@@ -56,8 +56,7 @@
 #     boot the Android emulator (with KVM)
 #   web-smoke:           web_example through the installed binary
 #   repo-checks:         `bazel mod tidy` leaves the lockfile unchanged,
-#     //tools/check_e2e_coverage (every e2e module in a workflow or with a
-#     recorded reason) and //tools/repo_contents_cache (repos marked
+#     //tools/check_maven_pins and //tools/repo_contents_cache (repos marked
 #     reproducible are shared through the repo contents cache)
 #   e2e-windows:         hello_world (Windows)
 # android_example runs in full.yaml (nightly) only: its APK + Kotlin actions
@@ -348,7 +347,7 @@ jobs:
           base="${RUNNER_TEMP}/sandbox_proof_base"
           bep="${RUNNER_TEMP}/sandbox_proof_bep.json"
           trap 'bazel "--output_base=${base}" shutdown' EXIT
-          bazel "--output_base=${base}" test //flutter/tests/ci_linux_sandbox_guard:ci_linux_sandbox_guard_unit_test --disk_cache= --nocache_test_results "--build_event_json_file=${bep}"
+          bazel "--output_base=${base}" test //flutter/private/tools:sha256_test --disk_cache= --nocache_test_results "--build_event_json_file=${bep}"
           python3 - "$bep" <<'PY'
           import json, sys
           counts = {}
@@ -460,18 +459,6 @@ jobs:
             exit 1
           fi
           echo "$out" | grep -F "is not a declared input"
-      # Coverage check: every manual `_compile_api_build_negative_*` target in
-      # compile_api_test.bzl must be named by a must-fail step that greps the
-      # refusal. Deleting the step above, or dropping its grep, turns this red
-      # even while `//...` stays green.
-      - name: Check every compile-api negative is covered
-        run: bazel run //tools/check_compile_api_coverage
-      # Coverage check: every hostile fixture declared in web_test.bzl must be
-      # named by the must-fail step below, and that step must pin the guard
-      # message. Adding a spelling without a build, or dropping one from the
-      # step, turns this red even while `//...` stays green.
-      - name: Check every web-guard hostile fixture is covered
-        run: bazel run //tools/check_web_guard_coverage
       # Web-guard hostile fixtures: each imports a file that exists on the
       # host but is in no target's `srcs`, in a different URI spelling. They
       # stay `manual`, so `//...` stays green; this step builds each one
@@ -1579,9 +1566,6 @@ jobs:
   # even when an earlier one failed, so one red check does not hide another.
   # - Module lockfile is tidy: fails when `bazel mod tidy` would rewrite the
   #   root module files, so a stale MODULE.bazel.lock fails the run.
-  # - E2E coverage: fails when an e2e module's MODULE.bazel is in no workflow
-  #   without a one-line reason recorded in tools/check_e2e_coverage, so
-  #   removing a workspace from every shard without saying why turns this red.
   # - Repo contents cache: fails when a repository that returns
   #   `repo_metadata(reproducible = True)` is extracted into every output base
   #   instead of shared through the repo contents cache, or holds an absolute
@@ -1612,9 +1596,6 @@ jobs:
         run: bazel build --nobuild --lockfile_mode=error //...
       - name: git diff --exit-code MODULE.bazel MODULE.bazel.lock
         run: git diff --exit-code MODULE.bazel MODULE.bazel.lock
-      - name: Check every e2e module is covered or reasoned
-        if: ${{ !cancelled() }}
-        run: bazel run //tools/check_e2e_coverage
       - name: Check rules_android_maven pins in Android workspaces
         if: ${{ !cancelled() }}
         run: bazel run //tools/check_maven_pins

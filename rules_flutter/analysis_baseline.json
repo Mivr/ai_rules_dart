@@ -449,21 +449,10 @@
   "flutter/tests/download_digest_guard_test.dart": {
     "use_raw_strings": 1
   },
-  "flutter/tests/flaky_guard/flaky_guard_test.dart": {
-    "sort_constructors_first": 1
-  },
   "flutter/tests/flutter_test_analyze_fixture/fake_test_api/lib/backend.dart": {
     "avoid_futureor_void": 1,
     "close_sinks": 1,
     "public_member_api_docs": 4
-  },
-  "flutter/tests/format_string_guard_test.dart": {
-    "avoid_escaping_inner_quotes": 1,
-    "curly_braces_in_flow_control_structures": 2,
-    "parameter_assignments": 1,
-    "prefer_final_locals": 1,
-    "use_is_even_rather_than_modulo": 2,
-    "use_raw_strings": 2
   },
   "flutter/tests/gen_l10n_fixture/gen_l10n_test.dart": {
     "avoid_redundant_argument_values": 2
@@ -530,21 +519,6 @@
     "process_requires_environment": 1,
     "specify_nonobvious_property_types": 1,
     "unnecessary_raw_strings": 5
-  },
-  "tools/check_e2e_coverage/check_e2e_coverage.dart": {
-    "avoid_print": 1
-  },
-  "tools/check_e2e_coverage/coverage.dart": {
-    "avoid_escaping_inner_quotes": 2
-  },
-  "tools/check_web_guard_coverage/check_web_guard_coverage.dart": {
-    "avoid_print": 1
-  },
-  "tools/check_web_guard_coverage/coverage.dart": {
-    "unnecessary_raw_strings": 3
-  },
-  "tools/check_web_guard_coverage/test/coverage_test.dart": {
-    "use_raw_strings": 3
   },
   "tools/dev_tool/bin/flutter_bazel.dart": {
     "avoid_relative_lib_imports": 7,
@@ -1752,12 +1726,6 @@
     "comment_references": 1,
     "dangling_library_doc_comments": 1,
     "unnecessary_raw_strings": 2
-  },
-  "tools/readme_check/readme_check.dart": {
-    "unnecessary_raw_strings": 1
-  },
-  "tools/readme_check/test/readme_check_test.dart": {
-    "dangling_library_doc_comments": 1
   },
   "tools/repo_contents_cache/bazel_fetch.dart": {
     "process_requires_environment": 1

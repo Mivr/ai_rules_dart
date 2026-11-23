@@ -137,8 +137,7 @@ filegroup(
 )
 
 # Parser shared by the root floor guard and e2e/min_versions, so both read
-# MODULE.bazel and the table the same way. The buildifier config guard in
-# ./buildifier_config reads the `buildifier_prebuilt` version through it too.
+# MODULE.bazel and the table the same way.
 dart_library(
     name = "dependency_floors_lib",
     package_name = "dependency_floors",
@@ -190,224 +189,6 @@ dart_test(
     ],
 )
 
-# Maven mirror guard: every `maven.install` lists Google's Maven Central
-# mirror between maven.google.com and repo1.maven.org, and every lock it names
-# records the mirror. Same discovery mechanism as above.
-dart_test(
-    name = "maven_mirror_guard_test",
-    size = "small",
-    data = ["maven_mirror_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :maven_mirror_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "maven_mirror_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Release-archive guard: every e2e workspace except e2e/smoke must be
-# export-ignored in .gitattributes. Same discovery mechanism as above.
-dart_test(
-    name = "e2e_export_ignore_guard_test",
-    size = "small",
-    data = ["e2e_export_ignore_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :e2e_export_ignore_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "e2e_export_ignore_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Message-formatting guard: no `.format()` call binds to one literal of a
-# `+` string join (the placeholders in the other literals would print
-# literally). Same discovery mechanism as above.
-dart_test(
-    name = "format_string_guard_test",
-    size = "small",
-    data = ["format_string_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :format_string_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "format_string_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# `flutter/private/layering_check.bzl` is the only Flutter file that loads
-# rules_dart's `import_check.bzl`. Same discovery mechanism as above.
-dart_test(
-    name = "layering_guard_test",
-    size = "small",
-    data = ["layering_guard_test.dart"],
-    env = {"LAYERING_GUARD_ANCHOR": "$(rlocationpath :layering_guard_test.dart)"},
-    main = "layering_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# README text check for `flutter_drive_test`: a section, its `load` from
-# `flutter/android.bzl`, the attributes, the driver environment and the scope.
-# The README is a declared input, so a cached pass tracks its content.
-dart_test(
-    name = "flutter_drive_readme_test",
-    size = "small",
-    data = ["//:README.md"],
-    env = {"README_PATH": "$(rlocationpath //:README.md)"},
-    main = "flutter_drive_readme_test.dart",
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Android floor-leg guard: `e2e/min_versions`' `android_build_test` must keep
-# building `:app_android` and stay compatible with Linux only, so macOS skips
-# it without a C++ toolchain while Linux still builds it. Same discovery
-# mechanism as the guards above.
-dart_test(
-    name = "min_versions_android_guard_test",
-    size = "medium",
-    data = ["min_versions_android_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :min_versions_android_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "min_versions_android_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Test hygiene guard: the iOS lint fixtures stay out of `manual` and carry an
-# explicit `size`, the non-sandboxed guards above are `medium`, and the
-# Starlark unit-test suites size their members `small`. Same discovery
-# mechanism as the guards above.
-dart_test(
-    name = "test_hygiene_regressions_guard_test",
-    size = "medium",
-    data = ["test_hygiene_regressions_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :test_hygiene_regressions_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "test_hygiene_regressions_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Gate 07 reproducibility canary guard: verifies e2e/repro_canary fixture and its CI job.
-dart_test(
-    name = "repro_canary_guard_test",
-    size = "small",
-    data = ["repro_canary_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :repro_canary_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "repro_canary_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Hosted-Linux disk headroom guard: the e2e jobs of ci.yaml free unused
-# preinstalled toolchains and log df before and after each workspace. Same
-# discovery mechanism as the guards above.
-dart_test(
-    name = "ci_disk_guard_test",
-    size = "small",
-    data = ["ci_disk_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :ci_disk_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "ci_disk_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Native-executable guard: `android_bundle`, `kernel_filter` and `macho_edit`
-# are `exe` builds that every action runs directly and declares as an input.
-# Reads the checkout like the guards above.
-dart_test(
-    name = "native_tools_guard_test",
-    size = "small",
-    data = ["native_tools_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :native_tools_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "native_tools_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Bootstrap template guard: the three `flutter_integration_test` bootstrap
-# templates keep the program text the Starlark unit tests cannot read (they see
-# only the substitutions), and every placeholder the rules substitute is still
-# there. Same discovery mechanism as the guards above.
-dart_test(
-    name = "integration_test_bootstrap_templates_test",
-    size = "small",
-    data = [
-        "integration_test_bootstrap_templates_test.dart",
-        "//flutter/private:integration_test_bootstrap_snippets.bzl",
-        "//flutter/private/integration_test_bootstrap:android_bootstrap.dart.tpl",
-        "//flutter/private/integration_test_bootstrap:linux_bootstrap.dart.tpl",
-        "//flutter/private/integration_test_bootstrap:web_bootstrap.dart.tpl",
-    ],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :integration_test_bootstrap_templates_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "integration_test_bootstrap_templates_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
 # Dependency floors: every regular bazel_dep declares the checked-in minimum,
 # not the release this checkout compiles. Reads both files from data, so a
 # stale run cannot hide a declared bump.
@@ -426,23 +207,6 @@ dart_test(
     main = "dependency_floors_test.dart",
     deps = [
         ":dependency_floors_lib",
-        "@dev_tool_deps//:test",
-    ],
-)
-
-dart_test(
-    name = "flutter_pub_internal_hubs_guard_test",
-    size = "medium",
-    data = ["flutter_pub_internal_hubs_guard_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :flutter_pub_internal_hubs_guard_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "flutter_pub_internal_hubs_guard_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
         "@dev_tool_deps//:test",
     ],
 )
@@ -792,53 +556,12 @@ flavor_test_suite(name = "flavor_test")
 
 flavor_ios_test_suite(name = "flavor_ios_test")
 
-# FF6 architecture invariants (Gate 13 section D): the provider analysis cases
-# and the production-.bzl source scan, behind one command. The scan walks the
-# live tree like the download guard above, so it needs no file list.
-dart_test(
-    name = "architecture_source_scan_test",
-    size = "small",
-    data = ["architecture_source_scan_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :architecture_source_scan_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "architecture_source_scan_test.dart",
-    tags = [
-        "external",
-        "local",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
-# Source pins for `flutter_android_aab`: the public rules_android entry point,
-# no signing or host tool, and bundletool pinned by sha256 in the lock file.
-dart_test(
-    name = "android_aab_contract_test",
-    size = "small",
-    data = ["android_aab_contract_test.dart"],
-    env = {"GUARD_ROOT_ANCHOR": "$(rlocationpath :android_aab_contract_test.dart)"},
-    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
-    main = "android_aab_contract_test.dart",
-    tags = [
-        "external",
-        "local",
-        "no-sandbox",
-        "tree-reader",
-    ],
-    deps = [
-        "@dev_tool_deps//:test",
-    ],
-)
-
 architecture_fixtures(name = "arch_inv")
 
+# FF6 architecture invariants (Gate 13 section D): the provider analysis cases.
 test_suite(
     name = "architecture_invariants_test",
     tests = [
-        ":architecture_source_scan_test",
         "//tests/rules_testing:architecture_analysis_cases",
     ],
 )

@@ -10,7 +10,6 @@ dart_library(
     name = "lib",
     package_name = "e2e_runner",
     srcs = glob(["lib/**/*.dart"]),
-    visibility = ["//tools/check_e2e_coverage:__pkg__"],
     deps = _LIB_DEPS,
 )
 

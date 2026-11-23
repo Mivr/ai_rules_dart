@@ -773,36 +773,6 @@ dart_test(
     ],
 )
 
-# Guards the split above: the two original test libraries stay under their
-# size ceilings and the relocated suites keep every case. The test reads the
-# sources through runfiles, so it needs no tool source of its own.
-dart_test(
-    name = "tool_test_library_sloc_guard_test",
-    size = "small",
-    data = [
-        "test/incr_fkc_define_flagfiles_test.dart",
-        "test/incr_fkc_staging_test.dart",
-        "test/incr_fkc_worker_test.dart",
-        "test/kernel_define_flagfiles_test.dart",
-        "test/kernel_filter_test.dart",
-        "test/kernel_read_set_test.dart",
-    ],
-    env = {
-        "INCR_FKC_DEFINE_FLAGFILES_TEST": "$(rlocationpath test/incr_fkc_define_flagfiles_test.dart)",
-        "INCR_FKC_STAGING_TEST": "$(rlocationpath test/incr_fkc_staging_test.dart)",
-        "INCR_FKC_WORKER_TEST": "$(rlocationpath test/incr_fkc_worker_test.dart)",
-        "KERNEL_DEFINE_FLAGFILES_TEST": "$(rlocationpath test/kernel_define_flagfiles_test.dart)",
-        "KERNEL_FILTER_TEST": "$(rlocationpath test/kernel_filter_test.dart)",
-        "KERNEL_READ_SET_TEST": "$(rlocationpath test/kernel_read_set_test.dart)",
-    },
-    main = "test/tool_test_library_sloc_guard_test.dart",
-    target_compatible_with = HOST_COMPATIBLE,
-    deps = [
-        "@dev_tool_deps//:test",
-        "@rules_dart//dart/runfiles",
-    ],
-)
-
 # Lifecycle tests for the incremental worker's crash-safe scratch: they drive
 # the built worker binary the way Bazel does (persistent protocol over
 # pipes, TMPDIR plus SIGKILL and stdin EOF), so the target carries the

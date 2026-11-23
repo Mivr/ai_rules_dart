@@ -31,7 +31,7 @@ aot_guards_test_suite(name = "aot_guards_test")
 header_only_kernel_info_test_suite(name = "header_only_kernel_info_test")
 
 # The FF6 provider analysis cases; `//flutter/tests:architecture_invariants_test`
-# runs them with the production-.bzl source scan.
+# runs them.
 test_suite(
     name = "architecture_analysis_cases",
     tests = architecture_invariants_analysis_tests(
