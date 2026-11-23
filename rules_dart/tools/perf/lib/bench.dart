@@ -272,7 +272,7 @@ Future<List<Row>> _measure(_Opts o) async {
     await stopEmulator(c);
     if (o['keep-servers'] == null) {
       for (final ws in c.workspaces) {
-        await runCmd(Cmd([...c.bazel, 'shutdown'], cwd: ws));
+        await runCmd(Cmd([...c.bazel, 'shutdown'], cwd: ws, env: c.stockEnv));
       }
     }
   }

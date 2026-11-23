@@ -69,9 +69,13 @@ final class Ctx {
   /// The Bazel command (a wrapper is fine).
   final List<String> bazel;
 
-  /// The stock tools' environment (Flutter and Dart on `PATH`, `HOME`,
-  /// `PUB_CACHE`, Java, Android, Gradle).
+  /// The variables the stock tools' environment sets on top of this
+  /// process's (Flutter and Dart on `PATH`, `PUB_CACHE`, Java, Android,
+  /// Gradle).
   final Map<String, String> stockEnv;
+
+  /// The value of [name] in the stock tools' environment.
+  String? stockVar(String name) => stockEnv[name] ?? Platform.environment[name];
 
   /// Runs per flow.
   final int runs;
@@ -110,7 +114,7 @@ final class Ctx {
   /// A [Bazel] for [workspace] logging to [flowId]'s log.
   Bazel bazelIn(String workspace, String flowId) {
     workspaces.add(workspace);
-    return Bazel(bazel, workspace, log: log(flowId));
+    return Bazel(bazel, workspace, log: log(flowId), env: stockEnv);
   }
 
   /// A command run with the stock tools' environment.

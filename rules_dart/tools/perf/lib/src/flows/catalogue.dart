@@ -203,7 +203,7 @@ Future<String> _stockPluginOverride(Ctx c) async {
         loadYaml(File('$ws/pubspec.lock').readAsStringSync()) as YamlMap;
     final version =
         ((lock['packages'] as YamlMap)[_plugin] as YamlMap)['version'];
-    final cache = c.stockEnv['PUB_CACHE'];
+    final cache = c.stockVar('PUB_CACHE');
     final copy = '${c.scratch}/stock/$_plugin';
     copyTree('$cache/hosted/pub.dev/$_plugin-$version', copy);
     pubspec.writeAsStringSync(
@@ -801,9 +801,11 @@ final class AddPluginFlow extends Flow {
 
   @override
   String describe(Ctx c) => stock
-      ? 'flutter build apk --debug after `flutter pub add --offline device_info_plus` (untimed), the app built before'
-      : 'bazel build -c dbg //:app after `flutter pub add --offline device_info_plus`, `bazel run //:android_pin` '
-            '(timed apart: extra.pin_s) and the label added to the app\'s deps, all untimed; the app built before';
+      ? 'flutter build apk --debug after `flutter pub add --offline device_info_plus` (untimed), the app built '
+            'before without it and the plugin\'s directories under build/ deleted'
+      : 'bazel build -c dbg --disk_cache= //:app after `flutter pub add --offline device_info_plus`, `bazel run '
+            '//:android_pin` (timed apart: extra.pin_s) and the label added to the app\'s deps, all untimed; the app '
+            'built before without it and the plugin\'s outputs under bazel-out deleted';
 
   Cmd _stockCmd(Ctx c, List<String> a) => c.stock(a, _ws);
 
@@ -831,6 +833,32 @@ final class AddPluginFlow extends Flow {
 
   double? _pin;
 
+  /// Deletes what an earlier run built for the added plugin, so every run
+  /// builds it as new: its directories under the app's `build/` (Gradle) or
+  /// its repositories' under `bazel-out/*/bin/external/` (the timed Bazel
+  /// build also leaves the disk cache out).
+  void _dropPluginOutputs() {
+    final roots = stock
+        ? [Directory('$_ws/build')]
+        : [
+            for (final cfg
+                in Directory('$_ws/bazel-out').existsSync()
+                    ? Directory('$_ws/bazel-out').listSync()
+                    : const <FileSystemEntity>[])
+              Directory('${cfg.path}/bin/external'),
+          ];
+    for (final root in roots) {
+      if (!root.existsSync()) continue;
+      for (final e in root.listSync(followLinks: false)) {
+        final name = e.uri.pathSegments.lastWhere((p) => p.isNotEmpty);
+        if (name.startsWith('device_info_plus') ||
+            name.contains('deps__device_info_plus')) {
+          rmrf(e.path);
+        }
+      }
+    }
+  }
+
   @override
   Future<void> prepare(Ctx c, int run) async {
     _restore();
@@ -844,13 +872,24 @@ final class AddPluginFlow extends Flow {
     } else {
       await _b!.must(['build', '-c', 'dbg', '//:app']);
     }
+    _dropPluginOutputs();
     await must(
       _stockCmd(c, ['flutter', 'pub', 'add', '--offline', 'device_info_plus']),
       log: log,
     );
     if (!stock) {
-      final pin = await _b!.must(['run', '//:android_pin']);
-      _pin = elapsedSeconds(pin.stderr) ?? pin.seconds;
+      // The pin runs Gradle, which needs the stock environment (Java, the
+      // SDK, the Gradle home); Bazel's own client environment stays as it
+      // is for every build, so the script is written and run apart.
+      final script = '${c.scratch}/android_pin.sh';
+      final built = await _b!.must([
+        'run',
+        '--script_path=$script',
+        '//:android_pin',
+      ]);
+      final pin = await runCmd(_stockCmd(c, [script]), log: log);
+      if (!pin.ok) throw StateError('android_pin failed: ${pin.tail()}');
+      _pin = (elapsedSeconds(built.stderr) ?? built.seconds) + pin.seconds;
       final build = File('$_ws/BUILD.bazel');
       build.writeAsStringSync(
         build.readAsStringSync().replaceFirst(
@@ -876,6 +915,7 @@ final class AddPluginFlow extends Flow {
       'build',
       '-c',
       'dbg',
+      '--disk_cache=',
       '--execution_log_json_file=$execLog',
       '//:app',
     ]);
@@ -941,6 +981,7 @@ final class InstallFlow extends Flow {
     _ws = stock
         ? await _stockCopy(_plugins)(c)
         : await _e2e(_plugins, android: true)(c);
+    await uninstallApp(c, _emu, c.log(id));
     if (stock) {
       await must(
         c.stock(['flutter', 'pub', 'get', '--offline'], _ws),

@@ -9,10 +9,16 @@ import 'proc.dart';
 
 /// One Bazel workspace and the command that runs Bazel in it.
 final class Bazel {
-  /// Bazel run as [command] (a wrapper is fine) in [workspace]; an
-  /// [outputBase] given here is not asked for.
-  Bazel(this.command, this.workspace, {this.log, String? outputBase})
-    : _outputBase = outputBase;
+  /// Bazel run as [command] (a wrapper is fine) in [workspace], with [env]
+  /// added to the environment of every command; an [outputBase] given here
+  /// is not asked for.
+  Bazel(
+    this.command,
+    this.workspace, {
+    this.log,
+    this.env = const {},
+    String? outputBase,
+  }) : _outputBase = outputBase;
 
   /// The Bazel executable and its startup options.
   final List<String> command;
@@ -23,10 +29,16 @@ final class Bazel {
   /// Where every command's output is appended.
   final File? log;
 
+  /// Variables added for every command. The client environment is part of
+  /// a server's startup options (the Java of `JAVA_HOME`), so every command
+  /// in a workspace gets the same.
+  final Map<String, String> env;
+
   String? _outputBase;
 
   /// A [Cmd] for `bazel <args>` in the workspace.
-  Cmd cmd(List<String> args) => Cmd([...command, ...args], cwd: workspace);
+  Cmd cmd(List<String> args) =>
+      Cmd([...command, ...args], cwd: workspace, env: env);
 
   /// Runs `bazel <args>`.
   Future<Done> run(List<String> args, {void Function(int pid)? started}) =>

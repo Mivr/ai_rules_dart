@@ -16,6 +16,9 @@ import 'device.dart';
 /// package and generated l10n.
 const devLoopWorkspace = 'rules_flutter/e2e/stock_dev_loop';
 
+/// The APK target flutter_dev builds (the x86_64 APK the emulator runs).
+const devLoopTarget = '//:app_x64';
+
 /// The file a reload edits and the line the edit goes after.
 const devLoopEdit = EditSpec(
   'lib/main.dart',
@@ -60,9 +63,9 @@ final class DevLoopFlow extends Flow {
 
   @override
   String describe(Ctx c) =>
-      '${stock ? 'flutter run' : 'flutter_dev run --bazel-target=//:app'} -d <emulator> --machine; '
+      '${stock ? 'flutter run' : 'flutter_dev run --bazel-target=$devLoopTarget'} -d <emulator> --machine; '
       '${switch (step) {
-        'start' => 'time: process start to the app.started event (flutter_dev holds it back until its automatic hot restart is done); a new session each run',
+        'start' => 'one untimed start first (builds and installs); time: process start to the app.started event (flutter_dev holds it back until its automatic hot restart is done); a new session each run',
         'reload' => 'one session; before each run ${devLoopEdit.describe}; time: the app.restart request (fullRestart false) to its response',
         _ => 'one session; time: the app.restart request (fullRestart true) to its response',
       }}';
@@ -80,6 +83,9 @@ final class DevLoopFlow extends Flow {
         c.stock(['flutter', 'pub', 'get', '--offline'], _ws),
         log: c.log(id),
       );
+      // The project has no l10n.yaml, so stock `flutter run` does not
+      // generate the localizations main.dart imports.
+      await must(c.stock(['flutter', 'gen-l10n'], _ws), log: c.log(id));
       _argv = ['flutter', 'run', '-d', _emu.serial, '--machine'];
     } else {
       _ws = e2eCopy(
@@ -100,16 +106,21 @@ final class DevLoopFlow extends Flow {
       _argv = [
         script,
         'run',
-        '--bazel-target=//:app',
+        '--bazel-target=$devLoopTarget',
         '--bazel=${c.bazel.first}',
         '-d',
         _emu.serial,
         '--machine',
       ];
     }
-    if (step != 'start') {
-      _session = await _start(c);
-      await _session!.event('app.started');
+    await uninstallApp(c, _emu, c.log(id));
+    _session = await _start(c);
+    await _session!.event('app.started');
+    if (step == 'start') {
+      // The first start builds and installs the app; the timed starts find
+      // it built.
+      await _session!.stop();
+      _session = null;
     }
   }
 

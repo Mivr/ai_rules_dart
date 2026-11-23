@@ -45,7 +45,15 @@ Future<Emulator> emulator(Ctx c) async {
     'ANDROID_SERIAL': serial,
   };
   final log = c.log('emulator');
-  final avdHome = env['ANDROID_AVD_HOME'] ?? '${env['ANDROID_USER_HOME']}/avd';
+  final v = c.stockVar;
+  final avdHome =
+      v('ANDROID_AVD_HOME') ??
+      (v('ANDROID_USER_HOME') != null ? '${v('ANDROID_USER_HOME')}/avd' : null);
+  if (avdHome == null) {
+    throw const NotAvailable(
+      'no ANDROID_AVD_HOME or ANDROID_USER_HOME in the stock environment',
+    );
+  }
   if (!Directory('$avdHome/$avd.avd').existsSync()) {
     final image =
         c.options['system_image'] ?? 'system-images;android-35;aosp_atd;x86_64';
@@ -109,6 +117,23 @@ Future<Emulator> emulator(Ctx c) async {
     }
   }
   return _running = Emulator._(serial, env, proc);
+}
+
+/// The application id of every app the emulator flows install
+/// (android_plugins and stock_dev_loop, for the rules and for stock).
+const emulatorAppId = 'dev.rdf.counter';
+
+/// Uninstalls [emulatorAppId], so the next install does not meet an APK
+/// signed with another debug key; a missing app is fine.
+Future<void> uninstallApp(Ctx c, Emulator e, File log) async {
+  await runCmd(
+    Cmd(
+      ['adb', '-s', e.serial, 'uninstall', emulatorAppId],
+      cwd: c.scratch,
+      env: e.env,
+    ),
+    log: log,
+  );
 }
 
 /// Stops the emulator and its adb server, if this process started them.

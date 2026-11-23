@@ -412,6 +412,8 @@ void rmrf(String path) {
   final t = FileSystemEntity.typeSync(path, followLinks: false);
   if (t == FileSystemEntityType.notFound) return;
   if (t == FileSystemEntityType.directory) {
+    // Bazel leaves its output directories read-only.
+    Process.runSync('chmod', ['-R', 'u+w', path]);
     Directory(path).deleteSync(recursive: true);
   } else {
     File(path).deleteSync();
