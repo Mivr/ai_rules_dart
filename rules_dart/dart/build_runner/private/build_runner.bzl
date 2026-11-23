@@ -157,17 +157,19 @@ build_runner_tool = rule(
     provides = [BuildRunnerInfo],
 )
 
+def _build_yaml_args(ctx, args):
+    for target, package in ctx.attr.build_yamls.items():
+        args.add_all(target.files, before_each = "--build-yaml", format_each = package + "=%s")
+    return depset(transitive = [target.files for target in ctx.attr.build_yamls])
+
 def _entry_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".dart")
     args = ctx.actions.args()
     args.add("--out", out)
-    for target, package in ctx.attr.build_yamls.items():
-        args.add_all(target.files, before_each = "--build-yaml", format_each = package + "=%s")
-    inputs = depset(transitive = [target.files for target in ctx.attr.build_yamls])
     ctx.actions.run(
         executable = ctx.executable.generator,
         arguments = [args],
-        inputs = inputs,
+        inputs = _build_yaml_args(ctx, args),
         outputs = [out],
         mnemonic = "DartBuildRunnerEntry",
         # The executable is an exec-configured attribute, not a toolchain.
@@ -176,15 +178,51 @@ def _entry_impl(ctx):
     )
     return [DefaultInfo(files = depset([out]))]
 
+_BUILD_YAMLS_ATTR = attr.label_keyed_string_dict(
+    doc = "Each builder package's `build.yaml` (an empty file group when it has none), to the package's name.",
+    allow_files = True,
+)
+
 build_runner_entry = rule(
     implementation = _entry_impl,
     doc = "Writes the runner's entry point from the `build.yaml` of the lock's builder packages.",
     attrs = {
         "generator": attr.label(mandatory = True, executable = True, cfg = "exec"),
-        "build_yamls": attr.label_keyed_string_dict(
-            doc = "Each builder package's `build.yaml` (an empty file group when it has none), to the package's name.",
-            allow_files = True,
-        ),
+        "build_yamls": _BUILD_YAMLS_ATTR,
+    },
+)
+
+def _facts_impl(ctx):
+    out = ctx.outputs.out
+    if ctx.attr.error:
+        ctx.actions.write(out, json.encode_indent({"builders": [], "error": ctx.attr.error, "version": 1}) + "\n")
+        return [DefaultInfo(files = depset([out]))]
+    args = ctx.actions.args()
+    args.add("--facts", out)
+    ctx.actions.run(
+        executable = ctx.executable.generator,
+        arguments = [args],
+        inputs = _build_yaml_args(ctx, args),
+        outputs = [out],
+        mnemonic = "DartBuildRunnerFacts",
+        # The executable is an exec-configured attribute, not a toolchain.
+        toolchain = None,
+        progress_message = "Writing the build_runner builder facts %{label}",
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+build_runner_facts = rule(
+    implementation = _facts_impl,
+    doc = """Writes `out`: the builder definitions of the lock's builder packages, as JSON.
+
+Gazelle reads it to predict the files `dart_build_runner` builds (`gen_entry --facts`
+documents the shape). With `error` set (the lock cannot run builders) it lists no
+builder and carries the message.""",
+    attrs = {
+        "out": attr.output(mandatory = True),
+        "generator": attr.label(executable = True, cfg = "exec"),
+        "build_yamls": _BUILD_YAMLS_ATTR,
+        "error": attr.string(),
     },
 )
 
@@ -221,6 +259,12 @@ def build_runner_targets(hub, version, builder_packages):
             message = err,
             visibility = ["//visibility:public"],
         )
+        build_runner_facts(
+            name = "builders",
+            out = "builders.json",
+            error = err,
+            visibility = ["//visibility:public"],
+        )
         return
 
     _dart_library(
@@ -237,10 +281,20 @@ def build_runner_targets(hub, version, builder_packages):
         launcher = True,
         deps = ["//:build_config"],
     )
+    build_yamls = {label: package for package, label in builder_packages.items()}
     build_runner_entry(
         name = "entry",
         generator = ":gen_entry",
-        build_yamls = {label: package for package, label in builder_packages.items()},
+        build_yamls = build_yamls,
+    )
+
+    # What Gazelle reads to write `dart_build_runner` targets.
+    build_runner_facts(
+        name = "builders",
+        out = "builders.json",
+        generator = ":gen_entry",
+        build_yamls = build_yamls,
+        visibility = ["//visibility:public"],
     )
     _dart_binary(
         name = "runner",

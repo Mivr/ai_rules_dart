@@ -2,6 +2,10 @@
 /// the way `build_runner` writes `.dart_tool/build/entrypoint/build.dart`.
 ///
 /// Usage: gen_entry --out <entry.dart> [--build-yaml <package>=<path>]...
+///        gen_entry --facts <builders.json> [--build-yaml <package>=<path>]...
+///
+/// With `--facts` it writes the builder definitions as JSON instead (see
+/// [_facts]): what Gazelle reads to predict a package's generated files.
 ///
 /// Each `build.yaml` is parsed with `package:build_config`, the parser
 /// `build_runner` uses. The entry imports every library a builder definition
@@ -10,17 +14,21 @@
 /// declared inputs, and a builder package's `build.yaml` is not one of them.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:build_config/build_config.dart';
 
 void main(List<String> args) {
   String? out;
+  String? facts;
   final yamls = <String, String>{};
   for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--out':
         out = args[++i];
+      case '--facts':
+        facts = args[++i];
       case '--build-yaml':
         final kv = args[++i];
         final eq = kv.indexOf('=');
@@ -30,8 +38,12 @@ void main(List<String> args) {
         exit(2);
     }
   }
+  if (facts != null) {
+    File(facts).writeAsStringSync(_facts(yamls));
+    return;
+  }
   if (out == null) {
-    stderr.writeln('gen_entry: --out is required');
+    stderr.writeln('gen_entry: --out or --facts is required');
     exit(2);
   }
 
@@ -86,6 +98,59 @@ void main(List<String> args) {
     '_r.runnerMain(args, _factories, _buildYamls);',
   );
   File(out).writeAsStringSync(buffer.toString());
+}
+
+/// The builder definitions of [yamls] as JSON, version 1:
+///
+/// ```json
+/// {"version": 1, "builders": [{
+///   "key": "json_serializable:json_serializable",
+///   "package": "json_serializable",
+///   "auto_apply": "dependents",          // none, dependents, all_packages, root_package
+///   "build_to": "cache",                 // source or cache
+///   "build_extensions": {".dart": ["json_serializable.g.part"]},
+///   "applies_builders": ["source_gen:combining_builder"],
+///   "required_inputs": [], "runs_before": [], "is_optional": false,
+///   "generate_for": null                 // or {"include": [...], "exclude": [...]}
+/// }]}
+/// ```
+///
+/// Builder keys are normalized as `build_config` normalizes them. Only the
+/// builders the entry point registers are listed: those whose library is a
+/// `package:` URI.
+String _facts(Map<String, String> yamls) {
+  const autoApply = {
+    AutoApply.none: 'none',
+    AutoApply.dependents: 'dependents',
+    AutoApply.allPackages: 'all_packages',
+    AutoApply.rootPackage: 'root_package',
+  };
+  final builders = <Map<String, Object?>>[];
+  for (final package in yamls.keys.toList()..sort()) {
+    final parsed = BuildConfig.parse(package, const [], yamls[package]!);
+    final keys = parsed.builderDefinitions.keys.toList()..sort();
+    for (final key in keys) {
+      final b = parsed.builderDefinitions[key]!;
+      if (!b.import.startsWith('package:')) continue;
+      final generateFor = b.defaults.generateFor;
+      builders.add({
+        'key': b.key,
+        'package': b.package,
+        'auto_apply': autoApply[b.autoApply],
+        'build_to': b.buildTo == BuildTo.source ? 'source' : 'cache',
+        'build_extensions': b.buildExtensions,
+        'applies_builders': b.appliesBuilders,
+        'required_inputs': b.requiredInputs,
+        'runs_before': b.runsBefore,
+        'is_optional': b.isOptional,
+        'generate_for':
+            generateFor.include == null && generateFor.exclude == null
+            ? null
+            : {'include': generateFor.include, 'exclude': generateFor.exclude},
+      });
+    }
+  }
+  return '${const JsonEncoder.withIndent('  ').convert({'version': 1, 'builders': builders})}\n';
 }
 
 String _literal(String s) {
