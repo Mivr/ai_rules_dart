@@ -2,7 +2,10 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load(":source_repo.bzl", "SOURCE_REPO")
 
-exports_files(["pubspec.lock"])
+exports_files([
+    "pub_plan.json",
+    "pubspec.lock",
+])
 
 _LIB_DEPS = [
     "@dev_tool_deps//:args",

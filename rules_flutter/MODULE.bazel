@@ -402,26 +402,38 @@ multitool = use_extension(
 multitool.hub(lockfile = "//:multitool.lock.json")
 use_repo(multitool, "multitool")
 
-flutter_tool_deps = use_extension(
-    "//flutter/private:tool_deps_extension.bzl",
-    "flutter_tool_deps",
-)
+# Pure-Dart pub hubs of rules_flutter's own tools, resolved by rules_dart's pub
+# extension. Hub names are global in that extension, hence the module prefix.
+# Each is isolated (its spokes are `<hub>__<package>` and it pins its own
+# versions, apart from any lock of the consumer) and ships its plan, so no
+# consumer sends a request for these packages. `//tools:pub_plan_test` checks
+# each plan against its lock; regenerate one with
+# `bazel run @rules_dart//dart/pub/plan -- write --lock <pubspec.lock> --out <pub_plan.json>`.
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
 
 # Dev tool pub dependencies (args, vm_service, watcher, path).
-flutter_tool_deps.pub(
-    name = "dev_tool_deps",
+pub.from_lock(
+    name = "rules_flutter_dev_tool_deps",
+    isolated = True,
     lock = "//tools/dev_tool:pubspec.lock",
+    plan = "//tools/dev_tool:pub_plan.json",
 )
 
 # Generation-time dependencies of the vendored `flutter gen-l10n` generator.
 # Separate from anything a consuming app resolves: this `intl` is the one the
 # generator's own code imports, while an app *using* the generated
 # localizations needs `intl` in its own lock. Upstream splits them the same way.
-flutter_tool_deps.pub(
-    name = "gen_l10n_deps",
+pub.from_lock(
+    name = "rules_flutter_gen_l10n_deps",
+    isolated = True,
     lock = "//flutter/private/gen_l10n:pubspec.lock",
+    plan = "//flutter/private/gen_l10n:pub_plan.json",
 )
-use_repo(flutter_tool_deps, "dev_tool_deps", "gen_l10n_deps")
+use_repo(
+    pub,
+    dev_tool_deps = "rules_flutter_dev_tool_deps",
+    gen_l10n_deps = "rules_flutter_gen_l10n_deps",
+)
 
 # Root-only (`dev_dependency = True`) registration on `flutter` so the root
 # workspace's repo-contents-cache check on `@@+flutter+dev_tool_deps__*` keeps
@@ -434,6 +446,7 @@ flutter_dev = use_extension(
 flutter_dev.pub(
     name = "dev_tool_deps",
     lock = "//tools/dev_tool:pubspec.lock",
+    plan = "//tools/dev_tool:pub_plan.json",
 )
 
 # iOS device screenshots and the device tunnel deliberately use NO Python

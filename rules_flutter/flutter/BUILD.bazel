@@ -309,7 +309,7 @@ bzl_library(
         "//flutter/private:flutter_pub_path",
         "//flutter/private:flutter_pub_plugin_defines",
         "//flutter/private:flutter_pub_plugin_deps",
-        "//flutter/private:flutter_pub_scc_plan",
+        "//flutter/private:flutter_pub_scc_spoke",
         "//flutter/private:flutter_pub_tag",
         "//flutter/private:flutter_pubspec",
         "//flutter/private:flutter_sdk_package",
@@ -320,6 +320,9 @@ bzl_library(
         "//flutter/private:versions",
         "//flutter/private:xtool_darwin_sdk_repo",
         "@rules_dart//dart/ext:registry",
+        "@rules_dart//dart/pub:extensions",
+        "@rules_dart//dart/pub:pub_lock_hub",
+        "@rules_dart//dart/pub:pub_plan",
         "@rules_dart//dart/pub:yaml",
     ],
 )

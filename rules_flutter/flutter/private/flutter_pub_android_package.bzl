@@ -14,6 +14,7 @@ to emit. `android_package_repo_name` and `android_spoke_alias_content` are the
 pure pieces the spoke generator and its unit tests consume.
 """
 
+load("@rules_dart//dart/pub:pub_lock_package.bzl", "fetch_pub_lock_archive")
 load("@rules_dart//dart/pub:yaml.bzl", "yaml_to_json")
 load(":flutter_pub_apple.bzl", _has_files_under = "has_files_under")
 load(":flutter_pub_maven.bzl", "maven_deps_attr", "maven_ignore_attr")
@@ -25,7 +26,6 @@ load(
     "outside_workspace_refusal",
     "path_spoke_resolves_outside",
 )
-load(":flutter_pub_scan.bzl", "fetch_hosted_archive", "scan_hosted_archive", "walk_hosted_package")
 load(
     ":flutter_pubspec.bzl",
     "parse_flutter_plugin_block",
@@ -758,9 +758,7 @@ def _flutter_pub_android_package_impl(ctx):
     if ctx.attr.path:
         _link_path_android_package(ctx)
     else:
-        refusal = fetch_hosted_archive(ctx, scan_hosted_archive, walk_hosted_package)
-        if refusal:
-            fail(refusal)
+        fetch_pub_lock_archive(ctx)
 
     android = detect_android_plugin_sources(ctx, _read_plugin_block(ctx))
     if android.native_build:
@@ -804,9 +802,9 @@ flutter_pub_android_package = repository_rule(
             doc = "SHA256 of the hosted archive, the same value the spoke verifies. A missing or mismatched checksum fails the fetch.",
             default = "",
         ),
-        "base_url": attr.string(
-            doc = "Base URL for the pub repository.",
-            default = "https://pub.dev",
+        "url": attr.string(
+            doc = "The archive URL planning found for a hosted package, the one its spoke fetches.",
+            default = "",
         ),
         "path": attr.string(
             doc = "Workspace-relative directory of a path package, or empty for a hosted package. A path package's `android` platform directory is linked with the path spoke's confinement rules.",

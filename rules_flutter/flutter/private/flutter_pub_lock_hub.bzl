@@ -1,30 +1,26 @@
-"""Augmented hub repo rule for Flutter pub lock files.
+"""What a `flutter.pub` hub adds to rules_dart's pub hub.
 
-Mirrors `rules_dart//dart/pub:pub_lock_hub.bzl`'s top-level alias
-structure (`@<hub>//:pkg` → `@<hub>__<pkg>//:<pkg>`) and additionally
-emits an `android/BUILD.bazel` containing the
-`all_android_plugin_libs` aggregator, plus
-`swift_package_sha256.json` with the hub's SwiftPM checksum table and
-`ios_native_deps.json` with the hub's SwiftPM product mapping. The
-aggregator is a `kt_android_library` whose deps are every spoke's
-`android:lib` target (see `flutter_pub_package`'s
-`make_android_subpackage_build_content`). A plugin pub spoke reads the
-checksum table lazily, only after finding its own `Package.swift`.
+`flutter.pub` generates its hub with rules_dart's `pub_lock_hub`: one alias
+per package (`@<hub>//:pkg` to `@<hub>__<pkg>//:<pkg>`, or to the merged
+repository of a dependency cycle). This file renders what a Flutter hub adds
+through that rule's `files`:
 
-`flutter_android_app` does not use the aggregator: an app compiles the Android
-library of each plugin in its own transitive Dart dependencies, which each
-plugin's Dart target names. The aggregator stays for a caller that names it.
-Spokes without Android sources contribute an empty `:lib` (a no-op at link
-time) so the aggregator's deps list is mechanical.
-
-Loaded lazily — Bazel only parses `android/BUILD.bazel` when something
-queries the aggregator. Non-Android workspaces (mac-only, web-only)
-don't pay the `@rules_android` / `@rules_kotlin` cost.
-
-This rule is the rules_flutter sibling of rules_dart's `pub_lock_hub`;
-the two never run for the same hub. `flutter.pub()` always invokes
-this one. `pub.pub()` (in non-Flutter modules) keeps using
-`pub_lock_hub`.
+- `android/BUILD.bazel`, the `all_android_plugin_libs` aggregator of every
+  spoke's `android:lib` (`flutter_android_app` does not use it: an app takes
+  the Android libraries of the plugins its own Dart graph reaches; the
+  aggregator stays for a caller that names it). Bazel parses it only when
+  something names it, so a workspace without Android never loads
+  `@rules_android` or `@rules_kotlin`.
+- `scc/BUILD.bazel` and `scc/scc_android_edge.bzl`, for cycle members: under
+  Android a member's alias carries the Android libraries of its cycle.
+- `swift_package_sha256.json` and `ios_native_deps.json`, the SwiftPM checksum
+  table and the native-dependency mappings a plugin spoke reads lazily, only
+  once it finds a `Package.swift` or a pod it needs.
+- `pub_packages.json`, the hub's package names and cycle members, which an
+  Apple plugin spoke reads lazily to name a sibling plugin's library.
+- `packages.bzl`, which a Flutter SDK package's BUILD file loads to keep the
+  dependencies the lock pins (an SDK package's own pubspec is read only when
+  its spoke is fetched, so its names cannot be planned).
 """
 
 visibility(["//flutter/..."])
@@ -71,24 +67,6 @@ def overlay_with_android_edge(content, package_name):
     if head not in content or "android_libs" in content:
         return content
     return content.replace(head, head + _ANDROID_EDGE_ATTR, 1)
-
-def hub_scc_dep_targets(hub_name, scc_targets):
-    """Maps each SCC member package to its `@<hub>//:<pkg>` hub target.
-
-    Singleton pub spokes route dependencies on cycle members through the hub so
-    an Android build traverses the hub's `@platforms//os:android` plugin edge.
-
-    Args:
-        hub_name: Apparent name of the hub repository.
-        scc_targets: Mapping `package -> "@<scc_repo>//:<package>"` for cycle members.
-
-    Returns:
-        Mapping `package -> "@<hub>//:<package>"`, or `{}` when `scc_targets` is empty.
-    """
-    return {
-        pkg: "@{hub}//:{pkg}".format(hub = hub_name, pkg = pkg)
-        for pkg in scc_targets
-    }
 
 def make_hub_scc_android_edge_bzl_content():
     """Renders `scc_android_edge.bzl` for a hub with merged SCC targets.
@@ -142,25 +120,61 @@ flutter_pub_scc_android_edge = rule(
 )
 """
 
-def _scc_members_by_repo(scc_targets):
-    """Groups non-`test` SCC member package names by their merged `@<scc_repo>` prefix."""
+def _scc_members_by_repo(merged_members):
+    """Groups non-`test` cycle members by their merged repository name."""
     by_repo = {}
-    for member in sorted(scc_targets):
+    for member in sorted(merged_members):
         if member == "test":
             continue
-        repo = scc_targets[member].partition("//:")[0]
-        by_repo.setdefault(repo, []).append(member)
+        by_repo.setdefault(merged_members[member], []).append(member)
     return by_repo
 
-def _render_scc_hub_entry(pkg, actual, repo_members):
-    """Renders the Android edge target and `select()` alias for one SCC member `pkg`."""
-    scc_repo = actual.partition("//:")[0]
-    lib_lines = [
-        '            "{repo}//{m}/android:lib",'.format(repo = scc_repo, m = m)
-        for m in repo_members
-    ]
-    libs_block = "\n".join(lib_lines)
-    return """\
+def hub_scc_targets(merged_members):
+    """Where the hub's alias of each cycle member points.
+
+    A member of a cycle that holds another member besides `test` aliases to
+    `//scc:<pkg>` in the hub, whose Android-only `select()` adds the cycle's
+    Android libraries; `test` and the members of a cycle with no other
+    member alias to the merged repository directly.
+
+    Args:
+        merged_members: Mapping of cycle member to its merged repository name.
+
+    Returns:
+        Mapping of member to the label its hub alias names (`//scc:<pkg>`
+        names the hub's own package).
+    """
+    by_repo = _scc_members_by_repo(merged_members)
+    targets = {}
+    for member in sorted(merged_members):
+        repo = merged_members[member]
+        if member != "test" and by_repo.get(repo):
+            targets[member] = "//scc:" + member
+        else:
+            targets[member] = "@{repo}//:{pkg}".format(repo = repo, pkg = member)
+    return targets
+
+def make_hub_scc_build_content(merged_members):
+    """Renders the hub's `scc/BUILD.bazel` for its cycle members, or `""`.
+
+    Args:
+        merged_members: Mapping of cycle member to its merged repository name.
+
+    Returns:
+        The BUILD text, or `""` when no member gets an Android edge.
+    """
+    by_repo = _scc_members_by_repo(merged_members)
+    entries = []
+    for member in sorted(merged_members):
+        repo = merged_members[member]
+        repo_members = by_repo.get(repo, [])
+        if member == "test" or not repo_members:
+            continue
+        libs = "\n".join([
+            '            "@{repo}//{m}/android:lib",'.format(repo = repo, m = m)
+            for m in repo_members
+        ])
+        entries.append("""\
 flutter_pub_scc_android_edge(
     name = "_scc_android_{pkg}",
     android_libs = select({{
@@ -170,61 +184,20 @@ flutter_pub_scc_android_edge(
         "//conditions:default": [],
     }}),
     tags = ["manual"],
-    deps = ["{actual}"],
+    deps = ["@{repo}//:{pkg}"],
 )
 
 alias(
     name = "{pkg}",
     actual = select({{
         "@platforms//os:android": ":_scc_android_{pkg}",
-        "//conditions:default": "{actual}",
+        "//conditions:default": "@{repo}//:{pkg}",
     }}),
     visibility = ["//visibility:public"],
-)""".format(
-        pkg = pkg,
-        actual = actual,
-        libs = libs_block,
-    )
-
-def make_flutter_pub_hub_build_content(packages, spoke_prefix, scc_targets = {}):
-    """Renders the root `BUILD.bazel` aliases for a `flutter_pub_lock_hub` repo.
-
-    Args:
-        packages: Sorted package names in the lock.
-        spoke_prefix: Prefix for single-package spoke repository names.
-        scc_targets: Mapping `package -> "@<scc_repo>//:<package>"` for cycle
-            members. Empty produces byte-identical output to acyclic hubs.
-
-    Returns:
-        The generated `BUILD.bazel` text.
-    """
-    by_repo = _scc_members_by_repo(scc_targets)
-    has_scc_edges = False
-    entries = []
-    for pkg in packages:
-        if pkg in scc_targets and pkg != "test":
-            actual = scc_targets[pkg]
-            scc_repo = actual.partition("//:")[0]
-            repo_members = by_repo.get(scc_repo, [])
-            if repo_members:
-                has_scc_edges = True
-                entries.append(_render_scc_hub_entry(pkg, actual, repo_members))
-                continue
-        actual = scc_targets[pkg] if pkg in scc_targets else "@{spoke}__{pkg}//:{pkg}".format(
-            spoke = spoke_prefix,
-            pkg = pkg,
-        )
-        entries.append("""\
-alias(
-    name = "{pkg}",
-    actual = "{actual}",
-    visibility = ["//visibility:public"],
-)""".format(
-            pkg = pkg,
-            actual = actual,
-        ))
-    header = 'load(":scc_android_edge.bzl", "flutter_pub_scc_android_edge")\n\n' if has_scc_edges else ""
-    return header + "\n\n".join(entries) + "\n"
+)""".format(pkg = member, repo = repo, libs = libs))
+    if not entries:
+        return ""
+    return 'load(":scc_android_edge.bzl", "flutter_pub_scc_android_edge")\n\n' + "\n\n".join(entries) + "\n"
 
 def make_flutter_pub_hub_android_build_content(packages, spoke_prefix, scc_targets = {}):
     """Renders `android/BUILD.bazel` for a `flutter_pub_lock_hub` repo.
@@ -276,107 +249,117 @@ kt_android_library(
 )
 """.format(deps = deps_block)
 
-def _flutter_pub_lock_hub_impl(ctx):
-    """Emits the Flutter pub hub BUILD aliases, Android aggregator, and native-dep JSON files."""
-    spoke_prefix = ctx.attr.spoke_prefix if ctx.attr.spoke_prefix else ctx.attr.hub_name
-    scc_targets = ctx.attr.scc_targets
+def ios_native_deps_json(swift_package_product_deps, ios_pod_deps, ios_pod_ignore, ios_pods_json):
+    """Renders the hub's `ios_native_deps.json`.
 
-    # SwiftPM checksum state for the pub spokes: a plugin spoke reads this
-    # file (and only this file) after it finds its own `Package.swift`, so
-    # the checksum table never reaches a pure-Dart spoke's attributes.
-    ctx.file("swift_package_sha256.json", json.encode(ctx.attr.swift_package_sha256))
+    Each label is already canonical (the extension serialised it from the
+    module that wrote the tag), so a spoke's generated BUILD file can name it
+    directly. Keys are sorted so the output is deterministic.
 
-    # SwiftPM product mappings and CocoaPods pod resolutions for the pub
-    # spokes. Each label is already canonical (the extension serialised it
-    # from the module that wrote the tag), so a spoke's generated BUILD file
-    # can name it directly. Keys are sorted so the output is deterministic.
-    product_deps = {}
-    for key in sorted(ctx.attr.swift_package_product_deps):
-        product_deps[key] = ctx.attr.swift_package_product_deps[key]
+    Args:
+        swift_package_product_deps: `<identity>:<product>` to canonical label.
+        ios_pod_deps: Pod name to canonical label.
+        ios_pod_ignore: Pod names to drop.
+        ios_pods_json: JSON-encoded precomputed pod resolution mapping.
 
-    ios_pod_deps = {}
-    for key in sorted(ctx.attr.ios_pod_deps):
-        ios_pod_deps[key] = ctx.attr.ios_pod_deps[key]
+    Returns:
+        The file content.
+    """
+    ios_pods_raw = json.decode(ios_pods_json) if ios_pods_json else {}
+    return json.encode({
+        "ios_pod_deps": {key: ios_pod_deps[key] for key in sorted(ios_pod_deps)},
+        "ios_pod_ignore": sorted(ios_pod_ignore),
+        "ios_pods": {key: ios_pods_raw[key] for key in sorted(ios_pods_raw)},
+        "swift_package_product_deps": {key: swift_package_product_deps[key] for key in sorted(swift_package_product_deps)},
+        "version": 1,
+    })
 
-    ios_pod_ignore = sorted(ctx.attr.ios_pod_ignore)
+def hub_packages_bzl_content(hub_name, packages):
+    """Renders the hub's `packages.bzl`, which an SDK package's BUILD file loads.
 
-    ios_pods_raw = json.decode(ctx.attr.ios_pods) if ctx.attr.ios_pods else {}
-    ios_pods = {}
-    for key in sorted(ios_pods_raw):
-        ios_pods[key] = ios_pods_raw[key]
+    Args:
+        hub_name: The hub's repository name, for the docstring.
+        packages: The hub's package names.
 
-    ctx.file(
-        "ios_native_deps.json",
-        json.encode({
-            "ios_pod_deps": ios_pod_deps,
-            "ios_pod_ignore": ios_pod_ignore,
-            "ios_pods": ios_pods,
-            "swift_package_product_deps": product_deps,
-            "version": 1,
-        }),
-    )
+    Returns:
+        The `.bzl` text: `hub_deps(names)` keeps the names the hub holds,
+        as labels of its aliases.
+    """
+    return """\
+\"\"\"The packages of the `{hub}` hub, for the Flutter SDK packages' BUILD files.\"\"\"
 
-    if scc_targets:
-        ctx.file("scc_android_edge.bzl", make_hub_scc_android_edge_bzl_content())
-    ctx.file(
-        "BUILD.bazel",
-        make_flutter_pub_hub_build_content(ctx.attr.packages, spoke_prefix, scc_targets),
-    )
-    ctx.file(
-        "android/BUILD.bazel",
-        make_flutter_pub_hub_android_build_content(ctx.attr.packages, spoke_prefix, scc_targets),
-    )
-    return ctx.repo_metadata(reproducible = True)
+_PACKAGES = {{name: True for name in {packages}}}
 
-flutter_pub_lock_hub = repository_rule(
-    implementation = _flutter_pub_lock_hub_impl,
-    attrs = {
-        "hub_name": attr.string(
-            doc = "The apparent name of this hub repo (for constructing spoke labels).",
-            mandatory = True,
-        ),
-        "spoke_prefix": attr.string(
-            doc = "Prefix for spoke repo names. If empty, defaults to hub_name.",
-            default = "",
-        ),
-        "packages": attr.string_list(
-            doc = "All hosted package names to create aliases and Android-aggregator deps for.",
-            mandatory = True,
-        ),
-        "scc_targets": attr.string_dict(
-            doc = "Package name to merged repository target, for dependencies on cycle members.",
-            default = {},
-        ),
-        "swift_package_sha256": attr.string_dict(
-            doc = "The hub's `swift_package_sha256` map, written to " +
-                  "`swift_package_sha256.json` for a plugin spoke that links " +
-                  "a SwiftPM pin. Reading is lazy: a pure-Dart spoke never " +
-                  "reads the file, so its marker stays independent of it.",
-            default = {},
-        ),
-        "swift_package_product_deps": attr.string_dict(
-            doc = "Canonical labels for the hub's `swift_package_product_deps` " +
-                  "map, written to `ios_native_deps.json` for a plugin spoke " +
-                  "that links a SwiftPM product. Reading is lazy: a spoke " +
-                  "without a product dependency never reads the file, so its " +
-                  "marker stays independent of it.",
-            default = {},
-        ),
-        "ios_pod_deps": attr.string_dict(
-            doc = "Canonical labels for CocoaPods pod mapping.",
-            default = {},
-        ),
-        "ios_pod_ignore": attr.string_list(
-            doc = "Pod names to drop.",
-            default = [],
-        ),
-        "ios_pods": attr.string(
-            doc = "JSON-encoded precomputed pod resolution mapping.",
-            default = "{}",
-        ),
-    },
-    doc = "Creates a Flutter pub hub repo with both the standard top-level package aliases " +
-          "and an `android/all_android_plugin_libs` aggregator that a caller may name. The " +
-          "aggregator pulls in every spoke's `android:lib`; `flutter_android_app` selects " +
-          "its plugins from the app's Dart dependencies instead.",
-)
+def hub_deps(names):
+    \"\"\"Labels of the hub's aliases for the names it holds; other names are dropped.
+
+    Args:
+        names: Dependency names from an SDK package's pubspec.
+
+    Returns:
+        The labels, in the order given.
+    \"\"\"
+    return [Label("//:" + name) for name in names if name in _PACKAGES]
+""".format(hub = hub_name, packages = repr(sorted(packages)))
+
+def hub_pub_packages_json(packages, merged_members):
+    """Renders the hub's `pub_packages.json`, read lazily by Apple plugin spokes.
+
+    Args:
+        packages: The hub's package names.
+        merged_members: Mapping of cycle member to its merged repository name.
+
+    Returns:
+        The file content: `packages` and `scc_targets` (member to
+        `@<merged repository>//:<member>`).
+    """
+    return json.encode({
+        "packages": sorted(packages),
+        "scc_targets": {m: "@{repo}//:{m}".format(repo = merged_members[m], m = m) for m in sorted(merged_members)},
+    })
+
+def read_hub_pub_packages(ctx):
+    """Reads the hub's `pub_packages.json` through the spoke's `hub_packages` label.
+
+    Call it only on the path that needs the hub's package names: reading the
+    file makes the spoke depend on every package the hub holds.
+
+    Args:
+        ctx: The spoke's repository context (or a member facade carrying
+            `attr.hub_packages` and `read`).
+
+    Returns:
+        `struct(packages, scc_targets)`; empty when the spoke has no hub.
+    """
+    label = getattr(ctx.attr, "hub_packages", None)
+    if label == None:
+        return struct(packages = [], scc_targets = {})
+    data = json.decode(ctx.read(label))
+    return struct(packages = data["packages"], scc_targets = data["scc_targets"])
+
+def flutter_pub_hub_files(hub_name, packages, merged_members, swift_package_sha256, ios_native_deps):
+    """Every file a Flutter hub adds to rules_dart's hub (`pub_lock_hub(files = ...)`).
+
+    Args:
+        hub_name: The hub's repository name.
+        packages: The hub's package names.
+        merged_members: Mapping of cycle member to its merged repository name.
+        swift_package_sha256: The tag's SwiftPM checksum table.
+        ios_native_deps: The rendered `ios_native_deps.json`.
+
+    Returns:
+        Dict of hub-relative path to content.
+    """
+    scc_targets = {m: "@{repo}//:{m}".format(repo = merged_members[m], m = m) for m in merged_members}
+    files = {
+        "android/BUILD.bazel": make_flutter_pub_hub_android_build_content(sorted(packages), hub_name, scc_targets),
+        "ios_native_deps.json": ios_native_deps,
+        "packages.bzl": hub_packages_bzl_content(hub_name, packages),
+        "pub_packages.json": hub_pub_packages_json(packages, merged_members),
+        "swift_package_sha256.json": json.encode(swift_package_sha256),
+    }
+    scc_build = make_hub_scc_build_content(merged_members)
+    if scc_build:
+        files["scc/BUILD.bazel"] = scc_build
+        files["scc/scc_android_edge.bzl"] = make_hub_scc_android_edge_bzl_content()
+    return files

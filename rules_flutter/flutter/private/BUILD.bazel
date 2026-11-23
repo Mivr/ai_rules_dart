@@ -1074,10 +1074,10 @@ bzl_library(
         ":flutter_pub_apple",
         ":flutter_pub_maven",
         ":flutter_pub_mirror",
-        ":flutter_pub_scan",
         ":flutter_pubspec",
         ":gradle",
         ":starlark_literal",
+        "@rules_dart//dart/pub:pub_lock_package",
         "@rules_dart//dart/pub:yaml",
     ],
 )
@@ -1090,6 +1090,7 @@ bzl_library(
         ":flutter_pub_apple_byname",
         ":flutter_pub_apple_deps",
         ":flutter_pub_apple_pods",
+        ":flutter_pub_lock_hub",
         ":flutter_pub_plugin_deps",
         ":flutter_pub_walk",
         ":podspec_read",
@@ -1253,6 +1254,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":flutter_pub_apple_pods_hub",
+        ":flutter_pub_lock_hub",
         ":podfile_lock",
         "@rules_dart//dart/pub:yaml",
     ],
@@ -1330,14 +1332,12 @@ bzl_library(
         ":flutter_pub_apple_local",
         ":flutter_pub_assets",
         ":flutter_pub_cover",
-        ":flutter_pub_cycle_breaks",
         ":flutter_pub_lock_hub",
         ":flutter_pub_maven",
         ":flutter_pub_mirror",
         ":flutter_pub_package_helpers",
         ":flutter_pub_plugin_defines",
         ":flutter_pub_plugin_deps",
-        ":flutter_pub_scan",
         ":flutter_pub_walk",
         ":flutter_pubspec",
         ":gradle",
@@ -1364,6 +1364,10 @@ bzl_library(
     name = "flutter_pub_path",
     srcs = ["flutter_pub_path.bzl"],
     visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_pub_mirror",
+        "@rules_dart//dart/pub:yaml",
+    ],
 )
 
 bzl_library(
@@ -1382,35 +1386,6 @@ bzl_library(
 )
 
 bzl_library(
-    name = "flutter_pub_scan",
-    srcs = ["flutter_pub_scan.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":artifact_urls",
-        ":download",
-        "@rules_dart//dart/pub:pub_lock_package",
-    ],
-)
-
-bzl_library(
-    name = "flutter_pub_scc",
-    srcs = ["flutter_pub_scc.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":download",
-        ":flutter_pub_cycle_breaks",
-        ":flutter_pub_mirror",
-        ":flutter_pub_path",
-        ":pub_lock_sdks",
-        "@rules_dart//dart/pub:extensions",
-        "@rules_dart//dart/pub:pinned_sources",
-        "@rules_dart//dart/pub:pub_lock_package",
-        "@rules_dart//dart/pub:pub_scc",
-        "@rules_dart//dart/pub:yaml",
-    ],
-)
-
-bzl_library(
     name = "flutter_pub_scc_build",
     srcs = ["flutter_pub_scc_build.bzl"],
     visibility = ["//visibility:public"],
@@ -1419,20 +1394,6 @@ bzl_library(
         ":flutter_pub_apple",
         ":flutter_pub_package_helpers",
         ":starlark_literal",
-    ],
-)
-
-bzl_library(
-    name = "flutter_pub_scc_plan",
-    srcs = ["flutter_pub_scc_plan.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_pub_overlays",
-        ":flutter_pub_scc",
-        ":flutter_pub_scc_spoke",
-        ":pub_lock_sdks",
-        ":swiftpm_resolved",
-        "@rules_dart//dart/ext:registry",
     ],
 )
 
@@ -1446,18 +1407,17 @@ bzl_library(
         ":flutter_pub_android_package",
         ":flutter_pub_apple",
         ":flutter_pub_apple_local",
-        ":flutter_pub_cycle_breaks",
         ":flutter_pub_mirror",
         ":flutter_pub_package",
         ":flutter_pub_package_helpers",
         ":flutter_pub_path",
         ":flutter_pub_plugin_defines",
         ":flutter_pub_plugin_deps",
-        ":flutter_pub_scc",
         ":flutter_pub_scc_build",
         ":flutter_pubspec",
         "@rules_dart//dart/pub:pinned_sources",
         "@rules_dart//dart/pub:pub_lock_package",
+        "@rules_dart//dart/pub:pub_scan",
         "@rules_dart//dart/pub:pub_scc",
         "@rules_dart//dart/pub:yaml",
     ],
@@ -2050,20 +2010,6 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":xtool_sdk_render",
-    ],
-)
-
-bzl_library(
-    name = "tool_deps_extension",
-    srcs = ["tool_deps_extension.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_pub_lock_hub",
-        ":flutter_pub_overlays",
-        ":flutter_pub_package",
-        ":flutter_pub_tag",
-        ":pub_lock_sdks",
-        "@rules_dart//dart/pub:yaml",
     ],
 )
 

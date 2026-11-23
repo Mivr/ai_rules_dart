@@ -14,6 +14,7 @@ load(
     "read_ios_pod_native_deps",
 )
 load("//flutter/private:podfile_lock.bzl", "read_podfile_lock")
+load(":flutter_pub_lock_hub.bzl", "read_hub_pub_packages")
 
 visibility(["//flutter/..."])
 
@@ -439,7 +440,7 @@ def _resolve_spoke_from_lock(ctx, matching_entries, spoke, apple, fail_fn):
         lock_label = spoke.lock_label,
         hub_name = hub_name,
         podfile = spoke.podfile,
-        scc_targets = ctx.attr.scc_targets if hasattr(ctx.attr, "scc_targets") else {},
+        scc_targets = read_hub_pub_packages(ctx).scc_targets,
     )
     macos_labels = []
     if apple.macos_srcs:

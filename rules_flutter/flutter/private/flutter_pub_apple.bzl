@@ -23,6 +23,7 @@ load(
     _select_apple_swiftpm_deps = "select_apple_swiftpm_deps",
 )
 load(":flutter_pub_apple_pods.bzl", "detect_apple_cocoapods_deps")
+load(":flutter_pub_lock_hub.bzl", "read_hub_pub_packages")
 load(":flutter_pub_plugin_deps.bzl", "mapped_apple_plugin_deps")
 load(":flutter_pub_walk.bzl", "PUB_WALK_BOUND", "has_files_under_walk")
 load(":podspec_read.bzl", "detect_apple_podspecs")
@@ -908,9 +909,10 @@ def _apple_swiftpm_pins(ctx, resolved_label, checksums_label, hub_name):
         `struct(resolved, pinned, unpinned, hub, lock_packages, lock_label, scc_targets)`
         for the plugin's manifest reader.
     """
-    lock_packages = ctx.attr.lock_packages
+    hub = read_hub_pub_packages(ctx)
+    lock_packages = hub.packages
     lock_label = str(ctx.attr.pubspec_lock) if ctx.attr.pubspec_lock != None else ""
-    scc_targets = ctx.attr.scc_targets if hasattr(ctx.attr, "scc_targets") else {}
+    scc_targets = hub.scc_targets
     if resolved_label == None:
         return struct(
             resolved = "",

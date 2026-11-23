@@ -1,7 +1,19 @@
 load("@bazelrc-preset.bzl", "bazelrc_preset")
+load("@rules_dart//dart/pub/plan:defs.bzl", "pub_plan_test")
 
 bazelrc_preset(
     name = "preset",
     doc_link_template = "https://registry.build/flag/bazel?filter={flag}",
     extra_presets = {"flaky_test_attempts": []},
+)
+
+# The tool hubs ship their plans (`pub.from_lock(plan = ...)` in MODULE.bazel),
+# so a consumer never asks pub.dev about them; each plan must plan exactly its
+# lock's hosted entries.
+pub_plan_test(
+    name = "pub_plan_test",
+    locks = {
+        "//flutter/private/gen_l10n:pubspec.lock": "//flutter/private/gen_l10n:pub_plan.json",
+        "//tools/dev_tool:pubspec.lock": "//tools/dev_tool:pub_plan.json",
+    },
 )

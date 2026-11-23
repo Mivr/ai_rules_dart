@@ -99,6 +99,16 @@ flutter_pub_tag = tag_class(
                   "declaration you make deliberately; it is never a default.",
             default = [],
         ),
+        "plan": attr.label(
+            doc = "A checked-in plan of this lock (`bazel run @rules_dart//dart/pub/plan -- " +
+                  "write`), as `pub.from_lock(plan = ...)` takes: the dependency names and " +
+                  "archive URL of every hosted package. A package the plan covers is " +
+                  "planned with no request to its server and recorded in no lockfile; one " +
+                  "it does not cover (a stale plan) is planned as without one. Unset by " +
+                  "default.",
+            allow_single_file = True,
+            default = None,
+        ),
         "cycle_breaks": attr.string_list_dict(
             doc = "Package name -> dependency names whose pubspec edge is " +
                   "explicitly left out of that package's spoke `deps`. " +
@@ -114,7 +124,7 @@ flutter_pub_tag = tag_class(
                   "build does not target. Every key and listed dependency " +
                   "must name a package in the lock, and each listed " +
                   "dependency must be one the key's own pubspec declares; " +
-                  "anything else fails evaluation or the spoke fetch. A key " +
+                  "anything else fails evaluation. A key " +
                   "naming a Flutter SDK package (`flutter`, `flutter_test`, " +
                   "...) fails evaluation, though a listed dependency may " +
                   "name one. Empty " +

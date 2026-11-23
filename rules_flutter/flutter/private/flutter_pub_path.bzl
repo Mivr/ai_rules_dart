@@ -1,8 +1,14 @@
 """Workspace-relative resolution for `relative: true` pub path dependencies.
 
 Lives apart from `extensions.bzl` so the extension file stays under the
-quality floor's per-file size cap; the extension `load()`s both helpers.
+quality floor's per-file size cap. A path package has no server to plan it
+from: `collect_path_deps` reads every path package's own pubspec at
+evaluation, confined to the workspace, for the dependency names planning
+needs.
 """
+
+load("@rules_dart//dart/pub:yaml.bzl", "pubspec_deps", "yaml_to_json")
+load("//flutter/private:flutter_pub_mirror.bzl", "detect_case_insensitive_host", "path_spoke_resolves_outside")
 
 visibility(["//flutter/..."])
 
@@ -145,3 +151,164 @@ def workspace_relative_lock_path(hub_name, package_name, lock_label, entry_path)
             pkg = package_name,
         ))
     return "/".join(out)
+
+def normalize_realpath(raw):
+    """Normalizes a realpath string to forward slashes without a trailing slash.
+
+    Windows drive roots such as `D:/` or `D:\\` normalize to `D:` so joining
+    `"/"` in confinement checks produces `D:/...` rather than `D://...`.
+
+    Args:
+        raw: A path object or path string.
+
+    Returns:
+        The normalized forward-slash path string.
+    """
+    norm = str(raw).replace("\\", "/")
+    if len(norm) > 1 and norm.endswith("/"):
+        norm = norm.rstrip("/")
+    return norm
+
+def _is_case_insensitive_workspace(ws_root, ws_realpath, segments, os_name):
+    """Returns True when path confinement checks should fold case."""
+    if "win" in os_name.lower():
+        return True
+    if len(ws_realpath) >= 2 and ws_realpath[1] == ":":
+        drive = ws_realpath[0]
+        if ("A" <= drive and drive <= "Z") or ("a" <= drive and drive <= "z"):
+            return True
+    if hasattr(ws_root, "readdir"):
+        return detect_case_insensitive_host(struct(workspace_root = ws_root), segments)
+    return False
+
+def _prefix_escape_error(ws_root, ws_realpath, hub_name, name, segments, case_insensitive):
+    """Returns a confinement error if any existing prefix of `segments` resolves outside `ws_realpath`."""
+    prefix = []
+    for seg in segments:
+        prefix.append(seg)
+        node = ws_root.get_child(*prefix)
+        if not node.exists:
+            break
+        node_real = normalize_realpath(node.realpath)
+        if path_spoke_resolves_outside(ws_realpath, node_real, case_insensitive):
+            return 'flutter.pub hub "%s": path dependency "%s" resolves outside workspace (%s)' % (
+                hub_name,
+                name,
+                str(node.realpath),
+            )
+    return None
+
+def resolve_path_pubspec(ws_root, ws_realpath, hub_name, name, rel_path, os_name = ""):
+    """Validates workspace confinement for `<rel_path>/pubspec.yaml` without failing.
+
+    Accepts forward-slash or backslash relative paths while refusing POSIX,
+    Windows drive-letter, and UNC absolute paths, `.`/`..` segments, missing or
+    directory `pubspec.yaml` entries, and symlinks resolving outside the
+    workspace root. Returns the `pubspec_file` `path` directly so callers pass
+    it to `yaml_to_json` without constructing a Bazel package `Label`
+    (which fails on case-insensitive hosts when a directory such as `build/`
+    collides in name with `BUILD`).
+
+    Args:
+        ws_root: The workspace root `path` object.
+        ws_realpath: Normalized realpath string of `ws_root`.
+        hub_name: The `flutter.pub` hub name.
+        name: The pub package name.
+        rel_path: The lock's workspace-relative path string.
+        os_name: Host OS name from `module_ctx.os.name`, if available.
+
+    Returns:
+        `struct(segments, pubspec_file, error)` where `error` is `None` on
+        success or a human-readable refusal message.
+    """
+    if is_absolute_lock_path(rel_path) or rel_path in ("", "."):
+        err = 'flutter.pub hub "%s": path dependency "%s" has invalid path %r' % (
+            hub_name,
+            name,
+            rel_path,
+        )
+        return struct(segments = [], pubspec_file = None, error = err)
+    segments = rel_path.replace("\\", "/").split("/")
+    if ".." in segments or "." in segments or "" in segments:
+        err = 'flutter.pub hub "%s": path dependency "%s" escapes workspace (%r)' % (
+            hub_name,
+            name,
+            rel_path,
+        )
+        return struct(segments = [], pubspec_file = None, error = err)
+    norm_ws = normalize_realpath(ws_realpath)
+    case_insensitive = _is_case_insensitive_workspace(ws_root, norm_ws, segments, os_name)
+    prefix_err = _prefix_escape_error(ws_root, norm_ws, hub_name, name, segments, case_insensitive)
+    if prefix_err:
+        return struct(segments = [], pubspec_file = None, error = prefix_err)
+    pkg_dir = ws_root.get_child(*segments)
+    pubspec_file = pkg_dir.get_child("pubspec.yaml")
+    if not pubspec_file.exists or (hasattr(pubspec_file, "is_dir") and pubspec_file.is_dir):
+        err = 'flutter.pub hub "%s": path dependency "%s" has no readable pubspec.yaml' % (
+            hub_name,
+            name,
+        )
+        return struct(segments = [], pubspec_file = None, error = err)
+    pubspec_real = normalize_realpath(pubspec_file.realpath)
+    if path_spoke_resolves_outside(norm_ws, pubspec_real, case_insensitive):
+        err = 'flutter.pub hub "%s": path dependency "%s" pubspec.yaml resolves outside workspace (%s)' % (
+            hub_name,
+            name,
+            str(pubspec_file.realpath),
+        )
+        return struct(segments = [], pubspec_file = None, error = err)
+    return struct(segments = segments, pubspec_file = pubspec_file, error = None)
+
+def _resolve_workspace_root(module_ctx, lock_label):
+    """Resolves the root module's workspace directory `path` from `lock_label`."""
+    if lock_label == None:
+        return module_ctx.path(Label("@@//:MODULE.bazel")).dirname
+    root = module_ctx.path(lock_label).dirname
+    lock_dir = lock_label.name.rpartition("/")[0]
+    if lock_dir:
+        for _ in lock_dir.split("/"):
+            root = root.dirname
+    if lock_label.package:
+        for _ in lock_label.package.split("/"):
+            root = root.dirname
+    return root
+
+def collect_path_deps(module_ctx, hub_name, path_pkgs, lock_label = None):
+    """Collects pubspec dependencies for workspace path packages.
+
+    Args:
+        module_ctx: The module extension context.
+        hub_name: The name of the pub hub.
+        path_pkgs: Dict mapping package name to path package info struct.
+        lock_label: Optional root-module `pubspec.lock` label anchoring the workspace root.
+
+    Returns:
+        Dict mapping package name to its sorted dependency list.
+    """
+    if not path_pkgs:
+        return {}
+    ws_root = _resolve_workspace_root(module_ctx, lock_label)
+    ws_realpath = normalize_realpath(ws_root.realpath)
+    os_name = module_ctx.os.name if hasattr(module_ctx, "os") else ""
+    names = []
+    pubspec_files = []
+
+    for name in sorted(path_pkgs.keys()):
+        info = path_pkgs[name]
+        resolved = resolve_path_pubspec(
+            ws_root,
+            ws_realpath,
+            hub_name,
+            name,
+            info.path,
+            os_name = os_name,
+        )
+        if resolved.error:
+            fail(resolved.error)
+        module_ctx.watch(resolved.pubspec_file)
+        names.append(name)
+        pubspec_files.append(resolved.pubspec_file)
+
+    # Every path package's pubspec in one `yaml2json` run.
+    data = yaml_to_json(module_ctx, pubspec_files, [path_pkgs[name].path + "/pubspec.yaml" for name in names])
+    return {name: sorted(pubspec_deps(pubspec)) for name, pubspec in zip(names, data)}

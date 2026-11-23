@@ -4,7 +4,10 @@ Every `flutter.pub` hosted spoke scans its archive with rules_dart's
 header scanner before extracting it, and walks the extracted tree before
 reading it. The archives under `fixtures/` are served over `file://` (the
 locks' `FIXTURES_ROOT` placeholder is rewritten to the absolute path by the
-CI step). Clean packages share one hub; each hostile package gets its own
+CI step). `fixtures/api/packages/<name>` is each package's listing, what
+pub.dev serves at that path: planning reads the dependency names there, so
+no hostile archive is opened before its own spoke fetches it. Clean
+packages share one hub; each hostile package gets its own
 hub so its refusal is asserted independently. `ok_app` must stay green —
 including `ok_inlink`, whose in-package relative symlink scans clean and
 is materialised as a regular file. Each hostile app must fail its fetch

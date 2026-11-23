@@ -8,9 +8,9 @@ reaches the Android repository) and only for a plugin that declares Android.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load(
     "//flutter/private:flutter_pub_lock_hub.bzl",
-    "hub_scc_dep_targets",
-    "make_flutter_pub_hub_build_content",
+    "hub_scc_targets",
     "make_hub_scc_android_edge_bzl_content",
+    "make_hub_scc_build_content",
     "overlay_with_android_edge",
 )
 load(
@@ -123,24 +123,24 @@ overlay_with_its_own_edge_is_untouched_test = unittest.make(_overlay_with_its_ow
 def _scc_hub_edge_has_android_only_select_test_impl(ctx):
     """SCC hub targets carry an Android-only `select()` edge without loading `@rules_android`."""
     env = unittest.begin(ctx)
-    asserts.equals(env, {}, hub_scc_dep_targets("deps", {}))
-    scc_targets = {
-        "cycle_a": "@deps__scc__cycle_a__test//:cycle_a",
-        "test": "@deps__scc__cycle_a__test//:test",
+    asserts.equals(env, {}, hub_scc_targets({}))
+    merged_members = {
+        "cycle_a": "deps__scc__cycle_a__test",
+        "test": "deps__scc__cycle_a__test",
     }
     asserts.equals(
         env,
-        {"cycle_a": "@deps//:cycle_a", "test": "@deps//:test"},
-        hub_scc_dep_targets("deps", scc_targets),
+        {"cycle_a": "//scc:cycle_a", "test": "@deps__scc__cycle_a__test//:test"},
+        hub_scc_targets(merged_members),
     )
     bzl_content = make_hub_scc_android_edge_bzl_content()
     asserts.false(env, "rules_android" in bzl_content, bzl_content)
     asserts.false(env, "rules_kotlin" in bzl_content, bzl_content)
     asserts.true(env, "flutter_pub_scc_android_edge = rule(" in bzl_content, bzl_content)
-    hub_build = make_flutter_pub_hub_build_content(["cycle_a", "test"], "deps", scc_targets = scc_targets)
-    asserts.true(env, '"@deps__scc__cycle_a__test//cycle_a/android:lib"' in hub_build, hub_build)
-    asserts.false(env, "//test/android:lib" in hub_build, hub_build)
-    asserts.true(env, 'name = "test",\n    actual = "@deps__scc__cycle_a__test//:test",' in hub_build, hub_build)
+    scc_build = make_hub_scc_build_content(merged_members)
+    asserts.true(env, '"@deps__scc__cycle_a__test//cycle_a/android:lib"' in scc_build, scc_build)
+    asserts.false(env, "//test/android:lib" in scc_build, scc_build)
+    asserts.false(env, 'name = "test"' in scc_build, scc_build)
     return unittest.end(env)
 
 scc_hub_edge_has_android_only_select_test = unittest.make(_scc_hub_edge_has_android_only_select_test_impl)

@@ -12,6 +12,8 @@ Covers:
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("@rules_dart//dart/pub:pub_plan.bzl", "plan_scope_sccs")
+load("@rules_dart//dart/pub:pub_scc.bzl", "spoke_planned_deps_error")
 load(
     "//flutter/private:flutter_pub_apple.bzl",
     "apple_swiftpm_pins",
@@ -22,32 +24,21 @@ load(
     "detect_apple_cocoapods_deps",
     "precompute_hub_apple_pods",
 )
-load(
-    "//flutter/private:flutter_pub_cycle_breaks.bzl",
-    "spoke_dep_labels",
-)
+load("//flutter/private:flutter_pub_cycle_breaks.bzl", "apply_cycle_breaks")
 load(
     "//flutter/private:flutter_pub_lock_hub.bzl",
+    "hub_pub_packages_json",
+    "hub_scc_targets",
     "make_flutter_pub_hub_android_build_content",
-    "make_flutter_pub_hub_build_content",
+    "make_hub_scc_build_content",
 )
+load("//flutter/private:flutter_pub_package.bzl", "spoke_dep_labels")
 load(
     "//flutter/private:flutter_pub_path.bzl",
-    "workspace_relative_lock_path",
-)
-load(
-    "//flutter/private:flutter_pub_scc.bzl",
     "collect_path_deps",
-    "hosted_fact_key",
-    "lookup_fact_deps",
     "normalize_realpath",
-    "parser_texts_digest",
-    "plan_flutter_pub_sccs",
     "resolve_path_pubspec",
-    "scc_member_deps_error",
-    "scc_members_connectivity_error",
-    "scc_planned_deps_error",
-    "spoke_planned_deps_error",
+    "workspace_relative_lock_path",
 )
 load(
     "//flutter/private:flutter_pub_scc_build.bzl",
@@ -69,71 +60,60 @@ load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 visibility(["//flutter/tests/..."])
 
 def _hub_build_content_empty_scc_test_impl(ctx):
-    """Hub BUILD and android/BUILD are byte-identical when scc_targets is empty."""
+    """With no cycle the hub gets no `scc` package and android/BUILD is unchanged."""
     env = unittest.begin(ctx)
 
-    base_root = make_flutter_pub_hub_build_content(["bar", "foo"], "deps")
-    explicit_root = make_flutter_pub_hub_build_content(["bar", "foo"], "deps", scc_targets = {})
-    asserts.equals(env, base_root, explicit_root)
-
+    asserts.equals(env, {}, hub_scc_targets({}))
+    asserts.equals(env, "", make_hub_scc_build_content({}))
     base_android = make_flutter_pub_hub_android_build_content(["bar", "foo"], "deps")
     explicit_android = make_flutter_pub_hub_android_build_content(["bar", "foo"], "deps", scc_targets = {})
     asserts.equals(env, base_android, explicit_android)
+    asserts.equals(
+        env,
+        {"packages": ["bar", "foo"], "scc_targets": {}},
+        json.decode(hub_pub_packages_json(["foo", "bar"], {})),
+    )
 
     return unittest.end(env)
 
 def _hub_build_content_with_sccs_test_impl(ctx):
-    """Hub BUILD and android/BUILD route cycle members to the merged SCC spoke."""
+    """The hub routes cycle members to the merged repository, with Android edges."""
     env = unittest.begin(ctx)
 
-    scc_targets = {
-        "cycle_a": "@deps__scc__cycle_a__cycle_b//:cycle_a",
-        "cycle_b": "@deps__scc__cycle_a__cycle_b//:cycle_b",
+    merged_members = {
+        "cycle_a": "deps__scc__cycle_a__cycle_b",
+        "cycle_b": "deps__scc__cycle_a__cycle_b",
     }
+    asserts.equals(
+        env,
+        {"cycle_a": "//scc:cycle_a", "cycle_b": "//scc:cycle_b"},
+        hub_scc_targets(merged_members),
+    )
+    asserts.equals(
+        env,
+        {"test": "@deps__scc__test__x//:test", "x": "//scc:x"},
+        hub_scc_targets({"test": "deps__scc__test__x", "x": "deps__scc__test__x"}),
+    )
+
+    scc_content = make_hub_scc_build_content(merged_members)
+    for needle in [
+        'load(":scc_android_edge.bzl", "flutter_pub_scc_android_edge")',
+        '"//conditions:default": "@deps__scc__cycle_a__cycle_b//:cycle_a"',
+        '"@platforms//os:android": ":_scc_android_cycle_a"',
+        'deps = ["@deps__scc__cycle_a__cycle_b//:cycle_a"]',
+        '"//conditions:default": "@deps__scc__cycle_a__cycle_b//:cycle_b"',
+        '"@platforms//os:android": ":_scc_android_cycle_b"',
+        '"@deps__scc__cycle_a__cycle_b//cycle_a/android:lib"',
+    ]:
+        asserts.true(env, needle in scc_content, needle + "\n" + scc_content)
+
+    scc_targets = {m: "@%s//:%s" % (merged_members[m], m) for m in merged_members}
+    asserts.equals(
+        env,
+        scc_targets,
+        json.decode(hub_pub_packages_json(["cycle_a", "cycle_b", "singleton_pkg"], merged_members))["scc_targets"],
+    )
     packages = ["cycle_a", "cycle_b", "singleton_pkg"]
-
-    root_content = make_flutter_pub_hub_build_content(packages, "deps", scc_targets = scc_targets)
-    asserts.true(
-        env,
-        'load(":scc_android_edge.bzl", "flutter_pub_scc_android_edge")' in root_content,
-        root_content,
-    )
-    asserts.true(
-        env,
-        '"//conditions:default": "@deps__scc__cycle_a__cycle_b//:cycle_a"' in root_content,
-        root_content,
-    )
-    asserts.true(
-        env,
-        '"@platforms//os:android": ":_scc_android_cycle_a"' in root_content,
-        root_content,
-    )
-    asserts.true(
-        env,
-        'deps = ["@deps__scc__cycle_a__cycle_b//:cycle_a"]' in root_content,
-        root_content,
-    )
-    asserts.true(
-        env,
-        '"//conditions:default": "@deps__scc__cycle_a__cycle_b//:cycle_b"' in root_content,
-        root_content,
-    )
-    asserts.true(
-        env,
-        '"@platforms//os:android": ":_scc_android_cycle_b"' in root_content,
-        root_content,
-    )
-    asserts.true(
-        env,
-        '"@deps__scc__cycle_a__cycle_b//cycle_a/android:lib"' in root_content,
-        root_content,
-    )
-    asserts.true(
-        env,
-        'actual = "@deps__singleton_pkg//:singleton_pkg"' in root_content,
-        root_content,
-    )
-
     android_content = make_flutter_pub_hub_android_build_content(packages, "deps", scc_targets = scc_targets)
     asserts.true(
         env,
@@ -154,36 +134,19 @@ def _hub_build_content_with_sccs_test_impl(ctx):
     return unittest.end(env)
 
 def _spoke_dep_labels_routing_test_impl(ctx):
-    """Cross-spoke dep labels, SwiftPM sibling plugins, and CocoaPods siblings resolve via scc_targets."""
+    """Spoke deps go through the hub; SwiftPM and CocoaPods sibling plugins resolve via scc_targets."""
     env = unittest.begin(ctx)
 
-    mock_ctx = struct(attr = struct(hub_name = "hub", scc_targets = {}))
     scc_targets = {
         "cycle_a": "@hub__scc__cycle_a__cycle_b//:cycle_a",
         "cycle_b": "@hub__scc__cycle_a__cycle_b//:cycle_b",
     }
-    routed = spoke_dep_labels(
-        mock_ctx,
-        ["cycle_a", "other"],
-        struct(uses_material_design = True),
-        scc_targets = scc_targets,
-    )
     asserts.equals(
         env,
-        [
-            "@hub__scc__cycle_a__cycle_b//:cycle_a",
-            "@hub__other//:other",
-            "@rules_flutter//flutter:material_icons",
-        ],
-        routed,
+        ["@hub//:cycle_a", "@hub//:other", "@rules_flutter//flutter:material_icons"],
+        spoke_dep_labels(["@hub//:cycle_a", "@hub//:other"], struct(uses_material_design = True)),
     )
-
-    unrouted = spoke_dep_labels(mock_ctx, ["cycle_a", "other"], None, scc_targets = {})
-    asserts.equals(env, ["@hub__cycle_a//:cycle_a", "@hub__other//:other"], unrouted)
-
-    mock_with_attr = struct(attr = struct(hub_name = "hub", scc_targets = scc_targets))
-    attr_routed = spoke_dep_labels(mock_with_attr, ["cycle_a", "other"], None)
-    asserts.equals(env, ["@hub__scc__cycle_a__cycle_b//:cycle_a", "@hub__other//:other"], attr_routed)
+    asserts.equals(env, ["@hub//:cycle_a"], spoke_dep_labels(["@hub//:cycle_a"], None))
 
     pins = apple_swiftpm_pins(
         '{"pins": [], "version": 2}',
@@ -259,13 +222,14 @@ def _check_cocoapods_scc_routing(env, scc_targets):
     files = {
         "//:Podfile.lock": podfile_text,
         "//:ios_native_deps.json": hub_json,
+        "//:pub_packages.json": json.encode({"packages": ["cycle_a", "cycle_b"], "scc_targets": scc_targets}),
     }
     pod_ctx = struct(
         attr = struct(
             hub_name = "hub",
             podfile_lock = "//:Podfile.lock",
             ios_native_deps = "//:ios_native_deps.json",
-            scc_targets = scc_targets,
+            hub_packages = "//:pub_packages.json",
         ),
         read = lambda p: files[str(p)],
         path = lambda p: str(p) if str(p) == "//:Podfile.lock" else struct(exists = True),
@@ -281,35 +245,34 @@ def _check_cocoapods_scc_routing(env, scc_targets):
     )
     asserts.equals(env, ["@hub__scc__cycle_a__cycle_b//:cycle_b_apple_ios"], pod_deps.ios)
 
+def _plan_sccs(deps, cycle_breaks):
+    """Plans one hub's cycles the way `flutter.pub` does: breaks first, then rules_dart's planner."""
+    kept = {}
+    for name in sorted(deps.keys()):
+        applied = apply_cycle_breaks(name, deps[name], cycle_breaks.get(name, []))
+        if applied.error:
+            fail(applied.error)
+        kept[name] = applied.dependencies
+    return plan_scope_sccs(sorted(deps.keys()), {}, ["hub"], "hub", kept)
+
 def _cycle_breaks_before_scc_2cycle_test_impl(ctx):
     """Broken 2-cycle yields singletons; unbroken yields a merged SCC spoke."""
     env = unittest.begin(ctx)
 
-    lazy_single = plan_flutter_pub_sccs(["solo"], "hub", {}, {})
-    asserts.equals(env, [], lazy_single.sccs)
-    asserts.equals(env, ["solo"], lazy_single.singletons)
-    asserts.equals(env, {}, lazy_single.planned_deps)
+    asserts.equals(env, {}, _plan_sccs({"solo": []}, {}).merged)
 
     deps = {"a": ["b"], "b": ["a"]}
 
-    unbroken = plan_flutter_pub_sccs(["a", "b"], "hub", deps, {})
-    asserts.equals(env, [["a", "b"]], unbroken.sccs)
-    asserts.equals(env, [], unbroken.singletons)
-    asserts.equals(env, "@hub__scc__a__b//:a", unbroken.scc_targets.get("a"))
-    asserts.equals(env, "@hub__scc__a__b//:b", unbroken.scc_targets.get("b"))
+    unbroken = _plan_sccs(deps, {})
+    asserts.equals(env, {"hub__scc__a__b": ["a", "b"]}, unbroken.merged)
+    asserts.equals(env, {"a": "hub__scc__a__b", "b": "hub__scc__a__b"}, unbroken.members)
 
-    broken = plan_flutter_pub_sccs(["a", "b"], "hub", deps, {"a": ["b"]})
-    asserts.equals(env, [], broken.sccs)
-    asserts.equals(env, ["a", "b"], sorted(broken.singletons))
-    asserts.equals(env, {}, broken.scc_targets)
+    broken = _plan_sccs(deps, {"a": ["b"]})
+    asserts.equals(env, {}, broken.merged)
+    asserts.equals(env, {}, broken.members)
 
-    key = hosted_fact_key("pkg", "1.0.0", "ab" * 32, parser_texts_digest(["a"]))
-    asserts.true(env, "pkg" in key)
-    asserts.equals(env, None, lookup_fact_deps({}, key))
+    asserts.true(env, "does not declare" in apply_cycle_breaks("a", ["b"], ["c"]).error)
     asserts.equals(env, None, spoke_planned_deps_error("flutter_pub_package", "r", "a", ["b"], ["b"]))
-    asserts.equals(env, None, scc_planned_deps_error("r", "a", ["b"]))
-    asserts.equals(env, None, scc_member_deps_error("r", "a", ["b"], ["b"]))
-    asserts.equals(env, None, scc_members_connectivity_error("r", {"a": ["b"], "b": ["a"]}))
     asserts.true(env, flutter_pub_scc_member_target != None)
 
     return unittest.end(env)
@@ -320,24 +283,16 @@ def _cycle_breaks_before_scc_3cycle_test_impl(ctx):
 
     deps_3 = {"a": ["b"], "b": ["c"], "c": ["a"]}
 
-    unbroken = plan_flutter_pub_sccs(["a", "b", "c"], "hub", deps_3, {})
-    asserts.equals(env, [["a", "b", "c"]], unbroken.sccs)
-    asserts.equals(env, "@hub__scc__a__b__c//:a", unbroken.scc_targets.get("a"))
-    asserts.equals(env, "@hub__scc__a__b__c//:b", unbroken.scc_targets.get("b"))
-    asserts.equals(env, "@hub__scc__a__b__c//:c", unbroken.scc_targets.get("c"))
+    unbroken = _plan_sccs(deps_3, {})
+    asserts.equals(env, {"hub__scc__a__b__c": ["a", "b", "c"]}, unbroken.merged)
 
-    broken_one = plan_flutter_pub_sccs(["a", "b", "c"], "hub", deps_3, {"a": ["b"]})
-    asserts.equals(env, [], broken_one.sccs)
-    asserts.equals(env, ["a", "b", "c"], sorted(broken_one.singletons))
-    asserts.equals(env, {}, broken_one.scc_targets)
+    broken_one = _plan_sccs(deps_3, {"a": ["b"]})
+    asserts.equals(env, {}, broken_one.merged)
 
     deps_sub = {"a": ["b"], "b": ["a", "c"], "c": ["a"]}
-    broken_sub = plan_flutter_pub_sccs(["a", "b", "c"], "hub", deps_sub, {"c": ["a"]})
-    asserts.equals(env, [["a", "b"]], broken_sub.sccs)
-    asserts.equals(env, ["c"], sorted(broken_sub.singletons))
-    asserts.equals(env, "@hub__scc__a__b//:a", broken_sub.scc_targets.get("a"))
-    asserts.equals(env, "@hub__scc__a__b//:b", broken_sub.scc_targets.get("b"))
-    asserts.true(env, "c" not in broken_sub.scc_targets)
+    broken_sub = _plan_sccs(deps_sub, {"c": ["a"]})
+    asserts.equals(env, {"hub__scc__a__b": ["a", "b"]}, broken_sub.merged)
+    asserts.true(env, "c" not in broken_sub.members)
 
     return unittest.end(env)
 

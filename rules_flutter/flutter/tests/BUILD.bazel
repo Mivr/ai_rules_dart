@@ -50,11 +50,9 @@ load(":flutter_pub_apple_deps_test.bzl", "flutter_pub_apple_deps_test_suite")
 load(":flutter_pub_apple_pods_test.bzl", "flutter_pub_apple_pods_test_suite")
 load(":flutter_pub_apple_test.bzl", "flutter_pub_apple_test_suite")
 load(":flutter_pub_cycle_breaks_test.bzl", "flutter_pub_cycle_breaks_test_suite")
-load(":flutter_pub_internal_hubs_test.bzl", "flutter_pub_internal_hubs_test_suite")
 load(":flutter_pub_overlays_test.bzl", "flutter_pub_overlays_test_suite")
 load(":flutter_pub_package_test.bzl", "flutter_pub_package_test_suite")
 load(":flutter_pub_plugin_defines_test.bzl", "flutter_pub_plugin_defines_test_suite")
-load(":flutter_pub_scan_test.bzl", "flutter_pub_scan_test_suite")
 load(":flutter_pub_scc_test.bzl", "flutter_pub_scc_test_suite")
 load(":flutter_pubspec_test.bzl", "flutter_pubspec_test_suite")
 load(":flutter_sdk_package_test.bzl", "flutter_sdk_package_test_suite")
@@ -302,8 +300,6 @@ flutter_pub_plugin_defines_test_suite(name = "flutter_pub_plugin_defines_test")
 
 flutter_pub_cycle_breaks_test_suite(name = "flutter_pub_cycle_breaks_test")
 
-flutter_pub_scan_test_suite(name = "flutter_pub_scan_test")
-
 flutter_pub_overlays_test_suite(name = "flutter_pub_overlays_test")
 
 flutter_pubspec_test_suite(name = "flutter_pubspec_test")
@@ -483,8 +479,6 @@ aot_flags_test_suite(name = "aot_flags_test")
 analyze_size_test_suite(name = "analyze_size_test")
 
 flutter_pub_scc_test_suite(name = "flutter_pub_scc_test")
-
-flutter_pub_internal_hubs_test_suite(name = "flutter_pub_internal_hubs_test")
 
 flavor_test_suite(name = "flavor_test")
 

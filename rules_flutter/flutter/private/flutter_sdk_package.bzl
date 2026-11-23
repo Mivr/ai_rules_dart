@@ -24,7 +24,7 @@ load("//flutter/private:repo_metadata.bzl", "download_mode_metadata")
 
 visibility(["//flutter/..."])
 
-def make_flutter_sdk_build_content(name, deps, language_version):
+def make_flutter_sdk_build_content(name, deps, language_version, hub_name):
     """Generate BUILD content for a Flutter SDK spoke.
 
     The "flutter" package uses flutter_library (not dart_library) so that
@@ -40,25 +40,34 @@ def make_flutter_sdk_build_content(name, deps, language_version):
     `shaders` routes it through the impellerc compile into flutter_assets,
     `resources` keeps it a member of the staged package tree.
 
+    The dependencies are the package's own pubspec names, kept by the hub's
+    `hub_deps` to those the lock pins: an SDK package is read only when its
+    spoke is fetched, so its names cannot be planned, and filtering them at
+    load time keeps the spoke's attributes free of the lock's package list
+    (adding a package to the lock does not refetch an SDK package).
+
     Args:
         name: Package name (also the target name).
-        deps: Fully-qualified Bazel label strings for sibling spokes.
+        deps: The package's pubspec dependency names.
         language_version: Dart language version string (e.g. `"3.11"`), or
             `""` when no pubspec was read. An empty string reaches the
             generated target as `language_version = ""`, which is what makes
             the `languageVersion` key absent from `package_config.json`
             entries downstream.
+        hub_name: The hub whose `packages.bzl` filters the dependencies.
 
     Returns:
         BUILD.bazel content as a string.
     """
     deps_block = ""
+    hub_load = ""
     if deps:
         dep_lines = ['        "{}",'.format(dep) for dep in deps]
-        deps_block = "    deps = [\n{}\n    ],\n".format("\n".join(dep_lines))
+        deps_block = "    deps = hub_deps([\n{}\n    ]),\n".format("\n".join(dep_lines))
+        hub_load = 'load("@{hub}//:packages.bzl", "hub_deps")\n'.format(hub = hub_name)
 
     if name == "flutter":
-        return """\
+        return hub_load + """\
 load("@rules_flutter//flutter:defs.bzl", "flutter_library")
 
 flutter_library(
@@ -80,7 +89,7 @@ flutter_library(
             language_version = language_version,
         )
 
-    return """\
+    return hub_load + """\
 load("@rules_dart//dart:defs.bzl", "dart_library")
 
 dart_library(
@@ -165,10 +174,10 @@ def _flutter_sdk_package_impl(repository_ctx):
         # the repo contents cache across output bases.
         copy_sdk_package_from_source(repository_ctx, package_name)
 
-    # Discover deps and the language version from the spoke pubspec.yaml,
-    # filtering deps to packages available in the lock file (same pattern as
-    # pub_lock_package). Both modes always stage the pubspec (the local fetch
-    # links it, the download extracts it), so it is always read here.
+    # Discover deps and the language version from the spoke pubspec.yaml.
+    # The hub's `packages.bzl` keeps the names the lock pins when the BUILD
+    # file loads. Both modes always stage the pubspec (the local fetch links
+    # it, the download extracts it), so it is always read here.
     bazel_deps = []
     language_version = ""
     pubspec_path = repository_ctx.path("pubspec.yaml")
@@ -178,27 +187,16 @@ def _flutter_sdk_package_impl(repository_ctx):
         sdk_err = pubspec_environment_error(pubspec, pubspec_label)
         if sdk_err:
             fail(sdk_err)
-        all_deps = pubspec_deps(pubspec)
-        available = {p: True for p in repository_ctx.attr.lock_packages}
-        bazel_deps = sorted([d for d in all_deps if d in available])
+        bazel_deps = sorted(pubspec_deps(pubspec))
         language_version = derive_language_version(
             pubspec_sdk_constraint(pubspec),
         )
 
-    # Build dep labels pointing to sibling spoke repos (or merged SCC targets).
-    scc_targets = repository_ctx.attr.scc_targets if hasattr(repository_ctx.attr, "scc_targets") else {}
-    dep_labels = [
-        scc_targets[dep] if dep in scc_targets else "@{hub}__{dep}//:{dep}".format(
-            hub = repository_ctx.attr.hub_name,
-            dep = dep,
-        )
-        for dep in bazel_deps
-    ]
-
     repository_ctx.file("BUILD.bazel", make_flutter_sdk_build_content(
         name = package_name,
-        deps = dep_labels,
+        deps = bazel_deps,
         language_version = language_version,
+        hub_name = repository_ctx.attr.hub_name,
     ))
 
     # Emit an empty `android/BUILD.bazel` so the hub's aggregator
@@ -245,16 +243,8 @@ flutter_sdk_package = repository_rule(
             default = "",
         ),
         "hub_name": attr.string(
-            doc = "Name of the hub repo (for constructing cross-spoke dep labels).",
+            doc = "Name of the hub repo, whose `packages.bzl` keeps the dependencies the lock pins.",
             mandatory = True,
-        ),
-        "lock_packages": attr.string_list(
-            doc = "All package names in the lock file (for dep filtering).",
-            default = [],
-        ),
-        "scc_targets": attr.string_dict(
-            doc = "Package name to merged repository target, for dependencies on cycle members.",
-            default = {},
         ),
     },
 )
@@ -332,7 +322,7 @@ def declare_sdk_spokes(plan, packages, sdk, rule = flutter_sdk_package):
     into the local tree.
 
     Args:
-        plan: The hub plan, with `hub_name`, `all_package_names`, `scc_targets`.
+        plan: The hub, with `hub_name`.
         packages: The SDK package names that get a spoke.
         sdk: Struct with `version`, `local_path` and `source_label`
             (empty for a local SDK).
@@ -346,6 +336,4 @@ def declare_sdk_spokes(plan, packages, sdk, rule = flutter_sdk_package):
             local_path = sdk.local_path,
             sdk_source = sdk.source_label or None,
             hub_name = plan.hub_name,
-            lock_packages = plan.all_package_names,
-            scc_targets = plan.scc_targets,
         )

@@ -1,0 +1,650 @@
+{
+  "schema": "pub.plan.v1",
+  "plans": {
+    "pub.plan.v1/hosted/_fe_analyzer_shared/105.0.0/9a3386eea899815698dd55995277cf7cb8572ee52b399a6edfb7ae2b50e5fc19/https://pub.dev": {
+      "deps": [
+        "meta"
+      ],
+      "sdk": "^3.11.0",
+      "archive_url": "https://pub.dev/api/archives/_fe_analyzer_shared-105.0.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/analyzer/14.1.0/62993bed6eadbe9596c5c20d5c167e7bc563c5fe266657a04ddeb93bdb84f4c9/https://pub.dev": {
+      "deps": [
+        "_fe_analyzer_shared",
+        "collection",
+        "convert",
+        "crypto",
+        "glob",
+        "meta",
+        "package_config",
+        "path",
+        "pub_semver",
+        "source_span",
+        "watcher",
+        "yaml"
+      ],
+      "sdk": "^3.11.0",
+      "archive_url": "https://pub.dev/api/archives/analyzer-14.1.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/args/2.7.0/d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.3.0",
+      "archive_url": "https://pub.dev/api/archives/args-2.7.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/async/2.13.1/e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37/https://pub.dev": {
+      "deps": [
+        "collection",
+        "meta"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/async-2.13.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/boolean_selector/2.1.2/8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea/https://pub.dev": {
+      "deps": [
+        "source_span",
+        "string_scanner"
+      ],
+      "sdk": "^3.1.0",
+      "archive_url": "https://pub.dev/api/archives/boolean_selector-2.1.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/browser_launcher/1.1.3/ca2557663d3033845f2ef2b60f94fc249528324fd1affddccb7c63ac0ccd6c67/https://pub.dev": {
+      "deps": [
+        "logging",
+        "path",
+        "webkit_inspection_protocol"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/browser_launcher-1.1.3.tar.gz"
+    },
+    "pub.plan.v1/hosted/cli_config/0.2.0/ac20a183a07002b700f0c25e61b7ee46b23c309d76ab7b7640a028f18e4d99ec/https://pub.dev": {
+      "deps": [
+        "args",
+        "yaml"
+      ],
+      "sdk": "^3.0.0",
+      "archive_url": "https://pub.dev/api/archives/cli_config-0.2.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/clock/1.1.2/fddb70d9b5277016c77a80201021d40a2247104d9f4aa7bab7157b7e3f05b84b/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/clock-1.1.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/collection/1.19.1/2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/convert/3.1.2/b30acd5944035672bc15c6b7a8b47d773e41e2f17de064350988c5d02adb1c68/https://pub.dev": {
+      "deps": [
+        "typed_data"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/convert-3.1.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/coverage/1.15.1/956a3de0725ca232ad353565a8290d3357592bf4250f6f298a185e2d949c5d3d/https://pub.dev": {
+      "deps": [
+        "args",
+        "cli_config",
+        "glob",
+        "logging",
+        "meta",
+        "package_config",
+        "path",
+        "source_maps",
+        "stack_trace",
+        "vm_service",
+        "yaml"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/coverage-1.15.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/crypto/3.0.7/c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf/https://pub.dev": {
+      "deps": [
+        "typed_data"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/crypto-3.0.7.tar.gz"
+    },
+    "pub.plan.v1/hosted/dap/1.4.0/42b0b083a09c59a118741769e218fc3738980ab591114f09d1026241d2b9c290/https://pub.dev": {
+      "deps": [],
+      "sdk": ">=2.19.0 <4.0.0",
+      "archive_url": "https://pub.dev/api/archives/dap-1.4.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/dart_service_protocol_shared/0.0.3/1737875c176d7e3d87bb3a359182828b542fe20a0b34198b8d31a81af5c7a76d/https://pub.dev": {
+      "deps": [
+        "meta"
+      ],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/dart_service_protocol_shared-0.0.3.tar.gz"
+    },
+    "pub.plan.v1/hosted/dds/5.4.0/f8e875dcd7b5e5073a7bfe54095144c70487f18e2f8e47fa51c09dd67eccfb0c/https://pub.dev": {
+      "deps": [
+        "args",
+        "async",
+        "browser_launcher",
+        "collection",
+        "dap",
+        "dds_service_extensions",
+        "devtools_shared",
+        "dtd",
+        "extension_discovery",
+        "http_multi_server",
+        "json_rpc_2",
+        "meta",
+        "mime",
+        "path",
+        "shelf",
+        "shelf_proxy",
+        "shelf_static",
+        "shelf_web_socket",
+        "sse",
+        "stream_channel",
+        "vm_service",
+        "web_socket_channel"
+      ],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/dds-5.4.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/dds_service_extensions/2.1.0/afe0fce921953ac0c5bb276bccd7e36fa5035d7769567d122523fdd09beb4d03/https://pub.dev": {
+      "deps": [
+        "dap",
+        "vm_service"
+      ],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/dds_service_extensions-2.1.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/devtools_shared/13.1.0/13df2c17d5f21dd7c92d08145386d45e1153364c04e531e994afb0ee7b67554b/https://pub.dev": {
+      "deps": [
+        "args",
+        "collection",
+        "dtd",
+        "extension_discovery",
+        "file",
+        "meta",
+        "path",
+        "shelf",
+        "sse",
+        "vm_service",
+        "web_socket_channel",
+        "webkit_inspection_protocol",
+        "yaml",
+        "yaml_edit"
+      ],
+      "sdk": "^3.11.0",
+      "archive_url": "https://pub.dev/api/archives/devtools_shared-13.1.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/dtd/4.0.0/09ddb228b3d1478a093556357692a4c203ff4f9d5f8cda05dfdca0ff3fb7c5d3/https://pub.dev": {
+      "deps": [
+        "dart_service_protocol_shared",
+        "json_rpc_2",
+        "stream_channel",
+        "unified_analytics",
+        "web_socket_channel"
+      ],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/dtd-4.0.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/dwds/27.1.1/d2fe0b3608330627871d7b0e070ffb4f356087a3e19fea64fa58f95a2c2871d6/https://pub.dev": {
+      "deps": [
+        "async",
+        "collection",
+        "crypto",
+        "dds",
+        "file",
+        "http",
+        "http_multi_server",
+        "logging",
+        "meta",
+        "package_config",
+        "path",
+        "pool",
+        "pub_semver",
+        "shelf",
+        "shelf_packages_handler",
+        "shelf_proxy",
+        "shelf_static",
+        "shelf_web_socket",
+        "source_maps",
+        "sse",
+        "stack_trace",
+        "stream_channel",
+        "vm_service",
+        "vm_service_interface",
+        "web",
+        "web_socket",
+        "web_socket_channel",
+        "webkit_inspection_protocol"
+      ],
+      "sdk": "^3.12.0-307.0.dev",
+      "archive_url": "https://pub.dev/api/archives/dwds-27.1.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/extension_discovery/2.1.0/de1fce715ab013cdfb00befc3bdf0914bea5e409c3a567b7f8f144bc061611a7/https://pub.dev": {
+      "deps": [
+        "yaml"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/extension_discovery-2.1.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/file/7.0.1/a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4/https://pub.dev": {
+      "deps": [
+        "meta",
+        "path"
+      ],
+      "sdk": "^3.0.0",
+      "archive_url": "https://pub.dev/api/archives/file-7.0.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/frontend_server_client/4.0.0/f64a0333a82f30b0cca061bc3d143813a486dc086b574bfb233b7c1372427694/https://pub.dev": {
+      "deps": [
+        "async",
+        "path"
+      ],
+      "sdk": "^3.0.0",
+      "archive_url": "https://pub.dev/api/archives/frontend_server_client-4.0.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/glob/2.1.3/c3f1ee72c96f8f78935e18aa8cecced9ab132419e8625dc187e1c2408efc20de/https://pub.dev": {
+      "deps": [
+        "async",
+        "collection",
+        "file",
+        "path",
+        "string_scanner"
+      ],
+      "sdk": "^3.3.0",
+      "archive_url": "https://pub.dev/api/archives/glob-2.1.3.tar.gz"
+    },
+    "pub.plan.v1/hosted/http/1.6.0/87721a4a50b19c7f1d49001e51409bddc46303966ce89a65af4f4e6004896412/https://pub.dev": {
+      "deps": [
+        "async",
+        "http_parser",
+        "meta",
+        "web"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/http-1.6.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/http_multi_server/3.2.2/aa6199f908078bb1c5efb8d8638d4ae191aac11b311132c3ef48ce352fb52ef8/https://pub.dev": {
+      "deps": [
+        "async"
+      ],
+      "sdk": "^3.2.0",
+      "archive_url": "https://pub.dev/api/archives/http_multi_server-3.2.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/http_parser/4.1.2/178d74305e7866013777bab2c3d8726205dc5a4dd935297175b19a23a2e66571/https://pub.dev": {
+      "deps": [
+        "collection",
+        "source_span",
+        "string_scanner",
+        "typed_data"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/http_parser-4.1.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/io/1.0.5/dfd5a80599cf0165756e3181807ed3e77daf6dd4137caaad72d0b7931597650b/https://pub.dev": {
+      "deps": [
+        "meta",
+        "path",
+        "string_scanner"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/io-1.0.5.tar.gz"
+    },
+    "pub.plan.v1/hosted/json_rpc_2/4.1.0/82dfd37d3b2e5030ae4729e1d7f5538cbc45eb1c73d618b9272931facac3bec1/https://pub.dev": {
+      "deps": [
+        "stack_trace",
+        "stream_channel"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/json_rpc_2-4.1.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/logging/1.3.0/c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/logging-1.3.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/matcher/0.12.20/31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd/https://pub.dev": {
+      "deps": [
+        "async",
+        "meta",
+        "stack_trace",
+        "term_glyph",
+        "test_api"
+      ],
+      "sdk": "^3.10.0",
+      "archive_url": "https://pub.dev/api/archives/matcher-0.12.20.tar.gz"
+    },
+    "pub.plan.v1/hosted/meta/1.19.0/307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/meta-1.19.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/mime/2.0.0/41a20518f0cb1256669420fdba0cd90d21561e560ac240f26ef8322e45bb7ed6/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.2.0",
+      "archive_url": "https://pub.dev/api/archives/mime-2.0.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/multicast_dns/0.3.3+1/134668a9605c747322d8c3eb0e89a4c0cbdedb29f8d2d5ae29d14daef724987b/https://pub.dev": {
+      "deps": [
+        "meta"
+      ],
+      "sdk": "^3.10.0",
+      "archive_url": "https://pub.dev/api/archives/multicast_dns-0.3.3%2B1.tar.gz"
+    },
+    "pub.plan.v1/hosted/node_preamble/2.0.2/6e7eac89047ab8a8d26cf16127b5ed26de65209847630400f9aefd7cd5c730db/https://pub.dev": {
+      "deps": [],
+      "sdk": ">=2.12.0-0 <3.0.0",
+      "archive_url": "https://pub.dev/api/archives/node_preamble-2.0.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/package_config/2.2.0/f096c55ebb7deb7e384101542bfba8c52696c1b56fca2eb62827989ef2353bbc/https://pub.dev": {
+      "deps": [
+        "path"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/package_config-2.2.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/path/1.9.1/75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/path-1.9.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/platform/3.1.6/5d6b1b0036a5f331ebc77c850ebc8506cbc1e9416c27e59b439f917a902a4984/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.2.0",
+      "archive_url": "https://pub.dev/api/archives/platform-3.1.6.tar.gz"
+    },
+    "pub.plan.v1/hosted/pool/1.5.2/978783255c543aa3586a1b3c21f6e9d720eb315376a915872c61ef8b5c20177d/https://pub.dev": {
+      "deps": [
+        "async",
+        "stack_trace"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/pool-1.5.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/pub_semver/2.2.0/5bfcf68ca79ef689f8990d1160781b4bad40a3bd5e5218ad4076ddb7f4081585/https://pub.dev": {
+      "deps": [
+        "collection"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/pub_semver-2.2.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/runfiles/0.4.6/d3f05faf1ba0dbb5aba9fa74698cbdfebb1d0eb26cd45030585c8d17e785e618/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.10.0",
+      "archive_url": "https://pub.dev/api/archives/runfiles-0.4.6.tar.gz"
+    },
+    "pub.plan.v1/hosted/shelf/1.4.2/e7dd780a7ffb623c57850b33f43309312fc863fb6aa3d276a754bb299839ef12/https://pub.dev": {
+      "deps": [
+        "async",
+        "collection",
+        "http_parser",
+        "path",
+        "stack_trace",
+        "stream_channel"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/shelf-1.4.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/shelf_packages_handler/3.0.2/89f967eca29607c933ba9571d838be31d67f53f6e4ee15147d5dc2934fee1b1e/https://pub.dev": {
+      "deps": [
+        "path",
+        "shelf",
+        "shelf_static"
+      ],
+      "sdk": ">=2.17.0 <3.0.0",
+      "archive_url": "https://pub.dev/api/archives/shelf_packages_handler-3.0.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/shelf_proxy/1.0.5/0c3a7b2b4c111cae8a6d9077701e0622c6013d38a780373ac359d6d45b3aa10b/https://pub.dev": {
+      "deps": [
+        "http",
+        "path",
+        "shelf"
+      ],
+      "sdk": "^3.3.0",
+      "archive_url": "https://pub.dev/api/archives/shelf_proxy-1.0.5.tar.gz"
+    },
+    "pub.plan.v1/hosted/shelf_static/1.1.3/c87c3875f91262785dade62d135760c2c69cb217ac759485334c5857ad89f6e3/https://pub.dev": {
+      "deps": [
+        "convert",
+        "http_parser",
+        "mime",
+        "path",
+        "shelf"
+      ],
+      "sdk": "^3.3.0",
+      "archive_url": "https://pub.dev/api/archives/shelf_static-1.1.3.tar.gz"
+    },
+    "pub.plan.v1/hosted/shelf_web_socket/3.0.0/3632775c8e90d6c9712f883e633716432a27758216dfb61bd86a8321c0580925/https://pub.dev": {
+      "deps": [
+        "shelf",
+        "stream_channel",
+        "web_socket_channel"
+      ],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/shelf_web_socket-3.0.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/source_map_stack_trace/2.1.2/c0713a43e323c3302c2abe2a1cc89aa057a387101ebd280371d6a6c9fa68516b/https://pub.dev": {
+      "deps": [
+        "path",
+        "source_maps",
+        "stack_trace"
+      ],
+      "sdk": "^3.3.0",
+      "archive_url": "https://pub.dev/api/archives/source_map_stack_trace-2.1.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/source_maps/0.10.13/190222579a448b03896e0ca6eca5998fa810fda630c1d65e2f78b3f638f54812/https://pub.dev": {
+      "deps": [
+        "source_span"
+      ],
+      "sdk": "^3.3.0",
+      "archive_url": "https://pub.dev/api/archives/source_maps-0.10.13.tar.gz"
+    },
+    "pub.plan.v1/hosted/source_span/1.10.2/56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab/https://pub.dev": {
+      "deps": [
+        "collection",
+        "path",
+        "term_glyph"
+      ],
+      "sdk": "^3.1.0",
+      "archive_url": "https://pub.dev/api/archives/source_span-1.10.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/sse/4.2.0/a9a804dbde8bfd369da3b4aa241d44d63a6486a97388c54ec166073d88c52302/https://pub.dev": {
+      "deps": [
+        "async",
+        "collection",
+        "logging",
+        "pool",
+        "shelf",
+        "stream_channel",
+        "web"
+      ],
+      "sdk": "^3.11.0",
+      "archive_url": "https://pub.dev/api/archives/sse-4.2.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/stack_trace/1.12.1/8b27215b45d22309b5cddda1aa2b19bdfec9df0e765f2de506401c071d38d1b1/https://pub.dev": {
+      "deps": [
+        "path"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/stack_trace-1.12.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/stream_channel/2.1.4/969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d/https://pub.dev": {
+      "deps": [
+        "async"
+      ],
+      "sdk": "^3.3.0",
+      "archive_url": "https://pub.dev/api/archives/stream_channel-2.1.4.tar.gz"
+    },
+    "pub.plan.v1/hosted/string_scanner/1.4.1/921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43/https://pub.dev": {
+      "deps": [
+        "source_span"
+      ],
+      "sdk": "^3.1.0",
+      "archive_url": "https://pub.dev/api/archives/string_scanner-1.4.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/term_glyph/1.2.2/7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.1.0",
+      "archive_url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/test/1.31.2/0d5ba5602ec3baa28c8ce365e1efc5575969c765f45c554a3e167dc7945b9c30/https://pub.dev": {
+      "deps": [
+        "analyzer",
+        "async",
+        "boolean_selector",
+        "collection",
+        "coverage",
+        "http_multi_server",
+        "io",
+        "matcher",
+        "node_preamble",
+        "package_config",
+        "path",
+        "pool",
+        "shelf",
+        "shelf_packages_handler",
+        "shelf_static",
+        "shelf_web_socket",
+        "source_span",
+        "stack_trace",
+        "stream_channel",
+        "test_api",
+        "test_core",
+        "typed_data",
+        "web_socket_channel",
+        "webkit_inspection_protocol",
+        "yaml"
+      ],
+      "sdk": "^3.11.0",
+      "archive_url": "https://pub.dev/api/archives/test-1.31.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/test_api/0.7.13/475610b2aa23c19687cce2961e44b0cc57cafe220f67c2b80201231b2a07fbe7/https://pub.dev": {
+      "deps": [
+        "async",
+        "boolean_selector",
+        "collection",
+        "meta",
+        "source_span",
+        "stack_trace",
+        "stream_channel",
+        "string_scanner",
+        "term_glyph"
+      ],
+      "sdk": "^3.11.0",
+      "archive_url": "https://pub.dev/api/archives/test_api-0.7.13.tar.gz"
+    },
+    "pub.plan.v1/hosted/test_core/0.6.19/a39c204a4fc7a7ccb04a2b985e359fda3cc37e45e0b8ac61c3fb1a05aa832132/https://pub.dev": {
+      "deps": [
+        "analyzer",
+        "args",
+        "async",
+        "boolean_selector",
+        "collection",
+        "coverage",
+        "frontend_server_client",
+        "glob",
+        "io",
+        "meta",
+        "package_config",
+        "path",
+        "pool",
+        "source_map_stack_trace",
+        "source_maps",
+        "source_span",
+        "stack_trace",
+        "stream_channel",
+        "test_api",
+        "vm_service",
+        "yaml"
+      ],
+      "sdk": "^3.11.0",
+      "archive_url": "https://pub.dev/api/archives/test_core-0.6.19.tar.gz"
+    },
+    "pub.plan.v1/hosted/typed_data/1.4.0/f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006/https://pub.dev": {
+      "deps": [
+        "collection"
+      ],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/typed_data-1.4.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/unified_analytics/8.0.16/0917e37f5cd9d70dfd23889b6738b160affc6021861403524ceca94ab5fb0e21/https://pub.dev": {
+      "deps": [
+        "clock",
+        "convert",
+        "file",
+        "http",
+        "meta",
+        "platform"
+      ],
+      "sdk": "^3.10.0",
+      "archive_url": "https://pub.dev/api/archives/unified_analytics-8.0.16.tar.gz"
+    },
+    "pub.plan.v1/hosted/vm_service/15.2.0/0016aef94fc66495ac78af5859181e3f3bf2026bd8eecc72b9565601e19ab360/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/vm_service-15.2.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/vm_service_interface/2.0.1/503c92c26cf9f77d688bf8fca27fa9ec40450adbf02ec1ec5f12828ded508ac0/https://pub.dev": {
+      "deps": [
+        "vm_service"
+      ],
+      "sdk": "^3.0.0",
+      "archive_url": "https://pub.dev/api/archives/vm_service_interface-2.0.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/watcher/1.2.1/1398c9f081a753f9226febe8900fce8f7d0a67163334e1c94a2438339d79d635/https://pub.dev": {
+      "deps": [
+        "async",
+        "path"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/watcher-1.2.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/web/1.1.1/868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/web-1.1.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/web_socket/1.0.1/34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c/https://pub.dev": {
+      "deps": [
+        "web"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/web_socket-1.0.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/web_socket_channel/3.0.3/d645757fb0f4773d602444000a8131ff5d48c9e47adfe9772652dd1a4f2d45c8/https://pub.dev": {
+      "deps": [
+        "async",
+        "crypto",
+        "stream_channel",
+        "web",
+        "web_socket"
+      ],
+      "sdk": "^3.3.0",
+      "archive_url": "https://pub.dev/api/archives/web_socket_channel-3.0.3.tar.gz"
+    },
+    "pub.plan.v1/hosted/webkit_inspection_protocol/1.2.1/87d3f2333bb240704cd3f1c6b5b7acd8a10e7f0bc28c28dcf14e782014f4a572/https://pub.dev": {
+      "deps": [
+        "logging"
+      ],
+      "sdk": "^3.0.0",
+      "archive_url": "https://pub.dev/api/archives/webkit_inspection_protocol-1.2.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/yaml/3.1.3/b9da305ac7c39faa3f030eccd175340f968459dae4af175130b3fc47e40d76ce/https://pub.dev": {
+      "deps": [
+        "collection",
+        "source_span",
+        "string_scanner"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/yaml-3.1.3.tar.gz"
+    },
+    "pub.plan.v1/hosted/yaml_edit/2.2.4/07c9e63ba42519745182b88ca12264a7ba2484d8239958778dfe4d44fe760488/https://pub.dev": {
+      "deps": [
+        "collection",
+        "meta",
+        "source_span",
+        "yaml"
+      ],
+      "sdk": "^3.1.0",
+      "archive_url": "https://pub.dev/api/archives/yaml_edit-2.2.4.tar.gz"
+    }
+  }
+}

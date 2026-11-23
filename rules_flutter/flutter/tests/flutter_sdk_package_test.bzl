@@ -81,8 +81,9 @@ def _flutter_spoke_declares_its_language_version_test_impl(ctx):
 
     content = make_flutter_sdk_build_content(
         name = "flutter",
-        deps = ["@hub__meta//:meta"],
+        deps = ["meta"],
         language_version = "3.11",
+        hub_name = "hub",
     )
 
     asserts.true(env, "flutter_library(" in content, content)
@@ -91,7 +92,8 @@ def _flutter_spoke_declares_its_language_version_test_impl(ctx):
     # The shader channel is what makes this spoke a flutter_library rather
     # than a dart_library; adding a language version must not disturb it.
     asserts.true(env, 'shaders = glob(["lib/src/material/shaders/*.frag"])' in content, content)
-    asserts.true(env, '"@hub__meta//:meta",' in content, content)
+    asserts.true(env, 'load("@hub//:packages.bzl", "hub_deps")' in content, content)
+    asserts.true(env, 'deps = hub_deps([\n        "meta",\n    ]),' in content, content)
 
     return unittest.end(env)
 
@@ -103,6 +105,7 @@ def _non_flutter_spoke_declares_its_language_version_test_impl(ctx):
         name = "flutter_test",
         deps = [],
         language_version = "3.11",
+        hub_name = "hub",
     )
 
     asserts.true(env, "dart_library(" in content, content)
@@ -110,7 +113,7 @@ def _non_flutter_spoke_declares_its_language_version_test_impl(ctx):
     asserts.true(env, 'language_version = "3.11",' in content, content)
 
     # No deps means no `deps` attribute at all, not an empty list.
-    asserts.true(env, "deps = [" not in content, content)
+    asserts.true(env, "deps = " not in content and "packages.bzl" not in content, content)
 
     return unittest.end(env)
 
@@ -131,6 +134,7 @@ def _pubspec_without_environment_yields_no_language_version_test_impl(ctx):
         name = "flutter_test",
         deps = [],
         language_version = "",
+        hub_name = "hub",
     )
     asserts.true(env, 'language_version = "",' in content, content)
 

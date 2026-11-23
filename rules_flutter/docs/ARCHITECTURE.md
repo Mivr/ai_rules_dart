@@ -426,12 +426,13 @@ A change must keep these true. Each names where the code holds it.
    bundle path fail (`flutter/private/common.bzl:1118-1135`).
 3. **No target cycle in a plugin graph.** Pub packages that depend on each other
    are merged into one strongly connected component repository
-   (`flutter/private/flutter_pub_scc_target.bzl:1-10`, planned by
-   `plan_flutter_pub_sccs` at `flutter/private/flutter_pub_scc.bzl:315`). The
-   `cycle_breaks` argument removes a named spoke-to-spoke edge; it is checked
-   against the lock and the pubspec
-   (`flutter/private/flutter_pub_cycle_breaks.bzl:1-12`,
-   `flutter/private/flutter_pub_package.bzl:1483-1485`).
+   (`flutter/private/flutter_pub_scc_target.bzl:1-10`, planned by rules_dart's
+   `plan_scope_sccs` from `_plan_hub_graph` at `flutter/extensions.bzl:695`).
+   The `cycle_breaks` argument removes a named spoke-to-spoke edge; it is
+   checked against the lock and the planned dependency names at evaluation
+   (`flutter/private/flutter_pub_cycle_breaks.bzl:1-15`), and each spoke checks
+   its planned names against the fetched pubspec
+   (`flutter/private/flutter_pub_package.bzl:1475`).
 4. **No load of a private file from outside this repository.** Consumers load
    the facades in section 1. Section 1 lists the in-repository exceptions.
 5. **No unpinned download.** Section 5 covers the Flutter SDK, engine artifacts,

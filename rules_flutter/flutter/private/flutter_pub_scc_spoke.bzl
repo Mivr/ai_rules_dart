@@ -47,10 +47,6 @@ load(
     "apply_apple_native_deps",
 )
 load(
-    "//flutter/private:flutter_pub_cycle_breaks.bzl",
-    "apply_cycle_breaks",
-)
-load(
     "//flutter/private:flutter_pub_mirror.bzl",
     "detect_case_insensitive_host",
     "link_scoped_file_entry",
@@ -71,6 +67,7 @@ load(
 load(
     "//flutter/private:flutter_pub_path.bzl",
     "is_absolute_lock_path",
+    "normalize_realpath",
 )
 load(
     "//flutter/private:flutter_pub_plugin_defines.bzl",
@@ -79,10 +76,6 @@ load(
 load(
     "//flutter/private:flutter_pub_plugin_deps.bzl",
     "check_plugin_native_deps",
-)
-load(
-    "//flutter/private:flutter_pub_scc.bzl",
-    "normalize_realpath",
 )
 load(
     "//flutter/private:flutter_pub_scc_build.bzl",
@@ -113,11 +106,7 @@ def _fetch_hosted_scc_member(ctx, member, name):
     )
     if err:
         fail(err)
-    url = "{base}/packages/{name}/versions/{version}.tar.gz".format(
-        base = member.get("url", "https://pub.dev"),
-        name = name,
-        version = member["version"],
-    )
+    url = member["url"]
     archive = "_" + name + ".tar.gz"
     pinned_download(ctx, url = url, output = archive, sha256 = member["sha256"].strip())
     raw = ctx.read(archive, watch = "no")
@@ -199,8 +188,7 @@ def _member_spoke_ctx(ctx, name):
         attr = struct(
             package_name = name,
             hub_name = ctx.attr.hub_name,
-            lock_packages = ctx.attr.lock_packages,
-            scc_targets = ctx.attr.scc_targets,
+            hub_packages = ctx.attr.hub_packages,
             plugin_defines = ctx.attr.ios_plugin_defines.get(name, []),
             plugin_native_deps = ctx.attr.ios_plugin_deps.get(name, None),
             overlay_roots = ctx.attr.overlay_roots,
@@ -267,11 +255,7 @@ def _parse_and_verify_scc_members(ctx, members, pubspecs):
         err = scc_planned_deps_error(ctx.attr.repo_name, name, planned)
         if err:
             fail(err)
-        raw_deps = sorted(pubspec_deps(pubspec))
-        applied = apply_cycle_breaks(name, raw_deps, ctx.attr.cycle_breaks.get(name, []))
-        if applied.error:
-            fail(applied.error)
-        real_deps[name] = applied.dependencies
+        real_deps[name] = sorted(pubspec_deps(pubspec))
         err = scc_member_deps_error(ctx.attr.repo_name, name, planned, real_deps[name])
         if err:
             fail(err)
@@ -393,9 +377,8 @@ def _emit_single_member_build(ctx, name, p, plugin_block, asset_block):
     ctx.file(name + "/android/BUILD.bazel", android_build)
     return _member_target_aliases(name, member_build)
 
-def _emit_scc_member_builds(ctx, member_names, parsed, real_deps):
-    """Emits per-member BUILD files and collects outside deps and root aliases."""
-    outside_deps = {}
+def _emit_scc_member_builds(ctx, member_names, parsed):
+    """Emits per-member BUILD files and collects root aliases."""
     uses_material = False
     apple_aliases = []
 
@@ -405,26 +388,19 @@ def _emit_scc_member_builds(ctx, member_names, parsed, real_deps):
         if asset_block and hasattr(asset_block, "uses_material_design") and asset_block.uses_material_design:
             uses_material = True
         plugin_block = parse_flutter_plugin_block(p.pubspec)
-
-        for dep in real_deps[name]:
-            if dep not in parsed and dep in ctx.attr.lock_packages:
-                fallback = "@{hub}__{dep}//:{dep}".format(hub = ctx.attr.hub_name, dep = dep)
-                label = ctx.attr.scc_targets.get(dep, fallback)
-                outside_deps[label] = True
-
         apple_aliases.extend(_emit_single_member_build(ctx, name, p, plugin_block, asset_block))
 
-    return outside_deps, apple_aliases, uses_material
+    return apple_aliases, uses_material
 
-def _emit_scc_root_build(ctx, member_names, outside_deps, apple_aliases, uses_material, parsed):
-    """Writes the root `BUILD.bazel` file for the merged SCC spoke repository."""
-    outside_list = sorted(outside_deps.keys())
+def _emit_scc_root_build(ctx, member_names, apple_aliases, uses_material):
+    """Writes the root `BUILD.bazel` file for the merged SCC spoke repository.
+
+    Its dependencies are the extension's: every member's planned dependency
+    outside the cycle, as the hub's alias, plus `flutter` when the lock pins it.
+    """
+    outside_list = list(ctx.attr.deps)
     if uses_material:
         outside_list.append("@rules_flutter//flutter:material_icons")
-    if "flutter" in ctx.attr.lock_packages and "flutter" not in parsed:
-        flutter_label = "@" + ctx.attr.hub_name + "__flutter//:flutter"
-        if flutter_label not in outside_list:
-            outside_list.append(flutter_label)
 
     ctx.file("BUILD.bazel", make_scc_merged_spoke_build_content(
         repo_name = ctx.attr.repo_name,
@@ -437,22 +413,10 @@ def _flutter_pub_scc_package_impl(ctx):
     """Repository rule implementation for a merged multi-package SCC spoke."""
     members = json.decode(ctx.attr.members_json)
     pubspecs = _stage_scc_members(ctx, members)
-    parsed, real_deps = _parse_and_verify_scc_members(ctx, members, pubspecs)
+    parsed, _ = _parse_and_verify_scc_members(ctx, members, pubspecs)
     member_names = sorted(parsed.keys())
-    outside_deps, apple_aliases, uses_material = _emit_scc_member_builds(
-        ctx,
-        member_names,
-        parsed,
-        real_deps,
-    )
-    _emit_scc_root_build(
-        ctx,
-        member_names,
-        outside_deps,
-        apple_aliases,
-        uses_material,
-        parsed,
-    )
+    apple_aliases, uses_material = _emit_scc_member_builds(ctx, member_names, parsed)
+    _emit_scc_root_build(ctx, member_names, apple_aliases, uses_material)
 
 flutter_pub_scc_package = repository_rule(
     implementation = _flutter_pub_scc_package_impl,
@@ -467,19 +431,19 @@ flutter_pub_scc_package = repository_rule(
         ),
         "members_json": attr.string(
             mandatory = True,
-            doc = "JSON-encoded member specs.",
+            doc = "JSON-encoded member specs: a hosted member's `name`, `version`, `sha256`, " +
+                  "`url` (the archive URL planning found) and `code_assets`, a path member's " +
+                  "`name`, `path`, `version` and `code_assets`, and for each its `planned_deps`.",
         ),
-        "lock_packages": attr.string_list(
+        "deps": attr.string_list(
             default = [],
-            doc = "All packages in the lock scope.",
+            doc = "Labels of the cycle's dependencies outside it, from the members' planned " +
+                  "names, each the hub's alias.",
         ),
-        "scc_targets": attr.string_dict(
-            default = {},
-            doc = "Map of package name to merged target.",
-        ),
-        "cycle_breaks": attr.string_list_dict(
-            default = {},
-            doc = "Package dependency edges to drop.",
+        "hub_packages": attr.label(
+            allow_single_file = True,
+            default = None,
+            doc = "The hub's `pub_packages.json`, read only by an Apple member that names a sibling plugin.",
         ),
         "ios_plugin_defines": attr.string_list_dict(
             default = {},

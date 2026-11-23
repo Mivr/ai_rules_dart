@@ -7,7 +7,10 @@ load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 # main() that adapts it to a Bazel action, the pub pins its seven dependencies
 # resolve from, and the patches that carve it out.
 exports_files(
-    ["pubspec.lock"],
+    [
+        "pub_plan.json",
+        "pubspec.lock",
+    ],
     visibility = ["//visibility:public"],
 )
 

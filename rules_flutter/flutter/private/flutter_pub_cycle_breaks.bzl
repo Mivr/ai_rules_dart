@@ -7,9 +7,11 @@ pair into a repository cycle. `flutter.pub(cycle_breaks = ...)` names the
 spoke-to-spoke edges to leave out; these helpers hold the two checks that
 keep the escape hatch honest.
 
-The extension validates lock membership before it creates any spoke; a spoke
-validates that each break names an edge its own pubspec declares. Both
-helpers are pure so unit tests drive them with plain strings and lists.
+The extension checks both before it creates any repository: lock membership,
+and that each break names a dependency planning found in the package's own
+pubspec (the spoke then checks those planned names against the fetched
+pubspec). Both helpers are pure so unit tests drive them with plain strings
+and lists.
 """
 
 visibility(["//flutter/..."])
@@ -89,34 +91,3 @@ def apply_cycle_breaks(package_name, declared_dependencies, broken_dependencies)
         ]),
         error = "",
     )
-
-def spoke_dep_labels(ctx, bazel_deps, asset_block, scc_targets = None):
-    """Sibling-spoke labels for the package's own pubspec dependencies.
-
-    If the pubspec declares `uses-material-design: true`, the spoke depends
-    on `@rules_flutter//flutter:material_icons` so the bundled font travels
-    through the deps graph automatically — same channel any other pub
-    package's font flows through. Cross-package mismatch (app says false,
-    pub dep says true) becomes structurally impossible.
-
-    Args:
-        ctx: The spoke's repository context.
-        bazel_deps: The dependency names left after the cycle breaks.
-        asset_block: The parsed `flutter` asset block.
-        scc_targets: Optional dict mapping package name to merged SCC target
-            label (`@<scc_repo>//:<pkg>`). Defaults to `ctx.attr.scc_targets`.
-
-    Returns:
-        The sibling-spoke labels for `bazel_deps`, plus the material-icons
-        label when the pubspec asks for material design.
-    """
-    resolved_scc = scc_targets
-    if resolved_scc == None:
-        resolved_scc = ctx.attr.scc_targets if hasattr(ctx.attr, "scc_targets") else {}
-    dep_labels = [
-        resolved_scc[dep] if dep in resolved_scc else "@{hub}__{dep}//:{dep}".format(hub = ctx.attr.hub_name, dep = dep)
-        for dep in bazel_deps
-    ]
-    if asset_block and hasattr(asset_block, "uses_material_design") and asset_block.uses_material_design:
-        dep_labels = dep_labels + ["@rules_flutter//flutter:material_icons"]
-    return dep_labels

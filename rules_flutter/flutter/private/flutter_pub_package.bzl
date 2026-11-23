@@ -1,9 +1,12 @@
 """flutter_pub_package — the `flutter pub get` analog for a single hosted
 Flutter pub.dev package.
 
-For each package in a Flutter app's pubspec.lock this rule:
-  1. Downloads the same `pub.dev/api/packages/<name>/versions/<version>.tar.gz`
-     archive that rules_dart's `pub_lock_package` would.
+The rule is rules_dart's `pub_lock_package` plus what makes a package a
+Flutter package. It takes `pub_lock_package`'s attributes (the package's
+coordinates, the archive URL planning found, the dependency names planning
+used and the labels of its own dependencies) and its checked fetch
+(`fetch_pub_lock_archive`), then:
+  1. Checks the fetched pubspec's dependency names against the planned ones.
   2. Reads the package's pubspec.yaml.
   3. Parses `flutter.plugin.platforms` via `parse_flutter_plugin_block`.
   4. Scans the extracted package tree for per-platform Apple source layouts
@@ -19,21 +22,16 @@ For each package in a Flutter app's pubspec.lock this rule:
          when Apple sources are detected for the corresponding
          `flutter.plugin.platforms.<plat>` entry.
 
-This is the rules_flutter sibling of rules_dart's `pub_lock_package`. The
-two rules never run for the same package: `flutter.pub()` always invokes
-this one for hosted pub packages; `pub.pub()` (in non-Flutter modules)
-keeps using `pub_lock_package`. Both share the same archive download +
-extract pattern (replicated, not abstracted, to keep the cross-repo
-surface small).
+Its dependencies are the `deps` the extension planned, each the hub's alias
+(`@<hub>//:<dep>`), so a package joining or leaving a dependency cycle changes
+no other package's attributes.
 """
 
-load("@rules_dart//dart/pub:pub_lock_package.bzl", "derive_language_version", "make_dart_library_build_content")
+load("@rules_dart//dart/pub:pub_lock_package.bzl", "PUB_LOCK_PACKAGE_ATTRS", "derive_language_version", "fetch_pub_lock_archive", "make_dart_library_build_content")
 load("@rules_dart//dart/pub:pub_scc.bzl", "spoke_planned_deps_error")
 load("@rules_dart//dart/pub:yaml.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint", "yaml_to_json")
-load("//flutter/private:flutter_pub_cycle_breaks.bzl", "apply_cycle_breaks", "spoke_dep_labels")
 load("//flutter/private:flutter_pub_plugin_defines.bzl", "check_plugin_defines", "plugin_defines_attr")
 load("//flutter/private:flutter_pub_plugin_deps.bzl", "check_plugin_native_deps")
-load("//flutter/private:flutter_pub_scan.bzl", "fetch_hosted_archive", "scan_hosted_archive", "walk_hosted_package")
 load("//flutter/private:flutter_pubspec.bzl", "parse_flutter_assets_block", "parse_flutter_plugin_block")
 load(":asset_uri.bzl", "normalize_spoke_asset_block", "normalize_spoke_assets", "normalize_spoke_fonts", "normalize_spoke_shaders")
 load(
@@ -61,7 +59,7 @@ load(
     "pub_shader_condition_entries",
 )
 load(":flutter_pub_cover.bzl", "covering_entry", "covering_entry_lookup")
-load(":flutter_pub_lock_hub.bzl", "android_plugin_libs_arg", "hub_scc_dep_targets", "overlay_with_android_edge")
+load(":flutter_pub_lock_hub.bzl", "android_plugin_libs_arg", "overlay_with_android_edge")
 load(":flutter_pub_maven.bzl", _maven_deps_attr = "maven_deps_attr", _maven_ignore_attr = "maven_ignore_attr")
 load(
     ":flutter_pub_mirror.bzl",
@@ -1101,17 +1099,17 @@ def read_spoke_pubspec_data(ctx, path = "pubspec.yaml", label = None):
 def _read_spoke_pubspec(ctx, data = None):
     """Projects the extracted `pubspec.yaml` into spoke inputs.
 
-    Returns `struct(raw_deps, bazel_deps, language_version, plugin_block,
-    asset_block)`: the unfiltered and lock-filtered dependency names, the
-    derived language version, and the parsed `flutter.plugin` / `flutter`
-    asset blocks (absent-pubspec defaults when no pubspec was extracted).
+    Returns `struct(raw_deps, language_version, plugin_block, asset_block)`:
+    the unfiltered dependency names, the derived language version, and the
+    parsed `flutter.plugin` / `flutter` asset blocks (absent-pubspec defaults
+    when no pubspec was extracted).
 
     Args:
         ctx: The spoke's repository context.
         data: The decoded pubspec when the caller already read it (a path
             spoke reads it to plan its links); read here when None.
     """
-    raw_deps, bazel_deps, language_version = [], [], ""
+    raw_deps, language_version = [], ""
     plugin_block = struct(present = False, platforms = {}, implements = "", ffi_plugin = False)
     asset_block = struct(
         fonts = [],
@@ -1126,16 +1124,12 @@ def _read_spoke_pubspec(ctx, data = None):
         sdk_err = pubspec_environment_error(data, ctx.attr.package_name + "/pubspec.yaml")
         if sdk_err:
             fail(sdk_err)
-        all_deps = pubspec_deps(data)
-        raw_deps = sorted(all_deps)
-        available = {p: True for p in ctx.attr.lock_packages}
-        bazel_deps = sorted([d for d in all_deps if d in available])
+        raw_deps = sorted(pubspec_deps(data))
         language_version = derive_language_version(pubspec_sdk_constraint(data))
         plugin_block = parse_flutter_plugin_block(data)
         asset_block = parse_flutter_assets_block(data)
     return struct(
         raw_deps = raw_deps,
-        bazel_deps = bazel_deps,
         language_version = language_version,
         plugin_block = plugin_block,
         asset_block = asset_block,
@@ -1340,15 +1334,12 @@ def _build_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hook):
     return _build_dart_spoke_content(ctx, pubspec, dep_labels, unreplaced_hook)
 
 def _flutter_pub_package_impl(ctx):
-    # Downloads and extracts the package archive, like `pub_lock_package`.
-    # `fetch_hosted_archive` does a sha256-verified download, the gzip
-    # trailer trim, rules_dart's header scan over the trimmed bytes before
-    # `ctx.extract`, and its symlink walk over the extracted tree before
+    # rules_dart's fetch of a hosted package: a sha256-verified download,
+    # the gzip trailer trim, the header scan over the trimmed bytes before
+    # `ctx.extract`, and the symlink walk over the extracted tree before
     # anything reads it. A refused archive fails the fetch with rules_dart's
     # diagnostic naming the package and the entry.
-    refusal = fetch_hosted_archive(ctx, scan_hosted_archive, walk_hosted_package)
-    if refusal:
-        fail(refusal)
+    fetch_pub_lock_archive(ctx)
     _generate_spoke(ctx)
     return ctx.repo_metadata(reproducible = True)
 
@@ -1482,24 +1473,44 @@ def _flutter_pub_path_package_impl(ctx):
     _generate_spoke(ctx, pubspec)
 
 def _verify_spoke_deps(ctx, pubspec):
-    """Applies `cycle_breaks`, checks `planned_deps`, and filters to locked packages."""
-    cycle_result = apply_cycle_breaks(ctx.attr.package_name, pubspec.raw_deps, ctx.attr.cycle_breaks)
-    if cycle_result.error:
-        fail(cycle_result.error)
-    rule_name = "flutter_pub_package" if hasattr(ctx.attr, "base_url") else "flutter_pub_path_package"
-    covers = ctx.attr.plan_covers_package if hasattr(ctx.attr, "plan_covers_package") else False
-    planned = ctx.attr.planned_deps if covers else None
+    """Checks the fetched pubspec's names against `planned_deps`; returns the planned labels.
+
+    The labels are the extension's, from the planned names: the hub alias of
+    every planned dependency the lock pins, less the edges `cycle_breaks`
+    drops. They are right only when the planned names are the real ones,
+    so a difference fails the fetch here.
+    """
+    rule_name = "flutter_pub_package" if hasattr(ctx.attr, "sha256") else "flutter_pub_path_package"
     planned_err = spoke_planned_deps_error(
         rule_name,
         ctx.name,
         ctx.attr.package_name,
-        planned,
-        cycle_result.dependencies,
+        ctx.attr.planned_deps,
+        pubspec.raw_deps,
     )
     if planned_err:
         fail(planned_err)
-    available = {p: True for p in ctx.attr.lock_packages}
-    return [d for d in cycle_result.dependencies if d in available and d != ctx.attr.package_name]
+    return list(ctx.attr.deps)
+
+def spoke_dep_labels(deps, asset_block):
+    """The spoke's dependency labels: its planned ones, plus the Material icons when asked for.
+
+    If the pubspec declares `uses-material-design: true`, the spoke depends
+    on `@rules_flutter//flutter:material_icons` so the bundled font travels
+    through the deps graph like any other pub package's font. A mismatch
+    between the app and a package (the app says false, the package true)
+    cannot happen.
+
+    Args:
+        deps: The planned dependency labels.
+        asset_block: The parsed `flutter` asset block.
+
+    Returns:
+        The labels.
+    """
+    if asset_block and getattr(asset_block, "uses_material_design", False):
+        return deps + ["@rules_flutter//flutter:material_icons"]
+    return deps
 
 def _generate_spoke(ctx, pubspec_data = None):
     """Runs the shared spoke pipeline: pubspec in, BUILD content out.
@@ -1511,15 +1522,7 @@ def _generate_spoke(ctx, pubspec_data = None):
     both exactly as before.
     """
     pubspec = _read_spoke_pubspec(ctx, pubspec_data)
-    bazel_deps = _verify_spoke_deps(ctx, pubspec)
-
-    # Build full label strings for sibling spoke repos, routing cycle members through the hub.
-    dep_labels = spoke_dep_labels(
-        ctx,
-        bazel_deps,
-        pubspec.asset_block,
-        scc_targets = hub_scc_dep_targets(ctx.attr.hub_name, ctx.attr.scc_targets),
-    )
+    dep_labels = spoke_dep_labels(_verify_spoke_deps(ctx, pubspec), pubspec.asset_block)
 
     # Pre-compute the pub-asset attr inputs once. Used by either branch
     # below (plugin vs library).
@@ -1567,82 +1570,45 @@ def _generate_spoke(ctx, pubspec_data = None):
 spoke_asset_inputs = _spoke_asset_inputs
 detect_desktop_plugin_sources = _detect_desktop_plugin_sources
 
+# What every Flutter package repository adds to the planned shape, hosted or
+# path: the hub it belongs to, the plugin's native configuration and the
+# overlays that can replace its BUILD file.
+_FLUTTER_SPOKE_ATTRS = {
+    "hub_name": attr.string(
+        doc = "Name of the hub repo (for the Android repository and the hub's files).",
+        mandatory = True,
+    ),
+    "hub_packages": attr.label(
+        doc = "The hub's `pub_packages.json`, read only by an Apple plugin that names a " +
+              "sibling plugin, so no other spoke depends on the hub's package list.",
+        allow_single_file = True,
+        default = None,
+    ),
+    "plugin_defines": plugin_defines_attr,
+    "android_maven_deps": _maven_deps_attr,
+    "android_maven_ignore": _maven_ignore_attr,
+    "overlay_roots": attr.label_list(
+        doc = "BUILD.bazel anchors for overlay trees. Each label points at " +
+              "an `ext/BUILD.bazel` (or equivalent) that anchors a directory " +
+              "tree of `<package>/<version>/BUILD.bazel.tpl` overrides. The " +
+              "rule walks the roots in order and uses the first match. " +
+              "User-supplied roots come before the bundled " +
+              "`@rules_flutter//ext:BUILD.bazel`.",
+        allow_files = True,
+        default = [],
+    ),
+    "pubspec_lock": attr.label(doc = "Hub `pubspec.lock` label.", allow_single_file = True, default = None),
+}
+
 flutter_pub_package = repository_rule(
     implementation = _flutter_pub_package_impl,
-    attrs = dict(pub_spoke_swiftpm_rule_attrs({
-        "package_name": attr.string(
-            doc = "The pub.dev package name.",
-            mandatory = True,
-        ),
-        "version": attr.string(
-            doc = "The package version to download.",
-            mandatory = True,
-        ),
-        "sha256": attr.string(
-            doc = "SHA256 hash of the package archive. Taken from the hosted lock entry; an empty value fails the fetch.",
-            default = "",
-        ),
-        "base_url": attr.string(
-            doc = "Base URL for the pub repository.",
-            default = "https://pub.dev",
-        ),
-        "hub_name": attr.string(
-            doc = "Name of the hub repo (for constructing cross-spoke dep labels).",
-            mandatory = True,
-        ),
-        "lock_packages": attr.string_list(
-            doc = "All hosted package names in the lock file (for dep filtering).",
-            default = [],
-        ),
-        "planned_deps": attr.string_list(
-            doc = "Dependency names cycle planning used.",
-            default = [],
-        ),
-        "plan_covers_package": attr.bool(
-            doc = "Whether cycle planning covered this package.",
-            default = False,
-        ),
-        "scc_targets": attr.string_dict(
-            doc = "Package name to merged repository target.",
-            default = {},
-        ),
-        "cycle_breaks": attr.string_list(doc = "Dependency names whose spoke-to-spoke edge is left out of this package's `deps`; each must be a dependency its own pubspec declares. Empty drops nothing.", default = []),
-        "plugin_defines": plugin_defines_attr,
-        "code_assets": attr.string_list(
-            doc = "Labels of `dart_code_asset` targets standing in for this " +
-                  "package's build hook. Resolved by the extension from " +
-                  "rules_dart's curated registry, so a user depending on, say, " +
-                  "`drift` never names `sqlite3`. Attached to the generated " +
-                  "package target rather than to the application, which is what " +
-                  "makes them propagate the way pub's own assets do.",
-            default = [],
-        ),
-        "ignore_hook": attr.bool(
-            doc = "Treat this package's build hook as irrelevant. Without it, a " +
-                  "package shipping a hook that nothing replaces is recorded and " +
-                  "the application that reaches it fails, rather than building " +
-                  "cleanly and dying at runtime on an unresolved native symbol.",
-            default = False,
-        ),
-        "android_maven_deps": _maven_deps_attr,
-        "android_maven_ignore": _maven_ignore_attr,
-        "overlay_roots": attr.label_list(
-            doc = "BUILD.bazel anchors for overlay trees. Each label points at " +
-                  "an `ext/BUILD.bazel` (or equivalent) that anchors a directory " +
-                  "tree of `<package>/<version>/BUILD.bazel.tpl` overrides. The " +
-                  "rule walks the roots in order and uses the first match. " +
-                  "User-supplied roots come before the bundled " +
-                  "`@rules_flutter//ext:BUILD.bazel`.",
-            allow_files = True,
-            default = [],
-        ),
-    }), pubspec_lock = attr.label(doc = "Hub `pubspec.lock` label.", allow_single_file = True, default = None)),
-    doc = "Downloads a single Flutter pub package and emits a `flutter_plugin` (when `flutter.plugin` is present) or a plain `dart_library` (otherwise). When Apple sources are detected, also emits per-platform `flutter_apple_plugin_library` sub-targets. Honors per-package overlay BUILD.bazel.tpl overrides under `overlay_roots`. The `flutter pub get` analog of `pub_lock_package`.",
+    attrs = pub_spoke_swiftpm_rule_attrs(dict(PUB_LOCK_PACKAGE_ATTRS, **_FLUTTER_SPOKE_ATTRS)),
+    doc = "Fetches a single hosted Flutter pub package the way rules_dart's `pub_lock_package` does and emits a `flutter_plugin` (when `flutter.plugin` is present), a `flutter_library` (when it declares assets, fonts or shaders) or a plain `dart_library`. When Apple sources are detected, also emits per-platform `flutter_apple_plugin_library` sub-targets. Honors per-package overlay BUILD.bazel.tpl overrides under `overlay_roots`. The `flutter pub get` analog of `pub_lock_package`.",
 )
 
 flutter_pub_path_package = repository_rule(
     implementation = _flutter_pub_path_package_impl,
-    attrs = dict(pub_spoke_swiftpm_rule_attrs({
+    attrs = pub_spoke_swiftpm_rule_attrs(dict(_FLUTTER_SPOKE_ATTRS, **{
         "package_name": attr.string(
             doc = "The pub package name.",
             mandatory = True,
@@ -1656,46 +1622,10 @@ flutter_pub_path_package = repository_rule(
                   "unstated and never conflicts, matching the hosted rule.",
             default = "",
         ),
-        "hub_name": attr.string(
-            doc = "Name of the hub repo (for constructing cross-spoke dep labels).",
-            mandatory = True,
-        ),
-        "lock_packages": attr.string_list(
-            doc = "All package names in the lock file (for dep filtering).",
-            default = [],
-        ),
-        "planned_deps": attr.string_list(
-            doc = "Dependency names cycle planning used.",
-            default = [],
-        ),
-        "plan_covers_package": attr.bool(
-            doc = "Whether cycle planning covered this package.",
-            default = False,
-        ),
-        "scc_targets": attr.string_dict(
-            doc = "Package name to merged repository target.",
-            default = {},
-        ),
-        "cycle_breaks": attr.string_list(doc = "Dependency names whose spoke-to-spoke edge is left out of this package's `deps`, same as `flutter_pub_package`.", default = []),
-        "plugin_defines": plugin_defines_attr,
-        "code_assets": attr.string_list(
-            doc = "Labels of `dart_code_asset` targets standing in for this " +
-                  "package's build hook, same as `flutter_pub_package`.",
-            default = [],
-        ),
-        "ignore_hook": attr.bool(
-            doc = "Treat this package's build hook as irrelevant, same as " +
-                  "`flutter_pub_package`.",
-            default = False,
-        ),
-        "android_maven_deps": _maven_deps_attr,
-        "android_maven_ignore": _maven_ignore_attr,
-        "overlay_roots": attr.label_list(
-            doc = "BUILD.bazel anchors for overlay trees, same as " +
-                  "`flutter_pub_package`.",
-            allow_files = True,
-            default = [],
-        ),
-    }), pubspec_lock = attr.label(doc = "Hub `pubspec.lock` label.", allow_single_file = True, default = None)),
+        "planned_deps": PUB_LOCK_PACKAGE_ATTRS["planned_deps"],
+        "deps": PUB_LOCK_PACKAGE_ATTRS["deps"],
+        "code_assets": PUB_LOCK_PACKAGE_ATTRS["code_assets"],
+        "ignore_hook": PUB_LOCK_PACKAGE_ATTRS["ignore_hook"],
+    })),
     doc = "Symlinks a workspace-local `path:` pub package into a spoke and emits the same `flutter_plugin` / `flutter_library` / `dart_library` the hosted rule would. The `flutter pub get` analog for path dependencies: hermetic (workspace-relative only, watched for changes) and fail-closed on anything resolving outside the workspace's real root; the package's pubspec `name` and `version` must match the lock entry, since overlays and code assets are selected by lock name and version.",
 )
