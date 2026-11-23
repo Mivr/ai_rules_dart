@@ -1,0 +1,10 @@
+load("@rules_java//java:defs.bzl", "java_library")
+
+# What the tests of the Android e2e workspaces check built APKs with (see apk_test.bzl).
+java_library(
+    name = "apk_check",
+    testonly = True,
+    srcs = ["ApkCheck.java"],
+    javacopts = ["-XepDisableAllChecks"],
+    visibility = ["//visibility:public"],
+)

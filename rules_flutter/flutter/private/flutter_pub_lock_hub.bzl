@@ -25,8 +25,13 @@ through that rule's `files`:
 
 visibility(["//flutter/..."])
 
+# The Android platform, for an app whose plugins' Android code is not built from the pinned Gradle
+# model (`//flutter/private/android_model`). An app built from the model takes the plugin projects
+# from its pin, so its Dart packages carry no Android library.
+_ANDROID_LIBS_CONDITION = "@rules_flutter//flutter/private/android_model:android_without_model"
+
 _ANDROID_EDGE_ATTR = (
-    '    android_libs = select({"@platforms//os:android": ["//android:lib"], ' +
+    '    android_libs = select({"' + _ANDROID_LIBS_CONDITION + '": ["//android:lib"], ' +
     '"//conditions:default": []}),\n'
 )
 
@@ -178,7 +183,7 @@ def make_hub_scc_build_content(merged_members):
 flutter_pub_scc_android_edge(
     name = "_scc_android_{pkg}",
     android_libs = select({{
-        "@platforms//os:android": [
+        "{condition}": [
 {libs}
         ],
         "//conditions:default": [],
@@ -190,11 +195,11 @@ flutter_pub_scc_android_edge(
 alias(
     name = "{pkg}",
     actual = select({{
-        "@platforms//os:android": ":_scc_android_{pkg}",
+        "{condition}": ":_scc_android_{pkg}",
         "//conditions:default": "@{repo}//:{pkg}",
     }}),
     visibility = ["//visibility:public"],
-)""".format(pkg = member, repo = repo, libs = libs))
+)""".format(pkg = member, repo = repo, libs = libs, condition = _ANDROID_LIBS_CONDITION))
     if not entries:
         return ""
     return 'load(":scc_android_edge.bzl", "flutter_pub_scc_android_edge")\n\n' + "\n\n".join(entries) + "\n"

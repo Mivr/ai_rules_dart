@@ -99,10 +99,10 @@ def _hub_build_content_with_sccs_test_impl(ctx):
     for needle in [
         'load(":scc_android_edge.bzl", "flutter_pub_scc_android_edge")',
         '"//conditions:default": "@deps__scc__cycle_a__cycle_b//:cycle_a"',
-        '"@platforms//os:android": ":_scc_android_cycle_a"',
+        '"@rules_flutter//flutter/private/android_model:android_without_model": ":_scc_android_cycle_a"',
         'deps = ["@deps__scc__cycle_a__cycle_b//:cycle_a"]',
         '"//conditions:default": "@deps__scc__cycle_a__cycle_b//:cycle_b"',
-        '"@platforms//os:android": ":_scc_android_cycle_b"',
+        '"@rules_flutter//flutter/private/android_model:android_without_model": ":_scc_android_cycle_b"',
         '"@deps__scc__cycle_a__cycle_b//cycle_a/android:lib"',
     ]:
         asserts.true(env, needle in scc_content, needle + "\n" + scc_content)

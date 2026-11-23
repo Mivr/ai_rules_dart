@@ -55,6 +55,10 @@ visibility(["//flutter/..."])
 # name that no repository has, so the transition reads the flag by its apparent label.
 ANDROID_PLATFORMS_FLAG = "@rules_android//flags:android_platforms"
 
+# Set for an app whose Android side is built from the pinned Gradle model: the plugins' Android code
+# then comes from the pin, and the Dart packages' own Android libraries are left out of the graph.
+PLUGINS_FROM_MODEL_FLAG = "//flutter/private/android_model:plugins_from_model"
+
 def _android_platform_transition_platforms(settings, attr):
     abi = getattr(attr, "android_abi", "")
     if abi in ANDROID_ABIS:
@@ -109,6 +113,7 @@ def _android_platform_transition_impl(settings, attr):
     if getattr(attr, "analyze_size", False) and "analyze_size" not in features:
         features.append("analyze_size")
     result["//command_line_option:features"] = features
+    result[PLUGINS_FROM_MODEL_FLAG] = settings[PLUGINS_FROM_MODEL_FLAG] or bool(getattr(attr, "plugins_from_model", False))
     return result
 
 # Builds the bundle and everything behind it (the flutter_application, its
@@ -125,11 +130,13 @@ _android_platform_transition = transition(
         "//command_line_option:cpu",
         "//command_line_option:dynamic_mode",
         "//command_line_option:features",
+        PLUGINS_FROM_MODEL_FLAG,
     ],
     outputs = [
         "//command_line_option:platforms",
         "//command_line_option:dynamic_mode",
         "//command_line_option:features",
+        PLUGINS_FROM_MODEL_FLAG,
     ],
 )
 
@@ -397,6 +404,11 @@ provided for selective fetching.
 
 Set to False if you only build release APKs and do not need mobile-install.""",
             default = True,
+        ),
+        "plugins_from_model": attr.bool(
+            doc = """Whether the app's Android side is built from the pinned Gradle model
+(`flutter_android_app` of the pin's repository sets it). The plugins' Android
+code then comes from the pin, not from the Dart packages.""",
         ),
         "android_abi": attr.string(
             doc = """Android ABI to build for ("arm64-v8a" or "x86_64").

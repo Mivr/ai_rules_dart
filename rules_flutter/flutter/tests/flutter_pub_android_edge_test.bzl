@@ -22,7 +22,10 @@ load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
 
-_EDGE = 'android_libs = select({"@platforms//os:android": ["//android:lib"], "//conditions:default": []}),'
+# The Android platform, when the app's Android side is not built from a pinned Gradle model.
+_ANDROID = "@rules_flutter//flutter/private/android_model:android_without_model"
+
+_EDGE = 'android_libs = select({"' + _ANDROID + '": ["//android:lib"], "//conditions:default": []}),'
 
 def _plugin(platforms_json):
     """Renders `make_flutter_plugin_build_content` for `platforms_json`."""

@@ -1,0 +1,29 @@
+load("@rules_java//java:defs.bzl", "java_library")
+
+# The build-side tool of the Android model is compiled in the hub repository, against AGP's own
+# libraries at the versions the pin file names; the pin step's init script is run by Gradle.
+exports_files([
+    "AndroidTool.java",
+    "Apk.java",
+    "Dexing.java",
+    "GradleAar.java",
+    "PinCheck.java",
+    "Resources.java",
+    "model.init.gradle",
+])
+
+# `bazel run //:android_pin` (see ../pin.bzl): runs Gradle once to write the pin file.
+java_library(
+    name = "pin_lib",
+    srcs = ["Pin.java"],
+    javacopts = ["-XepDisableAllChecks"],
+    visibility = ["//visibility:public"],
+)
+
+# `bazel run //:app_install`: sends the changed split APKs to a device.
+java_library(
+    name = "install_lib",
+    srcs = ["Install.java"],
+    javacopts = ["-XepDisableAllChecks"],
+    visibility = ["//visibility:public"],
+)

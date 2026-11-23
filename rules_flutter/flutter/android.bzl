@@ -95,10 +95,18 @@ load(
     _short_abi_to_full = "short_abi_to_full",
     _variant_overlay = "variant_overlay",
 )
+load("//flutter/private/android_model:extension.bzl", _android_model = "android_model")
+load("//flutter/private/android_model:pin.bzl", _flutter_android_pin = "flutter_android_pin")
 
 visibility("public")
 
 # Re-export constants for user BUILD files.
+# Android from the Gradle model: `android_model.pin(model = "//:android_model.json")` in MODULE.bazel
+# makes a repository whose `defs.bzl` has `flutter_android_app`; `flutter_android_pin` is the target
+# that writes the pin file. See //flutter/private/android_model:extension.bzl.
+android_model = _android_model
+flutter_android_pin = _flutter_android_pin
+
 ANDROID_MIN_SDK_VERSION = _ANDROID_MIN_SDK_VERSION
 ANDROID_TARGET_SDK_VERSION = _ANDROID_TARGET_SDK_VERSION
 

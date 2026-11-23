@@ -305,6 +305,13 @@ An application's families and assets are bare — `HelloSans` and `fonts/HelloSa
 
 `fonts_json` and `font_files` on `flutter_library` and `flutter_plugin` are deprecated and kept for one release. They now fail closed too: every declared asset must name a `font_files` entry, every entry must be named by a family, and weights and styles are checked with `flutter_tools`' own wording. Move each family to a `flutter_font_family` target and list it in `fonts`; `flutter_plugin` has no `fonts` attribute yet, so a plugin keeps `fonts_json` for this release.
 
+### Android from the Gradle model
+
+An app's Android side can be built from a pin file that Gradle writes once (`bazel run //:android_pin`):
+one library per plugin project, one import per Maven artifact by hash, AGP's own tools, split APKs for
+the debug loop and the whole APK equal to `flutter build apk --debug`. BOMs, kapt, KSP and any Maven
+coordinate work, because Gradle resolved them. See [docs/android-model.md](docs/android-model.md).
+
 ### Android native (Gradle) dependencies
 
 A plugin's `android/build.gradle` (`build.gradle.kts`) runtime dependencies (`implementation`, `api`, `runtimeOnly`) are translated to `@rules_android_maven` labels automatically. This happens in the plugin's own Android repository, and only when an Android target needs it: the spoke fetch itself never reads the Gradle model. Gradle evaluates exactly one build file per project directory, so when both files are present the repository reads `build.gradle` for everything — dependencies, namespace, native-build and ProGuard detection alike. Common AndroidX artifacts are built in; anything else must be mapped in `MODULE.bazel`:

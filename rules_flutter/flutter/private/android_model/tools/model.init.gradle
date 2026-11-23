@@ -1,0 +1,651 @@
+// The pin step of the Android model: Gradle describes, Bazel builds.
+//
+// Run by `bazel run //:android_pin` (see pin.dart) as
+//   ./gradlew -I model.init.gradle :app:rdfAndroidModel --no-configuration-cache \
+//       -Prdf.out=<file.json> [-Prdf.variants=debug,devDebug] [-Prdf.workspace=<dir>] [-Prdf.fallback=:a,:b]
+// from <app>/android, after `flutter pub get`.
+//
+// It writes one JSON file (schema 2) that describes every Android project of the build (the app, each
+// plugin's android/ project, library modules of the app) per variant, and the resolved Maven classpaths
+// with the sha256 of every artifact. Nothing is built: the work is configuration and dependency
+// resolution, plus the generator task of the google-services plugin when it is applied.
+//
+// The script uses what the build has loaded (AGP's variant API and DSL, the Kotlin plugin's compile
+// task). The user applies no plugin and no Gradle file is read as text by anything but Gradle.
+
+import groovy.json.JsonOutput
+import java.security.MessageDigest
+
+def rdfVariants = new java.util.concurrent.ConcurrentHashMap()   // project path -> [variant objects]
+
+gradle.allprojects { p ->
+  ['com.android.application', 'com.android.library'].each { pid ->
+    p.pluginManager.withPlugin(pid) {
+      def ac = p.extensions.getByName('androidComponents')
+      ac.onVariants(ac.selector().all(), { v ->
+        rdfVariants.computeIfAbsent(p.path, { new java.util.concurrent.CopyOnWriteArrayList() }).add(v)
+      } as org.gradle.api.Action)
+    }
+  }
+}
+
+// versionCode and versionName: a Flutter app takes them from `flutter.versionCode` and
+// `flutter.versionName`, which the Flutter tool derives from `version:` of pubspec.yaml and writes to
+// local.properties when it builds. The model must not depend on what that file happens to hold, so
+// Gradle evaluates the build with two markers instead; the rules put the pubspec's values in their
+// place at build time. A build file that sets its own values is recorded as it is.
+ext.rdfVersionCodeMarker = '1073741823'
+ext.rdfVersionNameMarker = '@pubspec.version@'
+gradle.allprojects { p ->
+  p.pluginManager.withPlugin('dev.flutter.flutter-gradle-plugin') {
+    def fx = p.extensions.findByName('flutter')
+    if (fx != null && fx.hasProperty('flutterVersionCode')) {
+      fx.flutterVersionCode = rdfVersionCodeMarker
+      fx.flutterVersionName = rdfVersionNameMarker
+    }
+  }
+}
+
+gradle.projectsEvaluated { g ->
+  def app = g.rootProject.allprojects.find { it.pluginManager.hasPlugin('com.android.application') }
+  if (app == null) return
+  app.tasks.register('rdfAndroidModel') { t ->
+    t.group = 'rdf'
+    t.notCompatibleWithConfigurationCache('reads the model of every project')
+    // google-services generates resource values from google-services.json: its task runs here, once,
+    // and what it wrote is recorded in the model.
+    g.rootProject.allprojects.each { p ->
+      p.tasks.matching { it.name ==~ /process.*GoogleServices/ }.each { gs -> t.dependsOn(gs) }
+    }
+    t.doLast { rdfWriteModel(g, app, rdfVariants) }
+  }
+}
+
+// The escape hatch (see GradleAar.java): `rdfFallbackAar -Prdf.fallback.project=:name
+// -Prdf.fallback.variant=debug -Prdf.fallback.out=<file>` builds one library project's AAR with Gradle
+// and copies it out.
+gradle.projectsEvaluated { g ->
+  def path = g.rootProject.findProperty('rdf.fallback.project')
+  // An init script runs in included builds too (the Flutter tool's Gradle plugin is one).
+  if (path == null || g.parent != null) return
+  def p = g.rootProject.findProject(path.toString())
+  if (p == null) throw new GradleException("rdf: no project ${path} in this build")
+  def variant = (g.rootProject.findProperty('rdf.fallback.variant') ?: 'debug').toString()
+  def out = new File(g.rootProject.findProperty('rdf.fallback.out').toString())
+  p.tasks.register('rdfFallbackAar') { t ->
+    def bundle = p.tasks.named("bundle${variant.capitalize()}Aar")
+    t.dependsOn(bundle)
+    t.doLast { out.bytes = bundle.get().archiveFile.get().asFile.bytes }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------
+
+// Gradle plugin classes the rules know how to build without running the plugin. Anything else may
+// generate code or resources that would be silently missing, so the pin fails and names it.
+ext.rdfKnownPlugins = [
+  'com.android.build.gradle.', 'com.android.build.api.', 'com.android.internal.',
+  'com.flutter.gradle.', 'io.flutter.', 'dev.flutter.',
+  'org.jetbrains.kotlin.gradle.plugin.KotlinAndroidPluginWrapper',
+  'org.jetbrains.kotlin.gradle.plugin.KotlinBaseApiPlugin',
+  'org.jetbrains.kotlin.gradle.internal.Kapt3GradleSubplugin',
+  'org.jetbrains.kotlin.gradle.scripting.internal.ScriptingGradleSubplugin',
+  'com.google.devtools.ksp.gradle.KspGradleSubplugin',
+  'com.google.devtools.ksp.gradle.KspAATransformPlugin',
+  'com.google.gms.googleservices.GoogleServicesPlugin',
+]
+
+def rdfRel(Object f, Map roots) {
+  if (f == null) return null
+  String s = (f instanceof File) ? f.absolutePath : f.toString()
+  for (e in roots) {
+    if (s == e.value) return e.key + ':'
+    if (s.startsWith(e.value + '/')) return e.key + ':' + s.substring(e.value.length() + 1)
+  }
+  return 'abs:' + s
+}
+
+def rdfSha256(File f) {
+  def md = MessageDigest.getInstance('SHA-256')
+  f.withInputStream { is ->
+    byte[] buf = new byte[1 << 16]
+    int n
+    while ((n = is.read(buf)) > 0) md.update(buf, 0, n)
+  }
+  return md.digest().encodeHex().toString()
+}
+
+def rdfTry(Closure c, Object dflt = null) {
+  try { def r = c(); return r == null ? dflt : r } catch (Throwable e) { return dflt }
+}
+
+// Only directories (and files) that exist: a source set names many conventional directories.
+def rdfDirs(Object provider, Map roots) {
+  def out = []
+  def v = rdfTry({ provider?.getOrNull() })
+  if (v == null) return out
+  def walk
+  walk = { x ->
+    if (x instanceof Collection) x.each { walk(it) }
+    else {
+      File f = rdfTry({ x.asFile }) ?: (x instanceof File ? x : null)
+      if (f != null && f.exists()) out << rdfRel(f, roots)
+    }
+  }
+  walk(v)
+  return out.unique()
+}
+
+def rdfVersionNum(Object v) {
+  if (v == null) return null
+  def api = rdfTry({ v.apiLevel })
+  if (api != null) return api
+  return v.toString()
+}
+
+def rdfServices(java.util.zip.ZipFile zf, String service) {
+  def e = zf.getEntry('META-INF/services/' + service)
+  if (e == null) return []
+  return zf.getInputStream(e).readLines('UTF-8').collect { it.replaceAll(/#.*/, '').trim() }.findAll { it }
+}
+
+// What an artifact holds, so that the Bazel side needs no probing: for an AAR its namespace and which
+// parts exist; for a jar the native libraries packed under lib/<abi>/ and the processors it declares.
+def rdfDescribeArchive(File f, Map rec) {
+  def zf = new java.util.zip.ZipFile(f)
+  try {
+    def names = zf.entries().collect { it }.findAll { !it.directory }.collect { it.name }
+    if (f.name.endsWith('.aar')) {
+      def c = new TreeMap()
+      c.res = names.any { it.startsWith('res/') }
+      c.assets = names.any { it.startsWith('assets/') }
+      c.jni = names.findAll { it.startsWith('jni/') && it.endsWith('.so') }.sort()
+      c.libs = names.findAll { it.startsWith('libs/') && it.endsWith('.jar') }.sort()
+      c.classes = names.contains('classes.jar')
+      c.proguard = names.contains('proguard.txt')
+      def rt = zf.getEntry('R.txt')
+      c.r_txt = rt != null && rt.size > 0
+      def me = zf.getEntry('AndroidManifest.xml')
+      if (me != null) {
+        def x = new groovy.xml.XmlSlurper(false, false).parse(zf.getInputStream(me))
+        c.namespace = x.'@package'.toString()
+      }
+      rec.aar = c
+    } else if (f.name.endsWith('.jar')) {
+      def so = names.findAll { it.startsWith('lib/') && it.endsWith('.so') }.sort()
+      if (so) rec.native_libs = so
+      def ap = rdfServices(zf, 'javax.annotation.processing.Processor')
+      if (ap) rec.processors = ap
+      def ksp = rdfServices(zf, 'com.google.devtools.ksp.processing.SymbolProcessorProvider')
+      if (ksp) rec.ksp_providers = ksp
+    }
+  } finally { zf.close() }
+}
+
+// One resolved configuration as a classpath: entries in Gradle's order, highest priority first. An
+// entry is the path of a Maven artifact (a key of `artifacts`) or "project:<gradle path>@<variant>".
+// `keep`, when given, limits the artifacts to those modules (used for tool classpaths).
+def rdfResolve(Object conf, Map ctx, boolean androidOrder = false, Collection keep = null) {
+  def artifacts = ctx.artifacts
+  def repoUrls = ctx.repoUrls
+  def result = conf.incoming.resolutionResult
+  def keyOf = { id ->
+    if (id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier)
+      return "${id.group}:${id.module}:${id.version}".toString()
+    if (id instanceof org.gradle.api.artifacts.component.ProjectComponentIdentifier)
+      return "project:${id.projectPath}".toString()
+    return "other:${id.displayName}".toString()
+  }
+  def repoOf = [:]
+  def variantOf = [:]
+  result.allComponents.each { c ->
+    def k = keyOf(c.id)
+    if (c.id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier) {
+      // Internal API: the repository a component was resolved from. Used only to write one URL;
+      // Bazel verifies the sha256, so a wrong URL fails the fetch and cannot change a build.
+      def repo = rdfTry({ c.repositoryName }) ?: rdfTry({ c.repositoryId })
+      if (repo != null) repoOf[k] = repo.toString()
+    } else if (c.id instanceof org.gradle.api.artifacts.component.ProjectComponentIdentifier) {
+      // Which variant of the project Gradle's attribute matching selected.
+      def names = rdfTry({ c.variants.collect { it.displayName } }, [])
+      def known = (ctx.variants[c.id.projectPath] ?: []).collect { it.name }
+      def sel = null
+      names.each { n ->
+        def m = (n =~ /^(.*?)(Runtime|Api)Elements/)
+        if (m.find() && known.contains(m.group(1))) sel = m.group(1)
+      }
+      if (sel != null) variantOf[k] = sel
+    }
+  }
+  // Projects publish no primary artifact, so the order is read from the view AGP itself compiles
+  // against (classes jars); components that have no classes follow in the order of the plain view.
+  def order = []
+  if (androidOrder) {
+    rdfTry({
+      conf.incoming.artifactView {
+        it.lenient(true)
+        it.attributes { at -> at.attribute(org.gradle.api.attributes.Attribute.of('artifactType', String), 'android-classes-jar') }
+      }.artifacts.artifacts.each { a ->
+        def k = keyOf(a.id.componentIdentifier)
+        if (!order.contains(k)) order << k
+      }
+    })
+  }
+  def files = [:]
+  conf.incoming.artifactView { it.lenient(true) }.artifacts.artifacts.each { a ->
+    def id = a.id.componentIdentifier
+    def k = keyOf(id)
+    if (!order.contains(k)) order << k
+    if (id instanceof org.gradle.api.artifacts.component.ProjectComponentIdentifier) return
+    if (!(id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier)) {
+      // A file dependency (`libs/*.jar`, `fileTree`): recorded, so that it is never dropped unseen.
+      files.computeIfAbsent(k, { [] }) << ('file:' + rdfRel(a.file, ctx.roots))
+      return
+    }
+    if (keep != null && !keep.contains(id.module)) return
+    File f = a.file
+    def path = "${id.group.replace('.', '/')}/${id.module}/${id.version}/${f.name}".toString()
+    def rec = artifacts[path]
+    if (rec == null) {
+      rec = new TreeMap()
+      rec.coordinate = k
+      rec.sha256 = rdfSha256(f)
+      rec.size = f.length()
+      def base = repoOf[k] != null ? repoUrls[repoOf[k]] : null
+      // The published file name can differ from the name Gradle caches it under (Gradle module
+      // metadata: `name` against `url`). Take the `url` from the module file beside the artifact when
+      // it is there, then the conventional Maven name, then the cached name. The sha256 decides.
+      def dirPath = "${id.group.replace('.', '/')}/${id.module}/${id.version}/".toString()
+      def names = []
+      rdfTry({
+        f.parentFile.parentFile.eachFileRecurse { mf ->
+          if (!mf.name.endsWith('.module')) return
+          def md = new groovy.json.JsonSlurper().parse(mf)
+          md.variants.each { vv -> vv.files?.each { ff -> if (ff.name == f.name && ff.url) names << ff.url.toString() } }
+        }
+      })
+      def ext = f.name.contains('.') ? f.name.substring(f.name.lastIndexOf('.')) : ''
+      if (f.name == "${id.module}${ext}".toString()) names << "${id.module}-${id.version}${ext}".toString()
+      names << f.name
+      names = names.unique()
+      def bases = base != null ? [base] : repoUrls.values().toList().unique()
+      rec.urls = bases.collectMany { b -> names.collect { n -> b + dirPath + n } }
+      rdfDescribeArchive(f, rec)
+      artifacts[path] = rec
+    }
+    files.computeIfAbsent(k, { [] }) << path
+  }
+  def out = []
+  order.each { k ->
+    if (k.startsWith('project:')) {
+      if (variantOf[k] == null) throw new GradleException("rdf: cannot tell which variant of ${k} was selected")
+      out << (k + '@' + variantOf[k])
+    } else {
+      (files[k] ?: []).unique().sort().each { out << it }
+    }
+  }
+  return out.unique()
+}
+
+// Stores a classpath once; equal classpaths share an id.
+def rdfShare(List entries, Map ctx) {
+  def md = MessageDigest.getInstance('SHA-256')
+  md.update(entries.join('\n').getBytes('UTF-8'))
+  def id = 'cp_' + md.digest().encodeHex().toString().substring(0, 12)
+  ctx.classpaths[id] = entries
+  return id
+}
+
+def rdfWriteModel(Object g, Object app, Map rdfVariants) {
+  def root = g.rootProject
+  def prop = { String n -> (app.findProperty(n) ?: '').toString() }
+  def want = prop('rdf.variants').split(',').findAll { it } as Set
+  def fallback = prop('rdf.fallback').split(',').findAll { it } as Set
+  def lp = new Properties()
+  def lpf = new File(root.projectDir, 'local.properties')
+  if (lpf.exists()) lpf.withInputStream { lp.load(it) }
+  def appRoot = root.projectDir.parentFile
+  def roots = new LinkedHashMap()
+  roots.app = appRoot.absolutePath
+  def pubCache = System.getenv('PUB_CACHE') ?: rdfTry({ new File(System.getProperty('user.home'), '.pub-cache').absolutePath })
+  if (pubCache) roots.pub = new File(pubCache).absolutePath
+  if (lp.getProperty('flutter.sdk')) roots.flutter = new File(lp.getProperty('flutter.sdk')).absolutePath
+  if (lp.getProperty('sdk.dir')) roots.android_sdk = new File(lp.getProperty('sdk.dir')).absolutePath
+  roots.gradle_home = g.gradleUserHomeDir.absolutePath
+  if (prop('rdf.workspace')) roots.ws = new File(prop('rdf.workspace')).absolutePath
+
+  def model = new TreeMap()
+  model.schema = 2
+  def tools = new TreeMap()
+  tools.gradle = g.gradleVersion
+  def agpCl = rdfTry({ app.plugins.findPlugin('com.android.application').class.classLoader })
+  tools.agp = rdfTry({ agpCl.loadClass('com.android.Version').getField('ANDROID_GRADLE_PLUGIN_VERSION').get(null) })
+  tools.agp_tools_base = rdfTry({ agpCl.loadClass('com.android.Version').getField('ANDROID_TOOLS_BASE_VERSION').get(null) })
+  tools.kotlin = rdfTry({ app.plugins.findPlugin('org.jetbrains.kotlin.android')?.pluginVersion }) ?:
+      rdfTry({ root.allprojects.findResult { it.plugins.findPlugin('org.jetbrains.kotlin.android')?.pluginVersion } })
+  model.tools = tools
+
+  def repoUrls = new LinkedHashMap()
+  root.allprojects.each { p ->
+    p.repositories.each { r -> def u = rdfTry({ r.url?.toString() }); if (u) repoUrls[r.name] = u.endsWith('/') ? u : u + '/' }
+  }
+  model.repositories = repoUrls.values().toList().unique()
+  repoUrls.each { n, u ->
+    if (!u.startsWith('https://') && !u.startsWith('http://'))
+      logger.warn("rdf: repository ${n} (${u}) is not an http repository; artifacts taken from it cannot be fetched by Bazel")
+  }
+
+  def ctx = [artifacts: new TreeMap(), classpaths: new TreeMap(), repoUrls: repoUrls, variants: rdfVariants, roots: roots]
+  def projects = new TreeMap()
+  def problems = []
+  root.allprojects.findAll { it.extensions.findByName('android') != null }.sort { it.path }.each { p ->
+    def a = p.extensions.getByName('android')
+    def pj = new TreeMap()
+    pj.dir = rdfRel(p.projectDir, roots)
+    pj.type = p.pluginManager.hasPlugin('com.android.application') ? 'application' : 'library'
+    pj.gradle_plugins = p.plugins.collect { it.class.name }.findAll { !it.startsWith('org.gradle.') }.sort().unique()
+    if (fallback.contains(p.path)) {
+      pj.gradle_fallback = true
+    } else {
+      pj.gradle_plugins.each { cls ->
+        if (!rdfKnownPlugins.any { cls == it || (it.endsWith('.') && cls.startsWith(it)) })
+          problems << "project ${p.path} applies the Gradle plugin ${cls}, which the rules cannot stand in for"
+      }
+    }
+    if (pj.dir.startsWith('abs:'))
+      problems << "project ${p.path} is at ${p.projectDir}, outside the app, the pub cache and the Bazel workspace"
+    pj.namespace = rdfTry({ a.namespace })
+    pj.compile_sdk = rdfTry({ a.compileSdkVersion })
+    pj.build_tools = rdfTry({ a.buildToolsVersion })
+    pj.ndk_version = rdfTry({ a.ndkVersion })
+    def bf = new TreeMap()
+    ['aidl', 'buildConfig', 'compose', 'dataBinding', 'prefab', 'prefabPublishing', 'renderScript', 'resValues', 'shaders', 'viewBinding', 'mlModelBinding'].each { n ->
+      if (rdfTry({ a.buildFeatures."$n" }) == true) bf[n] = true
+    }
+    if (rdfTry({ a.dataBinding.enabled }) == true || rdfTry({ a.dataBinding.isEnabled() }) == true) bf.dataBinding = true
+    pj.build_features = bf
+    def co = new TreeMap()
+    co.source = rdfTry({ a.compileOptions.sourceCompatibility.toString() })
+    co.target = rdfTry({ a.compileOptions.targetCompatibility.toString() })
+    co.core_library_desugaring = rdfTry({ a.compileOptions.coreLibraryDesugaringEnabled }, false)
+    pj.java = co
+    pj.build_types = rdfTry({ a.buildTypes.collect { b -> new TreeMap([name: b.name, debuggable: b.debuggable, minify: b.minifyEnabled, shrink_resources: rdfTry({ b.shrinkResources }, false), crunch_pngs: (rdfTry({ b.crunchPngs }) != null ? b.crunchPngs : !b.debuggable)]) }.sort { it.name } }, [])
+    def cmake = rdfTry({ a.externalNativeBuild.cmake.path })
+    def ndkBuild = rdfTry({ a.externalNativeBuild.ndkBuild.path })
+    if (cmake != null || ndkBuild != null) {
+      pj.external_native_build = new TreeMap([cmake: rdfRel(cmake, roots), cmake_version: rdfTry({ a.externalNativeBuild.cmake.version }), ndk_build: rdfRel(ndkBuild, roots)].findAll { it.value != null })
+    }
+
+    def variants = new TreeMap()
+    (rdfVariants[p.path] ?: []).sort { it.name }.each { v ->
+      def debuggable = rdfTry({ a.buildTypes.findByName(v.buildType)?.debuggable }, false)
+      if (pj.type == 'application') {
+        // By default the variants of the `debug` build type; release builds are not built from the model yet.
+        if (want ? !want.contains(v.name) : v.buildType != 'debug') return
+      }
+      def vj = new TreeMap()
+      vj.build_type = v.buildType
+      vj.debuggable = debuggable
+      vj.flavors = rdfTry({ v.productFlavors.collect { new TreeMap([dimension: it.first, name: it.second]) } }, [])
+      vj.namespace = rdfTry({ v.namespace.get() })
+      if (pj.type == 'application') {
+        vj.application_id = rdfTry({ v.applicationId.get() })
+        def out = rdfTry({ v.outputs.first() })
+        vj.version_code = rdfTry({ out.versionCode.getOrNull() })
+        vj.version_name = rdfTry({ out.versionName.getOrNull() })
+        vj.signing = rdfTry({ v.signingConfig != null ? 'debug-or-configured' : null })
+        if (rdfTry({ v.outputs.size() }, 1) > 1)
+          problems << "project ${p.path}, variant ${v.name}: several outputs (APK splits by ABI or density)"
+      }
+      vj.min_sdk = rdfVersionNum(rdfTry({ v.minSdk }) ?: rdfTry({ v.minSdkVersion }))
+      vj.target_sdk = rdfVersionNum(rdfTry({ v.targetSdk }) ?: rdfTry({ v.targetSdkVersion }))
+      vj.max_sdk = rdfTry({ v.maxSdk })
+      def src = new TreeMap()
+      def s = v.sources
+      // The DSL's source sets, for what the variant API leaves out. Present while the old DSL is
+      // (android.newDsl=false is what the Flutter template writes); AGP 10 removes it.
+      def ss = rdfTry({ a.sourceSets })
+      def ssNames = (['main'] + rdfTry({ v.productFlavors.collect { it.second } }, []) + [v.flavorName, v.buildType, v.name]).findAll { it }.unique()
+      src.java = rdfDirs(rdfTry({ s.java?.static }), roots)
+      src.kotlin = rdfDirs(rdfTry({ s.kotlin?.static }), roots)
+      src.res = rdfDirs(rdfTry({ s.res?.static }), roots)
+      if (!src.res && ss != null) {
+        // Seen with product flavors that add resValues: the variant API gives no directory.
+        ssNames.each { n -> rdfTry({ ss.findByName(n)?.res?.srcDirs }, []).each { d -> if (d.exists()) src.res << rdfRel(d, roots) } }
+        src.res = src.res.unique()
+      }
+      src.assets = rdfDirs(rdfTry({ s.assets?.static }), roots)
+      src.jni_libs = rdfDirs(rdfTry({ s.jniLibs?.static }), roots)
+      src.aidl = rdfDirs(rdfTry({ s.aidl?.static }), roots)
+      src.shaders = rdfDirs(rdfTry({ s.shaders?.static }), roots)
+      src.java_resources = rdfDirs(rdfTry({ s.resources?.static }), roots)
+      // Manifests: the main one first, then the overlays, highest priority first (variant, build type,
+      // flavors), which is the order AGP hands them to the merger. The variant API's `sources.manifests`
+      // lists all of them highest priority first; the old DSL's source sets are the fallback.
+      def mf = []
+      rdfTry({ s.manifests.all.get() }, []).each { rf -> def f = rdfTry({ rf.asFile }); if (f != null && f.exists()) mf << rdfRel(f, roots) }
+      if (mf) {
+        mf = [mf.last()] + mf.take(mf.size() - 1)
+      } else if (ss != null) {
+        def low = []
+        ssNames.each { n ->
+          def f = rdfTry({ ss.findByName(n)?.manifest?.srcFile })
+          if (f != null && f.exists()) low << rdfRel(f, roots)
+        }
+        if (low) mf = [low.first()] + low.drop(1).reverse()
+      }
+      src.manifests = mf.unique()
+      vj.sources = src
+      src.each { kind, list -> list.each { d -> if (d.startsWith('abs:')) problems << "project ${p.path}, variant ${v.name}: ${kind} ${d.substring(4)} is outside the app, the pub cache and the Bazel workspace" } }
+      vj.manifest_placeholders = new TreeMap(rdfTry({ v.manifestPlaceholders.get() }, [:]))
+      def bcf = new TreeMap()
+      rdfTry({ v.buildConfigFields?.get() }, [:]).each { k, f -> bcf[k] = new TreeMap([type: f.type, value: f.value?.toString()]) }
+      vj.build_config_fields = bcf
+      def rv = new TreeMap()
+      rdfTry({ v.resValues?.get() }, [:]).each { k, f -> rv[k.name] = new TreeMap([type: k.type, value: f.value]) }
+      def gsTask = p.tasks.findByName("process${v.name.capitalize()}GoogleServices")
+      if (gsTask != null) {
+        rdfTry({
+          gsTask.outputs.files.files.each { d ->
+            if (!d.isDirectory()) return
+            d.eachFileRecurse { xf ->
+              if (!xf.name.endsWith('.xml')) return
+              new groovy.xml.XmlSlurper(false, false).parse(xf).children().each { e ->
+                rv[e.'@name'.toString()] = new TreeMap([type: e.name(), value: e.text(), translatable: e.'@translatable'.toString() != 'false', generated_by: 'google-services'])
+              }
+            }
+          }
+        })
+      }
+      vj.res_values = rv
+      vj.proguard_files = rdfDirs(rdfTry({ v.proguardFiles }), roots).findAll { !it.startsWith('abs:') }
+      def cpf = []
+      rdfTry({ a.defaultConfig.consumerProguardFiles }, []).each { f -> if (f.exists()) cpf << rdfRel(f, roots) }
+      rdfTry({ a.buildTypes.findByName(v.buildType)?.consumerProguardFiles }, []).each { f -> if (f.exists()) cpf << rdfRel(f, roots) }
+      vj.consumer_proguard_files = cpf.unique()
+      def enb = rdfTry({ v.externalNativeBuild })
+      if (enb != null) {
+        vj.external_native_build = new TreeMap([
+          abi_filters: rdfTry({ enb.abiFilters.get().toList().sort() }, []),
+          arguments: rdfTry({ enb.arguments.get().toList() }, []),
+          c_flags: rdfTry({ enb.cFlags.get().toList() }, []),
+          cpp_flags: rdfTry({ enb.cppFlags.get().toList() }, []),
+          targets: rdfTry({ enb.targets.get().toList().sort() }, []),
+        ])
+      }
+      vj.ndk_abi_filters = rdfTry({ a.defaultConfig.ndk.abiFilters.toList().sort() }, [])
+      // Packaging as the variant sees it: the DSL's values and AGP's own defaults.
+      def pk = new TreeMap()
+      pk.excludes = rdfTry({ v.packaging.resources.excludes.get().toList().sort() }, [])
+      pk.pick_firsts = rdfTry({ v.packaging.resources.pickFirsts.get().toList().sort() }, [])
+      pk.merges = rdfTry({ v.packaging.resources.merges.get().toList().sort() }, [])
+      pk.jni_excludes = rdfTry({ v.packaging.jniLibs.excludes.get().toList().sort() }, [])
+      pk.jni_pick_firsts = rdfTry({ v.packaging.jniLibs.pickFirsts.get().toList().sort() }, [])
+      pk.jni_use_legacy = rdfTry({ v.packaging.jniLibs.useLegacyPackaging.getOrNull() })
+      pk.dex_use_legacy = rdfTry({ v.packaging.dex.useLegacyPackaging.getOrNull() })
+      vj.packaging = pk
+      // Kotlin: what the variant's compile task would be run with.
+      def cap = v.name.capitalize()
+      def kt = p.tasks.findByName("compile${cap}Kotlin")
+      if (kt != null) {
+        def kj = new TreeMap()
+        def o = kt.compilerOptions
+        kj.jvm_target = rdfTry({ o.jvmTarget.get().target })
+        kj.language_version = rdfTry({ o.languageVersion.getOrNull()?.version })
+        kj.api_version = rdfTry({ o.apiVersion.getOrNull()?.version })
+        kj.free_compiler_args = rdfTry({ o.freeCompilerArgs.get().toList() }, [])
+        kj.module_name = rdfTry({ o.moduleName.getOrNull() })
+        kj.all_warnings_as_errors = rdfTry({ o.allWarningsAsErrors.get() }, false)
+        kj.opt_in = rdfTry({ o.optIn.get().toList() }, [])
+        // Compiler plugins (parcelize, serialization, compose, ...): the jars are Maven artifacts in
+        // the Gradle home; they are recorded by file name, which is all that is machine-independent.
+        kj.plugin_jars = rdfTry({ kt.pluginClasspath.files.collect { it.name }.sort() }, [])
+        kj.plugin_options = rdfTry({ kt.pluginOptions.get().collectMany { it.arguments }.toList() }, [])
+        vj.kotlin = kj
+      }
+      def jc = p.tasks.findByName("compile${cap}JavaWithJavac")
+      if (jc != null) vj.javac_args = rdfTry({ jc.options.compilerArgs.toList() }, [])
+      vj.annotation_processor_args = new TreeMap(rdfTry({ v.javaCompilation.annotationProcessor.arguments.get() }, [:]))
+      vj.ksp_args = new TreeMap(rdfTry({ p.extensions.findByName('ksp')?.arguments }, [:]) ?: [:])
+
+      vj.runtime = rdfShare(rdfResolve(v.runtimeConfiguration, ctx, true), ctx)
+      vj.compile = rdfShare(rdfResolve(v.compileConfiguration, ctx, true), ctx)
+      def ap = rdfTry({ v.annotationProcessorConfiguration })
+      if (ap != null) {
+        def apn = rdfResolve(ap, ctx)
+        if (apn) vj.annotation_processors = rdfShare(apn, ctx)
+      }
+      [kapt: 'kapt_processors', ksp: 'ksp_processors', coreLibraryDesugaring: 'core_library_desugaring'].each { cn, key ->
+        def deps = [] as LinkedHashSet
+        ([cn] + (cn == 'coreLibraryDesugaring' ? [] : ssNames.collect { cn + it.capitalize() })).each { n ->
+          def c0 = p.configurations.findByName(n)
+          if (c0 != null) deps.addAll(c0.allDependencies)
+        }
+        if (!deps.isEmpty()) {
+          def c1 = p.configurations.detachedConfiguration(deps.toArray(new org.gradle.api.artifacts.Dependency[0]))
+          rdfTry({ c1.attributes.attribute(org.gradle.api.attributes.Usage.USAGE_ATTRIBUTE, p.objects.named(org.gradle.api.attributes.Usage, 'java-runtime')) })
+          vj[key] = rdfShare(rdfResolve(c1, ctx), ctx)
+        }
+      }
+      variants[v.name] = vj
+    }
+    pj.variants = variants
+    projects[p.path] = pj
+  }
+  // Keep the library variants an application variant reaches, and the classpaths they use.
+  def reach = [] as LinkedHashSet
+  def todo = []
+  projects.each { pp, pj -> if (pj.type == 'application') pj.variants.keySet().each { todo << [pp, it] } }
+  while (todo) {
+    def (pp, vn) = todo.pop()
+    if (!reach.add(pp + '@' + vn)) continue
+    def vj = projects[pp]?.variants?.get(vn)
+    if (vj == null) continue
+    [vj.runtime, vj.compile].each { id ->
+      ctx.classpaths[id].each { e ->
+        if (e.startsWith('project:')) { def at = e.lastIndexOf('@'); todo << [e.substring(8, at), e.substring(at + 1)] }
+      }
+    }
+  }
+  def usedCp = [] as Set
+  projects.each { pp, pj ->
+    pj.variants.keySet().toList().each { vn -> if (!reach.contains(pp + '@' + vn)) pj.variants.remove(vn) }
+    pj.variants.each { vn, vj -> ['runtime', 'compile', 'annotation_processors', 'kapt_processors', 'ksp_processors', 'core_library_desugaring'].each { k -> if (vj[k]) usedCp << vj[k] } }
+  }
+  ctx.classpaths.keySet().toList().each { if (!usedCp.contains(it)) ctx.classpaths.remove(it) }
+  def usedArtifacts = ctx.classpaths.values().flatten() as Set
+  ctx.pruneArtifacts = { extra -> ctx.artifacts.keySet().toList().each { if (!usedArtifacts.contains(it) && !extra.contains(it)) ctx.artifacts.remove(it) } }
+  model.projects = projects
+
+  // The plugin registrant the Flutter tool wrote at `flutter pub get`. It is not checked in by a
+  // stock project, so the model carries it.
+  def reg = new File(app.projectDir, 'src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java')
+  def gen = new TreeMap()
+  if (reg.exists()) gen['io/flutter/plugins/GeneratedPluginRegistrant.java'] = reg.getText('UTF-8')
+  model.generated_sources = gen
+
+  // How the pubspec's version shows in `version_code` and `version_name` of the app's variants.
+  model.pubspec_version_markers = new TreeMap([code: rdfVersionCodeMarker as Long, name: rdfVersionNameMarker])
+
+  // The pub packages whose android/ projects are part of the build, with the archive hash pub recorded.
+  def pubPkgs = new TreeMap()
+  def pubRef = { String rooted ->
+    def m = (rooted =~ /^pub:hosted\/([^\/]+)\/([^\/]+)(\/|$)/)
+    if (!m.find()) {
+      if (rooted.startsWith('pub:')) problems << "${rooted}: only packages hosted on a pub server are supported (not git or path overrides in the pub cache)"
+      return
+    }
+    def host = m.group(1); def nv = m.group(2)
+    if (pubPkgs.containsKey(nv)) return
+    def hf = new File(roots.pub, "hosted-hashes/${host}/${nv}.sha256")
+    def rec = new TreeMap()
+    rec.host = host.replace('%47', '/')
+    if (hf.exists()) rec.sha256 = hf.text.trim()
+    else problems << "no archive hash for ${nv} in the pub cache (${hf}); run `flutter pub get` with a current Flutter"
+    pubPkgs[nv] = rec
+  }
+  projects.each { pp, pj ->
+    pubRef(pj.dir)
+    pj.variants.each { vn, vj -> vj.sources.each { kind, list -> list.each { pubRef(it) } } }
+  }
+  model.pub_packages = pubPkgs
+
+  // The files whose change makes this pin stale, with their hashes: the lock and the Gradle files of
+  // the app (plugin projects are immutable per version, and the lock names the versions).
+  def inputs = new TreeMap()
+  def addInput = { File f ->
+    if (f == null || !f.exists() || !f.isFile()) return
+    def r = rdfRel(f, roots)
+    if (r.startsWith('app:')) inputs[r.substring(4)] = rdfSha256(f)
+  }
+  addInput(new File(appRoot, 'pubspec.lock'))
+  addInput(rdfTry({ g.settings.settingsScript.resource.file }) ?: rdfTry({ new File(g.startParameter.settingsFile ?: '') }))
+  ['settings.gradle', 'settings.gradle.kts', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml'].each { addInput(new File(root.projectDir, it)) }
+  root.allprojects.each { p ->
+    addInput(p.buildFile)
+    if (p.extensions.findByName('android') != null) {
+      addInput(new File(p.projectDir, 'google-services.json'))
+      rdfTry({ p.projectDir.listFiles() }, []).each { f -> if (f.name.endsWith('.pro') || f.name.endsWith('.gradle') || f.name.endsWith('.gradle.kts')) addInput(f) }
+    }
+  }
+  model.inputs = inputs
+
+  // AGP's own tools, so that Bazel runs the same D8, manifest merger, aapt2 and signer as the stock
+  // build. Resolved in detached configurations: they are not on the app's classpath.
+  def toolSets = new TreeMap()
+  def detached = { String name, List coords, Collection keep = null ->
+    def c = app.configurations.detachedConfiguration(coords.collect { app.dependencies.create(it) }.toArray(new org.gradle.api.artifacts.Dependency[0]))
+    rdfTry({ c.attributes.attribute(org.gradle.api.attributes.Usage.USAGE_ATTRIBUTE, app.objects.named(org.gradle.api.attributes.Usage, 'java-runtime')) })
+    toolSets[name] = rdfResolve(c, ctx, false, keep)
+  }
+  if (tools.agp) {
+    def r8v = rdfTry({ agpCl.loadClass('com.android.tools.r8.Version').getMethod('getVersionString').invoke(null).toString().split(' ')[0] })
+    tools.r8 = r8v
+    if (r8v) detached('r8', ["com.android.tools:r8:${r8v}"])
+    detached('manifest_merger', ["com.android.tools.build:manifest-merger:${tools.agp_tools_base}"])
+    detached('apksig', ["com.android.tools.build:apksig:${tools.agp}"])
+    // AGP's writer of R classes (bytecode, no javac) and the ASM it uses; the rest of `builder` is not needed.
+    detached('r_class_writer', ["com.android.tools.build:builder:${tools.agp}"], ['builder', 'asm', 'asm-commons', 'asm-tree', 'asm-analysis', 'asm-util'])
+    // AGP's resource compiler: XML resources are compiled in the JVM, not by the aapt2 binary.
+    detached('resource_compiler', ["com.android.tools.build:aaptcompiler:${tools.agp}"])
+    def aapt2 = rdfTry({
+      new File(g.gradleUserHomeDir, 'caches/modules-2/files-2.1/com.android.tools.build/aapt2').list().findAll { it.startsWith(tools.agp + '-') }.sort().last() })
+    tools.aapt2 = aapt2
+    if (aapt2) ['linux', 'osx', 'windows'].each { os -> rdfTry({ detached('aapt2_' + os, ["com.android.tools.build:aapt2:${aapt2}:${os}"]) }) }
+  }
+  model.tool_classpaths = toolSets
+  ctx.pruneArtifacts(toolSets.values().flatten() as Set)
+  model.classpaths = ctx.classpaths
+  model.artifacts = ctx.artifacts
+
+  if (problems) {
+    throw new GradleException("rdf: the Android model cannot be pinned:\n  - " + problems.unique().join("\n  - ") +
+        "\nA plugin project the model cannot express can be built by Gradle itself: list it in `gradle_fallback` of the pin target.")
+  }
+  def out = new File((app.findProperty('rdf.out') ?: new File(root.projectDir, 'android_model.json')).toString())
+  out.parentFile.mkdirs()
+  out.setText(JsonOutput.prettyPrint(JsonOutput.toJson(model)) + '\n', 'UTF-8')
+  println "rdf: wrote ${out} (${projects.size()} projects, ${ctx.artifacts.size()} artifacts)"
+}
+
+ext.rdfWriteModel = this.&rdfWriteModel
