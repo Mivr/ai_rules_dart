@@ -507,10 +507,6 @@ jobs:
           (cd e2e/min_versions && bazel shutdown) >/dev/null 2>&1 || true
           rm -rf "$archive_dir"
           trap - EXIT
-      # Pre-0.24.0 red path: lowering ai_rules_dart to v0.21.0 in the staged
-      # min_versions workspace must fail on the missing pub_scc.bzl symbol.
-      - name: Run e2e/min_versions (pre-0.24.0 rules_dart red path)
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/min_versions --command="pre-0.24.0 rules_dart fails on pub_scc.bzl" --bazel=bazel
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true

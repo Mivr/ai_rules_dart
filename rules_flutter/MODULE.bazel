@@ -31,14 +31,14 @@ module(
 # `@bazel_skylib//rules:build_test.bzl`, `//rules:common_settings.bzl`,
 # `//rules:expand_template.bzl` and `//rules:write_file.bzl`, and the test
 # suites use `//lib:unittest.bzl`. e2e/min_versions declares this floor;
-# ai_rules_dart 0.28.3 itself asks for 1.9.2, so a consumer resolves that
+# ai_rules_dart itself asks for 1.9.2, so a consumer resolves that
 # higher version through it (see docs/dependencies.md).
 bazel_dep(name = "bazel_skylib", version = "1.8.0")
 
 # package_metadata 0.0.5 is the floor: this module's root BUILD and
 # ai_rules_dart load `@package_metadata//licenses/rules:license.bzl`,
 # `@package_metadata//purl:purl.bzl` (`purl.bazel()`) and
-# `@package_metadata//rules:package_metadata.bzl`. ai_rules_dart 0.28.3
+# `@package_metadata//rules:package_metadata.bzl`. ai_rules_dart
 # asks for 0.0.13, which is the version a consumer resolves through it.
 bazel_dep(name = "package_metadata", version = "0.0.5")
 
@@ -53,7 +53,7 @@ bazel_dep(name = "platforms", version = "1.1.0")
 # `@rules_cc//cc:objc_library.bzl`,
 # `@rules_cc//cc/common:cc_shared_library_info.bzl` and the toolchain
 # helpers at `@rules_cc//cc:find_cc_toolchain.bzl`. llvm 0.8.17 asks for
-# 0.2.22 and ai_rules_dart 0.28.3 for 0.2.26, so a consumer resolves 0.2.26
+# 0.2.22 and ai_rules_dart for 0.2.26, so a consumer resolves 0.2.26
 # through those modules; that is their lift, not our floor.
 bazel_dep(name = "rules_cc", version = "0.2.20")
 
@@ -61,7 +61,7 @@ bazel_dep(name = "rules_cc", version = "0.2.20")
 # `@apple_support//constraints:{device,simulator}` and
 # `@apple_support//platforms:ios_arm64`, and MODULE.bazel joins the
 # `@apple_support//crosstool:setup.bzl` `apple_cc_configure_extension`.
-# rules_cc 0.2.26 (through ai_rules_dart 0.28.3) asks for 2.9.1, so a
+# rules_cc 0.2.26 (through ai_rules_dart) asks for 2.9.1, so a
 # consumer resolves that higher version through rules_cc.
 bazel_dep(name = "apple_support", version = "2.2.0")
 
@@ -114,19 +114,26 @@ bazel_dep(name = "rules_jvm_external", version = "6.8")
 
 # Minimum rules_dart with the APIs rules_flutter loads
 # (`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`,
-# `@rules_dart//dart/pub:pub_scc.bzl`, `dart_analysis_config(baseline = ...)`,
-# `dart_codegen(package_name = ...)`): the `Mivr/ai_rules_dart` release,
-# published on GitHub as `ai_rules_dart` with
-# `repo_name = "rules_dart"`, so every `@rules_dart//` label keeps working.
-# (A Bazel Central Registry entry for it is pending.)
+# `@rules_dart//dart/pub:pub_scc.bzl`, `@rules_dart//dart/pub:yaml.bzl`,
+# `dart_analysis_config(baseline = ...)`, `dart_codegen(package_name = ...)`).
+# rules_dart lives in this repository, so the floor is the first rules_dart
+# release cut from it that has all of them, and it is raised when rules_flutter
+# starts to load something that only a newer release has. It is published on
+# GitHub as `ai_rules_dart` with `repo_name = "rules_dart"`, so every
+# `@rules_dart//` label keeps working. (A Bazel Central Registry entry for it
+# is pending.)
 # aran's BCR releases (up to 0.7.3) lack them and fail at load with a
 # missing-symbol error, so the floor points at ai_rules_dart and consumers
-# take both modules from their GitHub releases (see README.md). This repo's own
-# builds use the sibling `rules_dart` directory through the
-# local_path_override below; e2e workspaces do the same.
-# ai_rules_dart 0.28.3 also brings its own higher floors for rules_cc
+# take both modules from their GitHub releases (see README.md).
+# This repo's own builds use the sibling `rules_dart` directory through the
+# local_path_override below, and so do the e2e workspaces: the number here
+# does not change what they build. No release has `yaml.bzl` yet, so 0.28.3
+# is a placeholder until rules_dart is released from this repository; until
+# then a consumer that resolves it from the registry fails at load.
+# ai_rules_dart also brings its own higher floors for rules_cc
 # (0.2.26), bazel_skylib (1.9.2), package_metadata (0.0.13) and rules_go
-# (0.64.2); docs/dependencies.md attributes every one of those lifts.
+# (0.64.2); docs/dependencies.md attributes every one of those lifts, and
+# `e2e/min_versions` checks them against the sibling's `MODULE.bazel`.
 bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
 
 # rules_go 0.59.0 is the floor: it is the lowest rules_go that builds on
@@ -134,7 +141,7 @@ bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
 # `go/private/rules/cross.bzl` uses the native `CcInfo` symbol Bazel 9
 # removed; the rules_cc import landed in 0.59.0). It also matches the floor
 # rules_android 0.8.0 imposes, so our own declaration binds nothing new.
-# ai_rules_dart 0.28.3 asks for 0.64.2, which a consumer resolves through
+# ai_rules_dart asks for 0.64.2, which a consumer resolves through
 # it. flutter_android_app's proxy transition sets `@rules_go//go/config:pure`,
 # which must resolve in every consumer, so this stays a regular dependency.
 bazel_dep(name = "rules_go", version = "0.59.0")
@@ -162,7 +169,7 @@ bazel_dep(name = "rules_testing", version = "0.9.0", dev_dependency = True)
 # `llvm-toolchain-minimal-<os>-<cpu>` repos this module imports below, and
 # the repo's own hermetic tests use `@llvm//toolchain:*`. llvm 0.8.17 itself
 # asks for rules_cc 0.2.22, bazel_skylib 1.9.0 and rules_go 0.62.0, but
-# ai_rules_dart 0.28.3 asks for even higher versions of all three, so those
+# ai_rules_dart asks for even higher versions of all three, so those
 # lifts are attributed there in docs/dependencies.md.
 bazel_dep(name = "llvm", version = "0.8.17")
 
@@ -268,7 +275,7 @@ single_version_override(
 # through 0.58.3 fail to load (`go/private/rules/cross.bzl` uses the native
 # `CcInfo` symbol Bazel 9 removed; the rules_cc import landed in 0.59.0).
 # It also matches the floor rules_android 0.8.0 already imposes, while
-# ai_rules_dart 0.28.3 asks for 0.64.2, so the floor binds nothing new in a
+# ai_rules_dart asks for 0.64.2, so the floor binds nothing new in a
 # consumer graph.
 #
 # rules_android ships its own Go SDK (0.8.0 downloads 1.22.4 without

@@ -3,10 +3,12 @@
 /// This module declares every dependency at the minimum rules_flutter
 /// supports. The repository rule `@resolved_module_versions` reads each
 /// selected module's own `MODULE.bazel`, so this program asserts the graph
-/// Bazel actually built, not a hand-written model of it. A dependency whose
-/// own requirement is above our floor is expected at that lifted version and
-/// is attributed to the module that lifted it; presenting a lift as our floor
-/// would hide a real consumer requirement.
+/// Bazel actually built, not a hand-written model of it. `rules_dart` is the
+/// sibling directory of this checkout: its declared floor is checked, and what
+/// it asks of the other modules is what the lifts attribute to it. A
+/// dependency whose own requirement is above our floor is expected at that
+/// lifted version and is attributed to the module that lifted it; presenting a
+/// lift as our floor would hide a real consumer requirement.
 ///
 /// It deliberately does not depend on `package:test`: `e2e/min_versions` has a
 /// Flutter-only pub graph, so `dart_test` runs this `main` directly and a
@@ -70,6 +72,11 @@ void main() {
   // dependency that `//:android_repositories.bzl` maps for its generated
   // repository.
   const fixtures = {'ai_rules_flutter', 'rules_android_ndk', 'rules_shell'};
+
+  // The sibling `rules_dart` of this checkout, taken through a
+  // `local_path_override`: it is declared at its floor, but it has no resolved
+  // version. What it asks of the other modules shows in their lifts.
+  const sibling = 'ai_rules_dart';
   for (final dep in deps) {
     if (fixtures.contains(dep.name)) continue;
     _check(
@@ -79,6 +86,7 @@ void main() {
   }
 
   for (final entry in floors.entries) {
+    if (entry.key == sibling) continue;
     final actual = resolved[entry.key];
     _check(actual != null, '${entry.key} is missing from the resolved graph');
     _check(
@@ -105,12 +113,13 @@ void main() {
     );
   }
 
+  final expected = floors.keys.toSet()..remove(sibling);
   _check(
-    resolved.keys.toSet().difference(floors.keys.toSet()).isEmpty,
+    resolved.keys.toSet().difference(expected).isEmpty,
     'versions.json contains modules without a floor entry',
   );
   _check(
-    floors.keys.toSet().difference(resolved.keys.toSet()).isEmpty,
+    expected.difference(resolved.keys.toSet()).isEmpty,
     'versions.json is missing a module from the floor table',
   );
   stdout.writeln('dependency floors: ${floors.length} modules checked');

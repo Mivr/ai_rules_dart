@@ -17,7 +17,7 @@ bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
 # never at the release this repository compiles. The comments in the root
 # MODULE.bazel name the symbol that sets each floor; this workspace is the
 # proof that the set builds together. Some of these floors are lifted by
-# another module's own requirement (ai_rules_dart 0.28.3 asks for newer
+# another module's own requirement (ai_rules_dart asks for newer
 # rules_cc, bazel_skylib, package_metadata and rules_go; rules_android 0.8.0
 # asks for newer rules_java and rules_jvm_external, and the newer rules_cc
 # asks for newer apple_support). Those modules stay at the floor here and MVS
@@ -39,11 +39,14 @@ local_path_override(
     path = "../..",
 )
 
-archive_override(
+# rules_dart is the sibling in this checkout, the same way every other e2e
+# workspace takes it. The version on the `bazel_dep` above is the floor
+# rules_flutter declares for the release; Bazel ignores it here, so what this
+# workspace proves about rules_dart is its requirements on the other modules
+# (the lifts `//:dependency_floors_test` attributes), not a published version.
+local_path_override(
     module_name = "ai_rules_dart",
-    sha256 = "75165afd286a20b381334761f271413b7a9839a843f1266190157d7ef526b7a1",
-    strip_prefix = "rules_dart-0.28.3",
-    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/v0.28.3/rules_dart-v0.28.3.tar.gz"],
+    path = "../../../rules_dart",
 )
 
 # Hermetic host C++ toolchain: CI images and bare hosts may have no
@@ -51,7 +54,7 @@ archive_override(
 # block as e2e/integration_android). llvm's floor is 0.8.17 (the xtool SDK
 # and the prebuilt-toolchain repos this workspace registers); llvm itself
 # asks for rules_cc 0.2.22, bazel_skylib 1.9.0 and rules_go 0.62.0, which
-# ai_rules_dart 0.28.3 lifts further.
+# ai_rules_dart lifts further.
 bazel_dep(name = "llvm", version = "0.8.17", dev_dependency = True)
 
 register_toolchains(
@@ -73,7 +76,7 @@ register_toolchains(
 # llvm, rules_android and platforms are the remaining floors no other module
 # asks to raise.
 #
-# The lifted floors are deliberately NOT overridden here: ai_rules_dart 0.28.3
+# The lifted floors are deliberately NOT overridden here: ai_rules_dart
 # asks for newer rules_cc, bazel_skylib, package_metadata and rules_go;
 # rules_android 0.8.0 asks for rules_java 9.3.0 and rules_jvm_external 6.9;
 # rules_cc 0.2.26 asks for apple_support 2.9.1. Forcing those below their
@@ -113,7 +116,7 @@ single_version_override(
 )
 
 # The resolved-version proof: a repository rule reads each selected module's
-# own `MODULE.bazel` (and the root pin for the archive-overridden rules_dart), so
+# own `MODULE.bazel` (the sibling rules_dart has no version and is left out), so
 # `//:dependency_floors_test` asserts the graph Bazel actually built instead
 # of a checked-in model of it.
 resolved_module_versions = use_repo_rule("//:resolved_module_versions.bzl", "resolved_module_versions")
