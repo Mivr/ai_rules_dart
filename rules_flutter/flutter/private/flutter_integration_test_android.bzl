@@ -1,20 +1,13 @@
 """The `platform = "android"` rules and macro helpers of `flutter_integration_test`.
 
-Compiles the app and its in-app test for `android_x64`, packages a signed APK
-through `android_binary`, and runs it in the hermetic headless emulator
-through `flutter_integration_test_runner`. `declare_android_integration_test`
-creates the helper app, bundle, registrant, manifest and APK targets and the
-test target `flutter_integration_test.bzl` dispatches to.
+Compiles the app and its in-app test, hands that Dart program to the app macro
+of the pinned Gradle model (`flutter_android_app` of the pin's `defs.bzl`), and
+runs the APK it builds in the hermetic headless emulator through
+`flutter_integration_test_runner`. The Android side (manifest, resources,
+plugins, application id) is the app's own Gradle project, as in
+`flutter test integration_test`.
 """
 
-load(
-    "@bazel_skylib//rules:write_file.bzl",
-    "write_file",
-)
-load(
-    "@rules_android//android:rules.bzl",
-    "android_binary",
-)
 load(
     "@rules_dart//dart:providers.bzl",
     "DartInfo",
@@ -24,10 +17,6 @@ load(
     "MODULAR_KERNEL_TOOLCHAINS",
     "derive_lib_root",
     "runfiles_path",
-)
-load(
-    "@rules_kotlin//kotlin:android.bzl",
-    "kt_android_library",
 )
 load(
     "//flutter:providers.bzl",
@@ -46,33 +35,9 @@ load(
     "PLATFORM_CONSTRAINT_ATTRS",
 )
 load(
-    "//flutter/private:constants.bzl",
-    "ANDROID_MIN_SDK_VERSION",
-    "ANDROID_TARGET_SDK_VERSION",
-)
-load(
-    "//flutter/private:flutter_android_engine.bzl",
-    "flutter_android_engine",
-)
-load(
-    "//flutter/private:flutter_android_manifest_merge.bzl",
-    "flutter_android_manifest_merge",
-)
-load(
-    "//flutter/private:flutter_android_plugin_closure.bzl",
-    "declare_android_bundle_targets",
-    "declare_android_plugin_closure",
-)
-load(
-    "//flutter/private:flutter_android_registrant.bzl",
-    "flutter_android_registrant",
-)
-load(
     "//flutter/private:flutter_integration_android_app.bzl",
     "ANDROID_APP_KWARG_KEYS",
     "android_integration_app_kernel",
-    "make_android_integration_manifest_lines",
-    "sanitize_android_package_segment",
 )
 load(
     "//flutter/private:flutter_integration_test_bootstrap.bzl",
@@ -107,6 +72,7 @@ load(
     "//flutter/private:native_sources.bzl",
     "native_sources_aspect",
 )
+load("//flutter/private/android_model:rules.bzl", "RdfApkInfo")
 
 visibility(["//flutter/..."])
 
@@ -223,8 +189,8 @@ def _android_integration_test_setup(ctx):
         ctx: The rule context of the rule implementation that calls this helper.
 
     Returns:
-        A struct with `main_file`, `extra_srcs`, `package_name`, `lib_root`
-        and `apk_file`.
+        A struct with `main_file`, `extra_srcs`, `package_name`, `lib_root`,
+        `apk_file` and `android_package`.
     """
     if ctx.attr.platform != "android":
         fail(
@@ -242,21 +208,9 @@ def _android_integration_test_setup(ctx):
 
     main_file, extra_srcs = resolve_main_and_srcs(ctx)
 
-    apk_files = [
-        f
-        for f in ctx.files.apk
-        if f.path.endswith(".apk") and not f.path.endswith("_unsigned.apk")
-    ]
-    if not apk_files:
-        fail(
-            "flutter_integration_test %s: expected a signed .apk from %s, got %s" % (
-                ctx.label.name,
-                ctx.attr.apk.label,
-                [f.short_path for f in ctx.files.apk],
-            ),
-        )
     return struct(
-        apk_file = apk_files[0],
+        android_package = ctx.attr.apk[RdfApkInfo].application_id,
+        apk_file = ctx.attr.apk[RdfApkInfo].apk,
         extra_srcs = extra_srcs,
         lib_root = derive_lib_root(ctx.label.workspace_root, ctx.label.package),
         main_file = main_file,
@@ -282,7 +236,7 @@ def _flutter_android_integration_test_impl(ctx):
     env = {
         "FLUTTER_INTEGRATION_TEST_PLATFORM": "android",
         "FLUTTER_INTEGRATION_TEST_ANDROID_APK": runfiles_path(setup.apk_file, workspace_name),
-        "FLUTTER_INTEGRATION_TEST_ANDROID_PACKAGE": ctx.attr.android_package,
+        "FLUTTER_INTEGRATION_TEST_ANDROID_PACKAGE": setup.android_package,
         "FLUTTER_INTEGRATION_TEST_ANDROID_EMULATOR": runfiles_path(ctx.file._android_emulator, workspace_name),
         "FLUTTER_INTEGRATION_TEST_ANDROID_ADB": runfiles_path(ctx.file._android_adb, workspace_name),
         "FLUTTER_INTEGRATION_TEST_PATH": setup.main_file.short_path,
@@ -350,12 +304,8 @@ _ANDROID_INTEGRATION_APP_ATTRS["_bootstrap_template"] = attr.label(
 _ANDROID_INTEGRATION_TEST_ATTRS = {
     "apk": attr.label(
         mandatory = True,
-        allow_files = True,
-        doc = "The compiled Android APK target.",
-    ),
-    "android_package": attr.string(
-        mandatory = True,
-        doc = "Android application ID (e.g. 'com.example.app_test').",
+        providers = [RdfApkInfo],
+        doc = "The whole APK of the app built from the pinned Gradle model; it names its application id.",
     ),
     "srcs": KERNEL_COMPILE_ATTRS["srcs"],
     "main": COMMON_INTEGRATION_TEST_ATTRS["main"],
@@ -426,21 +376,30 @@ _flutter_android_integration_test = rule(
     doc = "Runs a compiled Flutter Android integration test APK inside a hermetic, pinned headless Android emulator.",
 )
 
-def _android_integration_test_app(name, package_name, deps, kwargs):
-    """Declares the Android helper app, bundle, engine and plugin targets.
+def declare_android_integration_test(name, package_name, deps, android_app, android_variant, kwargs):
+    """Declares the Android integration-test app and test targets.
 
     Args:
-        name: The test target's name the helper names derive from.
+        name: The test target's name.
         package_name: The resolved Dart package name.
         deps: The merged dependencies.
+        android_app: `flutter_android_app` of the pin's `defs.bzl` (the function), which builds
+            the app's Android side from its Gradle model.
+        android_variant: The app variant to build, a debuggable one (`debug`, `devDebug`).
         kwargs: The macro's extra attributes.
     """
+    if android_app == None:
+        fail(("flutter_integration_test %s: platform = \"android\" needs `android_app`: the app's Android side is built " +
+              "from its Gradle model. Load `flutter_android_app` from the pin's `defs.bzl` " +
+              "(`@android_model//:defs.bzl`) and pass `android_app = flutter_android_app`. " +
+              "See docs/android-model.md.") % name)
     helper_tags = ["manual"]
     app_kwargs = {}
     for k in ANDROID_APP_KWARG_KEYS:
         if k in kwargs:
             app_kwargs[k] = kwargs[k]
 
+    # The Dart program: the app with the in-app test bootstrap.
     _flutter_android_integration_app(
         name = "__%s_app" % name,
         package_name = package_name,
@@ -450,130 +409,14 @@ def _android_integration_test_app(name, package_name, deps, kwargs):
         **app_kwargs
     )
 
-    flutter_android_engine(
-        name = "__%s_engine_raw" % name,
-        android_abi = "x64",
-        tags = helper_tags,
-        visibility = ["//visibility:private"],
-    )
-    declare_android_bundle_targets(
-        name = name,
+    # The Android app around it, from the pin. The hermetic emulator is x86_64.
+    app = android_app(
+        name = "__%s_android" % name,
         application = ":__%s_app" % name,
-        full_abi = "x86_64",
-        tags = helper_tags,
+        variant = android_variant,
+        abis = ["x86_64"],
         visibility = ["//visibility:private"],
     )
-
-    native.filegroup(
-        name = "__%s_flutter_assets" % name,
-        srcs = [":__%s_bundle" % name],
-        output_group = "mobile_install",
-        tags = helper_tags,
-        visibility = ["//visibility:private"],
-    )
-
-    flutter_android_registrant(
-        name = "__%s_registrant_src" % name,
-        application = ":__%s_app" % name,
-        android_abi = "x86_64",
-        tags = helper_tags,
-        visibility = ["//visibility:private"],
-    )
-
-    declare_android_plugin_closure(
-        name = name,
-        application = ":__%s_app" % name,
-        android_abi = "x86_64",
-        engine = ":__%s_engine" % name,
-        tags = helper_tags,
-        visibility = ["//visibility:private"],
-    )
-
-def _android_integration_test_apk(name, android_package, android_deps):
-    """Declares the Android registrant, merged manifest and signed APK targets.
-
-    Args:
-        name: The test target's name the helper names derive from.
-        android_package: The resolved Android application ID.
-        android_deps: Extra Android library targets.
-    """
-    helper_tags = ["manual"]
-    registrant_deps = [
-        ":__%s_engine" % name,
-        ":__%s_android_plugin_deps" % name,
-    ]
-    registrant_deps = registrant_deps + list(android_deps)
-
-    kt_android_library(
-        name = "__%s_registrant" % name,
-        srcs = [":__%s_registrant_src" % name],
-        custom_package = "io.flutter.plugins",
-        deps = registrant_deps,
-        tags = helper_tags,
-        visibility = ["//visibility:private"],
-    )
-
-    binary_deps = [
-        ":__%s_native_libs" % name,
-        ":__%s_engine" % name,
-        ":__%s_registrant" % name,
-        ":__%s_android_plugin_deps" % name,
-    ]
-    binary_deps = binary_deps + list(android_deps)
-
-    write_file(
-        name = "__%s_base_manifest" % name,
-        out = "__%s_base_manifest/AndroidManifest.xml" % name,
-        content = make_android_integration_manifest_lines(
-            android_package,
-            name,
-        ),
-        tags = helper_tags,
-        visibility = ["//visibility:private"],
-    )
-
-    flutter_android_manifest_merge(
-        name = "__%s_manifest" % name,
-        base = ":__%s_base_manifest" % name,
-        libraries = binary_deps,
-        placeholders = ["applicationId", "minSdkVersion", "targetSdkVersion"],
-        tags = helper_tags,
-        visibility = ["//visibility:private"],
-    )
-
-    android_binary(
-        name = "__%s_apk" % name,
-        manifest = ":__%s_manifest" % name,
-        manifest_values = {
-            "applicationId": android_package,
-            "minSdkVersion": ANDROID_MIN_SDK_VERSION,
-            "targetSdkVersion": ANDROID_TARGET_SDK_VERSION,
-        },
-        assets = [":__%s_flutter_assets" % name],
-        assets_dir = "assets",
-        deps = binary_deps,
-        tags = helper_tags,
-        visibility = ["//visibility:private"],
-    )
-
-def declare_android_integration_test(name, package_name, deps, android_package, android_deps, pub_hub_name, kwargs):
-    """Declares the Android integration-test app and test targets.
-
-    Args:
-        name: The test target's name.
-        package_name: The resolved Dart package name.
-        deps: The merged dependencies.
-        android_package: Optional explicit Android application ID.
-        android_deps: Extra Android library targets.
-        pub_hub_name: Accepted for compatibility and no longer read; plugins come from `deps`.
-        kwargs: The macro's extra attributes.
-    """
-    _ = pub_hub_name
-    resolved_android_package = android_package or (
-        "com.example.%s" % sanitize_android_package_segment(package_name)
-    )
-    _android_integration_test_app(name, package_name, deps, kwargs)
-    _android_integration_test_apk(name, resolved_android_package, android_deps)
 
     test_kwargs = {
         k: v
@@ -583,8 +426,7 @@ def declare_android_integration_test(name, package_name, deps, android_package, 
 
     _flutter_android_integration_test(
         name = name,
-        apk = ":__%s_apk" % name,
-        android_package = resolved_android_package,
+        apk = app.apk,
         package_name = package_name,
         deps = deps,
         platform = "android",

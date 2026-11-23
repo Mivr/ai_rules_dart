@@ -282,9 +282,21 @@ allocateAndroidEmulatorPorts() async {
   );
 }
 
+/// Parses the `<package>/<activity>` component from `cmd package
+/// resolve-activity --brief` [output], falling back to `FlutterActivity` under
+/// [packageName] when none is reported.
+String parseLauncherComponent(String output, String packageName) {
+  for (final String raw in output.split('\n').reversed) {
+    final String line = raw.trim();
+    if (line.isEmpty || line.contains(' ') || !line.contains('/')) continue;
+    return line;
+  }
+  return '$packageName/io.flutter.embedding.android.FlutterActivity';
+}
+
 /// Boots a hermetic, pinned headless Android `x86_64` emulator accelerated with
 /// KVM, installs the built integration test APK, forwards the harness WebSocket
-/// port via `adb reverse`, and launches `FlutterActivity`.
+/// port via `adb reverse`, and launches the app's launcher activity.
 class AndroidPlatformLauncher implements PlatformLauncher {
   new({
     required this.apkPath,
@@ -505,16 +517,31 @@ class AndroidPlatformLauncher implements PlatformLauncher {
     ]);
   }
 
-  /// Launches the app's `FlutterActivity` with the harness URL as its
+  /// Launches the app's launcher activity (the `MainActivity` of the app's
+  /// own Android project, a `FlutterActivity`) with the harness URL as its
   /// entrypoint args. Returns the harness URL the app dials.
   Future<String> _startFlutterActivity(String serial, String harnessUrl) async {
+    final ProcessResult resolved = await _runAdb(serial, <String>[
+      'shell',
+      'cmd',
+      'package',
+      'resolve-activity',
+      '--brief',
+      '-c',
+      'android.intent.category.LAUNCHER',
+      packageName,
+    ], timeout: const Duration(seconds: 45));
+    final String component = parseLauncherComponent(
+      resolved.exitCode == 0 ? '${resolved.stdout}' : '',
+      packageName,
+    );
     final ProcessResult startResult = await _runAdb(serial, <String>[
       'shell',
       'am',
       'start',
       '-W',
       '-n',
-      '$packageName/io.flutter.embedding.android.FlutterActivity',
+      component,
       '--esal',
       'dart_entrypoint_args',
       harnessUrl,
@@ -524,7 +551,7 @@ class AndroidPlatformLauncher implements PlatformLauncher {
         startOutput.contains('Error:') ||
         startOutput.contains('Exception')) {
       throw StateError(
-        'Failed to start FlutterActivity for $packageName on $serial:\n'
+        'Failed to start $component on $serial:\n'
         '$startOutput',
       );
     }

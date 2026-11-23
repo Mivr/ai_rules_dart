@@ -19,6 +19,7 @@ load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("//flutter:defs.bzl", "flutter_application", "flutter_integration_test")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+load(":android_app_stub.bzl", "stub_android_app")
 
 visibility(["//flutter/tests/..."])
 
@@ -264,6 +265,7 @@ def defines_files_test_suite(name):
     flutter_integration_test(
         name = "_defines_files_android_it",
         package_name = _PACKAGE,
+        android_app = stub_android_app,
         platform = "android",
         srcs = [_MAIN],
         defines = [_VISIBLE_DEFINE, _OVERRIDDEN_DEFINE],
@@ -275,6 +277,7 @@ def defines_files_test_suite(name):
     flutter_integration_test(
         name = "_defines_files_android_it_baseline",
         package_name = _PACKAGE,
+        android_app = stub_android_app,
         platform = "android",
         srcs = [_MAIN],
         defines = [_VISIBLE_DEFINE],

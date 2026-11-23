@@ -1,0 +1,15 @@
+name: android_greeting_plugin
+version: 0.0.1
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.example.android_greeting_plugin
+        pluginClass: AndroidGreetingPlugin

@@ -38,10 +38,9 @@ For `platform = "android"`:
      integration test binding, connects back to the host runner over a localhost
      WebSocket forwarded into the emulator via `adb reverse`, and drives the
      suite via `RemoteListener`.
-  2. Compiles the app + test to a kernel `.dill` (and in non-debug modes AOT
-     `libapp.so`) for `android_x64`, generates `GeneratedPluginRegistrant.java`,
-     compiles transitive Android plugin libraries, and packages a real signed
-     Android APK via `android_binary`.
+  2. Compiles the app + test to a kernel `.dill` and hands it to the app macro
+     of the pinned Gradle model (`android_app`), which builds the APK from the
+     app's own Android project: its manifest, resources and plugins.
   3. Runs `flutter_integration_test_runner`, which boots the hermetic pinned
      Android emulator (`x86_64` API 35 `aosp_atd`) headless with KVM and
      SwiftShader, sets up `adb reverse`, installs and launches the APK, monitors
@@ -216,9 +215,8 @@ def flutter_integration_test(
         app_deps = [],
         app = None,
         platform = "web",
-        android_package = "",
-        android_deps = [],
-        pub_hub_name = None,
+        android_app = None,
+        android_variant = "debug",
         ios_bundle_id = "",
         ios_runner_srcs = None,
         ios_info_plist = None,
@@ -244,15 +242,13 @@ def flutter_integration_test(
         app_deps: Optional additional dependencies for the app, merged with `deps`.
         app: Optional library target for the app under test, merged with `deps`.
         platform: Target platform (`"web"`, `"linux"`, `"android"`, or `"ios"`, defaults to `"web"`).
-        android_package: Optional Android application ID when `platform = "android"`.
-            Defaults to `"com.example.<package_name>"`.
-        android_deps: Optional additional Android library targets (`kt_android_library`,
-            `android_library`, `flutter_android_plugin_library`) when `platform = "android"`.
-            Workspace plugins that set `android_libs` on `flutter_plugin` are
-            collected automatically from `deps`.
-        pub_hub_name: Optional `flutter.pub` hub name (e.g. `"deps"`) whose
-            `@<pub_hub_name>//android:all_android_plugin_libs` aggregator should
-            be linked when `platform = "android"`.
+        android_app: Required when `platform = "android"`: `flutter_android_app` of the pin's
+            `defs.bzl` (`load("@android_model//:defs.bzl", "flutter_android_app")`, passed as
+            the function). The test app's Android side (manifest, resources, plugins,
+            application id) is built from the app's Gradle model, as
+            `flutter test integration_test` builds it from the Gradle project.
+        android_variant: The app variant the test builds when `platform = "android"`: a
+            debuggable variant of the pin (`debug` by default; `devDebug` for a flavor).
         ios_bundle_id: Optional iOS bundle ID when `platform = "ios"`.
             Used verbatim when set. Defaults to
             `"com.example.<package path>.<name>.<label hash>"`, where the
@@ -287,9 +283,8 @@ def flutter_integration_test(
             name = name,
             package_name = resolved_package_name,
             deps = merged_deps,
-            android_package = android_package,
-            android_deps = android_deps,
-            pub_hub_name = pub_hub_name,
+            android_app = android_app,
+            android_variant = android_variant,
             kwargs = kwargs,
         )
     elif platform == "ios":

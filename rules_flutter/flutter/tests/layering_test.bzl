@@ -16,12 +16,12 @@ twin the passing one: an action's exit status is not visible from analysis.
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@rules_android//providers:providers.bzl", "ApkInfo")
 load("//flutter:android.bzl", "flutter_drive_test")
 load("//flutter:defs.bzl", "flutter_integration_test")
 load("//flutter/private:flutter_integration_test_android.bzl", "android_integration_test_rule")
 load("//flutter/private:flutter_integration_test_ios.bzl", "flutter_ios_integration_test")
 load("//flutter/private:layering_check.bzl", "FlutterRefusedInfo", "LAYERING_CHECK_ASPECT")
+load("//flutter/private/android_model:rules.bzl", "RdfApkInfo")
 
 visibility(["//flutter/tests/..."])
 
@@ -93,26 +93,17 @@ def _off_test_impl(ctx):
 layering_off_test = analysistest.make(_off_test_impl)
 
 def _apk_app_impl(ctx):
-    """Stands in for `flutter_android_app`: the signed APK, with `ApkInfo`."""
+    """Stands in for `flutter_android_app`: the signed APK, with `RdfApkInfo`."""
     apk = ctx.file.apk
     return [
         DefaultInfo(files = depset([apk])),
-        ApkInfo(
-            signed_apk = apk,
-            unsigned_apk = apk,
-            deploy_jar = None,
-            coverage_metadata = None,
-            signing_keys = [],
-            signing_lineage = None,
-            signing_min_v3_rotation_api_version = None,
-            keystore = None,
-        ),
+        RdfApkInfo(apk = apk, application_id = "com.example.stub"),
     ]
 
 _apk_app = rule(
     implementation = _apk_app_impl,
     attrs = {"apk": attr.label(allow_single_file = True, doc = "The stub signed APK.")},
-    doc = "A target with a signed `.apk` and `ApkInfo`, standing in for `flutter_android_app`.",
+    doc = "A target with a signed `.apk` and `RdfApkInfo`, standing in for `flutter_android_app`.",
 )
 
 _PACKAGE = "layering_integ_fixture"
@@ -147,8 +138,7 @@ def layering_integration_targets(name, deps, package = _PACKAGE, entry = _ENTRY,
     )
     android_integration_test_rule(
         name = "android_it",
-        apk = ":stub_apk",
-        android_package = "com.example.layering",
+        apk = ":stub_app",
         package_name = package,
         platform = "android",
         **(common | srcs)

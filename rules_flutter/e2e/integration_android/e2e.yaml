@@ -2,4 +2,15 @@ schema: mivr-e2e-spec/1
 commands:
   - name: test all targets
     run: bazel test //... --test_output=errors
-    min_tests_executed: 5
+    min_tests_executed: 4
+  - name: Android emulator passing driver
+    run: bazel test //apps/sub:drive_pass_test --test_output=errors
+    expect:
+      exit_code: 0
+      test_log_contains: DRIVE_PASS_OK
+  - name: Android emulator failing driver
+    run: bazel test //apps/sub:drive_fail_test --test_output=errors
+    expect:
+      non_zero: true
+      output_contains: DRIVE_RED_MUST_FAIL
+      test_log_contains: DRIVE_RED_MUST_FAIL

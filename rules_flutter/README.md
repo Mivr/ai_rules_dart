@@ -1857,7 +1857,7 @@ For `platform = "web"`, add `flutter_web_sdk` and `flutter_chrome_headless_shell
 
 For `platform = "linux"`, the rule compiles the Linux desktop GTK runner, Dart kernel (or AOT `libapp.so`), bundled `flutter_assets/`, and any transitive native Linux plugins (`flutter_linux_plugin_library`) into a Linux application bundle. At test time, the runner starts a hermetic `Xvfb` virtual display (`@flutter_linux_headless_runtime`, choosing a free display via `-displayfd`) and runs the app against sha256-pinned GTK3, GLib, fontconfig, and Mesa `llvmpipe` software-rasterizer shared libraries — requiring no host X server, `Xvfb`, or GTK installation.
 
-For `platform = "android"`, add `flutter_android_engine_x64` (or `flutter_android_engine_arm64` for `android_abi = "arm64"`) and `flutter_android_headless_runtime` to `use_repo(flutter, ...)` in `MODULE.bazel`. The rule compiles a full Android APK (`android_binary`) with the integration test as its entrypoint, generated `MainActivity` and `GeneratedPluginRegistrant`, bundled `flutter_assets/`, and any transitive Android plugins (`flutter_android_plugin_library` attached via `flutter_plugin.android_libs`). At test time on Linux (`x86_64` with `/dev/kvm`), the runner boots a hermetic sha256-pinned Android 35 `aosp_atd` `x86_64` emulator headless (`-no-window`, `-gpu swiftshader_indirect`, `-accel on`) against its pinned shared-library closure (`@flutter_android_headless_runtime`), installs and launches the APK via `adb`, forwards the test harness WebSocket port over `adb reverse`, and fails the test on any assertion failure, uncaught error, native crash, ANR, or timeout.
+For `platform = "android"`, the test app's Android side is the app's own Android project, built from its pinned Gradle model (see [docs/android-model.md](docs/android-model.md)): load `flutter_android_app` from the pin's `defs.bzl` and pass the function as `android_app = flutter_android_app` (`android_variant` names a debuggable variant other than `debug`, for a flavor). Add `flutter_android_headless_runtime` to `use_repo(flutter, ...)` in `MODULE.bazel`. The rule compiles the app with the integration test as its entrypoint and hands that Dart program to the app macro, so the APK has the app's manifest, resources, application id and the plugins of its `pubspec.yaml`, as with `flutter test integration_test`. At test time on Linux (`x86_64` with `/dev/kvm`), the runner boots a hermetic sha256-pinned Android 35 `aosp_atd` `x86_64` emulator headless (`-no-window`, `-gpu swiftshader_indirect`, `-accel on`) against its pinned shared-library closure (`@flutter_android_headless_runtime`), installs the APK and starts its launcher activity via `adb`, forwards the test harness WebSocket port over `adb reverse`, and fails the test on any assertion failure, uncaught error, native crash, ANR, or timeout.
 
 ### integration_test on the iOS simulator
 
@@ -1896,8 +1896,8 @@ The bundle id defaults to `com.example.<package path>.<name>.<label hash>` — t
 | `renderer` | Web renderer (`"canvaskit"` or `"skwasm"`). Defaults to matching `compiler`. |
 | `gtk_app_id` | Linux GTK application identifier (`platform = "linux"`). Defaults to `"com.example.flutter_integration_test"`. |
 | `window_title` | Linux GTK window title (`platform = "linux"`). Defaults to the target name. |
-| `android_package_name` | Android application package name (`platform = "android"`). Defaults to `"com.example.flutter_integration_test"`. |
-| `android_abi` | Android ABI (`"x64"` or `"arm64"`, `platform = "android"`). Defaults to `"x64"`. |
+| `android_app` | Required for `platform = "android"`: `flutter_android_app` of the pin's `defs.bzl`, passed as the function. |
+| `android_variant` | The debuggable app variant to build (`platform = "android"`). Defaults to `"debug"`; `"devDebug"` for a flavor. |
 | `ios_bundle_id` | iOS CFBundleIdentifier (`platform = "ios"`). Defaults to `"com.example.<package path>.<name>.<label hash>"` (label hash keeps distinct targets distinct), used verbatim when set. |
 | `ios_runner_srcs` | Runner Swift sources (`platform = "ios"`). Defaults to `None`, which discovers the package's `ios/Runner/*.swift`. |
 | `ios_info_plist` | `Info.plist` override (`platform = "ios"`). Defaults to `None`, which preprocesses the package's `ios/Runner/Info.plist`. |
@@ -1909,21 +1909,21 @@ The bundle id defaults to `com.example.<package path>.<name>.<label hash>` — t
 Launches an app on a device, then runs a Dart driver script on the host against it, the way `flutter drive` and `package:flutter_driver` do. The device is the hermetic, pinned headless Android emulator for an Android app, or an iOS simulator for an iOS simulator app. `flutter_integration_test` runs the test inside the app; `flutter_drive_test` runs a script on the host against the running app. The test passes when the driver exits 0 and fails with the driver's exit status otherwise. The app is terminated and any emulator or simulator the test booted is shut down when the test ends, pass or fail, and a launch timeout names the step that timed out.
 
 ```starlark
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app", "flutter_drive_test")
+load("@android_model//:defs.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_drive_test")
 
+# The debug app, built from the pinned Gradle model (docs/android-model.md).
 flutter_android_app(
     name = "app_android",
     application = ":app",
-    package_name = "com.example.app",
 )
 
 # Host Dart and `flutter_driver` come from the toolchain and the pinned pub
 # lock, never the host machine. `driver` may also point at a `dart_binary`.
 flutter_drive_test(
     name = "drive_test",
-    app = ":app_android",
+    app = ":app_android_apk",
     driver = "test_driver/main_test.dart",
-    package_name = "com.example.app",
     deps = [
         "@deps//:flutter_driver",
         "@deps//:test",
@@ -1952,9 +1952,9 @@ Build the app in debug mode (`bazel test -c dbg :drive_test`; `ios_sim_debug_app
 
 | Attribute | Description |
 | --- | --- |
-| `app` | Required. The app under test: an Android app as `flutter_android_app` builds it, or an iOS simulator app (an `.ipa`) as `ios_sim_debug_app` builds it. An iOS simulator `app` tags the test `exclusive` and restricts it to macOS (`size = "enormous"`). A target of neither kind fails analysis naming `app`. |
+| `app` | Required. The app under test: the `<name>_apk` of a debug `flutter_android_app` of the pin's `defs.bzl`, or an iOS simulator app (an `.ipa`) as `ios_sim_debug_app` builds it. An iOS simulator `app` tags the test `exclusive` and restricts it to macOS (`size = "enormous"`). A target of neither kind fails analysis naming `app`. |
 | `driver` | Required. The host driver — either a `.dart` script (compiled with the hermetic Dart toolchain against `deps` and `srcs`) or a `dart_binary` target. Its exit status is the test's. A missing `driver` fails analysis naming `driver`. |
-| `package_name` | The Android application ID of `app`. Required for an Android app; also serves as a fallback for `bundle_id` on iOS. |
+| `package_name` | A fallback for `bundle_id` on iOS. An Android app names its own application ID (the Gradle project's); set this only to override it. |
 | `bundle_id` | Optional bundle identifier of an iOS simulator `app`; defaults to the app's `CFBundleIdentifier` (or `package_name`). |
 | `deps`, `srcs` | Optional Dart dependencies (from the pinned pub lock) and helper `.dart` files when `driver` is a `.dart` script. |
 | `data`, `env` | Optional runtime files and extra environment variables (`$(rlocationpath ...)` expanded over `data`). |

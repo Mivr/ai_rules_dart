@@ -10,6 +10,11 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
+  # A plugin of this workspace with Android code: a path dependency, as in any Flutter project. Its
+  # Android project (android_greeting_plugin/android) is part of the app's Gradle build and so of
+  # the pin.
+  android_greeting_plugin:
+    path: android_greeting_plugin
   federated_greeting:
     path: federated/federated_greeting
   # First-party package (`//libs/cov13font`) whose pubspec declares the font
@@ -19,8 +24,6 @@ dependencies:
     path: libs/cov13font
 
 dev_dependencies:
-  federated_greeting_alt:
-    path: federated/federated_greeting_alt
   flutter_test:
     sdk: flutter
   integration_test:

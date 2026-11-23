@@ -1,3 +1,4 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 
 # Android targets from a pinned Gradle model: see extension.bzl.
@@ -18,4 +19,12 @@ config_setting(
     constraint_values = ["@platforms//os:android"],
     flag_values = {":plugins_from_model": "False"},
     visibility = ["//visibility:public"],
+)
+
+# The build actions and the provider a test runner reads from an app's APK.
+bzl_library(
+    name = "rules",
+    srcs = ["rules.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["@rules_java//java/common"],
 )

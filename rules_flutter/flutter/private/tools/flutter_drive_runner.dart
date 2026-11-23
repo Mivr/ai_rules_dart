@@ -22,21 +22,10 @@ import 'test_support.dart';
 
 export 'flutter_drive_common.dart';
 export 'flutter_drive_ios.dart';
+export 'flutter_integration_test_android.dart' show parseLauncherComponent;
 
 /// Paths to the pinned headless Android `emulator` and `adb` binaries.
 typedef AndroidRuntimePaths = ({String emulator, String adb});
-
-/// Parses the `<package>/<activity>` component from `cmd package
-/// resolve-activity --brief` [output], falling back to `FlutterActivity` under
-/// [packageName] when none is reported.
-String parseLauncherComponent(String output, String packageName) {
-  for (final String raw in output.split('\n').reversed) {
-    final String line = raw.trim();
-    if (line.isEmpty || line.contains(' ') || !line.contains('/')) continue;
-    return line;
-  }
-  return '$packageName/io.flutter.embedding.android.FlutterActivity';
-}
 
 /// Everything the run reads from the test environment.
 class DriveConfig {

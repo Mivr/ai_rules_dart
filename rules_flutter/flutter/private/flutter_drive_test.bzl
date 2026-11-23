@@ -7,7 +7,6 @@ status. Host Dart and driver packages come from the hermetic toolchain and the
 pinned pub lock; no host Flutter or Dart is read, and no download is added.
 """
 
-load("@rules_android//providers:providers.bzl", "ApkInfo")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load(
     "@rules_dart//dart:utils.bzl",
@@ -21,6 +20,7 @@ load(
     "stable_entry_path",
 )
 load("//flutter:providers.bzl", "resolve_exec_dart_vm")
+load("//flutter/private/android_model:rules.bzl", "RdfApkInfo")
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "layering_check_drive")
 
 visibility(["//flutter/..."])
@@ -32,27 +32,6 @@ visibility(["//flutter/..."])
 _DRIVE_TEST_EXECUTION_REQUIREMENTS = {"no-sandbox": ""}
 
 _EXEC_TOOLS_TOOLCHAIN = "@rules_dart//dart:exec_tools_toolchain_type"
-
-def _drive_apk(ctx):
-    """Resolves the signed APK produced by the Android `app` target.
-
-    Args:
-        ctx: The rule context under analysis.
-
-    Returns:
-        The signed `.apk` `File` of `ctx.attr.app`.
-    """
-    if not ctx.attr.package_name:
-        fail("%s: attribute `package_name` is required." % ctx.label)
-    apks = [
-        f
-        for f in ctx.attr.app[DefaultInfo].files.to_list()
-        if f.path.endswith(".apk") and not f.path.endswith("_unsigned.apk")
-    ]
-    if not apks:
-        message = "%s: attribute `app` (%s) produces no signed .apk; pass a `flutter_android_app` target."
-        fail(message % (ctx.label, ctx.attr.app.label))
-    return apks[0]
 
 def _drive_ipa(ctx):
     """Resolves the simulator `.ipa` of an iOS `app` target, or `None`.
@@ -78,15 +57,17 @@ def _drive_device(ctx, workspace_name):
         runfiles inputs.
     """
     if not ctx.attr.app:
-        fail("%s: attribute `app` is required: pass a `flutter_android_app` or iOS simulator app target." % ctx.label)
-    if ApkInfo in ctx.attr.app and ctx.file._android_emulator != None:
-        apk = _drive_apk(ctx)
+        fail("%s: attribute `app` is required: pass the `<name>_apk` of a `flutter_android_app` or an iOS simulator app target." % ctx.label)
+    if RdfApkInfo in ctx.attr.app and ctx.file._android_emulator != None:
+        # The whole APK of an app built from the pinned Gradle model (`<name>_apk`), which names
+        # its own application id.
+        apk = ctx.attr.app[RdfApkInfo].apk
         return struct(
             env = {
                 "FLUTTER_DRIVE_ANDROID_ADB": runfiles_path(ctx.file._android_adb, workspace_name),
                 "FLUTTER_DRIVE_ANDROID_APK": runfiles_path(apk, workspace_name),
                 "FLUTTER_DRIVE_ANDROID_EMULATOR": runfiles_path(ctx.file._android_emulator, workspace_name),
-                "FLUTTER_DRIVE_ANDROID_PACKAGE": ctx.attr.package_name,
+                "FLUTTER_DRIVE_ANDROID_PACKAGE": ctx.attr.package_name or ctx.attr.app[RdfApkInfo].application_id,
             },
             files = [apk, ctx.file._android_emulator, ctx.file._android_adb],
             transitive = ctx.files._android_runtime_all_files,
@@ -94,7 +75,7 @@ def _drive_device(ctx, workspace_name):
     ipa = _drive_ipa(ctx)
     if ipa == None:
         fail((
-            "%s: attribute `app` (%s) is neither an Android app (`flutter_android_app`) nor an " +
+            "%s: attribute `app` (%s) is neither an Android app (the `<name>_apk` of a `flutter_android_app`) nor an " +
             "iOS simulator app (an `.ipa` from `ios_sim_debug_app`)."
         ) % (ctx.label, ctx.attr.app.label))
     bundle_id = ctx.attr.bundle_id or ctx.attr.package_name
@@ -341,7 +322,7 @@ _flutter_drive_test = rule(
     attrs = {
         "app": attr.label(
             allow_files = True,
-            doc = "Required app target under test: an Android app (`flutter_android_app` in `-c dbg`) or " +
+            doc = "Required app target under test: an Android app (the `<name>_apk` of a debug `flutter_android_app` of the pin) or " +
                   "an iOS simulator app (`.ipa` from `ios_sim_debug_app`); fails analysis when invalid.",
         ),
         "bundle_id": attr.string(
@@ -588,9 +569,11 @@ def flutter_drive_test(
 
     Args:
         name: Unique name for this test target.
-        app: The Android app (`flutter_android_app`) or the iOS simulator app (`ios_sim_debug_app`).
+        app: The Android app (`<name>_apk` of a debug `flutter_android_app` of the pin's `defs.bzl`) or the
+            iOS simulator app (`ios_sim_debug_app`).
         driver: Host Dart driver — a `.dart` script (compiled with `deps`) or a `dart_binary`.
-        package_name: Android application ID of `app`, or iOS bundle id fallback when `bundle_id` is unset.
+        package_name: iOS bundle id fallback when `bundle_id` is unset. An Android app names its own
+            application id; set this only to override it.
         deps: Dart package dependencies from the pinned pub lock when `driver` is a `.dart` file.
         size: Test size; `large` for Android and `enormous` for iOS by default.
         tags: Extra Bazel tags; `manual` is always added (`exclusive` too on iOS).

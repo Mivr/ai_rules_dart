@@ -1,8 +1,8 @@
 """Analysis tests for `flutter_drive_test`: its shape, its required inputs, its tags and the iOS leg."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
-load("@rules_android//providers:providers.bzl", "ApkInfo")
 load("//flutter:android.bzl", "flutter_drive_test")
+load("//flutter/private/android_model:rules.bzl", "RdfApkInfo")
 load(
     "//flutter:ios.bzl",
     "ios_sim_debug_app",
@@ -16,7 +16,7 @@ _MACOS_PLATFORM_CONFIG = {
 }
 
 def _app_stub_impl(ctx):
-    """Stands in for `flutter_android_app`: one signed APK carrying `ApkInfo`.
+    """Stands in for `flutter_android_app`: one signed APK carrying `RdfApkInfo`.
 
     Args:
         ctx: The rule context.
@@ -28,21 +28,12 @@ def _app_stub_impl(ctx):
     ctx.actions.write(apk, "")
     return [
         DefaultInfo(files = depset([apk])),
-        ApkInfo(
-            signed_apk = apk,
-            unsigned_apk = apk,
-            deploy_jar = None,
-            coverage_metadata = None,
-            signing_keys = [],
-            signing_lineage = None,
-            signing_min_v3_rotation_api_version = None,
-            keystore = None,
-        ),
+        RdfApkInfo(apk = apk, application_id = "com.example.stub"),
     ]
 
 _app_stub = rule(
     implementation = _app_stub_impl,
-    doc = "A target with a signed `.apk` and `ApkInfo`, standing in for `flutter_android_app`.",
+    doc = "A target with a signed `.apk` and `RdfApkInfo`, standing in for `flutter_android_app`.",
 )
 
 def _ios_app_stub_impl(ctx):
@@ -64,13 +55,13 @@ _ios_app_stub = rule(
 )
 
 def _not_android_impl(ctx):
-    """Produces a non-Android file target lacking `ApkInfo`.
+    """Produces a non-Android file target lacking `RdfApkInfo`.
 
     Args:
         ctx: The rule context.
 
     Returns:
-        The provider list without `ApkInfo`.
+        The provider list without `RdfApkInfo`.
     """
     out = ctx.actions.declare_file(ctx.label.name + ".txt")
     ctx.actions.write(out, "")
@@ -78,7 +69,7 @@ def _not_android_impl(ctx):
 
 _not_android = rule(
     implementation = _not_android_impl,
-    doc = "A target without `ApkInfo`, used to test invalid `app` rejection.",
+    doc = "A target without `RdfApkInfo`, used to test invalid `app` rejection.",
 )
 
 def _driver_stub_impl(ctx):
