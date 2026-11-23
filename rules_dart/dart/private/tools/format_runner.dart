@@ -32,6 +32,7 @@ import 'package:rules_dart_worker/worker_protocol.dart';
 import 'package:rules_dart_worker/worker_tool_fs.dart';
 
 import 'private_home.dart';
+import 'project_layout.dart';
 
 const _argvBudget = 8000;
 
@@ -223,6 +224,27 @@ String? _probeForSdkOverride(String text, Version? sdkLanguageVersion) {
 }
 
 Future<int> runFormatRequest(
+  List<String> args, {
+  required StringSink outSink,
+  required StringSink errSink,
+}) async {
+  // The project may be named by a layout manifest: built here, before
+  // anything reads it, and removed afterwards.
+  final ({List<String> args, String? project}) laidOut;
+  try {
+    laidOut = applyLayoutArgs(args);
+  } on FormatException catch (e) {
+    errSink.writeln('format_runner: ${e.message}');
+    return 64;
+  }
+  try {
+    return await _runFormat(laidOut.args, outSink: outSink, errSink: errSink);
+  } finally {
+    if (laidOut.project case final String project) removeLayout(project);
+  }
+}
+
+Future<int> _runFormat(
   List<String> args, {
   required StringSink outSink,
   required StringSink errSink,

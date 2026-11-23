@@ -15,6 +15,7 @@ sources with zero `--summary` flags, reporting source mode
 
 load("//dart/private:aot_tool.bzl", "aot_tool_launch")
 load("//dart/private:common.bzl", "writable_home_env")
+load("//dart/private:project_layout.bzl", "add_layout_args", "layout_directory")
 load(
     "//dart/private:dart_analyzer_summary.bzl",
     "analyzer_summaries_supported",
@@ -29,17 +30,17 @@ visibility(["//dart/..."])
 # loads this file: one string, two spellings, no import cycle.
 _TOOLCHAIN = "//dart:exec_tools_toolchain_type"
 
-def analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, own_paths, baseline):
+def analyze_summaries(ctx, name, layout, summaries, sdk_summary, sdk_inputs, own_paths, baseline):
     """Declares the summary-mode `dart analyze`; returns the stamp it writes on success.
 
-    `staged` holds the target's own files and the options alone, and
+    `layout` holds the target's own files and the options alone, and
     `summaries` the summaries of everything they import, which take the place
     of the closure's source the `dart analyze` action reads.
 
     Args:
       ctx: The aspect context.
       name: Action output name prefix for this target.
-      staged: The staged project holding the target's own files and options.
+      layout: The `project_layout` holding the target's own files and options.
       summaries: The dependency summaries the target is checked against.
       sdk_summary: The SDK summary every summary-mode action reads.
       sdk_inputs: The analyzing SDK's input files.
@@ -52,12 +53,13 @@ def analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, own
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     launch = aot_tool_launch(ctx, "_summary_tool", dart_sdk_info, dart_sdk_info.analyze_files)
     stamp = ctx.actions.declare_file(name + ".analyzed")
+    staged = layout_directory(ctx, layout, "analyze")
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
     args.add("analyze")
     args.add("--sdk", sdk_root_path(dart_sdk_info))
-    args.add("--project", staged.proj_path)
+    add_layout_args(args, staged)
     args.add("--stamp", stamp)
     args.add("--fatal-infos")
     if baseline != None:
@@ -69,15 +71,15 @@ def analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, own
         executable = launch.executable,
         arguments = launch.prefix + [args],
         inputs = depset(
-            direct = launch.inputs + [sdk_summary] + staged.inputs +
+            direct = launch.inputs + [sdk_summary] +
                      ([baseline] if baseline != None else []),
-            transitive = [summaries, sdk_inputs],
+            transitive = [staged.inputs, summaries, sdk_inputs],
         ),
         tools = depset(
             direct = launch.inputs,
             transitive = [dart_sdk_info.runtime_files],
         ),
-        outputs = [stamp],
+        outputs = [stamp, staged.dir],
         mnemonic = "DartAnalyze",
         progress_message = "Analyzing Dart sources of %{label} against summaries",
         env = writable_home_env(dart_sdk_info.dart, stamp),

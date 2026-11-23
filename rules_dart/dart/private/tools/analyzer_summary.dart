@@ -54,6 +54,7 @@ import 'package:rules_dart_worker/worker_tool_fs.dart';
 import 'analysis_baseline.dart';
 import 'analysis_model.dart';
 import 'analyzer_summary_lints.dart';
+import 'project_layout.dart';
 
 const _optionsBasename = 'analysis_options.yaml';
 const _packageConfig = '.dart_tool/package_config.json';
@@ -202,6 +203,34 @@ Future<int> runSingleRequest(
   if (args.isEmpty) {
     return _usageError(errSink, 'a mode is required: `summarize` or `analyze`');
   }
+  // An `analyze` request may name its project by a layout manifest: the
+  // project is built here, before anything reads it, and removed afterwards.
+  final ({List<String> args, String? project}) laidOut;
+  try {
+    laidOut = applyLayoutArgs(args);
+  } on FormatException catch (e) {
+    return _usageError(errSink, e.message);
+  }
+  try {
+    return await _runMode(
+      laidOut.args,
+      outSink: outSink,
+      errSink: errSink,
+      resourceProvider: resourceProvider,
+      requestInputPaths: requestInputPaths,
+    );
+  } finally {
+    if (laidOut.project case final String project) removeLayout(project);
+  }
+}
+
+Future<int> _runMode(
+  List<String> args, {
+  required StringSink outSink,
+  required StringSink errSink,
+  required fs.ResourceProvider resourceProvider,
+  Set<String>? requestInputPaths,
+}) async {
   final AnalyzerArgs parsed;
   try {
     parsed = AnalyzerArgs.parse(args.sublist(1));

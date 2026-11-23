@@ -85,6 +85,7 @@ load(
     "validate_config_baseline",
     _stage_config_project = "stage_config_project",
 )
+load("//dart/private:project_layout.bzl", "add_layout_args", "layout_directory", "project_layout")
 load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "owned_package_records", "writable_home_env")
 load("//dart/private:dart_analyze_summary_fallback.bzl", "analyze_summaries", "fallback_summary_ready")
 load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "closure_attrs", "dart_analyzer_summary", "own_lib_sources", "package_key", "unbacked_embedder_in_closure")
@@ -226,16 +227,17 @@ dart_analysis_config = rule(
     ),
 )
 
-def _analyze(ctx, name, staged, sdk_inputs, own_paths, baseline):
+def _analyze(ctx, name, layout, sdk_inputs, own_paths, baseline):
     """Declares the `dart analyze` action; returns the stamp it writes on success."""
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "_analyze_tool", ctx.attr._analyze_tool, dart_sdk_info.version)
     if mismatch != None:
         fail(mismatch)
     stamp = ctx.actions.declare_file(name + ".analyzed")
+    staged = layout_directory(ctx, layout, "analyze")
     args = ctx.actions.args()
     args.add("--dart", dart_sdk_info.dart)
-    args.add("--project", staged.proj_path)
+    add_layout_args(args, staged)
     args.add("--stamp", stamp)
     args.add("--fatal-infos")
     if baseline != None:
@@ -245,14 +247,14 @@ def _analyze(ctx, name, staged, sdk_inputs, own_paths, baseline):
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._analyze_tool.path, args],
         inputs = depset(
-            direct = [ctx.executable._analyze_tool] + staged.inputs + ([baseline] if baseline != None else []),
-            transitive = [sdk_inputs],
+            direct = [ctx.executable._analyze_tool] + ([baseline] if baseline != None else []),
+            transitive = [staged.inputs, sdk_inputs],
         ),
         tools = depset(
             direct = [ctx.executable._analyze_tool, dart_sdk_info.dart],
             transitive = [dart_sdk_info.runtime_files],
         ),
-        outputs = [stamp],
+        outputs = [stamp, staged.dir],
         mnemonic = "DartAnalyze",
         progress_message = "Analyzing Dart sources of %{label}",
         env = writable_home_env(dart_sdk_info.dart, stamp),
@@ -427,14 +429,14 @@ def _format_language_versions(info, own_paths):
 resolve_format_mode = _resolve_format_mode
 stage_config_project = _stage_config_project
 
-def _format(ctx, name, staged, own_paths, language_version):
+def _format(ctx, name, layout, own_paths, language_version):
     """Declares the `dart format` check; returns the stamp it writes on success.
 
     Files are named individually rather than by handing the formatter the
     project: the staged tree also holds the rulesets the options include,
     none of which are this target's to format.
 
-    `staged` is a project of its own, holding the target's files and the
+    `layout` is a project of its own, holding the target's files and the
     options alone — what `dart_format` stages for `bazel run`. The formatter
     reads nothing else: its options come from the walk up from each file, and
     its language version from the command line. Staging the dependencies too,
@@ -460,12 +462,13 @@ def _format(ctx, name, staged, own_paths, language_version):
         content = "".join(["src/%s\n" % p for p in own_paths]),
     )
     stamp = ctx.actions.declare_file(name + ".formatted")
+    staged = layout_directory(ctx, layout, "format." + (language_version or "latest"))
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
     args.add("--dart", dart_sdk_info.dart)
     args.add("--sdk-version", dart_sdk_info.version)
-    args.add("--project", staged.proj_path)
+    add_layout_args(args, staged)
     args.add("--manifest", manifest)
     args.add("--stamp", stamp)
 
@@ -477,12 +480,12 @@ def _format(ctx, name, staged, own_paths, language_version):
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._format_tool.path, args],
-        inputs = depset(direct = [ctx.executable._format_tool, manifest] + staged.inputs, transitive = [sdk_inputs]),
+        inputs = depset(direct = [ctx.executable._format_tool, manifest], transitive = [staged.inputs, sdk_inputs]),
         tools = depset(
             direct = [ctx.executable._format_tool, dart_sdk_info.dart],
             transitive = [dart_sdk_info.runtime_files],
         ),
-        outputs = [stamp],
+        outputs = [stamp, staged.dir],
         mnemonic = "DartFormat",
         progress_message = "Checking Dart formatting of %{label}",
         env = env,
@@ -500,15 +503,15 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
     Args:
       ctx: The aspect context.
       info: The target's `DartInfo` closure.
-      srcs: `struct(name, staged, all_pkgs, own, generated, own_paths)`: the
-        staged full-closure project and the target's own files, built once by
+      srcs: `struct(name, staged, own, generated, own_paths)`: the
+        full-closure project layout and the target's own files, built once by
         `_dart_analyze_aspect_impl`.
-      opts: `struct(sdk_inputs, sdk_version, config, is_leaf_own_only)`: the
-        SDK inputs, toolchain version, analysis config, and leaf shape flag.
+      opts: `struct(sdk_inputs, sdk_version, config)`: the SDK inputs,
+        toolchain version and analysis config.
 
     Returns:
       The tuple `(output, summary_mode, summary_staged)`: a depset holding the analysis output,
-      whether summary mode ran, and the summary-mode staged project, or `None` in source mode.
+      whether summary mode ran, and the summary-mode project layout, or `None` in source mode.
     """
 
     # The SDK check is the analyzing toolchain's own: the same one the
@@ -542,21 +545,18 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
     # The target's generated `.dart` sources are staged too, to resolve
     # its imports against, but are excluded from analysis, as the
     # default path excludes them. A generated source is in the closure
-    # there, but in no dependency's summary.
-    if opts.is_leaf_own_only and not srcs.generated:
-        summary_staged = srcs.staged
-    else:
-        summary_staged = stage_config_project(
-            ctx,
-            opts.config,
-            srcs.all_pkgs,
-            summary_files,
-            srcs.own.values(),
-            srcs.name + ".summary",
-            opts.sdk_version,
-            struct(copy_external = False, all_packages_named = True),
-        )
-    sdk_summary = _embedder_sdk_summary(ctx) or ctx.file._sdk_summary
+    # there, but in no dependency's summary. The config still names every
+    # package of the closure, so an import of one resolves to its summary.
+    summary_staged = project_layout(
+        ctx,
+        opts.config,
+        [info.transitive_packages],
+        [summary_files],
+        srcs.own.values(),
+        srcs.name + ".summary",
+        opts.sdk_version,
+        all_packages_named = True,
+    )
     return depset([analyze_summaries(
         ctx,
         srcs.name,
@@ -574,12 +574,12 @@ def _analyze_format_checks(ctx, info, srcs, opts, summary_staged):
     Args:
       ctx: The aspect context.
       info: The target's `DartInfo` closure.
-      srcs: `struct(name, staged, own, own_paths, generated, ...)`: the staged
-        full-closure project and the target's own files, built once by
-        `_dart_analyze_aspect_impl` (extra fields are ignored).
-      opts: `struct(sdk_version, config, is_leaf_own_only, ...)`: the toolchain
-        version, analysis config, and leaf shape flag (extra fields ignored).
-      summary_staged: The summary-mode staged project, or None.
+      srcs: `struct(name, own, own_paths, generated, ...)`: the target's own
+        files, built once by `_dart_analyze_aspect_impl` (extra fields are
+        ignored).
+      opts: `struct(sdk_version, config, ...)`: the toolchain version and
+        analysis config (extra fields ignored).
+      summary_staged: The summary-mode project layout, or None.
 
     Returns:
       The list of format-check outputs, one per language version, sorted by version.
@@ -587,18 +587,16 @@ def _analyze_format_checks(ctx, info, srcs, opts, summary_staged):
     by_version = _format_language_versions(info, srcs.own_paths)
     if summary_staged != None and not srcs.generated:
         format_staged = summary_staged
-    elif opts.is_leaf_own_only:
-        format_staged = srcs.staged
     else:
-        format_staged = stage_config_project(
+        format_staged = project_layout(
             ctx,
             opts.config,
             [],
-            srcs.own.values(),
+            [srcs.own.values()],
             srcs.own.values(),
             srcs.name + ".format",
             opts.sdk_version,
-            struct(copy_external = False, all_packages_named = False),
+            all_packages_named = False,
         )
     return [
         _format(
@@ -611,7 +609,7 @@ def _analyze_format_checks(ctx, info, srcs, opts, summary_staged):
         for version, paths in sorted(by_version.items())
     ]
 
-def _analyze_fix_outputs(ctx, name, staged, own_paths, sdk_inputs, dart_sdk_info):
+def _analyze_fix_outputs(ctx, name, layout, own_paths, sdk_inputs, dart_sdk_info):
     """Runs the fix action over the staged project. Returns (fixes, manifest)."""
     eligible = ctx.actions.declare_file(name + ".eligible")
     ctx.actions.write(
@@ -621,9 +619,10 @@ def _analyze_fix_outputs(ctx, name, staged, own_paths, sdk_inputs, dart_sdk_info
     fixes = ctx.actions.declare_directory(name + ".fixes")
     manifest = ctx.actions.declare_file(name + ".fix_manifest.json")
     scratch = ctx.actions.declare_directory(name + ".scratch")
+    staged = layout_directory(ctx, layout, "fix")
     fix_args = ctx.actions.args()
     fix_args.add("--dart", dart_sdk_info.dart)
-    fix_args.add("--project", staged.proj_path)
+    add_layout_args(fix_args, staged)
     fix_args.add("--scratch", scratch.path)
     fix_args.add("--fixes", fixes.path)
     fix_args.add("--manifest", manifest)
@@ -631,12 +630,12 @@ def _analyze_fix_outputs(ctx, name, staged, own_paths, sdk_inputs, dart_sdk_info
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._fix_tool.path, fix_args],
-        inputs = depset(direct = [ctx.executable._fix_tool, eligible] + staged.inputs, transitive = [sdk_inputs]),
+        inputs = depset(direct = [ctx.executable._fix_tool, eligible], transitive = [staged.inputs, sdk_inputs]),
         tools = depset(
             direct = [ctx.executable._fix_tool, dart_sdk_info.dart],
             transitive = [dart_sdk_info.runtime_files],
         ),
-        outputs = [fixes, manifest, scratch],
+        outputs = [fixes, manifest, scratch, staged.dir],
         mnemonic = "DartFix",
         progress_message = "Computing Dart fixes for %{label}",
         env = writable_home_env(dart_sdk_info.dart, manifest),
@@ -645,24 +644,22 @@ def _analyze_fix_outputs(ctx, name, staged, own_paths, sdk_inputs, dart_sdk_info
     return fixes, manifest
 
 def _analyze_stage_all(ctx, info, entry, own, generated, name, sdk_version, config):
-    """Stages the full closure project. Returns (all_pkgs, is_leaf_own_only, staged)."""
-    all_pkgs = info.transitive_packages.to_list()
-    closure_files = info.transitive_srcs.to_list() + info.transitive_resources.to_list()
-    all_closure_srcs = closure_files + entry + own.values() + generated
-    has_non_own_closure_srcs = any([f.path not in own for f in all_closure_srcs])
-    has_non_own_pkgs = any([p.package_name != info.package_name for p in all_pkgs])
-    is_leaf_own_only = not has_non_own_closure_srcs and not has_non_own_pkgs
-    staged = stage_config_project(
+    """The full-closure project layout: everything the target resolves against.
+
+    Read by the fix action, and by the analyze action when it does not read
+    summaries. Nothing here walks the closure: the manifest and the inputs
+    are the closure's depsets.
+    """
+    return project_layout(
         ctx,
         config,
-        all_pkgs,
-        all_closure_srcs,
+        [info.transitive_packages],
+        [info.transitive_srcs, info.transitive_resources, entry, own.values(), generated],
         own.values(),
         name,
         sdk_version,
-        struct(copy_external = False, all_packages_named = is_leaf_own_only),
+        all_packages_named = False,
     )
-    return all_pkgs, is_leaf_own_only, staged
 
 def _analyze_own_files(target, entry, package_srcs):
     """Splits a target's checkable Dart files into own and generated.
@@ -743,7 +740,7 @@ def _dart_analyze_aspect_impl(target, ctx):
     name = ctx.label.name + ".dart_analyze"
     config = ctx.attr._config[DartAnalysisConfigInfo]
     sdk_version = ctx.toolchains[_TOOLCHAIN].dart_sdk_info.version
-    all_pkgs, is_leaf_own_only, staged = _analyze_stage_all(ctx, info, entry, own, generated, name, sdk_version, config)
+    staged = _analyze_stage_all(ctx, info, entry, own, generated, name, sdk_version, config)
 
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
 
@@ -767,7 +764,6 @@ def _dart_analyze_aspect_impl(target, ctx):
     analyze_srcs = struct(
         name = name,
         staged = staged,
-        all_pkgs = all_pkgs,
         own = own,
         generated = generated,
         own_paths = own_paths,
@@ -776,7 +772,6 @@ def _dart_analyze_aspect_impl(target, ctx):
         sdk_inputs = sdk_inputs,
         sdk_version = sdk_version,
         config = config,
-        is_leaf_own_only = is_leaf_own_only,
     )
     if NO_ANALYZE_TAG not in tags:
         groups["dart_analyze"], summary_mode, summary_staged = _analyze_summary_or_source(

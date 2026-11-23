@@ -167,6 +167,7 @@ dart_binary(
         "baseline_json.dart",
         "cli_flags.dart",
         "private_home.dart",
+        "project_layout.dart",
         "project_lint_options.dart",
         "staged_project_copy.dart",
     ],
@@ -207,6 +208,7 @@ dart_test(
         "baseline_json.dart",
         "cli_flags.dart",
         "private_home.dart",
+        "project_layout.dart",
         "project_lint_options.dart",
         "staged_project_copy.dart",
         "//dart/guard:lib/directive_guard.dart",
@@ -238,6 +240,7 @@ dart_binary(
         "analysis_model.dart",
         "analyzer_summary_lints.dart",
         "baseline_json.dart",
+        "project_layout.dart",
     ],
     code_assets_from_deps = False,
     compile_mode = "aot-snapshot",
@@ -266,6 +269,7 @@ dart_binary(
         "analysis_model.dart",
         "analyzer_summary_lints.dart",
         "baseline_json.dart",
+        "project_layout.dart",
     ],
     code_assets_from_deps = False,
     compile_mode = "kernel",
@@ -288,6 +292,7 @@ dart_binary(
     srcs = [
         "analyze_runner_staged_prune.dart",
         "private_home.dart",
+        "project_layout.dart",
         "project_lint_options.dart",
         "staged_project_copy.dart",
     ],
@@ -461,6 +466,15 @@ dart_test(
     deps = ["@ext_pub_deps//:test"],
 )
 
+# Lays out projects from manifests, as the `dart_analyze` aspect's runners do.
+dart_test(
+    name = "project_layout_test",
+    size = "small",
+    srcs = ["project_layout.dart"],
+    main = "project_layout_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
 dart_test(
     name = "coverage_map_expand_test",
     size = "small",
@@ -499,7 +513,10 @@ dart_test(
 
 dart_binary(
     name = "format_runner",
-    srcs = ["private_home.dart"],
+    srcs = [
+        "private_home.dart",
+        "project_layout.dart",
+    ],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "format_runner.dart",
@@ -907,6 +924,7 @@ dart_test(
         "analyzer_summary_lints.dart",
         "analyzer_summary_test_support.dart",
         "baseline_json.dart",
+        "project_layout.dart",
         "worker_test_encode.dart",
     ],
     main = "analyzer_summary_test.dart",
@@ -1070,6 +1088,7 @@ dart_test(
         "analyze_runner_staged_prune.dart",
         "fix_runner.dart",
         "private_home.dart",
+        "project_layout.dart",
         "project_lint_options.dart",
         "staged_project_copy.dart",
         "//dart/guard:lib/directive_guard.dart",
@@ -1105,6 +1124,7 @@ dart_test(
     srcs = [
         "format_runner.dart",
         "private_home.dart",
+        "project_layout.dart",
     ],
     args = [
         "$(rlocationpath :format_runner)",

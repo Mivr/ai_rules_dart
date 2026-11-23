@@ -33,9 +33,13 @@ outside the project dir in both.
   and the package's files are declared as inputs of the consuming action
   instead of being copied. Nothing is copied per analyzed target: a test that
   depends on `package:test` would otherwise copy about 50 pub packages for each
-  of its analysis, fix and compile actions. The `dart_analyze` aspect and
-  `dart_web_application` use this mode. A package whose files do not all sit in
-  one directory is copied even so; see `external_package_placement`.
+  of its analysis, fix and compile actions. `dart_web_application` uses this
+  mode. A package whose files do not all sit in one directory is copied even
+  so; see `external_package_placement`.
+
+The `dart_analyze` aspect does not stage here: it describes the same tree in a
+manifest and its runners lay it out at execution (`project_layout.bzl`), so
+that analysis registers no action per file of a target's closure.
 
 Each main-repo package root also receives a stub `pubspec.yaml`. Imports
 resolve through `package_config.json` alone, but the analyzer attributes a

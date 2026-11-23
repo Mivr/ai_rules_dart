@@ -13,6 +13,7 @@ import 'package:rules_dart_guard/directive_guard.dart';
 
 import 'analyze_runner_staged_prune.dart';
 import 'private_home.dart';
+import 'project_layout.dart';
 import 'project_lint_options.dart';
 import 'staged_project_copy.dart';
 
@@ -25,7 +26,20 @@ const _droppedReason = 'not write-back eligible';
 /// from the staged original is self-inflicted rather than a discarded fix.
 const _packageConfigPath = '.dart_tool/package_config.json';
 
-void main(List<String> args) {
+void main(List<String> rawArgs) {
+  // The project may be named by a layout manifest: built here, before
+  // anything reads it, and removed once the fixes are written.
+  final ({List<String> args, String? project}) laidOut = applyLayoutArgs(
+    rawArgs,
+  );
+  try {
+    _fix(laidOut.args);
+  } finally {
+    if (laidOut.project case final String project) removeLayout(project);
+  }
+}
+
+void _fix(List<String> args) {
   final _FixArgs parsed = _parseFixArgs(args);
 
   final _StagedFix staged = _stageFixProject(parsed);

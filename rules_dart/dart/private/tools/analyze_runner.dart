@@ -12,12 +12,26 @@ import 'analyze_runner_machine.dart';
 import 'analyze_runner_staged_prune.dart';
 import 'cli_flags.dart';
 import 'private_home.dart';
+import 'project_layout.dart';
 import 'project_lint_options.dart';
 import 'staged_project_copy.dart';
 
 export 'analyze_runner_machine.dart' show parseMachineDiagnostics, unstage;
 
-void main(List<String> args) {
+void main(List<String> rawArgs) {
+  // The project may be named by a layout manifest: built here, before
+  // anything reads it, and removed once the analysis is done.
+  final ({List<String> args, String? project}) laidOut = applyLayoutArgs(
+    rawArgs,
+  );
+  try {
+    _analyze(laidOut.args);
+  } finally {
+    if (laidOut.project case final String project) removeLayout(project);
+  }
+}
+
+void _analyze(List<String> args) {
   final _AnalyzeArgs parsed = _parseAnalyzeArgs(args);
   final String project = parsed.project;
   final Set<String>? allowed = pruneOrphanedStagedFiles(project);
