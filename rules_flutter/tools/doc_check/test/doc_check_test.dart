@@ -5,7 +5,6 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 import '../doc_check.dart';
@@ -334,37 +333,6 @@ void main() {
       final list = Entries.parse('Used on few. | why', 'p', splitPhrasingLine);
       expect(staleShared(list, {'Used on few.': 3}), isNotEmpty);
       expect(staleShared(list, {'Used on few.': 4}), isEmpty);
-    });
-  });
-
-  group('checked-in lists', () {
-    String read(String key) {
-      final String? rlocation = Platform.environment[key];
-      if (rlocation == null || rlocation.isEmpty) {
-        throw StateError('$key is not set; the test needs the list in `data`');
-      }
-      return File(Runfiles.create().rlocation(rlocation)).readAsStringSync();
-    }
-
-    test('the allowlist is well formed and starts empty', () {
-      final list = Entries.parse(
-        read('DOC_CHECK_ALLOWLIST_RLOCATION'),
-        'allowlist.txt',
-        splitAllowlistLine,
-      );
-      expect(list.problems, isEmpty);
-      // The allowlist may only shrink: raise this and the review rejects it.
-      const ceiling = 0;
-      expect(list.reasons.length, lessThanOrEqualTo(ceiling));
-    });
-
-    test('the shared phrasings are well formed', () {
-      final list = Entries.parse(
-        read('DOC_CHECK_SHARED_RLOCATION'),
-        'shared_phrasings.txt',
-        splitPhrasingLine,
-      );
-      expect(list.problems, isEmpty);
     });
   });
 

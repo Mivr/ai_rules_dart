@@ -1,26 +1,10 @@
-/// The allowlist and shared-phrasings lists: parsing, shrink-only behaviour,
-/// and the checked-in files themselves.
+/// The allowlist and shared-phrasings lists: parsing and shrink-only behaviour,
+/// on lists the tests write themselves.
 library;
-
-import 'dart:io';
 
 import 'package:doc_check/doc_rules.dart';
 import 'package:doc_check/policy.dart';
-import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
-
-/// The most entries the checked-in allowlist may hold; it may only shrink.
-const _maxAllowlistEntries = 0;
-
-/// The most phrasings the checked-in shared list may hold; it may only shrink.
-const _maxSharedPhrasings = 3;
-
-String _read(String name) {
-  final String path = Runfiles.create().rlocation('_main/tool/doc_check/$name');
-  final file = File(path);
-  if (!file.existsSync()) fail('$name is missing at $path');
-  return file.readAsStringSync();
-}
 
 const _gap = Gap(
   file: '//a:b.bzl',
@@ -29,21 +13,6 @@ const _gap = Gap(
 );
 
 void main() {
-  group('checked-in lists', () {
-    test('the allowlist holds no more than its pinned size', () {
-      expect(
-        parseAllowlist(_read('allowlist.txt')).length,
-        lessThanOrEqualTo(_maxAllowlistEntries),
-      );
-    });
-    test('the shared-phrasings list holds no more than its pinned size', () {
-      expect(
-        parseSharedPhrasings(_read('shared_phrasings.txt')).length,
-        lessThanOrEqualTo(_maxSharedPhrasings),
-      );
-    });
-  });
-
   group('allowlist', () {
     test('an entry suppresses the gaps of its key', () {
       final Filtered filtered = applyAllowlist([

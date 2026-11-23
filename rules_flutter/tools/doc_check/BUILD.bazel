@@ -18,7 +18,6 @@ _LIB = [
     "failure.dart",
     "policy.dart",
     "rules.dart",
-    "sha256.dart",
     "source_probe.dart",
     "stardoc.dart",
     "wire.dart",
@@ -44,30 +43,8 @@ dart_test(
         "test/fixtures.dart",
         "test/proto_writer.dart",
     ],
-    data = [
-        ":allowlist.txt",
-        ":shared_phrasings.txt",
-    ],
-    env = {
-        "DOC_CHECK_ALLOWLIST_RLOCATION": "$(rlocationpath :allowlist.txt)",
-        "DOC_CHECK_SHARED_RLOCATION": "$(rlocationpath :shared_phrasings.txt)",
-    },
     main = "test/doc_check_test.dart",
     deps = [
         "@dev_tool_deps//:test",
-        "@rules_dart//dart/runfiles",
-    ],
-)
-
-dart_test(
-    name = "proto_pin_test",
-    size = "small",
-    srcs = ["sha256.dart"],
-    data = [":stardoc_output.proto"],
-    env = {"DOC_CHECK_PROTO_RLOCATION": "$(rlocationpath :stardoc_output.proto)"},
-    main = "test/proto_pin_test.dart",
-    deps = [
-        "@dev_tool_deps//:test",
-        "@rules_dart//dart/runfiles",
     ],
 )

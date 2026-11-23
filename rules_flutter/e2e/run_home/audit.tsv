@@ -119,7 +119,6 @@ e2e/federated_plugins:registrants_test	Dart test over generated registrant files
 e2e/aar_host:host_app	android_binary APK; needs emulator + Android SDK, built by e2e/aar_host
 e2e/aar_host:verify_aar_host_test	Dart emulator test; needs emulator + Android SDK, run by e2e/aar_host
 @rules_flutter//tools/doc_check:doc_check	pure-Dart doc checker; reads extract protos only, no CLI spawn and no HOME writes
-@rules_flutter//tools/doc_check:proto_pin_test	pure-Dart pin test; hashes the vendored proto only, no CLI spawn and no HOME writes
 @rules_flutter//tools/doc_check:rules_test	pure-Dart rule test over fixture protos; no CLI spawn and no HOME writes
 e2e/integration_ios:flavor_dev_test	macOS-only iOS simulator test; run by e2e/integration_ios
 e2e/integration_ios:flavor_prod_test	macOS-only iOS simulator test; run by e2e/integration_ios
