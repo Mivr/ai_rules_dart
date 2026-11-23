@@ -5,15 +5,19 @@ load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", 
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
-load("//dart/pub:pub_scc.bzl", "PARSER_SOURCE_LABELS", "compute_sccs", "package_dep_graph", "parser_schema", "read_scope_pubspec", "record_scope_facts", "scc_repo_name", "split_scope_facts")
-load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
+load("//dart/pub:pub_scc.bzl", "compute_sccs", "package_dep_graph", "parser_schema", "record_scope_facts", "scc_repo_name", "split_scope_facts")
 load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC")
+load("//dart/pub/private:parser_sources.bzl", "READER_SOURCE_LABELS")
+load("//dart/pub/private:pin_checks.bzl", "lock_package_error")
 load("//dart/pub/private:pub_emit.bzl", "SPOKE_PREFIX", "pub_emit_aliased", "pub_emit_explicit", "pub_emit_hubs", "pub_emit_isolated_git", "pub_emit_isolated_spokes", "pub_emit_shared_git", "pub_emit_shared_spokes")
 load("//dart/pub/private:pub_resolution_warnings.bzl", _warn_skipped_sources = "warn_skipped_sources")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
 load("//dart/pub/private:pub_scc_entries.bzl", _scc_member_entries = "scc_member_entries")
+load("//dart/pub/private:pub_scc_facts.bzl", "scope_pubspec_path")
 load("//dart/pub/private:pub_workspace.bzl", "check_workspaces")
+load("//dart/pub/private:pubspec_data.bzl", "lock_packages", "pubspec_deps")
+load("//dart/pub/private:yq.bzl", "yaml_to_json")
 
 visibility("public")
 
@@ -103,11 +107,12 @@ _from_lock = tag_class(
 )
 
 def _parser_schema(ctx):
-    """Builds this evaluation's fact-key schema from the parser sources' bytes.
+    """Builds this evaluation's fact-key schema from the pubspec reader's sources.
 
-    Reads the parser files with `watch = "no"`: no new recorded input is
-    needed, because the extension's own `bzlTransitiveDigest` already
-    re-evaluates it when they change.
+    The reader is the `yq` release and conversion plus the projection of its
+    output (`READER_SOURCE_LABELS`). Reads the files with `watch = "no"`: no
+    new recorded input is needed, because the extension's own
+    `bzlTransitiveDigest` already re-evaluates it when they change.
 
     Args:
       ctx: The module extension context.
@@ -115,7 +120,7 @@ def _parser_schema(ctx):
     Returns:
       The schema prefix every fact key of this evaluation carries.
     """
-    return parser_schema([ctx.read(label, watch = "no") for label in PARSER_SOURCE_LABELS])
+    return parser_schema([ctx.read(label, watch = "no") for label in READER_SOURCE_LABELS])
 
 def _scope_pubspec_deps(ctx, scope_dir, hosted, git_pkgs):
     """Downloads each in-scope package and returns its sorted dependency names.
@@ -126,8 +131,9 @@ def _scope_pubspec_deps(ctx, scope_dir, hosted, git_pkgs):
     the same git revisions the git spokes will, reading the one file it needs
     from each. The padded-tarball workaround is the spokes'
     (`trim_gzip_trailing_nulls`): some pub.dev archives end past the gzip
-    trailer, which Bazel's extractor rejects. Each pubspec is parsed once;
-    the one result is what facts record and what planning consumes.
+    trailer, which Bazel's extractor rejects. Each pubspec is read once, all
+    of them in one `yq` process; the one result is what facts record and what
+    planning consumes.
 
     Every archive is scanned before the first extraction: all packages
     download first, one snapshot invocation scans the batch in hosted
@@ -201,9 +207,17 @@ def _scope_pubspec_deps(ctx, scope_dir, hosted, git_pkgs):
         # Scratch is check-only, but the check still runs before extraction:
         # a hostile tarball fails planning here, not after its links land.
         run_pub_archive_scans(ctx, [struct(archive = p.archive, name = p.name) for p in pending])
+    pubspecs = []
     for p in pending:
         ctx.extract(p.archive, output = p.out)
-        deps[p.name] = sorted(parse_pubspec_deps(read_scope_pubspec(ctx, p.name, p.out)))
+        path = scope_pubspec_path(ctx, p.name, p.out)
+        if path == None:
+            deps[p.name] = []
+        else:
+            pubspecs.append(struct(name = p.name, path = path))
+    data = yaml_to_json(ctx, [p.path for p in pubspecs], [p.name + "/pubspec.yaml" for p in pubspecs])
+    for i in range(len(pubspecs)):
+        deps[pubspecs[i].name] = sorted(pubspec_deps(data[i]))
     return deps
 
 def touch_scanner_runtime_label(ctx):
@@ -723,7 +737,7 @@ def _pub_collect_tags(ctx):
     root_repos = {}
 
     package_tags = []
-    lock_tags = []
+    lock_fields = []
     for mod in ctx.modules:
         module_name = getattr(mod, "name", "")
         for pkg in mod.tags.package:
@@ -744,11 +758,10 @@ def _pub_collect_tags(ctx):
                 ignore_hooks[pkg_name] = True
             if mod.is_root:
                 root_repos[lock_tag.name] = root_repos.get(lock_tag.name, True) and ctx.is_dev_dependency(lock_tag)
-            lock_content = ctx.read(lock_tag.lock)
-            lock_tags.append(struct(
+            ctx.watch(lock_tag.lock)
+            lock_fields.append(dict(
                 name = lock_tag.name,
                 lock = lock_tag.lock,
-                packages = parse_pubspec_lock(lock_content, str(lock_tag.lock)),
                 on_version_conflict = lock_tag.on_version_conflict,
                 isolated = lock_tag.isolated,
                 package_files = lock_tag.package_files,
@@ -756,6 +769,13 @@ def _pub_collect_tags(ctx):
                 is_root = mod.is_root,
                 module = module_name,
             ))
+
+    # Every lock of every module in one `yq` process.
+    locks = yaml_to_json(ctx, [f["lock"] for f in lock_fields], [str(f["lock"]) for f in lock_fields])
+    lock_tags = [
+        struct(packages = lock_packages(locks[i], str(fields["lock"])), **fields)
+        for i, fields in enumerate(lock_fields)
+    ]
     check_workspaces(ctx, package_tags, lock_tags)
     return package_tags, lock_tags, ignore_hooks, root_repos
 

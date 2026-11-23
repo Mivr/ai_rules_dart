@@ -6,7 +6,8 @@ load("//dart/pub/private:language_version.bzl", "derive_language_version")
 load("//dart/pub/private:pinned_sources.bzl", "pinned_source_error")
 load("//dart/pub/private:pub_scan.bzl", "run_pub_archive_scan")
 load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
-load("//dart/pub/private:yaml_parser.bzl", "parse_pubspec_sdk_constraint", "pubspec_sdk_constraint_error")
+load("//dart/pub/private:pubspec_data.bzl", "pubspec_environment_error", "pubspec_sdk_constraint")
+load("//dart/pub/private:yq.bzl", "yaml_to_json")
 
 visibility(["//dart/..."])
 
@@ -62,11 +63,12 @@ def _pub_package_impl(ctx):
     # languageVersion behaviour. This lets the analyzer apply the right
     # language semantics for packages whose SDK floor predates the running
     # Dart SDK (e.g. `state_notifier` with `sdk: ">=2.12.0"`).
-    pubspec_content = ctx.read("pubspec.yaml")
-    sdk_err = pubspec_sdk_constraint_error(pubspec_content, ctx.attr.package_name + "/pubspec.yaml")
+    pubspec_label = ctx.attr.package_name + "/pubspec.yaml"
+    pubspec = yaml_to_json(ctx, ["pubspec.yaml"], [pubspec_label])[0]
+    sdk_err = pubspec_environment_error(pubspec, pubspec_label)
     if sdk_err:
         fail(sdk_err)
-    sdk_constraint = parse_pubspec_sdk_constraint(pubspec_content)
+    sdk_constraint = pubspec_sdk_constraint(pubspec)
     language_version = derive_language_version(sdk_constraint)
 
     # Generate BUILD.bazel with a dart_library target. `deps` here names sibling

@@ -14,6 +14,7 @@ effectively overriding the default named toolchain due to toolchain resolution p
 
 load("//dart/private:toolchain_selection.bzl", "select_toolchain_version", "toolchain_name_override_error")
 load("//dart/pub:pub_scanner.bzl", "pub_scanner_repo")
+load("//dart/pub/private:yq.bzl", "yq_repository")
 load(":repositories.bzl", "dart_register_toolchains")
 
 visibility("public")
@@ -87,6 +88,11 @@ def _toolchain_extension(module_ctx):
             dart_version = selection.version,
         )
     _create_pub_scanner(module_ctx, registrations, selections)
+
+    # The pinned `yq` the pub rules read pubspec files with (see
+    # `//dart/pub/private:yq.bzl`); it resolves through this module's own
+    # repo mapping, like the scanner.
+    yq_repository(name = "dart_yq")
     return module_ctx.extension_metadata(
         reproducible = True,
     )

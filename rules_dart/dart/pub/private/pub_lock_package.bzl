@@ -16,7 +16,8 @@ load("//dart/pub/private:pinned_sources.bzl", "git_materialize", "git_transport_
 load("//dart/pub/private:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
 load("//dart/pub/private:pub_scc_verify.bzl", "spoke_planned_deps_error")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
-load("//dart/pub/private:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint", "pubspec_sdk_constraint_error")
+load("//dart/pub/private:pubspec_data.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint")
+load("//dart/pub/private:yq.bzl", "yaml_to_json")
 
 visibility(["//dart/..."])
 
@@ -147,19 +148,17 @@ def _pub_lock_write_build(ctx, rule_name):
     bazel_deps = []
     language_version = ""
     real_deps = []
-    pubspec_path = ctx.path("pubspec.yaml")
-    if pubspec_path.exists:
-        pubspec_content = ctx.read(pubspec_path)
-        sdk_err = pubspec_sdk_constraint_error(pubspec_content, ctx.attr.package_name + "/pubspec.yaml")
+    if ctx.path("pubspec.yaml").exists:
+        pubspec_label = ctx.attr.package_name + "/pubspec.yaml"
+        pubspec = yaml_to_json(ctx, ["pubspec.yaml"], [pubspec_label])[0]
+        sdk_err = pubspec_environment_error(pubspec, pubspec_label)
         if sdk_err:
             fail(sdk_err)
-        all_deps = parse_pubspec_deps(pubspec_content)
+        all_deps = pubspec_deps(pubspec)
         real_deps = sorted(all_deps)
         available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages}
         bazel_deps = sorted([d for d in all_deps if d in available and d != ctx.attr.package_name])
-        language_version = _derive_language_version(
-            parse_pubspec_sdk_constraint(pubspec_content),
-        )
+        language_version = _derive_language_version(pubspec_sdk_constraint(pubspec))
 
     planned = ctx.attr.planned_deps if ctx.attr.plan_covers_package else None
     err = spoke_planned_deps_error(rule_name, ctx.name, ctx.attr.package_name, planned, real_deps)

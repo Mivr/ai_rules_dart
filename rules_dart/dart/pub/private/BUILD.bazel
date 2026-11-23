@@ -46,6 +46,24 @@ bzl_library(
 )
 
 bzl_library(
+    name = "pubspec_data",
+    srcs = ["pubspec_data.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_sdk_constraint",
+    ],
+)
+
+bzl_library(
+    name = "yq",
+    srcs = ["yq.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/private:download",
+    ],
+)
+
+bzl_library(
     name = "pub_lock_hub",
     srcs = ["pub_lock_hub.bzl"],
     visibility = ["//visibility:public"],
@@ -62,7 +80,8 @@ bzl_library(
         ":pub_scan",
         ":pub_scc_verify",
         ":pub_symlink",
-        ":yaml_parser",
+        ":pubspec_data",
+        ":yq",
         "//dart/private:download",
     ],
 )
@@ -113,7 +132,8 @@ bzl_library(
         ":pinned_sources",
         ":pub_scan",
         ":pub_symlink",
-        ":yaml_parser",
+        ":pubspec_data",
+        ":yq",
         "//dart/private:download",
     ],
 )
@@ -129,7 +149,7 @@ bzl_library(
     srcs = ["pub_workspace.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        "//dart/pub:yaml_parser",
+        ":yq",
     ],
 )
 

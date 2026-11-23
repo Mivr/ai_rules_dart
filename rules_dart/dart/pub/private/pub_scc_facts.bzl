@@ -10,7 +10,7 @@ a lock change, a rules_dart upgrade, or `--lockfile_mode=off` re-evaluates it.
 
 To skip the repeated work the extension records, per planned package, the
 sorted dependency names planning took from that package's `pubspec.yaml` —
-exactly what `parse_pubspec_deps` returns, unfiltered — as extension facts.
+exactly the names under its `dependencies:`, unfiltered — as extension facts.
 Bazel stores them in the lockfile and hands them back as `module_ctx.facts`
 on the next evaluation, so a package whose fact still applies is neither
 downloaded nor cloned, extracted, walked, nor parsed. Planning consumes the
@@ -19,8 +19,9 @@ pubspec text, so a name carrying quotes, newlines or colons cannot split
 into several names.
 
 Facts are hints, not pins. Every key carries the schema version plus a digest
-of the pubspec parser's sources (`pub.scc.v2.<digest>/`), so facts written by
-another version of the extension or another parser never collide: they are
+of the pubspec reader's sources (`pub.scc.v2.<digest>/`; for rules_dart the
+`yq` release, the conversion and the projection, see `parser_sources.bzl`), so
+facts written by another version of the extension or another reader never collide: they are
 simply never looked up, and the returned facts — built fresh each evaluation
 holding exactly the packages it planned — drop them. A fact whose key matches
 but whose value is malformed (not a list of strings) fails the evaluation
@@ -235,8 +236,8 @@ def record_scope_facts(recorded, split, miss_deps):
     """Records one scope's planned packages into the facts to return.
 
     Hits re-record what the lockfile said; misses record the sorted names one
-    pubspec parse took — the same result planning consumes — so a pubspec that
-    fails `parse_pubspec_deps` still fails the evaluation and records nothing.
+    pubspec read took — the same result planning consumes — so a pubspec that
+    cannot be read still fails the evaluation and records nothing.
     Building the dict fresh each evaluation — exactly the packages planned,
     nothing else — drops foreign-schema and stale entries.
 
@@ -286,8 +287,8 @@ def scratch_pubspec_error(check):
         return pub_symlink_error(check.package_name, check.pubspec_rel, check.real_str)
     return None
 
-def read_scope_pubspec(ctx, package_name, out):
-    """Reads one fetched scope package's `pubspec.yaml` under the narrowed check.
+def scope_pubspec_path(ctx, package_name, out):
+    """Checks one fetched scope package's `pubspec.yaml` and returns its path.
 
     Args:
       ctx: The module extension context.
@@ -295,15 +296,16 @@ def read_scope_pubspec(ctx, package_name, out):
       out: The scratch directory the package was extracted into.
 
     Returns:
-      The `pubspec.yaml` contents ("" when the package ships none), following
-      a link that resolves inside the package. Fails with today's
-      `pub_symlink_error` diagnostic when the root does not resolve to
-      itself, the pubspec dangles or loops, or its target escapes the root.
-      Uses only Bazel's path and repository APIs, never host tools.
+      The `pubspec.yaml` path relative to the extension's working directory,
+      or None when the package ships none. A link that resolves inside the
+      package is fine. Fails with today's `pub_symlink_error` diagnostic when
+      the root does not resolve to itself, the pubspec dangles or loops, or
+      its target escapes the root. Uses only Bazel's path and repository
+      APIs, never host tools.
     """
     root = ctx.path(out)
     if not root.exists or not root.is_dir:
-        return ""
+        return None
     parent, _, base = out.rpartition("/")
     if parent == "":
         parent = "."
@@ -328,5 +330,22 @@ def read_scope_pubspec(ctx, package_name, out):
     if err:
         fail(err)
     if not found:
+        return None
+    return pubspec
+
+def read_scope_pubspec(ctx, package_name, out):
+    """Reads one fetched scope package's `pubspec.yaml` under the narrowed check.
+
+    Args:
+      ctx: The module extension context.
+      package_name: The pub package being planned, for diagnostics.
+      out: The scratch directory the package was extracted into.
+
+    Returns:
+      The `pubspec.yaml` contents ("" when the package ships none), after
+      the checks of `scope_pubspec_path`.
+    """
+    pubspec = scope_pubspec_path(ctx, package_name, out)
+    if pubspec == None:
         return ""
     return ctx.read(pubspec)

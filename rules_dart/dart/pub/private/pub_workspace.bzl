@@ -1,6 +1,6 @@
 """Checks of a Dart pub workspace's members, for `pub.from_lock(workspace_members = ...)`."""
 
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_document")
+load("//dart/pub/private:yq.bzl", "yaml_to_json")
 
 visibility(["//dart/..."])
 
@@ -137,15 +137,15 @@ def _name_error(label, data, locked_names, declared_names):
         return "member %s: its name \"%s\" is also declared with pub.package()" % (label, name)
     return None
 
-def _with_overrides(text, overrides_text, label):
-    """Parses a pubspec; the top-level keys of its `pubspec_overrides.yaml` replace its own."""
-    data = dict(parse_pubspec_document(text, label))
-    if overrides_text != None:
-        data.update(parse_pubspec_document(overrides_text, "pubspec_overrides.yaml of " + label))
-    return data
+def _with_overrides(data, overrides):
+    """Returns a pubspec's data with the top-level keys of its `pubspec_overrides.yaml` replacing its own."""
+    merged = dict(data)
+    if overrides != None:
+        merged.update(overrides)
+    return merged
 
 def pub_workspace_error(
-        root_text,
+        root,
         members,
         root_package = "",
         locked_names = [],
@@ -155,22 +155,22 @@ def pub_workspace_error(
     """Checks a pub workspace's members against its root pubspec.
 
     Args:
-        root_text: Text of the root `pubspec.yaml` next to the lock.
-        members: Dict of each member's `pubspec.yaml` label string to its text.
+        root: Top-level mapping of the root `pubspec.yaml` next to the lock.
+        members: Dict of each member's `pubspec.yaml` label string to its top-level mapping.
             An empty dict means the lock is no workspace lock: nothing is checked.
         root_package: The root's directory in its repository, `""` for the top.
         locked_names: Names of the packages in the lock.
         declared_names: Names declared with `pub.package()`.
-        root_overrides: Text of the root's `pubspec_overrides.yaml`, or None.
-        member_overrides: Dict of a member's label string to the text of its `pubspec_overrides.yaml`.
+        root_overrides: Top-level mapping of the root's `pubspec_overrides.yaml`, or None.
+        member_overrides: Dict of a member's label string to the top-level mapping of its `pubspec_overrides.yaml`.
 
     Returns:
         An error string naming one failing member and the reason, or None.
     """
     if not members:
         return None
-    root = _with_overrides(root_text, root_overrides, "root pubspec.yaml")
-    parsed = {label: _with_overrides(members[label], member_overrides.get(label), label) for label in members}
+    root = _with_overrides(root, root_overrides)
+    parsed = {label: _with_overrides(members[label], member_overrides.get(label)) for label in members}
     patterns = None
     if root.get("workspace") != None:
         patterns, error = _workspace_patterns(root, parsed, root_package)
@@ -185,34 +185,34 @@ def pub_workspace_error(
             return error
     return None
 
-def pub_workspace_root(lock, read, exists):
+def _overrides_label(pubspec):
+    """Returns the label of the `pubspec_overrides.yaml` beside a pubspec label."""
+    prefix = pubspec.name.rpartition("/")[0]
+    return pubspec.same_package_label((prefix + "/" if prefix else "") + "pubspec_overrides.yaml")
+
+def pub_workspace_root(lock):
     """Finds the root pubspec of a lock: the `pubspec.yaml` in the lock file's own directory.
 
     Args:
         lock: The lock file's Label.
-        read: Function returning the text of a Label.
-        exists: Function returning whether a Label's file exists.
 
     Returns:
-        A struct with `text`, `overrides` (text or None) and `dir` (the root directory).
+        A struct with the labels `pubspec` and `overrides` (which may not
+        exist) and `dir`, the root directory.
     """
     prefix = lock.name.rpartition("/")[0]
-    prefix = prefix + "/" if prefix else ""
-    overrides = lock.same_package_label(prefix + "pubspec_overrides.yaml")
+    pubspec = lock.same_package_label((prefix + "/" if prefix else "") + "pubspec.yaml")
     return struct(
-        text = read(lock.same_package_label(prefix + "pubspec.yaml")),
-        overrides = read(overrides) if exists(overrides) else None,
+        pubspec = pubspec,
+        overrides = _overrides_label(pubspec),
         dir = _label_dir(str(lock)),
     )
 
-def _read_member_overrides(ctx, label):
-    """Returns the text of the `pubspec_overrides.yaml` beside a member's pubspec, or None."""
-    prefix = label.name.rpartition("/")[0]
-    overrides = label.same_package_label((prefix + "/" if prefix else "") + "pubspec_overrides.yaml")
-    return ctx.read(overrides) if ctx.path(overrides).exists else None
-
 def check_workspaces(ctx, package_tags, lock_tags):
     """Fails when a `workspace_members` lock's members break the pub workspace rules.
+
+    Every root and member pubspec, and every `pubspec_overrides.yaml` beside
+    one, of every workspace lock is converted in one `yq` process.
 
     Args:
         ctx: The module extension context, used to read the pubspec files.
@@ -220,20 +220,39 @@ def check_workspaces(ctx, package_tags, lock_tags):
         lock_tags: The collected `pub.from_lock()` records.
     """
     declared = [pkg.name for pkg in package_tags]
-    for lock_tag in lock_tags:
-        if not lock_tag.workspace_members:
-            continue
-        members = {str(label): ctx.read(label) for label in lock_tag.workspace_members}
-        overrides = {str(label): _read_member_overrides(ctx, label) for label in lock_tag.workspace_members}
-        root = pub_workspace_root(lock_tag.lock, ctx.read, lambda label: ctx.path(label).exists)
+    workspaces = [lock_tag for lock_tag in lock_tags if lock_tag.workspace_members]
+    if not workspaces:
+        return
+    files = {}
+    for lock_tag in workspaces:
+        root = pub_workspace_root(lock_tag.lock)
+        for pubspec in [root.pubspec] + lock_tag.workspace_members:
+            ctx.watch(pubspec)
+            files[pubspec] = True
+            overrides = _overrides_label(pubspec)
+
+            # Watched whether or not it exists, so adding one re-evaluates.
+            ctx.watch(overrides)
+            if ctx.path(overrides).exists:
+                files[overrides] = True
+    labels = files.keys()
+    data = dict(zip(labels, yaml_to_json(ctx, labels, [str(label) for label in labels])))
+    for lock_tag in workspaces:
+        root = pub_workspace_root(lock_tag.lock)
+        members = {str(label): data[label] for label in lock_tag.workspace_members}
+        overrides = {
+            str(label): data[_overrides_label(label)]
+            for label in lock_tag.workspace_members
+            if _overrides_label(label) in data
+        }
         error = pub_workspace_error(
-            root.text,
+            data[root.pubspec],
             members,
             root.dir,
             lock_tag.packages.keys(),
             declared,
-            root.overrides,
-            {label: text for label, text in overrides.items() if text != None},
+            data.get(root.overrides),
+            overrides,
         )
         if error:
             fail("pub.from_lock \"%s\": %s" % (lock_tag.name, error))

@@ -1,4 +1,8 @@
-"""Unit tests for the pub workspace member checks in `pub_workspace.bzl`."""
+"""Unit tests for the pub workspace member checks in `pub_workspace.bzl`.
+
+The checks read decoded pubspec data, so the pubspecs here are the dicts
+`yaml_to_json` returns for them.
+"""
 
 load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
@@ -6,9 +10,9 @@ load("//dart/pub/private:pub_workspace.bzl", "pub_workspace_error", "pub_workspa
 
 visibility(["//dart/..."])
 
-_ROOT = "name: root\nworkspace:\n  - a\n  - b\n"
-_A = "name: a\nresolution: workspace\n"
-_B = "name: b\nresolution: workspace\n"
+_ROOT = {"name": "root", "workspace": ["a", "b"]}
+_A = {"name": "a", "resolution": "workspace"}
+_B = {"name": "b", "resolution": "workspace"}
 _LA = "//a:pubspec.yaml"
 _LB = "//b:pubspec.yaml"
 
@@ -23,13 +27,13 @@ def _valid_test_impl(ctx):
 def _empty_members_unchecked_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # Not even a root pubspec that would fail to parse is read.
-    asserts.equals(env, None, pub_workspace_error("{{{ not yaml", {}))
+    # Not even a root pubspec whose `workspace:` is malformed is read.
+    asserts.equals(env, None, pub_workspace_error({"workspace": "3"}, {}))
     return unittest.end(env)
 
 def _missing_resolution_test_impl(ctx):
     env = unittest.begin(ctx)
-    members = {_LA: _A, _LB: "name: b\n"}
+    members = {_LA: _A, _LB: {"name": "b"}}
     asserts.equals(
         env,
         "member //b:pubspec.yaml: its pubspec.yaml is missing `resolution: workspace`",
@@ -39,7 +43,7 @@ def _missing_resolution_test_impl(ctx):
 
 def _other_resolution_test_impl(ctx):
     env = unittest.begin(ctx)
-    members = {_LA: "name: a\nresolution: local\n", _LB: _B}
+    members = {_LA: {"name": "a", "resolution": "local"}, _LB: _B}
     asserts.equals(
         env,
         "member //a:pubspec.yaml: its pubspec.yaml sets `resolution: local`, not `resolution: workspace`",
@@ -49,7 +53,7 @@ def _other_resolution_test_impl(ctx):
 
 def _not_listed_test_impl(ctx):
     env = unittest.begin(ctx)
-    members = {"//c:pubspec.yaml": "name: c\nresolution: workspace\n"}
+    members = {"//c:pubspec.yaml": {"name": "c", "resolution": "workspace"}}
     asserts.equals(
         env,
         "member //c:pubspec.yaml: its directory \"c\" is not listed in the root pubspec.yaml `workspace:`",
@@ -62,19 +66,19 @@ def _no_workspace_list_test_impl(ctx):
     asserts.equals(
         env,
         "member //a:pubspec.yaml: the root pubspec.yaml has no `workspace:` list",
-        pub_workspace_error("name: root\n", {_LA: _A}),
+        pub_workspace_error({"name": "root"}, {_LA: _A}),
     )
     return unittest.end(env)
 
 def _error_names_only_the_failing_member_test_impl(ctx):
     env = unittest.begin(ctx)
-    error = pub_workspace_error(_ROOT, {_LA: _A, _LB: "name: b\n"})
+    error = pub_workspace_error(_ROOT, {_LA: _A, _LB: {"name": "b"}})
     asserts.false(env, "//a:" in error)
     return unittest.end(env)
 
 def _nested_member_test_impl(ctx):
     env = unittest.begin(ctx)
-    root = "name: root\nworkspace:\n  - pkgs/a/\n  - ./b\n"
+    root = {"name": "root", "workspace": ["pkgs/a/", "./b"]}
     members = {"//app/pkgs/a:pubspec.yaml": _A, "//app/b:pubspec.yaml": _B}
     asserts.equals(env, None, pub_workspace_error(root, members, "app"))
     return unittest.end(env)
@@ -112,7 +116,7 @@ def _declared_name_test_impl(ctx):
 _LP = "//pkgs/a:pubspec.yaml"
 
 def _globbed(entry):
-    return "name: root\nworkspace:\n  - \"%s\"\n" % entry
+    return {"name": "root", "workspace": [entry]}
 
 def _glob_accepts_test_impl(ctx):
     env = unittest.begin(ctx)
@@ -143,8 +147,8 @@ def _unsupported_glob_test_impl(ctx):
 def _nested_workspace_test_impl(ctx):
     env = unittest.begin(ctx)
     members = {
-        "//pkgs/a:pubspec.yaml": "name: a\nresolution: workspace\nworkspace:\n  - inner\n",
-        "//pkgs/a/inner:pubspec.yaml": "name: inner\nresolution: workspace\n",
+        "//pkgs/a:pubspec.yaml": {"name": "a", "resolution": "workspace", "workspace": ["inner"]},
+        "//pkgs/a/inner:pubspec.yaml": {"name": "inner", "resolution": "workspace"},
     }
     asserts.equals(env, None, pub_workspace_error(_globbed("pkgs/a"), members))
 
@@ -154,27 +158,26 @@ def _nested_workspace_test_impl(ctx):
 
 def _overrides_test_impl(ctx):
     env = unittest.begin(ctx)
-    root = "name: root\nworkspace:\n  - a\n"
-    asserts.equals(env, None, pub_workspace_error(root, {_LB: _B}, root_overrides = "workspace:\n  - b\n"))
+    root = {"name": "root", "workspace": ["a"]}
+    asserts.equals(env, None, pub_workspace_error(root, {_LB: _B}, root_overrides = {"workspace": ["b"]}))
     asserts.true(env, pub_workspace_error(root, {_LB: _B}) != None)
-    asserts.true(env, pub_workspace_error(root, {_LA: _A}, root_overrides = "workspace:\n  - b\n") != None)
-    member = {_LA: "name: a\n"}
-    asserts.equals(env, None, pub_workspace_error(root, member, member_overrides = {_LA: "resolution: workspace\n"}))
+    asserts.true(env, pub_workspace_error(root, {_LA: _A}, root_overrides = {"workspace": ["b"]}) != None)
+    member = {_LA: {"name": "a"}}
+    asserts.equals(env, None, pub_workspace_error(root, member, member_overrides = {_LA: {"resolution": "workspace"}}))
     return unittest.end(env)
 
 def _lock_in_subdirectory_test_impl(ctx):
     env = unittest.begin(ctx)
-    texts = {"pubspec.yaml": "name: wrong\n", "app/pubspec.yaml": _ROOT, "app/pubspec_overrides.yaml": "name: o\n"}
-    lock = Label("//:app/pubspec.lock")
-    root = pub_workspace_root(lock, lambda label: texts[label.name], lambda label: label.name in texts)
-    asserts.equals(env, _ROOT, root.text)
-    asserts.equals(env, "name: o\n", root.overrides)
+    root = pub_workspace_root(Label("//:app/pubspec.lock"))
+    asserts.equals(env, Label("//:app/pubspec.yaml"), root.pubspec)
+    asserts.equals(env, Label("//:app/pubspec_overrides.yaml"), root.overrides)
     asserts.equals(env, "app", root.dir)
     members = {"//app/a:pubspec.yaml": _A, "//app/b:pubspec.yaml": _B}
-    asserts.equals(env, None, pub_workspace_error(root.text, members, root.dir))
-    plain = pub_workspace_root(Label("//app:pubspec.lock"), lambda label: texts[label.name.replace("pubspec", "app/pubspec")], lambda label: False)
+    asserts.equals(env, None, pub_workspace_error(_ROOT, members, root.dir))
+    plain = pub_workspace_root(Label("//app:pubspec.lock"))
     asserts.equals(env, "app", plain.dir)
-    asserts.equals(env, None, plain.overrides)
+    asserts.equals(env, Label("//app:pubspec.yaml"), plain.pubspec)
+    asserts.equals(env, Label("//app:pubspec_overrides.yaml"), plain.overrides)
     return unittest.end(env)
 
 _t11_test = unittest.make(_glob_accepts_test_impl)

@@ -21,11 +21,12 @@ load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_spoke_dep_labels", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint", "pubspec_sdk_constraint_error")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error", "scc_planned_deps_error")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
+load("//dart/pub/private:pubspec_data.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint")
+load("//dart/pub/private:yq.bzl", "yaml_to_json")
 
 visibility("public")
 
@@ -101,39 +102,50 @@ def _fetch_scc_member(ctx, member, name):
     else:
         _fetch_hosted_member(ctx, member, name)
 
-def _parsed_scc_member(ctx, member, name):
-    """Fetches one member and parses its pubspec into a planning struct.
+def _parsed_scc_members(ctx, members):
+    """Fetches every member and reads their pubspecs into planning structs.
+
+    All members' pubspecs are converted in one `yq` process.
 
     Args:
       ctx: The repository rule context.
-      member: The member's `members_json` entry dict.
-      name: The member package name, also its subdirectory.
+      members: The `members_json` entry dicts; each member's name is also
+        its subdirectory.
 
     Returns:
-      struct(name, version, code_assets, planned, real_deps, pubspec,
-      package_files): the member name, its version and code assets, its
-      entry's `planned_deps` value (None when the entry carries none), its
-      real sorted dependency names, its raw pubspec text ("" when the package
-      ships none), and its runtime-file globs.
+      One struct(name, version, code_assets, planned, real_deps,
+      sdk_constraint, package_files) per member, in member order: the member
+      name, its version and code assets, its entry's `planned_deps` value
+      (None when the entry carries none), its real sorted dependency names,
+      its `environment.sdk` ("" when it has none or ships no pubspec), and
+      its runtime-file globs.
     """
-    _fetch_scc_member(ctx, member, name)
+    for member in members:
+        _fetch_scc_member(ctx, member, member["name"])
 
-    # The member's pubspec.yaml states its deps and SDK constraint, the
-    # latter so the merged library mirrors pub's per-package
-    # languageVersion behaviour.
-    pubspec = ctx.read(name + "/pubspec.yaml") if ctx.path(name + "/pubspec.yaml").exists else ""
-    sdk_err = pubspec_sdk_constraint_error(pubspec, name + "/pubspec.yaml")
-    if sdk_err:
-        fail(sdk_err)
-    return struct(
-        name = name,
-        version = member["version"],
-        code_assets = member.get("code_assets", []),
-        planned = member.get("planned_deps", None),
-        real_deps = sorted(parse_pubspec_deps(pubspec)),
-        pubspec = pubspec,
-        package_files = member.get("package_files", ["pubspec.yaml", "LICENSE*"]),
-    )
+    # A member's pubspec.yaml states its deps and SDK constraint, the latter
+    # so the merged library mirrors pub's per-package languageVersion
+    # behaviour.
+    shipped = [m["name"] for m in members if ctx.path(m["name"] + "/pubspec.yaml").exists]
+    labels = [name + "/pubspec.yaml" for name in shipped]
+    pubspecs = dict(zip(shipped, yaml_to_json(ctx, labels, labels)))
+    parsed = []
+    for member in members:
+        name = member["name"]
+        pubspec = pubspecs.get(name, {})
+        sdk_err = pubspec_environment_error(pubspec, name + "/pubspec.yaml")
+        if sdk_err:
+            fail(sdk_err)
+        parsed.append(struct(
+            name = name,
+            version = member["version"],
+            code_assets = member.get("code_assets", []),
+            planned = member.get("planned_deps", None),
+            real_deps = sorted(pubspec_deps(pubspec)),
+            sdk_constraint = pubspec_sdk_constraint(pubspec),
+            package_files = member.get("package_files", ["pubspec.yaml", "LICENSE*"]),
+        ))
+    return parsed
 
 def _verify_scc_plan(repo_name, parsed_members):
     """Fails when the merge plan disagrees with the fetched pubspecs.
@@ -143,7 +155,7 @@ def _verify_scc_plan(repo_name, parsed_members):
 
     Args:
       repo_name: The merged repository's name, for diagnostics.
-      parsed_members: The `_parsed_scc_member` structs, in member order.
+      parsed_members: The `_parsed_scc_members` structs, in member order.
     """
     for parsed in parsed_members:
         err = scc_planned_deps_error(repo_name, parsed.name, parsed.planned)
@@ -164,7 +176,7 @@ def _scc_member_outside_labels(parsed, config):
     """Builds one member's dependency labels on targets outside the cycle.
 
     Args:
-      parsed: The member's `_parsed_scc_member` struct.
+      parsed: The member's `_parsed_scc_members` struct.
       config: struct(available, own_names, hub_name, explicit_packages,
         scc_targets) describing the scope the merged repository joins.
 
@@ -188,7 +200,7 @@ def _write_scc_member_build(ctx, parsed, config):
 
     Args:
       ctx: The repository rule context.
-      parsed: The member's `_parsed_scc_member` struct.
+      parsed: The member's `_parsed_scc_members` struct.
       config: struct(ignore_hooks) with the rule's hook suppressions.
     """
     name = parsed.name
@@ -199,9 +211,7 @@ def _write_scc_member_build(ctx, parsed, config):
     )
     ctx.file(name + "/BUILD.bazel", _make_dart_package_member_build_content(
         name = name,
-        language_version = _derive_language_version(
-            parse_pubspec_sdk_constraint(parsed.pubspec),
-        ),
+        language_version = _derive_language_version(parsed.sdk_constraint),
         code_assets = parsed.code_assets,
         has_unreplaced_hook = hooks.unreplaced_hook,
         version = parsed.version,
@@ -217,7 +227,7 @@ def _write_scc_build_files(ctx, parsed_members, config):
 
     Args:
       ctx: The repository rule context.
-      parsed_members: The `_parsed_scc_member` structs, in member order.
+      parsed_members: The `_parsed_scc_members` structs, in member order.
       config: struct(repo_name, own_names) plus the fields
         `_scc_member_outside_labels` and `_write_scc_member_build` take.
     """
@@ -247,9 +257,7 @@ def _pub_lock_scc_package_impl(ctx):
 
     # Phase one: fetch and parse every member. Phase two verifies the whole
     # plan before anything is generated; phase three writes every BUILD file.
-    parsed_members = []
-    for member in members:
-        parsed_members.append(_parsed_scc_member(ctx, member, member["name"]))
+    parsed_members = _parsed_scc_members(ctx, members)
     _verify_scc_plan(config.repo_name, parsed_members)
     _write_scc_build_files(ctx, parsed_members, config)
     return ctx.repo_metadata(reproducible = True)
