@@ -12,12 +12,13 @@
   twin, the entry) compiles with `--track-widget-creation`, and a plain app's modules carry none;
 - a release build (plain or tracking): one `FlutterKernelCompile`, no link;
 - a tracking app, a plain app and a `flutter_test` over one library in one debug configuration analyse without
-  conflicting actions, and so do two `flutter_test` targets whose names differ only in their directory.
+  conflicting actions, and so do two `flutter_test` targets whose names differ only in their directory;
+- an app whose `main` its library also lists fails at analysis, naming both targets and the fix.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("//flutter:defs.bzl", "flutter_application", "flutter_test")
+load("//flutter:defs.bzl", "flutter_application", "flutter_library", "flutter_test")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 load(":kernel_target_modular_test.bzl", "assert_kernel_target_dbg_modular")
 
@@ -194,6 +195,45 @@ def _shared_lib_cases(name):
         tests.append(test)
     return tests
 
+def _main_in_lib_impl(ctx):
+    env = analysistest.begin(ctx)
+    for want in [
+        "is listed by two targets",
+        ":_main_in_lib_app and ",
+        ":_main_in_lib_lib",
+        "exclude = [\"lib/web_fixture_main.dart\"]",
+        "only `main`",
+    ]:
+        asserts.expect_failure(env, want)
+    return analysistest.end(env)
+
+_main_in_lib_test = analysistest.make(_main_in_lib_impl, expect_failure = True, config_settings = _DBG)
+
+def _main_in_lib_cases(name):
+    """An app whose `main` its library also lists, the shape of a stock `lib/main.dart` globbed into `lib/`.
+
+    Refused, naming the app, the library and the fix.
+
+    Args:
+        name: The test_suite name.
+
+    Returns:
+        The test names.
+    """
+    flutter_library(
+        name = "_main_in_lib_lib",
+        package_name = "main_in_lib",
+        srcs = ["lib/web_fixture_main.dart"],
+        deps = _DEPS,
+        tags = ["manual"],
+    )
+    flutter_application(
+        name = "_main_in_lib_app",
+        **(_APP | {"package_name": "main_in_lib", "main": "lib/web_fixture_main.dart", "deps": [":_main_in_lib_lib"] + _DEPS})
+    )
+    _main_in_lib_test(name = name + "_main_in_lib", target_under_test = ":_main_in_lib_app")
+    return [name + "_main_in_lib"]
+
 def _same_basename_cases(name):
     """Two `flutter_test` targets whose names differ only in their directory, analysed together.
 
@@ -266,7 +306,7 @@ def debug_modular_app_test_suite(name):
         target_under_test = ":_modular_app_widget_tracking",
         expected = ["-DGLOBAL=1", "--track-widget-creation"],
     )
-    tests = _shared_lib_cases(name) + _tracking_shared_cases(name) + _same_basename_cases(name) + [
+    tests = _shared_lib_cases(name) + _tracking_shared_cases(name) + _same_basename_cases(name) + _main_in_lib_cases(name) + [
         name + "_widget_tracking",
         name + "_plain_untracked",
         name + "_release_tracking",

@@ -15,6 +15,8 @@ load(
     "STABLE_SCHEME",
     "dart_kernel_module_aspect",
     "duplicated_source",
+    "duplicated_source_message",
+    "duplicated_source_owners",
     "entry_source_uri",
     "entry_sources",
     "first_per_package",
@@ -268,6 +270,31 @@ def _first_per_package_test_impl(ctx):
     kept = first_per_package([_pkg("a", "pkg/a", "3.9"), _pkg("b", "pkg/b"), _pkg("a", "pkg/a", "")])
     asserts.equals(env, ["a", "b"], [p.package_name for p in kept], "one record per name, in order")
     asserts.equals(env, "3.9", kept[0].language_version, "the first record wins")
+    return unittest.end(env)
+
+def _duplicated_source_message_test_impl(ctx):
+    env = unittest.begin(ctx)
+    own = duplicated_source_owners(
+        ["app/lib/main.dart"],
+        [("//app:lib", "app/lib/main.dart"), ("//app:lib", "app/lib/b.dart")],
+        [],
+    )
+    asserts.equals(env, struct(path = "app/lib/main.dart", own = True, owners = ["//app:lib"]), own)
+    message = duplicated_source_message(own, "//app:app")
+    for want in [
+        "source app/lib/main.dart is listed by two targets, //app:app and //app:lib",
+        "Remove it from the library's `srcs` (for example `glob([\"lib/**/*.dart\"], exclude = [\"lib/main.dart\"])`)",
+        "or give //app:app only `main`",
+    ]:
+        asserts.true(env, want in message, "%r in %r" % (want, message))
+    two = duplicated_source_owners([], [("//x:one", "s.dart"), ("//x:two", "s.dart")], [])
+    asserts.equals(env, struct(path = "s.dart", own = False, owners = ["//x:one", "//x:two"]), two)
+    message = duplicated_source_message(two, "//x:bin")
+    for want in [
+        "source s.dart is listed by two libraries, //x:one and //x:two, and neither depends on the other",
+        "Remove it from the `srcs` of one of them, or make one depend on the other",
+    ]:
+        asserts.true(env, want in message, "%r in %r" % (want, message))
     return unittest.end(env)
 
 def _duplicated_source_test_impl(ctx):
@@ -1220,6 +1247,7 @@ _package_prefix_index_test = unittest.make(_package_prefix_index_test_impl)
 _duplicated_source_lazy_edges_test = unittest.make(_duplicated_source_lazy_edges_test_impl)
 _split_without_direct_edge_test = unittest.make(_split_without_direct_edge_test_impl)
 _duplicated_source_test = unittest.make(_duplicated_source_test_impl)
+_duplicated_source_message_test = unittest.make(_duplicated_source_message_test_impl)
 _modular_tools_off_test = unittest.make(_modular_tools_off_test_impl)
 _has_cross_pkg_cycle_test = unittest.make(_has_cross_pkg_cycle_test_impl)
 _unused_inputs_wiring_test = unittest.make(_unused_inputs_wiring_test_impl)
@@ -1393,6 +1421,7 @@ def kernel_test_suite(name):
         _packages_consistent_test,
         _first_per_package_test,
         _duplicated_source_test,
+        _duplicated_source_message_test,
         _duplicated_source_lazy_edges_test,
         _package_prefix_index_test,
         _split_without_direct_edge_test,

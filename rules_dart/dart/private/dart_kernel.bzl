@@ -385,6 +385,24 @@ def duplicated_source(own_paths, owned, edges):
     Returns:
       The `short_path` of the first source that cannot compile modularly, or None.
     """
+    found = duplicated_source_owners(own_paths, owned, edges)
+    return found.path if found != None else None
+
+def duplicated_source_owners(own_paths, owned, edges):
+    """The source a modular executable cannot compile, and the targets that list it, or None.
+
+    See `duplicated_source`.
+
+    Args:
+      own_paths: The `short_path` of each of the executable's own sources.
+      owned: The `(label, short_path)` of each source of each library in its closure.
+      edges: The `(label, dep_label)` of each `dart_library` dependency in its closure.
+
+    Returns:
+      `struct(path, own, owners)`, or None: `path` is the source's `short_path`;
+      `own` is True when the executable lists it too; `owners` the sorted labels
+      of the libraries that list it (both of them when `own` is False).
+    """
     own = {}
     for path in own_paths:
         own[path] = True
@@ -392,7 +410,8 @@ def duplicated_source(own_paths, owned, edges):
     shared = False
     for label, path in owned:
         if path in own:
-            return path
+            listing = sorted({lbl: True for lbl, p in owned if p == path}.keys())
+            return struct(path = path, own = True, owners = listing)
         labels = owners.setdefault(path, {})
         labels[label] = True
         if len(labels) > 1:
@@ -410,8 +429,38 @@ def duplicated_source(own_paths, owned, edges):
                 first = labels[i]
                 second = labels[j]
                 if not _depends_on(reaches, first, second) and not _depends_on(reaches, second, first):
-                    return path
+                    return struct(path = path, own = False, owners = [first, second])
     return None
+
+def _package_relative(label, path):
+    """`path` relative to the package of `label`, or `path` when it lies outside it."""
+    package = label.split("//", 1)[-1].split(":", 1)[0]
+    if package and path.startswith(package + "/"):
+        return path[len(package) + 1:]
+    return path
+
+def duplicated_source_message(found, program):
+    """What a user reads when one source belongs to two targets: which, and what to change.
+
+    Args:
+      found: The struct from `duplicated_source_owners`.
+      program: The label of the executable, as a string.
+
+    Returns:
+      The message.
+    """
+    libraries = " and ".join(found.owners)
+    if found.own:
+        rel = _package_relative(found.owners[0], found.path)
+        return (
+            "source %s is listed by two targets, %s and %s: one source belongs to one target. " +
+            "Remove it from the library's `srcs` (for example `glob([\"lib/**/*.dart\"], exclude = [\"%s\"])`), " +
+            "or give %s only `main` and leave the rest of `lib/` to the library"
+        ) % (found.path, program, libraries, rel, program)
+    return (
+        "source %s is listed by two libraries, %s, and neither depends on the other: one source belongs " +
+        "to one target. Remove it from the `srcs` of one of them, or make one depend on the other"
+    ) % (found.path, libraries)
 
 def _depends_on(reaches, label, target):
     """Whether `label` depends on `target`, directly or through other libraries.
@@ -1140,11 +1189,9 @@ def _not_modular_reasons(ctx, tools, target_sdk, closure, own_files, own_record,
     scan = None
     if closure == None or _clean_own_in_lib(own_paths, closure.keys):
         scan = _closure_scan(kernels or [])
-        duplicate = duplicated_source(own_paths, scan.owned, scan.edges)
+        duplicate = duplicated_source_owners(own_paths, scan.owned, scan.edges)
         if duplicate != None:
-            reasons.append(
-                "source %s belongs to two targets (the executable and a library, or two libraries neither of which depends on the other): one source belongs to one target" % duplicate,
-            )
+            reasons.append(duplicated_source_message(duplicate, str(ctx.label)))
     return reasons, scan
 
 def modular_executable_tools(

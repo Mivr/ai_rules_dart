@@ -20,7 +20,8 @@ load(
     "MODULAR_KERNEL_TOOLCHAINS",
     "collect_packages",
     "derive_lib_root",
-    "duplicated_source",
+    "duplicated_source_message",
+    "duplicated_source_owners",
     "first_per_package",
     "kernel_link_action",
     "kernel_package_config",
@@ -980,9 +981,9 @@ def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None
         reasons.append("one package of its closure has two roots, or two packages sit at the workspace root: a package config names one root per package")
     owned = depset(transitive = [k.owned for k in dep_kernels]).to_list()
     edges = depset(transitive = [k.edges for k in dep_kernels]).to_list()
-    duplicate = duplicated_source([f.short_path for f in own_files], owned, edges)
+    duplicate = duplicated_source_owners([f.short_path for f in own_files], owned, edges)
     if duplicate != None:
-        reasons.append("source %s belongs to two targets (the program and a library, or two libraries neither of which depends on the other): one source belongs to one target" % duplicate)
+        reasons.append(duplicated_source_message(duplicate, str(ctx.label)))
     if reasons:
         fail("%s compiles Flutter kernel modules, and cannot:\n%s" % (who, "\n".join(["  - " + r for r in reasons])))
     return tools

@@ -58,6 +58,8 @@ load(
     _dart_kernel_module_aspect = "dart_kernel_module_aspect",
     _dep_kernels_or_none = "dep_kernels_or_none",
     _duplicated_source = "duplicated_source",
+    _duplicated_source_message = "duplicated_source_message",
+    _duplicated_source_owners = "duplicated_source_owners",
     _entry_source_uri = "entry_source_uri",
     _entry_sources = "entry_sources",
     _find_kernel_module_tools = "find_kernel_module_tools",
@@ -238,6 +240,8 @@ kernel_package_config = _kernel_package_config
 kernel_packages_consistent = _kernel_packages_consistent
 first_per_package = _first_per_package
 duplicated_source = _duplicated_source
+duplicated_source_message = _duplicated_source_message
+duplicated_source_owners = _duplicated_source_owners
 has_cross_pkg_cycle = _has_cross_pkg_cycle
 package_of_source = _package_of_source
 global_dart_defines = _global_dart_defines
