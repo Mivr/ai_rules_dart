@@ -4,7 +4,7 @@ load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error")
 load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC")
 load("//dart/pub/private:pin_checks.bzl", "lock_package_error")
 load("//dart/pub/private:pub_emit.bzl", "instantiate_pub_repos", "pub_repo_specs", "pub_scopes")
-load("//dart/pub/private:pub_plan.bzl", "plan_pub_graph")
+load("//dart/pub/private:pub_plan.bzl", "plan_pub_graph", "read_pub_plans")
 load("//dart/pub/private:pub_resolution_warnings.bzl", _warn_skipped_sources = "warn_skipped_sources")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
@@ -99,6 +99,16 @@ _from_lock = tag_class(
             doc = "Applies to every package this lock materializes, including merged cycle " +
                   "members. " + PACKAGE_FILES_ATTR_DOC,
             default = ["pubspec.yaml", "LICENSE*"],
+        ),
+        "plan": attr.label(
+            doc = "A checked-in plan of this lock (`bazel run @rules_dart//dart/pub/plan -- " +
+                  "write`): the dependency names and archive URL of every hosted package, as " +
+                  "planning records them. A package the plan covers is planned with no " +
+                  "request to its server and recorded in no lockfile; one it does not cover " +
+                  "(a stale plan) is planned as without one. A module that ships a lock to " +
+                  "its users ships its plan with it, so they never plan it. Unset by default.",
+            allow_single_file = True,
+            default = None,
         ),
     },
 )
@@ -544,7 +554,7 @@ def resolve_pub_packages(package_tags, lock_tags):
     )
 
 def _pub_collect_tags(ctx):
-    """Collects package/lock tags across modules. Returns (package_tags, lock_tags, ignore_hooks, root_repos)."""
+    """Collects package/lock tags across modules. Returns (package_tags, lock_tags, ignore_hooks, root_repos, plan_files)."""
 
     # Packages the user has declared hook-irrelevant, unioned across every
     # from_lock call — a package is one repo regardless of how many locks
@@ -558,6 +568,7 @@ def _pub_collect_tags(ctx):
 
     package_tags = []
     lock_fields = []
+    plan_files = []
     for mod in ctx.modules:
         module_name = getattr(mod, "name", "")
         for pkg in mod.tags.package:
@@ -579,6 +590,8 @@ def _pub_collect_tags(ctx):
             if mod.is_root:
                 root_repos[lock_tag.name] = root_repos.get(lock_tag.name, True) and ctx.is_dev_dependency(lock_tag)
             ctx.watch(lock_tag.lock)
+            if lock_tag.plan != None:
+                plan_files.append(lock_tag.plan)
             lock_fields.append(dict(
                 name = lock_tag.name,
                 lock = lock_tag.lock,
@@ -597,7 +610,7 @@ def _pub_collect_tags(ctx):
         for i, fields in enumerate(lock_fields)
     ]
     check_workspaces(ctx, package_tags, lock_tags)
-    return package_tags, lock_tags, ignore_hooks, root_repos
+    return package_tags, lock_tags, ignore_hooks, root_repos, plan_files
 
 def _pub_extension_metadata(ctx, root_repos, recorded):
     """Returns this evaluation's metadata: the root's direct deps plus the planning facts for the lockfile."""
@@ -608,7 +621,7 @@ def _pub_extension_metadata(ctx, root_repos, recorded):
     )
 
 def _pub_impl(ctx):
-    package_tags, lock_tags, ignore_hooks, root_repos = _pub_collect_tags(ctx)
+    package_tags, lock_tags, ignore_hooks, root_repos, plan_files = _pub_collect_tags(ctx)
 
     resolution = resolve_pub_packages(package_tags, lock_tags)
     if resolution.error:
@@ -624,14 +637,15 @@ def _pub_impl(ctx):
 
     # Every package's dependency names decide the dependency cycles to merge
     # and each repository's own dependency labels. They come from the
-    # lockfile facts when recorded, else from the server's listing JSON (no
-    # archive is downloaded), else from the package's archive or git
-    # checkout; the repositories check them against the real pubspecs.
+    # lockfile facts when recorded, else from a checked-in plan a module ships
+    # with its lock, else from the server's listing JSON (no archive is
+    # downloaded), else from the package's archive or git checkout; the
+    # repositories check them against the real pubspecs.
     scopes = pub_scopes(resolution)
     if any([scope.hosted or scope.git for scope in scopes]):
         touch_scanner_runtime_label(ctx)
     recorded = {}
-    scope_plans = plan_pub_graph(ctx, scopes, recorded)
+    scope_plans = plan_pub_graph(ctx, scopes, recorded, read_pub_plans(ctx, plan_files))
     instantiate_pub_repos(pub_repo_specs(resolution, scope_plans, ignore_hooks))
     return _pub_extension_metadata(ctx, root_repos, recorded)
 

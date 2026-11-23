@@ -27,6 +27,7 @@ _DOC_EXTRACTS = [
     ":pub_lock_hub.doc_extract",
     ":pub_lock_package.doc_extract",
     ":pub_lock_scc.doc_extract",
+    ":pub_plan.doc_extract",
     ":pub_scan.doc_extract",
     ":pub_scanner.doc_extract",
     ":pub_scc.doc_extract",
@@ -184,6 +185,12 @@ starlark_doc_extract(
 )
 
 starlark_doc_extract(
+    name = "pub_plan.doc_extract",
+    src = "//dart/pub:pub_plan.bzl",
+    deps = ["//dart/pub:pub_plan"],
+)
+
+starlark_doc_extract(
     name = "pub_scan.doc_extract",
     src = "//dart/pub:pub_scan.bzl",
     deps = ["//dart/pub:pub_scan"],
@@ -214,8 +221,8 @@ _DECLARED_EXTRACTS = [
 ]
 
 _ = (
-    None if len(_DECLARED_EXTRACTS) == 28 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
-        "expected 28 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
+    None if len(_DECLARED_EXTRACTS) == 29 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
+        "expected 29 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
             len(_DECLARED_EXTRACTS),
         ),
     )

@@ -52,6 +52,37 @@ time; a very large lock plans faster with a higher value in `.bazelrc`.
   entry refetches that entry's repository only, or the merged repository of a
   dependency cycle it joins or leaves.
 
+## Shipping a plan with a lock
+
+A module that gives its users a lock (rules_dart's own `ext_pub_deps`, say)
+would make every one of them plan it, one request per package on their first
+evaluation. `pub.from_lock(plan = ...)` names a checked-in plan of the lock
+instead: what planning records for each hosted package, written ahead of time.
+
+```sh
+bazel run @rules_dart//dart/pub/plan -- write --lock path/to/pubspec.lock --out path/to/pub_plan.json
+```
+
+`write` reads each package's listing, one request at a time and at most four a
+second (`--server <url>` asks a mirror instead, while the plan keeps naming the
+lock's own server). A package the plan covers is planned with no request and
+is not recorded in `MODULE.bazel.lock`; a package it does not cover (the lock
+changed, the plan did not) is planned as without a plan. Its entries are hints
+like facts: every repository still checks them against the real pubspec.
+`pub_plan_test(name, locks = {lock: plan})` from
+`@rules_dart//dart/pub/plan:defs.bzl` fails when a plan no longer plans exactly
+its lock's hosted entries.
+
+## Building another rule set's packages on the planner
+
+`//dart/pub:pub_plan.bzl` gives another module extension the same three steps:
+`plan_pub_graph` (facts, shipped plans, listings, archives), `plan_scope_sccs`
+(dependency cycles) and `own_dep_labels` (one package's own labels). Its package
+repositories start from `PUB_LOCK_PACKAGE_ATTRS` and `fetch_pub_lock_archive`
+in `//dart/pub:pub_lock_package.bzl`, and its hub is `pub_lock_hub`, whose
+`files` attribute carries what the rule set adds next to the aliases.
+rules_flutter's `flutter.pub` is built this way.
+
 # Runtime package files
 
 A pub package is more than its `lib/`: `pubspec.yaml`, `LICENSE`, a `hook/`

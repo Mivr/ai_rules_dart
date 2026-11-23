@@ -50,8 +50,29 @@ alias(
         ))
     return "\n\n".join(aliases) + "\n"
 
+def hub_files_error(files):
+    """Validates a hub's extra files before any is written.
+
+    Args:
+      files: Dict of repository-relative path to file content.
+
+    Returns:
+      An error naming the first path that is not a plain relative path inside
+      the hub, or that would replace the hub's own `BUILD.bazel`, else None.
+    """
+    for path in sorted(files.keys()):
+        parts = path.split("/")
+        if path in ("BUILD.bazel", "BUILD", "REPO.bazel", "WORKSPACE") or path.startswith("/") or "" in parts or "." in parts or ".." in parts or "\\" in path:
+            return "pub_lock_hub: extra file %r is not a relative path inside the hub, or replaces the hub's own BUILD file" % path
+    return None
+
 def _pub_lock_hub_impl(ctx):
     spoke_prefix = ctx.attr.spoke_prefix if ctx.attr.spoke_prefix else ctx.attr.hub_name
+    err = hub_files_error(ctx.attr.files)
+    if err:
+        fail(err)
+    for path in sorted(ctx.attr.files.keys()):
+        ctx.file(path, ctx.attr.files[path], executable = False)
     ctx.file("BUILD.bazel", pub_lock_hub_content(
         ctx.attr.packages,
         ctx.attr.explicit_packages,
@@ -83,6 +104,13 @@ pub_lock_hub = repository_rule(
         "scc_targets": attr.string_dict(
             doc = "Package name to merged repository target, for packages merged over a dependency cycle. " +
                   "Each aliases to the merged target instead of a spoke. Empty when nothing is merged.",
+            default = {},
+        ),
+        "files": attr.string_dict(
+            doc = "Extra files written into the hub, as relative path to content: what a " +
+                  "rule set built on this hub adds next to the package aliases (a BUILD " +
+                  "file in a subdirectory, a `.bzl` or JSON file its package repositories " +
+                  "read). It cannot replace the hub's own `BUILD.bazel`. Empty by default.",
             default = {},
         ),
     },

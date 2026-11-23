@@ -8,6 +8,7 @@ load("//dart:defs.bzl", "dart_library", "dart_test")
 
 exports_files(
     [
+        "pub_plan.json",
         "pubspec.lock",
         "registry.bzl",
     ],

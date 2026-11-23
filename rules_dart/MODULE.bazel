@@ -136,5 +136,10 @@ pub.from_lock(
     # global version resolution and cannot conflict with a consumer's pins.
     isolated = True,
     lock = "//dart/ext:pubspec.lock",
+    # Planned ahead of time, so no module that depends on rules_dart asks a
+    # server about these packages. `//dart/pub/plan:plan_test` checks it
+    # against the lock; regenerate it with
+    # `bazel run //dart/pub/plan -- write --lock dart/ext/pubspec.lock --out dart/ext/pub_plan.json`.
+    plan = "//dart/ext:pub_plan.json",
 )
 use_repo(pub, "ext_pub_deps")

@@ -78,6 +78,17 @@ bzl_library(
 )
 
 bzl_library(
+    name = "pub_plan",
+    srcs = ["pub_plan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:pub_emit",
+        "//dart/pub/private:pub_plan",
+        "//dart/pub/private:scc",
+    ],
+)
+
+bzl_library(
     name = "pub_scan",
     srcs = ["pub_scan.bzl"],
     visibility = ["//visibility:public"],
@@ -127,6 +138,7 @@ exports_files(
         "pub_lock_hub.bzl",
         "pub_lock_package.bzl",
         "pub_lock_scc.bzl",
+        "pub_plan.bzl",
         "pub_scan.bzl",
         "pub_scanner.bzl",
         "pub_scc.bzl",

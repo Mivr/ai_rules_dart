@@ -158,7 +158,20 @@ def _pub_lock_write_build(ctx, rule_name):
 
     ctx.file("BUILD.bazel", build_content)
 
-def _pub_lock_package_impl(ctx):
+def fetch_pub_lock_archive(ctx):
+    """Downloads, checks and extracts one hosted package into the repository root.
+
+    The fetch half of `pub_lock_package`, shared with rule sets that build a
+    package repository of their own on top of it (rules_flutter's
+    `flutter_pub_package`): it reads the `package_name`, `version`, `sha256`
+    and `url` attributes of `PUB_LOCK_PACKAGE_ATTRS`. The archive is
+    downloaded against its sha256, its trailing gzip padding is trimmed, the
+    header scanner refuses hostile entries before the extractor runs, and the
+    extracted tree's symlinks are checked before anything reads it.
+
+    Args:
+      ctx: The repository rule context.
+    """
     err = pub_lock_package_sha256_error(
         ctx.attr.package_name,
         ctx.attr.version,
@@ -197,57 +210,65 @@ def _pub_lock_package_impl(ctx):
     ctx.delete("_archive.tar.gz")
     _check_package_symlinks(ctx, ctx.attr.package_name)
 
+def _pub_lock_package_impl(ctx):
+    fetch_pub_lock_archive(ctx)
     _pub_lock_write_build(ctx, "pub_lock_package")
     return ctx.repo_metadata(reproducible = True)
 
+# The attributes of one hosted package repository: its coordinates, the
+# dependency names planning used, and its own dependency labels. A rule set
+# that adds its own attributes to a package repository starts from these, so
+# both rules read the same planned shape (see `fetch_pub_lock_archive`).
+PUB_LOCK_PACKAGE_ATTRS = {
+    "package_name": attr.string(
+        doc = "The pub.dev package name.",
+        mandatory = True,
+    ),
+    "version": attr.string(
+        doc = "The package version to download.",
+        mandatory = True,
+    ),
+    "sha256": attr.string(
+        doc = "SHA256 hash of the package archive for integrity verification.",
+        mandatory = True,
+    ),
+    "url": attr.string(
+        doc = "The archive URL: the server's `archive_url` for the version, or " +
+              "`<base>/packages/<name>/versions/<version>.tar.gz` when it lists none.",
+        mandatory = True,
+    ),
+    "planned_deps": attr.string_list(
+        doc = "The sorted dependency names planning used for this package (its whole " +
+              "`dependencies:`, unfiltered). The fetch fails when the fetched pubspec " +
+              "lists other names.",
+        default = [],
+    ),
+    "deps": attr.string_list(
+        doc = "Labels of this package's own dependencies: a sibling spoke, the merged " +
+              "repository holding a dependency cycle, or a `pub.package()` repository.",
+        default = [],
+    ),
+    "ignore_hook": attr.bool(
+        doc = "Suppress the unreplaced-hook diagnostic for this package. Set by " +
+              "`pub.from_lock(ignore_hooks = [...])`; never a default.",
+        default = False,
+    ),
+    "code_assets": attr.string_list(
+        doc = "Labels of `dart_code_asset` targets replacing this package's " +
+              "`hook/build.dart` output. Resolved by the `pub` extension from " +
+              "rules_dart's curated registry; attached to the generated " +
+              "`dart_library` so they propagate to every consumer.",
+        default = [],
+    ),
+    "package_files": attr.string_list(
+        doc = "Applies to this hosted package. " + _PACKAGE_FILES_ATTR_DOC,
+        default = ["pubspec.yaml", "LICENSE*"],
+    ),
+}
+
 pub_lock_package = repository_rule(
     implementation = _pub_lock_package_impl,
-    attrs = {
-        "package_name": attr.string(
-            doc = "The pub.dev package name.",
-            mandatory = True,
-        ),
-        "version": attr.string(
-            doc = "The package version to download.",
-            mandatory = True,
-        ),
-        "sha256": attr.string(
-            doc = "SHA256 hash of the package archive for integrity verification.",
-            mandatory = True,
-        ),
-        "url": attr.string(
-            doc = "The archive URL: the server's `archive_url` for the version, or " +
-                  "`<base>/packages/<name>/versions/<version>.tar.gz` when it lists none.",
-            mandatory = True,
-        ),
-        "planned_deps": attr.string_list(
-            doc = "The sorted dependency names planning used for this package (its whole " +
-                  "`dependencies:`, unfiltered). The fetch fails when the fetched pubspec " +
-                  "lists other names.",
-            default = [],
-        ),
-        "deps": attr.string_list(
-            doc = "Labels of this package's own dependencies: a sibling spoke, the merged " +
-                  "repository holding a dependency cycle, or a `pub.package()` repository.",
-            default = [],
-        ),
-        "ignore_hook": attr.bool(
-            doc = "Suppress the unreplaced-hook diagnostic for this package. Set by " +
-                  "`pub.from_lock(ignore_hooks = [...])`; never a default.",
-            default = False,
-        ),
-        "code_assets": attr.string_list(
-            doc = "Labels of `dart_code_asset` targets replacing this package's " +
-                  "`hook/build.dart` output. Resolved by the `pub` extension from " +
-                  "rules_dart's curated registry; attached to the generated " +
-                  "`dart_library` so they propagate to every consumer.",
-            default = [],
-        ),
-        "package_files": attr.string_list(
-            doc = "Applies to this hosted package. " + _PACKAGE_FILES_ATTR_DOC,
-            default = ["pubspec.yaml", "LICENSE*"],
-        ),
-    },
+    attrs = PUB_LOCK_PACKAGE_ATTRS,
     doc = "Downloads a single hosted package from a pubspec.lock and generates a BUILD file.",
 )
 

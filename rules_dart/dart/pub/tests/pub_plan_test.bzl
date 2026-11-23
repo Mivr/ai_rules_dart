@@ -11,6 +11,7 @@ locks that differ in one entry and compare every repository spec.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/pub:extensions.bzl", "resolve_pub_packages")
 load("//dart/pub/private:pub_emit.bzl", "pub_repo_specs")
+load("//dart/pub/private:pub_lock_hub.bzl", "hub_files_error")
 load(
     "//dart/pub/private:pub_plan.bzl",
     "hosted_plan_key",
@@ -18,6 +19,7 @@ load(
     "plan_from_listing",
     "plan_from_listings",
     "plan_pub_graph",
+    "read_pub_plans",
 )
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
@@ -179,6 +181,40 @@ def _fact_shape_test_impl(ctx):
         asserts.true(env, err != None and "the-key" in err, "a malformed fact names its key: %r" % (bad,))
     return unittest.end(env)
 
+def _shipped_plan_test_impl(ctx):
+    env = unittest.begin(ctx)
+    key = hosted_plan_key("pkg", "1.0.0", _SHA_A, _BASE)
+    plan = {"deps": ["a"], "sdk": "^3.0.0", "archive_url": _BASE + "/archive.tar.gz"}
+    plan_file = json.encode({"schema": "pub.plan.v1", "plans": {
+        key: plan,
+        "pub.plan.v0/hosted/old/1.0.0/x/y": {"deps": 1},
+    }})
+    fake = struct(read = lambda label, watch = "auto": plan_file)
+    shipped = read_pub_plans(fake, ["//:plan.json"])
+    asserts.equals(env, {key: plan}, shipped, "a key of another schema is skipped")
+
+    scopes = [struct(hosted = {
+        "pkg": struct(version = "1.0.0", sha256 = _SHA_A, url = _BASE),
+        "other": struct(version = "2.0.0", sha256 = _SHA_B, url = _BASE),
+    }, git = {})]
+    fake = _fake_ctx({_BASE + "/api/packages/other": _listing(_version("2.0.0", sha = _SHA_B))})
+    recorded = {}
+    plans = plan_pub_graph(fake, scopes, recorded, shipped)
+    asserts.equals(env, plan, plans[0]["pkg"], "the shipped plan answers")
+    asserts.equals(env, [_BASE + "/api/packages/other"], [r.url for r in fake.requests], "only the package the plan misses is requested")
+    asserts.equals(env, [hosted_plan_key("other", "2.0.0", _SHA_B, _BASE)], sorted(recorded.keys()), "a shipped plan is not recorded as a fact")
+
+    asserts.equals(env, {}, read_pub_plans(fake, []), "no file, no plan")
+    return unittest.end(env)
+
+def _hub_files_test_impl(ctx):
+    env = unittest.begin(ctx)
+    asserts.equals(env, None, hub_files_error({"android/BUILD.bazel": "", "packages.bzl": "", "a/b.json": "{}"}))
+    for bad in ["BUILD.bazel", "/abs", "../up", "a/../b", "a//b", "./a", "a\\b", "REPO.bazel"]:
+        err = hub_files_error({bad: ""})
+        asserts.true(env, err != None and repr(bad) in err, "refused: %r" % bad)
+    return unittest.end(env)
+
 # One-entry lock changes and the repository specs they produce.
 
 def _lock_entry(version, sha):
@@ -299,6 +335,8 @@ _one_request_per_name_test = unittest.make(_one_request_per_name_test_impl)
 _fact_shape_test = unittest.make(_fact_shape_test_impl)
 _one_entry_one_repository_test = unittest.make(_one_entry_one_repository_test_impl)
 _own_attributes_test = unittest.make(_own_attributes_test_impl)
+_shipped_plan_test = unittest.make(_shipped_plan_test_impl)
+_hub_files_test = unittest.make(_hub_files_test_impl)
 
 def pub_plan_test_suite(name):
     small_unittest_suite(
@@ -311,4 +349,6 @@ def pub_plan_test_suite(name):
         _fact_shape_test,
         _one_entry_one_repository_test,
         _own_attributes_test,
+        _shipped_plan_test,
+        _hub_files_test,
     )

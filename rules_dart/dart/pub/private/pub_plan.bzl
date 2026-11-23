@@ -386,7 +386,42 @@ def plan_from_archives(ctx, hosted_fallback, git_miss):
             plans[p.key]["archive_url"] = p.url
     return plans
 
-def plan_pub_graph(ctx, scopes, recorded):
+def read_pub_plans(ctx, labels):
+    """Reads checked-in plan files: the plans a rule set ships for its own locks.
+
+    A plan file holds what planning a lock records as facts, made from the lock
+    ahead of time (`bazel run @rules_dart//dart/pub/plan`), so an evaluation
+    that finds a package there issues no request for it. The file is JSON:
+    `{"schema": "pub.plan.v1", "plans": {<fact key>: <plan>}}`. Its plans are
+    hints exactly like facts: each repository still checks its planned names
+    against the real pubspec. A plan of another schema is skipped, and a key
+    the lock does not name is never looked up, so a stale file costs requests,
+    never a wrong build.
+
+    Args:
+      ctx: The module extension context. Each file is watched.
+      labels: The plan file labels.
+
+    Returns:
+      Dict of fact key to plan, every value checked like a fact.
+    """
+    plans = {}
+    for label in labels:
+        data = json.decode(ctx.read(label), default = None)
+        if type(data) != "dict" or type(data.get("plans")) != "dict":
+            fail("pub plan file %s: expected {\"schema\": ..., \"plans\": {...}}; regenerate it with `bazel run @rules_dart//dart/pub/plan -- write`." % label)
+        if data.get("schema") != PLAN_FACTS_SCHEMA:
+            continue
+        for key, value in data["plans"].items():
+            if not key.startswith(PLAN_FACTS_SCHEMA + "/"):
+                continue
+            err = plan_fact_error(key, value, key.startswith(PLAN_FACTS_SCHEMA + "/hosted/"))
+            if err:
+                fail("pub plan file %s: %s" % (label, err))
+            plans[key] = value
+    return plans
+
+def plan_pub_graph(ctx, scopes, recorded, shipped = {}):
     """Plans every scope's packages: facts first, then listings, then archives.
 
     Args:
@@ -394,7 +429,11 @@ def plan_pub_graph(ctx, scopes, recorded):
       scopes: List of structs with `hosted` and `git` package dicts (see
         `collect_plan_keys`).
       recorded: Dict receiving this evaluation's facts (fact key to plan).
-        Built fresh, so it holds exactly the packages planned now.
+        Built fresh, so it holds exactly the packages planned now that no
+        shipped plan covers.
+      shipped: Dict of fact key to plan from checked-in plan files
+        (`read_pub_plans`), looked up after the lockfile facts. A package
+        found there is neither requested nor recorded.
 
     Returns:
       One dict per scope, in order, of package name to its plan
@@ -404,14 +443,23 @@ def plan_pub_graph(ctx, scopes, recorded):
     plans = {}
     hosted_miss = {}
     git_miss = {}
+    from_shipped = {}
     for key in sorted(keys.hosted.keys()):
         hit = _lookup(ctx.facts, key, True)
+        if hit == None:
+            hit = _lookup(shipped, key, True)
+            if hit != None:
+                from_shipped[key] = True
         if hit == None:
             hosted_miss[key] = keys.hosted[key]
         else:
             plans[key] = hit
     for key in sorted(keys.git.keys()):
         hit = _lookup(ctx.facts, key, False)
+        if hit == None:
+            hit = _lookup(shipped, key, False)
+            if hit != None:
+                from_shipped[key] = True
         if hit == None:
             git_miss[key] = keys.git[key]
         else:
@@ -421,7 +469,8 @@ def plan_pub_graph(ctx, scopes, recorded):
     plans.update(listed.plans)
     plans.update(plan_from_archives(ctx, listed.fallback, git_miss))
     for key in sorted(plans.keys()):
-        recorded[key] = plans[key]
+        if key not in from_shipped:
+            recorded[key] = plans[key]
     return [
         {name: plans[key] for name, key in scope_keys.items()}
         for scope_keys in keys.scope_keys
