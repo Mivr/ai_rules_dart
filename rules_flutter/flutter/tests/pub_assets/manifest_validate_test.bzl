@@ -1091,6 +1091,54 @@ def _font_noasset_fractional_weight_refused_test_impl(ctx):
     )
     return unittest.end(env)
 
+# -- YAML 1.2 int spellings of a font weight ------------------------------------------------------
+#
+# flutter_tools 3.47.7 reads the pubspec with `package:yaml`, which reads
+# `0x2BC`, `0o1274` and `+700` as the int 700 (checked with
+# `flutter build bundle`: FontManifest.json says `"weight":700` for all
+# three). `4e2` is the double 400.0, which crashes the build like `400.0`.
+
+_INT_SPELLING_WEIGHTS = ["0x2BC", "0o1274", "0o+1274", "+700", "0700", "700"]
+
+_INT_SPELLING_PUBSPEC = {
+    "name": "int_spellings",
+    "flutter": {
+        "fonts": [{
+            "family": "F",
+            "fonts": [{"asset": "%d.ttf" % i, "weight": w} for i, w in enumerate(_INT_SPELLING_WEIGHTS)],
+        }],
+    },
+}
+
+def _int_spelling_weights_load_test_impl(ctx):
+    """Hex, octal and signed int spellings of a font weight read as the int, as flutter_tools reads them."""
+    env = unittest.begin(ctx)
+    result = _assert_accepted(env, _INT_SPELLING_PUBSPEC)
+    asserts.equals(env, [700] * len(_INT_SPELLING_WEIGHTS), [f.weight for f in result.fonts[0].fonts])
+    return unittest.end(env)
+
+def _spelled_weight_pubspec(weight):
+    return {
+        "name": "spelled",
+        "flutter": {"fonts": [{"family": "F", "fonts": [{"asset": "a.ttf", "weight": weight}]}]},
+    }
+
+def _int_spelling_out_of_range_refused_test_impl(ctx):
+    """A hex, negative or exponent spelling outside 100..900 is refused with the number flutter_tools prints."""
+    env = unittest.begin(ctx)
+    _assert_refused(env, _spelled_weight_pubspec("0x96"), "fonts", "Invalid value 150 ((int)) for font -> weight.")
+    _assert_refused(env, _spelled_weight_pubspec("-700"), "fonts", "Invalid value -700 ((int)) for font -> weight.")
+    _assert_refused(env, _spelled_weight_pubspec("0o-1274"), "fonts", "Invalid value -700 ((int)) for font -> weight.")
+
+    # An exponent spelling is a double in flutter_tools, never the int 400.
+    result = _assert_refused(env, _spelled_weight_pubspec("4e2"), "fonts", "for font -> weight.")
+    asserts.equals(env, None, result.fonts[0].fonts[0].weight)
+
+    # Spellings `package:yaml` leaves as strings stay refused.
+    for text in ["0X2BC", "0x", "0o8", "0b101", "7_00"]:
+        _assert_refused(env, _spelled_weight_pubspec(text), "fonts", "for font -> weight.")
+    return unittest.end(env)
+
 _m0_test = unittest.make(_bad_weight_refused_test_impl)
 _m1_test = unittest.make(_bool_weight_refused_test_impl)
 _m2_test = unittest.make(_null_weight_refused_test_impl)
@@ -1156,6 +1204,8 @@ _m63_test = unittest.make(_shader_unknown_platform_refused_test_impl)
 _m64_test = unittest.make(_asset_unknown_platform_refused_test_impl)
 _m65_test = unittest.make(_font_noasset_float_weight_loads_test_impl)
 _m66_test = unittest.make(_font_noasset_fractional_weight_refused_test_impl)
+_m67_test = unittest.make(_int_spelling_weights_load_test_impl)
+_m68_test = unittest.make(_int_spelling_out_of_range_refused_test_impl)
 
 def manifest_validate_test_suite(name):
     """The `flutter:` section validation test suite."""
@@ -1226,4 +1276,6 @@ def manifest_validate_test_suite(name):
         _m64_test,
         _m65_test,
         _m66_test,
+        _m67_test,
+        _m68_test,
     )

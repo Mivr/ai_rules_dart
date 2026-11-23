@@ -235,14 +235,31 @@ def _is_digits(text):
             return False
     return True
 
+_HEX_DIGITS = "0123456789abcdefABCDEF"
+_OCTAL_DIGITS = "01234567"
+
+def _all_in(text, alphabet):
+    """Whether `text` is one or more characters of `alphabet`."""
+    if text == "":
+        return False
+    for ch in text.elems():
+        if ch not in alphabet:
+            return False
+    return True
+
 def _weight_number(value):
-    """Read a decoded font `weight` as the number its text spells.
+    """Read a decoded font `weight` as the number `package:yaml` reads in its text.
 
     The decoded pubspec spells `weight: 700` and `weight: "700"` both as the
-    string `"700"`, so the weight is read from its text: an optional `+`
-    and digits are an int, the same followed by `.` and only zeros (`400.0`)
-    a whole-number float. Anything else, a bool, None or a collection is
-    neither.
+    string `"700"`, so the weight is read from its text the way
+    `package:yaml` (which flutter_tools reads the pubspec with) reads an
+    unquoted scalar: an optional sign and digits are a decimal int, `0x`
+    and hex digits a hex int, `0o` and octal digits (with an optional sign
+    after the prefix, as Dart's `int.tryParse` takes it) an octal int, and
+    a decimal followed by `.` and only zeros (`400.0`) a whole-number
+    float. Anything else, a bool, None, a collection, or a float spelled
+    with an exponent (`4e2`, which stock flutter_tools reads as a double
+    too), is neither.
 
     Args:
         value: The decoded `weight` value.
@@ -253,11 +270,26 @@ def _weight_number(value):
     """
     if type(value) != "string":
         return struct(kind = "", number = None)
-    text = value[1:] if value.startswith("+") else value
+    if value.startswith("0x") and _all_in(value[2:], _HEX_DIGITS):
+        return struct(kind = "int", number = int(value[2:], 16))
+    if value.startswith("0o"):
+        rest = value[2:]
+        sign = 1
+        if rest.startswith("-") or rest.startswith("+"):
+            sign = -1 if rest.startswith("-") else 1
+            rest = rest[1:]
+        if _all_in(rest, _OCTAL_DIGITS):
+            return struct(kind = "int", number = sign * int(rest, 8))
+        return struct(kind = "", number = None)
+    sign = 1
+    text = value
+    if text.startswith("-") or text.startswith("+"):
+        sign = -1 if text.startswith("-") else 1
+        text = text[1:]
     whole, dot, fraction = text.partition(".")
     if not _is_digits(whole):
         return struct(kind = "", number = None)
-    number = int(whole.lstrip("0") or "0")
+    number = sign * int(whole.lstrip("0") or "0")
     if not dot:
         return struct(kind = "int", number = number)
     if fraction.strip("0") != "":
@@ -328,7 +360,7 @@ def _font_file_key_problems(item, slot):
                     slot,
                     "fonts",
                     "Invalid value {value} (({type})) for font -> weight.".format(
-                        value = dart_str(value),
+                        value = weight.number if weight.kind == "int" else dart_str(value),
                         type = weight.kind or dart_type(value),
                     ),
                 ))

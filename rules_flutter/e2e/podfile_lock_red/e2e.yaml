@@ -5,6 +5,5 @@ commands:
     expect:
       non_zero: true
       output_contains:
-        - "cannot read YAML: Error: bad file"
-        - ":Podfile.lock': go-yaml load error in scanner"
-        - "at L2.C1: found character that cannot start any token"
+        - "cannot read YAML: Error: YAML parsing error in file"
+        - ":Podfile.lock' at line 2, column 1"

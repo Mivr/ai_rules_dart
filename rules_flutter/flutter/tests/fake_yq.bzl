@@ -1,7 +1,7 @@
 """A stand-in for the `yq` process behind `yaml_to_json`, for mock repository contexts.
 
 `yaml_to_json` (`@rules_dart//dart/pub:yaml.bzl`) runs
-`ctx.execute([yq, flags..., expression, files...])` and decodes one JSON line
+`ctx.execute([yq, "--batch", files...])` and decodes one JSON line
 per document, `{"file", "doc", "duplicate_keys", "data"}`. A mock context
 built with these pieces answers that call from the decoded mapping the test
 holds, so unit tests hand rules_flutter exactly what a real `Podfile.lock`
