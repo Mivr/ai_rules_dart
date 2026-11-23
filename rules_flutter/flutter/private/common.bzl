@@ -24,6 +24,8 @@ load(
 )
 load(
     "//flutter/private:flutter_defines_files.bzl",
+    "entry_dart_env",
+    _DEFAULT_FLAVOR_ATTR = "DEFAULT_FLAVOR_ATTR",
     _DEFINES_FILES_APPLICATION_ATTRS = "DEFINES_FILES_APPLICATION_ATTRS",
     _EXTRA_DART_DEFINES_ATTR = "EXTRA_DART_DEFINES_ATTR",
     _collect_define_flagfiles = "collect_define_flagfiles",
@@ -420,11 +422,12 @@ def _kernel_compile_flags(ctx, track_widget_creation, mode, aot):
     user_defines = merge_dart_defines(ctx)
     all_defines = list(user_defines)
 
-    # Only `flutter_application` declares `define_flagfiles`; every other rule
-    # that shares this helper compiles exactly as it did before. The files are
-    # carried as File objects so the compile action can pass each as `@<path>`
-    # and declare it as an input without reading its contents at analysis.
-    define_flagfiles = collect_define_flagfiles(ctx, user_defines)
+    # Only `flutter_application` declares `dart_defines`; every other rule that
+    # shares this helper compiles exactly as it did before. The file is carried
+    # as a File so the whole-program compile can pass it as `@<path>` (before
+    # the `-D`s, which win) and declare it as an input without reading it at
+    # analysis. The modular compile reads it through `entry_dart_env`.
+    define_flagfiles = [f for f in [entry_dart_env(ctx).flagfile] if f != None] if hasattr(ctx.attr, "dart_defines") else []
     mode_defines = ["dart.vm.profile=true"] if mode == "profile" else ["dart.vm.product=true"] if aot else []
     all_defines.extend(mode_defines)
 
@@ -513,18 +516,19 @@ def _debug_registrant_modular(agent, reg, twins):
     return bool(staged and reg.location and reg.location.uri == _CONSTANT_REGISTRANT_URI)
 
 def _use_modular_kernel(plan, agent, reg, flags, twins):
-    # Whole-program (FlutterKernelCompile) is kept for: any define (attribute or global), define
-    # file, recorded use or native asset (the per-package modules are built without them), AOT,
-    # profile, web, any frontend flag other than `--track-widget-creation` (the application's aspect
-    # compiles every module with that one, and its registrant twin records that), and a closure with no
-    # registrant twin of the SDK `flutter` module (the SDK constant would not resolve to the registrant).
+    # Defines, the flavor and the `dart_defines` file are the `deps` configuration (see
+    # `flutter_defines_files.bzl`), so every module compiles with them and they keep nothing whole-program.
+    # Whole-program (FlutterKernelCompile) is kept for: a recorded use or native asset (the per-package
+    # modules are built without them), AOT, profile, web, any frontend flag other than
+    # `--track-widget-creation` (the application's aspect compiles every module with that one, and its
+    # registrant twin records that), and a closure with no registrant twin of the SDK `flutter` module (the
+    # SDK constant would not resolve to the registrant).
     return (
         not plan.aot and plan.mode != "profile" and
         plan.frontend_server_target == "flutter" and
         _debug_registrant_modular(agent, reg, twins) and
         not plan.native_assets and not plan.recorded_uses and
-        flags.extra_frontend == (["--track-widget-creation"] if twins and twins[0].tracked else []) and
-        not flags.all_defines and not flags.define_flagfiles
+        flags.extra_frontend == (["--track-widget-creation"] if twins and twins[0].tracked else [])
     )
 
 def _modular_tools_or_none(ctx, flutter_sdk_info, packages, native_assets):
@@ -1789,7 +1793,8 @@ FLUTTER_DEPS_DOC = (
 )
 
 # Shared attrs for all flutter application rules.
-FLUTTER_APPLICATION_ATTRS = KERNEL_COMPILE_ATTRS | DEFINES_FILES_APPLICATION_ATTRS | {
+FLUTTER_APPLICATION_ATTRS = KERNEL_COMPILE_ATTRS | {
+    "default_flavor": _DEFAULT_FLAVOR_ATTR,
     "flavor": attr.string(
         default = "",
         doc = "The application flavor (e.g. 'dev', 'prod'). When set, sets the " +

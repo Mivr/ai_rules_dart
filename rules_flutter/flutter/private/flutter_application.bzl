@@ -16,11 +16,11 @@ This rule produces outputs that platform-specific wrappers consume:
 load("@apple_support//lib:apple_support.bzl", "apple_support")
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "MODULAR_KERNEL_ATTRS", "MODULAR_KERNEL_TOOLCHAINS", "dart_link_hook_actions", "link_hook_runner_attr")
+load("@rules_dart//dart:utils.bzl", "DartDefinesInfo", "MODULAR_KERNEL_ATTRS", "MODULAR_KERNEL_TOOLCHAINS", "dart_link_hook_actions", "link_hook_runner_attr")
 load("//flutter:providers.bzl", "FlutterApplicationInfo", "FlutterInfo")
 load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "FLUTTER_DEPS_DOC", "PLATFORM_CONSTRAINT_ATTRS", "check_unreplaced_hooks", "collect_binding_contracts", "collect_native_libs", "declare_flutter_assets_dir", "detect_target_platform", "flutter_app_shader_aspect", "flutter_build_assets", "flutter_build_mode", "flutter_compile_kernel", "flutter_compile_shaders", "host_target_arch", "launch_build_args", "make_bundle_inputs", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info", "shader_sources")
 load("//flutter/private:flutter_aot_compile.bzl", "flutter_aot_elf_action", "flutter_aot_gen_snapshot_flags", "flutter_aot_macho_action", "macho_snapshot_options")
-load("//flutter/private:flutter_defines_files.bzl", "effective_flavor")
+load("//flutter/private:flutter_defines_files.bzl", "DART_DEFINES_DOC", "app_defines_transition", "effective_flavor")
 load("//flutter/private:flutter_font_family.bzl", "FONTS_ATTR")
 load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
 load("//flutter/private:flutter_kernel_module.bzl", "DEBUG_MODULAR_APP_ATTR", "flutter_app_kernel_module_aspect")
@@ -679,10 +679,19 @@ flutter_application = rule(
             ),
             "fonts": FONTS_ATTR,
             # The module aspect registers nothing unless the private debug_modular_app flag is on in a debug build.
+            # Then the app's defines, flavor and `dart_defines` are the configuration of its `deps`, so every
+            # module compiles with them and the app stays modular (see `app_defines_transition`).
             "deps": attr.label_list(
                 doc = FLUTTER_DEPS_DOC,
                 providers = [DartInfo],
                 aspects = [flutter_app_shader_aspect, flutter_app_kernel_module_aspect, LAYERING_CHECK_ASPECT],
+                cfg = app_defines_transition,
+            ),
+            # Configured like `deps`, so the app and its modules read one defines file.
+            "dart_defines": attr.label(
+                doc = DART_DEFINES_DOC,
+                providers = [DartDefinesInfo],
+                cfg = app_defines_transition,
             ),
         },
         PLATFORM_CONSTRAINT_ATTRS,

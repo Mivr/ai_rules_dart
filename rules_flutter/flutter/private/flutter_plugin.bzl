@@ -20,7 +20,7 @@ Platform-specific native dependencies use select() in BUILD files:
 load("@rules_android//providers:providers.bzl", "AndroidLibraryResourceClassJarProvider", "StarlarkAndroidResourcesInfo")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_dart//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "dart_info", "dart_package_identity", "derive_lib_root", "derive_package_name")
+load("@rules_dart//dart:utils.bzl", "dart_info", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset")
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("@rules_swift//swift:swift.bzl", "SwiftInfo")
 load("//flutter:providers.bzl", "FlutterApplePluginInfo", "FlutterDataAssetInfo", "FlutterInfo", "FlutterNativeAssetInfo")
@@ -495,9 +495,12 @@ flutter_plugin = rule(
         "plugin_platforms_json": attr.string(
             doc = "JSON-encoded per-platform metadata dict. Overrides platforms/plugin_class/dart_plugin_class if set.",
         ),
+        # Every attribute that leaves Dart for native code takes `native_defines_reset`: native code is configured
+        # once, whatever environment the application's Dart modules compile with.
         "native_deps": attr.label_list(
             doc = "Native dependencies. Use select() for platform-conditional deps.",
             aspects = [native_sources_aspect],
+            cfg = native_defines_reset,
         ),
         "code_assets": attr.label_list(
             doc = "`dart_code_asset` targets standing in for this package's " +
@@ -505,6 +508,7 @@ flutter_plugin = rule(
                   "rather than on the consuming application so they propagate " +
                   "the way pub's own do — depending on the package is enough.",
             providers = [DartCodeAssetInfo],
+            cfg = native_defines_reset,
         ),
         "has_unreplaced_hook": attr.string(
             doc = "Path of a build hook this package ships that nothing " +
@@ -529,34 +533,42 @@ flutter_plugin = rule(
             doc = "Per-platform Apple plugin libraries (`flutter_apple_plugin_library`) carrying the plugin's macOS / iOS native code and `FlutterApplePluginInfo` provider. Set this via `select()` on the target platform so only one platform's library analyzes per build — both with the same module name in the same configuration would conflict on the produced `<module>.swiftmodule` output.",
             aspects = [_apple_plugin_aspect],
             providers = [CcInfo],
+            cfg = native_defines_reset,
         ),
         "macos_libs": attr.label_list(
             doc = "macOS Apple plugin libraries providing `CcInfo` (and optionally `SwiftInfo`). Routed to the macOS runner aggregator.",
             providers = [CcInfo],
+            cfg = native_defines_reset,
         ),
         "ios_libs": attr.label_list(
             doc = "iOS Apple plugin libraries providing `CcInfo` (and optionally `SwiftInfo`). Routed to the iOS runner aggregator.",
             providers = [CcInfo],
+            cfg = native_defines_reset,
         ),
         "android_libs": attr.label_list(
             doc = "Android plugin libraries (`flutter_android_plugin_library`, `kt_android_library`, `android_library`, or `java_library`) providing `JavaInfo`. Propagated through `FlutterInfo.android_plugin_libraries` so `flutter_android_app` and `flutter_integration_test(platform = \"android\")` compile and package them automatically.",
             providers = [JavaInfo],
+            cfg = native_defines_reset,
         ),
         "linux_libs": attr.label_list(
             doc = "Linux plugin source bundles (`flutter_linux_plugin_library`). Propagated through `FlutterInfo.linux_plugin_libraries` so the Linux runner folds them into its `cc_common.compile()` pass.",
             providers = [FlutterLinuxPluginInfo],
+            cfg = native_defines_reset,
         ),
         "windows_libs": attr.label_list(
             doc = "Windows plugin source bundles (`flutter_windows_plugin_library`). Propagated through `FlutterInfo.windows_plugin_libraries` so the Windows runner folds them into its `cc_common.compile()` pass.",
             providers = [FlutterWindowsPluginInfo],
+            cfg = native_defines_reset,
         ),
         "native_assets": attr.label_list(
             doc = "Native Assets `CodeAsset` declarations (each a `flutter_native_asset` target). Propagated through `FlutterInfo.native_assets` and aggregated by `flutter_application` into the `--native-assets` manifest. Declare per-platform asset sets with `select()`: this is what routes each asset to the applications built for its platform, and listing two targets with the same `asset_id` in one configuration fails analysis.",
             providers = [FlutterNativeAssetInfo],
+            cfg = native_defines_reset,
         ),
         "data_assets": attr.label_list(
             doc = "Native Assets `DataAsset` declarations (each a `flutter_data_asset` target). Propagated through `FlutterInfo.data_assets` and bundled at `flutter_assets/packages/<pkg>/<name>` by `flutter_application`.",
             providers = [FlutterDataAssetInfo],
+            cfg = native_defines_reset,
         ),
         "apple_privacy_files": attr.label_list(
             doc = "`PrivacyInfo.xcprivacy` files this plugin contributes to the iOS / macOS app bundle. Apple requires every framework to ship a privacy manifest since iOS 17.4 / macOS 14.4; the App Store submission validator walks the bundle and aggregates them. Propagated through `FlutterInfo.apple_privacy_manifests` and threaded into the platform application bundle's `Resources/<pkg>/PrivacyInfo.xcprivacy` slot. Auto-detected by `flutter_pub_package` from both layouts pub plugins use (`Sources/<pkg>/PrivacyInfo.xcprivacy` and `Sources/<pkg>/Resources/PrivacyInfo.xcprivacy`).",

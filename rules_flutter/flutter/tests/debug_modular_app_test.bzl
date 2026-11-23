@@ -3,8 +3,10 @@
 - default flag (on again after #421/#422), a debug app that is plain, tracks widget creation or sits over the
   registrant twin closure: `DartKernel` modules, one `DartKernelLink`, no `FlutterKernelCompile`;
 - flag on explicitly, a plain debug app: the same modular path;
-- each selector (define, global define, define file, flavor, native asset) keeps the whole-program compile, and so
-  do tracking beside a define, tracking in a release build and any frontend flag other than tracking;
+- a define, a global define, a define file and a flavor (alone or beside tracking) stay modular: they are the
+  configuration of the app's `deps`, and the entry compile carries them too;
+- a native asset keeps the whole-program compile, and so do tracking in a release build and any frontend flag other
+  than tracking;
 - `track_widget_creation` stays modular: every module of its closure (the SDK `flutter` module and its registrant
   twin, the entry) compiles with `--track-widget-creation`, and a plain app's modules carry none;
 - flag off explicitly (plain, tracking and registrant apps), and a release build: one `FlutterKernelCompile`, no
@@ -83,6 +85,18 @@ def _plain_untracked_impl(ctx):
         asserts.false(env, ".tracked." in module, "module of the plain set: " + module)
     return analysistest.end(env)
 
+def _modular_env_impl(ctx):
+    """A debug app with an environment is modular, and its entry compile carries that environment."""
+    env = analysistest.begin(ctx)
+    asserts.equals(env, [], _mnemonics(env, "FlutterKernelCompile"), "no FlutterKernelCompile")
+    assert_kernel_target_dbg_modular(env)
+    entry = _mnemonics(env, "DartKernel")
+    asserts.equals(env, 1, len(entry), "the entry is the target's own module action")
+    for action in entry:
+        for want in ctx.attr.expected:
+            asserts.true(env, want in action.argv, "the entry carries %s: %s" % (want, action.argv))
+    return analysistest.end(env)
+
 def _whole_program_impl(ctx):
     """One whole-program compile, no module and no link."""
     env = analysistest.begin(ctx)
@@ -97,8 +111,12 @@ _modular_test = analysistest.make(_modular_impl, config_settings = _DBG_ON)
 _default_modular_test = analysistest.make(_modular_impl, config_settings = _DBG)
 _default_tracking_test = analysistest.make(_tracking_modular_impl, config_settings = _DBG)
 _selector_test = analysistest.make(_whole_program_impl, config_settings = _DBG_ON)
-_global_define_test = analysistest.make(_whole_program_impl, config_settings = _DBG_ON_GLOBAL_DEFINE)
-_global_define_tracking_test = analysistest.make(_whole_program_impl, config_settings = _DBG_ON_GLOBAL_DEFINE)
+_env_test = analysistest.make(_modular_env_impl, attrs = {"expected": attr.string_list()}, config_settings = _DBG_ON)
+_global_define_test = analysistest.make(
+    _modular_env_impl,
+    attrs = {"expected": attr.string_list()},
+    config_settings = _DBG_ON_GLOBAL_DEFINE,
+)
 _flag_off_test = analysistest.make(_whole_program_impl, config_settings = _DBG_OFF)
 _release_test = analysistest.make(_whole_program_impl, config_settings = _OPT_ON)
 
@@ -167,7 +185,7 @@ def debug_modular_app_test_suite(name):
     Args:
         name: The test_suite name.
     """
-    write_file(name = "_modular_app_defines_file", out = "_modular_app.defines", content = ["A=1"], tags = ["manual"])
+    write_file(name = "_modular_app_defines_file", out = "_modular_app.defines", content = ["-DA=1"], tags = ["manual"])
     variants = {
         "plain": {},
         "define": {"defines": ["A=1"]},
@@ -194,13 +212,14 @@ def debug_modular_app_test_suite(name):
     _flag_off_test(name = name + "_flag_off_tracking", target_under_test = ":_modular_app_widget_tracking")
     _flag_off_test(name = name + "_flag_off_registrant", target_under_test = ":_modular_app_registrant")
     _release_test(name = name + "_release", target_under_test = ":_modular_app_plain")
-    _global_define_test(name = name + "_global_define", target_under_test = ":_modular_app_plain")
+    _global_define_test(name = name + "_global_define", target_under_test = ":_modular_app_plain", expected = ["-DGLOBAL=1"])
     _tracking_modular_test(name = name + "_widget_tracking", target_under_test = ":_modular_app_widget_tracking")
     _plain_untracked_test(name = name + "_plain_untracked", target_under_test = ":_modular_app_plain")
     _release_test(name = name + "_release_tracking", target_under_test = ":_modular_app_widget_tracking")
-    _global_define_tracking_test(
+    _global_define_test(
         name = name + "_global_define_tracking",
         target_under_test = ":_modular_app_widget_tracking",
+        expected = ["-DGLOBAL=1", "--track-widget-creation"],
     )
     tests = _shared_lib_cases(name) + _tracking_shared_cases(name) + [
         name + "_widget_tracking",
@@ -218,8 +237,17 @@ def debug_modular_app_test_suite(name):
         name + "_release",
         name + "_global_define",
     ]
-    selectors = ["define", "flagfile", "flavor", "native_asset", "tracking_define", "tracking_flavor"]
-    for variant in selectors + ["tracking_native_asset"]:
+    environments = {
+        "define": ["-DA=1"],
+        "flagfile": ["--define-file"],
+        "flavor": ["-DFLUTTER_APP_FLAVOR=prod"],
+        "tracking_define": ["-DA=1", "--track-widget-creation"],
+        "tracking_flavor": ["-DFLUTTER_APP_FLAVOR=prod", "--track-widget-creation"],
+    }
+    for variant, expected in environments.items():
+        _env_test(name = "%s_%s" % (name, variant), target_under_test = ":_modular_app_" + variant, expected = expected)
+        tests.append("%s_%s" % (name, variant))
+    for variant in ["native_asset", "tracking_native_asset"]:
         _selector_test(name = "%s_%s" % (name, variant), target_under_test = ":_modular_app_" + variant)
         tests.append("%s_%s" % (name, variant))
     native.test_suite(name = name, tests = tests)

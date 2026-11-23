@@ -432,10 +432,11 @@ def _add_kernel_mode_args(ctx, args, aot, defines, define_flagfiles):
     if bazel_mode == "dbg" or not aot:
         args.add("--enable-asserts")
 
-    for d in defines:
-        args.add("-D" + d)
+    # Flagfiles first, so a `-D` of the same key (the target's `defines`, the global flag) wins.
     for flagfile in define_flagfiles:
         args.add("@" + flagfile.path)
+    for d in defines:
+        args.add("-D" + d)
 
 def _mount_kernel_sources(ctx, args, compile_sources, output, filesystem_roots):
     """Stages generated inputs and mounts the roots the compile resolves under.

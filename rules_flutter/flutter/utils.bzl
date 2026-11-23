@@ -186,21 +186,16 @@ flutter_kernel_module_aspect = _flutter_kernel_module_aspect
 FlutterKernelModuleInfo = _FlutterKernelModuleInfo
 
 # The attrs a custom modular-kernel rule merges into its own. `deps` (with the
-# aspect applied), `defines` (must stay empty — see below),
-# `ignore_global_dart_defines` (opt out of the global-defines refusal — see
-# below), the kernel tools (`_modular_kernel`, `_kernel_module`, `_kernel_link`)
-# and the transition allowlist are all provided, so the calling rule declares
-# only its own entry attrs (`main`/`srcs` stay the caller's). No private-named
-# attribute needs a caller-set value. The entry rules read
-# `//flutter:extra_dart_defines` and fail on a non-empty value: the `deps` edge
-# carries an outgoing transition that resets the flag to `[]` for the
-# dependency modules (`kernel_worker` cannot parse a comma-bearing define),
-# and the entry compile takes none of it either, so the defines would silently
-# never reach the kernel. Set `ignore_global_dart_defines = True` for a
-# pipeline that knowingly builds without the global defines; when the flag is
-# empty the configuration is untouched, so dependency modules keep sharing
-# their action keys with the built-in rules. See
-# `FLUTTER_MODULAR_KERNEL_ATTRS`.
+# aspect applied), `defines`, the kernel tools (`_modular_kernel`,
+# `_kernel_module`, `_kernel_link`) and the transition allowlist are all
+# provided, so the calling rule declares only its own entry attrs
+# (`main`/`srcs` stay the caller's). No private-named attribute needs a
+# caller-set value. The `deps` edge makes the kernel's `defines` the
+# configuration of its closure, so every dependency module and the entry
+# compile with them, followed by the global `//flutter:extra_dart_defines`; a
+# value with a comma fails the build. With no `defines` the configuration is
+# untouched, so dependency modules share their action keys with the built-in
+# rules. See `FLUTTER_MODULAR_KERNEL_ATTRS`.
 FLUTTER_MODULAR_KERNEL_ATTRS = _FLUTTER_MODULAR_KERNEL_ATTRS
 
 # The toolchains a custom modular-kernel rule declares: the Flutter toolchain

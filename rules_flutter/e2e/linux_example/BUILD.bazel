@@ -174,7 +174,110 @@ flutter_library(
     package_name = "linux_example",
     srcs = glob(["lib/**/*.dart"]),
     deps = [
+        "//defines_env",
         "@deps//:flutter",
         "@rules_flutter//flutter:material_icons",
     ],
+)
+
+# =============================================================================
+# Debug apps with defines: the defines, the defines file and the flavor are
+# the configuration of the app's `deps`, so every dependency module compiles
+# with them and the app stays modular.
+# =============================================================================
+
+flutter_application(
+    name = "app_defines_dev",
+    package_name = "linux_example",
+    dart_defines = "//defines_config:dev",
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV"],
+    flavor = "defcfgdev",
+    main = "lib/main_defines.dart",
+    tags = ["manual"],
+    deps = [
+        "//defines_env",
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# Equal settings, deps listed in another order: shares every module with
+# :app_defines_dev.
+flutter_application(
+    name = "app_defines_dev_twin",
+    package_name = "linux_example",
+    dart_defines = "//defines_config:dev",
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV"],
+    flavor = "defcfgdev",
+    main = "lib/main_defines.dart",
+    tags = ["manual"],
+    deps = [
+        "//defines_env",
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# Other settings: its own copy of every module.
+flutter_application(
+    name = "app_defines_prod",
+    package_name = "linux_example",
+    dart_defines = "//defines_config:prod",
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_PROD"],
+    flavor = "defcfgprod",
+    main = "lib/main_defines.dart",
+    tags = ["manual"],
+    deps = [
+        "//defines_env",
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The defines file spelled as before `dart_defines`: still modular, with its
+# own `dart_defines` target (`:app_defines_files_dart_defines`).
+flutter_application(
+    name = "app_defines_files",
+    package_name = "linux_example",
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV"],
+    defines_files = ["//defines_config:dev.json"],
+    flavor = "defcfgdev",
+    main = "lib/main_defines.dart",
+    tags = ["manual"],
+    deps = [
+        "//defines_env",
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+debug_kernel(
+    name = "app_defines_dev_kernel",
+    app = ":app_defines_dev",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+debug_kernel(
+    name = "app_defines_prod_kernel",
+    app = ":app_defines_prod",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# A dependency module of a debug app compiles with the app's define, defines
+# file and flavor.
+dart_test(
+    name = "defines_config_test",
+    size = "small",
+    data = [
+        ":app_defines_dev_kernel",
+        ":app_defines_prod_kernel",
+    ],
+    env = {
+        "APP_DEV_DILL": "$(rlocationpath :app_defines_dev_kernel)",
+        "APP_PROD_DILL": "$(rlocationpath :app_defines_prod_kernel)",
+    },
+    main = "test/defines_config_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
 )

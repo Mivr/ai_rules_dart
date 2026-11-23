@@ -117,21 +117,27 @@ def _flutter_test_runfiles_test_impl(ctx):
     asserts.equals(env, [], whole_program, "modular flutter_test must not run FlutterKernelCompile")
     return analysistest.end(env)
 
-def _flutter_test_defines_fallback_test_impl(ctx):
-    """When per-test `defines` are set, `flutter_test` falls back to `FlutterKernelCompile` with `--enable-asserts`."""
+def _flutter_test_defines_modular_test_impl(ctx):
+    """A `flutter_test` with its own `defines` stays modular: its `deps` compile with them, and so does its entry."""
     env = analysistest.begin(ctx)
-    compile_action = _find_action(env, ["FlutterKernelCompile"])
-    asserts.true(
-        env,
-        "--enable-asserts" in compile_action.argv,
-        "expected --enable-asserts in flutter_test FlutterKernelCompile argv, got %s" % compile_action.argv,
-    )
+    entry = _find_action(env, ["DartKernel"])
+    asserts.true(env, "-DFOO=1" in entry.argv, "expected -DFOO=1 in the entry compile, got %s" % entry.argv)
     modular_links = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartKernelLink"]
-    asserts.equals(env, [], modular_links, "flutter_test with own defines must fall back from DartKernelLink")
+    asserts.equals(env, 1, len(modular_links), "a flutter_test with own defines must link modularly")
+    whole_program = [a for a in analysistest.target_actions(env) if a.mnemonic == "FlutterKernelCompile"]
+    asserts.equals(env, [], whole_program, "a flutter_test with own defines must not run FlutterKernelCompile")
+    return analysistest.end(env)
+
+def _flutter_test_comma_refused_test_impl(ctx):
+    """A comma in a global define fails a `flutter_test` (always modular), naming the target and the define."""
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, "_inputs_flutter_test")
+    asserts.expect_failure(env, "FOO=a,b")
+    asserts.expect_failure(env, "comma")
     return analysistest.end(env)
 
 def _comma_defines_fallback_test_impl(ctx):
-    """When global `extra_dart_defines` contain a comma, modular kernel compilation falls back to `FlutterKernelCompile`."""
+    """A whole-program compile (a release kernel target) takes a global define with a comma intact."""
     env = analysistest.begin(ctx)
     compile_action = _find_action(env, ["FlutterKernelCompile"])
     asserts.true(
@@ -931,7 +937,12 @@ _flutter_plugin_rule_kind_test = analysistest.make(
     extra_target_under_test_aspects = [_inspect_rule_kind_aspect],
 )
 _flutter_test_runfiles_test = analysistest.make(_flutter_test_runfiles_test_impl)
-_flutter_test_defines_fallback_test = analysistest.make(_flutter_test_defines_fallback_test_impl)
+_flutter_test_defines_modular_test = analysistest.make(_flutter_test_defines_modular_test_impl)
+_flutter_test_comma_refused_test = analysistest.make(
+    _flutter_test_comma_refused_test_impl,
+    expect_failure = True,
+    config_settings = {str(Label("//flutter:extra_dart_defines")): ["FOO=a,b"]},
+)
 _flutter_comma_defines_fallback_test = analysistest.make(
     _comma_defines_fallback_test_impl,
     config_settings = {str(Label("//flutter:extra_dart_defines")): ["FOO=a,b"]},
@@ -1228,13 +1239,13 @@ def action_inputs_test_suite(name):
         target_under_test = ":_inputs_flutter_test",
         target_compatible_with = HOST_COMPATIBLE,
     )
-    _flutter_test_defines_fallback_test(
-        name = name + "_flutter_test_defines_fallback",
+    _flutter_test_defines_modular_test(
+        name = name + "_flutter_test_defines_modular",
         target_under_test = ":_inputs_flutter_test_defines",
         target_compatible_with = HOST_COMPATIBLE,
     )
-    _flutter_comma_defines_fallback_test(
-        name = name + "_flutter_test_comma_defines_fallback",
+    _flutter_test_comma_refused_test(
+        name = name + "_flutter_test_comma_refused",
         target_under_test = ":_inputs_flutter_test",
         target_compatible_with = HOST_COMPATIBLE,
     )
@@ -1367,8 +1378,8 @@ def action_inputs_test_suite(name):
             ":" + name + "_flutter_plugin_rule_kind",
             ":" + name + "_flutter_plugin_fonts_rule_kind",
             ":" + name + "_flutter_test_runfiles",
-            ":" + name + "_flutter_test_defines_fallback",
-            ":" + name + "_flutter_test_comma_defines_fallback",
+            ":" + name + "_flutter_test_defines_modular",
+            ":" + name + "_flutter_test_comma_refused",
             ":" + name + "_flutter_test_dart_extra_defines_ignored",
             ":" + name + "_kernel_target_comma_defines_fallback",
             ":" + name + "_kernel_target_dart_extra_defines_ignored",

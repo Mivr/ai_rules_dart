@@ -1,0 +1,17 @@
+load("@rules_flutter//flutter:defs.bzl", "dart_defines")
+
+exports_files(["dev.json"])
+
+# The defines files of the apps with defines: applications naming one target
+# share their debug modules.
+dart_defines(
+    name = "dev",
+    srcs = ["dev.json"],
+    visibility = ["//visibility:public"],
+)
+
+dart_defines(
+    name = "prod",
+    srcs = ["prod.json"],
+    visibility = ["//visibility:public"],
+)

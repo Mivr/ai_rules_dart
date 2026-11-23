@@ -403,5 +403,72 @@ void main() {
         expect(outFile.existsSync(), isFalse);
       },
     );
+
+    test('reads -D flagfiles and lets --define values win', () {
+      final File jsonFile = createFile(
+        'config.json',
+        '{"FROM_JSON": "j", "OVERRIDDEN": "file"}',
+      );
+      final File flags = createFile(
+        'flags.txt',
+        '-DFROM_FLAGFILE=a b\n\n-DBARE\n',
+      );
+      final outFile = File('${tempDir.path}/out.defines');
+      final err = StringBuffer();
+      final int code = run(<String>[
+        '--output',
+        outFile.path,
+        '--flagfile',
+        flags.path,
+        '--define',
+        'OVERRIDDEN=value',
+        '--define',
+        'EXTRA=x',
+        jsonFile.path,
+      ], errSink: err);
+
+      expect(code, 0, reason: err.toString());
+      expect(outFile.readAsLinesSync(), <String>[
+        '-DFROM_FLAGFILE=a b',
+        '-DBARE=',
+        '-DFROM_JSON=j',
+        '-DOVERRIDDEN=value',
+        '-DEXTRA=x',
+      ]);
+    });
+
+    test('refuses a flagfile line that is not a -D define', () {
+      final File flags = createFile('flags.txt', '--enable-asserts\n');
+      final outFile = File('${tempDir.path}/out.defines');
+      final err = StringBuffer();
+      final int code = run(<String>[
+        '--output',
+        outFile.path,
+        '--flagfile',
+        flags.path,
+      ], errSink: err);
+
+      expect(code, isNot(0));
+      expect(err.toString(), contains(flags.path));
+      expect(err.toString(), contains('-DKEY=VALUE'));
+      expect(outFile.existsSync(), isFalse);
+    });
+
+    test('refuses a key set by both a flagfile and a defines file', () {
+      final File jsonFile = createFile('config.json', '{"DUP": "j"}');
+      final File flags = createFile('flags.txt', '-DDUP=f\n');
+      final outFile = File('${tempDir.path}/out.defines');
+      final err = StringBuffer();
+      final int code = run(<String>[
+        '--output',
+        outFile.path,
+        '--flagfile',
+        flags.path,
+        jsonFile.path,
+      ], errSink: err);
+
+      expect(code, isNot(0));
+      expect(err.toString(), contains('DUP'));
+    });
   });
 }

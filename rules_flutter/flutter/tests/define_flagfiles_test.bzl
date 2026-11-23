@@ -5,8 +5,10 @@ command line and therefore out of `bazel aquery`, the BEP and a remote cache's
 stored action, while the compiler still receives the value when the guard
 expands the file. These tests pin both halves of that contract:
 
-- with a declared flagfile the `FlutterKernelCompile` argv contains `@<path>`
-  and none of the file's `-D` lines, and the file is an action input;
+- with a declared flagfile (which the `flutter_application` macro turns into a
+  `dart_defines` target) the `FlutterKernelCompile` argv contains `@<path>` of
+  that target's output and none of the file's `-D` lines, and the output is an
+  action input;
 - without one the argv is the base one: the ordinary `-D` flags are still
   there and no flagfile argument appears.
 """
@@ -49,8 +51,8 @@ def _action_paths(action):
     return [f.path for f in action.inputs.to_list()] if action else []
 
 def _flagfile_inputs(action):
-    """The action inputs whose basename is the generated flagfile."""
-    return [p for p in _action_paths(action) if p.endswith(_FLAGFILE)]
+    """The action inputs that are a `dart_defines` output."""
+    return [p for p in _action_paths(action) if p.endswith(".dart_defines")]
 
 def _flagfile_expands_test_impl(ctx):
     """A declared flagfile is an input and its values stay out of argv."""
@@ -103,7 +105,7 @@ def _no_flagfiles_test_impl(ctx):
     asserts.equals(
         env,
         [],
-        [p for p in _action_paths(action) if p.endswith(_FLAGFILE)],
+        _flagfile_inputs(action),
         "a target without define_flagfiles must declare no flagfile input",
     )
     return analysistest.end(env)

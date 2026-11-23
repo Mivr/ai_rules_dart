@@ -1,62 +1,12 @@
-"""Kernel-module tool selection and global-define handling for the modular Flutter kernel.
+"""Kernel-module tool selection for the modular Flutter kernel.
 
 Picks the `kernel_worker` and `dartaotruntime` that match the Flutter SDK's own
-Dart SDK, and reads the global `//flutter:extra_dart_defines` setting the way
-`kernel_worker`'s `-D` parser can take it.
+Dart SDK.
 """
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_dart//dart:utils.bzl", "kernel_tools_for")
 
 visibility(["//flutter/..."])
-
-def _global_extra_defines(ctx):
-    defines = []
-    if hasattr(ctx.attr, "_extra_dart_defines") and ctx.attr._extra_dart_defines != None:
-        defines.extend(ctx.attr._extra_dart_defines[BuildSettingInfo].value)
-    return defines
-
-def reject_global_extra_defines(ctx, what):
-    """Fails a custom modular kernel analysed with a global `extra_dart_defines`.
-
-    A custom kernel has no whole-program fallback, so a flag-bearing global
-    cannot quietly split the closure: the `deps` edge resets it for the
-    dependency modules while the entry would keep it. Refuse it unless the
-    target knowingly opts out with `ignore_global_dart_defines`.
-
-    Args:
-      ctx: The custom rule context. Must merge `FLUTTER_MODULAR_KERNEL_ATTRS`
-        (which provides `ignore_global_dart_defines`).
-      what: The calling function name, for error messages.
-    """
-    global_defines = _global_extra_defines(ctx)
-    if global_defines and not getattr(ctx.attr, "ignore_global_dart_defines", False):
-        fail("%s: %s refuses global //flutter:extra_dart_defines %s: the dependency modules are keyed and built without it, so the entry compile takes none of it either; set `ignore_global_dart_defines = True` to build without the global defines, or compile whole-program with `flutter_kernel_compile_action` when the defines must reach the kernel" % (ctx.label, what, global_defines))
-
-def has_comma_defines(ctx):
-    return any(["," in d for d in _global_extra_defines(ctx)])
-
-def kernel_worker_defines(ctx):
-    """Returns global `extra_dart_defines` entries supported by `kernel_worker`.
-
-    `kernel_worker`'s `ArgParser` declares `-D` / `--define` with `package:args`'s
-    default `splitCommas: true`, so a define whose value contains `,` (such as
-    `e2e/hello_world/.bazelrc`'s `E2E_FLAG=from,flag`) would be split at the
-    comma and rejected with `FormatException: no value given to -D option`.
-    When any global define contains `,`, `has_comma_defines(ctx)` disables
-    modular kernel compilation so targets fall back to whole-program
-    `frontend_server` compilation instead of silently dropping the define.
-    A custom modular kernel that set `ignore_global_dart_defines` builds its
-    whole closure without the flag (the `deps` edge resets it for the
-    dependency modules), so the entry compile takes none of it either.
-    """
-    if getattr(ctx.attr, "ignore_global_dart_defines", False):
-        return []
-    return [
-        d
-        for d in _global_extra_defines(ctx)
-        if "," not in d
-    ]
 
 def _sdk_root_from_dart(dart_file):
     p = dart_file.path

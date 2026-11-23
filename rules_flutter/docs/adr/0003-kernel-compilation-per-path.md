@@ -13,16 +13,18 @@ A `flutter_test` closure compiles each `DartInfo` dependency once, into a
 (`flutter/private/flutter_kernel_module.bzl:1-14`). When the closure is not
 eligible, the test falls back to one whole-program compile
 (`flutter/private/flutter_test.bzl:209-240`). Eligibility needs an enabled mode,
-modular dependencies, consistent packages, no code assets, no own defines, no
-duplicate source and the same SDK
+modular dependencies, consistent packages, no code assets, no
+duplicate source and the same SDK (the test's own defines are the configuration
+of its `deps`, so they do not count)
 (`flutter/private/flutter_kernel_module.bzl:1135-1147`).
 
 An application compiles its kernel through `flutter_compile_kernel`
 (`flutter/private/common.bzl:979`). The standalone `flutter_kernel_target` and
 `flutter_aot_target` call the same function. The modular path is taken only for
-a non-AOT, non-profile compile with no native-assets manifest, recorded uses,
-extra frontend flags, defines or define files (`_use_modular_kernel` in
-`flutter/private/common.bzl`). A registrant or staged agent is allowed only
+a non-AOT, non-profile compile with no native-assets manifest, recorded uses or
+extra frontend flags (`_use_modular_kernel` in `flutter/private/common.bzl`);
+defines, the flavor and `dart_defines` are the configuration of the `deps`, so
+they keep the modular path. A registrant or staged agent is allowed only
 for a debug `flutter_kernel_target` (no asset bundle) whose closure holds the
 registrant twin of the SDK `flutter` module: the entry module then compiles the
 agent, the native agent and the registrant under their constant URIs, and the

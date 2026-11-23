@@ -113,8 +113,9 @@ def flutter_kernel_options(
         entry must be single-line: a line break would split the worker's param
         file into extra argv elements.
       define_flagfiles: Files of environment declarations, each line an
-        already-spelled `-Dname=value` argument. Each `File` is appended to the
-        compiler argv as `@<path>` after the `defines` flags and declared as an
+        already-spelled `-Dname=value` argument. Each `File` is added to the
+        compiler argv as `@<path>` before the `defines` flags, so a `-D` of the
+        same key wins, and is declared as an
         action input; its contents are never read at analysis. `kernel_filter`
         and the incremental worker expand the files recursively and refuse a
         line that is not a `-D` argument.

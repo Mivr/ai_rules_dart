@@ -31,6 +31,7 @@ load(":cpp_client_wrapper_test.bzl", "cpp_client_wrapper_test_suite")
 load(":custom_kernel_defines_test.bzl", "custom_kernel_defines_test_suite")
 load(":debug_modular_app_test.bzl", "debug_modular_app_test_suite")
 load(":define_flagfiles_test.bzl", "define_flagfiles_test_suite")
+load(":defines_config_test.bzl", "defines_config_test_suite")
 load(":defines_files_test.bzl", "defines_files_test_suite")
 load(":dev_incremental_serialization_test.bzl", "dev_incremental_serialization_test_suite")
 load(":facade_reexports_test.bzl", "facade_reexports_test_suite")
@@ -234,6 +235,8 @@ compile_api_test_suite(name = "compile_api_test")
 cpp_client_wrapper_test_suite(name = "cpp_client_wrapper_test")
 
 custom_kernel_defines_test_suite(name = "custom_kernel_defines_test")
+
+defines_config_test_suite(name = "defines_config_test")
 
 define_flagfiles_test_suite(name = "define_flagfiles_test")
 

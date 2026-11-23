@@ -1,8 +1,9 @@
 """A debug `flutter_kernel_target` whose closure holds the registrant twin compiles modularly.
 
 The entry module carries the staged agent, native agent and registrant, and the link uses the twin
-in place of the plain SDK `flutter` module. A define, a closure without the twin, or a non-debug
-build keeps the whole-program `FlutterKernelCompile`.
+in place of the plain SDK `flutter` module. A define stays modular: it is the configuration of the
+target's `deps`, so every dependency module compiles with it, and so does the entry. A closure without
+the twin, or a non-debug build, keeps the whole-program `FlutterKernelCompile`.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -90,7 +91,25 @@ def _source_reach_impl(ctx):
     asserts.equals(env, [], plain, "the plain SDK module is not linked")
     return analysistest.end(env)
 
+def _define_modular_impl(ctx):
+    """A define stays modular, and every module of the closure and the entry compile with it."""
+    env = analysistest.begin(ctx)
+    asserts.equals(env, [], _by_mnemonic(env, "FlutterKernelCompile"), "no whole-program compile")
+    asserts.equals(env, 1, len(_by_mnemonic(env, "DartKernelLink")), "one DartKernelLink")
+    actions = analysistest.target_under_test(env)[_ActionsInfo].actions
+    modules = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.true(env, len(modules) > 2, "dependency modules and the entry: %s" % len(modules))
+    for action in modules:
+        name = [f.basename for f in action.outputs.to_list() if f.basename.endswith(".kmod")]
+        asserts.true(env, "-DA=1" in action.argv, "%s compiles with the define: %s" % (name, action.argv))
+    return analysistest.end(env)
+
 _whole_program_test = analysistest.make(_whole_program_impl, config_settings = _DBG)
+_define_modular_test = analysistest.make(
+    _define_modular_impl,
+    config_settings = _DBG,
+    extra_target_under_test_aspects = [_inspect_aspect],
+)
 _source_reach_test = analysistest.make(
     _source_reach_impl,
     config_settings = _DBG,
@@ -125,7 +144,7 @@ def kernel_target_modular_test_suite(name):
         tags = ["manual"],
         deps = ["//flutter/tests/registrant_twin_fixture/other"],
     )
-    _whole_program_test(name = name + "_define", target_under_test = ":_kernel_target_twin_define")
+    _define_modular_test(name = name + "_define", target_under_test = ":_kernel_target_twin_define")
     _whole_program_test(name = name + "_no_twin", target_under_test = ":_kernel_target_no_twin")
     _source_reach_test(name = name + "_source_reach", target_under_test = ":kernel_target_modular_twin")
     native.test_suite(

@@ -268,8 +268,10 @@ dependency is compiled once into a `<name>.flutter.kmod` directory by
 is modular only when `flutter_modular_test_tools`
 (`flutter/private/flutter_kernel_module.bzl:1093`) returns tools: the mode is
 enabled, every dependency is modular, the packages are consistent, the target
-has no code assets or own defines, no source is duplicated, and the SDK is the
-same (`flutter/private/flutter_kernel_module.bzl:1135-1147`). Otherwise
+has no code assets, no source is duplicated, and the SDK is the same
+(`flutter/private/flutter_kernel_module.bzl:1135-1147`). The test's own
+`defines` are the configuration of its `deps`, so they keep it modular
+(`flutter/private/flutter_defines_files.bzl`). Otherwise
 `flutter_test` falls back to one whole-program compile of its sources
 (`flutter/private/flutter_test.bzl:209-240`).
 
@@ -280,8 +282,10 @@ same (`flutter/private/flutter_kernel_module.bzl:1135-1147`). Otherwise
 `flutter_compile_kernel` (`flutter/private/common.bzl:979`). It chooses the path
 in `_run_kernel_compile` (`flutter/private/common.bzl:971`). The modular path is
 taken only for a non-AOT, non-profile compile of the `flutter` frontend target
-with no registrant, agent, native-assets manifest, recorded uses, extra frontend
-flags, defines or define flagfiles (`flutter/private/common.bzl:892-900`), and
+with no registrant, agent, native-assets manifest, recorded uses or extra frontend
+flags (`flutter/private/common.bzl:892-900`); defines, the flavor and
+`dart_defines` are the configuration of the `deps` and keep nothing
+whole-program; and
 only when modular tools exist. Every other build, including AOT and profile,
 takes the whole-program `flutter_kernel_compile_action`
 (`flutter/private/flutter_compile.bzl:602`). An opt-in incremental worker

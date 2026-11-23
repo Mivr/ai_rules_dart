@@ -1,7 +1,7 @@
 """Implementation of the flutter_library rule."""
 
 load("@rules_dart//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "dart_analyzable_info_with_package", "dart_info", "dart_package_identity", "derive_lib_root", "derive_package_name")
+load("@rules_dart//dart:utils.bzl", "dart_analyzable_info_with_package", "dart_info", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset")
 load("//flutter:providers.bzl", "FlutterInfo")
 load("//flutter/private:asset_keys.bzl", "library_asset_entries")
 load("//flutter/private:asset_uri.bzl", "normalize_asset_uri")
@@ -783,6 +783,7 @@ flutter_library = rule(
                   "rather than on the consuming application so they propagate " +
                   "the way pub's own do — depending on the package is enough.",
             providers = [DartCodeAssetInfo],
+            cfg = native_defines_reset,
         ),
         "has_unreplaced_hook": attr.string(
             doc = "Path of a build hook this package ships that nothing " +

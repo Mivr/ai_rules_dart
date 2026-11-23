@@ -15,6 +15,9 @@ rules that compile Dart code, bundle assets, and run tests.
     `flutter_library.fonts`.
 - `flutter_plugin`: Declares a Flutter plugin with optional Dart registration
     class and/or native shared library dependencies.
+- `dart_defines`: Dart environment defines from `.json`/`.env` files, `-D`
+    flagfiles and values, for `flutter_application.dart_defines`. Applications
+    naming the same target share their debug modules.
 - `flutter_test`: Runs Flutter widget tests using the flutter_tester runtime.
 - `flutter_prebuilt_test`: Runs an already built test kernel under the same
     flutter_tester runtime, for custom compile pipelines that feed it a
@@ -49,6 +52,7 @@ artifacts:
 load("//flutter/private:flutter_aot_target.bzl", _flutter_aot_target = "flutter_aot_target")
 load("//flutter/private:flutter_application.bzl", _flutter_application = "flutter_application")
 load("//flutter/private:flutter_asset_bundle.bzl", _flutter_asset_bundle = "flutter_asset_bundle")
+load("//flutter/private:flutter_defines_files.bzl", _dart_defines = "dart_defines")
 load("//flutter/private:flutter_gen_l10n.bzl", _flutter_gen_l10n = "flutter_gen_l10n")
 load("//flutter/private:flutter_integration_test.bzl", _flutter_integration_test = "flutter_integration_test")
 load("//flutter/private:flutter_kernel_target.bzl", _flutter_kernel_target = "flutter_kernel_target")
@@ -62,7 +66,7 @@ visibility("public")
 
 flutter_aot_target = _flutter_aot_target
 
-def flutter_application(name, package_name = "", **kwargs):
+def flutter_application(name, package_name = "", defines_files = None, define_flagfiles = None, **kwargs):
     """Compiles a Flutter application with stable package: URIs for hot reload.
 
     Auto-derives `package_name` from the rule name if not explicitly set.
@@ -70,16 +74,42 @@ def flutter_application(name, package_name = "", **kwargs):
     sandbox `file:///` URIs, which is required for hot reload incremental
     deltas to match the running application's library URIs.
 
+    `defines_files` and `define_flagfiles` are a spelling of `dart_defines`:
+    they become a `dart_defines` target named `<name>_dart_defines`. Two
+    applications share their debug modules only when they name the same
+    `dart_defines` target, so name one yourself where applications share
+    their defines.
+
     Args:
         name: Name of the `flutter_application` target; also the default Dart package name.
         package_name: Dart package name (from pubspec.yaml). Defaults to name.
+        defines_files: Files of Dart environment defines in `.json` or `.env`
+            format (see `dart_defines.srcs`).
+        define_flagfiles: Files of already-spelled `-Dname=value` lines (see
+            `dart_defines.flagfiles`).
         **kwargs: All other arguments forwarded to the underlying rule.
     """
+    if defines_files or define_flagfiles:
+        if kwargs.get("dart_defines"):
+            fail("%s: set `dart_defines` or `defines_files`/`define_flagfiles`, not both" % name)
+        _dart_defines(
+            name = name + "_dart_defines",
+            srcs = defines_files or [],
+            flagfiles = define_flagfiles or [],
+            tags = ["manual"],
+            testonly = kwargs.get("testonly"),
+            visibility = ["//visibility:private"],
+        )
+        kwargs["dart_defines"] = ":" + name + "_dart_defines"
     _flutter_application(
         name = name,
         package_name = package_name or name,
         **kwargs
     )
+
+# Dart environment defines from `.json`/`.env` files, `-D` flagfiles and
+# values, for `flutter_application.dart_defines`.
+dart_defines = _dart_defines
 
 flutter_asset_bundle = _flutter_asset_bundle
 flutter_font_family = _flutter_font_family

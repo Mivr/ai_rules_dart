@@ -90,6 +90,7 @@ load(
     "flutter_kernel_outputs",
     "flutter_kernel_sources",
 )
+load("//flutter/private:flutter_defines_files.bzl", "defines_transition")
 load(
     "//flutter/private:flutter_kernel_module.bzl",
     "compile_flutter_modular_test_kernel",
@@ -525,6 +526,9 @@ _TEST_ATTRS["deps"] = attr.label_list(
     doc = FLUTTER_DEPS_DOC,
     providers = [DartInfo],
     aspects = [flutter_tester_shader_aspect, flutter_kernel_module_aspect, LAYERING_CHECK_ASPECT],
+    # The test's own `defines` are the configuration of its `deps`, so every module compiles with them and the
+    # test stays modular.
+    cfg = defines_transition,
 )
 
 # Standard `data` attr — files made available at test runtime via runfiles.

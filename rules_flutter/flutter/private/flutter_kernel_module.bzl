@@ -15,6 +15,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_dart//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartKernelInfo")
 load(
     "@rules_dart//dart:utils.bzl",
+    "EXECUTABLE_DEFINES_ATTRS",
     "KERNEL_MODULE_ATTRS",
     "MODULAR_KERNEL_TOOLCHAINS",
     "collect_packages",
@@ -43,12 +44,16 @@ load(
     "synthesize_app_package",
 )
 load(
+    "//flutter/private:flutter_defines_files.bzl",
+    "defines_transition",
+    "entry_dart_env",
+    "module_dart_env",
+    "refuse_comma_defines",
+)
+load(
     "//flutter/private:flutter_kernel_tools.bzl",
     "flutter_kernel_tools_for",
-    "has_comma_defines",
     "is_same_sdk",
-    "kernel_worker_defines",
-    "reject_global_extra_defines",
 )
 load(
     "//flutter/private:flutter_test_common.bzl",
@@ -92,31 +97,6 @@ DEBUG_MODULAR_APP_ATTR = {
 # compiles with `--track-widget-creation`. Only the application's aspect takes it; the `flutter_test` aspect does not.
 TRACK_WIDGET_CREATION_FLAG = "--track-widget-creation"
 _TRACK_ATTR = {"track_widget_creation": attr.bool(doc = "Whether the app tracks widget creation.", default = False)}
-
-# Build setting read and cleared by `_modular_deps_transition`.
-_MODULAR_DEPS_DEFINES_SETTING = str(Label("//flutter:extra_dart_defines"))
-
-def _modular_deps_transition_impl(settings, _attr):
-    """Drops the global defines for one custom modular kernel's dependency closure.
-
-    `kernel_worker` parses defines with an ArgParser `splitCommas` converter, so
-    any global `--@rules_flutter//flutter:extra_dart_defines` value containing a
-    comma (e.g. `FOO=a,b`) aborts every modular action in the closure. The custom
-    entry compile below deliberately does not read the flag either, so the whole
-    custom closure builds without it; the rule-side `defines` attribute stays the
-    only source of `-D` flags. Returning `{}` when the flag is empty keeps the
-    configuration identical, so dependency modules built for a custom kernel
-    share their action keys with the same modules built for built-in rules.
-    """
-    if settings[_MODULAR_DEPS_DEFINES_SETTING]:
-        return {_MODULAR_DEPS_DEFINES_SETTING: []}
-    return {}
-
-_modular_deps_transition = transition(
-    implementation = _modular_deps_transition_impl,
-    inputs = [_MODULAR_DEPS_DEFINES_SETTING],
-    outputs = [_MODULAR_DEPS_DEFINES_SETTING],
-)
 
 def _no_flutter_kernel_module():
     empty = no_kernel_module()
@@ -209,7 +189,14 @@ def _kernel_module_base_args(ctx, package_config, stage, sdk, options):
     if stage.root != None:
         args.add("--multi-root", stage.root)
     args.add("--multi-root-scheme", options.scheme)
-    args.add_all([d for d in options.defines if "," not in d], format_each = "-D%s")
+
+    # The defines file first: a `-D` of the same key (the target's own defines, the global flag) wins, as in the
+    # whole-program compile. A comma in a value is refused before this point (`refuse_comma_defines`), and
+    # `kernel_module` refuses one from the defines file.
+    define_file = getattr(options, "define_file", None)
+    if define_file != None:
+        args.add("--define-file", define_file)
+    args.add_all(options.defines, format_each = "-D%s")
     args.add_all(options.extra_frontend_flags)
     args.add("--no-summary-only")
     args.add("--reuse-compiler-result")
@@ -321,7 +308,8 @@ def flutter_kernel_module_action(ctx, tools, module, options):
         input files, e.g. entry sources) and `closure_excluded` (optional
         upstream exclusion reports for the closed world).
       options: struct with the compile options: `defines` (extra `--define`
-        flags forwarded to the kernel worker), `exclude_non_sources` (whether
+        flags forwarded to the kernel worker), `define_file` (optional File of
+        `-D` lines `kernel_module` reads before `defines`), `exclude_non_sources` (whether
         the compile writes the VM exclusion report), `droppable` (whether
         unreachable libraries may be dropped from the module), `target`
         (kernel worker `--target`, defaults to `"flutter"`), `platform_dill`
@@ -382,7 +370,7 @@ def flutter_kernel_module_action(ctx, tools, module, options):
         tools.kernel_worker,
         sdk.libraries,
         sdk.platform,
-    ] + [s.file for s in sources] + stage.files
+    ] + [s.file for s in sources] + stage.files + [f for f in [getattr(options, "define_file", None)] if f != None]
     action_tools = [
         tools.dartaotruntime,
         tools.kernel_worker,
@@ -448,7 +436,7 @@ def _is_opaque_module(ctx, dart_info, package_name, lib_root, own_record, own_sr
 
 def _modular_gate_open(ctx, opaque, enabled, tools, same_sdk, flutter_sdk_info):
     """Whether every modular-kernel precondition holds for this evaluation."""
-    if opaque or not enabled or has_comma_defines(ctx) or tools == None or not same_sdk:
+    if opaque or not enabled or tools == None or not same_sdk:
         return False
     return flutter_sdk_info != None and flutter_sdk_info.platform_kernel_dill != None
 
@@ -572,20 +560,22 @@ def _header_only_module_info(product_modular, dep_product_kernels, closures, bas
         ),
     ]
 
-def _flutter_module_options(defines, platform_dill, droppable, frontend_flags):
+def _flutter_module_options(env, platform_dill, droppable, frontend_flags, extra_defines = []):
     """The `flutter_kernel_module_action` options of a Flutter-target module compile.
 
     Args:
-        defines: The `-D` defines of the compile.
+        env: struct(defines, flagfile): the environment of the compile (`module_dart_env` or `entry_dart_env`).
         platform_dill: The platform `.dill` the module compiles against.
         droppable: Whether the module is a dependency module the link may drop.
         frontend_flags: Extra frontend flags (`--track-widget-creation` for a tracking application).
+        extra_defines: Defines after the environment's (the registrant twin's, the product ones).
 
     Returns:
         The `options` struct for `flutter_kernel_module_action`.
     """
     return struct(
-        defines = defines,
+        defines = env.defines + extra_defines,
+        define_file = env.flagfile,
         exclude_non_sources = True,
         droppable = droppable,
         target = "flutter",
@@ -619,7 +609,7 @@ def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
         for f in spec.own_srcs
     ]
     deduped_packages = first_per_package(spec.records)
-    worker_defines = kernel_worker_defines(ctx) + ([_TWIN_DEFINE] if twin else [])
+    env = module_dart_env(ctx)
     excluded = flutter_kernel_module_action(
         ctx = ctx,
         tools = tools,
@@ -633,13 +623,14 @@ def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
             closure_excluded = spec.upstream_excluded,
         ),
         options = _flutter_module_options(
-            worker_defines,
+            env,
             flutter_sdk_info.platform_kernel_dill,
             True,
             spec.frontend_flags,
+            [_TWIN_DEFINE] if twin else [],
         ),
     )
-    return kmod, koutline, sources, deduped_packages, worker_defines, excluded
+    return kmod, koutline, sources, deduped_packages, env, excluded
 
 def _link_flutter_test_base(ctx, target_name, package_name, kmod, dep_closure, base_dill, base_keys, base_kmods):
     """Seed the `flutter_test` base dill from the debug modules; returns the base triple."""
@@ -667,8 +658,8 @@ def _compile_product_kmod(ctx, tools, flutter_sdk_info, spec):
         flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
         spec: struct with the target's module inputs: `target_name`, `sources`
             (the debug compile's `struct(uri, file)` entries), `deduped_packages`,
-            `worker_defines`, `dep_product_kernels`, `cross_pkg_srcs`, `owned`
-            and `edges`.
+            `env` (the debug compile's environment), `dep_product_kernels`,
+            `cross_pkg_srcs`, `owned` and `edges`.
     """
     product_dep_closure = depset(
         order = "postorder",
@@ -694,10 +685,11 @@ def _compile_product_kmod(ctx, tools, flutter_sdk_info, spec):
             closure_excluded = product_upstream_excluded,
         ),
         options = _flutter_module_options(
-            spec.worker_defines + ["dart.vm.product=true", "FLUTTER_WEB_USE_SKIA=false", "FLUTTER_WEB_USE_SKWASM=true"],
+            spec.env,
             flutter_sdk_info.platform_kernel_dill_product,
             True,
             [],
+            ["dart.vm.product=true", "FLUTTER_WEB_USE_SKIA=false", "FLUTTER_WEB_USE_SKWASM=true"],
         ),
     )
     return DartKernelInfo(
@@ -782,7 +774,7 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
         upstream_excluded = job.upstream_excluded,
         frontend_flags = job.frontend_flags,
     )
-    kmod, koutline, sources, deduped_packages, worker_defines, excluded = _compile_main_kmod(
+    kmod, koutline, sources, deduped_packages, env, excluded = _compile_main_kmod(
         ctx = ctx,
         tools = tools,
         flutter_sdk_info = flutter_sdk_info,
@@ -818,7 +810,7 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
                 target_name = target_name,
                 sources = sources,
                 deduped_packages = deduped_packages,
-                worker_defines = worker_defines,
+                env = env,
                 dep_product_kernels = job.dep_product_kernels,
                 cross_pkg_srcs = job.cross_pkg_srcs,
                 owned = job.owned,
@@ -957,7 +949,7 @@ def _module_aspect(extra_attrs):
     return aspect(
         implementation = _flutter_kernel_module_aspect_impl,
         attr_aspects = ["deps"],
-        attrs = KERNEL_MODULE_ATTRS | extra_attrs | {
+        attrs = KERNEL_MODULE_ATTRS | EXECUTABLE_DEFINES_ATTRS | extra_attrs | {
             "_extra_dart_defines": attr.label(
                 doc = "The //flutter:extra_dart_defines build setting, read for the aspect's module compiles.",
                 default = Label("//flutter:extra_dart_defines"),
@@ -989,7 +981,12 @@ def _compile_flutter_entry_module(
     sources), so a body-only edit to a library recompiles that library's module
     plus the entry/link actions — never the whole program. `frontend_flags` are the entry's extra
     frontend flags (`--track-widget-creation` for a tracking application).
+
+    The entry compiles with the environment its `deps` were configured with (`entry_dart_env`), so it and every
+    dependency module see the same defines. A comma in a define value fails the build here.
     """
+    env = entry_dart_env(ctx)
+    refuse_comma_defines(ctx, env.defines)
     dep_outline_closure = depset(
         order = "postorder",
         transitive = [k.transitive_koutlines for k in dep_kernels],
@@ -1012,7 +1009,7 @@ def _compile_flutter_entry_module(
                 transitive = [k.closure_excluded for k in dep_kernels],
             ),
         ),
-        options = _flutter_module_options(kernel_worker_defines(ctx), platform_dill, False, frontend_flags),
+        options = _flutter_module_options(env, platform_dill, False, frontend_flags),
     )
     return entry
 
@@ -1067,8 +1064,7 @@ def flutter_modular_test_tools(
         platform_dill = flutter_sdk_info.platform_kernel_dill
         if product:
             platform_dill = flutter_sdk_info.platform_kernel_dill_product
-    opted_out = getattr(ctx.attr, "ignore_global_dart_defines", False)
-    if not enabled or (has_comma_defines(ctx) and not opted_out) or platform_dill == None:
+    if not enabled or platform_dill == None:
         return None
     if tools == None:
         tools = flutter_kernel_tools_for(ctx, flutter_sdk_info)
@@ -1093,7 +1089,8 @@ def flutter_modular_test_tools(
             dep_modular = dep_modular,
             packages_consistent = kernel_packages_consistent(packages),
             has_code_assets = len(native_assets_list) > 0,
-            has_own_defines = len(ctx.attr.defines) > 0,
+            # The target's own defines are its `deps` configuration (see `entry_dart_env`).
+            has_own_defines = False,
             has_compile_flags = False,
             has_duplicate_source = duplicate != None,
             same_sdk = same_sdk,
@@ -1228,18 +1225,15 @@ FLUTTER_MODULAR_KERNEL_ATTRS = {
         doc = "DartInfo dependencies, compiled once each by `flutter_kernel_module_aspect`.",
         providers = [DartInfo],
         aspects = [flutter_kernel_module_aspect],
-        cfg = _modular_deps_transition,
+        # The kernel's own `defines` are the closure's configuration, so every module compiles with them.
+        cfg = defines_transition,
     ),
     "defines": attr.string_list(
-        doc = "Extra `-D` defines for the entry compile. Must stay empty: unlike the built-in rules, a custom modular kernel has no whole-program fallback, so a non-empty list fails the build. A non-empty global `//flutter:extra_dart_defines` fails the build too, unless the target sets `ignore_global_dart_defines` (the `deps` edge below resets the flag for the dependency modules, so the entry compile takes none of it either way).",
+        doc = "Dart environment defines (`KEY=VALUE`) of the kernel: its dependency modules and its entry compile with them, followed by the global `//flutter:extra_dart_defines`. A value with a comma fails the build.",
         default = [],
     ),
-    "ignore_global_dart_defines": attr.bool(
-        doc = "Whether the global `//flutter:extra_dart_defines` is NOT applied to the target. The dependency modules are keyed and built without it (the `deps` edge resets the flag for the custom closure), so the entry compile ignores it too; set this for a pipeline that knowingly builds without the global defines. Default False: a non-empty global flag fails the build.",
-        default = False,
-    ),
     "_extra_dart_defines": attr.label(
-        doc = "The //flutter:extra_dart_defines build setting, read to refuse a non-empty global value unless `ignore_global_dart_defines` opts out.",
+        doc = "The //flutter:extra_dart_defines build setting, appended after the kernel's own `defines`.",
         default = Label("//flutter:extra_dart_defines"),
         providers = [BuildSettingInfo],
     ),
@@ -1261,8 +1255,7 @@ def _flutter_modular_custom_tools(ctx, deps, own_files, packages, what):
     fails here with the reason instead.
 
     Args:
-      ctx: The custom rule context. Must provide `defines` and
-        `ignore_global_dart_defines` (see `FLUTTER_MODULAR_KERNEL_ATTRS`).
+      ctx: The custom rule context. Must merge `FLUTTER_MODULAR_KERNEL_ATTRS`.
       deps: The custom rule's dependency Targets.
       own_files: The entry's own `.dart` Files.
       packages: The `DartPackageInfo` list for the entry compile.
@@ -1275,9 +1268,6 @@ def _flutter_modular_custom_tools(ctx, deps, own_files, packages, what):
     flutter_sdk_info = flutter_toolchain.flutter_sdk_info if flutter_toolchain else None
     if flutter_sdk_info == None or flutter_sdk_info.platform_kernel_dill == None:
         fail("%s: %s needs a Flutter SDK with a debug platform kernel dill" % (ctx.label, what))
-    reject_global_extra_defines(ctx, what)
-    if ctx.attr.defines:
-        fail("%s: %s does not accept defines (%s); the built-in rules fall back to a whole-program compile for targets with defines, but a custom modular kernel has no fallback" % (ctx.label, what, ctx.attr.defines))
     native_assets = depset(transitive = [
         dep[FlutterInfo].native_assets
         for dep in deps

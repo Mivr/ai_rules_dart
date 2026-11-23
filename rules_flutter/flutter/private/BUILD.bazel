@@ -535,6 +535,7 @@ bzl_library(
     deps = [
         ":validation",
         "@bazel_skylib//rules:common_settings",
+        "@rules_dart//dart:utils",
     ],
 )
 
@@ -832,6 +833,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":app_entrypoint",
+        ":flutter_defines_files",
         ":flutter_kernel_tools",
         ":flutter_test_common",
         "//flutter:providers",
@@ -846,7 +848,6 @@ bzl_library(
     srcs = ["flutter_kernel_tools.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        "@bazel_skylib//rules:common_settings",
         "@rules_dart//dart:utils",
     ],
 )
@@ -857,6 +858,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common",
+        ":flutter_defines_files",
         ":flutter_kernel_module",
         "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",
@@ -1545,6 +1547,7 @@ bzl_library(
         ":app_entrypoint",
         ":common",
         ":flutter_compile",
+        ":flutter_defines_files",
         ":flutter_kernel_module",
         ":flutter_native_assets",
         ":flutter_test_common",

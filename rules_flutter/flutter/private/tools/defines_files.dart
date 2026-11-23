@@ -8,6 +8,8 @@ class _DefinesFilesOptions {
     required this.outputPath,
     required this.excludedKeys,
     required this.inputFiles,
+    required this.flagfiles,
+    required this.values,
   });
 
   /// The output path where the flagfile will be written.
@@ -18,6 +20,12 @@ class _DefinesFilesOptions {
 
   /// Ordered list of input `.json` or `.env` files.
   final List<String> inputFiles;
+
+  /// Files of already-spelled `-DKEY=VALUE` lines, read after [inputFiles].
+  final List<String> flagfiles;
+
+  /// `KEY=VALUE` defines applied last, each overriding a key read from a file.
+  final List<String> values;
 }
 
 /// Parses command-line arguments into [_DefinesFilesOptions].
@@ -25,6 +33,8 @@ _DefinesFilesOptions _parseArgs(List<String> args) {
   String? outputPath;
   final excludedKeys = <String>{};
   final inputFiles = <String>[];
+  final flagfiles = <String>[];
+  final values = <String>[];
 
   var i = 0;
   while (i < args.length) {
@@ -48,6 +58,11 @@ _DefinesFilesOptions _parseArgs(List<String> args) {
     } else if (arg.startsWith('--exclude-key=')) {
       final String val = arg.substring('--exclude-key='.length);
       excludedKeys.add(val.split('=').first);
+    } else if (arg == '--flagfile' || arg == '--define') {
+      if (i + 1 >= args.length) {
+        throw FormatException('Missing argument for $arg');
+      }
+      (arg == '--flagfile' ? flagfiles : values).add(args[++i]);
     } else {
       inputFiles.add(arg);
     }
@@ -62,6 +77,8 @@ _DefinesFilesOptions _parseArgs(List<String> args) {
     outputPath: outputPath,
     excludedKeys: excludedKeys,
     inputFiles: inputFiles,
+    flagfiles: flagfiles,
+    values: values,
   );
 }
 
@@ -415,10 +432,60 @@ List<MapEntry<String, String>> _parseEnvFile(
   return entries;
 }
 
-/// Parses all input files in [filePaths] in list order.
-List<MapEntry<String, String>> _parseDefinesFiles(List<String> filePaths) {
+/// Parses a flagfile of already-spelled `-DKEY=VALUE` lines.
+List<MapEntry<String, String>> _parseFlagfile(
+  String filePath,
+  String content,
+  Map<String, String> keyOrigin,
+) {
+  final entries = <MapEntry<String, String>>[];
+  final List<String> lines = content.split(RegExp(r'\r?\n'));
+  for (var lineNo = 1; lineNo <= lines.length; lineNo++) {
+    final String line = lines[lineNo - 1];
+    if (line.trim().isEmpty) {
+      continue;
+    }
+    if (!line.startsWith('-D')) {
+      throw FormatException(
+        "$filePath:$lineNo: expected a '-DKEY=VALUE' line, got '$line'",
+      );
+    }
+    final String define = line.substring(2);
+    final int eqIdx = define.indexOf('=');
+    final String key = eqIdx == -1 ? define : define.substring(0, eqIdx);
+    final String val = eqIdx == -1 ? '' : define.substring(eqIdx + 1);
+    _validateKey(key, filePath);
+    final String? previousFile = keyOrigin[key];
+    if (previousFile != null) {
+      throw FormatException(
+        "$filePath: define key '$key' is defined in both $previousFile and $filePath",
+      );
+    }
+    keyOrigin[key] = filePath;
+    entries.add(MapEntry<String, String>(key, val));
+  }
+  return entries;
+}
+
+/// Parses [flagfiles], then the input files in [filePaths] in list order (a
+/// key may appear in only one file), then applies [values], each of which
+/// replaces the entry of its key.
+List<MapEntry<String, String>> _parseDefinesFiles(
+  List<String> filePaths, {
+  List<String> flagfiles = const [],
+  List<String> values = const [],
+}) {
   final entries = <MapEntry<String, String>>[];
   final keyOrigin = <String, String>{};
+  for (final flagfile in flagfiles) {
+    final file = File(flagfile);
+    if (!file.existsSync()) {
+      throw FileSystemException('File not found', flagfile);
+    }
+    entries.addAll(
+      _parseFlagfile(flagfile, file.readAsStringSync(), keyOrigin),
+    );
+  }
 
   for (final filePath in filePaths) {
     final file = File(filePath);
@@ -435,6 +502,16 @@ List<MapEntry<String, String>> _parseDefinesFiles(List<String> filePaths) {
         '$filePath: unsupported file format (expected .json or .env)',
       );
     }
+  }
+  for (final value in values) {
+    final int eqIdx = value.indexOf('=');
+    final String key = eqIdx == -1 ? value : value.substring(0, eqIdx);
+    final String val = eqIdx == -1 ? '' : value.substring(eqIdx + 1);
+    _validateKey(key, '--define $value');
+    _validateValue(key, val, '--define $value');
+    entries
+      ..removeWhere((MapEntry<String, String> e) => e.key == key)
+      ..add(MapEntry<String, String>(key, val));
   }
   return entries;
 }
@@ -508,6 +585,8 @@ int run(List<String> args, {StringSink? errSink}) {
   try {
     final List<MapEntry<String, String>> entries = _parseDefinesFiles(
       options.inputFiles,
+      flagfiles: options.flagfiles,
+      values: options.values,
     );
     _writeOutput(options.outputPath, entries, options.excludedKeys);
     return 0;

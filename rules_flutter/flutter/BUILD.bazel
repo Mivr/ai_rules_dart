@@ -269,6 +269,7 @@ bzl_library(
         "//flutter/private:flutter_aot_target",
         "//flutter/private:flutter_application",
         "//flutter/private:flutter_asset_bundle",
+        "//flutter/private:flutter_defines_files",
         "//flutter/private:flutter_gen_l10n",
         "//flutter/private:flutter_integration_test",
         "//flutter/private:flutter_kernel_target",

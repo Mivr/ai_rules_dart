@@ -1,25 +1,23 @@
-"""Analysis tests for the custom modular kernel's global-defines refusal (COV-66).
+"""Analysis tests for defines on a custom modular kernel.
 
 A custom modular kernel — a rule built on `FLUTTER_MODULAR_KERNEL_ATTRS`,
-used through the public `//flutter:utils.bzl` — reads the global
-`//flutter:extra_dart_defines` and fails at analysis when it is non-empty:
-the `deps` edge resets the flag for the dependency modules, so letting the
-entry keep it would silently split the closure and the defines would never
-reach the kernel. A pipeline that knowingly builds without the global defines
-sets `ignore_global_dart_defines` instead, and an empty flag changes nothing
-either way.
+used through the public `//flutter:utils.bzl` — compiles with defines like the
+built-in rules do: its own `defines` are the configuration of its `deps` edge,
+so every dependency module and its entry compile with them, followed by the
+global `//flutter:extra_dart_defines`. A comma in a value fails the build: the
+module compiler cannot take one yet, and a custom kernel never falls back.
 
 The caller rules below load only the public `//flutter:utils.bzl`, the way a
 downstream pipeline would. The tests pin:
 
-- analysing a test kernel or an app kernel with a flag-bearing global fails,
-  naming the target, the flag value, the opt-out attribute and the
-  whole-program `flutter_kernel_compile_action` path;
-- the same kernels with `ignore_global_dart_defines = True` analyse fine
-  under the same flag, staying on the modular `DartKernel` + `DartKernelLink`
-  actions with no whole-program `FlutterKernelCompile`;
-- with the flag empty the opt-out changes nothing: the entry compile carries
-  no `-D` flag and the default complete link stages no base dill.
+- a test kernel and an app kernel analysed with the global flag stay on the
+  modular `DartKernel` + `DartKernelLink` actions, with no whole-program
+  `FlutterKernelCompile`, and the entry compile carries the global define;
+- a kernel's own `defines` reach its entry compile before the global ones, so
+  the global flag wins on a key both set, as in the whole-program compile;
+- a comma in a global value fails the build, naming the target and the define;
+- with the flag empty and no `defines` the entry compile carries no `-D` and
+  the default complete link stages no base dill.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -81,60 +79,49 @@ _refusal_app_kernel = rule(
     toolchains = FLUTTER_MODULAR_KERNEL_TOOLCHAINS,
 )
 
-def _reject_global_defines_test_impl(ctx):
-    """The kernel refuses the flag-bearing global, naming the way out."""
+def _entry_defines(env):
+    """The `-D` arguments of the one modular entry compile, after checking the kernel stayed modular."""
+    actions = analysistest.target_actions(env)
+    mnemonics = [a.mnemonic for a in actions]
+    asserts.true(env, "DartKernelLink" in mnemonics, "the kernel must link modularly, got %s" % (mnemonics,))
+    asserts.equals(
+        env,
+        [],
+        [m for m in mnemonics if m == "FlutterKernelCompile"],
+        "a custom kernel must not run a whole-program compile",
+    )
+    entries = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(entries), "expected one modular entry compile")
+    return [x for x in entries[0].argv if x.startswith("-D")] if entries else []
+
+def _global_stays_modular_test_impl(ctx):
+    """Under the global flag the kernel stays modular and its entry takes the global define."""
+    env = analysistest.begin(ctx)
+    asserts.equals(env, ["-DCUSTOM_KERNEL_GLOBAL=1"], _entry_defines(env))
+    return analysistest.end(env)
+
+def _own_defines_test_impl(ctx):
+    """The kernel's own defines come first, then the global flag's, which wins on a shared key."""
+    env = analysistest.begin(ctx)
+    asserts.equals(
+        env,
+        ["-DCUSTOM_KERNEL_GLOBAL=own", "-DCUSTOM_KERNEL_OWN=1", "-DCUSTOM_KERNEL_GLOBAL=1"],
+        _entry_defines(env),
+    )
+    return analysistest.end(env)
+
+def _comma_refused_test_impl(ctx):
+    """A comma in a global value fails the build, naming the target and the define."""
     env = analysistest.begin(ctx)
     for expected in ctx.attr.expected_substrings:
         asserts.expect_failure(env, expected)
     return analysistest.end(env)
 
-def _optout_stays_modular_test_impl(ctx):
-    """With the opt-out the kernel analyses under the flag and stays modular.
-
-    The `deps` transition strips the flag for the dependency modules and the
-    entry compile takes none of it, so the kernel still compiles as one
-    `DartKernel` entry module plus a `DartKernelLink` — never the
-    whole-program `FlutterKernelCompile` the built-in rules fall back to.
-    """
+def _empty_unchanged_test_impl(ctx):
+    """With the flag empty and no `defines` the entry carries no `-D` and the link stages no base."""
     env = analysistest.begin(ctx)
-    mnemonics = [a.mnemonic for a in analysistest.target_actions(env)]
-    asserts.true(
-        env,
-        "DartKernel" in mnemonics,
-        "the opted-out kernel must still compile a modular entry, got %s" % (mnemonics,),
-    )
-    asserts.true(
-        env,
-        "DartKernelLink" in mnemonics,
-        "the opted-out kernel must still link modularly, got %s" % (mnemonics,),
-    )
-    asserts.equals(
-        env,
-        [],
-        [m for m in mnemonics if m == "FlutterKernelCompile"],
-        "the opted-out kernel must not run a whole-program compile",
-    )
-    return analysistest.end(env)
-
-def _empty_optout_unchanged_test_impl(ctx):
-    """With the flag empty the opt-out changes nothing.
-
-    The entry compile carries no `-D` flag either way (the global is empty and
-    the entry never invents defines), and the default complete link stages no
-    base dill or keys — the same actions and outputs as without the opt-out.
-    """
-    env = analysistest.begin(ctx)
-    entries = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartKernel"]
-    asserts.equals(env, 1, len(entries), "expected one modular entry compile")
-    if entries:
-        asserts.equals(
-            env,
-            [],
-            [x for x in entries[0].argv if x.startswith("-D")],
-            "the entry compile must carry no defines when the flag is empty",
-        )
+    asserts.equals(env, [], _entry_defines(env), "the entry compile must carry no defines")
     links = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartKernelLink"]
-    asserts.equals(env, 1, len(links), "expected one modular link")
     if links:
         link_inputs = [f.path for f in links[0].inputs.to_list()]
         asserts.equals(
@@ -150,26 +137,24 @@ _DBG = {
     str(Label("//flutter:profile")): False,
 }
 _WITH_GLOBAL_DEFINES = _DBG | {
+    str(Label("//flutter:extra_dart_defines")): ["CUSTOM_KERNEL_GLOBAL=1"],
+}
+_WITH_COMMA = _DBG | {
     str(Label("//flutter:extra_dart_defines")): ["CUSTOM_KERNEL_GLOBAL=1", "CUSTOM_KERNEL_COMMA=a,b"],
 }
 
-_reject_global_defines_test = analysistest.make(
-    _reject_global_defines_test_impl,
+_global_stays_modular_test = analysistest.make(_global_stays_modular_test_impl, config_settings = _WITH_GLOBAL_DEFINES)
+_own_defines_test = analysistest.make(_own_defines_test_impl, config_settings = _WITH_GLOBAL_DEFINES)
+_comma_refused_test = analysistest.make(
+    _comma_refused_test_impl,
     expect_failure = True,
     attrs = {"expected_substrings": attr.string_list(mandatory = True)},
-    config_settings = _WITH_GLOBAL_DEFINES,
+    config_settings = _WITH_COMMA,
 )
-_optout_stays_modular_test = analysistest.make(
-    _optout_stays_modular_test_impl,
-    config_settings = _WITH_GLOBAL_DEFINES,
-)
-_empty_optout_unchanged_test = analysistest.make(
-    _empty_optout_unchanged_test_impl,
-    config_settings = _DBG,
-)
+_empty_unchanged_test = analysistest.make(_empty_unchanged_test_impl, config_settings = _DBG)
 
 def custom_kernel_defines_test_suite(name):
-    """Fixtures and tests for the global-defines refusal.
+    """Fixtures and tests for defines on a custom modular kernel.
 
     Args:
         name: The test suite name.
@@ -187,65 +172,47 @@ def custom_kernel_defines_test_suite(name):
         deps = ["//flutter/tests/modular_api_fixture:dep_a"],
     )
     _refusal_test_kernel(
-        name = "_custom_kernel_defines_test_optout",
+        name = "_custom_kernel_defines_test_own",
+        defines = ["CUSTOM_KERNEL_OWN=1", "CUSTOM_KERNEL_GLOBAL=own"],
         tags = ["manual"],
-        ignore_global_dart_defines = True,
         deps = ["//flutter/tests/modular_api_fixture:dep_b"],
     )
-    _refusal_app_kernel(
-        name = "_custom_kernel_defines_app_optout",
-        main = "modular_api_app_main.dart",
-        srcs = ["modular_api_app_main.dart"],
-        tags = ["manual"],
-        ignore_global_dart_defines = True,
-        deps = ["//flutter/tests/modular_api_fixture:dep_a"],
-    )
 
-    # Analysis negatives: a flag-bearing global has no whole-program fallback
-    # to route to, so the build fails naming the target, the flag value, the
-    # opt-out and the whole-program path — over both kernel variants.
-    _reject_global_defines_test(
-        name = name + "_test_rejects_global_defines",
+    _global_stays_modular_test(
+        name = name + "_test_global_stays_modular",
         target_under_test = ":_custom_kernel_defines_test",
-        expected_substrings = [
-            "_custom_kernel_defines_test",
-            "extra_dart_defines",
-            "CUSTOM_KERNEL_GLOBAL=1",
-            "ignore_global_dart_defines",
-            "flutter_kernel_compile_action",
-        ],
     )
-    _reject_global_defines_test(
-        name = name + "_app_rejects_global_defines",
+    _global_stays_modular_test(
+        name = name + "_app_global_stays_modular",
         target_under_test = ":_custom_kernel_defines_app",
-        expected_substrings = [
-            "_custom_kernel_defines_app",
-            "extra_dart_defines",
-            "CUSTOM_KERNEL_GLOBAL=1",
-            "ignore_global_dart_defines",
-            "flutter_kernel_compile_action",
-        ],
     )
-    _optout_stays_modular_test(
-        name = name + "_test_optout_stays_modular",
-        target_under_test = ":_custom_kernel_defines_test_optout",
+    _own_defines_test(
+        name = name + "_own_defines",
+        target_under_test = ":_custom_kernel_defines_test_own",
     )
-    _optout_stays_modular_test(
-        name = name + "_app_optout_stays_modular",
-        target_under_test = ":_custom_kernel_defines_app_optout",
+    _comma_refused_test(
+        name = name + "_test_comma_refused",
+        target_under_test = ":_custom_kernel_defines_test",
+        expected_substrings = ["_custom_kernel_defines_test", "CUSTOM_KERNEL_COMMA=a,b", "comma"],
     )
-    _empty_optout_unchanged_test(
-        name = name + "_empty_optout_unchanged",
-        target_under_test = ":_custom_kernel_defines_test_optout",
+    _comma_refused_test(
+        name = name + "_app_comma_refused",
+        target_under_test = ":_custom_kernel_defines_app",
+        expected_substrings = ["_custom_kernel_defines_app", "CUSTOM_KERNEL_COMMA=a,b", "comma"],
+    )
+    _empty_unchanged_test(
+        name = name + "_empty_unchanged",
+        target_under_test = ":_custom_kernel_defines_test",
     )
 
     native.test_suite(
         name = name,
         tests = [
-            ":" + name + "_test_rejects_global_defines",
-            ":" + name + "_app_rejects_global_defines",
-            ":" + name + "_test_optout_stays_modular",
-            ":" + name + "_app_optout_stays_modular",
-            ":" + name + "_empty_optout_unchanged",
+            ":" + name + "_test_global_stays_modular",
+            ":" + name + "_app_global_stays_modular",
+            ":" + name + "_own_defines",
+            ":" + name + "_test_comma_refused",
+            ":" + name + "_app_comma_refused",
+            ":" + name + "_empty_unchanged",
         ],
     )

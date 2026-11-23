@@ -1735,8 +1735,9 @@ flutter_application(
 | `fonts` | The app's font families, as `flutter_font_family` targets. Families and assets are bundled bare (`HelloSans`, `fonts/...`), in declaration order. See [Font families](#font-families). |
 | `native_deps` | Shared libraries to bundle for `dart:ffi`. |
 | `defines` | Dart environment defines, the `-D` flags. |
-| `defines_files` | Files of Dart environment defines in `.json` or `.env` format. Content is parsed in an action and never reaches the compile command line. |
-| `define_flagfiles` | Files holding compiler `-Dname=value` arguments, one per line. Passed to the compile as `@<path>`. |
+| `dart_defines` | A `dart_defines` target: Dart environment defines from `.json`/`.env` files, `-D` flagfiles and values. See *Defines files and `dart_defines`* below. |
+| `defines_files` | Files of Dart environment defines in `.json` or `.env` format; a spelling of `dart_defines` (the `flutter_application` macro makes a `<name>_dart_defines` target of them). Content is parsed in an action and never reaches the compile command line. |
+| `define_flagfiles` | Files holding compiler `-Dname=value` arguments, one per line; a spelling of `dart_defines`, like `defines_files`. |
 | `language_version` | The Dart language version, matching `pubspec.yaml`. |
 | `obfuscate` | Obfuscate Dart symbols in the AOT output. Pair with `split_debug_info`. Default `False`. |
 | `split_debug_info` | Write debug info to a separate `.symbols` file. Default `False`. |
@@ -1778,9 +1779,29 @@ The flavor is set by the `flavor` attribute only: declaring `FLUTTER_APP_FLAVOR`
 
 **Defines from the command line.** The repeatable flag `--@rules_flutter//flutter:extra_dart_defines=KEY=VALUE` adds a define to every Dart compile: native kernel, `flutter_test`, dart2wasm, and dart2js. Each occurrence of the flag is one define, so values may contain commas. When a key is set both by the flag and by the `defines` attribute, the flag wins. Reserved defines (`dart.vm.*`, `dart.library.*`, `dart.tool.*`, `flutter.*`) are set by the build and SDK and cannot be passed. The dev tool's `--dart-define` forwards to this flag and replays the defines on hot reload and restart, matching `flutter run --dart-define`.
 
-**Define flagfiles.** `flutter_application(define_flagfiles = [...])` passes files of Dart environment declarations, each line an already-spelled `-Dname=value` argument, as `@<file>` to the kernel compile. The file is an action input, so changes invalidate the compile while the values stay out of the command line and `bazel aquery`.
+**Defines are configuration in a debug build.** A debug build compiles Dart as kernel modules, one per library, so an edit recompiles one module. An application's `defines`, its flavor and its `dart_defines` are the configuration of its `deps`: every dependency module compiles with them, and so does the app's own entry module. Applications with equal settings share every module; an application with another set compiles its closure once more (cached like any other build). The same holds for `flutter_test` and `flutter_kernel_target` with `defines`. Native code (a plugin's `native_deps`, its platform libraries, code and native assets) keeps one configuration whatever the defines. Add `common --incompatible_exclude_starlark_flags_from_exec_config` to your `.bazelrc` (rules_dart's `dart/consumer.bazelrc` carries it) so a new set of defines does not rebuild the build tools too. A define value with a comma fails a debug build, naming the target: the module compiler cannot take one yet.
 
-**Defines files.** `flutter_application(defines_files = [...])` passes Dart environment defines from `.json` and `.env` files into the kernel compile without their values appearing on the command line or in `bazel aquery`. A `.json` file must define a top-level object whose values are strings, numbers, or booleans:
+**Defines files and `dart_defines`.** A `dart_defines` target holds Dart environment defines from `.json` and `.env` files (`srcs`), files of already-spelled `-Dname=value` lines (`flagfiles`) and `KEY=VALUE` strings (`values`, which win over the files). It parses them once per configuration, and the compile reads its output, so the values never appear on the command line or in `bazel aquery`. Applications that name the same `dart_defines` target share their debug modules:
+
+```starlark
+load("@rules_flutter//flutter:defs.bzl", "dart_defines", "flutter_application")
+
+dart_defines(
+    name = "dev_defines",
+    srcs = ["config/dev.json"],
+)
+
+flutter_application(
+    name = "app_dev",
+    package_name = "my_app",
+    main = "lib/main.dart",
+    dart_defines = ":dev_defines",
+    flavor = "dev",
+    deps = [":my_lib", "@deps//:flutter"],
+)
+```
+
+`flutter_application(defines_files = [...], define_flagfiles = [...])` is a spelling of the same thing: the macro declares a `dart_defines` target named `<name>_dart_defines` from them. Two applications spelled this way do not share modules, because each names its own target; name one `dart_defines` target where applications share their defines. A `.json` file must define a top-level object whose values are strings, numbers, or booleans:
 
 ```json
 {
@@ -1798,7 +1819,7 @@ API_URL=https://api.example.com
 DEBUG=false
 ```
 
-Precedence, lowest to highest: `defines_files` in list order, then `defines`, then `--@rules_flutter//flutter:extra_dart_defines`. A key set by a higher-precedence source overrides matching keys from earlier files. `defines_files` is accepted alongside `define_flagfiles` (the generated flagfile precedes user `define_flagfiles`), and is not read by a custom kernel pipeline.
+Precedence, lowest to highest: the `dart_defines` target (its files, then its `values`), then `defines`, then the flavor, then `--@rules_flutter//flutter:extra_dart_defines`. A key set by a higher-precedence source overrides matching keys from the files. A key may appear in only one file of one `dart_defines` target.
 
 ### flutter_test
 
@@ -2181,7 +2202,7 @@ Soundness rule for `import_dill`: `frontend_server` re-reads an imported dill's 
 
 The same file also publishes the modular path the built-in `flutter_test` and app rules compile with when eligible: `flutter_kernel_module_aspect` (the same aspect object the built-in rules use, so a library's module action keeps its action key across built-in and custom pipelines), the `FlutterKernelModuleInfo` provider it produces, the `FLUTTER_MODULAR_KERNEL_ATTRS` / `FLUTTER_MODULAR_KERNEL_TOOLCHAINS` dicts a calling rule merges and declares, and two entry functions — `flutter_modular_test_kernel(ctx, test_uri, deps, output, use_base_dill = False)`, which writes the `flutter_test` bootstrap protocol entry, compiles it against the dependency outlines and links it (run the result under `flutter_prebuilt_test`), and `flutter_modular_app_kernel(ctx, main, package_name, srcs, deps, output, use_base_dill = False)`, which does the same for an app entry point with the debug platform dill prepended.
 
-Use the whole-program path when the pipeline needs `defines`, native assets, or a flag-bearing global `extra_dart_defines` to reach the compile: those route a custom modular kernel to a build error (it has no whole-program fallback), while the built-in rules silently fall back. Use the modular path when the closure is define-free and incremental rebuilds matter: a body-only edit to one library then recompiles only that library's module plus the entry/link actions, never the whole program — in both link modes. The default complete link (`use_base_dill = False`, as in rules_dart's `modular_executable_kernel`) puts every reachable module in the kernel, which runs with no `base_dill`; pass `use_base_dill = True` to delta-link against the shared `flutter_test` base instead, and feed the returned base dill to `flutter_prebuilt_test`'s `base_dill` exactly as a `flutter_test` kernel's `test_base_kernel` must. The delta pays off when many tests share one SDK base: each per-test dill stays small while the base builds once. A pipeline that knowingly builds without the global defines sets `ignore_global_dart_defines = True` on the custom kernel: the custom `deps` edge still resets a non-empty global `extra_dart_defines` for the custom closure (which `kernel_worker` could not parse anyway when a value holds a comma) while the entry compile takes none of it, and an empty flag still leaves the configuration untouched, so modules keep sharing action keys with the built-in rules. `e2e/hello_world/custom_modular_test_kernel.bzl` is both pipelines as running targets: a custom modular test kernel over two `flutter_library` packages under `flutter_prebuilt_test` (complete and base-linked), and a custom modular app kernel.
+Use the whole-program path when the pipeline needs native assets: they route a custom modular kernel to a build error (it has no whole-program fallback). A custom kernel's `defines` and the global `extra_dart_defines` work as they do for the built-in rules: its `deps` edge makes them the closure's configuration, so every module and the entry compile with them; a value with a comma fails the build. Use the modular path when incremental rebuilds matter: a body-only edit to one library then recompiles only that library's module plus the entry/link actions, never the whole program — in both link modes. The default complete link (`use_base_dill = False`, as in rules_dart's `modular_executable_kernel`) puts every reachable module in the kernel, which runs with no `base_dill`; pass `use_base_dill = True` to delta-link against the shared `flutter_test` base instead, and feed the returned base dill to `flutter_prebuilt_test`'s `base_dill` exactly as a `flutter_test` kernel's `test_base_kernel` must. The delta pays off when many tests share one SDK base: each per-test dill stays small while the base builds once. A custom kernel with no `defines` leaves the configuration untouched, so its modules share their action keys with the built-in rules. `e2e/hello_world/custom_modular_test_kernel.bzl` is both pipelines as running targets: a custom modular test kernel over two `flutter_library` packages under `flutter_prebuilt_test` (complete and base-linked), and a custom modular app kernel.
 
 Stability note: `flutter:utils.bzl` is stable for external use. `flutter_kernel_compile_action` takes grouped parameter objects — `flutter_kernel_sources(...)`, `flutter_kernel_outputs(...)`, `flutter_kernel_options(...)` and `flutter_kernel_dills(...)` — so the flat keyword call shape is gone, but existing calls keep their command line and action keys.
 
