@@ -506,6 +506,7 @@ List<Flow> catalogue() {
     List<EditSpec> edits = const [],
     WorkspaceFn? ws,
     bool clean = false,
+    List<String> cleanArgs = const ['--disk_cache='],
     Set<String> tags = const {'android'},
   }) => BazelFlow(
     id: id,
@@ -520,7 +521,7 @@ List<Flow> catalogue() {
     targets: const ['//:app'],
     edits: edits,
     clean: clean,
-    cleanArgs: const ['--disk_cache='],
+    cleanArgs: cleanArgs,
     warmUp: !clean,
   );
   StockFlow gradle(
@@ -598,12 +599,39 @@ List<Flow> catalogue() {
       ),
     )
     ..add(
+      android(
+        'android.clean_all_jobs.rules',
+        'clean_all_jobs',
+        clean: true,
+        cleanArgs: const ['--disk_cache=', '--jobs=HOST_CPUS'],
+        tags: const {'android', 'heavy', 'on_request'},
+      ),
+    )
+    ..add(
       gradle(
         'android.clean.stock',
         'clean',
         prepare: const [
           ['flutter', 'clean'],
           ['flutter', 'pub', 'get', '--offline'],
+        ],
+        tags: const {'android', 'heavy', 'stock'},
+      ),
+    )
+    ..add(
+      gradle(
+        'android.clean_new_daemon.stock',
+        'clean_new_daemon',
+        prepare: const [
+          ['flutter', 'clean'],
+          ['flutter', 'pub', 'get', '--offline'],
+          // Stops the daemons of the stock environment's Gradle home, which
+          // must be the harness's own (GRADLE_USER_HOME), never a shared one.
+          [
+            'sh',
+            '-c',
+            'test -n "\$GRADLE_USER_HOME" && cd android && ./gradlew --stop',
+          ],
         ],
         tags: const {'android', 'heavy', 'stock'},
       ),

@@ -198,17 +198,27 @@ String planTable(List<Row> rows) {
     '-',
     '${_fmt(r['android.warm_cache.rules'])}; native actions run: ${_native(r['android.warm_cache.rules'])}',
   );
+  final gradle =
+      'Gradle clean, warm daemon: ${_fmt(r['android.clean.stock'])}; new daemon: '
+      '${_fmt(r['android.clean_new_daemon.stock'])}';
   row(
     'Clean build, warm cache',
     'at most 0.2x the stock tool',
-    'Gradle clean: ${_fmt(r['android.clean.stock'])}',
-    '${_ratio(r['android.warm_cache.rules'], r['android.clean.stock']) ?? '-'} of Gradle',
+    gradle,
+    '${_ratio(r['android.warm_cache.rules'], r['android.clean.stock']) ?? '-'} of Gradle with a warm daemon',
   );
   row(
     'Clean build, cold caches, Android nine plugins (5 jobs)',
     'at most 1.2x the stock tool',
-    'Gradle, caches kept: ${_fmt(r['android.clean.stock'])}',
-    '${_fmt(r['android.clean.rules'])}; ${_ratio(r['android.clean.rules'], r['android.clean.stock']) ?? '-'}',
+    gradle,
+    '${_fmt(r['android.clean.rules'])}; ${_ratio(r['android.clean.rules'], r['android.clean.stock']) ?? '-'} of a warm daemon, '
+        '${_ratio(r['android.clean.rules'], r['android.clean_new_daemon.stock']) ?? '-'} of a new one',
+  );
+  row(
+    'Clean build, cold caches, Android nine plugins (all processors; on request)',
+    'at most 1.2x the stock tool',
+    gradle,
+    _fmt(r['android.clean_all_jobs.rules']),
   );
   for (final (p, k) in [
     ('counter', 'apk'),

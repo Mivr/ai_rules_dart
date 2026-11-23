@@ -160,7 +160,9 @@ List<Flow> selectFlows(List<Flow> flows, String spec) {
     final remove = item.startsWith('-');
     final part = remove ? item.substring(1) : item;
     final hit = switch (part) {
-      'all' => flows,
+      // A flow tagged on_request runs only when named or selected by tag:
+      // the full-parallelism clean build, above the program's job limit.
+      'all' => flows.where((f) => !f.tags.contains('on_request')),
       _ when part.startsWith('tag:') => flows.where(
         (f) => f.tags.contains(part.substring(4)),
       ),
