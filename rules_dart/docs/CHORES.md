@@ -202,7 +202,8 @@ The tool exits 1 listing the stale or failed workspaces.
 workspaces whose hubs name a `file://FIXTURES_ROOT` registry that a CI step or
 the e2e runner rewrites cannot evaluate their pub extension in place. They are
 listed in `expectedFailures` with the text the failure must contain; their
-lockfiles hold what Bazel wrote before it failed and nothing about pub.
+lockfiles hold what Bazel wrote before it failed and nothing about pub, and
+`--check` does not check them (Bazel calls such a lock stale whatever it holds).
 
 **Other operating systems**: the lockfiles are made on Linux x64 and checked
 there and on macOS and Windows. A lock holds one `general` entry per module

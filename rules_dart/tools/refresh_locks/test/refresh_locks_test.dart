@@ -290,6 +290,20 @@ void main() {
       expect(fake.calls, ['mod deps --lockfile_mode=error', 'shutdown']);
     });
 
+    test('does not check a workspace that fails on purpose', () async {
+      final root = fixture(['ws/MODULE.bazel', 'ws/MODULE.bazel.lock']);
+      final fake = Fake((a, d) => const CommandResult(1, 'ERROR: stale'));
+      final o = await checkWorkspace(
+        Workspace('ws', '${root.path}/ws'),
+        const Options(expected: {'ws': 'on purpose'}),
+        fake.call,
+        StringBuffer(),
+      );
+      expect(o.status, Status.expected);
+      expect(o.ok, isTrue);
+      expect(fake.calls, isEmpty);
+    });
+
     test('names the first error of a stale lockfile', () async {
       final root = fixture(['ws/MODULE.bazel', 'ws/MODULE.bazel.lock']);
       final fake = Fake(

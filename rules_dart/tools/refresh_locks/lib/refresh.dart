@@ -258,7 +258,9 @@ Future<Outcome> refreshWorkspace(
 }
 
 /// Checks the lockfile of [ws] without writing it: a missing file is stale,
-/// otherwise `mod deps --lockfile_mode=error` must pass.
+/// otherwise `mod deps --lockfile_mode=error` must pass. A workspace listed in
+/// [Options.expected] is not checked: its pub extension cannot finish in
+/// place, so Bazel reports its lock as stale whatever the file holds.
 Future<Outcome> checkWorkspace(
   Workspace ws,
   Options options,
@@ -267,11 +269,14 @@ Future<Outcome> checkWorkspace(
 ) async {
   final started = DateTime.now();
   Duration elapsed() => DateTime.now().difference(started);
+  final expected = options.expected[ws.path];
+  if (expected != null) {
+    return Outcome(ws, Status.expected, elapsed(), 'not checked: $expected');
+  }
   if (!File(ws.lockfile).existsSync()) {
     return Outcome(ws, Status.stale, elapsed(), 'no MODULE.bazel.lock');
   }
   final s = _Session(ws, options, run);
-  final expected = options.expected[ws.path];
   final r = await s.bazel([
     'mod',
     'deps',
@@ -284,9 +289,6 @@ Future<Outcome> checkWorkspace(
     return osKeyed.isEmpty
         ? Outcome(ws, Status.current, elapsed())
         : Outcome(ws, Status.stale, elapsed(), osKeyedMessage(osKeyed));
-  }
-  if (expected != null && r.output.contains(expected)) {
-    return Outcome(ws, Status.expected, elapsed(), expected);
   }
   return Outcome(ws, Status.stale, elapsed(), firstError(r.output));
 }
