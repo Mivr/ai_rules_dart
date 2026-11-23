@@ -1,8 +1,6 @@
-/// Aggregate code generator for dart_aggregate_codegen rule.
+/// Aggregate code generator, run by `run_binary`.
 ///
-/// Interface (dart_aggregate_codegen contract): the primary source arrives as
-/// `--input <exec>`; each additional source arrives as
-/// `--input-asset-extra <exec>|<asset>`. The single output is
+/// Interface: one `--input <path>` per source file; the single output is
 /// `--output <path>`.
 ///
 /// Reads all source files, finds every class definition across them, and
@@ -21,10 +19,6 @@ void main(List<String> args) {
       case '--input':
         inputPaths.add(value);
         i++;
-      case '--input-asset-extra':
-        // Extra sources are passed as `<exec>|<asset>`; take the exec path.
-        inputPaths.add(value.split('|').first);
-        i++;
       case '--output':
         outputPath = value;
         i++;
@@ -33,8 +27,8 @@ void main(List<String> args) {
 
   if (inputPaths.isEmpty || outputPath == null) {
     stderr.writeln(
-      'Usage: aggregate_generator.dart --input <file> '
-      '[--input-asset-extra <exec>|<asset>...] --output <file>',
+      'Usage: aggregate_generator --input <file> [--input <file>...] '
+      '--output <file>',
     );
     exit(1);
   }

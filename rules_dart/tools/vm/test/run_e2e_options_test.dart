@@ -82,7 +82,6 @@ void _testFolderMatrix() {
       'e2e/pub_lock_dedup',
       'e2e/pub_lock_upgrade',
       'e2e/ext_exemplar',
-      'e2e/dual_build',
       'e2e/fix',
       'e2e/analyze_composition',
       'e2e/link_hook',

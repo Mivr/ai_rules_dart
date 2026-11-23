@@ -11,6 +11,41 @@ build.
 
 visibility(["//dart/..."])
 
+# The generic runner's sources, linked into the hub's `build_runner` package
+# so they compile there against the hub's own lock.
+_RUNNER_SOURCES = {
+    "build_runner/bin/gen_entry.dart": Label("//dart/build_runner:runner/bin/gen_entry.dart"),
+    "build_runner/lib/runner.dart": Label("//dart/build_runner:runner/lib/runner.dart"),
+}
+
+def pub_lock_hub_build_runner_content(hub_name, build_runner_version, builder_packages):
+    """The hub's `build_runner/BUILD.bazel`, as a string.
+
+    Args:
+      hub_name: The hub's name, for messages.
+      build_runner_version: The locked `build_runner` version, or "".
+      builder_packages: Dict of package name to the label of its `build.yaml`
+        file group, for the packages that may define builders.
+
+    Returns:
+      BUILD.bazel content as a string.
+    """
+    lines = ['        "{}": "{}",'.format(name, builder_packages[name]) for name in sorted(builder_packages.keys())]
+    return """\
+load("@rules_dart//dart/build_runner/private:build_runner.bzl", "build_runner_targets")
+
+# The generic build_runner runner, compiled from this hub's lock with every
+# package of it that may define builders. `dart_build_runner(runner = ...)`
+# names `:build_runner`.
+build_runner_targets(
+    hub = "{hub}",
+    version = "{version}",
+    builder_packages = {{
+{lines}
+    }},
+)
+""".format(hub = hub_name, version = build_runner_version, lines = "\n".join(lines))
+
 def pub_lock_hub_content(packages, explicit_packages, spoke_prefix, scc_targets = {}):
     """Generates the hub BUILD file content, as a string.
 
@@ -73,12 +108,28 @@ def _pub_lock_hub_impl(ctx):
         fail(err)
     for path in sorted(ctx.attr.files.keys()):
         ctx.file(path, ctx.attr.files[path], executable = False)
-    ctx.file("BUILD.bazel", pub_lock_hub_content(
+    content = pub_lock_hub_content(
         ctx.attr.packages,
         ctx.attr.explicit_packages,
         spoke_prefix,
         ctx.attr.scc_targets,
-    ))
+    )
+    if ctx.attr.package_graph:
+        ctx.file("package_graph.json", ctx.attr.package_graph)
+        content += """
+exports_files(
+    ["package_graph.json"],
+    visibility = ["//visibility:public"],
+)
+"""
+        ctx.file("build_runner/BUILD.bazel", pub_lock_hub_build_runner_content(
+            ctx.attr.hub_name,
+            ctx.attr.build_runner_version,
+            ctx.attr.builder_packages,
+        ))
+        for path, label in _RUNNER_SOURCES.items():
+            ctx.symlink(label, path)
+    ctx.file("BUILD.bazel", content)
     return ctx.repo_metadata(reproducible = True)
 
 pub_lock_hub = repository_rule(
@@ -100,6 +151,21 @@ pub_lock_hub = repository_rule(
             doc = "Names in `packages` that are also declared with `pub.package()`. " +
                   "Each aliases to that explicit repository rather than a spoke.",
             default = [],
+        ),
+        "package_graph": attr.string(
+            doc = "The lock's package graph as JSON, in the shape of pub's `.dart_tool/package_graph.json`: " +
+                  "every package of the lock with its version and dependencies. Written to `package_graph.json` " +
+                  "with the hub's `build_runner` package. Empty writes neither.",
+            default = "",
+        ),
+        "build_runner_version": attr.string(
+            doc = "The locked `build_runner` version, or empty when the lock has none.",
+            default = "",
+        ),
+        "builder_packages": attr.string_dict(
+            doc = "Package name to the label of its `build.yaml` file group, for every package of the lock " +
+                  "that may define builders. The hub's runner is compiled with them.",
+            default = {},
         ),
         "scc_targets": attr.string_dict(
             doc = "Package name to merged repository target, for packages merged over a dependency cycle. " +

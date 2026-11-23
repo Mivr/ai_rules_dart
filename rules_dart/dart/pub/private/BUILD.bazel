@@ -102,6 +102,8 @@ bzl_library(
     srcs = ["pub_emit.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":build_content",
+        ":package_graph",
         ":pub_lock_hub",
         ":pub_lock_package",
         ":pub_repository",
@@ -110,6 +112,12 @@ bzl_library(
         "//dart/private:curated_registry",
         "//dart/pub:pub_lock_scc",
     ],
+)
+
+bzl_library(
+    name = "package_graph",
+    srcs = ["package_graph.bzl"],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(

@@ -1,8 +1,8 @@
 /// Per-file generator for the `dep_lib` package: emits a STANDALONE library
 /// (not a `part of`) that the hand-written sibling imports.
 ///
-/// Interface (dart_codegen):
-/// `dart catalog_generator.dart --input <file> --output <file>`
+/// Interface (run_binary):
+/// `catalog_generator --input <file> --output <file>`
 library;
 
 import 'dart:io';

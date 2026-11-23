@@ -11,6 +11,7 @@ locks that differ in one entry and compare every repository spec.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/pub:extensions.bzl", "resolve_pub_packages")
 load("//dart/pub/private:pub_emit.bzl", "pub_repo_specs")
+load("//dart/pub/private:package_graph.bzl", "builder_packages")
 load("//dart/pub/private:pub_lock_hub.bzl", "hub_files_error")
 load(
     "//dart/pub/private:pub_plan.bzl",
@@ -269,7 +270,7 @@ def _one_entry_one_repository_test_impl(ctx):
     d = _diff(base, _specs(bumped))
     asserts.equals(env, [], d.added)
     asserts.equals(env, [], d.removed)
-    asserts.equals(env, ["dart_pub__leaf"], d.changed, "a version bump changes that package's repository only")
+    asserts.equals(env, ["dart_pub__leaf", "pub_deps"], d.changed, "a version bump changes that package's repository, and the hub's package graph")
 
     added = dict(_GRAPH)
     added["zed"] = ("0.1.0", "8" * 64, ["meta"])
@@ -288,7 +289,46 @@ def _one_entry_one_repository_test_impl(ctx):
     member = dict(_GRAPH)
     member["cyc_b"] = ("1.0.1", "9" * 64, ["cyc_a", "meta"])
     d = _diff(base, _specs(member))
-    asserts.equals(env, ["dart_pub__scc__cyc_a__cyc_b"], d.changed, "a cycle member's change changes its cycle's repository only")
+    asserts.equals(env, ["dart_pub__scc__cyc_a__cyc_b", "pub_deps"], d.changed, "a cycle member's change changes its cycle's repository, and the hub's package graph")
+    return unittest.end(env)
+
+def _hub_graph_test_impl(ctx):
+    env = unittest.begin(ctx)
+    hub = json.decode(_specs(_GRAPH)["pub_deps"])["attrs"]
+    graph = json.decode(hub["package_graph"])
+    asserts.equals(env, [], graph["roots"], "the user's own packages are not in a lock")
+    by_name = {p["name"]: p for p in graph["packages"]}
+    asserts.equals(env, sorted(_GRAPH.keys()), sorted(by_name.keys()), "every package of the lock")
+    for name, v in _GRAPH.items():
+        asserts.equals(env, v[0], by_name[name]["version"])
+        asserts.equals(env, sorted(v[2]), by_name[name]["dependencies"], name)
+        asserts.equals(env, [], by_name[name]["devDependencies"])
+    asserts.equals(env, "", hub["build_runner_version"], "no build_runner in this lock")
+    return unittest.end(env)
+
+def _builder_packages_test_impl(ctx):
+    env = unittest.begin(ctx)
+    names = ["build", "source_gen", "gen_a", "gen_b", "gen_flutter", "uses_gen_flutter", "plain"]
+    deps = {
+        "build": [],
+        "source_gen": ["build"],
+        "gen_a": ["build", "plain"],
+        "gen_b": ["source_gen"],
+        "gen_flutter": ["build", "flutter"],
+        "uses_gen_flutter": ["gen_flutter", "source_gen"],
+        "plain": [],
+    }
+    labels = {n: "@r__%s//:%s.build_yaml" % (n, n) for n in names}
+    asserts.equals(
+        env,
+        {
+            "gen_a": "@r__gen_a//:gen_a.build_yaml",
+            "gen_b": "@r__gen_b//:gen_b.build_yaml",
+            "source_gen": "@r__source_gen//:source_gen.build_yaml",
+        },
+        builder_packages(names, deps, labels),
+        "packages on the builder API whose closure stays in the lock; one reaching an SDK package, directly or not, is left out",
+    )
     return unittest.end(env)
 
 def _own_attributes_test_impl(ctx):
@@ -337,6 +377,8 @@ _one_entry_one_repository_test = unittest.make(_one_entry_one_repository_test_im
 _own_attributes_test = unittest.make(_own_attributes_test_impl)
 _shipped_plan_test = unittest.make(_shipped_plan_test_impl)
 _hub_files_test = unittest.make(_hub_files_test_impl)
+_hub_graph_test = unittest.make(_hub_graph_test_impl)
+_builder_packages_test = unittest.make(_builder_packages_test_impl)
 
 def pub_plan_test_suite(name):
     small_unittest_suite(
@@ -351,4 +393,6 @@ def pub_plan_test_suite(name):
         _own_attributes_test,
         _shipped_plan_test,
         _hub_files_test,
+        _hub_graph_test,
+        _builder_packages_test,
     )

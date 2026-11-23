@@ -26,17 +26,6 @@
       "sdk": "^3.11.0",
       "archive_url": "https://pub.dev/api/archives/analyzer-14.5.0.tar.gz"
     },
-    "pub.plan.v1/hosted/analyzer_buffer/0.3.4/f890a2e708e38fbf4238ad2f9fd3d506538acdddb0cd8eb2c3e8c7bd17784b57/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "collection",
-        "meta",
-        "path",
-        "source_gen"
-      ],
-      "sdk": "^3.6.0",
-      "archive_url": "https://pub.dev/api/archives/analyzer_buffer-0.3.4.tar.gz"
-    },
     "pub.plan.v1/hosted/args/2.7.0/d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04/https://pub.dev": {
       "deps": [],
       "sdk": "^3.3.0",
@@ -50,14 +39,6 @@
       "sdk": "^3.4.0",
       "archive_url": "https://pub.dev/api/archives/async-2.13.1.tar.gz"
     },
-    "pub.plan.v1/hosted/bazel_worker/1.1.5/87cae9150fcf9942b8057e5f51c4848a3efde1289e97411e1c8f01e350120999/https://pub.dev": {
-      "deps": [
-        "async",
-        "protobuf"
-      ],
-      "sdk": "^3.9.0",
-      "archive_url": "https://pub.dev/api/archives/bazel_worker-1.1.5.tar.gz"
-    },
     "pub.plan.v1/hosted/boolean_selector/2.1.2/8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea/https://pub.dev": {
       "deps": [
         "source_span",
@@ -65,70 +46,6 @@
       ],
       "sdk": "^3.1.0",
       "archive_url": "https://pub.dev/api/archives/boolean_selector-2.1.2.tar.gz"
-    },
-    "pub.plan.v1/hosted/build/4.0.11/8a5c5761af8e31748bba3c82f68925ace40f3225c3eea25be9beb57eca7cd7a8/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "crypto",
-        "glob",
-        "logging",
-        "package_config",
-        "path"
-      ],
-      "sdk": "^3.11.0",
-      "archive_url": "https://pub.dev/api/archives/build-4.0.11.tar.gz"
-    },
-    "pub.plan.v1/hosted/build_config/1.4.0/4703a785fbc3c266c5c7518589d0863f6a05078ee33f7ca5aa4b87a56f1cedd2/https://pub.dev": {
-      "deps": [
-        "checked_yaml",
-        "json_annotation",
-        "path",
-        "pubspec_parse"
-      ],
-      "sdk": "^3.8.0",
-      "archive_url": "https://pub.dev/api/archives/build_config-1.4.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/built_collection/5.1.2/44922ecebd8e3d0cef743dadd3b54df4e87e2a4c52a29465a1872aa9e192caa8/https://pub.dev": {
-      "deps": [],
-      "sdk": "^3.11.0",
-      "archive_url": "https://pub.dev/api/archives/built_collection-5.1.2.tar.gz"
-    },
-    "pub.plan.v1/hosted/built_value/8.13.0/f87ea98192116f7093cb214551ce1929caae0681fdba282b3d8b4462adee7bb7/https://pub.dev": {
-      "deps": [
-        "built_collection",
-        "collection",
-        "fixnum",
-        "meta"
-      ],
-      "sdk": ">=3.0.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/built_value-8.13.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/built_value_generator/8.13.0/68af3b1a6829c760f1c039c4302be60f35a65af5f93a9cfed5d65f681eca3757/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "build",
-        "build_config",
-        "built_collection",
-        "built_value",
-        "collection",
-        "source_gen"
-      ],
-      "sdk": ">=3.6.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/built_value_generator-8.13.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/charcode/1.4.0/fb0f1107cac15a5ea6ef0a6ef71a807b9e4267c713bb93e00e92d737cc8dbd8a/https://pub.dev": {
-      "deps": [],
-      "sdk": ">=3.0.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/charcode-1.4.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/checked_yaml/2.0.4/959525d3162f249993882720d52b7e0c833978df229be20702b33d48d91de70f/https://pub.dev": {
-      "deps": [
-        "json_annotation",
-        "source_span",
-        "yaml"
-      ],
-      "sdk": "^3.8.0",
-      "archive_url": "https://pub.dev/api/archives/checked_yaml-2.0.4.tar.gz"
     },
     "pub.plan.v1/hosted/cli_config/0.2.0/ac20a183a07002b700f0c25e61b7ee46b23c309d76ab7b7640a028f18e4d99ec/https://pub.dev": {
       "deps": [
@@ -147,11 +64,6 @@
       "sdk": "^3.7.0",
       "archive_url": "https://pub.dev/api/archives/cli_util-0.6.0.tar.gz"
     },
-    "pub.plan.v1/hosted/clock/1.1.3/e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e/https://pub.dev": {
-      "deps": [],
-      "sdk": "^3.4.0",
-      "archive_url": "https://pub.dev/api/archives/clock-1.1.3.tar.gz"
-    },
     "pub.plan.v1/hosted/code_assets/2.1.0/828110d598123b5ea96c00c9f3c72105bf79f8ee36c20a39b26209ade421ec57/https://pub.dev": {
       "deps": [
         "collection",
@@ -160,17 +72,6 @@
       ],
       "sdk": ">=3.10.0 <4.0.0",
       "archive_url": "https://pub.dev/api/archives/code_assets-2.1.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/code_builder/4.13.0/811709c1badd02fc054039a13f66e0db1961865f9a314175f68c3eaeebec786f/https://pub.dev": {
-      "deps": [
-        "built_collection",
-        "built_value",
-        "collection",
-        "matcher",
-        "meta"
-      ],
-      "sdk": "^3.10.0",
-      "archive_url": "https://pub.dev/api/archives/code_builder-4.13.0.tar.gz"
     },
     "pub.plan.v1/hosted/collection/1.19.1/2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76/https://pub.dev": {
       "deps": [],
@@ -183,24 +84,6 @@
       ],
       "sdk": "^3.4.0",
       "archive_url": "https://pub.dev/api/archives/convert-3.1.2.tar.gz"
-    },
-    "pub.plan.v1/hosted/copy_with_extension/18.0.0/9a832fe40e5a5fcbe58e094d2c857ac6b185f34ec200241051daebe48b1b0403/https://pub.dev": {
-      "deps": [
-        "meta"
-      ],
-      "sdk": "^3.7.0",
-      "archive_url": "https://pub.dev/api/archives/copy_with_extension-18.0.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/copy_with_extension_gen/18.0.0/4475dfeaa67d41760e7f8b690cbbbbc0d71efb34797997478ae869c0933a5fe1/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "build",
-        "copy_with_extension",
-        "meta",
-        "source_gen"
-      ],
-      "sdk": "^3.7.0",
-      "archive_url": "https://pub.dev/api/archives/copy_with_extension_gen-18.0.0.tar.gz"
     },
     "pub.plan.v1/hosted/coverage/1.16.0/ff89e37c19355194e279d26dafe8e4bece46c9ea63a30be4dc68214f5bc290d3/https://pub.dev": {
       "deps": [
@@ -248,52 +131,6 @@
       "sdk": ">=3.10.0 <4.0.0",
       "archive_url": "https://pub.dev/api/archives/data_assets-0.20.0.tar.gz"
     },
-    "pub.plan.v1/hosted/drift/2.35.2/ef9598e1785c18db37209e8554fc79aff94632209d384ec98984b9e3184af0f7/https://pub.dev": {
-      "deps": [
-        "async",
-        "collection",
-        "convert",
-        "meta",
-        "path",
-        "sqlite3",
-        "stack_trace",
-        "stream_channel",
-        "web"
-      ],
-      "sdk": ">=3.10.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/drift-2.35.2.tar.gz"
-    },
-    "pub.plan.v1/hosted/drift_dev/2.35.1/e0d16aaa21f3408cbe2dd4bfc56c36cea43e53a537e6613b91380c0924b3bd30/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "args",
-        "build",
-        "build_config",
-        "charcode",
-        "cli_util",
-        "collection",
-        "dart_style",
-        "drift",
-        "io",
-        "json_annotation",
-        "logging",
-        "meta",
-        "package_config",
-        "path",
-        "pub_semver",
-        "recase",
-        "source_gen",
-        "source_span",
-        "sqlite3",
-        "sqlparser",
-        "stream_transform",
-        "string_scanner",
-        "yaml",
-        "yaml_edit"
-      ],
-      "sdk": ">=3.10.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/drift_dev-2.35.1.tar.gz"
-    },
     "pub.plan.v1/hosted/ffi/2.2.0/6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45/https://pub.dev": {
       "deps": [],
       "sdk": ">=3.7.0 <4.0.0",
@@ -307,37 +144,6 @@
       "sdk": "^3.0.0",
       "archive_url": "https://pub.dev/api/archives/file-7.0.1.tar.gz"
     },
-    "pub.plan.v1/hosted/fixnum/1.1.1/b6dc7065e46c974bc7c5f143080a6764ec7a4be6da1285ececdc37be96de53be/https://pub.dev": {
-      "deps": [],
-      "sdk": "^3.1.0",
-      "archive_url": "https://pub.dev/api/archives/fixnum-1.1.1.tar.gz"
-    },
-    "pub.plan.v1/hosted/freezed/4.0.2/3af98c92d7d4dd182ea1393193e69a840fcbaee1f66f1158bd20504e5f3f6f4f/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "analyzer_buffer",
-        "build",
-        "build_config",
-        "collection",
-        "dart_style",
-        "freezed_annotation",
-        "json_annotation",
-        "meta",
-        "pub_semver",
-        "source_gen"
-      ],
-      "sdk": ">=3.13.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/freezed-4.0.2.tar.gz"
-    },
-    "pub.plan.v1/hosted/freezed_annotation/3.1.0/7294967ff0a6d98638e7acb774aac3af2550777accd8149c90af5b014e6d44d8/https://pub.dev": {
-      "deps": [
-        "collection",
-        "json_annotation",
-        "meta"
-      ],
-      "sdk": ">=3.0.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/freezed_annotation-3.1.0.tar.gz"
-    },
     "pub.plan.v1/hosted/frontend_server_client/4.1.0/404dbf9bce29beafbe9dcb19219447b6f7d49900cd42b8d3b7af102b24508e25/https://pub.dev": {
       "deps": [
         "async",
@@ -346,15 +152,6 @@
       ],
       "sdk": "^3.10.0-0.0.dev",
       "archive_url": "https://pub.dev/api/archives/frontend_server_client-4.1.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/get_it/8.3.0/ae78de7c3f2304b8d81f2bb6e320833e5e81de942188542328f074978cc0efa9/https://pub.dev": {
-      "deps": [
-        "async",
-        "collection",
-        "meta"
-      ],
-      "sdk": ">=3.0.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/get_it-8.3.0.tar.gz"
     },
     "pub.plan.v1/hosted/glob/2.2.0/218aeb56050c714f62a3182775320dfa04602b55074873e24e31bbd39bda96fb/https://pub.dev": {
       "deps": [
@@ -366,21 +163,6 @@
       ],
       "sdk": "^3.3.0",
       "archive_url": "https://pub.dev/api/archives/glob-2.2.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/go_router_builder/4.5.0/fbadb18697941b5efaa90c6295e81335e59b97bde83d675b4251e91eac1d4882/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "async",
-        "build",
-        "build_config",
-        "collection",
-        "meta",
-        "path",
-        "source_gen",
-        "source_helper"
-      ],
-      "sdk": "^3.10.0",
-      "archive_url": "https://pub.dev/api/archives/go_router_builder-4.5.0.tar.gz"
     },
     "pub.plan.v1/hosted/hooks/2.2.0/eaac480a35ec0814146c2c48d96aaa829e0e44a7662c88ae84c9edf4bc35651f/https://pub.dev": {
       "deps": [
@@ -420,39 +202,6 @@
       "sdk": "^3.4.0",
       "archive_url": "https://pub.dev/api/archives/io-1.1.0.tar.gz"
     },
-    "pub.plan.v1/hosted/json_annotation/4.12.0/2a743920d81b7910627f68ee2c9ac1fc0bfee32b9fc3403587d7c6791ca12f80/https://pub.dev": {
-      "deps": [
-        "meta"
-      ],
-      "sdk": "^3.9.0",
-      "archive_url": "https://pub.dev/api/archives/json_annotation-4.12.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/json_serializable/6.14.1/e45aefa0324f08c683caafbb94b72837aa6193c61822799c916e45f4a263113d/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "async",
-        "build",
-        "build_config",
-        "dart_style",
-        "json_annotation",
-        "meta",
-        "path",
-        "pub_semver",
-        "pubspec_parse",
-        "source_gen",
-        "source_helper"
-      ],
-      "sdk": "^3.9.0",
-      "archive_url": "https://pub.dev/api/archives/json_serializable-6.14.1.tar.gz"
-    },
-    "pub.plan.v1/hosted/logger/2.8.0/2a0dc097e7b01d942475bdd552356db2d0f768b05540bd4b2b53f1840f2239a7/https://pub.dev": {
-      "deps": [
-        "clock",
-        "meta"
-      ],
-      "sdk": ">=2.17.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/logger-2.8.0.tar.gz"
-    },
     "pub.plan.v1/hosted/logging/1.3.0/c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61/https://pub.dev": {
       "deps": [],
       "sdk": "^3.4.0",
@@ -478,22 +227,6 @@
       "deps": [],
       "sdk": "^3.2.0",
       "archive_url": "https://pub.dev/api/archives/mime-2.1.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/mockito/5.8.1/6c1970612452260366064d4df80fdb3eece1ec5e52610ae34a0e51f2f3d8e64f/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "build",
-        "code_builder",
-        "collection",
-        "dart_style",
-        "matcher",
-        "meta",
-        "path",
-        "source_gen",
-        "test_api"
-      ],
-      "sdk": "^3.7.0",
-      "archive_url": "https://pub.dev/api/archives/mockito-5.8.1.tar.gz"
     },
     "pub.plan.v1/hosted/native_toolchain_c/0.19.5/90eaad8059ebc2004a63810a4696ea9acdb02473e47ed3b6b3bafb100ac77e31/https://pub.dev": {
       "deps": [
@@ -550,37 +283,12 @@
       "sdk": "^3.5.0",
       "archive_url": "https://pub.dev/api/archives/process-5.0.6.tar.gz"
     },
-    "pub.plan.v1/hosted/protobuf/6.1.0/13b6717366aa7ec3792dd62c19c7d33a785708224365f2db23c5ca01f1c1a0f2/https://pub.dev": {
-      "deps": [
-        "collection",
-        "fixnum",
-        "meta"
-      ],
-      "sdk": "^3.7.0",
-      "archive_url": "https://pub.dev/api/archives/protobuf-6.1.0.tar.gz"
-    },
     "pub.plan.v1/hosted/pub_semver/2.2.1/261236774e8b1d69cfc6b9eabbc96c40f25e7a2d6b171f3385d4f65d5734fb24/https://pub.dev": {
       "deps": [
         "collection"
       ],
       "sdk": "^3.4.0",
       "archive_url": "https://pub.dev/api/archives/pub_semver-2.2.1.tar.gz"
-    },
-    "pub.plan.v1/hosted/pubspec_parse/1.6.0/c38b81cbf34450b67e0265d73433569d12e34782e30ed769c9cc99c9d5f2e796/https://pub.dev": {
-      "deps": [
-        "checked_yaml",
-        "collection",
-        "json_annotation",
-        "pub_semver",
-        "yaml"
-      ],
-      "sdk": "^3.8.0",
-      "archive_url": "https://pub.dev/api/archives/pubspec_parse-1.6.0.tar.gz"
-    },
-    "pub.plan.v1/hosted/recase/4.1.0/e4eb4ec2dcdee52dcf99cb4ceabaffc631d7424ee55e56f280bc039737f89213/https://pub.dev": {
-      "deps": [],
-      "sdk": ">=2.12.0 <3.0.0",
-      "archive_url": "https://pub.dev/api/archives/recase-4.1.0.tar.gz"
     },
     "pub.plan.v1/hosted/record_use/1.1.1/1cb8564af8d43b464294411db9217f5ec04891c6f22ee2c32d73ae05e88a6bd2/https://pub.dev": {
       "deps": [
@@ -632,29 +340,6 @@
       "sdk": "^3.5.0",
       "archive_url": "https://pub.dev/api/archives/shelf_web_socket-3.0.0.tar.gz"
     },
-    "pub.plan.v1/hosted/source_gen/4.3.1/833ea7d15b5be79949d3d6c077da0267a0bd93c16897b36a771395a91e63086e/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "async",
-        "build",
-        "dart_style",
-        "glob",
-        "path",
-        "pub_semver",
-        "source_span",
-        "yaml"
-      ],
-      "sdk": "^3.11.0",
-      "archive_url": "https://pub.dev/api/archives/source_gen-4.3.1.tar.gz"
-    },
-    "pub.plan.v1/hosted/source_helper/1.3.13/5e6f216fdf6376c9f3852381ae037499797a3385377d388b011dac98d303c67c/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "source_gen"
-      ],
-      "sdk": "^3.9.0",
-      "archive_url": "https://pub.dev/api/archives/source_helper-1.3.13.tar.gz"
-    },
     "pub.plan.v1/hosted/source_map_stack_trace/2.1.2/c0713a43e323c3302c2abe2a1cc89aa057a387101ebd280371d6a6c9fa68516b/https://pub.dev": {
       "deps": [
         "path",
@@ -696,16 +381,6 @@
       "sdk": ">=3.10.0 <4.0.0",
       "archive_url": "https://pub.dev/api/archives/sqlite3-3.7.1.tar.gz"
     },
-    "pub.plan.v1/hosted/sqlparser/0.45.0/772bb2f6f5bce0631a60f26b57d6e8882e1105c22345b05c163ee6ee5d7ba32d/https://pub.dev": {
-      "deps": [
-        "charcode",
-        "collection",
-        "meta",
-        "source_span"
-      ],
-      "sdk": ">=3.10.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/sqlparser-0.45.0.tar.gz"
-    },
     "pub.plan.v1/hosted/stack_trace/1.12.2/277654b3034d17ac6f9f1cb5595db011b1d5d41e8806866db28e0abaa101c490/https://pub.dev": {
       "deps": [
         "path"
@@ -713,43 +388,12 @@
       "sdk": "^3.4.0",
       "archive_url": "https://pub.dev/api/archives/stack_trace-1.12.2.tar.gz"
     },
-    "pub.plan.v1/hosted/stacked_generator/2.0.4/6e267e40c85111dca881538ef0404be3c6bcdc51dd206f2a3361d9f62f90a706/https://pub.dev": {
-      "deps": [
-        "analyzer",
-        "build",
-        "code_builder",
-        "collection",
-        "dart_style",
-        "freezed_annotation",
-        "json_annotation",
-        "logger",
-        "meta",
-        "path",
-        "recase",
-        "source_gen",
-        "stacked_shared"
-      ],
-      "sdk": ">=3.9.0 <4.0.0",
-      "archive_url": "https://pub.dev/api/archives/stacked_generator-2.0.4.tar.gz"
-    },
-    "pub.plan.v1/hosted/stacked_shared/1.4.2/3d69b34d87422b78a7e5123681d3f4bcdd79757170454933f68795c54812d003/https://pub.dev": {
-      "deps": [
-        "get_it"
-      ],
-      "sdk": ">=2.16.2 <3.0.0",
-      "archive_url": "https://pub.dev/api/archives/stacked_shared-1.4.2.tar.gz"
-    },
     "pub.plan.v1/hosted/stream_channel/2.1.4/969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d/https://pub.dev": {
       "deps": [
         "async"
       ],
       "sdk": "^3.3.0",
       "archive_url": "https://pub.dev/api/archives/stream_channel-2.1.4.tar.gz"
-    },
-    "pub.plan.v1/hosted/stream_transform/2.1.2/a00e5f18bffc764f923e7dec1038527f7fe7a1791361a7117f0358193f13d53a/https://pub.dev": {
-      "deps": [],
-      "sdk": "^3.4.0",
-      "archive_url": "https://pub.dev/api/archives/stream_transform-2.1.2.tar.gz"
     },
     "pub.plan.v1/hosted/string_scanner/1.4.1/921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43/https://pub.dev": {
       "deps": [
@@ -894,16 +538,6 @@
       ],
       "sdk": "^3.4.0",
       "archive_url": "https://pub.dev/api/archives/yaml-3.1.4.tar.gz"
-    },
-    "pub.plan.v1/hosted/yaml_edit/2.2.4/07c9e63ba42519745182b88ca12264a7ba2484d8239958778dfe4d44fe760488/https://pub.dev": {
-      "deps": [
-        "collection",
-        "meta",
-        "source_span",
-        "yaml"
-      ],
-      "sdk": "^3.1.0",
-      "archive_url": "https://pub.dev/api/archives/yaml_edit-2.2.4.tar.gz"
     }
   }
 }

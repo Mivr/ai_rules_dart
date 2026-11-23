@@ -160,9 +160,9 @@ def _flutter_gen_l10n_impl(ctx):
 
     srcs = _dedupe_arb_srcs(ctx, ctx.files.arbs)
 
-    # Outputs land beside the arb files, matching how dart_codegen places its
-    # own output next to the source: the generated files import each other by
-    # bare filename, so they have to be siblings.
+    # Outputs land beside the arb files, the way a generator's output sits next
+    # to its source: the generated files import each other by bare filename, so
+    # they have to be siblings.
     arb_dir = _check_single_arb_dir(ctx, srcs)
 
     rel_dir = srcs[0].short_path[:-len(srcs[0].basename)]

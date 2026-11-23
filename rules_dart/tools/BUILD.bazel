@@ -7,6 +7,3 @@ bazelrc_preset(
         "flaky_test_attempts": [],
     },
 )
-
-# The dual-build collision checker moved to //dart/ext/tools:check_dual_build_collisions
-# (Dart port; reads the same baseline extension list Gazelle's filter uses).

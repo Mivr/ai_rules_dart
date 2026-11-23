@@ -1,17 +1,22 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_library", "dart_source_set", "dart_test")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_source_set", "dart_test")
 load(":colocate.bzl", "colocated_sources")
 
 # A package assembled explicitly via dart_source_set and consumed via srcs_dir
 # (the pre-assembled single-directory path, which the consumer uses as-is).
 
-dart_codegen(
+run_binary(
     name = "message_part",
-    package_name = "source_set_fixture",
-    src = "lib/message.dart",
-    generator = "//tools:part_gen.dart",
-    language_version = "3.11",
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/message.dart"],
+    outs = ["lib/message.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/message.dart)",
+        "--output",
+        "$(execpath lib/message.g.dart)",
+    ],
+    tool = "//tools:part_gen",
 )
 
 dart_source_set(

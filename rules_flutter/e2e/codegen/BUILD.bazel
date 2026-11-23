@@ -1,7 +1,8 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_apple//apple:macos.bzl", "macos_application")
 load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
-load("@rules_dart//dart:defs.bzl", "dart_aggregate_codegen", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_codegen", "dart_library")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_library")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_gen_l10n", "flutter_library", "flutter_native_library", "flutter_test")
 load(
     "@rules_flutter//flutter:macos.bzl",
@@ -16,46 +17,64 @@ load(
 )
 load("@rules_flutter//flutter:web.bzl", "flutter_web_bundle")
 
-# The generator scripts this package's codegen rules invoke by file label.
-# Named once here because the `dart_binary` analysis handles below iterate it.
+# The generators this package runs through `run_binary`. Each is a `dart_binary`
+# over `tools/<name>.dart` (see the comprehension near the end of this file),
+# taking `--input <file>` (repeatable for the aggregate one) and `--output <file>`.
 _GENERATOR_SCRIPTS = [
     "simple_generator",
     "json_generator",
     "aggregate_generator",
 ]
 
-# --- Per-file codegen (dart_codegen) ---
-# Generates a .g.dart companion for each source file independently.
-# dart_codegen is single-source, so each input file gets its own target.
+# --- Per-file codegen ---
+# Generates a .g.dart companion for each source file independently, one
+# `run_binary` per input file.
 
-dart_codegen(
+run_binary(
     name = "model_generated",
-    package_name = "codegen_e2e",
-    src = "lib/model.dart",
-    generator = "tools/simple_generator.dart",
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/model.dart"],
+    outs = ["lib/model.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/model.dart)",
+        "--output",
+        "$(execpath lib/model.g.dart)",
+    ],
+    tool = ":simple_generator",
 )
 
-dart_codegen(
+run_binary(
     name = "order_generated",
-    package_name = "codegen_e2e",
-    src = "lib/order.dart",
-    generator = "tools/simple_generator.dart",
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/order.dart"],
+    outs = ["lib/order.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/order.dart)",
+        "--output",
+        "$(execpath lib/order.g.dart)",
+    ],
+    tool = ":simple_generator",
 )
 
-# --- Aggregate codegen (dart_aggregate_codegen) ---
+# --- Aggregate codegen ---
 # Reads ALL source files and produces a single registry output.
 
-dart_aggregate_codegen(
+run_binary(
     name = "model_registry",
-    package_name = "codegen_e2e",
     srcs = [
         "lib/model.dart",
         "lib/order.dart",
     ],
-    generator_script = "tools/aggregate_generator.dart",
-    outputs = ["lib/registry.g.dart"],
+    outs = ["lib/registry.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/model.dart)",
+        "--input",
+        "$(execpath lib/order.dart)",
+        "--output",
+        "$(execpath lib/registry.g.dart)",
+    ],
+    tool = ":aggregate_generator",
 )
 
 # --- Flutter app consuming a generated part ---
@@ -63,12 +82,17 @@ dart_aggregate_codegen(
 # Compiling the app exercises rules_flutter's kernel compile co-locating the
 # generated part with its hand-written source sibling so the part resolves.
 
-dart_codegen(
+run_binary(
     name = "user_json",
-    package_name = "codegen_e2e",
-    src = "lib/user.dart",
-    generator = "tools/json_generator.dart",
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/user.dart"],
+    outs = ["lib/user.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/user.dart)",
+        "--output",
+        "$(execpath lib/user.g.dart)",
+    ],
+    tool = ":json_generator",
 )
 
 flutter_application(
@@ -404,21 +428,9 @@ dart_library(
     ],
 )
 
-# Analysis handles for the generator scripts.
-#
-# `generator` and `generator_script` take a bare `.dart` file label — the
-# script runs as `dart <script>` with no package resolution of its own — so
-# no target owns the file, and the analysis aspect checks only files a target
-# owns. A `dart_binary` over the same source supplies the owner.
-#
-# Deliberately not wired into any codegen rule. `generator_bin` enlists its
-# executable in the persistent-worker protocol (see
-# `dart/private/dart_aggregate_codegen.bzl`), which these plain scripts do not
-# speak, so moving one into that slot to gain a target would hand it worker
-# requests it cannot answer.
-#
-# `options`, matching the test-source analyze targets above: these generators
-# hold to the same very_good_analysis bar as the app code.
+# The generators, built for the exec platform as `run_binary` tools. They import
+# only `dart:io`, so they need no `deps`, and they hold to the same
+# very_good_analysis bar as the app code.
 [dart_binary(
     name = name,
     main = "tools/%s.dart" % name,

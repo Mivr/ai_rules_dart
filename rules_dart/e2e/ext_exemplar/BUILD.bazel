@@ -1,6 +1,6 @@
-# Scenario matrix for the `dart/ext/` codegen pipeline. Each subpackage is
-# one shape: single SharedPart, macro form, multi-shard combining, two-stage
-# cascade, cross-file resolver/generator, PackageBuilder aggregate, etc.
+# Exemplars for what `dart/ext/` still curates — code assets (`sqlite3_binary`,
+# `webcrypto`) — plus a pub dependency cycle merged by `dart_package_member`
+# (`pub_cycle`). Code generation is covered by `e2e/build_runner`.
 #
 # Run:      bazel test //...
 # Regen:    bazel run //:gazelle

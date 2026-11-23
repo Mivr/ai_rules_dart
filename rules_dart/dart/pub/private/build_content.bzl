@@ -70,6 +70,30 @@ dart_test_package(
 )
 """.format(library = _TEST_LIBRARY)
 
+def build_yaml_target(name):
+    """The name of the file group holding a package's `build.yaml`.
+
+    Every package repository carries it, empty when the package has no
+    `build.yaml`, so a hub can name the `build.yaml` of any package without
+    knowing whether it exists.
+
+    Args:
+      name: The package name.
+
+    Returns:
+      The target name, `<name>.build_yaml`.
+    """
+    return name + ".build_yaml"
+
+def _build_yaml_block(name):
+    return """
+filegroup(
+    name = "{target}",
+    srcs = glob(["build.yaml"], allow_empty = True),
+    visibility = ["//visibility:public"],
+)
+""".format(target = build_yaml_target(name))
+
 def classify_pub_hooks(has_build_hook, has_link_hook, build_hook_handled):
     """Decides what a pub package's hooks mean for its generated `dart_library`.
 
@@ -240,8 +264,8 @@ dart_library(
         visibility = "//visibility:private" if name == "test" else "//visibility:public",
     )
     if name != "test":
-        return _LOAD + "\n" + library
-    return _LOAD + _TEST_RUNNER_LOAD + "\n" + library + "\n" + _TEST_RUNNER_BLOCK
+        return _LOAD + "\n" + library + _build_yaml_block(name)
+    return _LOAD + _TEST_RUNNER_LOAD + "\n" + library + "\n" + _TEST_RUNNER_BLOCK + _build_yaml_block(name)
 
 _MEMBER_LOAD = 'load("@rules_dart//dart:defs.bzl", "dart_package_member")\n'
 
@@ -378,10 +402,11 @@ dart_package_member(
         language_version = language_version,
     )
     if name != "test":
-        return _MEMBER_LOAD + "\n" + member
+        return _MEMBER_LOAD + "\n" + member + _build_yaml_block(name)
     return (
         _MEMBER_TEST_RUNNER_LOAD + "\n" + member + "\n" +
-        _MEMBER_TEST_RUNNER_BLOCK.format(merged = merged_label)
+        _MEMBER_TEST_RUNNER_BLOCK.format(merged = merged_label) +
+        _build_yaml_block(name)
     )
 
 def make_scc_merged_build_content(members, dep_labels, repo_name):

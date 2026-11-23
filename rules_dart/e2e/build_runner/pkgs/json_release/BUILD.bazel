@@ -1,0 +1,19 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner")
+load("//:reference.bzl", "stock_reference_test")
+
+OUTS = ["lib/src/address.g.dart", "lib/src/user.g.dart"]
+
+# `--release`: build.yaml's `release_options` replace `options`.
+dart_build_runner(
+    name = "gen",
+    outs = OUTS,
+    build_runner_args = ["--release"],
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:json_annotation"],
+)
+
+stock_reference_test(
+    name = "stock_test",
+    outs = OUTS,
+    package = "json_release",
+)

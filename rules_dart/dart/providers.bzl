@@ -68,10 +68,10 @@ it owns — accumulated by `dart_info()` and carried in depsets. This is the \
 attribute by the rules that would otherwise each ask for the same two strings.
 
 It exists because those two facts are properties of a package, not of a rule, \
-and a package is routinely built by more than one rule: a `dart_codegen` \
-generating part of it and the `dart_library` collecting the result must agree \
-on both, and `sibling_aggregate_pkg` shows the two living in different BUILD \
-files, where no macro can hold them together. A referenceable declaration can.
+and a package is routinely built by more than one rule: several \
+`dart_library` and `dart_package_member` targets contributing to one package \
+must agree on both, and they can live in different BUILD files, where no macro \
+can hold them together. A referenceable declaration can.
 
 Deliberately a leaf: it carries no `DartInfo`, so a `dart_package_metadata` \
 cannot be mistaken for a dependency. `attr.label(providers = ...)` is \

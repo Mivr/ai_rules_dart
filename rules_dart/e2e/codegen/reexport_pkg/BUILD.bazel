@@ -1,4 +1,5 @@
-load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_library", "dart_package_metadata", "dart_test")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_package_metadata", "dart_test")
 
 # A dart_library that re-exports a Bazel-generated standalone library.
 
@@ -8,12 +9,17 @@ dart_package_metadata(
     language_version = "3.11",
 )
 
-dart_codegen(
+run_binary(
     name = "api_gen",
-    src = "lib/api.dart",
-    generator = "//tools:lib_gen.dart",
-    output_suffixes = [".g.dart"],
-    package = ":pkg",
+    srcs = ["lib/api.dart"],
+    outs = ["lib/api.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/api.dart)",
+        "--output",
+        "$(execpath lib/api.g.dart)",
+    ],
+    tool = "//tools:lib_gen",
 )
 
 dart_library(

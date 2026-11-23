@@ -19,15 +19,15 @@ dart_package_metadata = rule(
             doc = "The Dart package name used in `package:` imports — the `name:` from the package's `pubspec.yaml`.",
         ),
         "language_version": attr.string(
-            doc = "Dart language version implied by the package's `environment.sdk` constraint, in `<major>.<minor>` form (e.g. `3.11`). Emitted as `languageVersion` in generated `package_config.json` entries and passed to code generators as the root language version. Leave empty to state none.",
+            doc = "Dart language version implied by the package's `environment.sdk` constraint, in `<major>.<minor>` form (e.g. `3.11`). Emitted as `languageVersion` in generated `package_config.json` entries. Leave empty to state none.",
         ),
     },
     provides = [DartPackageMetadataInfo],
     doc = """Declares a Dart package's name and language version once, for every rule that builds part of it.
 
-Point `dart_library`, `dart_codegen`, `dart_aggregate_codegen` and
-`dart_sqlcodegen` at it with `package = ":<name>"` instead of repeating
-`package_name` and `language_version` on each:
+Point `dart_library`, `dart_package_member`, `dart_binary` and `dart_test` at it
+with `package = ":<name>"` instead of repeating `package_name` and
+`language_version` on each:
 
 ```starlark
 dart_package_metadata(
@@ -36,18 +36,10 @@ dart_package_metadata(
     language_version = "3.11",
 )
 
-dart_codegen(
-    name = "model_g",
-    package = ":pkg",
-    src = "lib/model.dart",
-    generator = "//tools:gen.dart",
-    output_suffixes = [".g.dart"],
-)
-
 dart_library(
     name = "my_app",
     package = ":pkg",
-    srcs = ["lib/model.dart", ":model_g"],
+    srcs = glob(["lib/**/*.dart"]),
 )
 ```
 
@@ -60,9 +52,8 @@ is no duplication to remove. `dart_package_metadata` is for hand-written package
 there is.
 
 Visible across BUILD files, which is the case a macro cannot reach: a package
-whose `dart_library` sits in `app/BUILD.bazel` and whose `dart_codegen` sits in
-`gen/BUILD.bazel` has two files stating the same two strings, and only a target
-can be referenced from both.
+built by targets in `app/BUILD.bazel` and `gen/BUILD.bazel` has two files
+stating the same two strings, and only a target can be referenced from both.
 
 Not to be confused with `pub.package()`, the module extension tag that fetches a
 published package from pub.dev. This declares facts about a package you are

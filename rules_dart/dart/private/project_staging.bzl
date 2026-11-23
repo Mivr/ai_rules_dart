@@ -426,7 +426,7 @@ def external_package_placement(ext_pkgs, ext_files_by_pkg):
 
     It is copied when its files sit under two or more directories. That
     happens to a `dart_library` from another Bazel module that mixes
-    hand-written sources (`external/<repo>/lib/...`) with `dart_codegen`
+    hand-written sources (`external/<repo>/lib/...`) with generated
     outputs (`bazel-out/<cfg>/bin/external/<repo>/lib/...`): no single
     directory holds the whole package, so no single rootUri can name it.
     Copying merges the two, as copy mode always does. Every file is checked,

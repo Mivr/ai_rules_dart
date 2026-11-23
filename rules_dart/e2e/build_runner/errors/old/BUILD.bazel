@@ -1,0 +1,11 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner")
+
+exports_files(["pubspec.lock"])
+
+dart_build_runner(
+    name = "gen",
+    outs = ["lib/a.g.dart"],
+    runner = "@old_build_runner//build_runner",
+    srcs = [],
+    tags = ["manual"],
+)

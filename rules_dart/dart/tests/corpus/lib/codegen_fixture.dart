@@ -1,2 +1,2 @@
-/// Input of the per-file codegen fixture.
+/// Input of the generated-source fixture.
 const int codegenFixture = 1;

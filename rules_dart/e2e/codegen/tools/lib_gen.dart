@@ -2,8 +2,7 @@ import 'dart:io';
 
 /// Emits a standalone library (not a `part`) defining `generatedValue()`,
 /// consumed via `import` (relative or `package:`).
-/// Contract: `dart lib_gen.dart --input <src> --output <path>`,
-/// optionally `--input-asset <asset>`.
+/// Contract: `lib_gen --input <src> --output <path>`.
 void main(List<String> args) {
   String? output;
   for (var i = 0; i < args.length - 1; i++) {

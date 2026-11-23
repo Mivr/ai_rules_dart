@@ -2,4 +2,4 @@ schema: mivr-e2e-spec/1
 commands:
   - name: test
     run: bazel test --test_output=errors //...
-    min_tests_executed: 83
+    min_tests_executed: 5

@@ -40,7 +40,7 @@ module, against a package config naming every member.
 """
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartPackageInfo")
-load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "resolve_package_identity")
+load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "resolve_package_identity")
 load("//dart/private:dart_info.bzl", "dart_info")
 load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load("//dart/private:dart_library.bzl", "DartPackageMemberInfo", "check_files_under_lib_root", "check_no_dart_in_data", "check_no_duplicate_srcs", "derive_lib_root", "derive_package_name", "link_hook_error")
@@ -54,17 +54,6 @@ def _dart_package_member_impl(ctx):
         ctx.label.package,
         ctx.label.name,
     )
-
-    err = codegen_identity_error(
-        ctx.label,
-        ctx.attr.srcs,
-        struct(
-            package_name = package_name,
-            language_version = identity.language_version,
-        ),
-    )
-    if err != None:
-        fail(err)
 
     own_resources = ctx.files.resources
     for f in own_resources:

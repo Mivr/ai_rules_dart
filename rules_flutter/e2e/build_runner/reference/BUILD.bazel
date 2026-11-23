@@ -1,0 +1,2 @@
+# What stock `dart run build_runner build` wrote, by package and path.
+exports_files(glob(["**/*.dart"]))

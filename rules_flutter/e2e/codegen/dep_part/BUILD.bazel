@@ -1,16 +1,22 @@
-load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_codegen")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_dart//dart:defs.bzl", "dart_binary")
 load("@rules_flutter//flutter:defs.bzl", "flutter_library")
 
 # Dependency package mixing a hand-written source with a generated `part`.
 # Consumed by //:app — exercises per-dependency source assembly and the dev
 # tool resolving a generated part in a NON-app package.
 
-dart_codegen(
+run_binary(
     name = "settings_gen",
-    package_name = "dep_part",
-    src = "lib/settings.dart",
-    generator = "tools/settings_generator.dart",
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/settings.dart"],
+    outs = ["lib/settings.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/settings.dart)",
+        "--output",
+        "$(execpath lib/settings.g.dart)",
+    ],
+    tool = ":settings_generator",
 )
 
 flutter_library(
@@ -23,10 +29,7 @@ flutter_library(
     visibility = ["//visibility:public"],
 )
 
-# Analysis handle for the generator script — see the comment on the same
-# pattern in //:BUILD.bazel. `generator` takes a bare `.dart` file label, so
-# no target owns the script until a `dart_binary` over the same source does,
-# and the analysis aspect checks only files a target owns. Not wired into `:settings_gen`.
+# The generator `:settings_gen` runs, built for the exec platform.
 dart_binary(
     name = "settings_generator",
     main = "tools/settings_generator.dart",

@@ -1,0 +1,26 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+load("//:reference.bzl", "stock_reference_test")
+
+OUTS = ["lib/src/address.g.dart", "lib/src/user.g.dart"]
+
+dart_build_runner(
+    name = "gen",
+    outs = OUTS,
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:json_annotation"],
+)
+
+dart_library(
+    name = "json_ser",
+    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS if o.startswith("lib/")],
+    package_name = "json_ser",
+    language_version = "3.13",
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:json_annotation"],
+)
+
+stock_reference_test(
+    name = "stock_test",
+    outs = OUTS,
+    package = "json_ser",
+)

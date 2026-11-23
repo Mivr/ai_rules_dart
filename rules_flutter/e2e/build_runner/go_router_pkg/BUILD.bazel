@@ -1,0 +1,45 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner")
+load("@rules_flutter//flutter:defs.bzl", "flutter_library")
+load("//:reference.bzl", "stock_reference_test")
+
+exports_files(["pubspec.lock"])
+
+OUTS = [
+    "lib/routes.g.dart",
+    "lib/routes_a.g.dart",
+    "lib/routes_b.g.dart",
+    "lib/routes_c.g.dart",
+    "lib/routes_d.g.dart",
+    "lib/routes_e.g.dart",
+    "lib/routes_f.g.dart",
+    "lib/routes_g.g.dart",
+    "lib/routes_h.g.dart",
+    "lib/routes_i.g.dart",
+]
+
+dart_build_runner(
+    name = "gen",
+    outs = OUTS,
+    runner = "@build_deps//build_runner",
+    sdk_summary = "//:flutter_sdk_summary",
+    deps = [
+        "@deps//:flutter",
+        "@deps//:go_router",
+    ],
+)
+
+flutter_library(
+    name = "go_router_pkg",
+    package_name = "go_router_pkg",
+    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS],
+    deps = [
+        "@deps//:flutter",
+        "@deps//:go_router",
+    ],
+)
+
+stock_reference_test(
+    name = "stock_test",
+    outs = OUTS,
+    package = "go_router_pkg",
+)

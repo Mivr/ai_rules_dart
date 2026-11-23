@@ -18,7 +18,7 @@
 #   caller-home  the entry keeps the caller's environment (pub cache and
 #                credentials keep working) but the rule-owned launcher around
 #                it must write nothing under HOME. User programs (binaries,
-#                tests, shims) and the SDK pass-through live here.
+#                tests) and the SDK pass-through live here.
 #   private      the entry redirects the home variables at a fresh directory
 #                that is removed afterwards. Rule-owned tool launchers
 #                (format, fix, analysis) live here.
@@ -66,29 +66,7 @@ RUN_HOME_ENTRIES=(
   '@rules_dart//dart:dart|{WORKSPACE}/hello.dart|caller-home|exit:0|stdout:hello'
   '@rules_dart//dart:dart|pub token list|caller-home|exit:0|stdout:pub-cache-token.example.com'
   '@rules_dart//dart:dart|--verbose pub token list|caller-home|exit:0|stdout:pub-cache-token.example.com'
-  # --- codegen shims: `--help` parses arguments and exits, no work ---
-  '@rules_dart//dart/ext/_shared/combining_shim:bin|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/built_value:shim|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/copy_with_extension_gen:shim|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/drift:shim_analyzer|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/drift:shim_discover|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/drift:shim_drift|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/drift:shim_prep|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/freezed:shim|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/go_router:shim|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/json_serializable:shim|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/mockito:shim|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/stacked:shim_bottomsheet|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/stacked:shim_dialog|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/stacked:shim_form|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/stacked:shim_locator|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/stacked:shim_logger|--help|caller-home|exit:0'
-  '@rules_dart//dart/ext/stacked:shim_router|--help|caller-home|exit:0'
   # --- developer tools: safe arguments that stop before any network ---
-  # `check_dual_build_collisions` resolves its baseline only inside the
-  # rules_dart checkout itself, so from here it exits 255 after the usage
-  # check; the row pins that behavior and its HOME cleanliness.
-  '@rules_dart//dart/ext/tools:check_dual_build_collisions|{WORKSPACE}/empty_dir|caller-home|exit:255'
   '@rules_dart//dart/private/tools:update_cross_sdk_versions|--versions-bzl=/nonexistent|caller-home|exit:1'
   # --- tool binaries run directly: configless or kernel-shaped ---
   '@rules_dart//dart/private/tools:kernel_launcher||caller-home|exit:1'
@@ -104,7 +82,6 @@ RUN_HOME_ENTRIES=(
   # --- public but not runnable: `bazel run` must refuse each one ---
   '@rules_dart//dart/private:analyzer_sdk_summary_input||n/a|refuse'
   '@rules_dart//dart/private:aspect_modular_kernel||n/a|refuse'
-  '@rules_dart//dart/ext/tools:check_dual_build_collisions_lib||n/a|refuse'
   '@rules_dart//dart/guard:directive_guard||n/a|refuse'
   '@rules_dart//dart/lints:rules_dart_project_lints||n/a|refuse'
   '@rules_dart//dart/runfiles:runfiles||n/a|refuse'

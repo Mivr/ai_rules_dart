@@ -1,7 +1,7 @@
 """`dart_source_set`, the shared source-assembly helper, and executable inputs.
 
 A package whose files are split between the source tree and `bazel-out` (because
-a `dart_codegen` writes generated members, or several `dart_library` targets
+a `dart_build_runner` writes generated members, or several `dart_library` targets
 contribute to one package) keeps its one `lib_root`. Compiles name every package
 as `org-dartlang-root:///<lib_root>`, and the compiler resolves that through a
 multi-root file system: the source tree and the bin directory both serve the

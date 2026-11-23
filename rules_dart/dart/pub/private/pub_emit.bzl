@@ -16,6 +16,8 @@ list it.
 load("//dart/private:curated_registry.bzl", "curated_code_assets")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub/private:pub_lock_hub.bzl", "pub_lock_hub")
+load("//dart/pub/private:package_graph.bzl", "builder_packages", "package_graph_json")
+load("//dart/pub/private:build_content.bzl", "build_yaml_target")
 load("//dart/pub/private:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_scc_entries.bzl", "scc_member_entries")
@@ -154,25 +156,61 @@ def _scope_package_specs(specs, scope, plans, sccs, labels, ignore_hooks):
             members_json = json.encode(scc_member_entries(members, scope.hosted, scope.git, plans, labels, ignore_hooks)),
         ))
 
-def _hub_specs(specs, resolution, scopes, scope_sccs):
+def _hub_graph_attrs(names, scope, plans, sccs, explicit):
+    """The package graph and `build_runner` attributes of one hub.
+
+    Args:
+      names: The hub's package names.
+      scope: The planning scope the hub's packages come from.
+      plans: That scope's plans, by package name.
+      sccs: That scope's merged cycles.
+      explicit: Names the hub aliases to `pub.package()` repositories.
+
+    Returns:
+      Dict of `pub_lock_hub` attributes.
+    """
+    versions = {}
+    deps = {}
+    labels = {}
+    for name in names:
+        pkg = scope.hosted.get(name) or scope.git.get(name)
+        if pkg == None:
+            continue
+        versions[name] = pkg.version
+        deps[name] = plans[name]["deps"] if name in plans else []
+        if name in sccs.members:
+            labels[name] = "@%s//%s:%s" % (sccs.members[name], name, build_yaml_target(name))
+        elif name in explicit:
+            labels[name] = "@%s//:%s" % (name, build_yaml_target(name))
+        else:
+            labels[name] = "@%s__%s//:%s" % (scope.prefix, name, build_yaml_target(name))
+    return dict(
+        package_graph = package_graph_json(versions, deps),
+        build_runner_version = versions.get("build_runner", ""),
+        builder_packages = builder_packages(sorted(versions.keys()), deps, labels),
+    )
+
+def _hub_specs(specs, resolution, scopes, scope_sccs, scope_plans):
     """Adds one hub per `from_lock` name."""
-    by_prefix = {scope.prefix: sccs for scope, sccs in zip(scopes, scope_sccs)}
+    by_prefix = {scope.prefix: (scope, sccs, plans) for scope, sccs, plans in zip(scopes, scope_sccs, scope_plans)}
     for hub_name in sorted(resolution.hub_packages.keys()):
         packages = resolution.hub_packages[hub_name]
         names = sorted(packages)
         isolated = hub_name in resolution.isolated_packages or hub_name in resolution.isolated_git_packages
         prefix = hub_name if isolated else SPOKE_PREFIX
-        sccs = by_prefix[prefix]
+        scope, sccs, plans = by_prefix[prefix]
+        explicit = [] if isolated else [n for n in names if n in resolution.explicit]
         _add(specs, hub_name, "pub_lock_hub", dict(
             hub_name = hub_name,
             spoke_prefix = prefix,
             packages = names,
-            explicit_packages = [] if isolated else [n for n in names if n in resolution.explicit],
+            explicit_packages = explicit,
             scc_targets = {
                 member: _merged_label(repo, member)
                 for member, repo in sccs.members.items()
                 if member in packages
             },
+            **_hub_graph_attrs(names, scope, plans, sccs, explicit)
         ))
 
 def pub_repo_specs(resolution, scope_plans, ignore_hooks):
@@ -236,7 +274,7 @@ def pub_repo_specs(resolution, scope_plans, ignore_hooks):
 
     for scope, plans, sccs in zip(scopes, scope_plans, scope_sccs):
         _scope_package_specs(specs, scope, plans, sccs, _scope_labels(scope, sccs), ignore_hooks)
-    _hub_specs(specs, resolution, scopes, scope_sccs)
+    _hub_specs(specs, resolution, scopes, scope_sccs, scope_plans)
     return specs
 
 def instantiate_pub_repos(specs):

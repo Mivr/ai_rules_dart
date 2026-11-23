@@ -1,0 +1,27 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+load("//:reference.bzl", "stock_reference_test")
+
+OUTS = ["lib/injectable_micro.module.dart"]
+
+dart_build_runner(
+    name = "gen",
+    outs = OUTS,
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:injectable"],
+)
+
+dart_library(
+    name = "injectable_micro",
+    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS if o.startswith("lib/")],
+    package_name = "injectable_micro",
+    language_version = "3.13",
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:injectable"],
+)
+
+stock_reference_test(
+    name = "stock_test",
+    outs = OUTS,
+    package = "injectable_micro",
+)
+exports_files(["pubspec.yaml"])

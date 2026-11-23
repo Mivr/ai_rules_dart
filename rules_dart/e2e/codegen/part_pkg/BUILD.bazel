@@ -1,14 +1,19 @@
-load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_codegen", "dart_library", "dart_test")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 
 # A Bazel-generated `part` file feeding a runnable program and a test.
 
-dart_codegen(
+run_binary(
     name = "message_part",
-    package_name = "part_pkg_fixture",
-    src = "lib/message.dart",
-    generator = "//tools:part_gen.dart",
-    language_version = "3.11",
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/message.dart"],
+    outs = ["lib/message.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/message.dart)",
+        "--output",
+        "$(execpath lib/message.g.dart)",
+    ],
+    tool = "//tools:part_gen",
 )
 
 dart_library(

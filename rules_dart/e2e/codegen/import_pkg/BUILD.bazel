@@ -1,24 +1,33 @@
-load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_codegen", "dart_library", "dart_test")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 
 # Bazel-generated standalone libraries consumed via `package:` and relative
 # imports (not `part`), feeding a runnable program and a test.
 
-dart_codegen(
+run_binary(
     name = "via_package_gen",
-    package_name = "import_fixture",
-    src = "lib/via_package.dart",
-    generator = "//tools:lib_gen.dart",
-    language_version = "3.11",
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/via_package.dart"],
+    outs = ["lib/via_package.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/via_package.dart)",
+        "--output",
+        "$(execpath lib/via_package.g.dart)",
+    ],
+    tool = "//tools:lib_gen",
 )
 
-dart_codegen(
+run_binary(
     name = "via_relative_gen",
-    package_name = "import_fixture",
-    src = "lib/via_relative.dart",
-    generator = "//tools:lib_gen.dart",
-    language_version = "3.11",
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/via_relative.dart"],
+    outs = ["lib/via_relative.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/via_relative.dart)",
+        "--output",
+        "$(execpath lib/via_relative.g.dart)",
+    ],
+    tool = "//tools:lib_gen",
 )
 
 dart_library(

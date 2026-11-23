@@ -1,11 +1,15 @@
 ---
-status: accepted
-unenforceable: "No registered gate metric runs the codegen rules or checks that analysis contexts are not reused across worker requests"
+status: superseded
 ---
 
 # 0008. Bazel-native code generation through per-builder shims
 
-Source: `docs/ARCHITECTURE.md`, Design Decision 6; `docs/ext.md`.
+**Superseded.** The shims, `dart_codegen`, `dart_aggregate_codegen` and
+`dart_sqlcodegen` are deleted. `dart_build_runner` runs `build_runner`'s own
+engine with the builders of the user's lock; see
+[`docs/build_runner.md`](../build_runner.md). The record below is history.
+
+Source: `docs/ARCHITECTURE.md`, Design Decision 6; `docs/ext.md` (deleted).
 
 ## Context
 

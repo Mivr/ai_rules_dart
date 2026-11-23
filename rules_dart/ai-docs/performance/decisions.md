@@ -36,7 +36,7 @@ runner's kernel.
 **`dart_format` (`bazel run`) keeps copying pub packages (agent).** It reads
 its staged project from runfiles, where a relative path into `external/` does
 not hold. A package split between `external/<repo>` and `bazel-out` (a
-`bazel_dep` module's library with `dart_codegen` outputs) is also still copied:
+`bazel_dep` module's library with generated outputs) is also still copied:
 two roots must be merged.
 
 **Lockfile regression, and the extra check (agent).** The runner-snapshot

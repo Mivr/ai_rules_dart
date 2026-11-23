@@ -123,7 +123,7 @@ def _mixed_package_test_impl(ctx):
     ext_files = {
         "foo": [_file("../foo/lib/foo.dart", "external/foo/lib/foo.dart")],
 
-        # One hand-written source and one `dart_codegen` output from the same
+        # One hand-written source and one generated output from the same
         # repository: the output sits under `bazel-out/`, so its directory is
         # not the one the source sits in.
         "gen": [

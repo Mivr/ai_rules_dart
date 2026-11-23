@@ -69,8 +69,9 @@ class _Fixture {
 }
 
 const _fixtures = <String, _Fixture>{
-  // A codegen INPUT: every edit re-runs the `dart_codegen` action, so the peer
-  // session's build has real work to do rather than reporting a cache hit.
+  // A codegen INPUT: every edit re-runs the generator's `run_binary` action, so
+  // the peer session's build has real work to do rather than reporting a cache
+  // hit.
   'codegen': _Fixture(
     'codegen',
     ':app_macos',

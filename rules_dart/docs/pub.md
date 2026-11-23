@@ -86,6 +86,21 @@ in `//dart/pub:pub_lock_package.bzl`, and its hub is `pub_lock_hub`, whose
 `files` attribute carries what the rule set adds next to the aliases.
 rules_flutter's `flutter.pub` is built this way.
 
+# What a `pub.from_lock()` hub holds for `build_runner`
+
+Besides one target per package, every `pub.from_lock()` hub has:
+
+- `@<hub>//:package_graph.json`: the lock's package graph, in the shape of
+  pub's `.dart_tool/package_graph.json`;
+- `@<hub>//build_runner`: the runner `dart_build_runner` uses, compiled from
+  the lock's `build_runner` and every package of the lock that defines
+  builders. `@<hub>//build_runner:runner` is the runner binary and
+  `@<hub>//build_runner:sdk_summary` its plain Dart SDK summary.
+
+A lock without `build_runner`, or with one older than 2.8.0, still gets the
+`build_runner` target: it fails with a message when a target uses it. See
+[build_runner.md](build_runner.md).
+
 # Runtime package files
 
 A pub package is more than its `lib/`: `pubspec.yaml`, `LICENSE`, a `hook/`
@@ -122,7 +137,7 @@ hand-written `dart_library`'s `data` is refused at analysis. rules_flutter's
 does not duplicate them.
 
 The default's cost is one file per spoke, plus a `LICENSE` where the package
-ships one. This module's own `ext_pub_deps` materialises 92 package
+ships one. This module's own `ext_pub_deps` materialises 58 package
 repositories, so a test that depends on them all gains about two runfiles
 entries per spoke — under two hundred files — rather than the thousands a
 `glob(["**"])` over `test/`, `example/`, `doc/` and `tool/` would add. That is

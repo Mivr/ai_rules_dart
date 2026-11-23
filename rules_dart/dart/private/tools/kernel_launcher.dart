@@ -19,8 +19,8 @@ import 'test_runner_workspace.dart' as staging;
 /// When a kernel-mode binary sets `launcher = True`, `DefaultInfo.executable`
 /// is a symlink to this native launcher and `<name>.kernel_launcher.json` sits
 /// beside it (and in runfiles under `RULES_DART_KERNEL_CONFIG`). Rules that
-/// consume `DartCompileInfo` directly (such as `dart_codegen`) still run the
-/// `.dill` in a persistent worker without spawning this launcher, while
+/// consume `DartCompileInfo` directly still run the `.dill` on their own VM
+/// without spawning this launcher, while
 /// `bazel run` and generic `ctx.executable` consumers can invoke the target
 /// as a standalone executable.
 Future<void> main(List<String> args) async {

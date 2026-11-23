@@ -115,7 +115,7 @@ bazel_dep(name = "rules_jvm_external", version = "6.8")
 # Minimum rules_dart with the APIs rules_flutter loads
 # (`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`,
 # `@rules_dart//dart/pub:pub_scc.bzl`, `@rules_dart//dart/pub:yaml.bzl`,
-# `dart_analysis_config(baseline = ...)`, `dart_codegen(package_name = ...)`).
+# `dart_analysis_config(baseline = ...)`).
 # rules_dart lives in this repository, so the floor is the first rules_dart
 # release cut from it that has all of them, and it is raised when rules_flutter
 # starts to load something that only a newer release has. It is published on

@@ -7,7 +7,7 @@ something its `deps` contradict, is tagged `manual`, and is pinned by the error
 that names both sides.
 """
 
-load("//dart:defs.bzl", "dart_binary", "dart_codegen", "dart_library", "dart_package_metadata", "dart_test")
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_package_metadata", "dart_test")
 load(
     "//dart/tests:executable_package_test.bzl",
     "executable_package_refused_test",
@@ -118,31 +118,4 @@ executable_package_refused_test(
     size = "small",
     message = "lies inside package \"inner_pkg\" (root `dart/tests/exec_package_fixture/inner`",
     target_under_test = ":swallowed",
-)
-
-# A generated source naming another package than the executable collecting it.
-dart_codegen(
-    name = "misnamed_g",
-    package_name = "not_exec_pkg",
-    src = "test/member_test.dart",
-    generator = "//dart/tests/package_fixture:gen.dart",
-    language_version = "3.8",
-    output_suffixes = [".g.dart"],
-    tags = ["manual"],
-)
-
-dart_test(
-    name = "misnamed_codegen",
-    srcs = [":misnamed_g"],
-    main = "test/member_test.dart",
-    package = ":meta",
-    tags = ["manual"],
-    deps = [":lib"],
-)
-
-executable_package_refused_test(
-    name = "misnamed_codegen_test",
-    size = "small",
-    message = "collects them into package \"exec_pkg\"",
-    target_under_test = ":misnamed_codegen",
 )

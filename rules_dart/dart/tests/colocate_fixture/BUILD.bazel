@@ -10,7 +10,7 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//dart:defs.bzl", "dart_code_asset", "dart_library")
 load("//dart/tests:source_set_test.bzl", "colocate_probe")
 
-# The generated half of the package. A genrule stands in for `dart_codegen`
+# The generated half of the package. A genrule stands in for any generator
 # here — colocation keys off `File.is_source`, not off which rule produced it.
 genrule(
     name = "gen_src",

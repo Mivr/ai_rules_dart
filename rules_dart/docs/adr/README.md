@@ -13,7 +13,7 @@ provider contract in [ARCHITECTURE.md](../ARCHITECTURE.md) and from
 | [0005](0005-compilation-modes-and-modular-kernels.md)                | Design Decision 3                                                                                                             |
 | [0006](0006-pub-from-lock-hosted-and-git-packages.md)                | Design Decision 4                                                                                                             |
 | [0007](0007-gazelle-plugin-in-the-core-module.md)                    | Design Decision 5                                                                                                             |
-| [0008](0008-bazel-native-code-generation.md)                         | Design Decision 6                                                                                                             |
+| [0008](0008-bazel-native-code-generation.md)                         | Design Decision 6 (superseded by `dart_build_runner`)                                                                         |
 | [0009](0009-analysis-and-format-check-as-an-aspect.md)               | Design Decision 7                                                                                                             |
 | [0010](0010-source-rewriting-through-run-targets.md)                 | Design Decision 8                                                                                                             |
 | [0011](0011-test-runner-speaks-the-bazel-test-protocol.md)           | Design Decision 9                                                                                                             |

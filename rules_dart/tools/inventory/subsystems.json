@@ -124,20 +124,21 @@
       "paths": ["rules_dart/third_party/**"]
     },
     {
-      "name": "codegen-shims",
-      "note": "Builder shims for build_runner generators (shrink to a generic runner)",
+      "name": "build-runner",
+      "note": "Generic build_runner runner, its rule and the pub hub's package graph (S10, T33)",
+      "paths": [
+        "rules_dart/dart/build_runner/**",
+        "rules_dart/dart/pub/private/package_graph.bzl",
+        "rules_dart/e2e/build_runner/**",
+        "rules_flutter/e2e/build_runner/**"
+      ]
+    },
+    {
+      "name": "curated-code-assets",
+      "note": "Curated native code assets for pub packages (W5-4, S13)",
       "paths": [
         "rules_dart/dart/ext/**",
-        "rules_flutter/ext/**",
-        "rules_dart/dart/private/dart_codegen.bzl",
-        "rules_dart/dart/private/dart_aggregate_codegen.bzl",
-        "rules_dart/dart/private/dart_sqlcodegen.bzl",
-        "rules_dart/dart/tests/*codegen*",
-        "rules_dart/dart/tests/*_library_direct_test.bzl",
-        "rules_dart/e2e/codegen/**",
-        "rules_dart/e2e/dual_build/**",
-        "rules_dart/e2e/ext_exemplar/**",
-        "rules_flutter/e2e/codegen/**"
+        "rules_flutter/ext/**"
       ]
     },
     {

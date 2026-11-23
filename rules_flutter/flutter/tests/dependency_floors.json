@@ -81,7 +81,7 @@
     "current": "0.28.3",
     "resolved": "0.28.3",
     "lifted_by": [],
-    "symbol": "`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `@rules_dart//dart/pub:pub_scc.bzl`, `@rules_dart//dart/pub:yaml.bzl`, `dart_analysis_config(baseline = ...)` and `dart_codegen(package_name = ...)`"
+    "symbol": "`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `@rules_dart//dart/pub:pub_scc.bzl`, `@rules_dart//dart/pub:yaml.bzl` and `dart_analysis_config(baseline = ...)`"
   },
   "rules_go": {
     "floor": "0.59.0",

@@ -28,7 +28,7 @@ If `flutter build` works for you, here is what Bazel adds:
 - **Remote execution.** Compile on cloud workers, and build macOS, Linux, and Android targets from one `bazel build`.
 - **One build graph.** Flutter apps, backend services, Rust and C++ libraries, and infrastructure code live together with real dependency tracking.
 - **Native code without a second build system.** Depend on `cc_library`, `rust_shared_library`, or `swift_library` targets directly. No CMake, Gradle, or CocoaPods.
-- **No build_runner.** Code generators such as json_serializable and freezed run as ordinary Bazel actions.
+- **build_runner as a Bazel action.** Code generators such as json_serializable and freezed run through rules_dart's `dart_build_runner`, cached and sandboxed like any other action.
 
 ## Contents
 
@@ -111,7 +111,7 @@ Two extensions cover the rest. A root-registered custom release (an older stable
 
 #### Overriding `rules_dart`
 
-`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, and `dart_codegen(package_name = ...)`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.28.3, released on GitHub under that module name with `repo_name = "rules_dart"`. The block above gives the latest released, CI-tested pair: `ai_rules_flutter` 0.20.0 with `ai_rules_dart` 0.18.0. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
+`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl` and `@rules_dart//dart:utils.bzl`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.28.3, released on GitHub under that module name with `repo_name = "rules_dart"`. The block above gives the latest released, CI-tested pair: `ai_rules_flutter` 0.20.0 with `ai_rules_dart` 0.18.0. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
 
 To live at the heads instead of these releases (local development against a checkout of each repository's `main`), replace the two `archive_override` blocks with overrides onto your clones. Because Bzlmod ignores module overrides in non-root modules, the overrides go in your root `MODULE.bazel`:
 
@@ -2210,39 +2210,37 @@ Stability note: `flutter:utils.bzl` is stable for external use. `flutter_kernel_
 
 ### Code generation
 
-rules_dart provides `dart_codegen` and `dart_aggregate_codegen`, which replace `build_runner` with ordinary Bazel actions. They load from `@rules_dart//dart:defs.bzl`. A generated file goes into the consuming target's `srcs`, and the rules place it next to its hand-written sibling so a `part` directive resolves:
+Pub builders (json_serializable, freezed, go_router_builder, ...) run through rules_dart's `dart_build_runner`, which runs the package's own `build_runner` as one Bazel action and declares the files it writes. A package that imports Flutter also needs an SDK summary that includes the engine libraries (`dart:ui`, ...), built once by `build_runner_sdk_summary` from `sky_engine`:
 
 ```starlark
-load("@rules_dart//dart:defs.bzl", "dart_aggregate_codegen", "dart_codegen")
+load("@rules_dart//dart:defs.bzl", "build_runner_sdk_summary", "dart_build_runner")
+load("@rules_flutter//flutter:defs.bzl", "flutter_library")
 
-# One output per input file, for example a json_serializable part.
-dart_codegen(
-    name = "user_json",
-    package_name = "my_app",
-    src = "lib/user.dart",
-    generator = "tools/json_generator.dart",
-    output_suffixes = [".g.dart"],
+# `@build_deps` is a rules_dart `pub.from_lock` hub over the same pubspec.lock
+# (which must have build_runner 2.8 or newer).
+build_runner_sdk_summary(
+    name = "flutter_sdk_summary",
+    embedder = "@flutter_sky_engine//:sky_engine",
+    runner = "@build_deps//build_runner:runner",
 )
 
-# One output from all the inputs, for example a route registry.
-dart_aggregate_codegen(
-    name = "registry",
-    package_name = "my_app",
-    srcs = ["lib/model.dart", "lib/order.dart"],
-    generator_script = "tools/aggregate_generator.dart",
-    outputs = ["lib/registry.g.dart"],
+dart_build_runner(
+    name = "gen",
+    outs = ["lib/routes.g.dart"],
+    runner = "@build_deps//build_runner",
+    sdk_summary = ":flutter_sdk_summary",
+    deps = ["@deps//:flutter", "@deps//:go_router"],
 )
 
-flutter_application(
-    name = "my_app",
-    package_name = "my_app",
-    main = "lib/main.dart",
-    srcs = ["lib/user.dart", ":user_json", ":registry"],
-    deps = ["@deps//:flutter"],
+flutter_library(
+    name = "my_pkg",
+    package_name = "my_pkg",
+    srcs = ["lib/routes.dart", ":lib/routes.g.dart"],
+    deps = ["@deps//:flutter", "@deps//:go_router"],
 )
 ```
 
-`e2e/codegen` is the worked example, including generated code in dependency packages and hot reload over regenerated sources.
+`e2e/build_runner` is the worked example (its root `BUILD.bazel` and `go_router_pkg/BUILD.bazel`). A hand-written generator is a `dart_binary` run by skylib's `run_binary`; `e2e/codegen` shows that shape, including generated code in dependency packages and hot reload over regenerated sources.
 
 #### flutter_gen_l10n
 

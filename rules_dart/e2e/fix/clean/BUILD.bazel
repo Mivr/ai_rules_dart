@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
-load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_fix", "dart_library")
+load("@rules_dart//dart:defs.bzl", "dart_fix", "dart_library")
 
 # The green end of the red/green pair. //dirty holds the same library with two
 # violations in it; this one is what `bazel run //dirty:fix` must produce, and
@@ -9,20 +9,30 @@ load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_fix", "dart_library")
 # what it produces passes the analyzer.
 exports_files(["lib/model.dart"])
 
-dart_codegen(
+run_binary(
     name = "model_g",
-    package_name = "fix_clean",
-    src = "lib/model.dart",
-    generator = "//tools:part_gen.dart",
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/model.dart"],
+    outs = ["lib/model.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/model.dart)",
+        "--output",
+        "$(execpath lib/model.g.dart)",
+    ],
+    tool = "//tools:part_gen",
 )
 
-dart_codegen(
+run_binary(
     name = "model_freezed",
-    package_name = "fix_clean",
-    src = "lib/model.dart",
-    generator = "//tools:part_gen.dart",
-    output_suffixes = [".freezed.dart"],
+    srcs = ["lib/model.dart"],
+    outs = ["lib/model.freezed.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/model.dart)",
+        "--output",
+        "$(execpath lib/model.freezed.dart)",
+    ],
+    tool = "//tools:part_gen",
 )
 
 dart_library(

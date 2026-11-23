@@ -1,0 +1,16 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner")
+
+# The config builder searches the package for every `.injectable.json`; one
+# would come from lib/src/service.dart, which this target leaves out of its
+# inputs, so the action fails instead of writing a config without it.
+dart_build_runner(
+    name = "gen",
+    srcs = ["lib/injection.dart"],
+    outs = ["lib/injection.config.dart"],
+    runner = "@pub_deps//build_runner",
+    tags = ["manual"],
+    deps = [
+        "@pub_deps//:get_it",
+        "@pub_deps//:injectable",
+    ],
+)

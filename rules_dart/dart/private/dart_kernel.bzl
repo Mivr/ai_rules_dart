@@ -22,7 +22,7 @@ which the VM runs as one program. A kernel nothing reaches is never linked.
 
 A module's package config names every package by a multi-root URI,
 `org-dartlang-root:///<path>`. The compiler resolves that against the source tree
-and the output tree alike, so a package split between the two (a `dart_codegen`
+and the output tree alike, so a package split between the two (a generated
 part) is read where it lies and never copied.
 
 A module compiles the sources its library declares that compile for the target.

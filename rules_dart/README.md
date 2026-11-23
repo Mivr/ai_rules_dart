@@ -392,6 +392,12 @@ Gazelle will scan `lib/`, `bin/`, and `test/` directories, emitting
 resolves `import` statements to determine `deps`, including support for
 `show` and `deferred` import modifiers.
 
+Gazelle treats files with code-generation annotations as ordinary sources and
+writes no code-generation rules: add `dart_build_runner` by hand (see
+[Code generation](#code-generation)). It does not leave generated files such as
+`*.g.dart` out of `srcs`, so if you check them in, exclude them with
+`# gazelle:exclude`.
+
 #### Directives
 
 Add directives as comments in a `BUILD.bazel` file to control generation:
@@ -432,78 +438,47 @@ repository in CI reports an `analysis_options.yaml` nobody listed.
 
 ### Code generation
 
-`dart_codegen` runs a generator on each source file individually.
-`dart_aggregate_codegen` runs a generator over all sources at once (for
-generators like auto_route that need a whole-package view).
+`dart_build_runner` runs the `build_runner` builders of your lock
+(`json_serializable`, `freezed`, `mockito`, `drift_dev`, ...) for one Dart
+package and writes the same bytes as `dart run build_runner build`. The runner
+is built from your lock (`@<hub>//build_runner`, which needs `build_runner`
+2.8.0 or later in the lock), and builder options stay in your `build.yaml`.
 
 ```starlark
-load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_aggregate_codegen")
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
 
-# One target per input file; outputs are the input's stem plus each suffix.
-dart_codegen(
-    name = "user_g",
-    src = "lib/user.dart",
-    package_name = "my_pkg",
-    generator_bin = "@rules_dart//dart/ext/json_serializable:shim",
-    output_suffixes = [".json_serializable.g.part"],
-    deps = [
-        ":models",                      # same-package siblings
-        "@pub_deps//:json_annotation",  # import source
-    ],
+OUTS = ["lib/src/user.g.dart"]
+
+dart_build_runner(
+    name = "gen",
+    outs = OUTS,
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:json_annotation"],
 )
 
-dart_aggregate_codegen(
-    name = "routes",
-    srcs = glob(["lib/**/*.dart"]),
-    package_name = "my_pkg",
-    generator_bin = "//tools:route_shim",
-    outputs = ["lib/router.gr.dart"],
-    deps = [":my_lib"],
+dart_library(
+    name = "my_pkg",
+    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS],
+    deps = ["@pub_deps//:json_annotation"],
 )
 ```
 
-Both rules take the generator either way. `generator_bin` is a target: a
-`dart_binary` speaking the shim CLI contract, run as a persistent worker (see
-[`docs/ext.md`](./docs/ext.md)). `generator`/`generator_script` is a bare
-`.dart` file run as `dart <script>` with no package resolution of its own, so it
-can import `dart:` core libraries and nothing else — fine for a throwaway
-emitter, insufficient for anything with dependencies.
+A generator of your own runs as a `dart_binary` under skylib's `run_binary`
+(see `e2e/codegen`). Gazelle does not write `dart_build_runner` yet.
 
-That distinction is also what analyzing a generator comes down to. A
-`generator_bin` is already a target, and every executable rule hands out
-`DartAnalyzableInfo`, so the `dart_analyze` aspect checks it like any other
-target (see [Static analysis](#static-analysis-and-formatting)).
-
-A bare script has no target to be checked as. Declare a `dart_binary` over the
-same source as an analysis handle — it needs no wiring into the `dart_codegen`
-call, which keeps running the script exactly as before:
-
-```starlark
-dart_binary(name = "my_generator", main = "my_generator.dart")
-```
-
-Do not promote a script to `generator_bin` just to analyze it: that path runs
-its executable as a persistent worker, which a plain `dart_binary` does not
-speak. The model files a generator reads need nothing special — they belong to
-the `dart_library` targets in `deps`, which are analyzable already.
-
-For first-party builders (`json_serializable`, `freezed`, `built_value`,
-`mockito`, `go_router`, `copy_with_extension_gen`, `stacked`,
-`drift`), each ships a convenience macro (`json_serializable_library`,
-`freezed_library`, …) under `dart/ext/<builder>/defs.bzl`. Gazelle discovers
-the matching annotations in sources and emits the macro automatically. See
-[`docs/ext.md`](./docs/ext.md) for the shim contract, worker behaviour, and
-dual-build migration guide when coexisting with `build_runner`.
+See [`docs/build_runner.md`](./docs/build_runner.md) for attributes, Flutter,
+`--release`/`--define`/`--config`, error messages, and migration from the
+removed `*_library` builder macros and `dart_codegen` rules.
 
 #### Stating a package's name once
 
 Every rule that builds part of a package must agree on its `package_name` and
-`language_version`: the `dart_codegen` above states them, and the `dart_library`
-collecting its output has to state the same pair. A `dart_package_metadata`
+`language_version`: a library and a test of the same package, or several
+`dart_library` targets that split one package. A `dart_package_metadata`
 target declares them once and the rules point at it:
 
 ```starlark
-load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_library", "dart_package_metadata")
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_package_metadata", "dart_test")
 
 dart_package_metadata(
     name = "pkg",
@@ -511,26 +486,24 @@ dart_package_metadata(
     language_version = "3.11",
 )
 
-dart_codegen(
-    name = "user_g",
-    src = "lib/user.dart",
-    package = ":pkg",
-    generator = "//tools:gen.dart",
-    output_suffixes = [".g.dart"],
-)
-
 dart_library(
     name = "my_lib",
-    srcs = ["lib/user.dart", ":user_g"],
+    srcs = glob(["lib/**/*.dart"]),
     package = ":pkg",
+)
+
+dart_test(
+    name = "my_test",
+    main = "test/my_test.dart",
+    package = ":pkg",
+    deps = [":my_lib"],
 )
 ```
 
 Set `package` or the inline attributes, never both — the rules refuse the
 overlap rather than silently ignoring one. Because it is a target rather than a
 macro, the rules referencing it can sit in different BUILD files, which is the
-case nothing else covers. The builder macros (`json_serializable_library` and
-friends) accept `package` too and forward it to every rule they emit.
+case nothing else covers.
 
 This is not `pub.package()`, which fetches a published package from pub.dev;
 `dart_package_metadata` states facts about a package you are building yourself.
@@ -580,7 +553,7 @@ Each setting, and what it saves:
   test on each build; use `--build_runfile_links` to run a built binary outside
   `bazel run`.
 - `--experimental_shrink_worker_pool` saves the memory idle persistent workers
-  (analyzer, kernel, codegen) hold.
+  (analyzer, kernel, `build_runner`) hold.
 - `--incompatible_exclude_starlark_flags_from_exec_config` saves rebuilding the
   build tools for each set of `defines`: an executable's `defines` are the
   configuration of its `deps`, and without this flag the exec configuration
@@ -764,9 +737,6 @@ When a target cannot be analyzed from summaries (such as an opaque `srcs_dir`
 dependency or a package split across targets), it is analyzed over staged sources
 by `analyzer_summary` without summaries.
 
-`dart_codegen` passes the summaries only to generators built on rules_dart's
-builder shim. A generator of your own gets the command line it always had.
-
 The diagnostics come from rules_dart's pinned `package:analyzer` (14.5.0) and
 `rules_dart_project_lints` hosted in the `analyzer_summary` worker, with lint rules
 from `third_party/dart_linter`. `dart fix` still runs on the SDK, and the format check
@@ -860,28 +830,28 @@ hook's message. Pub packages that ship a link hook get `link_hook` set by
 
 The [`e2e/`](e2e/) directory contains complete working examples:
 
-| Example                                               | What it demonstrates                                                                     |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [`hello_world`](e2e/hello_world/)                     | Minimal binary + all compile modes (`exe`, `aot-snapshot`, `kernel`, `jit-snapshot`)     |
-| [`library_deps`](e2e/library_deps/)                   | Transitive `dart_library` dependencies, `srcs` attribute                                 |
-| [`dart_test`](e2e/dart_test/)                         | Tests with and without deps, `srcs` for test helpers                                     |
-| [`analysis`](e2e/analysis/)                           | The `dart_analyze` aspect's checks with `package:`-included options                      |
-| [`fix`](e2e/fix/)                                     | `dart_fix` write-back, and that generated files are never rewritten                      |
-| [`analyze_composition`](e2e/analyze_composition/)     | A lint ruleset shared from another Bazel module                                          |
-| [`web_app`](e2e/web_app/)                             | JavaScript and WebAssembly compilation with library deps                                 |
-| [`pub_deps`](e2e/pub_deps/)                           | Single pub.dev package via `pub.package()`                                               |
-| [`pub_lock`](e2e/pub_lock/)                           | Multiple packages from `pubspec.lock` via `pub.from_lock()`                              |
-| [`gazelle`](e2e/gazelle/)                             | Automatic BUILD file generation with Gazelle                                             |
-| [`cross_compile`](e2e/cross_compile/)                 | Cross-compilation to other platforms via `platform_data` transition                      |
-| [`dart_test_pkg`](e2e/dart_test_pkg/)                 | `dart_test` with pub dependencies via `pub.from_lock()`                                  |
-| [`pub_lock_dedup`](e2e/pub_lock_dedup/)               | Cross-lock-file package deduplication                                                    |
-| [`pub_lock_upgrade`](e2e/pub_lock_upgrade/)           | Version conflict resolution with `on_version_conflict = "upgrade"`                       |
-| [`pub_lock_conflict`](e2e/pub_lock_conflict/)         | Version conflict detection across lock files                                             |
-| [`pub_lock_cross_module`](e2e/pub_lock_cross_module/) | `pub.from_lock()` across Bazel module boundaries                                         |
-| [`codegen`](e2e/codegen/)                             | `dart_codegen`/`dart_aggregate_codegen` over parts, re-exports and source sets           |
-| [`ext_exemplar`](e2e/ext_exemplar/)                   | One package per bundled `dart/ext` builder, plus native `code_assets`, sqlite3/webcrypto |
-| [`dual_build`](e2e/dual_build/)                       | Collision detection between Bazel-generated and `build_runner`-generated sources         |
-| [`link_hook`](e2e/link_hook/)                         | `record_use` and a package's `hook/link.dart` emitting a data asset via `dart_link_hook` |
+| Example                                               | What it demonstrates                                                                      |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| [`hello_world`](e2e/hello_world/)                     | Minimal binary + all compile modes (`exe`, `aot-snapshot`, `kernel`, `jit-snapshot`)      |
+| [`library_deps`](e2e/library_deps/)                   | Transitive `dart_library` dependencies, `srcs` attribute                                  |
+| [`dart_test`](e2e/dart_test/)                         | Tests with and without deps, `srcs` for test helpers                                      |
+| [`analysis`](e2e/analysis/)                           | The `dart_analyze` aspect's checks with `package:`-included options                       |
+| [`fix`](e2e/fix/)                                     | `dart_fix` write-back, and that generated files are never rewritten                       |
+| [`analyze_composition`](e2e/analyze_composition/)     | A lint ruleset shared from another Bazel module                                           |
+| [`web_app`](e2e/web_app/)                             | JavaScript and WebAssembly compilation with library deps                                  |
+| [`pub_deps`](e2e/pub_deps/)                           | Single pub.dev package via `pub.package()`                                                |
+| [`pub_lock`](e2e/pub_lock/)                           | Multiple packages from `pubspec.lock` via `pub.from_lock()`                               |
+| [`gazelle`](e2e/gazelle/)                             | Automatic BUILD file generation with Gazelle                                              |
+| [`cross_compile`](e2e/cross_compile/)                 | Cross-compilation to other platforms via `platform_data` transition                       |
+| [`dart_test_pkg`](e2e/dart_test_pkg/)                 | `dart_test` with pub dependencies via `pub.from_lock()`                                   |
+| [`pub_lock_dedup`](e2e/pub_lock_dedup/)               | Cross-lock-file package deduplication                                                     |
+| [`pub_lock_upgrade`](e2e/pub_lock_upgrade/)           | Version conflict resolution with `on_version_conflict = "upgrade"`                        |
+| [`pub_lock_conflict`](e2e/pub_lock_conflict/)         | Version conflict detection across lock files                                              |
+| [`pub_lock_cross_module`](e2e/pub_lock_cross_module/) | `pub.from_lock()` across Bazel module boundaries                                          |
+| [`build_runner`](e2e/build_runner/)                   | `dart_build_runner` with real builders, compared with stock `build_runner build`          |
+| [`codegen`](e2e/codegen/)                             | Custom generators as `dart_binary` + `run_binary` over parts, re-exports and source sets  |
+| [`ext_exemplar`](e2e/ext_exemplar/)                   | Native `code_assets` (sqlite3, webcrypto) and a pub cycle merged by `dart_package_member` |
+| [`link_hook`](e2e/link_hook/)                         | `record_use` and a package's `hook/link.dart` emitting a data asset via `dart_link_hook`  |
 
 > **Note**: Only the `exe` and `aot-snapshot` compile modes cross-compile via
 > `--platforms`. `kernel` is a VM format that ignores target flags, and a JIT

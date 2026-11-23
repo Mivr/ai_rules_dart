@@ -6,6 +6,15 @@ semi-public surface, and what a downstream rule set should check.
 
 ## Landed on `main`
 
+### Codegen shims and rules deleted; `dart_build_runner` replaces them
+
+`dart_codegen`, `dart_aggregate_codegen`, `dart_sqlcodegen`, the
+`@rules_dart//dart/ext/<builder>` macros and Gazelle's codegen emission are
+gone. `dart_build_runner` runs the builders of the user's lock through
+`@<hub>//build_runner`; a Flutter package passes a `build_runner_sdk_summary`
+with `embedder = "@flutter_sky_engine//:sky_engine"` as `sdk_summary`
+(`rules_flutter/e2e/build_runner`). See `docs/build_runner.md`.
+
 ### `DartSdkInfo` has two new fields (`b3c8dc3`)
 
 - `compile_files`: the SDK files `dart compile`, `gen_kernel` and `dart format`
@@ -117,18 +126,16 @@ normal for any rule-set bump, but it bit this repository once.
   `bool.fromEnvironment('dart.library.mirrors')`, one `path:line: what` line each.
   A name built at run time is out of reach.
 
-### `DartSdkInfo.analyze_files` (analysis, fix and codegen)
+### `DartSdkInfo.analyze_files` (analysis and fix)
 
 The SDK files `dart analyze`, `dart fix` and the analyzer-summary tool open:
 the launcher, the analysis snapshots, the `lib/` sources and the
-`lib/_internal` metadata. The analyze and fix actions, the summary actions, and
-`dart_codegen`, `dart_aggregate_codegen` and `dart_sqlcodegen` take it instead
-of the whole SDK. `dart_toolchain` takes an optional `analyze_files` label.
+`lib/_internal` metadata. The analyze and fix actions and the summary actions
+take it instead of the whole SDK (the codegen rules that also took it are
+deleted; see `docs/build_runner.md`). `dart_toolchain` takes an optional `analyze_files` label.
 When it is unset the field is `tool_files`, so a toolchain declared by another
 rule set keeps its old behaviour and gets the speedup only once it declares the
-filegroup, mirroring the generated one in `dart/repositories.bzl`. A generator
-given as a `.dart` script also takes `runtime_files`, because the `dart`
-launcher runs it through `dartvm` and the kernel service.
+filegroup, mirroring the generated one in `dart/repositories.bzl`.
 
 ### Whole-program compiles copy nothing (`09c5905`)
 
@@ -143,10 +150,8 @@ toolchain.
 ### Summary-mode and codegen changes (`4090db6`, `dfb6274`)
 
 `DartAnalyzerSummaryInfo` gained `packaged_summaries` (`depset[(package, File)]`).
-Under `//dart:analyzer_summaries`, `dart_codegen` passes `--summary <path>`
-(repeatable) and `--sdk-summary <path>` to every `generator_bin`; a generator
-that does not use `dart/ext/lib/builder_shim.dart` must accept (or ignore)
-them. With the flag off nothing changes.
+`dart_codegen` and its `--summary` flags are deleted since: code generation is
+`dart_build_runner` (`docs/build_runner.md`), which reads its own SDK summary.
 
 ### Modular regressions fixed (`8e2e855`)
 
@@ -307,8 +312,6 @@ module (`e2e/codegen` `//source_set_pkg:colocated_test`) and against
 - Summary mode is off on a Dart SDK newer than `ANALYZER_MAX_LANGUAGE_VERSION`
   (`3.13`, in `dart_analyzer_summary.bzl`), so a newer Flutter-bundled Dart
   analyzes from source until the pinned analyzer is bumped.
-- `dart_codegen` passes `--summary` only to generators built on
-  `dart/ext/lib/builder_shim.dart`.
 - `--@rules_dart//dart:analyzer_summaries=false` restores source analysis.
 
 ### `pub.package` stands in for its name in every hub (`8f3b716`)

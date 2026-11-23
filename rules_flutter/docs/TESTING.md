@@ -643,7 +643,8 @@ cd e2e/windows_example && bazel test //...  # Windows-only (target_compatible_wi
 |-----------|-----------|
 | smoke | Toolchain resolution for all platforms; custom-release (`3.47.70`) toolchain with checksum-verified fetch; offline (`local_path`) toolchain from the checked-in `fake_sdk` tree |
 | hello_world | Kernel, AOT, application, and per-platform bundle builds; flutter_test |
-| codegen | Per-file and aggregate dart_codegen, custom generators, hot-reload-with-codegen |
+| codegen | Per-file and aggregate custom generators (`dart_binary` + `run_binary`), generated code in dependency packages, hot-reload-with-codegen |
+| build_runner | `dart_build_runner` over a Flutter package (go_router_builder) with a `sky_engine` SDK summary; each generated file diffed against stock `build_runner` output |
 | ffi_example | Both FFI mechanisms — Native Assets (`add_plugin`, `@Native` asset-id bind) and `native_deps` (`mul_plugin`, conventional-path open) — bundle structure on macOS/Linux plus manual runtime proof on iOS simulator and macOS |
 | ffi_plugin_example | FFI plugin build + macOS/Linux bundle structure with `libmultiply.dylib`/`.so` |
 | plugin_example | Real pub.dev plugins (`path_provider`, `url_launcher`, `package_info_plus`) plus the hand-written `:greeting_plugin` regression case; per-platform bundle builds; web plugin assertions via the e2e suite; macOS runtime verifier asserting the four plugin-result strings. See **Plugin verification matrix** below. |

@@ -1,0 +1,26 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+load("//:reference.bzl", "stock_reference_test")
+
+OUTS = ["lib/src/settings.freezed.dart", "lib/src/settings.g.dart", "lib/src/shape.freezed.dart", "lib/src/shape.g.dart"]
+
+dart_build_runner(
+    name = "gen",
+    outs = OUTS,
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:freezed_annotation", "@pub_deps//:json_annotation"],
+)
+
+dart_library(
+    name = "freezed_json",
+    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS if o.startswith("lib/")],
+    package_name = "freezed_json",
+    language_version = "3.13",
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:freezed_annotation", "@pub_deps//:json_annotation"],
+)
+
+stock_reference_test(
+    name = "stock_test",
+    outs = OUTS,
+    package = "freezed_json",
+)

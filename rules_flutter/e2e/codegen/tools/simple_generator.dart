@@ -1,6 +1,6 @@
-/// Per-file code generator for dart_codegen rule.
+/// Per-file code generator, run by `run_binary`.
 ///
-/// Interface: `dart simple_generator.dart --input <path> --output <path>`
+/// Interface: `simple_generator --input <path> --output <path>`
 ///
 /// Reads a .dart source file, finds class definitions and their fields,
 /// and generates a companion file with toDebugString() extensions.
@@ -21,9 +21,7 @@ void main(List<String> args) {
   }
 
   if (inputPath == null || outputPath == null) {
-    stderr.writeln(
-      'Usage: dart simple_generator.dart --input <file> --output <file>',
-    );
+    stderr.writeln('Usage: simple_generator --input <file> --output <file>');
     exit(1);
   }
 

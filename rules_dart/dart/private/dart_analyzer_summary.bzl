@@ -40,7 +40,7 @@ load("//dart/private:source_set.bzl", "package_for_index", "package_index")
 visibility(["//dart/..."])
 
 # Summaries are built on the build machine, with the exec tools SDK, the type
-# the codegen rules and `dart_analyze` use for the same reason.
+# `dart_analyze` uses for the same reason.
 _TOOLCHAIN = "//dart:exec_tools_toolchain_type"
 
 # The oldest Dart language version that compiles the analysis worker, as
@@ -112,9 +112,8 @@ CONFLICT_PREFIX = "conflict:"
 
 # A Flutter embedder. `dart:ui` is not in the Dart SDK: the analyzer finds it
 # through the `lib/_embedder.yaml` of Flutter's `sky_engine`, which
-# `dart_analyzer_summary` turns into an embedder SDK summary. Pre-compiled
-# codegen shims cannot take an embedder SDK summary, so `dart_codegen` still
-# checks `embedder_in_closure`.
+# `dart_analyzer_summary` turns into an embedder SDK summary. A
+# `dart_build_runner` with no Flutter SDK summary checks `embedder_in_closure`.
 _EMBEDDER_PACKAGE = "sky_engine"
 _EMBEDDER_FILE = "_embedder.yaml"
 

@@ -2,7 +2,7 @@
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
 load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "native_defines_reset")
-load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "resolve_package_identity")
+load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "resolve_package_identity")
 load("//dart/private:coverage_map.bzl", "forward_origins")
 load("//dart/private:dart_info.bzl", "dart_info", "dart_info_multi", "package_lib_prefix")
 load("//dart/private:dart_info_params.bzl", "dart_package_identity")
@@ -448,18 +448,6 @@ def _dart_library_impl(ctx):
         ctx.label.name,
     )
 
-    # The one point a generated source and the library collecting it meet.
-    err = codegen_identity_error(
-        ctx.label,
-        ctx.attr.srcs,
-        struct(
-            package_name = package_name,
-            language_version = identity.language_version,
-        ),
-    )
-    if err != None:
-        fail(err)
-
     own = _library_own_sources(ctx)
 
     err = link_hook_error(ctx.label, own.lib_root, ctx.file.link_hook)
@@ -517,7 +505,7 @@ dart_library = rule(
             providers = [DartPackageInfo, DartPackageMemberInfo],
         ),
         "srcs": attr.label_list(
-            doc = "Dart source files (`.dart`), source-tree or generated. Typically `glob([\"lib/**/*.dart\"])`, optionally plus `dart_codegen` outputs. Generated members are compiled together with the rest of the package by the consuming `dart_binary`/`dart_test`. Mutually exclusive with `srcs_dir`.",
+            doc = "Dart source files (`.dart`), source-tree or generated. Typically `glob([\"lib/**/*.dart\"])`, optionally plus generated files (`dart_build_runner` outputs). Generated members are compiled together with the rest of the package by the consuming `dart_binary`/`dart_test`. Mutually exclusive with `srcs_dir`.",
             allow_files = [".dart"],
         ),
         "resources": attr.label_list(

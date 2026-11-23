@@ -6,7 +6,7 @@
 // hand-written library resolves `ModelBase` and `modelLabel` out of these parts
 // while the fix rule has them excluded.
 //
-// Contract (the subset of the shim contract this needs):
+// Contract:
 //   --input <path> --output <path> [--violation]
 import 'dart:io';
 

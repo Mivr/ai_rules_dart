@@ -77,7 +77,7 @@ Against rules_dart `main` at `95089ce`, through `--override_module` with
     `:exec_tools_toolchain_type`):
     - the `dart_analyze` aspect over Flutter targets (analysis, format check,
       fix);
-    - `dart_codegen`;
+    - `dart_build_runner` and the `dart_binary` generators `run_binary` runs;
     - every `dart_test` and `dart_binary`, including rules_flutter's own
       `flutter_test_runner`;
     - `flutter_application`'s link hooks (`flutter_application.bzl:205`).

@@ -1,8 +1,8 @@
 /// Per-file generator for the `dep_part` package: emits a `part of` extension
 /// with a `toJson()` for the first class in the input.
 ///
-/// Interface (dart_codegen):
-/// `dart settings_generator.dart --input <file> --output <file>`
+/// Interface (run_binary):
+/// `settings_generator --input <file> --output <file>`
 library;
 
 import 'dart:io';

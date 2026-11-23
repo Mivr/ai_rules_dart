@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
-load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_fix", "dart_library", "dart_test")
+load("@rules_dart//dart:defs.bzl", "dart_fix", "dart_library", "dart_test")
 
 # The red end of the red/green pair, and the fixture the whole workspace exists
 # for. Both generated parts carry the same `prefer_final_locals` violation as
@@ -14,22 +14,32 @@ load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_fix", "dart_library", "
 # The hand-written violation is load-bearing, so this library opts out of the
 # `dart_analyze` aspect's check; `dart_fix` still fixes it. //clean is the
 # analyzed half.
-dart_codegen(
+run_binary(
     name = "model_g",
-    package_name = "fix_dirty",
-    src = "lib/model.dart",
-    generator = "//tools:part_gen.dart",
-    generator_args = ["--violation"],
-    output_suffixes = [".g.dart"],
+    srcs = ["lib/model.dart"],
+    outs = ["lib/model.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/model.dart)",
+        "--output",
+        "$(execpath lib/model.g.dart)",
+        "--violation",
+    ],
+    tool = "//tools:part_gen",
 )
 
-dart_codegen(
+run_binary(
     name = "model_freezed",
-    package_name = "fix_dirty",
-    src = "lib/model.dart",
-    generator = "//tools:part_gen.dart",
-    generator_args = ["--violation"],
-    output_suffixes = [".freezed.dart"],
+    srcs = ["lib/model.dart"],
+    outs = ["lib/model.freezed.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/model.dart)",
+        "--output",
+        "$(execpath lib/model.freezed.dart)",
+        "--violation",
+    ],
+    tool = "//tools:part_gen",
 )
 
 dart_library(

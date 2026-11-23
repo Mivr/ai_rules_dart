@@ -2,7 +2,7 @@
 /// `package:` URI.
 ///
 /// `lib/user.dart` declares `part 'user.g.dart';`. The generated part is
-/// produced by `:user_json` (a `dart_codegen` target) and lives in `bazel-out`.
+/// produced by `:user_json` (a `run_binary` target) and lives in `bazel-out`.
 /// This test imports the package by its `package:` URI — the same shape every
 /// real test uses — so the kernel compile must resolve `package:codegen_e2e/
 /// user.dart`'s `part` against a directory that contains both the hand-written

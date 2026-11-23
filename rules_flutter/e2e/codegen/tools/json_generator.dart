@@ -1,11 +1,11 @@
 /// Per-file code generator producing toJson() extensions.
 ///
 /// A second generator shape (alongside simple_generator's toDebugString) so the
-/// e2e covers more than one dart_codegen output format. Emits a `part of` file,
+/// e2e covers more than one generated output format. Emits a `part of` file,
 /// which is what the Flutter app (lib/user.dart) consumes — exercising the
 /// kernel compile's co-location of a generated part with its source sibling.
 ///
-/// Interface: `dart json_generator.dart --input <file> --output <file>`
+/// Interface: `json_generator --input <file> --output <file>`
 library;
 
 import 'dart:io';

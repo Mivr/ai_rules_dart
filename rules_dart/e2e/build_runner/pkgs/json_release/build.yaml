@@ -1,0 +1,9 @@
+targets:
+  $default:
+    builders:
+      json_serializable:
+        options:
+          field_rename: snake
+        release_options:
+          field_rename: pascal
+          include_if_null: false

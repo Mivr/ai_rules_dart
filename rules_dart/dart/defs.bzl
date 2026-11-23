@@ -14,28 +14,25 @@ Load this file from your BUILD files to access the following rules:
 - `dart_format`: Formats workspace files via `bazel run`, under the options the `dart_analyze` aspect's format check applies.
 - `dart_js_binary`: Compiles a Dart web application to JavaScript.
 - `dart_wasm_binary`: Compiles a Dart web application to WebAssembly.
-- `dart_codegen`: Runs a Dart code generator on source files, producing generated .dart outputs.
-- `dart_aggregate_codegen`: Runs a package-level aggregate code generator over all sources.
-- `dart_sqlcodegen`: Like `dart_codegen` but accepts non-Dart inputs (e.g. `.drift` files).
+- `dart_build_runner`: Builds a Dart package's generated files with the `build_runner` builders of the lock, byte for byte what `dart run build_runner build` writes.
+- `build_runner_sdk_summary`: The SDK summary `dart_build_runner` needs for a package that imports Flutter.
 - `dart_code_asset`: Binds a native dynamic library — a Bazel-built `cc_shared_library` or a pinned prebuilt file — to a Dart code-asset id, for use in `dart_test`/`dart_binary` `code_assets`.
 - `dart_link_hook`: Runs packages' `hook/link.dart` over a `dart_binary`'s recorded uses and collects the data assets they emit.
 """
 
 load("//dart:providers.bzl", _DartCodeAssetInfo = "DartCodeAssetInfo")
-load("//dart/private:dart_aggregate_codegen.bzl", _dart_aggregate_codegen = "dart_aggregate_codegen")
+load("//dart/build_runner/private:build_runner.bzl", _build_runner_sdk_summary = "build_runner_sdk_summary", _dart_build_runner = "dart_build_runner")
 load("//dart/private:dart_analysis_options.bzl", _dart_analysis_options = "dart_analysis_options")
 load("//dart/private:dart_analysis_test.bzl", _dart_analysis_test = "dart_analysis_test")
 load("//dart/private:dart_analyze_aspect.bzl", _dart_analysis_config = "dart_analysis_config")
 load("//dart/private:dart_binary.bzl", _dart_binary = "dart_binary")
 load("//dart/private:dart_code_asset.bzl", _dart_code_asset = "dart_code_asset")
-load("//dart/private:dart_codegen.bzl", _dart_codegen = "dart_codegen")
 load("//dart/private:dart_fix.bzl", _dart_fix = "dart_fix")
 load("//dart/private:dart_format.bzl", _dart_format = "dart_format")
 load("//dart/private:dart_library.bzl", _dart_library = "dart_library")
 load("//dart/private:dart_link_hook.bzl", _dart_link_hook = "dart_link_hook")
 load("//dart/private:dart_package_member.bzl", _dart_package_member = "dart_package_member")
 load("//dart/private:dart_package_metadata.bzl", _dart_package_metadata = "dart_package_metadata")
-load("//dart/private:dart_sqlcodegen.bzl", _dart_sqlcodegen = "dart_sqlcodegen")
 load("//dart/private:dart_test.bzl", _dart_test = "dart_test")
 load("//dart/private:dart_web_application.bzl", _dart_js_binary = "dart_js_binary", _dart_wasm_binary = "dart_wasm_binary")
 load("//dart/private:source_set.bzl", _dart_source_set = "dart_source_set")
@@ -55,9 +52,8 @@ dart_fix = _dart_fix
 dart_format = _dart_format
 dart_js_binary = _dart_js_binary
 dart_wasm_binary = _dart_wasm_binary
-dart_codegen = _dart_codegen
-dart_aggregate_codegen = _dart_aggregate_codegen
-dart_sqlcodegen = _dart_sqlcodegen
+dart_build_runner = _dart_build_runner
+build_runner_sdk_summary = _build_runner_sdk_summary
 dart_code_asset = _dart_code_asset
 dart_link_hook = _dart_link_hook
 DartCodeAssetInfo = _DartCodeAssetInfo

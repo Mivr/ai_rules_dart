@@ -110,7 +110,6 @@ int_flag(
 # via `analyze_runner` is used only as fallback for SDKs outside that range
 # (< 3.13 or > 3.14) or closures with an unbacked `_embedder.yaml` (outside
 # Flutter's `sky_engine`).
-# `dart_codegen` passes summaries only to generators built on the builder shim.
 #
 # The diagnostics come from rules_dart's pinned `package:analyzer`, 14.5.0, with
 # the lint rules of the SDK linter vendored in //third_party/dart_linter (the
@@ -155,13 +154,12 @@ toolchain_type(
     visibility = ["//visibility:public"],
 )
 
-# Build-time tools (the codegen rules) resolve their Dart SDK through this type
-# instead of `:toolchain_type`. Codegen runs on the exec/host machine and emits
-# platform-agnostic Dart source, so its toolchains are registered with
-# `exec_compatible_with` pinned and `target_compatible_with` omitted — i.e.
-# selection is independent of the build's target platform. This lets codegen
-# resolve under any target platform (iOS, Android, …), including ones rules_dart
-# registers no compile toolchain for.
+# Build-time tools (the analyzer, test runners, link hooks) resolve their Dart
+# SDK through this type instead of `:toolchain_type`. They run on the exec/host
+# machine, so their toolchains are registered with `exec_compatible_with` pinned
+# and `target_compatible_with` omitted — i.e. selection is independent of the
+# build's target platform. This lets them resolve under any target platform
+# (iOS, Android, …), including ones rules_dart registers no compile toolchain for.
 toolchain_type(
     name = "exec_tools_toolchain_type",
     visibility = ["//visibility:public"],
@@ -221,20 +219,18 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":providers",
-        "//dart/private:dart_aggregate_codegen",
+        "//dart/build_runner/private:build_runner",
         "//dart/private:dart_analysis_options",
         "//dart/private:dart_analysis_test",
         "//dart/private:dart_analyze_aspect",
         "//dart/private:dart_binary",
         "//dart/private:dart_code_asset",
-        "//dart/private:dart_codegen",
         "//dart/private:dart_fix",
         "//dart/private:dart_format",
         "//dart/private:dart_library",
         "//dart/private:dart_link_hook",
         "//dart/private:dart_package_member",
         "//dart/private:dart_package_metadata",
-        "//dart/private:dart_sqlcodegen",
         "//dart/private:dart_test",
         "//dart/private:dart_web_application",
         "//dart/private:source_set",

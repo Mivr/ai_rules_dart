@@ -25,7 +25,6 @@ load(
     "//dart/private:common.bzl",
     "PACKAGE_IDENTITY_ATTRS",
     "check_unreplaced_hooks",
-    "codegen_identity_error",
     "collect_transitive_code_assets",
     "merge_package_records",
     "resolve_package_identity",
@@ -271,16 +270,6 @@ def executable_package(ctx, own_srcs):
         stated_by = "`package_name = \"%s\"`" % identity.package_name
     else:
         stated_by = "`language_version = \"%s\"`" % identity.language_version
-
-    # Generated sources this target collects name the package they were
-    # generated for; that is one more statement of the same identity.
-    err = codegen_identity_error(
-        ctx.label,
-        ctx.attr.srcs,
-        struct(package_name = name, language_version = identity.language_version),
-    )
-    if err != None:
-        fail(err)
 
     # The package's `lib/` files are reachable as `package:` URIs and join the
     # package's sources; the rest (the entrypoint) belong to no `lib/`.

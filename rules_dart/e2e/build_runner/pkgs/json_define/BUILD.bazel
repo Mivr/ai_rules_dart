@@ -1,0 +1,22 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner")
+load("//:reference.bzl", "stock_reference_test")
+
+OUTS = ["lib/src/address.g.dart", "lib/src/user.g.dart"]
+
+# `--define`: builder options from the command line, over build.yaml's.
+dart_build_runner(
+    name = "gen",
+    outs = OUTS,
+    build_runner_args = [
+        "--define=json_serializable:json_serializable=field_rename=kebab",
+        "--define=json_serializable:json_serializable=explicit_to_json=true",
+    ],
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:json_annotation"],
+)
+
+stock_reference_test(
+    name = "stock_test",
+    outs = OUTS,
+    package = "json_define",
+)

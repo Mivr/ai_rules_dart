@@ -1,73 +1,4 @@
 {
-  "dart/ext/_shared/combining_shim/bin/main.dart": {
-    "avoid_catches_without_on_clauses": 1,
-    "avoid_catching_errors": 1,
-    "avoid_dynamic_calls": 3,
-    "omit_obvious_local_variable_types": 1,
-    "prefer_function_declarations_over_variables": 1,
-    "unintended_html_in_doc_comment": 3,
-    "unnecessary_lambdas": 1
-  },
-  "dart/ext/_shared/combining_shim/test/combining_test.dart": {
-    "prefer_const_declarations": 3,
-    "use_raw_strings": 1
-  },
-  "dart/ext/drift/shim_analyzer.dart": {
-    "dangling_library_doc_comments": 1
-  },
-  "dart/ext/drift/shim_discover.dart": {
-    "dangling_library_doc_comments": 1
-  },
-  "dart/ext/drift/shim_prep.dart": {
-    "dangling_library_doc_comments": 1
-  },
-  "dart/ext/lib/builder_shim.dart": {
-    "always_put_required_named_parameters_first": 2,
-    "async_return_with_no_await": 2,
-    "avoid_catches_without_on_clauses": 1,
-    "avoid_catching_errors": 8,
-    "avoid_escaping_inner_quotes": 2,
-    "avoid_slow_async_io": 7,
-    "document_ignores": 7,
-    "missing_whitespace_between_adjacent_strings": 1,
-    "no_wall_clock_in_actions": 2,
-    "prefer_single_quotes": 6,
-    "public_member_api_docs": 8,
-    "sort_constructors_first": 1,
-    "unintended_html_in_doc_comment": 1,
-    "use_raw_strings": 2
-  },
-  "dart/ext/lib/worker_entry.dart": {
-    "avoid_catches_without_on_clauses": 1,
-    "avoid_slow_async_io": 1,
-    "omit_obvious_local_variable_types": 1,
-    "public_member_api_docs": 2
-  },
-  "dart/ext/test/builder_shim_test.dart": {
-    "always_put_required_named_parameters_first": 4,
-    "avoid_catches_without_on_clauses": 1,
-    "avoid_escaping_inner_quotes": 1,
-    "avoid_slow_async_io": 10,
-    "inference_failure_on_untyped_parameter": 1,
-    "no_dynamic_casts": 1,
-    "only_throw_errors": 1,
-    "prefer_const_constructors": 1,
-    "prefer_foreach": 1,
-    "prefer_single_quotes": 4,
-    "unnecessary_async": 3,
-    "unnecessary_lambdas": 1,
-    "use_raw_strings": 2
-  },
-  "dart/ext/tools/check_dual_build_collisions_test.dart": {
-    "avoid_slow_async_io": 1,
-    "unnecessary_async": 1
-  },
-  "dart/ext/tools/lib/check_dual_build_collisions.dart": {
-    "avoid_print": 11,
-    "dangling_library_doc_comments": 1,
-    "prefer_foreach": 1,
-    "public_member_api_docs": 4
-  },
   "dart/guard/lib/directive_guard.dart": {
     "comment_references": 2,
     "parameter_assignments": 3,
@@ -350,9 +281,6 @@
   "dart/tests/analyzable_pkg_fixture/main.dart": {
     "avoid_print": 1,
     "dangling_library_doc_comments": 1
-  },
-  "dart/tests/analyzer_summary_fixture/codegen/readonly_root_config_codegen_test.dart": {
-    "missing_whitespace_between_adjacent_strings": 1
   },
   "dart/tests/analyzer_summary_fixture/flutter/app/lib/app.dart": {
     "public_member_api_docs": 1

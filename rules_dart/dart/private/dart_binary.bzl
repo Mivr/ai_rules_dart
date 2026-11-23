@@ -427,7 +427,7 @@ def _binary_default_outputs(ctx, result):
 
 def _dart_binary_impl(ctx):
     # A `dart_binary` evaluated in the execution configuration (`cfg = "exec"`)
-    # is a build-time tool — a codegen shim, analyzer/format runner, link-hook
+    # is a build-time tool — a code generator, analyzer/format runner, link-hook
     # runner, or kernel compiler — and will be executed by the host's
     # `//dart:exec_tools_toolchain_type` VM. Compile it with that same SDK so a
     # kernel tool's `.dill` format and SDK hash always match the VM that runs it.
@@ -629,7 +629,7 @@ Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_com
             doc = """Whether `compile_mode = "kernel"` also emits a native launcher executable as \
 `DefaultInfo.executable` so the target can be invoked directly with `bazel run` or `ctx.executable`, \
 while `DartCompileInfo.executable` continues to carry the compiled `.dill` kernel for \
-persistent-worker rules (`dart_codegen`, `dart_aggregate_codegen`, `dart_sqlcodegen`).""",
+rules that run it on their own VM.""",
         ),
         "_kernel_launcher": attr.label(
             default = _kernel_launcher_for_mode,

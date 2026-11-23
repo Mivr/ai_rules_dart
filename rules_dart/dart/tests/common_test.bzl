@@ -4,7 +4,6 @@ load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageInfo")
 load(
     "//dart/private:common.bzl",
-    "asset_path_for",
     "check_single_root_package",
     "check_unreplaced_hooks",
     "generate_dev_package_config",
@@ -14,7 +13,6 @@ load(
     "kernel_sdk_mismatch_error",
     "relative_path",
     "resolve_package_roots",
-    "same_package_library_dep_files",
     "writable_home_env",
 )
 load("//dart/private:dart_compile.bzl", "cross_target_error")
@@ -452,64 +450,6 @@ def _hooks_offender_test_impl(ctx):
     asserts.true(env, "fine" not in err)
     return unittest.end(env)
 
-# --- asset_path_for tests ---
-
-def _apf_source_under_lib_root_test_impl(ctx):
-    env = unittest.begin(ctx)
-    src = _fake_src("pkg/lib/a.dart")
-    asserts.equals(env, "lib/a.dart", asset_path_for(src, "pkg"))
-    return unittest.end(env)
-
-def _apf_empty_lib_root_test_impl(ctx):
-    env = unittest.begin(ctx)
-    src = _fake_src("lib/a.dart")
-    asserts.equals(env, "lib/a.dart", asset_path_for(src, ""))
-    return unittest.end(env)
-
-def _apf_generated_colocated_test_impl(ctx):
-    # Codegen target in the same BUILD as the Dart package root: declared
-    # path is already package-root-relative; the lib_root strip applies.
-    env = unittest.begin(ctx)
-    gen = _fake_gen("pkg/lib/a.g.dart", owner_package = "pkg")
-    asserts.equals(env, "lib/a.g.dart", asset_path_for(gen, "pkg"))
-    return unittest.end(env)
-
-def _apf_generated_nested_package_test_impl(ctx):
-    # Codegen target in a Bazel package NESTED below the Dart package root
-    # with a cross-package src: dart_codegen declares the output at the
-    # src's full short_path, so the generated short_path embeds it after
-    # the owning package. The naive lib_root strip would return the wrong
-    # `gen/pkg/lib/a.shard.json`.
-    env = unittest.begin(ctx)
-    gen = _fake_gen(
-        "pkg/gen/pkg/lib/a.shard.json",
-        owner_package = "pkg/gen",
-    )
-    asserts.equals(env, "lib/a.shard.json", asset_path_for(gen, "pkg"))
-    return unittest.end(env)
-
-def _apf_generated_sibling_package_test_impl(ctx):
-    # Codegen target in a SIBLING Bazel package of the Dart package root:
-    # the generated short_path is entirely outside lib_root (previously a
-    # hard fail()); the owning package + declared path recover the asset.
-    env = unittest.begin(ctx)
-    gen = _fake_gen(
-        "pkg/gen/pkg/app/lib/a.shard.json",
-        owner_package = "pkg/gen",
-    )
-    asserts.equals(env, "lib/a.shard.json", asset_path_for(gen, "pkg/app"))
-    return unittest.end(env)
-
-def _apf_generated_deeper_build_test_impl(ctx):
-    # Codegen target at `pkg/lib/BUILD` for Dart package root `pkg` with a
-    # same-package src: dart_codegen strips its own package from the src's
-    # short_path, so the generated short_path mirrors a source file's and
-    # the standard lib_root strip stays correct.
-    env = unittest.begin(ctx)
-    gen = _fake_gen("pkg/lib/model.g.dart", owner_package = "pkg/lib")
-    asserts.equals(env, "lib/model.g.dart", asset_path_for(gen, "pkg"))
-    return unittest.end(env)
-
 def _kernel_sdk_mismatch_matching_version_ok_test_impl(ctx):
     env = unittest.begin(ctx)
     tool = {
@@ -600,33 +540,6 @@ def _cross_target_error_test_impl(ctx):
     asserts.true(env, unsupported_err != None and "unsupported cross-compilation target (macos, arm64)" in unsupported_err)
     return unittest.end(env)
 
-def _same_package_library_dep_files_includes_resources_test_impl(ctx):
-    env = unittest.begin(ctx)
-    src_file = struct(path = "myapp/lib/a.dart", short_path = "myapp/lib/a.dart")
-    res_file = struct(path = "myapp/lib/schema.json", short_path = "myapp/lib/schema.json")
-    other_res = struct(path = "other/lib/other.json", short_path = "other/lib/other.json")
-    dep = {
-        DartInfo: DartInfo(
-            package_name = "myapp",
-            lib_root = "myapp",
-            transitive_srcs = depset([src_file]),
-            transitive_resources = depset([res_file, other_res]),
-            transitive_packages = depset([
-                DartPackageInfo(package_name = "myapp", lib_root = "myapp"),
-                DartPackageInfo(package_name = "other", lib_root = "other"),
-            ]),
-            transitive_code_asset_files = depset(),
-        ),
-    }
-    files, lib_root = same_package_library_dep_files([dep], "myapp")
-    asserts.equals(env, "myapp", lib_root)
-    asserts.equals(
-        env,
-        ["myapp/lib/a.dart", "myapp/lib/schema.json"],
-        [f.short_path for f in files],
-    )
-    return unittest.end(env)
-
 def _jit_train_key_shape_test_impl(ctx):
     # The key stays 16 lowercase hex characters (the keyed training paths and
     # `--train-key=` validation depend on the shape, not the value).
@@ -677,12 +590,6 @@ _t19_test = unittest.make(_gdpc_source_packages_excludes_generated_only_test_imp
 _t20_test = unittest.make(_gdpc_source_packages_includes_assembled_test_impl)
 _t21_test = unittest.make(_check_single_root_ok_test_impl)
 _t22_test = unittest.make(_check_single_root_conflict_test_impl)
-_t23_test = unittest.make(_apf_source_under_lib_root_test_impl)
-_t24_test = unittest.make(_apf_empty_lib_root_test_impl)
-_t25_test = unittest.make(_apf_generated_colocated_test_impl)
-_t26_test = unittest.make(_apf_generated_nested_package_test_impl)
-_t27_test = unittest.make(_apf_generated_sibling_package_test_impl)
-_t28_test = unittest.make(_apf_generated_deeper_build_test_impl)
 _t32_test = unittest.make(_hooks_ok_test_impl)
 _t33_test = unittest.make(_hooks_offender_test_impl)
 _t34_test = unittest.make(_resolve_ignores_colocated_sibling_dir_test_impl)
@@ -694,7 +601,6 @@ _t39_test = unittest.make(_kernel_sdk_mismatch_different_version_reports_error_t
 _t40_test = unittest.make(_writable_home_env_posix_test_impl)
 _t41_test = unittest.make(_writable_home_env_windows_test_impl)
 _t42_test = unittest.make(_cross_target_error_test_impl)
-_t43_test = unittest.make(_same_package_library_dep_files_includes_resources_test_impl)
 _t44_test = unittest.make(_jit_train_key_shape_test_impl)
 _t45_test = unittest.make(_jit_train_key_deterministic_test_impl)
 _t46_test = unittest.make(_jit_train_key_sensitive_test_impl)
@@ -725,12 +631,6 @@ def common_test_suite(name):
         _t20_test,
         _t21_test,
         _t22_test,
-        _t23_test,
-        _t24_test,
-        _t25_test,
-        _t26_test,
-        _t27_test,
-        _t28_test,
         _t32_test,
         _t33_test,
         _t34_test,
@@ -742,7 +642,6 @@ def common_test_suite(name):
         _t40_test,
         _t41_test,
         _t42_test,
-        _t43_test,
         _t44_test,
         _t45_test,
         _t46_test,

@@ -35,7 +35,6 @@ file at runtime — keep file lists current as the repo evolves.
 - `e2e/pub_lock_dedup/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/pub_lock_upgrade/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/codegen/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
-- `e2e/dual_build/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/ext_exemplar/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/fix/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `README.md` — `dart.toolchain(dart_version = "...")` in installation snippet
@@ -99,7 +98,6 @@ file at runtime — keep file lists current as the repo evolves.
 - `e2e/pub_lock_dedup/.bazelversion`
 - `e2e/pub_lock_upgrade/.bazelversion`
 - `e2e/codegen/.bazelversion`
-- `e2e/dual_build/.bazelversion`
 - `e2e/ext_exemplar/.bazelversion`
 - `e2e/fix/.bazelversion`
 - `.github/workflows/ci.yaml` — `bazel_versions:` must match `.bazelversion`; the
@@ -138,10 +136,10 @@ file at runtime — keep file lists current as the repo evolves.
   - `e2e/gazelle/MODULE.bazel` — `bazel_skylib`, `gazelle`, `rules_shell`,
     `apple_support`, `hermetic_cc_toolchain`
   - `e2e/cross_compile/MODULE.bazel` — `platforms`, `rules_platform`
-  - `e2e/dual_build/MODULE.bazel` — `rules_shell`
   - `e2e/ext_exemplar/MODULE.bazel` — `gazelle`, `rules_go`, `sqlite3`,
     `rules_cc`, `platforms`, `apple_support`, `hermetic_cc_toolchain`
   - `e2e/fix/MODULE.bazel` — `bazel_skylib`
+  - `e2e/sdk_coupling/MODULE.bazel` — `bazel_skylib`
 - `e2e/ext_exemplar/sqlite3_binary/test/direct_test.dart` — asserts the exact
   `sqlite3.version.libVersion` string, so a `sqlite3` bump fails this test until
   the literal is updated to match
@@ -188,7 +186,6 @@ load to) anything in `dart/pub/extensions.bzl`'s closure invalidates the lock of
 - `e2e/pub_lock_dedup`
 - `e2e/pub_lock_upgrade`
 - `e2e/codegen`
-- `e2e/dual_build`
 - `e2e/ext_exemplar`
 - `e2e/fix`
 - `e2e/analyze_composition`
@@ -210,7 +207,7 @@ not only those the workspace's targets reach) and runs `dart pub get` in the in-
 `pubspec.lock` files. Pub runs on the pinned SDK
 (`bazel run @rules_dart//dart`), since a package's SDK floor can be ahead of
 the host's `dart`, with `FLUTTER_ROOT` taken from the environment or the
-`flutter` on PATH: `dart/ext/` needs a Flutter-flavored pub.
+`flutter` on PATH, for any lock that needs a Flutter-flavored pub.
 
 **Verification**: All workspaces and packages report success.
 
@@ -324,26 +321,17 @@ Each in-repo Dart package is publishable to pub.dev. Maintenance includes:
   to take what the current constraints allow.
 
   `dart/ext/` moves as a deliberate chore, not with the routine sweep. Its
-  lock is `ext_pub_deps`, shared with every workspace that runs codegen, and
-  there is one version per package across all locks. `ext_pub_deps` sets
-  `on_version_conflict = "upgrade"`, so a consumer's newer version wins over
-  ours, but a consumer lock _older_ than ours for a shared package still
-  fails the build unless that consumer sets it too. The graph rides the
-  newest analyzer line every builder accepts: today that is analyzer 14.x,
-  while `build` stays on 4.x because every generator except `source_gen`
-  caps it below 5. `e2e/codegen`,
+  lock is `ext_pub_deps` (isolated): the packages rules_dart's own tools,
+  tests and lints are built from (the pinned `analyzer`, `dart_style`,
+  `hooks`, `data_assets`, `sqlite3`). It holds no code generators any more:
+  `dart_build_runner` takes `build_runner` and the builders from the user's
+  lock (see [build_runner.md](build_runner.md)). `e2e/codegen`,
   `e2e/dart_test_pkg`, and rules_dart_proto's `dart_proto` set floors on
   `analyzer`/`package_config` in their pubspecs to keep their locks no older
-  than this one. To bump:
-  `FLUTTER_ROOT=<flutter sdk> bazel run @rules_dart//dart -- pub upgrade` in
-  `dart/ext/` (it needs a Flutter-flavored pub on the pinned SDK —
-  `go_router_builder` declares a Flutter environment constraint), then
-  `dart pub upgrade` in each pinned workspace, refresh the touched
-  `MODULE.bazel.lock`s, and verify with `//dart/ext/...`,
-  `e2e/codegen`, and a consuming app. The analyzer 10→13 and 13→14 bumps
-  needed no shim changes — every shim compiled and analyzed clean
-  unchanged — so expect builder majors to be cheap unless a builder
-  entrypoint signature changes.
+  than this one. To bump: `bazel run @rules_dart//dart -- pub upgrade` in
+  `dart/ext/`, then `dart pub upgrade` in each pinned workspace, refresh the
+  touched `MODULE.bazel.lock`s, and verify with `//dart/ext/...`,
+  `e2e/codegen`, and a consuming app.
 
 - **Lock file**: `pubspec.lock` is refreshed automatically by
   `tool/refresh_locks.dart`.

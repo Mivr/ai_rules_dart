@@ -3,11 +3,9 @@
 //
 // `analyzer_summary` and `format_runner` pruned the same orphaned files from
 // the action's staged source tree and wrapped the analyzer in bounded
-// `package:analyzer` resource providers with their own copy of each;
-// `builder_shim` carries the same wrapper shape. This library holds the
-// single copy. `analyzer_summary` and `format_runner` depend on the
-// `worker_tool_fs` target below (alongside `worker_protocol`); `builder_shim`
-// (in `dart/ext`) depends on it from `dart/ext/BUILD.bazel`.
+// `package:analyzer` resource providers with their own copy of each. This
+// library holds the single copy. `analyzer_summary` and `format_runner` depend
+// on the `worker_tool_fs` target (alongside `worker_protocol`).
 import 'dart:io';
 
 import 'package:analyzer/file_system/file_system.dart' as fs;

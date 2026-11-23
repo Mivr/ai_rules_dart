@@ -12,15 +12,7 @@ _DOC_EXTRACTS = [
     ":dart_toolchain.doc_extract",
     ":dart_utils.doc_extract",
     ":registry.doc_extract",
-    ":built_value_defs.doc_extract",
-    ":copy_with_extension_gen_defs.doc_extract",
-    ":drift_defs.doc_extract",
-    ":freezed_defs.doc_extract",
-    ":go_router_defs.doc_extract",
-    ":json_serializable_defs.doc_extract",
-    ":mockito_defs.doc_extract",
     ":sqlite3_defs.doc_extract",
-    ":stacked_defs.doc_extract",
     ":pub_defs.doc_extract",
     ":pub_extensions.doc_extract",
     ":pub_pinned_sources.doc_extract",
@@ -95,57 +87,9 @@ starlark_doc_extract(
 )
 
 starlark_doc_extract(
-    name = "built_value_defs.doc_extract",
-    src = "//dart/ext/built_value:defs.bzl",
-    deps = ["//dart/ext/built_value:defs"],
-)
-
-starlark_doc_extract(
-    name = "copy_with_extension_gen_defs.doc_extract",
-    src = "//dart/ext/copy_with_extension_gen:defs.bzl",
-    deps = ["//dart/ext/copy_with_extension_gen:defs"],
-)
-
-starlark_doc_extract(
-    name = "drift_defs.doc_extract",
-    src = "//dart/ext/drift:defs.bzl",
-    deps = ["//dart/ext/drift:defs"],
-)
-
-starlark_doc_extract(
-    name = "freezed_defs.doc_extract",
-    src = "//dart/ext/freezed:defs.bzl",
-    deps = ["//dart/ext/freezed:defs"],
-)
-
-starlark_doc_extract(
-    name = "go_router_defs.doc_extract",
-    src = "//dart/ext/go_router:defs.bzl",
-    deps = ["//dart/ext/go_router:defs"],
-)
-
-starlark_doc_extract(
-    name = "json_serializable_defs.doc_extract",
-    src = "//dart/ext/json_serializable:defs.bzl",
-    deps = ["//dart/ext/json_serializable:defs"],
-)
-
-starlark_doc_extract(
-    name = "mockito_defs.doc_extract",
-    src = "//dart/ext/mockito:defs.bzl",
-    deps = ["//dart/ext/mockito:defs"],
-)
-
-starlark_doc_extract(
     name = "sqlite3_defs.doc_extract",
     src = "//dart/ext/sqlite3:defs.bzl",
     deps = ["//dart/ext/sqlite3:defs"],
-)
-
-starlark_doc_extract(
-    name = "stacked_defs.doc_extract",
-    src = "//dart/ext/stacked:defs.bzl",
-    deps = ["//dart/ext/stacked:defs"],
 )
 
 starlark_doc_extract(
@@ -221,8 +165,8 @@ _DECLARED_EXTRACTS = [
 ]
 
 _ = (
-    None if len(_DECLARED_EXTRACTS) == 29 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
-        "expected 29 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
+    None if len(_DECLARED_EXTRACTS) == 21 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
+        "expected 21 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
             len(_DECLARED_EXTRACTS),
         ),
     )

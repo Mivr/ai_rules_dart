@@ -1,4 +1,4 @@
-"E2e test: dart_codegen, dart_aggregate_codegen, and a Flutter app consuming a generated part (incl. a macOS runner that exercises hot reload over an assembled .pkgsrcs package)"
+"E2e test: custom generators run by run_binary (per-file and aggregate), and a Flutter app consuming a generated part (incl. a macOS runner that exercises hot reload over an assembled .pkgsrcs package)"
 
 module(name = "rules_flutter_codegen_e2e")
 
