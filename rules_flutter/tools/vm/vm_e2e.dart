@@ -8,7 +8,7 @@ library;
 import 'dart:io';
 
 /// The default folder matrix, mirroring the `e2e` job in
-/// `.github/workflows/ci.yaml`. `.` is the root module (Starlark unit tests).
+/// `.github/workflows/flutter-ci.yaml`. `.` is the root module (Starlark unit tests).
 /// Override with `--folders=` to scope a run (e.g. just the Linux or Windows
 /// subset).
 const e2eDefaultFolders = [

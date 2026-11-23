@@ -4,9 +4,9 @@
 ///   dart run tools/vm/run_e2e.dart <vm-name> [--windows] \
 ///       [--folders=e2e/ext_exemplar,e2e/dart_test] [--keep-going]
 ///
-/// Transfers the committed working tree (`git archive HEAD`) to the VM,
-/// extracts it, then runs `bazel test //...` in each CI folder, mirroring
-/// `.github/workflows/ci.yaml` (exit code 4 — "no test targets" — counts as a
+/// Transfers the committed `rules_dart/` tree (`git archive HEAD:rules_dart`)
+/// to the VM, extracts it, then runs `bazel test //...` in each CI folder,
+/// mirroring `.github/workflows/dart-ci.yaml` (exit code 4 — "no test targets" — counts as a
 /// pass, as do build-only folders). Prints a per-folder PASS/FAIL summary and
 /// exits non-zero if any folder failed.
 ///
@@ -50,7 +50,7 @@ Future<void> main(List<String> args) async {
     '--prefix=rules_dart/',
     '-o',
     tgz,
-    'HEAD',
+    'HEAD:rules_dart',
   ]);
 
   // 2. Wait for the toolchain, then transfer + extract.
@@ -88,7 +88,7 @@ Future<void> main(List<String> args) async {
     }
   }
 
-  // 4. Expected-failure checks (Linux only, mirrors ci.yaml).
+  // 4. Expected-failure checks (Linux only, mirrors dart-ci.yaml).
   final expectedFailures = <FolderResult>[];
   if (!isWindows && options.usesDefaultFolders) {
     for (final check in _expectedFailureChecks) {
@@ -206,7 +206,7 @@ const _expectedFailureChecks = [
 /// Checks an expected-failure workspace: the build must FAIL (a successful
 /// build means the error path regressed, e.g. a swallowed exit code) AND its
 /// output must carry the expected error (mirrors the `expected-failure` job
-/// in ci.yaml).
+/// in dart-ci.yaml).
 Future<FolderResult> _runExpectedFailure(
   String vmName,
   _ExpectedFailure check,

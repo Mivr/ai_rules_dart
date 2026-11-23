@@ -5,7 +5,7 @@
 /// Uses only dart:core — no pubspec needed.
 library;
 
-/// The `folders` matrix from `.github/workflows/ci.yaml` (the `test` job).
+/// The `folders` matrix from `.github/workflows/dart-ci.yaml` (the `test` job).
 const List<String> ciFolders = [
   '.',
   'e2e/smoke',

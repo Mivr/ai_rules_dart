@@ -88,7 +88,7 @@ use_repo(flutter, "deps", "flutter_toolchains")
 register_toolchains("@flutter_toolchains//:all")
 ```
 
-Keep the `ai_rules_dart` override in your root `MODULE.bazel` at or above the floor that rules_flutter's `MODULE.bazel` names in its `bazel_dep` on `ai_rules_dart`: an older one fails the `flutter` extension before any repository is created, naming the override to raise.
+Keep the `ai_rules_dart` override in your root `MODULE.bazel` at or above the floor that rules_flutter's `MODULE.bazel` names in its `bazel_dep` on `ai_rules_dart`: an older one fails to load, on the first `@rules_dart` file it lacks.
 
 `flutter.toolchain` downloads the Flutter SDK and engine. `flutter.pub` reads your `pubspec.lock` and creates a repository, here named `deps`, with one target per package: `@deps//:flutter`, `@deps//:flutter_test`, `@deps//:collection`, and so on. See [Pub packages](#pub-packages).
 

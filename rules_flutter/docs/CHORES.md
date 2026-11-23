@@ -123,10 +123,10 @@ or `.bazelversion` — the lock records a format version (Bazel 9.1.0 writes 26,
 a sibling `rules_dart` in local development, and their locks are intentionally
 left stale. Refreshing them produces a large diff that nothing checks.
 
-**Procedure**: move `.bazelrc.user` aside — its `--override_module` line changes
-the module graph away from the registry one CI resolves, and forces
-`--lockfile_mode` off — then `bazel mod deps --lockfile_mode=update`, then put it
-back. Any host will do.
+**Procedure**: move any `.bazelrc.user` aside — an `--override_module` line in it
+changes the module graph away from the one CI resolves, and a
+`--lockfile_mode=off` line stops the lock from being checked — then
+`bazel mod deps --lockfile_mode=update`, then put it back. Any host will do.
 
 There is deliberately no Python in the module graph: `//tools/ios_screenshot`
 builds `dart_binary` drivers that run their `pymobiledevice3` programs

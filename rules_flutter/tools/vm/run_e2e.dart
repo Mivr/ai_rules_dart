@@ -4,9 +4,11 @@
 ///   dart run tools/vm/run_e2e.dart <vm-name> [--windows] \
 ///       [--folders=.,e2e/hello_world] [--keep-going]
 ///
-/// Transfers the committed working tree (`git archive HEAD`) to the VM, clones
-/// the `rules_dart` sibling it depends on, extracts, then runs `bazel test
-/// //...` in each folder, mirroring `.github/workflows/ci.yaml`. Exit code 4
+/// Transfers the committed tree of the repository (both `rules_dart/` and
+/// `rules_flutter/`, which the e2e workspaces reach through
+/// `../../../rules_dart`) to the VM, extracts it, then runs `bazel test //...`
+/// in each folder of `rules_flutter/`, mirroring
+/// `.github/workflows/flutter-ci.yaml`. Exit code 4
 /// ("no test targets") counts as a pass. Prints a per-folder PASS/FAIL summary
 /// and exits non-zero if any folder failed.
 ///
@@ -64,7 +66,9 @@ Future<void> main(List<String> args) async {
   exit(results.any((r) => !r.pass) ? 1 : 0);
 }
 
-/// Packages the committed tree into a tarball, returning its path.
+/// Packages the committed tree of the whole repository into a tarball, with
+/// paths relative to the repository root (`rules_dart/...`,
+/// `rules_flutter/...`), returning its path.
 ///
 /// Deliberately not `git archive`: it honours `export-ignore`, and
 /// `.gitattributes` marks `e2e/` as one so release tarballs stay small. An
@@ -100,7 +104,7 @@ Future<String> _packageCommittedTree(String repoRoot) async {
   return tgz;
 }
 
-/// Transfers the packaged tree to the VM and clones the rules_dart sibling.
+/// Transfers the packaged tree to the VM, where it lands in `rf/`.
 Future<void> _transferTreeToVm(
   String vmName,
   String tgz, {
@@ -112,26 +116,14 @@ Future<void> _transferTreeToVm(
     // Separate, simple commands. A compound `cmd /c "... & ... & ..."` mangles
     // through gcloud ssh -> Windows cmd and can silently no-op.
     await sshExec(vmName, 'rmdir /s /q C:\\rf'); // tolerate "not found"
-    await sshRun(vmName, 'mkdir C:\\rf\\rules_flutter');
-    await sshRun(vmName, 'tar -xf C:\\rf_src.tgz -C C:\\rf\\rules_flutter');
-    await sshExec(vmName, 'rmdir /s /q C:\\rules_dart');
-    await sshRun(
-      vmName,
-      'git clone --depth 1 https://github.com/aran/rules_dart.git '
-      'C:\\rules_dart',
-    );
+    await sshRun(vmName, 'mkdir C:\\rf');
+    await sshRun(vmName, 'tar -xf C:\\rf_src.tgz -C C:\\rf');
   } else {
     await scpToVm(vmName, tgz, '~/rules_flutter_src.tgz', compress: true);
     await sshRun(
       vmName,
-      "bash -lc 'rm -rf ~/rf && mkdir -p ~/rf/rules_flutter && "
-      "tar xzf ~/rules_flutter_src.tgz -C ~/rf/rules_flutter'",
-    );
-    await sshRun(
-      vmName,
-      "bash -lc 'rm -rf ~/rules_dart && "
-      "git clone --depth 1 https://github.com/aran/rules_dart.git "
-      "~/rules_dart'",
+      "bash -lc 'rm -rf ~/rf && mkdir -p ~/rf && "
+      "tar xzf ~/rules_flutter_src.tgz -C ~/rf'",
     );
   }
 }

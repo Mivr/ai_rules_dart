@@ -147,63 +147,6 @@ version in the same change, then reformatting whatever the new style moves.
 The one exception is `flutter/private/gen_l10n/pubspec.yaml`, which matches
 upstream `flutter_tools` exactly.
 
-### A green sweep does not test the published ai_rules_dart pin
-
-The repo root and all fourteen `e2e/*` workspaces carry a gitignored
-`.bazelrc.user` holding:
-
-    common --override_module=ai_rules_dart=/Users/aran/Projects/rules_dart
-    common --lockfile_mode=off
-
-So every local build resolves ai_rules_dart **main**, and the committed
-`bazel_dep(name = "ai_rules_dart", version = ...)` is inert. CI has no such file —
-it is gitignored and no sibling checkout exists there — so CI builds against the
-published pin. A full green sweep is therefore *no evidence* that the code works
-against the version consumers get.
-
-Two different kinds of breakage hide behind this, and only the second is widely
-known:
-
-1. **Starlark API** — a rule or attribute that exists only on rules_dart main.
-   This fails at *loading*, loudly, the moment you remove the override.
-2. **Dart SDK version** — this fails at *compilation*, long after loading and
-   module resolution have succeeded, so any check that stops at "it loaded" will
-   miss it entirely.
-
-The second is the nastier one. Previously, `dart_binary` compiled with
-**rules_dart's** exec-tools Dart rather than Flutter's Dart because the bundled
-SDK was not a registered toolchain. `@flutter_toolchains` now registers
-Flutter's bundled Dart SDK as the Dart toolchain, so `dart_binary` compiles
-with Flutter's Dart. However, cross-compilation or an override can still resolve
-a different Dart SDK: Dart source using an API newer than the resolved Dart
-builds clean locally and fails on CI, whenever the sibling checkout carries a
-newer Dart than the published pin.
-
-**Check any new or changed `dart_binary` like this** — it must *compile*, not
-merely load:
-
-    mv .bazelrc.user .bazelrc.user.aside
-    bazel build --lockfile_mode=error //path/to:target
-    mv .bazelrc.user.aside .bazelrc.user
-
-In an `e2e/*` workspace, replace the file with `common --lockfile_mode=off`
-rather than removing it: those workspaces' committed `MODULE.bazel.lock` files
-are written by an older Bazel, and `--lockfile_mode=error` trips on that
-unrelated staleness before it gets anywhere near your change.
-
-Two cautions:
-
-- **Do not run this while another session is building out of the same tree.**
-  It changes the resolved rules_dart mid-flight, which produces failures that
-  look like your change and are not.
-- **Restore the file.** Verify with `find . e2e -maxdepth 3 -name .bazelrc.user`
-  before moving on; a half-restored override is a confusing state to inherit.
-
-When the right fix is a newer rules_dart, say so upstream rather than reaching
-for a toolchain override locally. When the offending code is dead in this
-context, deleting it is the better answer, and should be commented as
-deliberate so nobody later "restores" it.
-
 ## 2. dev_tool tests
 
 Unit tests run under section 1 — every one of them has a Bazel target, on the

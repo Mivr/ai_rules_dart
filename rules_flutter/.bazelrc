@@ -49,10 +49,11 @@ common --@rules_dart//dart:analysis_config=//:analysis_config
 # In this repo there is a fourth step, first: move every gitignored
 # `.bazelrc.user` aside — the root's plus one per `e2e/*` workspace. Enumerate
 # them rather than counting from memory, because the set grows with the
-# workspaces: `find . -name .bazelrc.user -not -path './bazel-*'`. Each puts
-# `--override_module=ai_rules_dart` on `common`, which applies to `mod tidy` too,
-# and regenerating through one writes a lock that omits the very registry entry
-# it is meant to pin.
+# workspaces: `find . -name .bazelrc.user -not -path './bazel-*'`. An
+# `--override_module` line in one applies to `mod tidy` too, and regenerating
+# through it writes a lock that omits the very registry entry it overrides.
+# (rules_dart itself is the sibling directory through `MODULE.bazel`, so it
+# needs no such line.)
 #
 # When testing different versions of Bazel, use --lockfile_mode=update or
 # --lockfile_mode=off. The lock file format changes over time, and different

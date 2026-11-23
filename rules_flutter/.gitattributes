@@ -21,7 +21,6 @@
 /dev/ export-ignore
 /tests/rules_testing/ export-ignore
 /references/ export-ignore
-/renovate.json export-ignore
 /tools/BUILD.bazel export-ignore
 /tools/changelog/ export-ignore
 /e2e/_compare/ export-ignore
