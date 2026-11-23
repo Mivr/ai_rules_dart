@@ -671,6 +671,24 @@ def find_kernel_module_tools(dart_sdk_info):
       toolchain's comma-splitting-disabled copy of the worker snapshot, or
       None when the toolchain declares none.
     """
+
+    # `dart_toolchain` finds the files once and carries them; a `DartSdkInfo`
+    # built elsewhere may not, and then this searches as before.
+    named = getattr(dart_sdk_info, "kernel_module_files", None)
+    if named != None:
+        if named.kernel_worker == None:
+            return None
+        return struct(
+            dart = dart_sdk_info.dart,
+            dartvm = named.dartvm,
+            runtime_files = dart_sdk_info.runtime_files,
+            dartaotruntime = named.dartaotruntime,
+            kernel_worker = named.kernel_worker,
+            platform_dill = named.platform_dill,
+            libraries_json = named.libraries_json,
+            version = dart_sdk_info.version,
+            patched_kernel_worker = getattr(dart_sdk_info, "patched_kernel_worker", None),
+        )
     sdk_root = sdk_path_from_dart(dart_sdk_info.dart)
     dartvm_paths = [
         sdk_root + "/bin/dartvm",

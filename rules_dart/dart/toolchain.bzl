@@ -18,6 +18,7 @@ DartSdkInfo = provider(
         "cross_dartaotruntime": "File or None: Pinned target `dartaotruntime` binary for cross-compilation (`target_os`/`target_arch`), or `None` for native.",
         "patched_kernel_worker": "File or None: The `kernel_worker` AOT snapshot with comma-splitting disabled (see `comma_patch.dart`), or `None` when the SDK names no `kernel_worker` snapshot. Declared by one action per SDK; compiles that pass comma-containing `-D` values take it as a tool input.",
         "patched_gen_kernel": "File or None: The `gen_kernel` AOT snapshot with comma-splitting disabled, or `None` when the SDK names no `gen_kernel` snapshot. One action per SDK, like `patched_kernel_worker`.",
+        "kernel_module_files": "struct or None: The `compile_files` a modular kernel compile and link run from, found once per toolchain: `dartvm`, `dartaotruntime`, `kernel_worker` (the `kernel_worker_aot.dart.snapshot`), `platform_dill` (`vm_platform_strong.dill`) and `libraries_json`. All but `dartvm` are `None` when the SDK lacks any of them, and then no module compiles. Optional: a `DartSdkInfo` without it has the files searched for in `compile_files` instead.",
     },
 )
 
@@ -61,6 +62,56 @@ def _subset_with_dartvm(subset, dartvm):
         if f == dartvm:
             return subset
     return depset(direct = [dartvm], transitive = [subset])
+
+def _kernel_module_files(dart, compile_files):
+    """Finds the SDK files a modular kernel compile runs from, once per toolchain.
+
+    The same search `find_kernel_module_tools` makes when a `DartSdkInfo`
+    carries no `kernel_module_files`: each file by its exact path under the
+    SDK root, within the compile subset, so every file found is already an
+    input of the action that runs it.
+
+    Args:
+      dart: The SDK's `dart` File.
+      compile_files: The toolchain's final `compile_files` depset.
+
+    Returns:
+      `struct(dartvm, dartaotruntime, kernel_worker, platform_dill,
+      libraries_json)`. When any of the last four is missing, all four are
+      `None`.
+    """
+    sdk_root = dart.path
+    for suffix in ("/bin/dart", "/bin/dart.exe"):
+        if sdk_root.endswith(suffix):
+            sdk_root = sdk_root[:-len(suffix)]
+            break
+    dartvm_paths = [
+        sdk_root + "/bin/dartvm",
+        sdk_root + "/bin/dartvm.exe",
+    ]
+    wanted = {
+        "dartaotruntime": [sdk_root + "/bin/dartaotruntime", sdk_root + "/bin/dartaotruntime.exe"],
+        "kernel_worker": [sdk_root + "/bin/snapshots/kernel_worker_aot.dart.snapshot"],
+        "platform_dill": [sdk_root + "/lib/_internal/vm_platform_strong.dill"],
+        "libraries_json": [sdk_root + "/lib/libraries.json"],
+    }
+    dartvm = None
+    found = {}
+    for f in compile_files.to_list():
+        if f.path in dartvm_paths:
+            dartvm = f
+        for key, paths in wanted.items():
+            if f.path in paths:
+                found[key] = f
+    if len(found) != len(wanted):
+        found = {}
+    return struct(
+        dartvm = dartvm,
+        dartaotruntime = found.get("dartaotruntime"),
+        kernel_worker = found.get("kernel_worker"),
+        platform_dill = found.get("platform_dill"),
+        libraries_json = found.get("libraries_json"),
+    )
 
 def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
     """Declares the comma-patch action for one SDK AOT snapshot, or None.
@@ -202,6 +253,7 @@ def _dart_toolchain_impl(ctx):
             "gen_kernel_nocomma.snapshot",
             "gen_kernel",
         ),
+        kernel_module_files = _kernel_module_files(ctx.file.dart, compile_files),
     )
 
     template_variables = platform_common.TemplateVariableInfo({

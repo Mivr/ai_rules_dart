@@ -42,6 +42,8 @@ load(
 )
 load(
     "//dart/private:dart_kernel.bzl",
+    "EXEC_TOOLS_TOOLCHAIN",
+    "find_kernel_module_tools",
     "package_of_indexed_source",
     "package_prefix_index",
 )
@@ -1512,6 +1514,36 @@ def _split_without_direct_edge_test_impl(ctx):
     )
     return unittest.end(env)
 
+def _toolchain_kernel_files_fixture_impl(ctx):
+    info = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN].dart_sdk_info
+    named = find_kernel_module_tools(info)
+
+    # The same `DartSdkInfo` without the named fields: the search fallback.
+    searched = find_kernel_module_tools(struct(
+        dart = info.dart,
+        compile_files = info.compile_files,
+        runtime_files = info.runtime_files,
+        version = info.version,
+        patched_kernel_worker = info.patched_kernel_worker,
+    ))
+    if getattr(info, "kernel_module_files", None) == None:
+        fail("the toolchain carries no kernel_module_files")
+    if named == None or named != searched:
+        fail("kernel_module_files disagree with the search: %s vs %s" % (named, searched))
+    return [DefaultInfo()]
+
+_toolchain_kernel_files_fixture = rule(
+    implementation = _toolchain_kernel_files_fixture_impl,
+    toolchains = [EXEC_TOOLS_TOOLCHAIN],
+)
+
+def _toolchain_kernel_files_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    asserts.true(env, analysistest.target_under_test(env) != None, "the toolchain's named files match the search")
+    return analysistest.end(env)
+
+_toolchain_kernel_files_test = analysistest.make(_toolchain_kernel_files_test_impl)
+
 _package_prefix_index_test = unittest.make(_package_prefix_index_test_impl)
 _duplicated_source_lazy_edges_test = unittest.make(_duplicated_source_lazy_edges_test_impl)
 _split_without_direct_edge_test = unittest.make(_split_without_direct_edge_test_impl)
@@ -1667,6 +1699,15 @@ def kernel_test_suite(name):
         target_under_test = ":" + name + "_unseeded_base_kmods_fixture",
         size = "small",
     )
+    _toolchain_kernel_files_fixture(
+        name = name + "_toolchain_kernel_files_fixture",
+        tags = ["manual"],
+    )
+    _toolchain_kernel_files_test(
+        name = name + "_toolchain_kernel_files_test",
+        target_under_test = ":" + name + "_toolchain_kernel_files_fixture",
+        size = "small",
+    )
     _cross_pkg_cycle_inputs_test(
         name = name + "_cross_pkg_cycle_inputs_test",
         target_under_test = "//dart/tests/cross_pkg_cycle_fixture:app_modular",
@@ -1728,6 +1769,7 @@ def kernel_test_suite(name):
             ":" + name + "_user_kernel_link_modular_test",
             ":" + name + "_unseeded_base_kmods_intersection_test",
             ":" + name + "_cross_pkg_cycle_inputs_test",
+            ":" + name + "_toolchain_kernel_files_test",
             ":" + name + "_entry_unused_inputs_test",
             ":" + name + "_library_unused_inputs_test",
             ":" + name + "_part_sources_inputs_test",
