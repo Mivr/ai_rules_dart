@@ -6,6 +6,7 @@ resolution in CocoaPods mode with mixed-mode `Package.swift` fallback and
 fail-closed refusals.
 """
 
+load("@rules_dart//dart/pub:yaml.bzl", "yaml_to_json_or_error")
 load(
     "//flutter/private:flutter_pub_apple_pods_hub.bzl",
     "make_pod_resolution",
@@ -289,12 +290,12 @@ def hub_cocoapods_attrs(hub_name, all_package_names, podfile, lock_label, pub_ta
     )
 
 def _collect_matching_lock_entries(podfile, package_name):
-    """Find all PODS entries belonging to `package_name`, sorted by `entry.line`."""
+    """Find all PODS entries belonging to `package_name`, sorted by `entry.index`."""
     matched = []
     for pod_name, entry in podfile.pods.items():
         root = pod_name.partition("/")[0]
         if podfile.plugin_pods.get(root) == package_name:
-            matched.append((entry.line, pod_name))
+            matched.append((entry.index, pod_name))
     return [podfile.pods[pod_name] for _, pod_name in sorted(matched)]
 
 def _filter_kept_deps(matching_entries, podfile, package_name):
@@ -528,7 +529,12 @@ def detect_apple_cocoapods_deps(ctx, package_name, apple, detect_swiftpm_platfor
         return struct(macos = [], ios = [])
 
     lock_label = str(podfile_lock_attr)
-    podfile = read_podfile_lock(ctx.read(podfile_lock_attr), lock_label)
+    ctx.watch(podfile_lock_attr)
+    converted = yaml_to_json_or_error(ctx, [podfile_lock_attr], [lock_label])
+    if converted.error != None:
+        fail_fn(converted.error)
+        return struct(macos = [], ios = [])
+    podfile = read_podfile_lock(converted.data[0], lock_label)
     if not podfile.ok:
         fail_fn(podfile.error)
         return struct(macos = [], ios = [])

@@ -1,4 +1,4 @@
-"""Reads the `sdks:` block a resolver writes at the end of `pubspec.lock`.
+"""The Flutter floor in the `sdks:` block a resolver writes into `pubspec.lock`.
 
 Pub records the *constraints* its solution requires, not the SDK that produced
 it — so a lock cannot tell you which Flutter resolved it. What it can tell you
@@ -16,37 +16,21 @@ is the only thing that prevents it.
 
 visibility(["//flutter/..."])
 
-def parse_lock_sdk_constraints(lock_content):
-    """Extracts the `sdks:` block from a pubspec.lock.
+def lock_flutter_constraint(lock_data):
+    """The `sdks.flutter` constraint of a decoded `pubspec.lock`.
 
     Args:
-        lock_content: The full text of a `pubspec.lock`.
+        lock_data: The lock's top-level mapping, from `yaml_to_json`.
 
     Returns:
-        A dict of SDK name to constraint string, e.g.
-        `{"dart": ">=3.9.0 <4.0.0", "flutter": ">=3.18.0"}`. Empty when the
-        lock records no `sdks:` block.
+        The constraint string, e.g. `">=3.18.0-18.0.pre.54"`, or `""` when
+        the lock records no Flutter constraint.
     """
-    constraints = {}
-    in_block = False
-    for line in lock_content.split("\n"):
-        if line.startswith("sdks:"):
-            in_block = True
-            continue
-        if not in_block:
-            continue
-
-        # The block runs to the end of the file; any unindented line ends it.
-        if not line.startswith("  "):
-            if line.strip():
-                break
-            continue
-
-        parts = line.strip().split(":", 1)
-        if len(parts) != 2:
-            continue
-        constraints[parts[0].strip()] = parts[1].strip().strip('"')
-    return constraints
+    sdks = lock_data.get("sdks")
+    if type(sdks) != "dict":
+        return ""
+    constraint = sdks.get("flutter")
+    return constraint if type(constraint) == "string" else ""
 
 def _release_core(version):
     """The numeric release triple of a version string, without prerelease or build.

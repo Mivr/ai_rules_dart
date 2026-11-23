@@ -5,37 +5,36 @@ load(
     "//flutter/private:pub_lock_sdks.bzl",
     "constraint_lower_bound",
     "hosted_package_sha256",
-    "parse_lock_sdk_constraints",
+    "lock_flutter_constraint",
     "version_below_lower_bound",
 )
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
 
-_LOCK = """packages:
-  meta:
-    dependency: transitive
-    description:
-      name: meta
-      sha256: "abc"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.18.0"
-sdks:
-  dart: ">=3.10.0-0 <4.0.0"
-  flutter: ">=3.18.0-18.0.pre.54"
-"""
+_LOCK = {
+    "packages": {
+        "meta": {
+            "dependency": "transitive",
+            "description": {"name": "meta", "sha256": "abc", "url": "https://pub.dev"},
+            "source": "hosted",
+            "version": "1.18.0",
+        },
+    },
+    "sdks": {"dart": ">=3.10.0-0 <4.0.0", "flutter": ">=3.18.0-18.0.pre.54"},
+}
 
-def _parses_the_sdks_block_test_impl(ctx):
+def _reads_the_flutter_constraint_test_impl(ctx):
     env = unittest.begin(ctx)
-    sdks = parse_lock_sdk_constraints(_LOCK)
-    asserts.equals(env, ">=3.10.0-0 <4.0.0", sdks.get("dart"))
-    asserts.equals(env, ">=3.18.0-18.0.pre.54", sdks.get("flutter"))
+    asserts.equals(env, ">=3.18.0-18.0.pre.54", lock_flutter_constraint(_LOCK))
     return unittest.end(env)
 
-def _lock_without_sdks_block_test_impl(ctx):
+def _lock_without_flutter_constraint_test_impl(ctx):
     env = unittest.begin(ctx)
-    asserts.equals(env, {}, parse_lock_sdk_constraints("packages:\n  meta:\n    version: \"1.0.0\"\n"))
+    asserts.equals(env, "", lock_flutter_constraint({"packages": {}}))
+    asserts.equals(env, "", lock_flutter_constraint({"packages": {}, "sdks": None}))
+    asserts.equals(env, "", lock_flutter_constraint({"packages": {}, "sdks": {"dart": ">=3.0.0 <4.0.0"}}))
+    asserts.equals(env, "", lock_flutter_constraint({"packages": {}, "sdks": {"flutter": None}}))
     return unittest.end(env)
 
 def _reads_the_lower_bound_test_impl(ctx):
@@ -125,8 +124,8 @@ _hosted_package_missing_sha256_fails_test = analysistest.make(
     expect_failure = True,
 )
 
-_parses_the_sdks_block_test = unittest.make(_parses_the_sdks_block_test_impl)
-_lock_without_sdks_block_test = unittest.make(_lock_without_sdks_block_test_impl)
+_parses_the_sdks_block_test = unittest.make(_reads_the_flutter_constraint_test_impl)
+_lock_without_sdks_block_test = unittest.make(_lock_without_flutter_constraint_test_impl)
 _reads_the_lower_bound_test = unittest.make(_reads_the_lower_bound_test_impl)
 _flags_only_a_toolchain_below_the_floor_test = unittest.make(_flags_only_a_toolchain_below_the_floor_test_impl)
 _hosted_package_sha256_returns_recorded_value_test = unittest.make(_hosted_package_sha256_returns_recorded_value_test_impl)

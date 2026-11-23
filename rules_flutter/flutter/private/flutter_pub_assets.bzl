@@ -118,24 +118,23 @@ def asset_entry_problem_error(package_name, problem):
     """The fetch failure for one malformed asset entry condition.
 
     Returns the message instead of failing so unit tests can assert it; the
-    caller `fail()`s with it. Names the package, `pubspec.yaml` and the
-    offending line, then the entry and the key.
+    caller `fail()`s with it. Names the package and `pubspec.yaml`, then the
+    entry and the key.
 
     Args:
         package_name: The pub package the entry comes from.
-        problem: A `struct(path, key, detail, line)` from the asset entry
-            parser; `detail` already words the complaint flutter_tools
-            style, and `line` is its 1-based `pubspec.yaml` line.
+        problem: A `struct(path, key, detail)` from the asset entry parser;
+            `detail` already words the complaint flutter_tools style, and
+            `path` names the entry (`fonts[0]`, `assets[2]`, ...).
 
     Returns:
         The error string; the caller `fail()`s with it.
     """
     return (
-        "flutter.pub spoke for \"{pkg}\": pubspec.yaml line {line}: " +
+        "flutter.pub spoke for \"{pkg}\": pubspec.yaml: " +
         "asset \"{entry}\": {detail}"
     ).format(
         pkg = package_name,
-        line = problem.line,
         entry = problem.path,
         detail = problem.detail,
     )
@@ -146,8 +145,7 @@ def check_asset_entry_problems(package_name, asset_errors):
     A `platforms` / `flavors` value that is not a list of strings, or an
     entry carrying `transformers`, loads today but contradicts
     flutter_tools; refusing it is a breaking change. Each failure names the
-    package, `pubspec.yaml` and the offending line, then the entry and the
-    key.
+    package and `pubspec.yaml`, then the entry and the key.
 
     Args:
         package_name: The pub package the entries come from.

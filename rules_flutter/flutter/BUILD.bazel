@@ -319,7 +319,7 @@ bzl_library(
         "//flutter/private:versions",
         "//flutter/private:xtool_darwin_sdk_repo",
         "@rules_dart//dart/ext:registry",
-        "@rules_dart//dart/pub:yaml_parser",
+        "@rules_dart//dart/pub:yaml",
     ],
 )
 

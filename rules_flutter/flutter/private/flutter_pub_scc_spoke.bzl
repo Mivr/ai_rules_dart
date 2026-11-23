@@ -23,10 +23,11 @@ load(
     "scc_planned_deps_error",
 )
 load(
-    "@rules_dart//dart/pub:yaml_parser.bzl",
-    "parse_pubspec_deps",
-    "parse_pubspec_sdk_constraint",
-    "pubspec_sdk_constraint_error",
+    "@rules_dart//dart/pub:yaml.bzl",
+    "pubspec_deps",
+    "pubspec_environment_error",
+    "pubspec_sdk_constraint",
+    "yaml_to_json",
 )
 load(
     "//flutter/private:asset_uri.bzl",
@@ -129,8 +130,13 @@ def _fetch_hosted_scc_member(ctx, member, name):
     ctx.delete(archive)
     check_package_symlinks(ctx, name, root = name)
 
-def _link_path_scc_member(ctx, member, name):
-    """Confines and mirrors a workspace-local path SCC member under `<name>/`."""
+def _link_path_scc_pubspec(ctx, member, name):
+    """Confines a workspace-local path SCC member and links its pubspec under `<name>/`.
+
+    Returns:
+        `struct(src, scope)` for `_link_path_scc_contents`, once the
+        member's pubspec has been read.
+    """
     rel = member.get("path", "")
     if is_absolute_lock_path(rel) or rel in ("", "."):
         fail('flutter.pub SCC member "%s": invalid path %r' % (name, rel))
@@ -147,17 +153,19 @@ def _link_path_scc_member(ctx, member, name):
     fail_on_outside_package_path(ctx, name, segments, ws_real, case_insensitive)
     scope = make_link_scope(name, src_real, ws_real, case_insensitive, {}, dest_prefix = name)
     link_scoped_file_entry(ctx, src, "pubspec.yaml", scope)
-    pubspec_node = ctx.path(name + "/pubspec.yaml")
-    pubspec_text = ctx.read(pubspec_node) if pubspec_node.exists else ""
-    check_pubspec_identity_mismatch(ctx.attr.hub_name, name, member.get("version", ""), pubspec_text)
+    return struct(src = src, scope = scope)
+
+def _link_path_scc_contents(ctx, member, name, linked, pubspec):
+    """Checks a path SCC member's pubspec identity and mirrors what it declares."""
+    check_pubspec_identity_mismatch(ctx.attr.hub_name, name, member.get("version", ""), pubspec)
     link_spoke_contents(
         ctx,
-        src,
-        normalize_spoke_asset_block(name, parse_flutter_assets_block(pubspec_text)),
-        path_spoke_platform_dirs(parse_flutter_plugin_block(pubspec_text)),
-        scope,
+        linked.src,
+        normalize_spoke_asset_block(name, parse_flutter_assets_block(pubspec)),
+        path_spoke_platform_dirs(parse_flutter_plugin_block(pubspec)),
+        linked.scope,
     )
-    ctx.watch(src)
+    ctx.watch(linked.src)
 
 def _member_spoke_ctx(ctx, name):
     """Adapts the repository `ctx` so single-package helpers read `<name>/...`."""
@@ -180,10 +188,14 @@ def _member_spoke_ctx(ctx, name):
             p = name if p in ("", ".") else name + "/" + p
         return ctx.watch(p)
 
+    # `os` and `execute` let `yaml_to_json` run its pinned `yq` through
+    # this facade (a member reading the hub's `Podfile.lock`, say).
     return struct(
         path = member_path,
         read = member_read,
         watch = member_watch,
+        os = ctx.os,
+        execute = ctx.execute,
         attr = struct(
             package_name = name,
             hub_name = ctx.attr.hub_name,
@@ -216,28 +228,46 @@ def _detect_member_hooks(ctx, name, code_assets):
     )
 
 def _stage_scc_members(ctx, members):
-    """Stages all hosted and path members into their `<name>/` subdirectories."""
+    """Stages all hosted and path members into their `<name>/` subdirectories.
+
+    Every member's pubspec is read in one `yq` run once it is in place; a
+    path member's other files are linked after that, as its pubspec
+    declares them.
+
+    Returns:
+        Dict of member name to its decoded pubspec (`{}` when it has none).
+    """
+    linked = {}
     for m in members:
         if m.get("source", "hosted") == "path":
-            _link_path_scc_member(ctx, m, m["name"])
+            linked[m["name"]] = _link_path_scc_pubspec(ctx, m, m["name"])
         else:
             _fetch_hosted_scc_member(ctx, m, m["name"])
+    present = [m["name"] for m in members if ctx.path(m["name"] + "/pubspec.yaml").exists]
+    data = yaml_to_json(ctx, [name + "/pubspec.yaml" for name in present], [name + "/pubspec.yaml" for name in present])
+    pubspecs = {m["name"]: {} for m in members}
+    for name, pubspec in zip(present, data):
+        pubspecs[name] = pubspec
+    for m in members:
+        if m["name"] in linked:
+            _link_path_scc_contents(ctx, m, m["name"], linked[m["name"]], pubspecs[m["name"]])
+    return pubspecs
 
-def _parse_and_verify_scc_members(ctx, members):
-    """Parses staged member pubspecs and verifies planned deps and SCC connectivity."""
+def _parse_and_verify_scc_members(ctx, members, pubspecs):
+    """Projects staged member pubspecs and verifies planned deps and SCC connectivity."""
     parsed = {}
     real_deps = {}
     for m in members:
         name = m["name"]
-        pubspec_text = ctx.read(name + "/pubspec.yaml") if ctx.path(name + "/pubspec.yaml").exists else ""
-        sdk_err = pubspec_sdk_constraint_error(pubspec_text, name + "/pubspec.yaml")
+        pubspec = pubspecs[name]
+        sdk_err = pubspec_environment_error(pubspec, name + "/pubspec.yaml")
         if sdk_err:
             fail(sdk_err)
         planned = m.get("planned_deps", None)
         err = scc_planned_deps_error(ctx.attr.repo_name, name, planned)
         if err:
             fail(err)
-        raw_deps = sorted(parse_pubspec_deps(pubspec_text))
+        raw_deps = sorted(pubspec_deps(pubspec))
         applied = apply_cycle_breaks(name, raw_deps, ctx.attr.cycle_breaks.get(name, []))
         if applied.error:
             fail(applied.error)
@@ -246,8 +276,8 @@ def _parse_and_verify_scc_members(ctx, members):
         if err:
             fail(err)
         parsed[name] = struct(
-            pubspec_text = pubspec_text,
-            language_version = derive_language_version(parse_pubspec_sdk_constraint(pubspec_text)),
+            pubspec = pubspec,
+            language_version = derive_language_version(pubspec_sdk_constraint(pubspec)),
             version = m.get("version", ""),
             code_assets = m.get("code_assets", []),
             package_files = m.get("package_files", None),
@@ -371,10 +401,10 @@ def _emit_scc_member_builds(ctx, member_names, parsed, real_deps):
 
     for name in member_names:
         p = parsed[name]
-        asset_block = parse_flutter_assets_block(p.pubspec_text)
+        asset_block = parse_flutter_assets_block(p.pubspec)
         if asset_block and hasattr(asset_block, "uses_material_design") and asset_block.uses_material_design:
             uses_material = True
-        plugin_block = parse_flutter_plugin_block(p.pubspec_text)
+        plugin_block = parse_flutter_plugin_block(p.pubspec)
 
         for dep in real_deps[name]:
             if dep not in parsed and dep in ctx.attr.lock_packages:
@@ -406,8 +436,8 @@ def _emit_scc_root_build(ctx, member_names, outside_deps, apple_aliases, uses_ma
 def _flutter_pub_scc_package_impl(ctx):
     """Repository rule implementation for a merged multi-package SCC spoke."""
     members = json.decode(ctx.attr.members_json)
-    _stage_scc_members(ctx, members)
-    parsed, real_deps = _parse_and_verify_scc_members(ctx, members)
+    pubspecs = _stage_scc_members(ctx, members)
+    parsed, real_deps = _parse_and_verify_scc_members(ctx, members, pubspecs)
     member_names = sorted(parsed.keys())
     outside_deps, apple_aliases, uses_material = _emit_scc_member_builds(
         ctx,

@@ -5,7 +5,7 @@ public `flutter` extension so consumer builds that do not build targets needing
 those hubs never evaluate or create their repositories.
 """
 
-load("@rules_dart//dart/pub:yaml_parser.bzl", "parse_pubspec_lock")
+load("@rules_dart//dart/pub:yaml.bzl", "lock_packages", "yaml_to_json")
 load("//flutter/private:flutter_pub_lock_hub.bzl", "flutter_pub_lock_hub")
 load("//flutter/private:flutter_pub_overlays.bzl", "spoke_overlay_roots")
 load("//flutter/private:flutter_pub_package.bzl", "flutter_pub_package")
@@ -15,15 +15,15 @@ load("//flutter/private:pub_lock_sdks.bzl", "hosted_package_sha256")
 visibility(["//flutter/..."])
 
 def register_tool_pub_hub(
-        module_ctx,
         pub_tag,
+        lock_data,
         hub_rule = flutter_pub_lock_hub,
         spoke_rule = flutter_pub_package):
     """Registers a pure-Dart hosted pub hub and its spoke repositories.
 
     Args:
-        module_ctx: The module extension context used to read the lockfile.
         pub_tag: A `flutter_tool_deps.pub` tag naming `name` and `lock`.
+        lock_data: The tag's decoded `pubspec.lock`, from `yaml_to_json`.
         hub_rule: Repository rule callable that creates the hub repository.
         spoke_rule: Repository rule callable that creates each package spoke.
 
@@ -31,7 +31,7 @@ def register_tool_pub_hub(
         The sorted list of hosted package names registered for the hub.
     """
     hub_name = pub_tag.name
-    lock_pkgs = parse_pubspec_lock(module_ctx.read(pub_tag.lock))
+    lock_pkgs = lock_packages(lock_data, str(pub_tag.lock))
     package_names = sorted(lock_pkgs.keys())
     overlay_roots = spoke_overlay_roots([])
 
@@ -64,10 +64,16 @@ def register_tool_pub_hub(
     return package_names
 
 def _tool_deps_extension_impl(module_ctx):
-    """Resolves `flutter_tool_deps.pub` tags for `ai_rules_flutter` internal tools."""
-    for mod in module_ctx.modules:
-        for pub_tag in mod.tags.pub:
-            register_tool_pub_hub(module_ctx, pub_tag)
+    """Resolves `flutter_tool_deps.pub` tags for `ai_rules_flutter` internal tools.
+
+    Every tag's lock is read in one `yq` run and watched.
+    """
+    tags = [pub_tag for mod in module_ctx.modules for pub_tag in mod.tags.pub]
+    for pub_tag in tags:
+        module_ctx.watch(pub_tag.lock)
+    locks = yaml_to_json(module_ctx, [pub_tag.lock for pub_tag in tags], [str(pub_tag.lock) for pub_tag in tags])
+    for pub_tag, lock_data in zip(tags, locks):
+        register_tool_pub_hub(pub_tag, lock_data)
     return module_ctx.extension_metadata(reproducible = True)
 
 flutter_tool_deps = module_extension(

@@ -14,6 +14,7 @@ to emit. `android_package_repo_name` and `android_spoke_alias_content` are the
 pure pieces the spoke generator and its unit tests consume.
 """
 
+load("@rules_dart//dart/pub:yaml.bzl", "yaml_to_json")
 load(":flutter_pub_apple.bzl", _has_files_under = "has_files_under")
 load(":flutter_pub_maven.bzl", "maven_deps_attr", "maven_ignore_attr")
 load(
@@ -741,11 +742,12 @@ def _read_plugin_block(ctx):
         root = path_package_root(ctx)
         pubspec_node = root.src.get_child("pubspec.yaml")
         ctx.watch(pubspec_node)
-        content = ctx.read(pubspec_node) if pubspec_node.exists else ""
     else:
         pubspec_node = ctx.path("pubspec.yaml")
-        content = ctx.read(pubspec_node) if pubspec_node.exists else ""
-    return parse_flutter_plugin_block(content)
+    if not pubspec_node.exists:
+        return parse_flutter_plugin_block({})
+    pubspec = yaml_to_json(ctx, [pubspec_node], [ctx.attr.package_name + "/pubspec.yaml"])[0]
+    return parse_flutter_plugin_block(pubspec)
 
 def _flutter_pub_android_package_impl(ctx):
     """Build the plugin's Android repository from its one Gradle build.

@@ -3,7 +3,7 @@
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load(
     "@rules_dart//dart/pub:pub_scc.bzl",
-    "PARSER_SOURCE_LABELS",
+    "READER_SOURCE_LABELS",
     "parser_schema",
 )
 load(
@@ -110,7 +110,7 @@ def _dev_tool_and_gen_l10n_internal_plan_test_impl(ctx):
 
 def _two_cycle_consumer_fixture():
     """Creates a cached 2-cycle hosted consumer fixture."""
-    schema = parser_schema(["# parser source" for _ in PARSER_SOURCE_LABELS])
+    schema = parser_schema(["# reader source" for _ in READER_SOURCE_LABELS])
     key_a = hosted_fact_key("cycle_a", "1.0.0", "a" * 64, schema)
     key_b = hosted_fact_key("cycle_b", "1.0.0", "b" * 64, schema)
     consumer_ctx = struct(
@@ -118,7 +118,7 @@ def _two_cycle_consumer_fixture():
             key_a: ["cycle_b"],
             key_b: ["cycle_a"],
         },
-        read = lambda _label, watch = "no": "# parser source",
+        read = lambda _label, watch = "no": "# reader source",
     )
     hosted = {
         "cycle_a": _hosted_entry("cycle_a", "1.0.0", "a"),
@@ -221,34 +221,30 @@ def _internal_and_consumer_hub_plan_test_impl(ctx):
 def _register_tool_pub_hub_test_impl(ctx):
     """register_tool_pub_hub emits the hub and pure-Dart hosted spokes without android spokes."""
     env = unittest.begin(ctx)
-    lock_yaml = "\n".join([
-        "packages:",
-        "  intl:",
-        "    dependency: \"direct main\"",
-        "    description:",
-        "      name: intl",
-        "      sha256: \"" + ("3" * 64) + "\"",
-        "      url: \"https://pub.dev\"",
-        "    source: hosted",
-        "    version: \"0.20.3\"",
-        "  meta:",
-        "    dependency: transitive",
-        "    description:",
-        "      name: meta",
-        "      sha256: \"" + ("4" * 64) + "\"",
-        "      url: \"https://pub.dev\"",
-        "    source: hosted",
-        "    version: \"1.18.3\"",
-    ])
+    lock_data = {
+        "packages": {
+            "intl": {
+                "dependency": "direct main",
+                "description": {"name": "intl", "sha256": "3" * 64, "url": "https://pub.dev"},
+                "source": "hosted",
+                "version": "0.20.3",
+            },
+            "meta": {
+                "dependency": "transitive",
+                "description": {"name": "meta", "sha256": "4" * 64, "url": "https://pub.dev"},
+                "source": "hosted",
+                "version": "1.18.3",
+            },
+        },
+    }
     hubs = []
     spokes = []
     lock_label = Label("//flutter/private/gen_l10n:pubspec.lock")
-    mock_ctx = struct(read = lambda _label: lock_yaml)
     pub_tag = struct(name = "gen_l10n_deps", lock = lock_label)
 
     pkgs = register_tool_pub_hub(
-        mock_ctx,
         pub_tag,
+        lock_data,
         hub_rule = lambda **kwargs: hubs.append(kwargs),
         spoke_rule = lambda **kwargs: spokes.append(kwargs),
     )

@@ -9,11 +9,7 @@ load(
     "parse_pub_version",
     "pub_version_text",
 )
-load(
-    "//flutter/private:flutter_pubspec.bzl",
-    "asset_flavor_error",
-    "parse_pubspec",
-)
+load("//flutter/private:flutter_pubspec.bzl", "asset_flavor_error")
 load("//flutter/private:starlark_literal.bzl", "starlark_string_literal")
 
 visibility(["//flutter/..."])
@@ -254,7 +250,7 @@ def format_pub_asset_attrs_with_shaders(
         res += scoped_shader_includes_block(sorted(pkg_shaders.values())) + "\n"
     return res
 
-def parse_pubspec_identity(content):
+def parse_pubspec_identity(pubspec):
     """The `(name, version)` identity a path spoke verifies against its lock entry.
 
     A path package's overlays and curated code assets are selected by the
@@ -270,15 +266,14 @@ def parse_pubspec_identity(content):
     surrounding whitespace and the YAML scalar type do not matter.
 
     Args:
-        content: Full pubspec.yaml content as a string.
+        pubspec: The decoded pubspec.yaml mapping (`{}` when there is none).
 
     Returns:
         A `struct(name, version)` of strings; the name is `""` when
-        absent, unparsable, or not a scalar, and the version is `"0.0.0"`
-        when unstated. A missing pubspec therefore never matches a lock
-        key and fails closed at the caller's comparison.
+        absent or empty, and the version is `"0.0.0"` when unstated. A
+        missing pubspec therefore never matches a lock key and fails closed
+        at the caller's comparison.
     """
-    pubspec = parse_pubspec(content)
     name = pubspec.get("name", "")
     version = pub_version_text(pubspec.get("version", ""))
     return struct(
@@ -380,7 +375,7 @@ def malformed_pub_version_refusal(hub_name, package_name, bad_value):
         "version or re-resolve the lock."
     )
 
-def check_pubspec_identity_mismatch(hub_name, package_name, lock_version, pubspec_text):
+def check_pubspec_identity_mismatch(hub_name, package_name, lock_version, pubspec):
     """Fail when the package's pubspec name or version disagrees with the lock.
 
     Overlays and curated code assets are selected by the lock key and the
@@ -396,10 +391,10 @@ def check_pubspec_identity_mismatch(hub_name, package_name, lock_version, pubspe
         hub_name: The name of the pub hub.
         package_name: The expected package name from the lockfile.
         lock_version: The locked version string.
-        pubspec_text: The raw pubspec.yaml content.
+        pubspec: The decoded pubspec.yaml mapping (`{}` when there is none).
     """
-    identity = parse_pubspec_identity(pubspec_text)
-    if not pubspec_text.strip() or not identity.name:
+    identity = parse_pubspec_identity(pubspec)
+    if not identity.name:
         fail(missing_pubspec_refusal(hub_name, package_name))
     if identity.name != package_name:
         fail(pubspec_name_refusal(hub_name, package_name, identity.name))

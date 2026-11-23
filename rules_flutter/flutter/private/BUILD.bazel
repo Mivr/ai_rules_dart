@@ -1076,6 +1076,7 @@ bzl_library(
         ":flutter_pubspec",
         ":gradle",
         ":starlark_literal",
+        "@rules_dart//dart/pub:yaml",
     ],
 )
 
@@ -1251,6 +1252,7 @@ bzl_library(
     deps = [
         ":flutter_pub_apple_pods_hub",
         ":podfile_lock",
+        "@rules_dart//dart/pub:yaml",
     ],
 )
 
@@ -1341,7 +1343,7 @@ bzl_library(
         ":swiftpm_resolved",
         "@rules_dart//dart/pub:pub_lock_package",
         "@rules_dart//dart/pub:pub_scc",
-        "@rules_dart//dart/pub:yaml_parser",
+        "@rules_dart//dart/pub:yaml",
     ],
 )
 
@@ -1402,7 +1404,7 @@ bzl_library(
         "@rules_dart//dart/pub:pinned_sources",
         "@rules_dart//dart/pub:pub_lock_package",
         "@rules_dart//dart/pub:pub_scc",
-        "@rules_dart//dart/pub:yaml_parser",
+        "@rules_dart//dart/pub:yaml",
     ],
 )
 
@@ -1455,7 +1457,7 @@ bzl_library(
         "@rules_dart//dart/pub:pinned_sources",
         "@rules_dart//dart/pub:pub_lock_package",
         "@rules_dart//dart/pub:pub_scc",
-        "@rules_dart//dart/pub:yaml_parser",
+        "@rules_dart//dart/pub:yaml",
     ],
 )
 
@@ -1496,7 +1498,6 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":flutter_manifest_validate",
-        "@rules_dart//dart/pub:yaml_parser",
     ],
 )
 
@@ -1511,7 +1512,7 @@ bzl_library(
         ":local_sdk",
         ":repo_metadata",
         "@rules_dart//dart/pub:pub_lock_package",
-        "@rules_dart//dart/pub:yaml_parser",
+        "@rules_dart//dart/pub:yaml",
     ],
 )
 
@@ -1913,15 +1914,6 @@ bzl_library(
     name = "podfile_lock",
     srcs = ["podfile_lock.bzl"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":podfile_lock_scan",
-    ],
-)
-
-bzl_library(
-    name = "podfile_lock_scan",
-    srcs = ["podfile_lock_scan.bzl"],
-    visibility = ["//visibility:public"],
 )
 
 bzl_library(
@@ -2068,7 +2060,7 @@ bzl_library(
         ":flutter_pub_package",
         ":flutter_pub_tag",
         ":pub_lock_sdks",
-        "@rules_dart//dart/pub:yaml_parser",
+        "@rules_dart//dart/pub:yaml",
     ],
 )
 

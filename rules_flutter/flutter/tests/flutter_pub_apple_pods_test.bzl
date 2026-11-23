@@ -17,42 +17,47 @@ load(
 load("//flutter/private:flutter_pub_apple_pods_hub.bzl", "read_ios_pod_native_deps")
 load("//flutter/private:podfile_lock.bzl", "read_podfile_lock")
 load("//flutter/private:swiftpm_resolved.bzl", "read_ios_native_deps")
+load("//flutter/tests:fake_yq.bzl", "FAKE_YQ_OS", "fake_yq_execute", "fake_yq_watch")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
 
-_FIXTURE_LOCK = """PODS:
-  - Flutter (1.0.0)
-  - FlutterMacOS (1.0.0)
-  - Firebase/Auth (10.0.0):
-    - Firebase/Core (= 10.0.0)
-    - FirebaseAuthPlatform (= 1.0.0)
-  - Firebase/Core (10.0.0)
-  - FirebaseAuthPlatform (1.0.0)
-  - path_provider_foundation (0.0.1):
-    - Flutter
-    - FlutterMacOS
-    - path_provider_foundation/Core (= 0.0.1)
-  - path_provider_foundation/Core (0.0.1)
-  - url_launcher_ios (0.0.1):
-    - Flutter
-    - url_launcher_platform_interface (= 1.0.0)
-  - url_launcher_platform_interface (1.0.0)
-  - custom_checkout_pod (1.2.0)
-  - unmapped_pod (2.0.0)
-DEPENDENCIES:
-  - Firebase/Auth (from `~> 10.0.0`)
-  - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
-  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
-EXTERNAL SOURCES:
-  custom_checkout_pod:
-    :git: https://github.com/example/custom.git
-  path_provider_foundation:
-    :path: .symlinks/plugins/path_provider_foundation/darwin
-  url_launcher_ios:
-    :path: .symlinks/plugins/url_launcher_ios/ios
-COCOAPODS: 1.14.3
-"""
+_FIXTURE_LOCK = {
+    "PODS": [
+        "Flutter (1.0.0)",
+        "FlutterMacOS (1.0.0)",
+        {
+            "Firebase/Auth (10.0.0)": ["Firebase/Core (= 10.0.0)", "FirebaseAuthPlatform (= 1.0.0)"],
+        },
+        "Firebase/Core (10.0.0)",
+        "FirebaseAuthPlatform (1.0.0)",
+        {
+            "path_provider_foundation (0.0.1)": [
+                "Flutter",
+                "FlutterMacOS",
+                "path_provider_foundation/Core (= 0.0.1)",
+            ],
+        },
+        "path_provider_foundation/Core (0.0.1)",
+        {
+            "url_launcher_ios (0.0.1)": ["Flutter", "url_launcher_platform_interface (= 1.0.0)"],
+        },
+        "url_launcher_platform_interface (1.0.0)",
+        "custom_checkout_pod (1.2.0)",
+        "unmapped_pod (2.0.0)",
+    ],
+    "DEPENDENCIES": [
+        "Firebase/Auth (from `~> 10.0.0`)",
+        "path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)",
+        "url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)",
+    ],
+    "EXTERNAL SOURCES": {
+        "custom_checkout_pod": {":git": "https://github.com/example/custom.git"},
+        "path_provider_foundation": {":path": ".symlinks/plugins/path_provider_foundation/darwin"},
+        "url_launcher_ios": {":path": ".symlinks/plugins/url_launcher_ios/ios"},
+    },
+    "COCOAPODS": "1.14.3",
+}
 
 _FLUTTERFIRE_MANIFEST = """// swift-tools-version: 5.9
 import PackageDescription
@@ -101,12 +106,12 @@ def _make_plugin_build(pkg, src):
     )
     return tpl.format(pkg = pkg, sfx = "", src = src) + tpl.format(pkg = pkg, sfx = "_xtool", src = src)
 
-def _make_hub_json(lock_text, lock_label, packages, pod_deps = None, pod_ignore = None, product_deps = None):
+def _make_hub_json(lock_data, lock_label, packages, pod_deps = None, pod_ignore = None, product_deps = None):
     """Build deterministic `ios_native_deps.json` text from a lock fixture."""
     deps_map = pod_deps if pod_deps != None else {}
     ignore_list = pod_ignore if pod_ignore != None else []
     products_map = product_deps if product_deps != None else {}
-    parsed = read_podfile_lock(lock_text, lock_label)
+    parsed = read_podfile_lock(lock_data, lock_label)
     precomputed = precompute_hub_apple_pods("deps", packages, parsed, lock_label, deps_map, ignore_list)
     return json.encode({
         "ios_pod_deps": deps_map,
@@ -126,11 +131,17 @@ def _mock_dir_entries(dirs_dict, dir_path):
     return entries
 
 def _make_mock_path_fn(files, dirs_dict):
-    """Build a mock `ctx.path` function backed by `files` and `dirs_dict`."""
+    """Build a mock `ctx.path` function backed by `files` and `dirs_dict`.
+
+    A YAML file (a decoded mapping in `files`) resolves to its own key, the
+    name `fake_yq_execute` answers for.
+    """
 
     def _path(path_str):
         """Return a mock path struct for `path_str`."""
         p = str(path_str)
+        if type(files.get(p)) == "dict":
+            return p
         is_dir = p in dirs_dict
         base = p.rpartition("/")[2] if "/" in p else p
         return struct(
@@ -161,7 +172,11 @@ def _make_mock_spoke_ctx(
         hub_name = "deps",
         plugin_native_deps = None,
         dirs = None):
-    """Create a mock repository context for Apple plugin spoke unit tests."""
+    """Create a mock repository context for Apple plugin spoke unit tests.
+
+    `files` maps each path to its text, or a YAML file (the Podfile.lock) to
+    the mapping `yaml_to_json` decodes it to.
+    """
     dirs_dict = dirs if dirs != None else {}
     return struct(
         attr = struct(
@@ -176,6 +191,9 @@ def _make_mock_spoke_ctx(
         ),
         path = _make_mock_path_fn(files, dirs_dict),
         read = _make_mock_read_fn(files),
+        execute = fake_yq_execute({k: v for k, v in files.items() if type(v) == "dict"}),
+        os = FAKE_YQ_OS,
+        watch = fake_yq_watch,
     )
 
 def _step1_engine_pods_test_impl(ctx):
@@ -238,10 +256,14 @@ def _step3_subspec_self_edges_test_impl(ctx):
     """Plugin subspec self-edges skip self-linking while keeping subspec external deps."""
     env = unittest.begin(ctx)
     lock_self = (
-        "PODS:\n  - my_plugin (1.0.0):\n    - my_plugin/Core\n" +
-        "  - my_plugin/Core (1.0.0):\n    - ExternalPod (= 1.0.0)\n    - Flutter\n" +
-        "  - ExternalPod (1.0.0)\nEXTERNAL SOURCES:\n  my_plugin:\n" +
-        "    :path: .symlinks/plugins/my_plugin/ios\n"
+        {
+            "PODS": [
+                {"my_plugin (1.0.0)": ["my_plugin/Core"]},
+                {"my_plugin/Core (1.0.0)": ["ExternalPod (= 1.0.0)", "Flutter"]},
+                "ExternalPod (1.0.0)",
+            ],
+            "EXTERNAL SOURCES": {"my_plugin": {":path": ".symlinks/plugins/my_plugin/ios"}},
+        }
     )
     hub_json = _make_hub_json(lock_self, "//:self.lock", ["my_plugin"], {"ExternalPod": "//ext:target"})
     mock_ctx = _make_mock_spoke_ctx(
@@ -302,10 +324,17 @@ def _deduplication_and_rendering_test_impl(ctx):
     """Duplicate labels deduplicate in lock order and splice into both Apple targets."""
     env = unittest.begin(ctx)
     lock_dedup = (
-        "PODS:\n  - sample_plugin (1.0.0):\n    - DepFirst (= 1.0.0)\n" +
-        "    - DepA (= 1.0.0)\n    - DepB (= 1.0.0)\n" +
-        "  - DepFirst (1.0.0)\n  - DepA (1.0.0)\n  - DepB (1.0.0)\n" +
-        "EXTERNAL SOURCES:\n  sample_plugin:\n    :path: .symlinks/plugins/sample_plugin/ios\n"
+        {
+            "PODS": [
+                {
+                    "sample_plugin (1.0.0)": ["DepFirst (= 1.0.0)", "DepA (= 1.0.0)", "DepB (= 1.0.0)"],
+                },
+                "DepFirst (1.0.0)",
+                "DepA (1.0.0)",
+                "DepB (1.0.0)",
+            ],
+            "EXTERNAL SOURCES": {"sample_plugin": {":path": ".symlinks/plugins/sample_plugin/ios"}},
+        }
     )
     pod_deps = {"DepFirst": "//z_first:lib", "DepA": "//shared:umbrella", "DepB": "//shared:umbrella"}
     hub_json = _make_hub_json(lock_dedup, "//:dedup.lock", ["sample_plugin"], pod_deps)
@@ -369,9 +398,13 @@ def _spoke_message_11_refusal_test_impl(ctx):
     """A spoke reaching an unresolved pod fails with verbatim Message 11."""
     env = unittest.begin(ctx)
     lock_bad = (
-        "PODS:\n  - flutter_sound (9.30.0):\n    - flutter_sound_core (= 9.30.0)\n" +
-        "  - flutter_sound_core (9.30.0)\nEXTERNAL SOURCES:\n  flutter_sound:\n" +
-        "    :path: .symlinks/plugins/flutter_sound/ios\n"
+        {
+            "PODS": [
+                {"flutter_sound (9.30.0)": ["flutter_sound_core (= 9.30.0)"]},
+                "flutter_sound_core (9.30.0)",
+            ],
+            "EXTERNAL SOURCES": {"flutter_sound": {":path": ".symlinks/plugins/flutter_sound/ios"}},
+        }
     )
     hub_json = _make_hub_json(lock_bad, "//app/ios:Podfile.lock", ["flutter_sound"])
     mock_bad = _make_mock_spoke_ctx(
@@ -390,9 +423,13 @@ def _flutterfire_manifest_cocoapods_mode_test_impl(ctx):
     """FlutterFire spoke in CocoaPods mode links mapped pod + POD-1 local target without SwiftPM pins."""
     env = unittest.begin(ctx)
     lock_fb = (
-        "PODS:\n  - firebase_auth (10.0.0):\n    - Firebase/Auth (= 10.0.0)\n" +
-        "  - Firebase/Auth (10.0.0)\nEXTERNAL SOURCES:\n  firebase_auth:\n" +
-        "    :path: .symlinks/plugins/firebase_auth/ios\n"
+        {
+            "PODS": [
+                {"firebase_auth (10.0.0)": ["Firebase/Auth (= 10.0.0)"]},
+                "Firebase/Auth (10.0.0)",
+            ],
+            "EXTERNAL SOURCES": {"firebase_auth": {":path": ".symlinks/plugins/firebase_auth/ios"}},
+        }
     )
     pod_deps = {"Firebase/Auth": "//third_party:firebase_auth_umbrella"}
     hub_json = _make_hub_json(lock_fb, "//app/ios:Podfile.lock", ["firebase_auth"], pod_deps)

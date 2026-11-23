@@ -21,12 +21,12 @@ docs/flutter-sdk-versions.md.
 """
 
 load("@rules_dart//dart/ext:registry.bzl", "curated_code_assets")
-load("@rules_dart//dart/pub:yaml_parser.bzl", "parse_pubspec_lock")
+load("@rules_dart//dart/pub:yaml.bzl", "lock_packages", "yaml_to_json")
 load("//flutter/private:artifact_urls.bzl", "source_strip_prefix")
 load("//flutter/private:flutter_gen_l10n_repo.bzl", "flutter_gen_l10n_repo")
 load("//flutter/private:flutter_pub_android_package.bzl", "android_package_repo_name", "flutter_pub_android_package")
 load("//flutter/private:flutter_pub_apple_pods.bzl", "hub_cocoapods_attrs")
-load("//flutter/private:flutter_pub_apple_pods_hub.bzl", "read_hub_podfile_lock")
+load("//flutter/private:flutter_pub_apple_pods_hub.bzl", "hub_podfile_lock")
 load("//flutter/private:flutter_pub_cycle_breaks.bzl", "cycle_breaks_lock_error")
 load("//flutter/private:flutter_pub_lock_hub.bzl", "flutter_pub_lock_hub")
 load("//flutter/private:flutter_pub_maven.bzl", "path_spoke_maven_inputs")
@@ -44,7 +44,7 @@ load("//flutter/private:flutter_pub_scc_plan.bzl", "create_scc_spokes", "plan_hu
 load("//flutter/private:flutter_pub_tag.bzl", "flutter_pub_tag", "validate_swift_package_product_deps")
 load("//flutter/private:flutter_pubspec.bzl", "parse_flutter_plugin_block")
 load("//flutter/private:flutter_sdk_package.bzl", "declare_sdk_source", "declare_sdk_spokes")
-load("//flutter/private:pub_lock_sdks.bzl", "hosted_package_sha256", "parse_lock_sdk_constraints", "version_below_lower_bound")
+load("//flutter/private:pub_lock_sdks.bzl", "hosted_package_sha256", "lock_flutter_constraint", "version_below_lower_bound")
 load("//flutter/private:swiftpm_package.bzl", "swiftpm_package")
 load("//flutter/private:swiftpm_resolved.bzl", "check_swiftpm_config_present", "check_swiftpm_dicts", "classify_swiftpm_pin", "pub_spoke_swiftpm_attrs", "read_swiftpm_pins", "swiftpm_spoke_attrs")
 load("//flutter/private:toolchain_selection.bzl", "select_toolchain_source")
@@ -264,7 +264,29 @@ def _collect_custom_tags(modules):
         for tag in mod.tags.version
     ]
 
-def _collect_lock_floors(module_ctx):
+def _read_pub_yaml(module_ctx):
+    """Reads every `flutter.pub` tag's `pubspec.lock` and `Podfile.lock` in one `yq` run.
+
+    Each file is watched, so editing it re-evaluates the extension.
+
+    Args:
+        module_ctx: The module extension context.
+
+    Returns:
+        Dict of label string to the file's decoded top-level mapping.
+    """
+    labels = {}
+    for mod in module_ctx.modules:
+        for pub_tag in mod.tags.pub:
+            labels[str(pub_tag.lock)] = pub_tag.lock
+            if getattr(pub_tag, "ios_podfile_lock", None) != None:
+                labels[str(pub_tag.ios_podfile_lock)] = pub_tag.ios_podfile_lock
+    names = sorted(labels.keys())
+    for name in names:
+        module_ctx.watch(labels[name])
+    return dict(zip(names, yaml_to_json(module_ctx, [labels[name] for name in names], names)))
+
+def _collect_lock_floors(module_ctx, pub_yaml):
     """Collects pub-lock Flutter floors, keyed by lock label string.
 
     In download mode these are checked at evaluation; in local mode they
@@ -274,7 +296,7 @@ def _collect_lock_floors(module_ctx):
     lock_flutter_constraints = {}
     for mod in module_ctx.modules:
         for pub_tag in mod.tags.pub:
-            constraint = parse_lock_sdk_constraints(module_ctx.read(pub_tag.lock)).get("flutter", "")
+            constraint = lock_flutter_constraint(pub_yaml[str(pub_tag.lock)])
             if constraint:
                 lock_flutter_constraints[str(pub_tag.lock)] = constraint
     return lock_flutter_constraints
@@ -389,7 +411,7 @@ def _register_all_toolchains(module_ctx, registrations, merged, lock_flutter_con
         selected_info[name] = _register_download_toolchain(name, source.version, merged, darwin_sdk, llvm_tool_repos)
     return selected_info
 
-def _check_pub_flutter_floor(lock_content, toolchain_info, pub_tag):
+def _check_pub_flutter_floor(lock_data, toolchain_info, pub_tag):
     """Fails when the lock's Flutter floor exceeds the pinned toolchain.
 
     This is the one moment where the SDK that resolved the lock and
@@ -402,7 +424,7 @@ def _check_pub_flutter_floor(lock_content, toolchain_info, pub_tag):
     and each host repo checks it once the SDK is read; only the
     download-mode pin is checked here.
     """
-    flutter_constraint = parse_lock_sdk_constraints(lock_content).get("flutter", "")
+    flutter_constraint = lock_flutter_constraint(lock_data)
     flutter_version = toolchain_info.version
     if flutter_constraint and flutter_version and version_below_lower_bound(flutter_version, flutter_constraint):
         fail((
@@ -573,27 +595,38 @@ def _workspace_root_of_lock(module_ctx, lock_label):
             root = root.rpartition("/")[0]
     return root
 
-def _path_package_declares_android(module_ctx, workspace_root, package_dir):
-    """Whether a path package's pubspec declares the `android` platform.
+def _path_packages_declaring_android(module_ctx, workspace_root, path_pkgs):
+    """The path packages whose pubspec declares the `android` platform.
 
-    The extension reads only this package's own pubspec, so a path package
-    with no Android platform gets no Android repository at all. A missing
-    pubspec reads as no Android platform; the path spoke's fetch reports
-    the real problem.
+    The extension reads only the packages' own pubspecs, all in one `yq`
+    run, so a path package with no Android platform gets no Android
+    repository at all. A missing pubspec reads as no Android platform; the
+    path spoke's fetch reports the real problem.
 
     Args:
         module_ctx: The module extension context.
         workspace_root: The absolute workspace root.
-        package_dir: The workspace-relative package directory.
+        path_pkgs: Dict of path package name to its lock info struct.
 
     Returns:
-        True when `flutter.plugin.platforms.android` is present.
+        Dict of package name to True for each package whose
+        `flutter.plugin.platforms.android` is present.
     """
-    pubspec_path = workspace_root + "/" + package_dir + "/pubspec.yaml"
-    if not module_ctx.path(pubspec_path).exists:
-        return False
-    plugin_block = parse_flutter_plugin_block(module_ctx.read(pubspec_path))
-    return bool(plugin_block.platforms.get("android", {}))
+    names = []
+    paths = []
+    for name in sorted(path_pkgs.keys()):
+        pubspec_path = workspace_root + "/" + path_pkgs[name].path + "/pubspec.yaml"
+        if not module_ctx.path(pubspec_path).exists:
+            continue
+        module_ctx.watch(pubspec_path)
+        names.append(name)
+        paths.append(pubspec_path)
+    pubspecs = yaml_to_json(module_ctx, paths, [path_pkgs[name].path + "/pubspec.yaml" for name in names])
+    return {
+        name: True
+        for name, pubspec in zip(names, pubspecs)
+        if parse_flutter_plugin_block(pubspec).platforms.get("android", {})
+    }
 
 def _create_path_spokes(plan, path_pkgs, user_overlay_roots, pub_tag, ignore_hooks, module_ctx):
     """Creates one `flutter_pub_path_package` spoke per singleton path dependency.
@@ -607,6 +640,7 @@ def _create_path_spokes(plan, path_pkgs, user_overlay_roots, pub_tag, ignore_hoo
     workspace_root = _workspace_root_of_lock(module_ctx, pub_tag.lock)
     overlay_roots = spoke_overlay_roots(user_overlay_roots)
     singleton_set = {pkg: True for pkg in plan.singletons}
+    declares_android = _path_packages_declaring_android(module_ctx, workspace_root, path_pkgs)
     for name, path_info in path_pkgs.items():
         if name in singleton_set:
             swiftpm_attrs = pub_spoke_swiftpm_attrs(pub_tag, include_ios_native_deps = True, plugin_name = name)
@@ -635,7 +669,7 @@ def _create_path_spokes(plan, path_pkgs, user_overlay_roots, pub_tag, ignore_hoo
                 pubspec_lock = pub_tag.lock,
             )
         if (
-            _path_package_declares_android(module_ctx, workspace_root, path_info.path) and
+            name in declares_android and
             not overlay_replaces_spoke(module_ctx, overlay_roots, name, path_info.version)
         ):
             flutter_pub_android_package(
@@ -719,21 +753,21 @@ def _create_swiftpm_spokes(hub_name, pub_tag, module_ctx):
         )
     return
 
-def _register_pub_hub(module_ctx, pub_tag, selected_info, user_overlay_roots, facts_state):
+def _register_pub_hub(module_ctx, pub_tag, selected_info, user_overlay_roots, facts_state, pub_yaml):
     """Resolves one `flutter.pub` tag into spoke repos plus the hub repo."""
     hub_name = pub_tag.name
-    podfile, lock_label = read_hub_podfile_lock(module_ctx, pub_tag)
+    podfile, lock_label = hub_podfile_lock(pub_tag, pub_yaml)
 
     validate_swift_package_product_deps(hub_name, pub_tag.swift_package_product_deps)
     _fail_on_invalid_maven_deps(hub_name, pub_tag.android_maven_deps)
-    lock_content = module_ctx.read(pub_tag.lock)
-    lock_pkgs = parse_pubspec_lock(lock_content)
+    lock_data = pub_yaml[str(pub_tag.lock)]
+    lock_pkgs = lock_packages(lock_data, str(pub_tag.lock))
 
     toolchain_info = selected_info.get(_DEFAULT_NAME)
     if not toolchain_info:
         fail("flutter.pub() requires a flutter.toolchain() to be registered.")
 
-    _check_pub_flutter_floor(lock_content, toolchain_info, pub_tag)
+    _check_pub_flutter_floor(lock_data, toolchain_info, pub_tag)
 
     hosted, path_pkgs, sdk_flutter, all_package_names = _classify_lock_packages(hub_name, pub_tag.lock, lock_pkgs)
     cycle_error = cycle_breaks_lock_error(pub_tag.cycle_breaks, all_package_names, sdk_flutter)
@@ -796,7 +830,8 @@ def _toolchain_extension(module_ctx):
     # checks them at evaluation below, while local mode hands them to the
     # host repos, which check them against the local SDK's own version at
     # fetch time (the version is only known once the SDK is read).
-    lock_flutter_constraints = _collect_lock_floors(module_ctx)
+    pub_yaml = _read_pub_yaml(module_ctx)
+    lock_flutter_constraints = _collect_lock_floors(module_ctx, pub_yaml)
 
     registrations = _collect_registrations(module_ctx.modules)
     selected_info = _register_all_toolchains(module_ctx, registrations, merged, lock_flutter_constraints, darwin_sdk)
@@ -821,6 +856,7 @@ def _toolchain_extension(module_ctx):
                 selected_info,
                 hub_overlay_roots(root_overlay_roots, _overlay_roots_of_module(mod), mod.is_root),
                 facts_state,
+                pub_yaml,
             )
 
     # Don't declare root_module_direct_deps: flutter_register_toolchains creates

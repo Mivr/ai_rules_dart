@@ -63,6 +63,7 @@ load(
     "flutter_pub_scc_member_target",
 )
 load("//flutter/private:podfile_lock.bzl", "read_podfile_lock")
+load("//flutter/tests:fake_yq.bzl", "FAKE_YQ_OS", "fake_yq_execute", "fake_yq_watch")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
@@ -223,23 +224,22 @@ let package = Package(
 
 def _check_cocoapods_scc_routing(env, scc_targets):
     """Verify CocoaPods sibling plugin resolution routes through scc_targets."""
-    podfile_text = """PODS:
-  - Flutter (1.0.0)
-  - cycle_a (0.1.0):
-    - Flutter
-    - cycle_b (= 0.1.0)
-  - cycle_b (0.1.0):
-    - Flutter
-DEPENDENCIES:
-  - cycle_a (from `.symlinks/plugins/cycle_a/ios`)
-  - cycle_b (from `.symlinks/plugins/cycle_b/ios`)
-EXTERNAL SOURCES:
-  cycle_a:
-    :path: .symlinks/plugins/cycle_a/ios
-  cycle_b:
-    :path: .symlinks/plugins/cycle_b/ios
-COCOAPODS: 1.14.3
-"""
+    podfile_text = {
+        "PODS": [
+            "Flutter (1.0.0)",
+            {"cycle_a (0.1.0)": ["Flutter", "cycle_b (= 0.1.0)"]},
+            {"cycle_b (0.1.0)": ["Flutter"]},
+        ],
+        "DEPENDENCIES": [
+            "cycle_a (from `.symlinks/plugins/cycle_a/ios`)",
+            "cycle_b (from `.symlinks/plugins/cycle_b/ios`)",
+        ],
+        "EXTERNAL SOURCES": {
+            "cycle_a": {":path": ".symlinks/plugins/cycle_a/ios"},
+            "cycle_b": {":path": ".symlinks/plugins/cycle_b/ios"},
+        },
+        "COCOAPODS": "1.14.3",
+    }
     parsed = read_podfile_lock(podfile_text, "//:Podfile.lock")
     precomputed = precompute_hub_apple_pods(
         "hub",
@@ -268,6 +268,10 @@ COCOAPODS: 1.14.3
             scc_targets = scc_targets,
         ),
         read = lambda p: files[str(p)],
+        path = lambda p: str(p) if str(p) == "//:Podfile.lock" else struct(exists = True),
+        execute = fake_yq_execute({"//:Podfile.lock": podfile_text}),
+        os = FAKE_YQ_OS,
+        watch = fake_yq_watch,
     )
     pod_deps = detect_apple_cocoapods_deps(
         pod_ctx,
@@ -569,7 +573,12 @@ def _make_win_fs_node(root_real, rel_parts, node_val):
     )
 
 def _windows_path_pubspec_test_impl(ctx):
-    """Windows NTFS `build/` dirs, backslashes, mixed-case drives, and CRLF pubspecs succeed."""
+    """Windows NTFS `build/` dirs, backslashes and mixed-case drives resolve.
+
+    The pubspec files keep their CRLF text, but what `collect_path_deps`
+    reads is the mapping `yaml_to_json` decodes, keyed by each file's real
+    path.
+    """
     env = unittest.begin(ctx)
 
     win_root_real = "D:\\a\\ai_rules_flutter\\e2e\\hello_world"
@@ -616,20 +625,32 @@ def _windows_path_pubspec_test_impl(ctx):
     asserts.true(env, ws_root.get_child("path_probe", "BUILD").exists)
     asserts.true(env, ws_root.get_child("path_probe", "BUILD").is_dir)
 
-    def mock_path(_label):
-        """Returns the lock file path whose `.dirname` is `ws_root`."""
+    def mock_path(target):
+        """Returns a pubspec node's real path, else the lock path under `ws_root`."""
+        if type(target) == "struct" and target.basename == "pubspec.yaml":
+            return target.realpath
         return struct(dirname = ws_root)
 
-    def mock_read(target):
-        """Fails if passed a `Label` (matching Bazel PackageLookup on non-packages)."""
-        if type(target) == "Label":
-            fail("Unexpected Label passed to module_ctx.read: %s" % target)
-        return target.text
+    win_pkg_pubspec = "d:\\a\\AI_Rules_Flutter\\e2e\\hello_world\\packages\\win_pkg\\pubspec.yaml"
+    decoded = {
+        win_root_real + "/path_probe/pubspec.yaml": {
+            "name": "path_probe",
+            "version": "0.1.0",
+            "dependencies": {"collection": "^1.18.0"},
+        },
+        win_pkg_pubspec: {
+            "name": "win_pkg",
+            "version": "0.1.0",
+            "environment": {"sdk": "^3.4.0"},
+            "dependencies": {"path_probe": {"path": "../../path_probe"}, "meta": "^1.11.0"},
+        },
+    }
 
     mock_module_ctx = struct(
-        os = struct(name = "windows amd64"),
+        os = struct(name = "windows amd64", arch = "amd64"),
         path = mock_path,
-        read = mock_read,
+        execute = fake_yq_execute(decoded),
+        watch = fake_yq_watch,
     )
     path_pkgs = {
         "path_probe": struct(path = "path_probe", version = "0.1.0"),

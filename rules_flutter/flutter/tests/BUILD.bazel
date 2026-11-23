@@ -90,7 +90,6 @@ load(":podspec_read_test.bzl", "podspec_read_test_suite")
 load(":podspec_xcconfig_defines_test.bzl", "podspec_xcconfig_defines_test_suite")
 load(":profile_mode_test.bzl", "profile_mode_test_suite")
 load(":pub_lock_sdks_test.bzl", "pub_lock_sdks_test_suite")
-load(":pubspec_errors_test.bzl", "pubspec_errors_test_suite")
 load(":registrant_twin_test.bzl", "registrant_twin_test_suite")
 load(":repo_metadata_test.bzl", "repo_metadata_test_suite")
 load(":sdk_source_and_ios_engine_repos_test.bzl", "sdk_source_and_ios_engine_repos_test_suite")
@@ -305,8 +304,6 @@ flutter_pub_scan_test_suite(name = "flutter_pub_scan_test")
 flutter_pub_overlays_test_suite(name = "flutter_pub_overlays_test")
 
 flutter_pubspec_test_suite(name = "flutter_pubspec_test")
-
-pubspec_errors_test_suite(name = "pubspec_errors_test")
 
 flutter_sdk_package_test_suite(name = "flutter_sdk_package_test")
 

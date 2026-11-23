@@ -33,61 +33,51 @@ load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
 
-_CONDITIONED_PUBSPEC = """\
-name: shader_conditions
-flutter:
-  shaders:
-    - path: shaders/web_only.frag
-      platforms: [web]
-    - path: shaders/paid_only.frag
-      flavors: [paid]
-    - path: shaders/any.frag
-"""
+_CONDITIONED_PUBSPEC = {
+    "name": "shader_conditions",
+    "flutter": {
+        "shaders": [
+            {"path": "shaders/web_only.frag", "platforms": ["web"]},
+            {"path": "shaders/paid_only.frag", "flavors": ["paid"]},
+            {"path": "shaders/any.frag"},
+        ],
+    },
+}
 
-_SCALAR_PLATFORMS_PUBSPEC = """\
-name: shader_scalar_platforms
-flutter:
-  shaders:
-    - path: shaders/web_only.frag
-      platforms: web
-"""
+_SCALAR_PLATFORMS_PUBSPEC = {
+    "name": "shader_scalar_platforms",
+    "flutter": {"shaders": [{"path": "shaders/web_only.frag", "platforms": "web"}]},
+}
 
-_SCALAR_FLAVORS_PUBSPEC = """\
-name: shader_scalar_flavors
-flutter:
-  shaders:
-    - path: shaders/paid_only.frag
-      flavors: paid
-"""
+_SCALAR_FLAVORS_PUBSPEC = {
+    "name": "shader_scalar_flavors",
+    "flutter": {"shaders": [{"path": "shaders/paid_only.frag", "flavors": "paid"}]},
+}
 
-_UNKNOWN_PLATFORM_PUBSPEC = """\
-name: shader_unknown_platform
-flutter:
-  shaders:
-    - path: shaders/web_only.frag
-      platforms: [tvos]
-"""
+_UNKNOWN_PLATFORM_PUBSPEC = {
+    "name": "shader_unknown_platform",
+    "flutter": {"shaders": [{"path": "shaders/web_only.frag", "platforms": ["tvos"]}]},
+}
 
-_SHADER_TRANSFORMERS_PUBSPEC = """\
-name: shader_transformers
-flutter:
-  shaders:
-    - path: shaders/distort.frag
-      transformers:
-        - package: weave
-"""
+_SHADER_TRANSFORMERS_PUBSPEC = {
+    "name": "shader_transformers",
+    "flutter": {
+        "shaders": [
+            {
+                "path": "shaders/distort.frag",
+                "transformers": [{"package": "weave"}],
+            },
+        ],
+    },
+}
 
-_SHADER_NULL_TRANSFORMERS_PUBSPEC = """\
-name: shader_null_transformers
-flutter:
-  assets:
-    - path: assets/image.png
-      transformers:
-        - package: weave
-  shaders:
-    - path: shaders/distort.frag
-      transformers: null
-"""
+_SHADER_NULL_TRANSFORMERS_PUBSPEC = {
+    "name": "shader_null_transformers",
+    "flutter": {
+        "assets": [{"path": "assets/image.png", "transformers": [{"package": "weave"}]}],
+        "shaders": [{"path": "shaders/distort.frag", "transformers": None}],
+    },
+}
 
 def _shader_conditions_survive_parse_test_impl(ctx):
     """A shader map entry keeps its `platforms` and `flavors` lists."""
@@ -167,7 +157,6 @@ def _shader_transformers_refused_test_impl(ctx):
     problem = result.asset_errors[0]
     asserts.equals(env, "transformers", problem.key)
     asserts.equals(env, "shaders/distort.frag", problem.path)
-    asserts.equals(env, 5, problem.line)
     asserts.true(env, "asset transformers are not supported by rules_flutter." in problem.detail, problem.detail)
     message = asset_entry_problem_error("shader_pkg", problem)
     for want in ["shader_pkg", "shaders/distort.frag", "transformers"]:
@@ -182,7 +171,6 @@ def _shader_null_transformers_accepted_test_impl(ctx):
     problem = result.asset_errors[0]
     asserts.equals(env, "transformers", problem.key)
     asserts.equals(env, "assets/image.png", problem.path)
-    asserts.equals(env, 5, problem.line)
     asserts.equals(env, 1, len(result.shaders))
     asserts.equals(env, "shaders/distort.frag", result.shaders[0].path)
     asserts.equals(env, [], result.shaders[0].platforms)

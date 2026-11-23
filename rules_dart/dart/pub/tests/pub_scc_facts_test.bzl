@@ -27,11 +27,11 @@ load(
     "lookup_fact_deps",
     "parser_schema",
     "parser_texts_digest",
-    "read_scope_pubspec",
     "record_scope_facts",
     "scc_member_deps_error",
     "scc_members_connectivity_error",
     "scc_planned_deps_error",
+    "scope_pubspec_path",
     "scratch_pubspec_error",
     "split_scope_facts",
     "spoke_planned_deps_error",
@@ -47,7 +47,7 @@ _OTHER_REF = "2f6098cf40d1b7bdd43ef384dfab82e809c5cee0"
 
 # The schema the key, split, and record tests share: fixed parser texts, so
 # the keys are deterministic and the binding tests pin the changes instead.
-_SCHEMA = parser_schema(["yaml_parser test source", "yaml_subset test source"])
+_SCHEMA = parser_schema(["yq.bzl test source", "pubspec_data.bzl test source"])
 
 def _hosted(version = "1.4.0", sha256 = _SHA):
     return struct(version = version, sha256 = sha256, url = "https://pub.dev")
@@ -61,7 +61,7 @@ def _hosted_key_test_impl(ctx):
     asserts.true(env, hosted_fact_key("meta", "1.19.0", _SHA, _SCHEMA) != hosted_fact_key("meta", "1.20.0", _SHA, _SCHEMA), "a version bump is a miss")
     asserts.true(env, hosted_fact_key("meta", "1.19.0", _SHA, _SCHEMA) != hosted_fact_key("meta", "1.19.0", _OTHER_SHA, _SCHEMA), "a sha256 bump is a miss")
     asserts.true(env, hosted_fact_key("meta", "1.19.0", _SHA, _SCHEMA) != hosted_fact_key("path", "1.19.0", _SHA, _SCHEMA), "another package is another key")
-    asserts.true(env, hosted_fact_key("meta", "1.19.0", _SHA, _SCHEMA) != hosted_fact_key("meta", "1.19.0", _SHA, parser_schema(["other", "subset"])), "another parser is a miss")
+    asserts.true(env, hosted_fact_key("meta", "1.19.0", _SHA, _SCHEMA) != hosted_fact_key("meta", "1.19.0", _SHA, parser_schema(["other", "reader"])), "another reader is a miss")
     return unittest.end(env)
 
 def _git_key_test_impl(ctx):
@@ -256,15 +256,12 @@ def _empty_readdir():
 def _missing_path(_path):
     return struct(exists = False, is_dir = False)
 
-def _fake_read(_path):
-    return "name: charcode\n"
-
-def _read_scope_pubspec_test_impl(ctx):
+def _scope_pubspec_path_test_impl(ctx):
     env = unittest.begin(ctx)
     missing_ctx = struct(path = _missing_path)
-    asserts.equals(env, "", read_scope_pubspec(missing_ctx, "charcode", "scratch/charcode"), "a missing scratch root reads as empty")
-    fake_ctx = struct(path = _fake_path, read = _fake_read)
-    asserts.equals(env, "name: charcode\n", read_scope_pubspec(fake_ctx, "charcode", "scratch/charcode"), "a pubspec inside the package is read")
+    asserts.equals(env, None, scope_pubspec_path(missing_ctx, "charcode", "scratch/charcode"), "a missing scratch root has no pubspec")
+    fake_ctx = struct(path = _fake_path)
+    asserts.equals(env, "scratch/charcode/pubspec.yaml", scope_pubspec_path(fake_ctx, "charcode", "scratch/charcode"), "a pubspec inside the package is returned")
     return unittest.end(env)
 
 def _verify_match_test_impl(ctx):
@@ -468,7 +465,7 @@ _t25_test = unittest.make(_spoke_dropped_edge_test_impl)
 _t26_test = unittest.make(_spoke_fake_edge_test_impl)
 _t27_test = unittest.make(_record_split_lookup_round_trip_test_impl)
 _t28_test = unittest.make(_verify_mismatch_message_test_impl)
-_t29_test = unittest.make(_read_scope_pubspec_test_impl)
+_t29_test = unittest.make(_scope_pubspec_path_test_impl)
 
 def pub_scc_facts_test_suite(name):
     small_unittest_suite(

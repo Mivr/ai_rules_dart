@@ -11,7 +11,7 @@ The fixture shapes mirror real pub.dev plugins:
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("@rules_dart//dart/pub:yaml_parser.bzl", "pubspec_sdk_constraint_error")
+load("@rules_dart//dart/pub:yaml.bzl", "pubspec_environment_error")
 load("//flutter/private:flutter_pub_android_package.bzl", "android_build_config_source", "android_package_repo_name", "android_spoke_alias_content")
 load(
     "//flutter/private:flutter_pub_package.bzl",
@@ -2342,25 +2342,26 @@ def _spoke_sdk_constraint_refusal_test_impl(ctx):
     env = unittest.begin(ctx)
 
     for content, quoted in [
-        ("name: my_pkg\nenvironment:\n  sdk: \"3.10\"\n", '"3.10"'),
-        ("name: my_pkg\nenvironment:\n  sdk: 3.5\n", '"3.5"'),
+        # `sdk: "3.10"` and the bare number `sdk: 3.5`, which reads as its text.
+        ({"name": "my_pkg", "environment": {"sdk": "3.10"}}, '"3.10"'),
+        ({"name": "my_pkg", "environment": {"sdk": "3.5"}}, '"3.5"'),
     ]:
-        err = pubspec_sdk_constraint_error(content, "my_pkg/pubspec.yaml")
-        asserts.true(env, err != None, "bad sdk is refused:\n%s" % content)
+        err = pubspec_environment_error(content, "my_pkg/pubspec.yaml")
+        asserts.true(env, err != None, "bad sdk is refused: %s" % content)
         asserts.true(env, "my_pkg" in err, "refusal names the package: %s" % err)
         asserts.true(env, "pubspec.yaml" in err, "refusal names pubspec.yaml: %s" % err)
         asserts.true(env, "environment.sdk" in err, "refusal names environment.sdk: %s" % err)
         asserts.true(env, quoted in err, "refusal quotes the value: %s" % err)
 
     for content in [
-        "name: my_pkg\nenvironment:\n  sdk: ^3.0.0\n",
-        "name: my_pkg\nenvironment:\n  sdk:\n",
-        "name: my_pkg\n",
+        {"name": "my_pkg", "environment": {"sdk": "^3.0.0"}},
+        {"name": "my_pkg", "environment": {"sdk": None}},
+        {"name": "my_pkg"},
     ]:
         asserts.true(
             env,
-            pubspec_sdk_constraint_error(content, "my_pkg/pubspec.yaml") == None,
-            "sdk block reads as before:\n%s" % content,
+            pubspec_environment_error(content, "my_pkg/pubspec.yaml") == None,
+            "sdk block reads as before: %s" % content,
         )
 
     return unittest.end(env)

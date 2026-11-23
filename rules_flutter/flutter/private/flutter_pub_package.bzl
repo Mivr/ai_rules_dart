@@ -29,7 +29,7 @@ surface small).
 
 load("@rules_dart//dart/pub:pub_lock_package.bzl", "derive_language_version", "make_dart_library_build_content")
 load("@rules_dart//dart/pub:pub_scc.bzl", "spoke_planned_deps_error")
-load("@rules_dart//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint", "pubspec_sdk_constraint_error")
+load("@rules_dart//dart/pub:yaml.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint", "yaml_to_json")
 load("//flutter/private:flutter_pub_cycle_breaks.bzl", "apply_cycle_breaks", "spoke_dep_labels")
 load("//flutter/private:flutter_pub_plugin_defines.bzl", "check_plugin_defines", "plugin_defines_attr")
 load("//flutter/private:flutter_pub_plugin_deps.bzl", "check_plugin_native_deps")
@@ -1080,13 +1080,36 @@ def resolve_overlay_roots(ctx, overlay_roots, package_name, version, language_ve
             break
     return overlay_content, overlay_android_content
 
-def _read_spoke_pubspec(ctx):
-    """Parses the extracted `pubspec.yaml` into spoke inputs.
+def read_spoke_pubspec_data(ctx, path = "pubspec.yaml", label = None):
+    """Reads a pubspec the spoke fetched or linked, as decoded data.
+
+    Args:
+        ctx: The repository context.
+        path: The pubspec, relative to the repository or absolute.
+        label: The name for diagnostics; defaults to
+            `<package_name>/pubspec.yaml`.
+
+    Returns:
+        The pubspec's top-level mapping, `{}` when the file does not exist.
+        Fails naming the file on anything `yaml_to_json` refuses.
+    """
+    if not ctx.path(path).exists:
+        return {}
+    shown = label if label != None else ctx.attr.package_name + "/pubspec.yaml"
+    return yaml_to_json(ctx, [path], [shown])[0]
+
+def _read_spoke_pubspec(ctx, data = None):
+    """Projects the extracted `pubspec.yaml` into spoke inputs.
 
     Returns `struct(raw_deps, bazel_deps, language_version, plugin_block,
     asset_block)`: the unfiltered and lock-filtered dependency names, the
     derived language version, and the parsed `flutter.plugin` / `flutter`
     asset blocks (absent-pubspec defaults when no pubspec was extracted).
+
+    Args:
+        ctx: The spoke's repository context.
+        data: The decoded pubspec when the caller already read it (a path
+            spoke reads it to plan its links); read here when None.
     """
     raw_deps, bazel_deps, language_version = [], [], ""
     plugin_block = struct(present = False, platforms = {}, implements = "", ffi_plugin = False)
@@ -1097,19 +1120,19 @@ def _read_spoke_pubspec(ctx):
         uses_material_design = False,
         asset_errors = [],
     )
-    pubspec_path = ctx.path("pubspec.yaml")
-    if pubspec_path.exists:
-        pubspec_content = ctx.read(pubspec_path)
-        sdk_err = pubspec_sdk_constraint_error(pubspec_content, ctx.attr.package_name + "/pubspec.yaml")
+    if data == None:
+        data = read_spoke_pubspec_data(ctx) if ctx.path("pubspec.yaml").exists else None
+    if data != None:
+        sdk_err = pubspec_environment_error(data, ctx.attr.package_name + "/pubspec.yaml")
         if sdk_err:
             fail(sdk_err)
-        all_deps = parse_pubspec_deps(pubspec_content)
+        all_deps = pubspec_deps(data)
         raw_deps = sorted(all_deps)
         available = {p: True for p in ctx.attr.lock_packages}
         bazel_deps = sorted([d for d in all_deps if d in available])
-        language_version = derive_language_version(parse_pubspec_sdk_constraint(pubspec_content))
-        plugin_block = parse_flutter_plugin_block(pubspec_content)
-        asset_block = parse_flutter_assets_block(pubspec_content)
+        language_version = derive_language_version(pubspec_sdk_constraint(data))
+        plugin_block = parse_flutter_plugin_block(data)
+        asset_block = parse_flutter_assets_block(data)
     return struct(
         raw_deps = raw_deps,
         bazel_deps = bazel_deps,
@@ -1386,7 +1409,7 @@ def path_spoke_platform_dirs(plugin_block):
         dirs.append("windows")
     return sorted(dirs)
 
-def link_path_package(ctx):
+def link_path_package(ctx, read_pubspec = None):
     """Symlinks a workspace-local `path:` package into the spoke, hermetically.
 
     The link plan parses the package's own `pubspec.yaml` from the spoke:
@@ -1418,9 +1441,12 @@ def link_path_package(ctx):
     Args:
         ctx: The path-package spoke's repository context. Reads `path`,
             `package_name`, `version`, and `hub_name` from its attrs.
+        read_pubspec: Reads the linked `pubspec.yaml` as decoded data from
+            `ctx`; defaults to `read_spoke_pubspec_data`, which runs `yq`.
 
     Returns:
-        Always `None`; the function works through the repository context.
+        The decoded pubspec when the package has one (else None), for the
+        spoke generator to reuse.
     """
     root = path_package_root(ctx)
     src = root.src
@@ -1438,21 +1464,22 @@ def link_path_package(ctx):
     # exposes. A missing pubspec parses as empty rather than failing: the
     # spoke pipeline reports the real problem.
     link_scoped_file_entry(ctx, src, "pubspec.yaml", scope)
-    pubspec_node = ctx.path("pubspec.yaml")
-    pubspec_text = ctx.read(pubspec_node) if pubspec_node.exists else ""
-    _check_pubspec_identity_mismatch(ctx.attr.hub_name, package_name, ctx.attr.version, pubspec_text)
+    read = read_pubspec if read_pubspec != None else read_spoke_pubspec_data
+    pubspec = read(ctx) if ctx.path("pubspec.yaml").exists else None
+    _check_pubspec_identity_mismatch(ctx.attr.hub_name, package_name, ctx.attr.version, pubspec or {})
     link_spoke_contents(
         ctx,
         src,
-        normalize_spoke_asset_block(package_name, parse_flutter_assets_block(pubspec_text)),
-        path_spoke_platform_dirs(parse_flutter_plugin_block(pubspec_text)),
+        normalize_spoke_asset_block(package_name, parse_flutter_assets_block(pubspec or {})),
+        path_spoke_platform_dirs(parse_flutter_plugin_block(pubspec or {})),
         scope,
     )
     ctx.watch(src)
+    return pubspec
 
 def _flutter_pub_path_package_impl(ctx):
-    link_path_package(ctx)
-    _generate_spoke(ctx)
+    pubspec = link_path_package(ctx)
+    _generate_spoke(ctx, pubspec)
 
 def _verify_spoke_deps(ctx, pubspec):
     """Applies `cycle_breaks`, checks `planned_deps`, and filters to locked packages."""
@@ -1474,7 +1501,7 @@ def _verify_spoke_deps(ctx, pubspec):
     available = {p: True for p in ctx.attr.lock_packages}
     return [d for d in cycle_result.dependencies if d in available and d != ctx.attr.package_name]
 
-def _generate_spoke(ctx):
+def _generate_spoke(ctx, pubspec_data = None):
     """Runs the shared spoke pipeline: pubspec in, BUILD content out.
 
     The Android half is never read here. An Android plugin's
@@ -1483,7 +1510,7 @@ def _generate_spoke(ctx):
     depends on. Overlays that ship `android/BUILD.bazel.tpl` keep replacing
     both exactly as before.
     """
-    pubspec = _read_spoke_pubspec(ctx)
+    pubspec = _read_spoke_pubspec(ctx, pubspec_data)
     bazel_deps = _verify_spoke_deps(ctx, pubspec)
 
     # Build full label strings for sibling spoke repos, routing cycle members through the hub.

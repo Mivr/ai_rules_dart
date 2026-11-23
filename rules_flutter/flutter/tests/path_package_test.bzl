@@ -127,8 +127,10 @@ def _make_mock_link_ctx(tree, path_value = "platform_assets", package_name = "pl
         case_insensitive_fs: Resolve lookups folding case.
 
     Returns:
-        struct(ctx, watched, linked): the fake ctx, the watched path
-        strings, and the symlinked (link name, resolved target) pairs.
+        struct(ctx, watched, linked, read_pubspec): the fake ctx, the
+        watched path strings, the symlinked (link name, resolved target)
+        pairs, and the pubspec reader to hand `link_path_package` (a
+        `pubspec.yaml` leaf holds the JSON `yaml_to_json` decodes it to).
     """
     watched = []
     linked = []
@@ -195,6 +197,10 @@ def _make_mock_link_ctx(tree, path_value = "platform_assets", package_name = "pl
     def _read(path_obj):
         return linked_names.get(path_obj.link_name, "")
 
+    def _read_pubspec(_ctx):
+        # Pubspec leaves hold the JSON `yaml_to_json` would decode.
+        return json.decode(linked_names.get("pubspec.yaml") or "{}")
+
     return struct(
         ctx = struct(
             attr = struct(path = path_value, package_name = package_name, version = version, hub_name = hub_name),
@@ -206,21 +212,17 @@ def _make_mock_link_ctx(tree, path_value = "platform_assets", package_name = "pl
         ),
         watched = watched,
         linked = linked,
+        read_pubspec = _read_pubspec,
     )
 
-_SCOPED_PUBSPEC = """name: mypkg
-flutter:
-  assets:
-    - assets/any.txt
-    - assets/dir/
-"""
+_SCOPED_PUBSPEC = {"name": "mypkg", "flutter": {"assets": ["assets/any.txt", "assets/dir/"]}}
 
 # A package exercising every scoping rule: declared and undeclared assets, a
 # nested user BUILD file, an example app with its own build output and
 # `.plugin_symlinks` cycle, tool state, a dot-directory, an (undeclared,
 # non-plugin) android tree, and an undeclared top-level file.
 _SCOPED_CONTENTS = {
-    "pubspec.yaml": _SCOPED_PUBSPEC,
+    "pubspec.yaml": json.encode(_SCOPED_PUBSPEC),
     "lib": {
         "mypkg.dart": None,
     },
@@ -289,7 +291,7 @@ def _link_scopes_to_the_pubspec_plan_test_impl(ctx):
     """
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({"mypkg": _SCOPED_CONTENTS}, path_value = "mypkg", package_name = "mypkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     asserts.equals(env, _SCOPED_LINKED, sorted([link.name for link in mock.linked]))
     asserts.equals(env, sorted(_SCOPED_WATCHED), sorted({w: True for w in mock.watched}))
     for link in mock.linked:
@@ -302,14 +304,16 @@ def _link_scopes_to_the_pubspec_plan_test_impl(ctx):
 
 link_scopes_to_the_pubspec_plan_test = unittest.make(_link_scopes_to_the_pubspec_plan_test_impl)
 
-_PLUGIN_PUBSPEC = """name: mypkg
-flutter:
-  plugin:
-    platforms:
-      android:
-        package: com.example.mypkg
-        pluginClass: MyPlugin
-"""
+_PLUGIN_PUBSPEC = {
+    "name": "mypkg",
+    "flutter": {
+        "plugin": {
+            "platforms": {
+                "android": {"package": "com.example.mypkg", "pluginClass": "MyPlugin"},
+            },
+        },
+    },
+}
 
 def _plugin_platform_dir_is_mirrored_not_symlinked_test_impl(ctx):
     """A declared platform dir mirrors file by file; the write stays in-spoke.
@@ -325,7 +329,7 @@ def _plugin_platform_dir_is_mirrored_not_symlinked_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "mypkg": {
-            "pubspec.yaml": _PLUGIN_PUBSPEC,
+            "pubspec.yaml": json.encode(_PLUGIN_PUBSPEC),
             "lib": {"mypkg.dart": None},
             "android": {
                 "BUILD.bazel": None,
@@ -335,7 +339,7 @@ def _plugin_platform_dir_is_mirrored_not_symlinked_test_impl(ctx):
             "ios": {"Runner.xcodeproj": None},
         },
     }, path_value = "mypkg", package_name = "mypkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     names = sorted([link.name for link in mock.linked])
     asserts.false(env, "android" in names, "android/ must not be one dir symlink, got {}".format(names))
     asserts.true(env, "android/settings.gradle" in names, "android children must be linked one by one, got {}".format(names))
@@ -364,12 +368,12 @@ def _non_plugin_package_links_no_android_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "mypkg": {
-            "pubspec.yaml": "name: mypkg\n",
+            "pubspec.yaml": json.encode({"name": "mypkg"}),
             "lib": {"mypkg.dart": None},
             "android": {"settings.gradle": None},
         },
     }, path_value = "mypkg", package_name = "mypkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     names = sorted([link.name for link in mock.linked])
     asserts.equals(env, ["lib/mypkg.dart", "pubspec.yaml"], names)
     for seen in mock.watched:
@@ -389,7 +393,7 @@ def _workspace_sibling_link_replicates_without_descending_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "mypkg": {
-            "pubspec.yaml": "name: mypkg\n",
+            "pubspec.yaml": json.encode({"name": "mypkg"}),
             "lib": {
                 "mypkg.dart": None,
                 "ext.so": struct(symlink_to = "/workspace/shared/ext.so"),
@@ -399,7 +403,7 @@ def _workspace_sibling_link_replicates_without_descending_test_impl(ctx):
             "ext.so": None,
         },
     }, path_value = "mypkg", package_name = "mypkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     by_name = {link.name: link.target for link in mock.linked}
     asserts.equals(env, "/workspace/shared/ext.so", by_name.get("lib/ext.so", "missing"))
     asserts.true(env, "/workspace/mypkg/lib/ext.so" in mock.watched, "the replicated link must be watched, got {}".format(sorted(mock.watched)))
@@ -409,14 +413,10 @@ def _workspace_sibling_link_replicates_without_descending_test_impl(ctx):
 
 workspace_sibling_link_replicates_without_descending_test = unittest.make(_workspace_sibling_link_replicates_without_descending_test_impl)
 
-_OVERLAP_PUBSPEC = """name: mypkg
-flutter:
-  assets:
-    - data/x.txt
-    - data/
-  shaders:
-    - shaders/ripple.frag
-"""
+_OVERLAP_PUBSPEC = {
+    "name": "mypkg",
+    "flutter": {"assets": ["data/x.txt", "data/"], "shaders": ["shaders/ripple.frag"]},
+}
 
 def _overlapping_entries_link_once_test_impl(ctx):
     """A file inside its own declared dir (or a shader in its dir) links once.
@@ -428,13 +428,13 @@ def _overlapping_entries_link_once_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "mypkg": {
-            "pubspec.yaml": _OVERLAP_PUBSPEC,
+            "pubspec.yaml": json.encode(_OVERLAP_PUBSPEC),
             "lib": {"m.dart": None},
             "data": {"x.txt": None, "y.txt": None},
             "shaders": {"ripple.frag": None, "include": {"common.glsl": None}},
         },
     }, path_value = "mypkg", package_name = "mypkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     names = sorted([link.name for link in mock.linked])
     asserts.equals(
         env,
@@ -532,19 +532,20 @@ def _absolute_lock_path_decides_test_impl(ctx):
 
 absolute_lock_path_decides_test = unittest.make(_absolute_lock_path_decides_test_impl)
 
-_DIR_LINK_PUBSPEC = """name: dirlinkpkg
-flutter:
-  plugin:
-    platforms:
-      android:
-        package: com.example.dirlinkpkg
-        pluginClass: DirlinkPlugin
-  assets:
-    - assets/
-    - path: assets/extra.txt
-      platforms:
-        - android
-"""
+_DIR_LINK_PUBSPEC = {
+    "name": "dirlinkpkg",
+    "flutter": {
+        "plugin": {
+            "platforms": {
+                "android": {
+                    "package": "com.example.dirlinkpkg",
+                    "pluginClass": "DirlinkPlugin",
+                },
+            },
+        },
+        "assets": ["assets/", {"path": "assets/extra.txt", "platforms": ["android"]}],
+    },
+}
 
 def _dir_link_mirrors_not_symlinks_test_impl(ctx):
     """A directory symlink mirrors file by file; no directory is symlinked.
@@ -562,7 +563,7 @@ def _dir_link_mirrors_not_symlinks_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "dirlinkpkg": {
-            "pubspec.yaml": _DIR_LINK_PUBSPEC,
+            "pubspec.yaml": json.encode(_DIR_LINK_PUBSPEC),
             "lib": {"dirlinkpkg.dart": None},
             "android": struct(symlink_to = "/workspace/shared/android", is_dir = True),
             "assets": struct(symlink_to = "/workspace/shared/assets", is_dir = True),
@@ -580,7 +581,7 @@ def _dir_link_mirrors_not_symlinks_test_impl(ctx):
             },
         },
     }, path_value = "dirlinkpkg", package_name = "dirlinkpkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     names = sorted([link.name for link in mock.linked])
     asserts.equals(env, [
         "android/settings.gradle",
@@ -607,19 +608,14 @@ def _dir_link_mirrors_not_symlinks_test_impl(ctx):
 
 dir_link_mirrors_not_symlinks_test = unittest.make(_dir_link_mirrors_not_symlinks_test_impl)
 
-_ESCAPED_LINK_PUBSPEC = """name: hpkg
-flutter:
-  assets:
-    - enc%20c.png
-    - pct%25.png
-    - dir%20d/
-  fonts:
-    - family: Esc
-      fonts:
-        - asset: fonts/f%20g.ttf
-  shaders:
-    - shaders/a%20b.frag
-"""
+_ESCAPED_LINK_PUBSPEC = {
+    "name": "hpkg",
+    "flutter": {
+        "assets": ["enc%20c.png", "pct%25.png", "dir%20d/"],
+        "fonts": [{"family": "Esc", "fonts": [{"asset": "fonts/f%20g.ttf"}]}],
+        "shaders": ["shaders/a%20b.frag"],
+    },
+}
 
 def _escaped_entries_link_decoded_test_impl(ctx):
     """Escaped entries link the decoded files, in every entry kind.
@@ -633,7 +629,7 @@ def _escaped_entries_link_decoded_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "hpkg": {
-            "pubspec.yaml": _ESCAPED_LINK_PUBSPEC,
+            "pubspec.yaml": json.encode(_ESCAPED_LINK_PUBSPEC),
             "enc c.png": None,
             "pct%.png": None,
             "dir d": {"f.png": None},
@@ -641,7 +637,7 @@ def _escaped_entries_link_decoded_test_impl(ctx):
             "shaders": {"a b.frag": None},
         },
     }, path_value = "hpkg", package_name = "hpkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     names = sorted([link.name for link in mock.linked])
     asserts.equals(
         env,
@@ -664,7 +660,7 @@ def _nested_links_stay_confined_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "nestedpkg": {
-            "pubspec.yaml": "name: nestedpkg\n",
+            "pubspec.yaml": json.encode({"name": "nestedpkg"}),
             "lib": {
                 "nestedpkg.dart": None,
                 "sibling.txt": None,
@@ -679,7 +675,7 @@ def _nested_links_stay_confined_test_impl(ctx):
             },
         },
     }, path_value = "nestedpkg", package_name = "nestedpkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     names = sorted([link.name for link in mock.linked])
     asserts.equals(env, [
         "lib/dir_link/deep.txt",
@@ -701,16 +697,17 @@ def _nested_links_stay_confined_test_impl(ctx):
 
 nested_links_stay_confined_test = unittest.make(_nested_links_stay_confined_test_impl)
 
-_SKIP_ROOT_PUBSPEC = """name: skippkg
-flutter:
-  plugin:
-    platforms:
-      android:
-        package: com.example.skippkg
-        pluginClass: SkipPlugin
-  assets:
-    - assets/icons/
-"""
+_SKIP_ROOT_PUBSPEC = {
+    "name": "skippkg",
+    "flutter": {
+        "plugin": {
+            "platforms": {
+                "android": {"package": "com.example.skippkg", "pluginClass": "SkipPlugin"},
+            },
+        },
+        "assets": ["assets/icons/"],
+    },
+}
 
 def _skips_stop_at_mirror_root_test_impl(ctx):
     """Skip names stop at each skipping tree's top level; dot-files link.
@@ -725,7 +722,7 @@ def _skips_stop_at_mirror_root_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "skippkg": {
-            "pubspec.yaml": _SKIP_ROOT_PUBSPEC,
+            "pubspec.yaml": json.encode(_SKIP_ROOT_PUBSPEC),
             "lib": {
                 "skippkg.dart": None,
                 "src": {
@@ -737,7 +734,7 @@ def _skips_stop_at_mirror_root_test_impl(ctx):
             "assets": {"icons": {".keep": None, "sub": {".cache": {"c.txt": None}}, "a.txt": None}},
         },
     }, path_value = "skippkg", package_name = "skippkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     names = sorted([link.name for link in mock.linked])
     asserts.equals(env, [
         "android/src/main/kotlin/com/example/Plugin.kt",
@@ -753,11 +750,7 @@ def _skips_stop_at_mirror_root_test_impl(ctx):
 
 skips_stop_at_mirror_root_test = unittest.make(_skips_stop_at_mirror_root_test_impl)
 
-_COV76_PUBSPEC = """name: cov76pkg
-flutter:
-  assets:
-    - assets/
-"""
+_COV76_PUBSPEC = {"name": "cov76pkg", "flutter": {"assets": ["assets/"]}}
 
 def _lib_and_asset_dir_skip_names_link_test_impl(ctx):
     """COV-76: `lib/` and asset dirs mirror whole; root skips stay.
@@ -772,7 +765,7 @@ def _lib_and_asset_dir_skip_names_link_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "cov76pkg": {
-            "pubspec.yaml": _COV76_PUBSPEC,
+            "pubspec.yaml": json.encode(_COV76_PUBSPEC),
             "lib": {
                 "cov76pkg.dart": None,
                 "build": {"a.dart": None},
@@ -790,7 +783,7 @@ def _lib_and_asset_dir_skip_names_link_test_impl(ctx):
             ".dart_tool": {"package_config.json": None},
         },
     }, path_value = "cov76pkg", package_name = "cov76pkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     names = sorted([link.name for link in mock.linked])
     asserts.equals(env, [
         "assets/.hidden/f.txt",
@@ -829,11 +822,14 @@ def _missing_declared_paths_are_watched_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "latepkg": {
-            "pubspec.yaml": "name: latepkg\nflutter:\n  assets:\n    - assets/late.txt\n    - assets/missing_dir/\n",
+            "pubspec.yaml": json.encode({
+                "name": "latepkg",
+                "flutter": {"assets": ["assets/late.txt", "assets/missing_dir/"]},
+            }),
             "lib": {"latepkg.dart": None},
         },
     }, path_value = "latepkg", package_name = "latepkg")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     names = sorted([link.name for link in mock.linked])
     asserts.equals(env, ["lib/latepkg.dart", "pubspec.yaml"], names)
     for seen in [
@@ -894,7 +890,17 @@ def _case_folded_skip_applies_end_to_end_test_impl(ctx):
     env = unittest.begin(ctx)
     tree = {
         "casepkg": {
-            "pubspec.yaml": "name: casepkg\nflutter:\n  assets:\n    - assets/\n  plugin:\n    platforms:\n      android:\n        package: com.example.casepkg\n        pluginClass: CasePlugin\n",
+            "pubspec.yaml": json.encode({
+                "name": "casepkg",
+                "flutter": {
+                    "assets": ["assets/"],
+                    "plugin": {
+                        "platforms": {
+                            "android": {"package": "com.example.casepkg", "pluginClass": "CasePlugin"},
+                        },
+                    },
+                },
+            }),
             "lib": {"casepkg.dart": None},
             "assets": {
                 "any.txt": None,
@@ -907,10 +913,10 @@ def _case_folded_skip_applies_end_to_end_test_impl(ctx):
         },
     }
     exact = _make_mock_link_ctx(tree, path_value = "casepkg", package_name = "casepkg")
-    link_path_package(exact.ctx)
+    link_path_package(exact.ctx, exact.read_pubspec)
     asserts.equals(env, ["android/Build/stale.txt", "android/settings.gradle", "assets/Build/top.txt", "assets/any.txt", "lib/casepkg.dart", "pubspec.yaml"], sorted([link.name for link in exact.linked]))
     folded = _make_mock_link_ctx(tree, path_value = "casepkg", package_name = "casepkg", case_insensitive_fs = True)
-    link_path_package(folded.ctx)
+    link_path_package(folded.ctx, folded.read_pubspec)
     asserts.equals(env, ["android/settings.gradle", "assets/Build/top.txt", "assets/any.txt", "lib/casepkg.dart", "pubspec.yaml"], sorted([link.name for link in folded.linked]))
     return unittest.end(env)
 
@@ -987,20 +993,20 @@ def _pubspec_identity_parses_test_impl(ctx):
     the comparison.
     """
     env = unittest.begin(ctx)
-    identity = parse_pubspec_identity("name: mypkg\nversion: 0.1.0\n")
+    identity = parse_pubspec_identity({"name": "mypkg", "version": "0.1.0"})
     asserts.equals(env, "mypkg", identity.name)
     asserts.equals(env, "0.1.0", identity.version)
-    quoted = parse_pubspec_identity("name: \"mypkg\"\nversion: '1.2.3'\n")
+    quoted = parse_pubspec_identity({"name": "mypkg", "version": "1.2.3"})
     asserts.equals(env, "mypkg", quoted.name)
     asserts.equals(env, "1.2.3", quoted.version)
-    padded = parse_pubspec_identity("name: mypkg\nversion: '  0.1.0  '\n")
+    padded = parse_pubspec_identity({"name": "mypkg", "version": "  0.1.0  "})
     asserts.equals(env, "0.1.0", padded.version)
-    unversioned = parse_pubspec_identity("name: mypkg\npublish_to: none\n")
+    unversioned = parse_pubspec_identity({"name": "mypkg", "publish_to": "none"})
     asserts.equals(env, "mypkg", unversioned.name)
     asserts.equals(env, "0.0.0", unversioned.version)
-    empty = parse_pubspec_identity("name: mypkg\nversion:\n")
+    empty = parse_pubspec_identity({"name": "mypkg", "version": None})
     asserts.equals(env, "0.0.0", empty.version)
-    missing = parse_pubspec_identity("")
+    missing = parse_pubspec_identity({})
     asserts.equals(env, "", missing.name)
     asserts.equals(env, "0.0.0", missing.version)
     return unittest.end(env)
@@ -1105,11 +1111,11 @@ def _matching_identity_links_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "mypkg": {
-            "pubspec.yaml": "name: mypkg\nversion: 0.1.0\n",
+            "pubspec.yaml": json.encode({"name": "mypkg", "version": "0.1.0"}),
             "lib": {"mypkg.dart": None},
         },
     }, path_value = "mypkg", package_name = "mypkg", version = "0.1.0", hub_name = "deps")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     asserts.equals(env, ["lib/mypkg.dart", "pubspec.yaml"], sorted([link.name for link in mock.linked]))
     return unittest.end(env)
 
@@ -1125,11 +1131,11 @@ def _unversioned_identity_links_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "mypkg": {
-            "pubspec.yaml": "name: mypkg\npublish_to: none\n",
+            "pubspec.yaml": json.encode({"name": "mypkg", "publish_to": "none"}),
             "lib": {"mypkg.dart": None},
         },
     }, path_value = "mypkg", package_name = "mypkg", version = "0.0.0", hub_name = "deps")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     asserts.equals(env, ["lib/mypkg.dart", "pubspec.yaml"], sorted([link.name for link in mock.linked]))
     return unittest.end(env)
 
@@ -1144,11 +1150,11 @@ def _padded_identity_links_test_impl(ctx):
     env = unittest.begin(ctx)
     mock = _make_mock_link_ctx({
         "mypkg": {
-            "pubspec.yaml": "name: mypkg\nversion: '  0.1.0  '\n",
+            "pubspec.yaml": json.encode({"name": "mypkg", "version": "  0.1.0  "}),
             "lib": {"mypkg.dart": None},
         },
     }, path_value = "mypkg", package_name = "mypkg", version = "0.1.0", hub_name = "deps")
-    link_path_package(mock.ctx)
+    link_path_package(mock.ctx, mock.read_pubspec)
     asserts.equals(env, ["lib/mypkg.dart", "pubspec.yaml"], sorted([link.name for link in mock.linked]))
     return unittest.end(env)
 
@@ -1157,18 +1163,38 @@ padded_identity_links_test = unittest.make(_padded_identity_links_test_impl)
 def _path_spoke_platform_dirs_test_impl(ctx):
     """Only declared platforms resolve sources, so only they link."""
     env = unittest.begin(ctx)
-    asserts.equals(env, [], path_spoke_platform_dirs(parse_flutter_plugin_block("name: x\n")))
+    asserts.equals(env, [], path_spoke_platform_dirs(parse_flutter_plugin_block({"name": "x"})))
     asserts.equals(env, ["android"], path_spoke_platform_dirs(parse_flutter_plugin_block(_PLUGIN_PUBSPEC)))
     asserts.equals(
         env,
         ["darwin", "ios", "macos"],
-        path_spoke_platform_dirs(parse_flutter_plugin_block("name: x\nflutter:\n  plugin:\n    platforms:\n      ios:\n        pluginClass: X\n")),
+        path_spoke_platform_dirs(parse_flutter_plugin_block({
+            "name": "x",
+            "flutter": {
+                "plugin": {
+                    "platforms": {"ios": {"pluginClass": "X"}},
+                },
+            },
+        })),
     )
     asserts.equals(
         env,
         ["android", "darwin", "ios", "linux", "macos", "windows"],
         path_spoke_platform_dirs(parse_flutter_plugin_block(
-            "name: x\nflutter:\n  plugin:\n    platforms:\n      android:\n        package: a\n      ios:\n        pluginClass: X\n      macos:\n        pluginClass: X\n      linux:\n        pluginClass: X\n      windows:\n        pluginClass: X\n",
+            {
+                "name": "x",
+                "flutter": {
+                    "plugin": {
+                        "platforms": {
+                            "android": {"package": "a"},
+                            "ios": {"pluginClass": "X"},
+                            "macos": {"pluginClass": "X"},
+                            "linux": {"pluginClass": "X"},
+                            "windows": {"pluginClass": "X"},
+                        },
+                    },
+                },
+            },
         )),
     )
     return unittest.end(env)

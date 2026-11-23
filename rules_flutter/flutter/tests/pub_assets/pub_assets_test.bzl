@@ -161,52 +161,41 @@ def _directory_bound_error_propagates_test_impl(ctx):
 
 # -- strict entry conditions ------------------------------------------------------------
 
-_SCALAR_PLATFORMS_PUBSPEC = """\
-name: scalar_platforms
-flutter:
-  assets:
-    - path: assets/pic.png
-      platforms: web
-"""
+_SCALAR_PLATFORMS_PUBSPEC = {
+    "name": "scalar_platforms",
+    "flutter": {"assets": [{"path": "assets/pic.png", "platforms": "web"}]},
+}
 
-_SCALAR_FLAVORS_PUBSPEC = """\
-name: scalar_flavors
-flutter:
-  assets:
-    - path: assets/pic.png
-      flavors: paid
-"""
+_SCALAR_FLAVORS_PUBSPEC = {
+    "name": "scalar_flavors",
+    "flutter": {"assets": [{"path": "assets/pic.png", "flavors": "paid"}]},
+}
 
-_MIXED_ELEMENTS_PUBSPEC = """\
-name: mixed_elements
-flutter:
-  assets:
-    - path: assets/pic.png
-      platforms:
-        - ios
-        - 5
-"""
+_MIXED_ELEMENTS_PUBSPEC = {
+    "name": "mixed_elements",
+    "flutter": {"assets": [{"path": "assets/pic.png", "platforms": ["ios", True]}]},
+}
 
-_TRANSFORMERS_PUBSPEC = """\
-name: transformed
-flutter:
-  assets:
-    - path: assets/pic.png
-      transformers:
-        - package: weave
-"""
+_TRANSFORMERS_PUBSPEC = {
+    "name": "transformed",
+    "flutter": {
+        "assets": [{"path": "assets/pic.png", "transformers": [{"package": "weave"}]}],
+    },
+}
 
-_UNKNOWN_KEYS_PUBSPEC = """\
-name: unknown_keys
-flutter:
-  assets:
-    - path: assets/kept.png
-      platforms:
-        - ios
-      extra_key: ignored
-    - path: assets/plain.png
-      transformers:
-"""
+_UNKNOWN_KEYS_PUBSPEC = {
+    "name": "unknown_keys",
+    "flutter": {
+        "assets": [
+            {
+                "path": "assets/kept.png",
+                "platforms": ["ios"],
+                "extra_key": "ignored",
+            },
+            {"path": "assets/plain.png", "transformers": None},
+        ],
+    },
+}
 
 def _scalar_platforms_refused_test_impl(ctx):
     env = unittest.begin(ctx)
@@ -278,93 +267,42 @@ def _unknown_keys_ignored_test_impl(ctx):
 # the spoke message names the package and the key, and nothing usable
 # survives the refused section.
 
-_STRING_ASSETS_PUBSPEC = """\
-name: string_assets
-flutter:
-  assets: assets/a.png
-"""
+# A YAML number reads as its text, so the wrong-type values below are
+# booleans: `5` and `"5"` both decode to the string "5".
+_STRING_ASSETS_PUBSPEC = {"name": "string_assets", "flutter": {"assets": "assets/a.png"}}
 
-_MAP_ASSETS_PUBSPEC = """\
-name: map_assets
-flutter:
-  assets: {a: b}
-"""
+_MAP_ASSETS_PUBSPEC = {"name": "map_assets", "flutter": {"assets": {"a": "b"}}}
 
-_BAD_ITEM_ASSETS_PUBSPEC = """\
-name: bad_item_assets
-flutter:
-  assets:
-    - 5
-"""
+_BAD_ITEM_ASSETS_PUBSPEC = {"name": "bad_item_assets", "flutter": {"assets": [True]}}
 
-_BAD_PATH_ASSETS_PUBSPEC = """\
-name: bad_path_assets
-flutter:
-  assets:
-    - path: 5
-"""
+_BAD_PATH_ASSETS_PUBSPEC = {"name": "bad_path_assets", "flutter": {"assets": [{"path": True}]}}
 
-_STRING_FONTS_PUBSPEC = """\
-name: string_fonts
-flutter:
-  fonts: x
-"""
+_STRING_FONTS_PUBSPEC = {"name": "string_fonts", "flutter": {"fonts": "x"}}
 
-_INT_LIST_FONTS_PUBSPEC = """\
-name: int_list_fonts
-flutter:
-  fonts: [1]
-"""
+_INT_LIST_FONTS_PUBSPEC = {"name": "int_list_fonts", "flutter": {"fonts": ["1"]}}
 
-_BAD_FAMILY_FONTS_PUBSPEC = """\
-name: bad_family_fonts
-flutter:
-  fonts: [{family: 1}]
-"""
+_BAD_FAMILY_FONTS_PUBSPEC = {"name": "bad_family_fonts", "flutter": {"fonts": [{"family": True}]}}
 
-_BAD_FONTS_KEY_FONTS_PUBSPEC = """\
-name: bad_fonts_key_fonts
-flutter:
-  fonts: [{family: F, fonts: x}]
-"""
+_BAD_FONTS_KEY_FONTS_PUBSPEC = {
+    "name": "bad_fonts_key_fonts",
+    "flutter": {"fonts": [{"family": "F", "fonts": "x"}]},
+}
 
-_BAD_FILE_FONTS_PUBSPEC = """\
-name: bad_file_fonts
-flutter:
-  fonts:
-    - family: F
-      fonts:
-        - 5
-"""
+_BAD_FILE_FONTS_PUBSPEC = {
+    "name": "bad_file_fonts",
+    "flutter": {"fonts": [{"family": "F", "fonts": ["5"]}]},
+}
 
-_BAD_FILE_ASSET_FONTS_PUBSPEC = """\
-name: bad_file_asset_fonts
-flutter:
-  fonts:
-    - family: F
-      fonts:
-        - asset: 5
-"""
+_BAD_FILE_ASSET_FONTS_PUBSPEC = {
+    "name": "bad_file_asset_fonts",
+    "flutter": {"fonts": [{"family": "F", "fonts": [{"asset": True}]}]},
+}
 
-_STRING_SHADERS_PUBSPEC = """\
-name: string_shaders
-flutter:
-  shaders: x
-"""
+_STRING_SHADERS_PUBSPEC = {"name": "string_shaders", "flutter": {"shaders": "x"}}
 
-_BAD_ITEM_SHADERS_PUBSPEC = """\
-name: bad_item_shaders
-flutter:
-  shaders:
-    - 5
-"""
+_BAD_ITEM_SHADERS_PUBSPEC = {"name": "bad_item_shaders", "flutter": {"shaders": [True]}}
 
-_BAD_PATH_SHADERS_PUBSPEC = """\
-name: bad_path_shaders
-flutter:
-  shaders:
-    - path: 5
-"""
+_BAD_PATH_SHADERS_PUBSPEC = {"name": "bad_path_shaders", "flutter": {"shaders": [{"path": True}]}}
 
 def _assert_shape_refused(env, content, key):
     """Assert parsing `content` refuses the `key` section for the fetch.

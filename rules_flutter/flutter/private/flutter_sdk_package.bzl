@@ -15,7 +15,7 @@ Omitting it is not neutral: `package_config.json` reads a missing
 """
 
 load("@rules_dart//dart/pub:pub_lock_package.bzl", "derive_language_version")
-load("@rules_dart//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint", "pubspec_sdk_constraint_error")
+load("@rules_dart//dart/pub:yaml.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint", "yaml_to_json")
 load("//flutter/private:artifact_urls.bzl", "flutter_source_tarball_url", "require_sha256", "source_strip_prefix")
 load("//flutter/private:download.bzl", "pinned_download_and_extract")
 load("//flutter/private:flutter_sky_engine_repo.bzl", "list_local_files")
@@ -173,15 +173,16 @@ def _flutter_sdk_package_impl(repository_ctx):
     language_version = ""
     pubspec_path = repository_ctx.path("pubspec.yaml")
     if pubspec_path.exists:
-        content = repository_ctx.read(pubspec_path)
-        sdk_err = pubspec_sdk_constraint_error(content, package_name + "/pubspec.yaml")
+        pubspec_label = package_name + "/pubspec.yaml"
+        pubspec = yaml_to_json(repository_ctx, [pubspec_path], [pubspec_label])[0]
+        sdk_err = pubspec_environment_error(pubspec, pubspec_label)
         if sdk_err:
             fail(sdk_err)
-        all_deps = parse_pubspec_deps(content)
+        all_deps = pubspec_deps(pubspec)
         available = {p: True for p in repository_ctx.attr.lock_packages}
         bazel_deps = sorted([d for d in all_deps if d in available])
         language_version = derive_language_version(
-            parse_pubspec_sdk_constraint(content),
+            pubspec_sdk_constraint(pubspec),
         )
 
     # Build dep labels pointing to sibling spoke repos (or merged SCC targets).

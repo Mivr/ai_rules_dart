@@ -91,20 +91,21 @@ def _pod_resolution_from_dict(d):
         error = reason,
     )
 
-def read_hub_podfile_lock(module_ctx, pub_tag):
-    """Read and validate `pub_tag.ios_podfile_lock` when configured on the hub.
+def hub_podfile_lock(pub_tag, pub_yaml):
+    """Validate `pub_tag.ios_podfile_lock` when configured on the hub.
 
     Args:
-        module_ctx: Module extension context with `read(...)`.
         pub_tag: The `flutter.pub` tag struct.
+        pub_yaml: Dict of label string to decoded YAML data; holds the
+            tag's `Podfile.lock` when the tag sets one.
 
     Returns:
         `(podfile, lock_label)` tuple, or `(None, "")` when unset.
     """
-    if not hasattr(pub_tag, "ios_podfile_lock") or pub_tag.ios_podfile_lock == None:
+    if getattr(pub_tag, "ios_podfile_lock", None) == None:
         return None, ""
     lock_label = str(pub_tag.ios_podfile_lock)
-    podfile = read_podfile_lock(module_ctx.read(pub_tag.ios_podfile_lock), lock_label)
+    podfile = read_podfile_lock(pub_yaml[lock_label], lock_label)
     if not podfile.ok:
         fail(podfile.error)
     return podfile, lock_label

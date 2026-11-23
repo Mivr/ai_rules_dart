@@ -15,13 +15,13 @@ load(
 )
 load(
     "@rules_dart//dart/pub:pub_scc.bzl",
-    "PARSER_SOURCE_LABELS",
+    "READER_SOURCE_LABELS",
     "compute_sccs",
     "package_dep_graph",
     "parser_schema",
-    "read_scope_pubspec",
     "record_scope_facts",
     "scc_repo_name",
+    "scope_pubspec_path",
     "split_scope_facts",
     _hosted_fact_key = "hosted_fact_key",
     _lookup_fact_deps = "lookup_fact_deps",
@@ -31,7 +31,7 @@ load(
     _scc_planned_deps_error = "scc_planned_deps_error",
     _spoke_planned_deps_error = "spoke_planned_deps_error",
 )
-load("@rules_dart//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
+load("@rules_dart//dart/pub:yaml.bzl", "pubspec_deps", "yaml_to_json")
 load("//flutter/private:download.bzl", "pinned_download")
 load("//flutter/private:flutter_pub_cycle_breaks.bzl", "apply_cycle_breaks")
 load(
@@ -53,15 +53,15 @@ spoke_planned_deps_error = _spoke_planned_deps_error
 scc_members_connectivity_error = _scc_members_connectivity_error
 
 def resolve_flutter_pub_schema(module_ctx):
-    """Builds the fact-key schema from pubspec parser source bytes.
+    """Builds the fact-key schema from the pubspec reader's source bytes.
 
     Args:
         module_ctx: The module extension context.
 
     Returns:
-        The parser schema string for this evaluation.
+        The reader schema string for this evaluation.
     """
-    texts = [module_ctx.read(label, watch = "no") for label in PARSER_SOURCE_LABELS]
+    texts = [module_ctx.read(label, watch = "no") for label in READER_SOURCE_LABELS]
     return parser_schema(texts)
 
 def _download_and_scan_scratch(module_ctx, scope_dir, misses):
@@ -101,13 +101,21 @@ def _download_and_scan_scratch(module_ctx, scope_dir, misses):
         )
 
     miss_deps = {}
+    pubspecs = []
     for p in pending:
         module_ctx.extract(p.archive, output = p.out)
         check_package_symlinks(module_ctx, p.name, root = p.out)
-        pubspec_content = read_scope_pubspec(module_ctx, p.name, p.out)
-        miss_deps[p.name] = sorted(parse_pubspec_deps(pubspec_content))
+        pubspec = scope_pubspec_path(module_ctx, p.name, p.out)
+        if pubspec == None:
+            miss_deps[p.name] = []
+        else:
+            pubspecs.append(struct(name = p.name, path = pubspec))
 
-    return miss_deps
+    # Every fetched package's pubspec in one `yq` run.
+    data = yaml_to_json(module_ctx, [p.path for p in pubspecs], [p.name + "/pubspec.yaml" for p in pubspecs])
+    for p, pubspec in zip(pubspecs, data):
+        miss_deps[p.name] = sorted(pubspec_deps(pubspec))
+    return {name: miss_deps[name] for name in sorted(miss_deps.keys())}
 
 def collect_hosted_facts(module_ctx, hub_name, hosted, pub_lock, schema, recorded_facts):
     """Collects pubspec dependencies for hosted packages, caching in facts.
@@ -210,7 +218,7 @@ def resolve_path_pubspec(ws_root, ws_realpath, hub_name, name, rel_path, os_name
     Windows drive-letter, and UNC absolute paths, `.`/`..` segments, missing or
     directory `pubspec.yaml` entries, and symlinks resolving outside the
     workspace root. Returns the `pubspec_file` `path` directly so callers pass
-    it to `module_ctx.read(...)` without constructing a Bazel package `Label`
+    it to `yaml_to_json` without constructing a Bazel package `Label`
     (which fails on case-insensitive hosts when a directory such as `build/`
     collides in name with `BUILD`).
 
@@ -295,7 +303,8 @@ def collect_path_deps(module_ctx, hub_name, path_pkgs, lock_label = None):
     ws_root = _resolve_workspace_root(module_ctx, lock_label)
     ws_realpath = normalize_realpath(ws_root.realpath)
     os_name = module_ctx.os.name if hasattr(module_ctx, "os") else ""
-    deps = {}
+    names = []
+    pubspec_files = []
 
     for name in sorted(path_pkgs.keys()):
         info = path_pkgs[name]
@@ -309,10 +318,13 @@ def collect_path_deps(module_ctx, hub_name, path_pkgs, lock_label = None):
         )
         if resolved.error:
             fail(resolved.error)
-        content = module_ctx.read(resolved.pubspec_file)
-        deps[name] = sorted(parse_pubspec_deps(content))
+        module_ctx.watch(resolved.pubspec_file)
+        names.append(name)
+        pubspec_files.append(resolved.pubspec_file)
 
-    return deps
+    # Every path package's pubspec in one `yq` run.
+    data = yaml_to_json(module_ctx, pubspec_files, [path_pkgs[name].path + "/pubspec.yaml" for name in names])
+    return {name: sorted(pubspec_deps(pubspec)) for name, pubspec in zip(names, data)}
 
 def plan_flutter_pub_sccs(all_package_names, hub_name, package_deps, cycle_breaks):
     """Plans strongly connected components for a flutter.pub hub.

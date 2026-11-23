@@ -38,7 +38,7 @@ This module holds the pure facts logic (parser digest, key building, lookup,
 validation, the split into hits and misses, and the returned dict) plus the
 narrowed scratch check, so Starlark unit tests cover them without a context.
 The context-touching halves — the fetch orchestration in
-`//dart/pub:extensions.bzl` and `read_scope_pubspec` below — stay thin
+`//dart/pub:extensions.bzl` and `scope_pubspec_path` below — stay thin
 wrappers over these.
 
 Facts only change the extension's own planning input. The spokes (hosted,
@@ -332,20 +332,3 @@ def scope_pubspec_path(ctx, package_name, out):
     if not found:
         return None
     return pubspec
-
-def read_scope_pubspec(ctx, package_name, out):
-    """Reads one fetched scope package's `pubspec.yaml` under the narrowed check.
-
-    Args:
-      ctx: The module extension context.
-      package_name: The pub package being planned, for diagnostics.
-      out: The scratch directory the package was extracted into.
-
-    Returns:
-      The `pubspec.yaml` contents ("" when the package ships none), after
-      the checks of `scope_pubspec_path`.
-    """
-    pubspec = scope_pubspec_path(ctx, package_name, out)
-    if pubspec == None:
-        return ""
-    return ctx.read(pubspec)

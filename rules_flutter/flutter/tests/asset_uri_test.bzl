@@ -233,22 +233,14 @@ def _spoke_error_names_package_test_impl(ctx):
 
 # -- through the pub package ------------------------------------------------------
 
-_THROUGH_PUBSPEC = """\
-name: uri_pkg
-flutter:
-  assets:
-    - ./a.png
-    - path: a b.png
-      platforms:
-        - ios
-    - ./d/
-  fonts:
-    - family: Spaced
-      fonts:
-        - asset: fonts/a b.ttf
-  shaders:
-    - shaders/a b.frag
-"""
+_THROUGH_PUBSPEC = {
+    "name": "uri_pkg",
+    "flutter": {
+        "assets": ["./a.png", {"path": "a b.png", "platforms": ["ios"]}, "./d/"],
+        "fonts": [{"family": "Spaced", "fonts": [{"asset": "fonts/a b.ttf"}]}],
+        "shaders": ["shaders/a b.frag"],
+    },
+}
 
 _THROUGH_FILES = {
     "": ["a.png", "a b.png", "2.0x/a.png"],
@@ -309,22 +301,20 @@ def _through_pub_package_test_impl(ctx):
     )
     return unittest.end(env)
 
-_ESCAPED_PUBSPEC = """\
-name: esc_pkg
-flutter:
-  assets:
-    - enc%20c.png
-    - pct%25.png
-    - pct%2525.png
-    - ca%C3%A9.png
-    - dir%20d/
-  fonts:
-    - family: Esc
-      fonts:
-        - asset: fonts/f%20g.ttf
-  shaders:
-    - shaders/a%20b.frag
-"""
+_ESCAPED_PUBSPEC = {
+    "name": "esc_pkg",
+    "flutter": {
+        "assets": [
+            "enc%20c.png",
+            "pct%25.png",
+            "pct%2525.png",
+            "ca%C3%A9.png",
+            "dir%20d/",
+        ],
+        "fonts": [{"family": "Esc", "fonts": [{"asset": "fonts/f%20g.ttf"}]}],
+        "shaders": ["shaders/a%20b.frag"],
+    },
+}
 
 # The encoded entry below names the same oracle file as `_CAFE_ENTRY`: the
 # spellchecker never sees those three letters whole in either spelling.
@@ -397,20 +387,18 @@ def _escaped_entries_bundle_encoded_test_impl(ctx):
 
 # -- manifest decode with encoded copies and fonts --------------------------------
 
-_MANIFEST_PUBSPEC = """\
-name: mani_pkg
-flutter:
-  assets:
-    - a b.png
-    - enc%20c.png
-    - pct%25.png
-    - ca%C3%A9.png
-  fonts:
-    - family: Mani
-      fonts:
-        - asset: fonts/a b.ttf
-        - asset: fonts/p%25.ttf
-"""
+_MANIFEST_PUBSPEC = {
+    "name": "mani_pkg",
+    "flutter": {
+        "assets": ["a b.png", "enc%20c.png", "pct%25.png", "ca%C3%A9.png"],
+        "fonts": [
+            {
+                "family": "Mani",
+                "fonts": [{"asset": "fonts/a b.ttf"}, {"asset": "fonts/p%25.ttf"}],
+            },
+        ],
+    },
+}
 
 _MANIFEST_FILES = {
     "": ["a b.png", "enc c.png", "pct%.png", _CAFE_ENTRY],
@@ -472,13 +460,10 @@ def _manifest_decoded_copies_encoded_test_impl(ctx):
 _PACKAGES_CAFE = "ca" + "f" + "\303\251" + ".png"
 _PACKAGES_CAFE_KEY = "ca" + "f%C3%A9.png"
 
-_PACKAGES_PUBSPEC = """\
-name: d
-flutter:
-  assets:
-    - packages/d/./a.png
-    - packages/d/ca""" + "f%c3%a9.png\n" + """\
-"""
+_PACKAGES_PUBSPEC = {
+    "name": "d",
+    "flutter": {"assets": ["packages/d/./a.png", "packages/d/caf%c3%a9.png"]},
+}
 
 _PACKAGES_FILES = {
     "packages/d": ["packages/d/a.png", "packages/d/" + _PACKAGES_CAFE],
@@ -520,7 +505,7 @@ def _packages_first_spoke_test_impl(ctx):
     )
     return unittest.end(env)
 
-_PACKAGES_BACKSLASH_PUBSPEC = "name: d\nflutter:\n  assets:\n    - packages/d/a\\b.png\n"
+_PACKAGES_BACKSLASH_PUBSPEC = {"name": "d", "flutter": {"assets": ["packages/d/a\\b.png"]}}
 
 def _packages_backslash_bundles_test_impl(ctx):
     """A backslash `packages`-first spelling splits as `Uri.parse` splits it."""
@@ -532,12 +517,7 @@ def _packages_backslash_bundles_test_impl(ctx):
     asserts.equals(env, "packages/d/a/b.png", assets[0].key)
     return unittest.end(env)
 
-_REFUSED_PUBSPEC = """\
-name: refused_pkg
-flutter:
-  assets:
-    - a?.png
-"""
+_REFUSED_PUBSPEC = {"name": "refused_pkg", "flutter": {"assets": ["a?.png"]}}
 
 def _through_refusal_test_impl(ctx):
     """A pubspec entry no engine build reads fails as not supported."""
@@ -567,16 +547,13 @@ def _backslash_splits_like_uri_test_impl(ctx):
     asserts.true(env, "absolute" in norm.reason, norm.reason)
     return unittest.end(env)
 
-_DOUBLE_SLASH_PUBSPEC = """\
-name: dbl_pkg
-flutter:
-  assets:
-    - assets/e//em.png
-  fonts:
-    - family: Dbl
-      fonts:
-        - asset: fonts//f g.ttf
-"""
+_DOUBLE_SLASH_PUBSPEC = {
+    "name": "dbl_pkg",
+    "flutter": {
+        "assets": ["assets/e//em.png"],
+        "fonts": [{"family": "Dbl", "fonts": [{"asset": "fonts//f g.ttf"}]}],
+    },
+}
 
 _DOUBLE_SLASH_FILES = {
     "assets/e": ["assets/e/em.png"],
@@ -660,17 +637,16 @@ def _map_form_reads_literal_test_impl(ctx):
     asserts.true(env, "fragment" in norm.reason, norm.reason)
     return unittest.end(env)
 
-_MAP_FORM_PUBSPEC = """\
-name: map_pkg
-flutter:
-  assets:
-    - path: lit%20x.png
-      platforms:
-        - ios
-    - path: dots/./ok.png
-  shaders:
-    - path: shaders/s%2Ehd.frag
-"""
+_MAP_FORM_PUBSPEC = {
+    "name": "map_pkg",
+    "flutter": {
+        "assets": [
+            {"path": "lit%20x.png", "platforms": ["ios"]},
+            {"path": "dots/./ok.png"},
+        ],
+        "shaders": [{"path": "shaders/s%2Ehd.frag"}],
+    },
+}
 
 _MAP_FORM_FILES = {
     "": ["lit%20x.png"],
@@ -735,12 +711,7 @@ def _map_form_entries_bundle_literal_test_impl(ctx):
     )
     return unittest.end(env)
 
-_MISSING_LITERAL_PUBSPEC = """\
-name: miss_pkg
-flutter:
-  assets:
-    - path: no%20pe.png
-"""
+_MISSING_LITERAL_PUBSPEC = {"name": "miss_pkg", "flutter": {"assets": [{"path": "no%20pe.png"}]}}
 
 def _missing_literal_fails_fetch_test_impl(ctx):
     """A map-form entry whose literal file is missing fails the fetch.
@@ -763,13 +734,10 @@ def _missing_literal_fails_fetch_test_impl(ctx):
 
 # -- empty-segment entries in either form (RT38-flutter:02) ---------------------
 
-_EMPTY_SEGMENT_FORMS_PUBSPEC = """\
-name: es_pkg
-flutter:
-  assets:
-    - a//2.0x/b.png
-    - path: f//fm.png
-"""
+_EMPTY_SEGMENT_FORMS_PUBSPEC = {
+    "name": "es_pkg",
+    "flutter": {"assets": ["a//2.0x/b.png", {"path": "f//fm.png"}]},
+}
 
 _EMPTY_SEGMENT_FORMS_FILES = {
     "a/2.0x": ["a/2.0x/b.png"],
@@ -831,21 +799,9 @@ def _empty_segment_forms_bundle_raw_test_impl(ctx):
 # empty-segment entry. A mixed list without such a pair bundles with
 # flutter_tools' own keys (oracle-checked below).
 
-_OVERLAP_PLAIN_RAW_PUBSPEC = """\
-name: hpkg
-flutter:
-  assets:
-    - a/b.png
-    - a//b.png
-"""
+_OVERLAP_PLAIN_RAW_PUBSPEC = {"name": "hpkg", "flutter": {"assets": ["a/b.png", "a//b.png"]}}
 
-_OVERLAP_VARIANT_RAW_PUBSPEC = """\
-name: hpkg
-flutter:
-  assets:
-    - a/b.png
-    - a//2.0x/b.png
-"""
+_OVERLAP_VARIANT_RAW_PUBSPEC = {"name": "hpkg", "flutter": {"assets": ["a/b.png", "a//2.0x/b.png"]}}
 
 _OVERLAP_FILES = {
     "a": ["a/b.png", "a/2.0x/b.png"],
@@ -893,16 +849,18 @@ def _overlap_variant_raw_refuses_test_impl(ctx):
         asserts.true(env, want in result.error, result.error)
     return unittest.end(env)
 
-_MIXED_PUBSPEC = """\
-name: hpkg
-flutter:
-  assets:
-    - c/d.png
-    - e//em.png
-    - path: 'f//fm.png'
-    - path: 'a%20b.png'
-    - path: 'g/./h.png'
-"""
+_MIXED_PUBSPEC = {
+    "name": "hpkg",
+    "flutter": {
+        "assets": [
+            "c/d.png",
+            "e//em.png",
+            {"path": "f//fm.png"},
+            {"path": "a%20b.png"},
+            {"path": "g/./h.png"},
+        ],
+    },
+}
 
 _MIXED_FILES = {
     "": ["a%20b.png"],

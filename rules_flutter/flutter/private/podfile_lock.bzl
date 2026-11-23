@@ -2,20 +2,11 @@
 
 Reads the evaluated CocoaPods lockfile committed by Flutter iOS/macOS apps
 to discover plugin native pod dependencies and versions without running Ruby.
+The file is YAML: the caller converts it with `yaml_to_json` from
+`@rules_dart//dart/pub:yaml.bzl`, and this module checks and projects the
+decoded mapping. Only the pod entries themselves (`<name> (<version>)`) are
+CocoaPods text inside YAML scalars, split here.
 """
-
-load(
-    "//flutter/private:podfile_lock_scan.bzl",
-    "count_indent",
-    "has_flow_or_anchor",
-    "has_indent_tab",
-    "make_refusal",
-    "parse_mapping_line",
-    "parse_pods_dep",
-    "parse_pods_entry",
-    "starts_with_flow_or_anchor",
-    "unquote",
-)
 
 visibility(["//flutter/..."])
 
@@ -37,10 +28,15 @@ _CHECKOUT_KINDS = {
     "svn": True,
 }
 
-_TAB_DETAIL = "an indentation tab is not part of the Podfile.lock YAML subset rules_flutter reads"
-_FLOW_DETAIL = "flow syntax and anchors are not part of the Podfile.lock YAML subset rules_flutter reads"
+def _refusal(label, where, detail):
+    """Format a refusal naming the label, the place in the lock and the detail."""
+    return "{label} (Podfile.lock {where}): {detail}.".format(
+        label = label,
+        where = where,
+        detail = detail,
+    )
 
-def _make_failure(error):
+def _failure(error):
     """Build a failure struct with empty maps."""
     return struct(
         ok = False,
@@ -52,250 +48,160 @@ def _make_failure(error):
         checkout = {},
     )
 
-def _handle_pods(state, stripped, indent, line_num, label):
-    """Handle a line inside the PODS section."""
-    if indent == 2:
-        entry = parse_pods_entry(stripped)
-        if not entry.ok:
-            return make_refusal(
-                label,
-                line_num,
-                '"{text}" is not a "<name> (<version>):" PODS entry'.format(text = stripped),
-            )
-        if entry.name in state.pods:
-            return make_refusal(
-                label,
-                line_num,
-                'PODS lists "{pod}" twice'.format(pod = entry.name),
-            )
-        state.pods[entry.name] = struct(version = entry.version, line = line_num)
-        state.pod_deps[entry.name] = []
-        state.current["pod"] = entry.name
-        state.current["has_colon"] = entry.has_colon
-        state.current["entry_line"] = line_num
-        state.current["entry_text"] = stripped
-        return ""
+def _is_valid_pod_token(token, allow_spaces = False):
+    """Whether `token` is non-empty and free of delimiter characters."""
+    if not token or token.startswith("-"):
+        return False
+    bad_chars = ("(", ")", ":", '"', "'", "\t") if allow_spaces else (" ", "\t", "(", ")", ":", '"', "'")
+    for ch in bad_chars:
+        if token.find(ch) != -1:
+            return False
+    return True
 
-    if indent > 2 and state.current["pod"] and not state.current["has_colon"]:
-        return make_refusal(
-            label,
-            state.current["entry_line"],
-            '"{text}" is not a "<name> (<version>):" PODS entry'.format(text = state.current["entry_text"]),
-        )
+def _split_pod_entry(text):
+    """Split a `<name> (<version>)` PODS entry, or None when it is not one."""
+    if type(text) != "string" or not text.endswith(")"):
+        return None
+    open_paren = text.rfind(" (")
+    if open_paren <= 0:
+        return None
+    name = text[:open_paren]
+    version = text[open_paren + 2:-1]
+    if not _is_valid_pod_token(name) or not _is_valid_pod_token(version):
+        return None
+    return struct(name = name, version = version)
 
-    if indent == 4 and state.current["pod"]:
-        dep = parse_pods_dep(stripped)
-        if not dep.ok:
-            return make_refusal(
-                label,
-                line_num,
-                '"{text}" is not a "<name> (<requirement>)" PODS dependency'.format(text = stripped),
-            )
-        state.pod_deps[state.current["pod"]].append(
-            struct(name = dep.name, requirement = dep.requirement),
-        )
-        return ""
+def _split_pod_dep(text):
+    """Split a `<name>` or `<name> (<requirement>)` dependency, or None."""
+    if type(text) != "string":
+        return None
+    if text.endswith(")"):
+        open_paren = text.rfind(" (")
+        if open_paren <= 0:
+            return None
+        name = text[:open_paren]
+        req = text[open_paren + 2:-1].strip()
+        if not _is_valid_pod_token(name) or not _is_valid_pod_token(req, allow_spaces = True):
+            return None
+        return struct(name = name, requirement = req)
+    if not _is_valid_pod_token(text):
+        return None
+    return struct(name = text, requirement = "")
 
-    if not state.current["pod"] or stripped.endswith(":") or indent < 2:
-        return make_refusal(
-            label,
-            line_num,
-            '"{text}" is not a "<name> (<version>):" PODS entry'.format(text = stripped),
-        )
-    return make_refusal(
-        label,
-        line_num,
-        '"{text}" is not a "<name> (<requirement>)" PODS dependency'.format(text = stripped),
-    )
+def _entry_text(value):
+    """Render a PODS item for a refusal message."""
+    return value if type(value) == "string" else json.encode(value)
 
-def _handle_spec_repos(state, stripped, indent):
-    """Handle a line inside the SPEC REPOS section."""
-    if indent == 2:
-        kv = parse_mapping_line(stripped)
-        state.current["repo"] = kv.key
-    elif indent > 2:
-        pod = stripped[2:].strip() if stripped.startswith("- ") else stripped
-        pod = unquote(pod)
-        repo = state.current["repo"]
-        if repo and pod:
-            state.spec_repos[pod] = repo
+def _read_pods(raw, label):
+    """Read the `PODS` list into `(pods, error)`; `pods` keeps lock order."""
+    pods = {}
+    if raw == None:
+        return pods, ""
+    if type(raw) != "list":
+        return None, _refusal(label, "PODS", "PODS is not a list of \"<name> (<version>)\" entries")
+    for index, item in enumerate(raw):
+        where = "PODS entry %d" % (index + 1)
+        if type(item) == "dict" and len(item) == 1:
+            entry_text, deps_raw = item.items()[0]
+        else:
+            entry_text, deps_raw = item, None
+        entry = _split_pod_entry(entry_text)
+        if entry == None:
+            return None, _refusal(label, where, '"{text}" is not a "<name> (<version>):" PODS entry'.format(text = _entry_text(entry_text)))
+        if entry.name in pods:
+            return None, _refusal(label, where, 'PODS lists "{pod}" twice'.format(pod = entry.name))
+        if deps_raw == None:
+            deps_raw = []
+        if type(deps_raw) != "list":
+            return None, _refusal(label, where, '"{pod}" lists its dependencies as something other than a list'.format(pod = entry.name))
+        deps = []
+        for dep_raw in deps_raw:
+            dep = _split_pod_dep(dep_raw)
+            if dep == None:
+                return None, _refusal(label, where, '"{text}" is not a "<name> (<requirement>)" PODS dependency'.format(text = _entry_text(dep_raw)))
+            deps.append(dep)
+        pods[entry.name] = struct(version = entry.version, deps = deps, index = index)
+    return pods, ""
 
 def _plugin_pkg_from_path(path):
     """Extract pub package name from `.symlinks/plugins/<pkg>/<ios|darwin|macos>`, or `""`."""
     prefix = ".symlinks/plugins/"
-    if not path.startswith(prefix):
+    if type(path) != "string" or not path.startswith(prefix):
         return ""
     parts = path[len(prefix):].split("/")
     if len(parts) == 2 and parts[1] in ("ios", "darwin", "macos") and parts[0] not in ("", ".", ".."):
         return parts[0]
     return ""
 
-def _handle_external_sources(state, stripped, indent):
-    """Handle a line inside the EXTERNAL SOURCES section."""
-    if indent == 2:
-        kv = parse_mapping_line(stripped)
-        state.current["ext_pod"] = kv.key
-        return
-    if indent <= 2 or not state.current["ext_pod"]:
-        return
-    pod = state.current["ext_pod"]
-    kv = parse_mapping_line(stripped)
-    if not kv.is_symbol:
-        return
-    if kv.kind == "path":
-        pkg = _plugin_pkg_from_path(kv.value)
-        if pkg:
-            state.plugin_pods[pod] = pkg
-    elif kv.kind in _CHECKOUT_KINDS and pod not in state.checkout:
-        state.checkout[pod] = kv.kind
+def _mapping(data, key):
+    """The mapping under a top-level key, or `{}` when it is absent or not one."""
+    value = data.get(key)
+    return value if type(value) == "dict" else {}
 
-def _handle_checkout_options(state, stripped, indent):
-    """Handle a line inside the CHECKOUT OPTIONS section."""
-    if indent == 2:
-        kv = parse_mapping_line(stripped)
-        state.current["checkout_pod"] = kv.key
-    elif indent > 2:
-        pod = state.current["checkout_pod"]
-        if not pod:
-            return
-        kv = parse_mapping_line(stripped)
-        if kv.is_symbol and kv.kind in _CHECKOUT_KINDS and pod not in state.checkout:
-            state.checkout[pod] = kv.kind
+def _source_kinds(source):
+    """The `(kind, value)` pairs of a source mapping's `:<kind>` keys, in order."""
+    if type(source) != "dict":
+        return []
+    return [(key[1:], value) for key, value in source.items() if key.startswith(":")]
 
-def _handle_spec_checksums(state, stripped, indent):
-    """Handle a line inside the SPEC CHECKSUMS section."""
-    if indent == 2:
-        kv = parse_mapping_line(stripped)
-        if kv.has_kv and kv.key and kv.value:
-            state.checksums[kv.key] = kv.value
-
-def _handle_top_level(state, stripped, line_num, label):
-    """Handle a top-level section header."""
-    kv = parse_mapping_line(stripped)
-    top_key = kv.key if kv.has_kv else stripped
-    if not kv.has_kv or top_key not in _ALLOWED_TOP_LEVEL:
-        return make_refusal(
-            label,
-            line_num,
-            '"{key}" is not a Podfile.lock top-level key rules_flutter reads'.format(key = top_key),
-        )
-    state.current["section"] = top_key
-    state.current["pod"] = ""
-    state.current["has_colon"] = False
-    state.current["entry_line"] = 0
-    state.current["entry_text"] = ""
-    state.current["repo"] = ""
-    state.current["ext_pod"] = ""
-    state.current["checkout_pod"] = ""
-    return ""
-
-def _dispatch_section(state, stripped, indent, line_num, label):
-    """Dispatch a content line to the active section handler."""
-    section = state.current["section"]
-    if section == "PODS":
-        return _handle_pods(state, stripped, indent, line_num, label)
-    if section == "SPEC REPOS":
-        _handle_spec_repos(state, stripped, indent)
-        return ""
-    if section == "EXTERNAL SOURCES":
-        _handle_external_sources(state, stripped, indent)
-        return ""
-    if section == "CHECKOUT OPTIONS":
-        _handle_checkout_options(state, stripped, indent)
-        return ""
-    if section == "SPEC CHECKSUMS":
-        _handle_spec_checksums(state, stripped, indent)
-        return ""
-    if section in ("DEPENDENCIES", "PODFILE CHECKSUM", "COCOAPODS"):
-        return ""
-    kv = parse_mapping_line(stripped)
-    return make_refusal(
-        label,
-        line_num,
-        '"{key}" is not a Podfile.lock top-level key rules_flutter reads'.format(key = kv.key),
-    )
-
-def _scan_line(state, raw_line, line_num, label):
-    """Process one raw line of `Podfile.lock`, returning `""` or refusal text."""
-    if raw_line.endswith("\r"):
-        raw_line = raw_line[:-1]
-    if has_indent_tab(raw_line):
-        return make_refusal(label, line_num, _TAB_DETAIL)
-    stripped = raw_line.strip()
-    if not stripped:
-        return ""
-    if starts_with_flow_or_anchor(stripped):
-        return make_refusal(label, line_num, _FLOW_DETAIL)
-    indent = count_indent(raw_line)
-    is_pods_list_item = (
-        state.current["section"] == "PODS" and
-        (stripped == "-" or stripped.startswith("- ") or stripped.startswith("-\t"))
-    )
-    if indent == 0 and not is_pods_list_item:
-        err = _handle_top_level(state, stripped, line_num, label)
-        if err:
-            return err
-        if has_flow_or_anchor(stripped):
-            return make_refusal(label, line_num, _FLOW_DETAIL)
-        return ""
-    if has_flow_or_anchor(stripped):
-        return make_refusal(label, line_num, _FLOW_DETAIL)
-    return _dispatch_section(state, stripped, indent, line_num, label)
-
-def _build_pods_map(state):
-    """Convert state pods and deps into final structs."""
-    pods = {}
-    for name, entry in state.pods.items():
-        pods[name] = struct(
-            version = entry.version,
-            deps = list(state.pod_deps.get(name, [])),
-            line = entry.line,
-        )
-    return pods
-
-def read_podfile_lock(text, label):
-    """Parse CocoaPods `Podfile.lock` text into structured pod data.
+def read_podfile_lock(data, label):
+    """Check a decoded CocoaPods `Podfile.lock` and project its pod data.
 
     Args:
-        text: The file content string.
+        data: The lock's top-level mapping, from `yaml_to_json`.
         label: The file label string, for error reporting.
 
     Returns:
         `struct(ok, error, pods, plugin_pods, spec_repos, checksums, checkout)`:
-        on success, `ok` is True and `error` is `""`. On failure, `ok` is False,
-        `error` holds the refusal message, and all maps are empty.
+        on success, `ok` is True and `error` is `""`; `pods` maps each pod
+        to `struct(version, deps, index)`, `deps` holding
+        `struct(name, requirement)` and `index` the entry's position in
+        `PODS`. On failure, `ok` is False, `error` holds the refusal message,
+        and all maps are empty.
     """
-    lines = text.split("\n")
-    state = struct(
-        pods = {},
-        pod_deps = {},
-        plugin_pods = {},
-        spec_repos = {},
-        checksums = {},
-        checkout = {},
-        current = {
-            "section": "",
-            "pod": "",
-            "has_colon": False,
-            "entry_line": 0,
-            "entry_text": "",
-            "repo": "",
-            "ext_pod": "",
-            "checkout_pod": "",
-        },
-    )
+    for key in data.keys():
+        if key not in _ALLOWED_TOP_LEVEL:
+            return _failure(_refusal(label, "top level", '"{key}" is not a Podfile.lock top-level key rules_flutter reads'.format(key = key)))
 
-    for line_idx in range(len(lines)):
-        err = _scan_line(state, lines[line_idx], line_idx + 1, label)
-        if err:
-            return _make_failure(err)
+    pods, err = _read_pods(data.get("PODS"), label)
+    if err:
+        return _failure(err)
+
+    spec_repos = {}
+    for repo, repo_pods in _mapping(data, "SPEC REPOS").items():
+        if type(repo_pods) != "list":
+            continue
+        for pod in repo_pods:
+            if type(pod) == "string" and pod:
+                spec_repos[pod] = repo
+
+    # The first checkout kind named for a pod wins, in file order, whichever
+    # of the two sections names it first.
+    plugin_pods = {}
+    checkout = {}
+    for section in data.keys():
+        if section not in ("EXTERNAL SOURCES", "CHECKOUT OPTIONS"):
+            continue
+        for pod, source in _mapping(data, section).items():
+            for kind, value in _source_kinds(source):
+                if kind == "path" and section == "EXTERNAL SOURCES":
+                    pkg = _plugin_pkg_from_path(value)
+                    if pkg:
+                        plugin_pods[pod] = pkg
+                elif kind in _CHECKOUT_KINDS and pod not in checkout:
+                    checkout[pod] = kind
+
+    checksums = {}
+    for pod, checksum in _mapping(data, "SPEC CHECKSUMS").items():
+        if pod and type(checksum) == "string" and checksum:
+            checksums[pod] = checksum
 
     return struct(
         ok = True,
         error = "",
-        pods = _build_pods_map(state),
-        plugin_pods = dict(state.plugin_pods),
-        spec_repos = dict(state.spec_repos),
-        checksums = dict(state.checksums),
-        checkout = dict(state.checkout),
+        pods = pods,
+        plugin_pods = plugin_pods,
+        spec_repos = spec_repos,
+        checksums = checksums,
+        checkout = checkout,
     )

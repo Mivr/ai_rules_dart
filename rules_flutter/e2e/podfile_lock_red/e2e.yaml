@@ -5,5 +5,6 @@ commands:
     expect:
       non_zero: true
       output_contains:
-        - Podfile.lock line 2
-        - an indentation tab is not part of the Podfile.lock YAML subset rules_flutter reads
+        - "cannot read YAML: Error: bad file"
+        - ":Podfile.lock': go-yaml load error in scanner"
+        - "at L2.C1: found character that cannot start any token"

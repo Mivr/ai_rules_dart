@@ -9,7 +9,7 @@ environment:
 flutter:
   # Deliberately malformed: flutter_tools only accepts font weights
   # 100..900. The spoke fetch must fail with `Invalid value 150 ... for
-  # font -> weight` at the `weight:` line instead of bundling the font
+  # font -> weight` naming the font entry instead of bundling the font
   # with an unset weight.
   fonts:
     - family: BadFont
