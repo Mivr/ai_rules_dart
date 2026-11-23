@@ -20,6 +20,7 @@ load(
     "modular_executable_tools",
 )
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
+load("//dart/private:executable_package.bzl", "executable_packages")
 load("//dart/private:kernel_params.bzl", "kernel_compile_settings", "kernel_link_options", "library_vm_product")
 load("//dart/private:source_set.bzl", "executable_inputs")
 load("//dart/private/tools:compile_wrapper.bzl", "compile_wrapper_inputs")
@@ -101,7 +102,7 @@ def _source_compile(ctx, run):
     # compiles in place, through the multi-root file system (`executable_inputs`).
     # The one flatten per rule: the package lookup inspects per-file paths.
     inputs = executable_inputs(
-        run.own.packages,
+        executable_packages(run.own),
         collect_transitive_srcs(ctx.attr.deps).to_list(),
         ctx.file.main,
         ctx.files.srcs,
@@ -212,6 +213,7 @@ def binary_compile(ctx, run):
         own_defines = ctx.attr.defines,
         compile_flags = ctx.attr.dart_compile_flags,
         target_sdk = run.dart_sdk_info,
+        closure = run.own.closure,
     )
     if kernel_tools == None:
         return _source_compile(ctx, run)

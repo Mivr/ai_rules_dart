@@ -56,6 +56,7 @@ load(
     "stable_path",
     "writable_home_env",
 )
+load("//dart/private:closure_facts.bzl", "lib_roots_of", "root_key")
 load("//dart/private:dart_info.bzl", "package_lib_prefix")
 load("//dart/private:kernel_exec_link.bzl", "exec_base_dill", "exec_link_closure")
 load(
@@ -1238,7 +1239,8 @@ def modular_executable_tools(
         resolved_assets,
         own_defines,
         compile_flags,
-        target_sdk = None):
+        target_sdk = None,
+        closure = None):
     """Decides whether an executable compiles modularly, and with which tools.
 
     Reads the flag and gathers each fact of the `modular_kernel_conditions`
@@ -1257,6 +1259,11 @@ def modular_executable_tools(
       compile_flags: The executable's `dart_compile_flags`.
       target_sdk: Optional `DartSdkInfo` that will execute the output kernel;
         defaults to `ctx.toolchains["//dart:toolchain_type"].dart_sdk_info`.
+      closure: Optional `executable_package`'s `closure`: the closure's
+        records as a depset and the index of their owners, set only when the
+        closure is clean (see `clean_closure`). Its records are then one per
+        name with one root each, so they are consistent without a walk, and
+        `modular_executable_kernel` takes `packages = None`.
 
     Returns:
       The struct from `find_kernel_module_tools`, or None.
@@ -1273,18 +1280,30 @@ def modular_executable_tools(
     kernels = dep_kernels_or_none(ctx.attr.deps)
     dep_modular = kernels != None and all([k.modular for k in kernels])
 
-    records = depset(transitive = [dep[DartInfo].transitive_packages for dep in ctx.attr.deps]).to_list()
-    if own_record != None:
-        records = [own_record] + records
+    if closure != None:
+        # A clean closure has one record per name, one name per root and at
+        # most one root package: consistent by construction.
+        consistent = True
+    else:
+        records = depset(transitive = [dep[DartInfo].transitive_packages for dep in ctx.attr.deps]).to_list()
+        if own_record != None:
+            records = [own_record] + records
+        consistent = kernel_packages_consistent(records)
 
-    closure = _closure_scan(kernels or [])
-    duplicate = duplicated_source([f.short_path for f in own_files], closure.owned, closure.edges)
+    own_paths = [f.short_path for f in own_files]
+    if closure != None and not _clean_own_in_lib(own_paths, closure.index):
+        # Nothing to scan: see `_clean_own_in_lib`.
+        scan = None
+        duplicate = None
+    else:
+        scan = _closure_scan(kernels or [])
+        duplicate = duplicated_source(own_paths, scan.owned, scan.edges)
 
     eligible = modular_kernel_eligible(
         modular_kernel_conditions(
             modular_kernel_mode(enabled, kernel_mode),
             dep_modular,
-            kernel_packages_consistent(records),
+            consistent,
             len(resolved_assets) > 0,
             len(own_defines) > 0,
             len(compile_flags) > 0,
@@ -1298,15 +1317,60 @@ def modular_executable_tools(
     # The executable's entry compile reads the same closure: hand the one
     # flattened copy over with the tools, so `modular_executable_kernel` does
     # not flatten it again.
-    return struct(closure_scan = closure, **_struct_fields(tools))
+    return struct(closure_scan = scan, clean_closure = closure, **_struct_fields(tools))
 
 def _struct_fields(value):
     """The fields of a struct as a dict, for rebuilding it with one more field."""
     return {
         name: getattr(value, name)
         for name in dir(value)
-        if name not in ("to_json", "to_proto", "closure_scan")
+        if name not in ("to_json", "to_proto", "closure_scan", "clean_closure")
     }
+
+def _clean_own_in_lib(own_paths, index):
+    """Whether one of an executable's own files lies in a clean closure package's `lib/`.
+
+    In a clean closure every root has one owner and no root sits inside
+    another package's `lib/`. A library that compiles a module lists only
+    files under its own package's `lib/` (anything else makes it opaque, and
+    its closure not modular), so two libraries listing one file would own one
+    root, which a clean closure rules out. What `duplicated_source` can still
+    find is an own file that a library lists too, and that file lies in a
+    closure package's `lib/`. This answers that from the owner index, with no
+    walk; when it says True, the precise scan runs.
+
+    Args:
+      own_paths: The `short_path` of each of the executable's own sources.
+      index: The `owner_index` of the clean closure.
+
+    Returns:
+      True when some own file lies under a closure package's `lib/`.
+    """
+    for path in own_paths:
+        for root in lib_roots_of(path):
+            if root_key(root) in index:
+                return True
+    return False
+
+def _clean_entry_needs_scan(sources, index):
+    """Whether a clean closure's entry still needs the cross-package scan.
+
+    `_cyclic_source_paths` finds nothing to add for a clean closure when the
+    entry has one source that lies in no closure package's `lib/`: every
+    package then has one owner, each owner's sources map to its own package,
+    and the executable names no package of its own. Any other entry takes the
+    scan, which gives the precise answer.
+
+    Args:
+      sources: The entry's `struct(uri, file)` list.
+      index: The `owner_index` of the clean closure.
+
+    Returns:
+      True when the scan has to run.
+    """
+    if len(sources) != 1:
+        return True
+    return _clean_own_in_lib([sources[0].file.short_path], index)
 
 def _closure_scan(dep_kernels):
     """The closure ownership an executable checks, flattened once.
@@ -1339,7 +1403,7 @@ def _closure_scan(dep_kernels):
         edges = edges,
     )
 
-def _exec_entry_inputs(ctx, dep_kernels, packages, sources, closure = None):
+def _exec_entry_inputs(ctx, dep_kernels, packages, sources, closure = None, clean = None):
     """Collects the entry module's closures and cross-package sources. Returns (dep_closure, dep_outline_closure, cross_pkg_srcs)."""
     dep_closure = depset(
         order = "postorder",
@@ -1349,6 +1413,10 @@ def _exec_entry_inputs(ctx, dep_kernels, packages, sources, closure = None):
         order = "postorder",
         transitive = [k.transitive_koutlines for k in dep_kernels],
     )
+    if clean != None and not _clean_entry_needs_scan(sources, clean.index):
+        return dep_closure, dep_outline_closure, depset(transitive = [k.cross_pkg_srcs for k in dep_kernels])
+    if packages == None:
+        packages = clean.records.to_list()
     if closure == None or closure.kernels != dep_kernels:
         closure = _closure_scan(dep_kernels)
     exec_owned = closure.owned
@@ -1395,7 +1463,9 @@ def modular_executable_kernel(
       ctx: The rule context.
       tools: The struct from `find_kernel_module_tools`.
       sources: The entry module's `struct(uri, file)` list, its entry point first.
-      packages: The executable's `DartPackageInfo` records, its own first.
+      packages: The executable's `DartPackageInfo` records, its own first; or
+        None when `modular_executable_tools` was given a clean `closure`,
+        whose record depset then stands in for them.
       dep_kernels: The `DartKernelInfo` of each direct dependency.
       output: The linked kernel File the executable runs.
       compile: The struct from `kernel_compile_settings()`: the frontend
@@ -1409,13 +1479,25 @@ def modular_executable_kernel(
       The shared `base_dill` File if `link.use_base_dill` is True and a dependency
       provides one, or None.
     """
+    clean = getattr(tools, "clean_closure", None) if packages == None else None
+    if packages == None and clean == None:
+        fail("modular_executable_kernel: `packages` is None, but the tools carry no clean closure.")
     dep_closure, dep_outline_closure, cross_pkg_srcs = _exec_entry_inputs(
         ctx,
         dep_kernels,
         packages,
         sources,
         getattr(tools, "closure_scan", None),
+        clean,
     )
+    if clean != None:
+        # The records are one per name already, in the order the merged list
+        # would have, so the worker gets the same `--record` arguments from
+        # the depset that it would from the list. A clean closure with no
+        # record has an empty index.
+        entry_packages = ([], clean.records) if clean.index else []
+    else:
+        entry_packages = (packages, depset()) if packages else packages
     entry = ctx.actions.declare_directory(ctx.label.name + ".entry.kmod")
     kernel_module_action(
         ctx,
@@ -1426,7 +1508,7 @@ def modular_executable_kernel(
             # as it does a library's, so analysis formats no closure-sized
             # JSON. The bytes are those `kernel_package_config` writes. With
             # no records the worker writes nothing, so that config stays inline.
-            packages = (packages, depset()) if packages else packages,
+            packages = entry_packages,
             dep_kmods = dep_outline_closure,
             extra_inputs = cross_pkg_srcs,
             closure_excluded = depset(transitive = [k.closure_excluded for k in dep_kernels]),

@@ -15,9 +15,7 @@ load(
     "//dart/private:common.bzl",
     "DART_ABI_CONSTRAINT_ATTRS",
     "WINDOWS_CONSTRAINT_ATTR",
-    "check_unreplaced_hooks",
     "code_asset_entries",
-    "collect_transitive_code_assets",
     "collect_transitive_resources",
     "collect_transitive_srcs",
     "create_test_executable",
@@ -42,7 +40,16 @@ load(
     "modular_executable_tools",
 )
 load("//dart/private:dart_test_runner.bzl", "DartTestKernelInfo")
-load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
+load(
+    "//dart/private:executable_package.bzl",
+    "EXECUTABLE_PACKAGE_ATTRS",
+    "executable_code_assets",
+    "executable_has_package",
+    "executable_hook_error",
+    "executable_package",
+    "executable_package_set",
+    "executable_packages",
+)
 load("//dart/private:kernel_params.bzl", "kernel_compile_settings", "kernel_link_options")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load("//dart/private:source_set.bzl", "executable_inputs")
@@ -73,7 +80,7 @@ def _dart_test_impl(ctx):
     # The build-time compile resolves each package, and the test's own `main`
     # with any generated sibling sources (e.g. a `.mocks.dart`), where they sit.
     own = executable_package(ctx, [ctx.file.main] + ctx.files.srcs)
-    runner = _test_runner(ctx, own.packages, dart_sdk_info)
+    runner = _test_runner(ctx, own, dart_sdk_info)
     kernel = _compile_test_kernel(ctx, own, bootstrap = runner != None, use_base_dill = runner != None)
     dill = kernel.dill
 
@@ -86,11 +93,11 @@ def _dart_test_impl(ctx):
     }
 
     # The launcher turns this list into the package config the test runs with.
-    package_roots = write_package_roots(ctx, own.packages)
+    package_roots = write_package_roots(ctx, executable_package_set(own))
     env["RULES_DART_PACKAGE_ROOTS"] = runfiles_path(package_roots, workspace_name)
     coverage_files = []
     if ctx.configuration.coverage_enabled:
-        coverage_map = _coverage_map(ctx, own.packages)
+        coverage_map = _coverage_map(ctx, executable_packages(own))
         coverage_files.append(coverage_map)
         env["RULES_DART_COVERAGE_MAP"] = runfiles_path(coverage_map, workspace_name)
     generated_list = write_generated_list(ctx, ctx.files.srcs + [ctx.file.main], ctx.attr.deps)
@@ -225,17 +232,15 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
     """
     toolchain = ctx.toolchains["//dart:toolchain_type"]
     dart_sdk_info = toolchain.dart_sdk_info
-    packages = own.packages
-
     if ctx.attr.code_assets_from_deps:
-        hook_err = check_unreplaced_hooks(ctx.label, packages)
+        hook_err = executable_hook_error(ctx.label, own)
         if hook_err != None:
             fail(hook_err)
 
     # Transitively propagated assets (unless opted out) plus any named outright
     # — see the same comment in `dart_binary`.
     transitive_assets = (
-        collect_transitive_code_assets(ctx.attr.deps) if ctx.attr.code_assets_from_deps else depset()
+        executable_code_assets(ctx.attr.deps, own) if ctx.attr.code_assets_from_deps else depset()
     )
     resolved_assets = resolve_code_assets(
         ctx.label,
@@ -254,6 +259,7 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
         # for every module, so it does not stop a test going modular.
         own_defines = ctx.attr.defines,
         compile_flags = [],
+        closure = own.closure,
     )
     if kernel_tools != None:
         return _compile_modular_test_kernel(ctx, own, bootstrap, kernel_tools, use_base_dill = use_base_dill)
@@ -261,7 +267,7 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
     # Nothing is copied (see `executable_inputs`). The one flatten per rule: the
     # package lookup inspects per-file paths.
     inputs = executable_inputs(
-        packages,
+        executable_packages(own),
         collect_transitive_srcs(ctx.attr.deps).to_list(),
         ctx.file.main,
         ctx.files.srcs,
@@ -444,7 +450,7 @@ def _dart_test_kernel_impl(ctx):
         ),
     ]
 
-def _test_runner(ctx, packages, dart_sdk_info):
+def _test_runner(ctx, own, dart_sdk_info):
     """The `package:test` runner for this test, or `None` to run it directly.
 
     The runner is found on the direct dependency that provides `package:test`
@@ -455,7 +461,7 @@ def _test_runner(ctx, packages, dart_sdk_info):
 
     Args:
       ctx: The rule context.
-      packages: The test's `DartPackageInfo` closure.
+      own: The `executable_package` result for the test.
       dart_sdk_info: The `DartSdkInfo` that will execute the test and runner.
 
     Returns:
@@ -472,12 +478,11 @@ def _test_runner(ctx, packages, dart_sdk_info):
                     "only run on the exact Dart SDK version that compiled it."
                 ) % (ctx.label, dep.label, runner_sdk, dart_sdk_info.version))
             return info.runner
-    for pkg in packages:
-        if pkg.package_name == "test":
-            fail(("%s: depends on `package:test` without listing it in " +
-                  "`deps`. Add the `package:test` target (e.g. " +
-                  "`@<hub>//:test`) to `deps`: `dart_test` runs tests through " +
-                  "the runner that target carries.") % ctx.label)
+    if executable_has_package(own, "test"):
+        fail(("%s: depends on `package:test` without listing it in " +
+              "`deps`. Add the `package:test` target (e.g. " +
+              "`@<hub>//:test`) to `deps`: `dart_test` runs tests through " +
+              "the runner that target carries.") % ctx.label)
     return None
 
 def _test_path(ctx):

@@ -7,8 +7,6 @@ load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "REFUSED_DA
 load(
     "//dart/private:common.bzl",
     "DART_ABI_CONSTRAINT_ATTRS",
-    "check_unreplaced_hooks",
-    "collect_transitive_code_assets",
     "collect_transitive_resources",
     "resolve_code_assets",
     "runfiles_path",
@@ -28,7 +26,7 @@ load(
 )
 load("//dart/private:dart_link_check.bzl", "LINK_MODULES_ATTRS", "link_modules_check")
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
-load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
+load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_code_assets", "executable_hook_error", "executable_package")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load(
     "//dart/private/tools:compile_wrapper.bzl",
@@ -432,7 +430,7 @@ def _dart_binary_impl(ctx):
     own = executable_package(ctx, own_files)
 
     if ctx.attr.code_assets_from_deps:
-        hook_err = check_unreplaced_hooks(ctx.label, own.packages)
+        hook_err = executable_hook_error(ctx.label, own)
         if hook_err != None:
             fail(hook_err)
 
@@ -452,7 +450,7 @@ def _dart_binary_impl(ctx):
     # hand-written cases; it is simply no longer the only mechanism.
     resolved_assets = resolve_code_assets(
         ctx.label,
-        collect_transitive_code_assets(ctx.attr.deps) if ctx.attr.code_assets_from_deps else [],
+        executable_code_assets(ctx.attr.deps, own) if ctx.attr.code_assets_from_deps else [],
         [dep[DartCodeAssetInfo] for dep in ctx.attr.code_assets],
     )
 

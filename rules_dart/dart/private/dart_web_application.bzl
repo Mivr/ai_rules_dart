@@ -10,7 +10,7 @@ The rules stage the project layout hermetically from declared artifacts (see
 load("//dart:providers.bzl", "DartInfo")
 load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "merge_dart_defines")
 load("//dart/private:common.bzl", "STABLE_SCHEME", "collect_transitive_resources", "collect_transitive_srcs", "writable_home_env")
-load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
+load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package", "executable_packages")
 load("//dart/private:project_staging.bzl", "stage_dart_project")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 
@@ -57,7 +57,7 @@ def _dart_web_compile(ctx, compile_mode):
     copy_tc = ctx.toolchains[COPY_TO_DIRECTORY_TOOLCHAINS[0]]
 
     own = executable_package(ctx, [ctx.file.main] + ctx.files.srcs)
-    packages = own.packages
+    packages = executable_packages(own)
 
     # Resources join the staged project for the same reason they join the
     # analyzer's: a package staged without them is not the package. They are

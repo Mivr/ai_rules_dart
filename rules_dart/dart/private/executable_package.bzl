@@ -20,7 +20,16 @@ pure, so each can be tested by calling it.
 """
 
 load("//dart:providers.bzl", "DartInfo")
-load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "merge_package_records", "resolve_package_identity")
+load("//dart/private:closure_facts.bzl", "clean_closure", "facts_of", "name_key")
+load(
+    "//dart/private:common.bzl",
+    "PACKAGE_IDENTITY_ATTRS",
+    "check_unreplaced_hooks",
+    "codegen_identity_error",
+    "collect_transitive_code_assets",
+    "merge_package_records",
+    "resolve_package_identity",
+)
 load("//dart/private:dart_info.bzl", "dart_analyzable_info", "dart_analyzable_info_with_package", "dart_info", "package_lib_prefix")
 load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load("//dart/private:dart_library.bzl", "derive_lib_root", "derive_package_name")
@@ -216,18 +225,41 @@ def executable_package(ctx, own_srcs):
         any colocation.
 
     Returns:
-      `struct(record, packages, analyzable)`: the executable's own
+      `struct(record, packages, closure, analyzable)`: the executable's own
       `DartPackageInfo` (`None` when it states none), the deduplicated package
-      list to compile against with that record first, and its
-      `DartAnalyzableInfo`.
+      list to compile against with that record first, the clean closure, and
+      its `DartAnalyzableInfo`.
+
+      When the executable states no package and its closure is clean (see
+      `clean_closure`), the closure's records need no merging and are not
+      flattened here: `packages` is None and `closure` is
+      `struct(records, index, facts)`, the record depset, the `owner_index`
+      and the closure facts. Read the list through `executable_packages()`.
+      Otherwise `closure` is None.
     """
-    dep_packages = depset(transitive = [dep[DartInfo].transitive_packages for dep in ctx.attr.deps]).to_list()
     if not _states_identity(ctx):
+        analyzable = dart_analyzable_info(deps = ctx.attr.deps, srcs = own_srcs)
+        facts = facts_of(analyzable.dart_info)
+        clean = clean_closure(facts)
+        if clean != None:
+            return struct(
+                record = None,
+                packages = None,
+                closure = struct(
+                    records = analyzable.dart_info.transitive_packages,
+                    index = clean.index,
+                    facts = facts,
+                ),
+                analyzable = analyzable,
+            )
         return struct(
             record = None,
-            packages = merge_package_records(dep_packages),
-            analyzable = dart_analyzable_info(deps = ctx.attr.deps, srcs = own_srcs),
+            packages = merge_package_records(analyzable.dart_info.transitive_packages.to_list()),
+            closure = None,
+            analyzable = analyzable,
         )
+
+    dep_packages = depset(transitive = [dep[DartInfo].transitive_packages for dep in ctx.attr.deps]).to_list()
 
     identity = resolve_package_identity(ctx)
     name = derive_package_name(identity.package_name, ctx.label.package, ctx.label.name)
@@ -289,5 +321,80 @@ def executable_package(ctx, own_srcs):
     return struct(
         record = record,
         packages = merge_package_records([record] + dep_packages),
+        closure = None,
         analyzable = analyzable,
     )
+
+def executable_packages(own):
+    """The executable's package records as a list, its own first.
+
+    For a clean closure this expands the record depset, in Java: the records
+    are one per name already. Only the paths that hand a list to a
+    whole-program compile or a coverage map call this.
+
+    Args:
+      own: The `executable_package` result.
+
+    Returns:
+      A list of `DartPackageInfo`.
+    """
+    if own.packages != None:
+        return own.packages
+    return own.closure.records.to_list()
+
+def executable_package_set(own):
+    """The executable's package records for an `Args.add_all`: a list or a depset.
+
+    Args:
+      own: The `executable_package` result.
+
+    Returns:
+      The deduplicated list, or for a clean closure the record depset, which
+      expands to the same records in the same order.
+    """
+    if own.packages != None:
+        return own.packages
+    return own.closure.records
+
+def executable_has_package(own, package_name):
+    """Whether the executable's closure holds a package of the given name.
+
+    Args:
+      own: The `executable_package` result.
+      package_name: The package name.
+
+    Returns:
+      A bool.
+    """
+    if own.closure != None:
+        return name_key(package_name) in own.closure.index
+    return any([pkg.package_name == package_name for pkg in own.packages])
+
+def executable_hook_error(label, own):
+    """`check_unreplaced_hooks` over the executable's records.
+
+    Args:
+      label: The executable's label.
+      own: The `executable_package` result.
+
+    Returns:
+      The error message, or None.
+    """
+    if own.closure != None and not own.closure.facts.unreplaced_hooks:
+        return None
+    return check_unreplaced_hooks(label, executable_packages(own))
+
+def executable_code_assets(deps, own):
+    """The code assets the executable's dependencies carry, as `collect_transitive_code_assets` finds them.
+
+    Args:
+      deps: The executable's `deps`.
+      own: The `executable_package` result.
+
+    Returns:
+      A list of `DartCodeAssetInfo`; empty for a clean closure, which has
+      none.
+    """
+    if own.closure != None:
+        return []
+    return collect_transitive_code_assets(deps)
