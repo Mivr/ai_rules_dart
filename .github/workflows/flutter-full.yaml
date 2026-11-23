@@ -36,7 +36,7 @@
 permissions:
   actions: write
   contents: read
-name: Full
+name: Flutter Full
 on:
   push:
     branches: [main]
@@ -67,10 +67,10 @@ concurrency:
   cancel-in-progress: false
 env:
   BAZEL_REPOSITORY_CACHE_KEY_FILES: |
-    - MODULE.bazel
-    - MODULE.bazel.lock
-    - e2e/*/MODULE.bazel
-    - flutter/private/versions.bzl
+    - rules_flutter/MODULE.bazel
+    - rules_flutter/MODULE.bazel.lock
+    - rules_flutter/e2e/*/MODULE.bazel
+    - rules_flutter/flutter/private/versions.bzl
 jobs:
   # The nightly run skips both macOS jobs on a commit a main push run already
   # passed: the macOS slots are the scarce ones, and that run proved the same
@@ -94,12 +94,15 @@ jobs:
         run: |
           skip=false
           if [ "$EVENT" = schedule ]; then
-            n=$(gh run list --repo "$REPO" --workflow full.yaml --commit "$SHA" --event push --status success --limit 20 \
+            n=$(gh run list --repo "$REPO" --workflow flutter-full.yaml --commit "$SHA" --event push --status success --limit 20 \
               --json headBranch --jq '[.[] | select(.headBranch == "main")] | length' || echo 0)
             if [ "$n" -gt 0 ]; then skip=true; fi
           fi
           echo "skip=$skip" | tee -a "$GITHUB_OUTPUT"
   e2e-macos:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E full (${{ matrix.workspace }}, macos-latest)
     needs: dedupe
     if: needs.dedupe.outputs.skip-macos != 'true'
@@ -222,11 +225,12 @@ jobs:
       - uses: actions/checkout@v7
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ matrix.shard }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ matrix.shard }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ matrix.shard }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ matrix.shard }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       # The repository cache is shared per OS with push CI (same key files).
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ matrix['cache-save'] && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached }}
       # Workspaces with shard `none` have no push-CI macOS content and rebuild
@@ -261,7 +265,7 @@ jobs:
       # and fails when the query finds none.
       - name: bazel test (e2e/${{ matrix.workspace }}, ${{ matrix.scope }})
         if: matrix.workspace != 'integration_ios' && matrix.workspace != 'smoke'
-        working-directory: e2e/${{ matrix.workspace }}
+        working-directory: rules_flutter/e2e/${{ matrix.workspace }}
         env:
           SCOPE: ${{ matrix.scope }}
           WORKSPACE: ${{ matrix.workspace }}
@@ -299,7 +303,7 @@ jobs:
       # Android targets (the same query the legs exclude) build and test here.
       - name: Android on a macOS host (e2e/hello_world)
         if: matrix.workspace == 'hello_world'
-        working-directory: e2e/hello_world
+        working-directory: rules_flutter/e2e/hello_world
         run: |
           query='rdeps(//..., kind(".*android.*|aar_import", //...)) except attr(tags, "\bmanual\b", //...)'
           status=0
@@ -324,18 +328,18 @@ jobs:
       # in build_expected.json.
       - name: iOS plugin build matrix (e2e/ios_plugin_matrix)
         if: matrix.workspace == 'ios_plugin_matrix'
-        working-directory: e2e/ios_plugin_matrix
+        working-directory: rules_flutter/e2e/ios_plugin_matrix
         run: python3 run_matrix.py --mode build
       - name: iOS plugin CocoaPods build matrix (e2e/ios_plugin_matrix)
         if: matrix.workspace == 'ios_plugin_matrix'
-        working-directory: e2e/ios_plugin_matrix
+        working-directory: rules_flutter/e2e/ios_plugin_matrix
         run: python3 run_pods_matrix.py --mode build
       # The simulator runtime behind `manual`: `//...` never picks up
       # `:verify_ios_simulator_test`, so the ffi_example leg runs it by name.
       # No `continue-on-error`: a failing simulator run fails the job.
       - name: iOS simulator runtime (e2e/ffi_example)
         if: matrix.workspace == 'ffi_example'
-        working-directory: e2e/ffi_example
+        working-directory: rules_flutter/e2e/ffi_example
         run: bazel test //:verify_ios_simulator_test --test_output=errors
       # The integration_ios spec runs on the macOS runner through
       # //tools/e2e_runner: `bazel test //...`, the green `:app_test` JUnit
@@ -394,6 +398,9 @@ jobs:
   # nightly (and on tag dispatches), as `bazel test //...` — the emulator-attached
   # `verify_android_app_test` is `manual`-tagged and excluded, so no KVM.
   e2e-linux-nightly:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E nightly (android_example, ubuntu-latest)
     runs-on: ubuntu-latest
     # Cold nightly and `uncached` runs rebuild the APK actions from scratch; fork
@@ -406,15 +413,16 @@ jobs:
       DISK_CACHE_SHARD: full-linux-android
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/free-disk
+      - uses: ./rules_flutter/.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached }}
       - name: Restore disk cache
@@ -491,7 +499,7 @@ jobs:
       # cycle_breaks; `deps_cycle` is the same lock with no cycle_breaks,
       # which automatically merges into `deps_cycle__scc__cycle_a__cycle_b`.
       - name: Cycle-breaks and automatic SCC spoke resolution
-        working-directory: e2e/pub_cycle_breaks
+        working-directory: rules_flutter/e2e/pub_cycle_breaks
         run: |
           bazel cquery @deps__cycle_a//:cycle_a
           bazel cquery @deps__cycle_b//:cycle_b
@@ -505,13 +513,13 @@ jobs:
       # continue-on-error: a change that fixes or breaks a plugin fails the
       # job, and a later item flips the expectation.
       - name: iOS plugin fetch matrix (e2e/ios_plugin_matrix)
-        working-directory: e2e/ios_plugin_matrix
+        working-directory: rules_flutter/e2e/ios_plugin_matrix
         run: python3 run_matrix.py
       - name: iOS plugin CocoaPods fetch matrix (e2e/ios_plugin_matrix)
-        working-directory: e2e/ios_plugin_matrix
+        working-directory: rules_flutter/e2e/ios_plugin_matrix
         run: python3 run_pods_matrix.py
       - name: iOS plugin Android refusal (e2e/ios_plugin_matrix)
-        working-directory: e2e/ios_plugin_matrix
+        working-directory: rules_flutter/e2e/ios_plugin_matrix
         run: bash check_android_refusal.sh
       - name: Report cache sizes
         if: always()
@@ -584,6 +592,9 @@ jobs:
   # - The suite runs from the repo root (the runner locates `tools/dev_tool`
   #   from its own path) with no wrapper, so its exit status is the job's.
   dev-tool-ios:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Dev tool iOS (macos-latest)
     needs: dedupe
     if: needs.dedupe.outputs.skip-macos != 'true'
@@ -597,6 +608,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: false
       - name: Keep one output base per workspace
@@ -632,6 +644,9 @@ jobs:
   # `linux-sandbox`, so the launcher's discovery diagnostic block lands in the
   # full test log (`--test_output=all`).
   e2e-android-linux-sandbox:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E Android under linux-sandbox (dev-only, ubuntu-latest)
     if: github.event_name == 'workflow_dispatch' && inputs.android_linux_sandbox
     runs-on: ubuntu-latest
@@ -639,11 +654,12 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/free-disk
+      - uses: ./rules_flutter/.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: false
       - name: Enable KVM
@@ -652,7 +668,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: bazel test //:app_test without no-sandbox (e2e/integration_android)
-        working-directory: e2e/integration_android
+        working-directory: rules_flutter/e2e/integration_android
         run: bazel test //:app_test --modify_execution_info=TestRunner=-no-sandbox --strategy=TestRunner=linux-sandbox --nocache_test_results --test_output=all
   conclusion:
     name: Conclusion

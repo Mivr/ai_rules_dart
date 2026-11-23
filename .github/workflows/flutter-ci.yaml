@@ -87,7 +87,7 @@
 permissions:
   actions: write
   contents: read
-name: CI
+name: Flutter CI
 on:
   push:
     branches: [main, "ci/**"]
@@ -118,15 +118,18 @@ concurrency:
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 env:
   BAZEL_REPOSITORY_CACHE_KEY_FILES: |
-    - MODULE.bazel
-    - MODULE.bazel.lock
-    - e2e/*/MODULE.bazel
-    - flutter/private/versions.bzl
+    - rules_flutter/MODULE.bazel
+    - rules_flutter/MODULE.bazel.lock
+    - rules_flutter/e2e/*/MODULE.bazel
+    - rules_flutter/flutter/private/versions.bzl
 jobs:
   # The macOS-specific signal Linux cannot give: building the macOS desktop
   # bundle and the iOS simulator bundle exercises the Xcode toolchain, the
   # Apple SDKs and the Apple bundle rules (packaging, simulator runtime).
   e2e-macos-apple:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: macOS Apple bundles (hello_world macOS + iOS)
     # macOS is deferred (owner decision 2026-11-04): pushes and PRs skip this
     # job, and so does the nightly, since Full (every push to main and
@@ -143,10 +146,11 @@ jobs:
       - uses: actions/checkout@v7
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -164,27 +168,27 @@ jobs:
           mkdir -p "$dir"
           echo "build --disk_cache=$dir" >> ~/.bazelrc
       - name: bazel test Apple bundles (e2e/hello_world)
-        working-directory: e2e/hello_world
+        working-directory: rules_flutter/e2e/hello_world
         run: bazel test //:macos_bundle_build_test //:ios_bundle_build_test --test_output=errors
       # A real ObjC compile against a Swift module's generated header. It
       # cannot run on Linux, where the ObjC half does not compile.
       - name: bazel test mixed ObjC + Swift plugin (e2e/plugin_example)
-        working-directory: e2e/plugin_example
+        working-directory: rules_flutter/e2e/plugin_example
         run: bazel test //mixed_plugin:mixed_plugin_build_test --test_output=errors
       # The same Apple legs against the minimum supported dependency floors:
       # the Linux job below already proves min_versions' Dart app, kernel,
       # dart_test and Android leg, so only the macOS-gated tests run here.
       - name: bazel test Apple bundles (e2e/min_versions)
-        working-directory: e2e/min_versions
+        working-directory: rules_flutter/e2e/min_versions
         run: bazel test //:ios_build_test //:macos_build_test --test_output=errors
       - name: bazel test pub_scc (e2e/pub_scc)
-        working-directory: e2e/pub_scc
+        working-directory: rules_flutter/e2e/pub_scc
         run: bazel test //... --test_output=errors
       # `bazel run <flutter_test> -- --update-goldens` on a scratch copy of
       # e2e/codegen: a stale PNG fails the test, the update rewrites it, and
       # the test then passes.
       - name: Check --update-goldens rewrites a stale golden (e2e/codegen)
-        working-directory: e2e/codegen
+        working-directory: rules_flutter/e2e/codegen
         run: bazel run //:update_goldens_check -- --bazel=bazel
       - name: Report cache sizes
         if: always()
@@ -222,6 +226,9 @@ jobs:
   # toolchain alias resolves, guarding the shared rule code all workspaces
   # load, on the OS whose toolchain is the most fragile.
   e2e-macos-toolchain:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: macOS toolchain resolution (smoke)
     # macOS is deferred (owner decision 2026-11-04): pushes and PRs skip this
     # job, and so does the nightly, since Full (every push to main and
@@ -238,10 +245,11 @@ jobs:
       - uses: actions/checkout@v7
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -296,6 +304,9 @@ jobs:
           ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
   unit-tests:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 150
@@ -308,10 +319,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -558,6 +570,9 @@ jobs:
   # restores the unit-tests disk cache shard (read only) so the builds replay
   # and only the test runs execute.
   flake-sweep:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Flake sweep (root unit tests, pull requests)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -571,10 +586,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: false
       - name: Restore disk cache
@@ -600,6 +616,9 @@ jobs:
             exit 1
           fi
   e2e-linux-app:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E Linux app (hello_world, codegen)
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -612,10 +631,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -634,7 +654,7 @@ jobs:
           echo "build --disk_cache=$dir" >> ~/.bazelrc
       - name: Disk report (before first workspace)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: before first workspace
       # Each workspace's e2e.yaml passes --test_output=errors so a failure's
@@ -650,12 +670,12 @@ jobs:
       # argument; the rest of the workspace is covered by the run above.
       - name: Disk report (after e2e/hello_world)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/hello_world
       - name: bazel test flutter_test targets 10x flake sweep (e2e/hello_world, nightly)
         if: github.event_name == 'schedule'
-        working-directory: e2e/hello_world
+        working-directory: rules_flutter/e2e/hello_world
         timeout-minutes: 120
         run: |
           set -o pipefail
@@ -672,11 +692,11 @@ jobs:
       # e2e/codegen: a stale PNG fails the test, the update rewrites it, and
       # the test then passes.
       - name: Check --update-goldens rewrites a stale golden (e2e/codegen)
-        working-directory: e2e/codegen
+        working-directory: rules_flutter/e2e/codegen
         run: bazel run //:update_goldens_check -- --bazel=bazel
       - name: Disk report (after e2e/codegen)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/codegen
       # Real-compiler proof that a warm incremental worker's dill is
@@ -718,6 +738,9 @@ jobs:
           ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
   e2e-linux-small:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E Linux small (smoke, dual_hub, ffi_example, ffi_plugin_example, web_example)
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -730,10 +753,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -756,7 +780,7 @@ jobs:
       # license files aliased by @local_linux-x64//...) must succeed and leave
       # no flutter extension entry in the freshly written lockfile.
       - name: smoke offline fetch stays lazy and reproducible
-        working-directory: e2e/smoke
+        working-directory: rules_flutter/e2e/smoke
         run: |
           empty_cache="$(mktemp -d)"
           cfg="$(mktemp)"
@@ -769,48 +793,48 @@ jobs:
           ! grep -Fq 'flutter:extensions.bzl%flutter' MODULE.bazel.lock
       - name: Disk report (before first workspace)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: before first workspace
       - name: Run e2e/smoke
         run: bazel run //tools/e2e_runner -- --workspace=e2e/smoke --bazel=bazel
       - name: Disk report (after e2e/smoke)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/smoke
       - name: Run e2e/dual_hub
         run: bazel run //tools/e2e_runner -- --workspace=e2e/dual_hub --bazel=bazel
       - name: Disk report (after e2e/dual_hub)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/dual_hub
       - name: Run e2e/ffi_example
         run: bazel run //tools/e2e_runner -- --workspace=e2e/ffi_example --bazel=bazel
       - name: Disk report (after e2e/ffi_example)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/ffi_example
       - name: Run e2e/ffi_plugin_example
         run: bazel run //tools/e2e_runner -- --workspace=e2e/ffi_plugin_example --bazel=bazel
       - name: Disk report (after e2e/ffi_plugin_example)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/ffi_plugin_example
       - name: Run e2e/web_example
         run: bazel run //tools/e2e_runner -- --workspace=e2e/web_example --bazel=bazel
       - name: Disk report (after e2e/web_example)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/web_example
       # The runner builds in a temp copy, so build in the tree here for the
       # check below to see writes through the dirlinks.
       - name: Build e2e/dual_hub in tree
-        working-directory: e2e/dual_hub
+        working-directory: rules_flutter/e2e/dual_hub
         run: bazel test //... --test_output=errors
       # The build rewrites MODULE.bazel.lock; only the dirlink targets and the
       # trees they point at must stay untouched.
@@ -833,7 +857,7 @@ jobs:
       # that coordinate. The script runs the positive build first, so it
       # cannot pass by making the fail-closed fetch fail for another reason.
       - name: pub_android_lazy reads Gradle only on the Android path
-        working-directory: e2e/pub_android_lazy
+        working-directory: rules_flutter/e2e/pub_android_lazy
         run: |
           bazel test //:check_android_fail_closed_test
           bash check_android_fail_closed.sh
@@ -870,6 +894,9 @@ jobs:
           ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
   e2e-linux-integration:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E Linux integration (web, linux, min_versions, android_no_go_sdk)
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -882,10 +909,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -904,21 +932,21 @@ jobs:
           echo "build --disk_cache=$dir" >> ~/.bazelrc
       - name: Disk report (before first workspace)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: before first workspace
       - name: Run e2e/integration_web
         run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_web --bazel=bazel
       - name: Disk report (after e2e/integration_web)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/integration_web
       - name: Run e2e/integration_linux
         run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_linux --bazel=bazel
       - name: Disk report (after e2e/integration_linux)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/integration_linux
       - name: Run e2e/federated_plugins
@@ -927,18 +955,18 @@ jobs:
         run: bazel run //tools/e2e_runner -- --workspace=e2e/min_versions --bazel=bazel
       - name: Disk report (after e2e/min_versions)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/min_versions
       - name: Run e2e/android_no_go_sdk
         run: bazel run //tools/e2e_runner -- --workspace=e2e/android_no_go_sdk --bazel=bazel
       - name: Disk report (after e2e/android_no_go_sdk)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/android_no_go_sdk
       - name: run_home hermeticity gate (RT37-flutter:02)
-        working-directory: e2e/run_home
+        working-directory: rules_flutter/e2e/run_home
         run: ./run_home_test.sh
       - name: Report cache sizes
         if: always()
@@ -976,6 +1004,9 @@ jobs:
   # e2e-linux-integration until 2026-11-16, which made that job the longest in
   # CI at 12-16 min warm; split, each half is about 6 min.
   e2e-linux-android:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E Linux Android emulator (integration_android, aar_host)
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -988,10 +1019,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -1019,21 +1051,21 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Disk report (before first workspace)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: before first workspace
       - name: Run e2e/integration_android
         run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_android --bazel=bazel
       - name: Disk report (after e2e/integration_android)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/integration_android
       - name: Run e2e/aar_host
         run: bazel run //tools/e2e_runner -- --workspace=e2e/aar_host --bazel=bazel
       - name: Disk report (after e2e/aar_host)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/aar_host
       - name: Report cache sizes
@@ -1074,6 +1106,9 @@ jobs:
   # builds on Linux but stays in the nightly Full run: its APK + Kotlin
   # actions would make this the longest push job.
   e2e-linux-examples:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E Linux examples (linux_example, cross_compile_example)
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -1086,10 +1121,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -1108,21 +1144,21 @@ jobs:
           echo "build --disk_cache=$dir" >> ~/.bazelrc
       - name: Disk report (before first workspace)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: before first workspace
       - name: Run e2e/linux_example
         run: bazel run //tools/e2e_runner -- --workspace=e2e/linux_example --bazel=bazel
       - name: Disk report (after e2e/linux_example)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/linux_example
       - name: Run e2e/cross_compile_example
         run: bazel run //tools/e2e_runner -- --workspace=e2e/cross_compile_example --bazel=bazel
       - name: Disk report (after e2e/cross_compile_example)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/cross_compile_example
       - name: Report cache sizes
@@ -1158,6 +1194,9 @@ jobs:
           ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
   e2e-linux-pub-scc:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E Linux pub_scc
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -1170,10 +1209,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -1192,14 +1232,14 @@ jobs:
           echo "build --disk_cache=$dir" >> ~/.bazelrc
       - name: Disk report (before first workspace)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: before first workspace
       - name: Run e2e/pub_scc
         run: bazel run //tools/e2e_runner -- --workspace=e2e/pub_scc --bazel=bazel
       - name: Disk report (after e2e/pub_scc)
         if: always()
-        uses: ./.github/actions/disk-report
+        uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/pub_scc
       - name: Report cache sizes
@@ -1235,6 +1275,9 @@ jobs:
           ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
   e2e-windows:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: E2E (hello_world, windows-latest)
     runs-on: windows-latest
     timeout-minutes: 90
@@ -1246,13 +1289,14 @@ jobs:
       - name: Set disk cache key
         shell: bash
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       # See the note above for the shared repository cache. The output base
       # setup-bazel sets (D:/_bazel) takes precedence over the Windows step's
       # --output_user_root and is as short.
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -1303,7 +1347,7 @@ jobs:
       # stop the OOMing build action.
       - name: bazel test //... (e2e/hello_world)
         if: runner.os == 'Windows'
-        working-directory: e2e/hello_world
+        working-directory: rules_flutter/e2e/hello_world
         run: bazel --output_user_root=C:/b test //... --test_output=errors --build_tag_filters=-no-windows-ci --test_tag_filters=-no-windows-ci
       - name: Report cache sizes
         if: always()
@@ -1355,6 +1399,9 @@ jobs:
           # Keep in step with prek in multitool.lock.json
           prek-version: 0.5.5
   dart-tool-tests:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Dart tool tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -1362,7 +1409,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dart-lang/setup-dart@v1
       - name: Run dev_tool tests
-        working-directory: tools/dev_tool
+        working-directory: rules_flutter/tools/dev_tool
         # Exclude e2e tests (tagged @Tags(['e2e'])): they need a browser/CDP,
         # iOS simulators, or a running macOS app — none available on this
         # runner. Real-render coverage lives in the Bazel e2e workspaces and,
@@ -1382,12 +1429,15 @@ jobs:
       # //flutter/private/tools:kernel_filter_test, which the `unit-tests`
       # job runs via `bazel test //...`.
       - name: Run private tool tests
-        working-directory: flutter/private/tools
+        working-directory: rules_flutter/flutter/private/tools
         run: dart pub get && dart test -x runfiles
   # The only place CI runs the binary users install rather than `dart run`.
   # One `-c dbg` Chrome run, asserted down to a VM service that answers
   # `getVersion` — `app.started` alone does not prove DWDS came up.
   web-smoke:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Web smoke (DWDS VM service)
     runs-on: ubuntu-latest
     # Cold, this downloads the Flutter SDK, the engine artifacts and the web
@@ -1402,10 +1452,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
         run: |
-          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
-          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
@@ -1483,6 +1534,9 @@ jobs:
           ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
   reproducibility:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Reproducibility canary
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1492,10 +1546,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: false
       - name: Verify canary output differs across distinct output bases
-        working-directory: e2e/repro_canary
+        working-directory: rules_flutter/e2e/repro_canary
         run: |
           trap 'bazel --output_base="${RUNNER_TEMP}/repro_canary_a" shutdown; bazel --output_base="${RUNNER_TEMP}/repro_canary_b" shutdown' EXIT
           bazel "--output_base=${RUNNER_TEMP}/repro_canary_a" build //:canary
@@ -1542,6 +1597,9 @@ jobs:
   #   into two fresh output bases that share the repository cache and one
   #   temporary repo contents cache.
   repo-checks:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Repo checks (lockfile tidy, e2e coverage, repo contents cache)
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -1551,6 +1609,7 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: false
       - name: bazel mod tidy --lockfile_mode=refresh
@@ -1606,6 +1665,9 @@ jobs:
   # nightly and on dispatches (release tags) only: on every push and pull
   # request it held a runner for 7 to 17 min that nothing waited on.
   last_rc:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Bazel last_rc (early warning)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -1617,6 +1679,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: false
       - name: bazel test --lockfile_mode=off //... --test_output=errors
@@ -1629,6 +1692,9 @@ jobs:
   # dispatches (release tags) only: on every push and pull request it held a
   # runner for 7 to 22 min that nothing waited on.
   strict:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Bazel strict flags (burn-in)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -1638,6 +1704,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
+          module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: false
       - name: bazel test --config=strict //... --test_output=errors

@@ -1,7 +1,7 @@
 # Checks every commit pushed to main against the commit policy in AGENTS.md:
 # a conventional-commit subject and the `Changelog:` trailer rules. We push straight to main, so
 # there is no PR to check instead.
-name: Commit messages
+name: Dart Commit messages
 on:
   push:
     branches: [main]
@@ -9,6 +9,9 @@ permissions:
   contents: read
 jobs:
   check:
+    defaults:
+      run:
+        working-directory: rules_dart
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -19,10 +22,11 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - uses: bazel-contrib/setup-bazel@0.19.1
         with:
+          module-root: rules_dart
           bazelisk-cache: true
           repository-cache: true
       - name: Configure Bazel version
-        working-directory: tools
+        working-directory: rules_dart/tools
         run: echo "9.3.0" > .bazelversion
       - name: Check commit messages
         run: |

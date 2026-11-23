@@ -1,6 +1,6 @@
 # Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
 # Publish new releases to Bazel Central Registry.
-name: Publish to BCR
+name: Dart Publish to BCR
 on:
   # Run the publish workflow after a successful release
   # Will be triggered from the release.yaml workflow
@@ -26,6 +26,8 @@ on:
         type: string
 jobs:
   publish:
+    # Disabled in the merged repository until releasing moves here (later task).
+    if: false
     # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
     # workflow.
     uses: bazel-contrib/publish-to-bcr/.github/workflows/publish.yaml@v1.5.1

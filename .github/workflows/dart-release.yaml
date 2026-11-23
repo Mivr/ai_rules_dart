@@ -1,6 +1,6 @@
-# Mivr/ai_rules_flutter workflow (moved from the frozen Mivr/rules_flutter fork on 2026-10-28).
+# Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
 # Cut a release whenever a new tag is pushed to the repo.
-name: Release
+name: Dart Release
 on:
   # Can be triggered from the tag.yaml workflow
   workflow_call:
@@ -31,9 +31,17 @@ jobs:
   # there. The gate judges each run's current status on every poll, and it
   # fails closed: a failed or cancelled run, a dispatched run that never appears,
   # or no passing run within the deadline blocks the release.
-  gate-tag-matrix:
-    name: CI and Full passed for this tag
+  gate:
+    # Disabled in the merged repository until releasing moves here (later task).
+    if: false
+    defaults:
+      run:
+        working-directory: rules_dart
     runs-on: ubuntu-latest
+    # The gate's deadline is 350 minutes: uncached CI takes ~25 minutes and the
+    # uncached Full matrix ~60 minutes, with headroom for slow runners. The
+    # timeout only bounds a hung gate past that deadline. GitHub caps jobs at
+    # 6 h.
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v7
@@ -47,21 +55,26 @@ jobs:
         # The tagged commit, from the tag: when auto-release.yaml calls this
         # through tag.yaml, github.sha is main's head, not the tagged commit.
         run: bash .github/workflows/release_gate.sh "$TAG" "$(gh api "repos/$REPO/commits/$TAG" --jq .sha)"
-  # A reusable-workflow call: `uses:` jobs take no timeout-minutes (only the
-  # called workflow's own jobs can carry one).
   release:
-    needs: gate-tag-matrix
+    # Disabled in the merged repository until releasing moves here (later task).
+    if: false
+    needs: gate
+    # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
+    # workflow. The gate job above carries its own timeout.
     uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@1d798ff015ed0696433e01e2c3ccbb2abefadad7 # v7.7.0
     with:
-      release_files: rules_flutter-*.tar.gz
-      # The gate job above already proved this commit (CI and Full passed on
-      # it), so this job repeats no tests. Loading and analysing every target
-      # checks the tagged checkout resolves before the archive is cut; the
-      # default, a cold `bazel test //...`, repeated the whole suite.
+      release_files: rules_dart-*.tar.gz
+      # The gate job above already refuses to release without passing CI and
+      # Full runs on the tagged commit (a nightly or a dispatch on the tag), so
+      # this job repeats no tests: it only builds the root workspace to verify
+      # the checkout before cutting the archive. A cold `bazel test //...` here
+      # timed out small tests on v0.11.0 even though the same commit was green,
+      # so testing again buys no coverage and only reintroduces cold-runner
+      # flakes. Loading and analysing every target (`--nobuild`) checks that
+      # the checkout resolves without the ~8 minute cold build.
       bazel_test_command: bazel build --nobuild //...
       # No setup-bazel caches: a tag ref's caches are never restored by any
-      # later run, and v0.28.0's build saved 22 of them (1.7 GB), evicting
-      # main's disk caches under the 10 GB repository limit.
+      # later run; they only evict main's under the 10 GB repository limit.
       mount_bazel_caches: false
       prerelease: false
       tag_name: ${{ inputs.tag_name || github.ref_name }}

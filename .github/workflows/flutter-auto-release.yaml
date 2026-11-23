@@ -14,10 +14,10 @@
 #
 # A version by hand (a different bump, a re-release) is still "Tag a Release"
 # dispatched on main.
-name: Auto release
+name: Flutter Auto release
 on:
   workflow_run:
-    workflows: [CI, Full]
+    workflows: ["Flutter CI", "Flutter Full"]
     types: [completed]
     branches: [main]
 permissions:
@@ -29,8 +29,13 @@ concurrency:
   cancel-in-progress: false
 jobs:
   decide:
+    defaults:
+      run:
+        working-directory: rules_flutter
     name: Decide whether to release
+    # Disabled in the merged repository until releasing moves here (later task).
     if: >-
+      false &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main' &&
       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule')
@@ -58,7 +63,7 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           proven=true
-          for wf in ci.yaml full.yaml; do
+          for wf in flutter-ci.yaml flutter-full.yaml; do
             n=$(gh run list --repo "$REPO" --workflow "$wf" --commit "$SHA" --limit 50 --json event,headBranch,conclusion \
               --jq '[.[] | select(.conclusion == "success" and (.event == "schedule" or (.event == "push" and .headBranch == "main")))] | length')
             echo "$wf: $n passing push or nightly run(s) on $SHA"
@@ -73,11 +78,12 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         if: steps.proof.outputs.proven == 'true'
         with:
+          module-root: rules_flutter
           repository-cache: |
-            - MODULE.bazel
-            - MODULE.bazel.lock
-            - e2e/*/MODULE.bazel
-            - flutter/private/versions.bzl
+            - rules_flutter/MODULE.bazel
+            - rules_flutter/MODULE.bazel.lock
+            - rules_flutter/e2e/*/MODULE.bazel
+            - rules_flutter/flutter/private/versions.bzl
           cache-save: false
       - name: Next version
         id: version
@@ -94,8 +100,9 @@ jobs:
   release:
     name: Tag and release
     needs: decide
-    if: needs.decide.outputs.version != ''
-    uses: ./.github/workflows/tag.yaml
+    # Disabled in the merged repository until releasing moves here (later task).
+    if: false && (needs.decide.outputs.version != '')
+    uses: ./.github/workflows/flutter-tag.yaml
     with:
       version: ${{ needs.decide.outputs.version }}
       sha: ${{ needs.decide.outputs.sha }}

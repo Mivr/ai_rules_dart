@@ -7,7 +7,7 @@
 # The version is typed in rather than derived from commit messages: a `!`
 # commit in a 0.x release is a minor bump here, and the version is the
 # releaser's call.
-name: Tag a Release
+name: Dart Tag a Release
 on:
   workflow_dispatch:
     inputs:
@@ -29,6 +29,11 @@ on:
         default: ""
 jobs:
   tag:
+    # Disabled in the merged repository until releasing moves here (later task).
+    if: false
+    defaults:
+      run:
+        working-directory: rules_dart
     permissions:
       contents: write # allow create tag
     runs-on: ubuntu-latest
@@ -60,10 +65,12 @@ jobs:
           git push origin "refs/tags/$VERSION"
           echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
   release:
+    # Disabled in the merged repository until releasing moves here (later task).
+    if: false
     needs: tag
     # A reusable-workflow call: `uses:` jobs take no timeout-minutes (only
     # the called workflow's own jobs can carry one).
-    uses: ./.github/workflows/release.yaml
+    uses: ./.github/workflows/dart-release.yaml
     with:
       tag_name: ${{ needs.tag.outputs.tag }}
     permissions:

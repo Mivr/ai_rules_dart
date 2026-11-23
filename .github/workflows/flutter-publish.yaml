@@ -1,6 +1,6 @@
 # Mivr/ai_rules_flutter workflow (moved from the frozen Mivr/rules_flutter fork on 2026-10-28).
 # Publish new releases to Bazel Central Registry.
-name: Publish to BCR
+name: Flutter Publish to BCR
 on:
   # Run the publish workflow after a successful release
   # Will be triggered from the release.yaml workflow
@@ -29,6 +29,8 @@ jobs:
   # A reusable-workflow call: `uses:` jobs take no timeout-minutes (only the
   # called workflow's own jobs can carry one).
   publish:
+    # Disabled in the merged repository until releasing moves here (later task).
+    if: false
     uses: bazel-contrib/publish-to-bcr/.github/workflows/publish.yaml@v1.5.1
     with:
       tag_name: ${{ inputs.tag_name }}

@@ -29,7 +29,7 @@
 # timeout, one small artifact (retention 3 days), no caches, build outputs
 # never uploaded. Must stay that way: this workflow is the control plane's
 # daily Android/Web perf dispatch.
-name: Linux perf bench
+name: Flutter Linux perf bench
 "on":
   workflow_dispatch:
     inputs:
@@ -85,7 +85,7 @@ jobs:
         with:
           path: tools-src
       - name: Enable Linux sandbox user namespaces
-        run: tools-src/.github/scripts/enable_linux_sandbox.sh
+        run: tools-src/rules_flutter/.github/scripts/enable_linux_sandbox.sh
       - name: Check out rules_flutter at head_ref
         uses: actions/checkout@v7
         with:
@@ -99,7 +99,7 @@ jobs:
           BAZEL_FLAGS: ${{ inputs.bazel_flags }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/bench_flags.py" \
+          python3 "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/bench_flags.py" \
             --flags="$BAZEL_FLAGS"
       - name: Validate A/B inputs
         env:
@@ -108,7 +108,7 @@ jobs:
           LOCKFILE: ${{ inputs.lockfile }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/ab.py" validate \
+          python3 "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/ab.py" validate \
             --mode sol \
             --ab "$AB" \
             --lockfile "$LOCKFILE" \
@@ -133,10 +133,10 @@ jobs:
           TARGET_LOC: ${{ inputs.target_loc }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/gen_monorepo.py" generate \
+          python3 "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/gen_monorepo.py" generate \
             --target-loc "$TARGET_LOC" \
             --seed "$SEED" \
-            --rules-flutter "$GITHUB_WORKSPACE/rules-head" \
+            --rules-flutter "$GITHUB_WORKSPACE/rules-head/rules_flutter" \
             --out "$RUNNER_TEMP/ws-head-pristine"
       - name: Generate committed lockfile
         # One unmeasured analysis-only build per configuration writes
@@ -163,7 +163,7 @@ jobs:
           BAZEL_FLAGS: ${{ inputs.bazel_flags }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/bench_flags.py" \
+          python3 "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/bench_flags.py" \
             --flags="$BAZEL_FLAGS" \
             --workspace "$RUNNER_TEMP/ws-head-pristine"
       - name: Prepare A/B workspaces
@@ -176,7 +176,7 @@ jobs:
           LOCKFILE: ${{ inputs.lockfile }}
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           rm -rf "$RUNNER_TEMP/ws-control-pristine" "$RUNNER_TEMP/ws-treatment-pristine"
           cp -a "$RUNNER_TEMP/ws-head-pristine" "$RUNNER_TEMP/ws-control-pristine"
           cp -a "$RUNNER_TEMP/ws-head-pristine" "$RUNNER_TEMP/ws-treatment-pristine"
@@ -201,7 +201,7 @@ jobs:
           REPEATS: ${{ inputs.repeats }}
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           run_sol() {
             python3 "$tools/sol.py" run --tools "$tools" \
               --pristine "$RUNNER_TEMP/ws-head-pristine" \
@@ -234,7 +234,7 @@ jobs:
           REPEATS: ${{ inputs.repeats }}
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           failed=0
           python3 "$tools/ab.py" run --tools "$tools" \
             --platform "$PLATFORM" \
@@ -261,7 +261,7 @@ jobs:
           TARGET_LOC: ${{ inputs.target_loc }}
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD)"
           python3 "$tools/sol.py" summarize \
             --results "$GITHUB_WORKSPACE/sol-results" \
@@ -290,7 +290,7 @@ jobs:
           TARGET_LOC: ${{ inputs.target_loc }}
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD)"
           python3 "$tools/ab.py" summarize \
             --platform "$PLATFORM" \

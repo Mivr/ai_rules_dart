@@ -1,4 +1,4 @@
-name: Perf Scale Linux
+name: Dart Perf Scale Linux
 on:
   schedule:
     - cron: "17 3 * * *"
@@ -30,7 +30,7 @@ jobs:
         with:
           path: tools-src
       - name: Enable and verify Linux user namespaces
-        run: tools-src/.github/scripts/enable_linux_sandbox.sh
+        run: tools-src/rules_dart/.github/scripts/enable_linux_sandbox.sh
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
@@ -41,8 +41,8 @@ jobs:
           cache-save: false
       - name: Configure tooling Bazel version
         run: |
-          if [ -f tools-src/.bazelversion ]; then
-            cp tools-src/.bazelversion tools-src/tools/.bazelversion
+          if [ -f tools-src/rules_dart/.bazelversion ]; then
+            cp tools-src/rules_dart/.bazelversion tools-src/rules_dart/tools/.bazelversion
           fi
       - name: Checkout rules under measurement
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -65,10 +65,10 @@ jobs:
           esac
           mkdir -p "$roots"
           for n in $(echo "$SIZES" | tr ',' ' '); do
-            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:generate -- \
+            (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:generate -- \
               --libraries="$n" \
               --seed="$SEED" \
-              --rules-dart="$GITHUB_WORKSPACE/rules-head" \
+              --rules-dart="$GITHUB_WORKSPACE/rules-head/rules_dart" \
               --out="$roots/ws-$n")
           done
       - name: Measure scale and check growth ceilings
@@ -79,18 +79,18 @@ jobs:
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           roots="${RUNNER_TEMP}/scale-workspaces"
           mkdir -p "$GITHUB_WORKSPACE/scale-out"
-          (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:scale -- \
+          (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:scale -- \
             --workspace-root="$roots" \
             --sizes="$SIZES" \
             --seed="$SEED" \
-            --ceilings="$GITHUB_WORKSPACE/tools-src/tools/perf/scale_ceilings.json" \
+            --ceilings="$GITHUB_WORKSPACE/tools-src/rules_dart/tools/perf/scale_ceilings.json" \
             --out="$GITHUB_WORKSPACE/scale-out/dart-scale.json")
       - name: Shut down tooling Bazel server
         if: ${{ always() }}
         run: |
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
-          if [ -d tools-src/tools ]; then
-            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || echo "bazel shutdown failed" >&2
+          if [ -d tools-src/rules_dart/tools ]; then
+            (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || echo "bazel shutdown failed" >&2
           fi
       - name: Upload dart-scale report and Starlark profiles
         if: ${{ !cancelled() }}

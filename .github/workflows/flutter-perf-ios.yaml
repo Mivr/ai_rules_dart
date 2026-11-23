@@ -40,7 +40,7 @@
 # Cost: workflow_dispatch only (never automatic), macos-15, 5 h job timeout,
 # one small artifact (retention 3 days), no caches, build outputs never
 # uploaded. Must stay that way: this workflow runs on freemacOS minutes.
-name: iOS perf bench
+name: Flutter iOS perf bench
 "on":
   workflow_dispatch:
     inputs:
@@ -115,7 +115,7 @@ jobs:
           BAZEL_FLAGS: ${{ inputs.bazel_flags }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/bench_flags.py" \
+          python3 "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/bench_flags.py" \
             --flags="$BAZEL_FLAGS"
       - name: Validate A/B inputs
         env:
@@ -125,7 +125,7 @@ jobs:
           MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/ab.py" validate \
+          python3 "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/ab.py" validate \
             --mode "$MODE" \
             --ab "$AB" \
             --lockfile "$LOCKFILE" \
@@ -143,13 +143,13 @@ jobs:
           refs="head"
           if [ "$MODE" = "compare" ]; then refs="base head"; fi
           for ref in $refs; do
-            python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/gen_monorepo.py" generate \
+            python3 "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/gen_monorepo.py" generate \
               --target-loc "$TARGET_LOC" \
               --seed "$SEED" \
-              --rules-flutter "$GITHUB_WORKSPACE/rules-$ref" \
+              --rules-flutter "$GITHUB_WORKSPACE/rules-$ref/rules_flutter" \
               --out "$RUNNER_TEMP/ws-$ref-pristine"
           done
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           if [ "$MODE" = "compare" ]; then
             if [ "$LOCKFILE" = "committed" ]; then
               for ref in $refs; do
@@ -214,7 +214,7 @@ jobs:
         # the next incremental build.
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           for ref in base head; do
             for rep in $(seq 1 "$REPEATS"); do
               rm -rf "$RUNNER_TEMP/out-$ref-$rep" "$RUNNER_TEMP/run-$ref-$rep"
@@ -238,8 +238,8 @@ jobs:
           TARGET_LOC: ${{ inputs.target_loc }}
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
-          meta="$(python3 - "$GITHUB_WORKSPACE/tools-src/tools/perf" "$RUNNER_TEMP" "$TARGET_LOC" "$SEED" \
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
+          meta="$(python3 - "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf" "$RUNNER_TEMP" "$TARGET_LOC" "$SEED" \
             "$REPEATS" "$BASE_REF" "$HEAD_REF" <<'EOF'
           import json
           import os
@@ -320,7 +320,7 @@ jobs:
         # non-zero, but summarize and upload still run.
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           failed=0
           if [ "$AB" = "off" ]; then
             for rep in $(seq 1 "$REPEATS"); do
@@ -363,7 +363,7 @@ jobs:
           TARGET_LOC: ${{ inputs.target_loc }}
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD)"
           if [ "$AB" = "off" ]; then
             python3 "$tools/sol.py" summarize \

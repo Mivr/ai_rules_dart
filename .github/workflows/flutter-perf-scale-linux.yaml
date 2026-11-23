@@ -15,7 +15,7 @@
 # Cost: schedule (nightly) and workflow_dispatch only, never push or pull
 # request; ubuntu-latest, no caches, small result artifacts (retention 3 days),
 # build outputs never uploaded.
-name: Linux scale bench
+name: Flutter Linux scale bench
 "on":
   schedule:
     - cron: "17 3 * * *"
@@ -56,7 +56,7 @@ jobs:
         with:
           path: tools-src
       - name: Enable Linux sandbox user namespaces
-        run: tools-src/.github/scripts/enable_linux_sandbox.sh
+        run: tools-src/rules_flutter/.github/scripts/enable_linux_sandbox.sh
       - name: Check out rules_flutter at head_ref
         uses: actions/checkout@v7
         with:
@@ -83,11 +83,11 @@ jobs:
           SEED: ${{ inputs.seed || '1' }}
         run: |
           set -euo pipefail
-          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/gen_monorepo.py" generate \
+          python3 "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/gen_monorepo.py" generate \
             --packages "${{ matrix.packages }}" \
             --plugins "${{ matrix.plugins }}" \
             --seed "$SEED" \
-            --rules-flutter "$GITHUB_WORKSPACE/rules-head" \
+            --rules-flutter "$GITHUB_WORKSPACE/rules-head/rules_flutter" \
             --out "$RUNNER_TEMP/ws-head-pristine"
       - name: Measure speed-of-light
         # One repeat at a time: sol.py run resets the workspace from
@@ -99,7 +99,7 @@ jobs:
           REPEATS: ${{ inputs.repeats || '1' }}
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           failed=0
           for rep in $(seq 1 "$REPEATS"); do
             rm -rf "$RUNNER_TEMP/sol-out-$rep" "$RUNNER_TEMP/sol-run-$rep"
@@ -122,7 +122,7 @@ jobs:
           SEED: ${{ inputs.seed || '1' }}
         run: |
           set -euo pipefail
-          tools="$GITHUB_WORKSPACE/tools-src/tools/perf"
+          tools="$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf"
           sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD)"
           python3 "$tools/sol.py" summarize \
             --results "$GITHUB_WORKSPACE/sol-results" \
@@ -170,9 +170,9 @@ jobs:
             size="${size%.json}"
             args+=(--point "${size%-*},${size#*-},$file")
           done
-          python3 "$GITHUB_WORKSPACE/tools-src/tools/perf/scale_report.py" \
+          python3 "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/scale_report.py" \
             "${args[@]}" \
-            --ceilings "$GITHUB_WORKSPACE/tools-src/tools/perf/scale_ceilings.json" \
+            --ceilings "$GITHUB_WORKSPACE/tools-src/rules_flutter/tools/perf/scale_ceilings.json" \
             --out "$GITHUB_WORKSPACE/scale.json"
       - name: Upload scale report
         # Runs even when the report failed: scale.json explains why.

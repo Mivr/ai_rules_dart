@@ -1,4 +1,4 @@
-name: Perf Linux
+name: Dart Perf Linux
 on:
   workflow_dispatch:
     inputs:
@@ -56,7 +56,7 @@ jobs:
         with:
           path: tools-src
       - name: Enable and verify Linux user namespaces
-        run: tools-src/.github/scripts/enable_linux_sandbox.sh
+        run: tools-src/rules_dart/.github/scripts/enable_linux_sandbox.sh
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
@@ -67,8 +67,8 @@ jobs:
           cache-save: false
       - name: Configure tooling Bazel version
         run: |
-          if [ -f tools-src/.bazelversion ]; then
-            cp tools-src/.bazelversion tools-src/tools/.bazelversion
+          if [ -f tools-src/rules_dart/.bazelversion ]; then
+            cp tools-src/rules_dart/.bazelversion tools-src/rules_dart/tools/.bazelversion
           fi
       - name: Checkout rules under measurement
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -85,11 +85,11 @@ jobs:
           for arm in $ARMS; do
             ws="${RUNNER_TEMP}/pristine-ws-$arm"
             mkdir -p "$ws"
-            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:generate -- \
+            (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:generate -- \
               --target-loc="$TARGET_LOC" \
               --seed="$SEED" \
               --link-modules="$arm" \
-              --rules-dart="$GITHUB_WORKSPACE/rules-head" \
+              --rules-dart="$GITHUB_WORKSPACE/rules-head/rules_dart" \
               --out="$ws")
           done
       - name: Commit lockfile via unmeasured analysis-only pass
@@ -134,7 +134,7 @@ jobs:
             fi
             for arm in "${order[@]}"; do
               mkdir -p "${RUNNER_TEMP}/bench-results-$arm"
-              (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:runner -- \
+              (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:runner -- \
                 --workspace="${RUNNER_TEMP}/pristine-ws-$arm" \
                 --repeat="$i" \
                 --repeats="$REPEATS" \
@@ -173,7 +173,7 @@ jobs:
           fi
           mkdir -p "$results"
           summary_rc=0
-          (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:summarize -- \
+          (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:summarize -- \
             --results-dir="$results" \
             --sha="$sha" \
             --target-loc="$TARGET_LOC" \
@@ -191,8 +191,8 @@ jobs:
         if: ${{ always() }}
         run: |
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
-          if [ -d tools-src/tools ]; then
-            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || echo "bazel shutdown failed" >&2
+          if [ -d tools-src/rules_dart/tools ]; then
+            (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || echo "bazel shutdown failed" >&2
           fi
       - name: Upload dart-sol artifact
         if: ${{ !cancelled() && inputs.head_ref != '' && inputs.link_modules != 'ab' }}
