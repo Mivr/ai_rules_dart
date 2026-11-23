@@ -178,8 +178,12 @@ String textReport(
       if (s != null && s.built && s.reason != null) {
         out.writeln('  $side partial: ${s.reason}');
       }
-      for (final n in s?.notes ?? const <String>[]) {
+      final List<String> notes = s?.notes ?? const [];
+      for (final n in notes.take(examples)) {
         out.writeln('  $side: $n');
+      }
+      if (notes.length > examples) {
+        out.writeln('  $side: ... ${notes.length - examples} more like these');
       }
     }
     for (final g in r.groups()) {

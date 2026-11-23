@@ -21,6 +21,11 @@ const Set<String> skipOnCopy = {
   'bazel-testlogs',
 };
 
+/// Directories the Flutter tool generates inside platform folders (plugin
+/// symlinks into the pub cache, generated registrants): never copied, the
+/// tool makes them again.
+const Set<String> skipAnywhereOnCopy = {'ephemeral'};
+
 /// Makes a fresh copy of [corpusProject] at [copy] and applies the
 /// project's `prepare` copies.
 void freshCopy(ProjectSpec spec, Directory corpusProject, Directory copy) {
@@ -30,7 +35,7 @@ void freshCopy(ProjectSpec spec, Directory corpusProject, Directory copy) {
     final String name = e.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
     if (name.startsWith('bazel-')) skip.add(name);
   }
-  copyTree(corpusProject, copy, skip: skip);
+  copyTree(corpusProject, copy, skip: skip, skipAnywhere: skipAnywhereOnCopy);
   for (final MapEntry(key: to, value: from) in spec.prepare.entries) {
     File('${copy.path}/$from').copySync('${copy.path}/$to');
   }

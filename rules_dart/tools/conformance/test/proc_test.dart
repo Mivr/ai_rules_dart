@@ -61,8 +61,12 @@ Call Stack (most recent call first):
     final tool = File('${from.path}/tool')..writeAsStringSync('#!/bin/sh\n');
     Process.runSync('chmod', ['755', tool.path]);
     final to = Directory('${tmp.path}/to');
-    copyTree(from, to, skip: {'build'});
+    File('${from.path}/keep/ephemeral/gen.txt')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('g');
+    copyTree(from, to, skip: {'build'}, skipAnywhere: {'ephemeral'});
     expect(File('${to.path}/keep/a.txt').readAsStringSync(), 'a');
+    expect(Directory('${to.path}/keep/ephemeral').existsSync(), isFalse);
     expect(Directory('${to.path}/build').existsSync(), isFalse);
     expect(File('${to.path}/tool').statSync().mode & 0x40, isNot(0));
   });

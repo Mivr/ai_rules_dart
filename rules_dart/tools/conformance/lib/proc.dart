@@ -137,23 +137,33 @@ String _quote(String s) =>
     RegExp(r'^[A-Za-z0-9_./=:@+,%-]+$').hasMatch(s) ? s : "'$s'";
 
 /// Copies [from] into [to] (created), skipping the top-level entries named
-/// in [skip]. Symbolic links are copied as the files they point to.
-void copyTree(Directory from, Directory to, {Set<String> skip = const {}}) {
+/// in [skip] and directories named in [skipAnywhere] at any depth. Symbolic
+/// links are copied as the files they point to.
+void copyTree(
+  Directory from,
+  Directory to, {
+  Set<String> skip = const {},
+  Set<String> skipAnywhere = const {},
+}) {
   to.createSync(recursive: true);
   for (final e in from.listSync(followLinks: false)) {
     final String name = e.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
     if (skip.contains(name)) continue;
-    _copyEntity(e, '${to.path}/$name');
+    _copyEntity(e, '${to.path}/$name', skipAnywhere);
   }
 }
 
-void _copyEntity(FileSystemEntity e, String dest) {
+void _copyEntity(FileSystemEntity e, String dest, Set<String> skipAnywhere) {
   final FileSystemEntityType type = FileSystemEntity.typeSync(e.path);
   if (type == FileSystemEntityType.directory) {
     Directory(dest).createSync(recursive: true);
     for (final c in Directory(e.path).listSync(followLinks: false)) {
       final String name = c.uri.pathSegments.lastWhere((s) => s.isNotEmpty);
-      _copyEntity(c, '$dest/$name');
+      if (skipAnywhere.contains(name) &&
+          FileSystemEntity.isDirectorySync(c.path)) {
+        continue;
+      }
+      _copyEntity(c, '$dest/$name', skipAnywhere);
     }
   } else if (type == FileSystemEntityType.file) {
     final File copy = File(e.path).copySync(dest);
