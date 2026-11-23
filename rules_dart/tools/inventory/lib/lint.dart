@@ -71,7 +71,9 @@ const PubFetchScope _pubScope = (
   executors: {
     'private/pub_scan.bzl': 'runs the AOT header scanner',
     'private/pub_scanner_repo.bzl': 'builds and runs the AOT header scanner',
-    'private/yq.bzl': 'runs the pinned yq binary',
+    'private/yaml2json.bzl': 'runs the pinned yaml2json binary',
   },
-  notPackageFetches: {'private/yq.bzl': 'downloads the pinned yq tool'},
+  notPackageFetches: {
+    'private/yaml2json.bzl': 'downloads the pinned yaml2json tool',
+  },
 );

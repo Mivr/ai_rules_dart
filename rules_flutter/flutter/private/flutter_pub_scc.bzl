@@ -111,7 +111,7 @@ def _download_and_scan_scratch(module_ctx, scope_dir, misses):
         else:
             pubspecs.append(struct(name = p.name, path = pubspec))
 
-    # Every fetched package's pubspec in one `yq` run.
+    # Every fetched package's pubspec in one `yaml2json` run.
     data = yaml_to_json(module_ctx, [p.path for p in pubspecs], [p.name + "/pubspec.yaml" for p in pubspecs])
     for p, pubspec in zip(pubspecs, data):
         miss_deps[p.name] = sorted(pubspec_deps(pubspec))
@@ -322,7 +322,7 @@ def collect_path_deps(module_ctx, hub_name, path_pkgs, lock_label = None):
         names.append(name)
         pubspec_files.append(resolved.pubspec_file)
 
-    # Every path package's pubspec in one `yq` run.
+    # Every path package's pubspec in one `yaml2json` run.
     data = yaml_to_json(module_ctx, pubspec_files, [path_pkgs[name].path + "/pubspec.yaml" for name in names])
     return {name: sorted(pubspec_deps(pubspec)) for name, pubspec in zip(names, data)}
 

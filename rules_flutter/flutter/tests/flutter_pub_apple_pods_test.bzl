@@ -17,7 +17,7 @@ load(
 load("//flutter/private:flutter_pub_apple_pods_hub.bzl", "read_ios_pod_native_deps")
 load("//flutter/private:podfile_lock.bzl", "read_podfile_lock")
 load("//flutter/private:swiftpm_resolved.bzl", "read_ios_native_deps")
-load("//flutter/tests:fake_yq.bzl", "FAKE_YQ_OS", "fake_yq_execute", "fake_yq_watch")
+load("//flutter/tests:fake_yaml2json.bzl", "FAKE_YAML2JSON_OS", "fake_yaml2json_execute", "fake_yaml2json_watch")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
@@ -134,7 +134,7 @@ def _make_mock_path_fn(files, dirs_dict):
     """Build a mock `ctx.path` function backed by `files` and `dirs_dict`.
 
     A YAML file (a decoded mapping in `files`) resolves to its own key, the
-    name `fake_yq_execute` answers for.
+    name `fake_yaml2json_execute` answers for.
     """
 
     def _path(path_str):
@@ -191,9 +191,9 @@ def _make_mock_spoke_ctx(
         ),
         path = _make_mock_path_fn(files, dirs_dict),
         read = _make_mock_read_fn(files),
-        execute = fake_yq_execute({k: v for k, v in files.items() if type(v) == "dict"}),
-        os = FAKE_YQ_OS,
-        watch = fake_yq_watch,
+        execute = fake_yaml2json_execute({k: v for k, v in files.items() if type(v) == "dict"}),
+        os = FAKE_YAML2JSON_OS,
+        watch = fake_yaml2json_watch,
     )
 
 def _step1_engine_pods_test_impl(ctx):

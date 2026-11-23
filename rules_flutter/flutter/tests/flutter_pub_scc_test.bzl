@@ -63,7 +63,7 @@ load(
     "flutter_pub_scc_member_target",
 )
 load("//flutter/private:podfile_lock.bzl", "read_podfile_lock")
-load("//flutter/tests:fake_yq.bzl", "FAKE_YQ_OS", "fake_yq_execute", "fake_yq_watch")
+load("//flutter/tests:fake_yaml2json.bzl", "FAKE_YAML2JSON_OS", "fake_yaml2json_execute", "fake_yaml2json_watch")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
@@ -269,9 +269,9 @@ def _check_cocoapods_scc_routing(env, scc_targets):
         ),
         read = lambda p: files[str(p)],
         path = lambda p: str(p) if str(p) == "//:Podfile.lock" else struct(exists = True),
-        execute = fake_yq_execute({"//:Podfile.lock": podfile_text}),
-        os = FAKE_YQ_OS,
-        watch = fake_yq_watch,
+        execute = fake_yaml2json_execute({"//:Podfile.lock": podfile_text}),
+        os = FAKE_YAML2JSON_OS,
+        watch = fake_yaml2json_watch,
     )
     pod_deps = detect_apple_cocoapods_deps(
         pod_ctx,
@@ -649,8 +649,8 @@ def _windows_path_pubspec_test_impl(ctx):
     mock_module_ctx = struct(
         os = struct(name = "windows amd64", arch = "amd64"),
         path = mock_path,
-        execute = fake_yq_execute(decoded),
-        watch = fake_yq_watch,
+        execute = fake_yaml2json_execute(decoded),
+        watch = fake_yaml2json_watch,
     )
     path_pkgs = {
         "path_probe": struct(path = "path_probe", version = "0.1.0"),

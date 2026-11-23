@@ -21,7 +21,7 @@ Facts (`READER_SOURCE_LABELS` and the `parser_*`, `*_fact_key`,
 `*_scope_facts`, `fact_deps_error`, `lookup_fact_deps`,
 `scratch_pubspec_error`, `scope_pubspec_path` functions):
   Facts are hints, not pins. Their keys carry a fixed schema version plus a
-  digest of the pubspec reader's sources (the pinned `yq`, its conversion and
+  digest of the pubspec reader's sources (the pinned `yaml2json`, its conversion and
   the projection, see `//dart/pub:yaml.bzl`), and every fact is verified
   against the package's real pubspec before a repository trusts it. A
   consumer that wants `parser_schema` to match rules_dart's keys must read the

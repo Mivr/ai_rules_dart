@@ -265,7 +265,7 @@ def _collect_custom_tags(modules):
     ]
 
 def _read_pub_yaml(module_ctx):
-    """Reads every `flutter.pub` tag's `pubspec.lock` and `Podfile.lock` in one `yq` run.
+    """Reads every `flutter.pub` tag's `pubspec.lock` and `Podfile.lock` in one `yaml2json` run.
 
     Each file is watched, so editing it re-evaluates the extension.
 
@@ -598,7 +598,7 @@ def _workspace_root_of_lock(module_ctx, lock_label):
 def _path_packages_declaring_android(module_ctx, workspace_root, path_pkgs):
     """The path packages whose pubspec declares the `android` platform.
 
-    The extension reads only the packages' own pubspecs, all in one `yq`
+    The extension reads only the packages' own pubspecs, all in one `yaml2json`
     run, so a path package with no Android platform gets no Android
     repository at all. A missing pubspec reads as no Android platform; the
     path spoke's fetch reports the real problem.

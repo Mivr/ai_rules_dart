@@ -26,7 +26,7 @@ the listing's metadata is checked against the archive it describes.
 Fallback: a package the server cannot answer for (no listing, the version
 missing from it, a listing that is not JSON) is planned from its archive, as
 before: downloaded in parallel with the other fallbacks, scanned, extracted,
-and its `pubspec.yaml` converted with the other pubspecs in one `yq` call.
+and its `pubspec.yaml` converted with the other pubspecs in one `yaml2json` call.
 Git packages have no API: they are cloned and read the same way.
 """
 
@@ -36,7 +36,7 @@ load("//dart/pub/private:pub_lock_package.bzl", "trim_gzip_trailing_nulls")
 load("//dart/pub/private:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub/private:pub_scc_facts.bzl", "scope_pubspec_path")
 load("//dart/pub/private:pubspec_data.bzl", "pubspec_deps", "pubspec_sdk_constraint")
-load("//dart/pub/private:yq.bzl", "yaml_to_json")
+load("//dart/pub/private:yaml2json.bzl", "yaml_to_json")
 
 visibility(["//dart/..."])
 
@@ -346,7 +346,7 @@ def plan_from_archives(ctx, hosted_fallback, git_miss):
     """Plans packages from their archives: the hosted fallback and git packages.
 
     Every archive is scanned in one scanner run before the first is
-    extracted, and every pubspec is converted in one `yq` call. The
+    extracted, and every pubspec is converted in one `yaml2json` call. The
     repositories that fetch these packages later scan their own copies
     again: nothing decided here weakens their checks.
 

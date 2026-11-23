@@ -12,7 +12,7 @@ load("//dart/pub/private:pub_scc_entries.bzl", _scc_member_entries = "scc_member
 load("//dart/pub/private:pub_workspace.bzl", "check_workspaces")
 load("//dart/pub/private:pubspec_data.bzl", "lock_packages")
 load("//dart/pub/private:scc.bzl", _plan_scope_sccs = "plan_scope_sccs")
-load("//dart/pub/private:yq.bzl", "yaml_to_json")
+load("//dart/pub/private:yaml2json.bzl", "yaml_to_json")
 
 visibility("public")
 
@@ -590,7 +590,7 @@ def _pub_collect_tags(ctx):
                 module = module_name,
             ))
 
-    # Every lock of every module in one `yq` process.
+    # Every lock of every module in one `yaml2json` process.
     locks = yaml_to_json(ctx, [f["lock"] for f in lock_fields], [str(f["lock"]) for f in lock_fields])
     lock_tags = [
         struct(packages = lock_packages(locks[i], str(fields["lock"])), **fields)

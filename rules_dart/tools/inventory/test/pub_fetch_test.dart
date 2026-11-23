@@ -9,7 +9,7 @@ const PubFetchScope _scope = (
   dir: 'rules_dart/dart/pub',
   entry: 'private/pinned_sources.bzl',
   executors: {'private/scan.bzl': 'runs the scanner'},
-  notPackageFetches: {'private/yq.bzl': 'downloads yq'},
+  notPackageFetches: {'private/yaml2json.bzl': 'downloads yaml2json'},
 );
 
 const String _entry = 'rules_dart/dart/pub/private/pinned_sources.bzl';
@@ -65,7 +65,9 @@ void main() {
 
   test('a download that is not a package fetch may be exempt', () {
     expect(
-      _check({'rules_dart/dart/pub/private/yq.bzl': 'pinned_download(ctx)\n'}),
+      _check({
+        'rules_dart/dart/pub/private/yaml2json.bzl': 'pinned_download(ctx)\n',
+      }),
       isEmpty,
     );
   });

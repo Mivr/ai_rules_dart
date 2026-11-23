@@ -12,7 +12,7 @@ load("//dart/pub/tests:pub_symlink_test.bzl", "pub_symlink_test_suite")
 load("//dart/pub/tests:pubspec_data_test.bzl", "pubspec_data_test_suite")
 load("//dart/pub/tests:pubspec_guard_test.bzl", "pubspec_guard_test_suite")
 load("//dart/pub/tests:semver_test.bzl", "semver_test_suite")
-load("//dart/pub/tests:yq_test.bzl", "yq_test_suite")
+load("//dart/pub/tests:yaml2json_test.bzl", "yaml2json_test_suite")
 load(":analyze_mode_parity_test.bzl", "analyze_mode_parity_test_suite")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
 load(":analyzer_summary_tool_test.bzl", "analyzer_summary_tool_test_suite")
@@ -143,7 +143,7 @@ project_staging_test_suite(name = "project_staging_test")
 
 pin_checks_test_suite(name = "pin_checks_test")
 
-yq_test_suite(name = "yq_test")
+yaml2json_test_suite(name = "yaml2json_test")
 
 codegen_test_suite(name = "codegen_test")
 

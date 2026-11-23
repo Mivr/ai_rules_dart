@@ -1442,7 +1442,7 @@ def link_path_package(ctx, read_pubspec = None):
         ctx: The path-package spoke's repository context. Reads `path`,
             `package_name`, `version`, and `hub_name` from its attrs.
         read_pubspec: Reads the linked `pubspec.yaml` as decoded data from
-            `ctx`; defaults to `read_spoke_pubspec_data`, which runs `yq`.
+            `ctx`; defaults to `read_spoke_pubspec_data`, which runs `yaml2json`.
 
     Returns:
         The decoded pubspec when the package has one (else None), for the

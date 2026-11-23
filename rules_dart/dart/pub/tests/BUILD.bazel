@@ -22,8 +22,8 @@ exports_files(
         "pubspec_data_test.bzl",
         "pubspec_guard_test.bzl",
         "semver_test.bzl",
-        "yq_probe.bzl",
-        "yq_test.bzl",
+        "yaml2json_probe.bzl",
+        "yaml2json_test.bzl",
     ],
     visibility = ["//dart:__subpackages__"],
 )

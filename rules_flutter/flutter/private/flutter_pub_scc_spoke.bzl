@@ -188,7 +188,7 @@ def _member_spoke_ctx(ctx, name):
             p = name if p in ("", ".") else name + "/" + p
         return ctx.watch(p)
 
-    # `os` and `execute` let `yaml_to_json` run its pinned `yq` through
+    # `os` and `execute` let `yaml_to_json` run its pinned `yaml2json` through
     # this facade (a member reading the hub's `Podfile.lock`, say).
     return struct(
         path = member_path,
@@ -230,7 +230,7 @@ def _detect_member_hooks(ctx, name, code_assets):
 def _stage_scc_members(ctx, members):
     """Stages all hosted and path members into their `<name>/` subdirectories.
 
-    Every member's pubspec is read in one `yq` run once it is in place; a
+    Every member's pubspec is read in one `yaml2json` run once it is in place; a
     path member's other files are linked after that, as its pubspec
     declares them.
 

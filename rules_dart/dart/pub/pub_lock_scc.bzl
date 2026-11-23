@@ -26,7 +26,7 @@ load("//dart/pub/private:language_version.bzl", _derive_language_version = "deri
 load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error", "scc_planned_deps_error")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
 load("//dart/pub/private:pubspec_data.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint")
-load("//dart/pub/private:yq.bzl", "yaml_to_json")
+load("//dart/pub/private:yaml2json.bzl", "yaml_to_json")
 
 visibility("public")
 
@@ -101,7 +101,7 @@ def _fetch_scc_member(ctx, member, name):
 def _parsed_scc_members(ctx, members):
     """Fetches every member and reads their pubspecs into planning structs.
 
-    All members' pubspecs are converted in one `yq` process.
+    All members' pubspecs are converted in one `yaml2json` process.
 
     Args:
       ctx: The repository rule context.

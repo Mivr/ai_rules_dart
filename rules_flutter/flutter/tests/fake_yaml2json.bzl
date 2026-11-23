@@ -1,7 +1,7 @@
-"""A stand-in for the `yq` process behind `yaml_to_json`, for mock repository contexts.
+"""A stand-in for the `yaml2json` process behind `yaml_to_json`, for mock repository contexts.
 
 `yaml_to_json` (`@rules_dart//dart/pub:yaml.bzl`) runs
-`ctx.execute([yq, "--batch", files...])` and decodes one JSON line
+`ctx.execute([yaml2json, "--batch", files...])` and decodes one JSON line
 per document, `{"file", "doc", "duplicate_keys", "data"}`. A mock context
 built with these pieces answers that call from the decoded mapping the test
 holds, so unit tests hand rules_flutter exactly what a real `Podfile.lock`
@@ -12,9 +12,9 @@ line.
 
 visibility(["//flutter/tests/..."])
 
-FAKE_YQ_OS = struct(name = "linux", arch = "amd64")
+FAKE_YAML2JSON_OS = struct(name = "linux", arch = "amd64")
 
-def fake_yq_execute(yaml_files):
+def fake_yaml2json_execute(yaml_files):
     """An `execute` answering `yaml_to_json` from decoded data.
 
     Args:
@@ -35,5 +35,5 @@ def fake_yq_execute(yaml_files):
 
     return _execute
 
-def fake_yq_watch(_path):
+def fake_yaml2json_watch(_path):
     """A `watch` that records nothing."""

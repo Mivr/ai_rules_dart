@@ -26,11 +26,11 @@
       "note": "The YAML converter and what reads its output: the conversion helper, the SDK-constraint grammar and the checks over decoded pubspecs. Kept under its name so the ledger series continues; it was the Starlark YAML reader (deleted)",
       "paths": [
         "rules_dart/dart/pub/yaml.bzl",
-        "rules_dart/dart/pub/private/yq*",
+        "rules_dart/dart/pub/private/yaml2json*",
         "rules_dart/dart/pub/private/yaml_*.bzl",
         "rules_dart/dart/pub/private/parser_sources.bzl",
         "rules_dart/dart/pub/private/pubspec_data.bzl",
-        "rules_dart/dart/pub/tests/yq_*",
+        "rules_dart/dart/pub/tests/yaml2json_*",
         "rules_dart/dart/pub/tests/pubspec_data_test.bzl"
       ]
     },

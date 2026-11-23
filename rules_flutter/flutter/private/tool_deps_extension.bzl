@@ -66,7 +66,7 @@ def register_tool_pub_hub(
 def _tool_deps_extension_impl(module_ctx):
     """Resolves `flutter_tool_deps.pub` tags for `ai_rules_flutter` internal tools.
 
-    Every tag's lock is read in one `yq` run and watched.
+    Every tag's lock is read in one `yaml2json` run and watched.
     """
     tags = [pub_tag for mod in module_ctx.modules for pub_tag in mod.tags.pub]
     for pub_tag in tags:

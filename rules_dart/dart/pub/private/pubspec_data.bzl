@@ -1,11 +1,11 @@
 """What the pub rules read from decoded `pubspec.lock` and `pubspec.yaml` data.
 
-`yq.bzl` turns the files into data; this file checks that data the way `pub`
+`yaml2json.bzl` turns the files into data; this file checks that data the way `pub`
 does and projects it to the shapes the pub extension and repository rules
 consume. Scalars arrive as strings holding their source text, booleans as
-booleans and empty values as None (see `yq.bzl`).
+booleans and empty values as None (see `yaml2json.bzl`).
 
-The pub extension's facts key digests this file with `yq.bzl`, so a change
+The pub extension's facts key digests this file with `yaml2json.bzl`, so a change
 here re-derives every recorded fact.
 """
 

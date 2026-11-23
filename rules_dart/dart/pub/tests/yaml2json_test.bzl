@@ -1,13 +1,13 @@
 """Behavioural tests of `yaml_to_json`: documents in, expected data out.
 
-The conversion ran in the `yq_probe` repository rule (see `yq_probe.bzl`)
+The conversion ran in the `yaml2json_probe` repository rule (see `yaml2json_probe.bzl`)
 with the pinned `yaml2json` binary; these tests check what it produced.
 """
 
 load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("@yq_probe//:results.bzl", "RESULTS")
-load("//dart/pub/tests:yq_probe.bzl", "DOCUMENTS", "MUST_FAIL")
+load("@yaml2json_probe//:results.bzl", "RESULTS")
+load("//dart/pub/tests:yaml2json_probe.bzl", "DOCUMENTS", "MUST_FAIL")
 
 visibility(["//dart/..."])
 
@@ -101,7 +101,7 @@ _documents_test = unittest.make(_documents_test_impl)
 _same_file_twice_test = unittest.make(_same_file_twice_test_impl)
 _must_fail_test = unittest.make(_must_fail_test_impl)
 
-def yq_test_suite(name):
+def yaml2json_test_suite(name):
     """Declares the `yaml_to_json` behaviour tests.
 
     Args:

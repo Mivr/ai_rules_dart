@@ -7,7 +7,7 @@ load("//dart/pub/private:pinned_sources.bzl", "pinned_source_error")
 load("//dart/pub/private:pub_scan.bzl", "run_pub_archive_scan")
 load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
 load("//dart/pub/private:pubspec_data.bzl", "pubspec_environment_error", "pubspec_sdk_constraint")
-load("//dart/pub/private:yq.bzl", "yaml_to_json")
+load("//dart/pub/private:yaml2json.bzl", "yaml_to_json")
 
 visibility(["//dart/..."])
 

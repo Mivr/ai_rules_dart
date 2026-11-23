@@ -2,7 +2,7 @@
 
 Public entry point for rule sets that read `pubspec.yaml`, `pubspec.lock` or
 another YAML file (a CocoaPods `Podfile.lock`, say) the way rules_dart does:
-one pinned `yq` process converts every file a step needs to JSON, and
+one pinned `yaml2json` process converts every file a step needs to JSON, and
 Starlark decodes it. Load from `//dart/pub:yaml.bzl`, not from
 `//dart/pub/private`, which is not public.
 
@@ -30,7 +30,7 @@ load(
     _pubspec_sdk_constraint = "pubspec_sdk_constraint",
 )
 load(
-    "//dart/pub/private:yq.bzl",
+    "//dart/pub/private:yaml2json.bzl",
     _yaml_to_json = "yaml_to_json",
     _yaml_to_json_or_error = "yaml_to_json_or_error",
 )

@@ -1,18 +1,18 @@
 """Runs `yaml_to_json` with the real `yaml2json` binary over fixed documents.
 
-`yq_probe` writes every document of `DOCUMENTS` and `MUST_FAIL` to a file of
-its own, converts them with `//dart/pub/private:yq.bzl`, and writes the
-outcome to `results.bzl` (`RESULTS`), which `yq_test.bzl` checks. The
+`yaml2json_probe` writes every document of `DOCUMENTS` and `MUST_FAIL` to a file of
+its own, converts them with `//dart/pub/private:yaml2json.bzl`, and writes the
+outcome to `results.bzl` (`RESULTS`), which `yaml2json_test.bzl` checks. The
 documents convert in one call, as the pub extension converts a lock's
 pubspecs; each must-fail document converts in a call of its own, so each
 error is that document's.
 """
 
-load("//dart/pub/private:yq.bzl", "yaml_to_json_or_error")
+load("//dart/pub/private:yaml2json.bzl", "yaml_to_json_or_error")
 
 visibility(["//dart/..."])
 
-# Documents that convert, by file name. `yq_test.bzl` holds the data each
+# Documents that convert, by file name. `yaml2json_test.bzl` holds the data each
 # one must decode to.
 DOCUMENTS = {
     "anchors.yaml": "a: &v 1.10\nb: *v\nc: &w 0x10\nd: *w\n",
@@ -77,7 +77,7 @@ MUST_FAIL = {
     "text_after_quote.yaml": ("name: \"a\" b\n", "line 1"),
 }
 
-def _yq_probe_impl(rctx):
+def _yaml2json_probe_impl(rctx):
     for name, text in DOCUMENTS.items():
         rctx.file("docs/" + name, text)
     for name, case in MUST_FAIL.items():
@@ -98,7 +98,7 @@ def _yq_probe_impl(rctx):
     rctx.file("BUILD.bazel", 'exports_files(["results.bzl"])\n')
     rctx.file("results.bzl", "RESULTS = json.decode(%r)\n" % json.encode(results))
 
-yq_probe = repository_rule(
-    implementation = _yq_probe_impl,
-    doc = "Converts the fixed documents with the real `yaml2json` and records what came out, for `yq_test.bzl`.",
+yaml2json_probe = repository_rule(
+    implementation = _yaml2json_probe_impl,
+    doc = "Converts the fixed documents with the real `yaml2json` and records what came out, for `yaml2json_test.bzl`.",
 )

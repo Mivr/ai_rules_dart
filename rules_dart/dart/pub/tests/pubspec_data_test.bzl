@@ -2,7 +2,7 @@
 
 Each input is the mapping `yaml_to_json` decodes the file to: booleans stay
 booleans, empty values are None, every other scalar is its source text.
-YAML syntax itself is `yq_test`'s business.
+YAML syntax itself is `yaml2json_test`'s business.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")

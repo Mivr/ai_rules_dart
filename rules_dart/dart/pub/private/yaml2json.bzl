@@ -5,9 +5,9 @@ of parsing YAML in Starlark, the rules run one pinned `yaml2json --batch`
 process over every file a step needs and read its JSON output with
 `json.decode`.
 
-The binary comes from `yq_repository`, a repository rule that downloads the
+The binary comes from `yaml2json_repository`, a repository rule that downloads the
 release asset for the fetch host and checks its published sha256. The `dart`
-module extension instantiates it once as `@dart_yq`, and `yaml_to_json`
+module extension instantiates it once as `@dart_yaml2json`, and `yaml_to_json`
 addresses it through this module's own repo mapping, so it works from any
 module extension or repository rule whatever name a consumer gives this
 module.
@@ -33,13 +33,13 @@ load("//dart/private:download.bzl", "pinned_download")
 
 visibility(["//dart/..."])
 
-YQ_VERSION = "1.2.0"
+YAML2JSON_VERSION = "1.2.0"
 
-_YQ_URL = "https://github.com/SimpleSoftwareOrg/yaml2json/releases/download/v{version}/{asset}"
+_YAML2JSON_URL = "https://github.com/SimpleSoftwareOrg/yaml2json/releases/download/v{version}/{asset}"
 
 # Release asset and sha256 of the raw binary for every supported fetch host.
 # The checksums are the release's published `checksums.txt` (sha256).
-_YQ_BINARIES = {
+_YAML2JSON_BINARIES = {
     "linux-arm64": ("yaml2json-linux-arm64", "3990677cf94789ae2537b14967899a3f4095df10570687be56aadb16aba83497"),
     "linux-x64": ("yaml2json-linux-x86_64", "531e6928aaecd17935a52c756e99ec432ae91245f7e3c0df3abbaa6898d572d2"),
     "macos-arm64": ("yaml2json-macos-arm64", "987ff149c18b088b606333141a4e2f17d6a50a417e563518248abf47334c2c4c"),
@@ -54,7 +54,7 @@ _YQ_BINARIES = {
 _FLAGS = ["--batch"]
 
 def _host_key(os):
-    """Returns the `_YQ_BINARIES` key of the fetch host, failing on an unsupported one."""
+    """Returns the `_YAML2JSON_BINARIES` key of the fetch host, failing on an unsupported one."""
     name = os.name.lower()
     arch = os.arch.lower()
     if name.startswith("linux"):
@@ -72,10 +72,10 @@ def _host_key(os):
     else:
         arch_part = arch
     key = os_part + "-" + arch_part
-    if key not in _YQ_BINARIES:
+    if key not in _YAML2JSON_BINARIES:
         fail("reading pubspec files needs yaml2json %s, which rules_dart pins for %s only; there is none for this fetch host (os %r, arch %r)" % (
-            YQ_VERSION,
-            ", ".join(sorted(_YQ_BINARIES.keys())),
+            YAML2JSON_VERSION,
+            ", ".join(sorted(_YAML2JSON_BINARIES.keys())),
             os.name,
             os.arch,
         ))
@@ -84,26 +84,26 @@ def _host_key(os):
 def _executable_name(os):
     return "yaml2json.exe" if os.name.lower().startswith("windows") else "yaml2json"
 
-def _yq_repository_impl(rctx):
-    asset, sha256 = _YQ_BINARIES[_host_key(rctx.os)]
+def _yaml2json_repository_impl(rctx):
+    asset, sha256 = _YAML2JSON_BINARIES[_host_key(rctx.os)]
     exe = _executable_name(rctx.os)
     pinned_download(
         rctx,
-        url = _YQ_URL.format(version = YQ_VERSION, asset = asset),
+        url = _YAML2JSON_URL.format(version = YAML2JSON_VERSION, asset = asset),
         output = exe,
         sha256 = sha256,
         executable = True,
     )
     rctx.file("BUILD.bazel", 'exports_files(["%s"])\n' % exe)
 
-yq_repository = repository_rule(
-    implementation = _yq_repository_impl,
+yaml2json_repository = repository_rule(
+    implementation = _yaml2json_repository_impl,
     doc = "Downloads the pinned `yaml2json` binary for the fetch host, checked against its published sha256.",
 )
 
-def _yq_path(ctx):
+def _yaml2json_path(ctx):
     """Resolves the `yaml2json` binary through this module's repo mapping."""
-    return ctx.path(Label("@dart_yq//:" + _executable_name(ctx.os)))
+    return ctx.path(Label("@dart_yaml2json//:" + _executable_name(ctx.os)))
 
 def _document_error(name, docs):
     """Returns why a file's documents are not one mapping, or None."""
@@ -138,7 +138,7 @@ def yaml_to_json_or_error(ctx, paths, names = None):
     absolute = [str(ctx.path(p)) for p in paths]
     shown = names if names != None else [str(p) for p in paths]
     unique = {path: True for path in absolute}.keys()
-    result = ctx.execute([_yq_path(ctx)] + _FLAGS + unique)
+    result = ctx.execute([_yaml2json_path(ctx)] + _FLAGS + unique)
     if result.return_code != 0:
         message = result.stderr.strip() or result.stdout.strip()
         for i in range(len(absolute)):

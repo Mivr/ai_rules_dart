@@ -28,7 +28,7 @@ bzl_library(
         "//dart/pub/private:pub_workspace",
         "//dart/pub/private:pubspec_data",
         "//dart/pub/private:scc",
-        "//dart/pub/private:yq",
+        "//dart/pub/private:yaml2json",
     ],
 )
 
@@ -73,7 +73,7 @@ bzl_library(
         "//dart/pub/private:pub_scc_verify",
         "//dart/pub/private:pub_symlink",
         "//dart/pub/private:pubspec_data",
-        "//dart/pub/private:yq",
+        "//dart/pub/private:yaml2json",
     ],
 )
 
@@ -113,7 +113,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         "//dart/pub/private:pubspec_data",
-        "//dart/pub/private:yq",
+        "//dart/pub/private:yaml2json",
     ],
 )
 

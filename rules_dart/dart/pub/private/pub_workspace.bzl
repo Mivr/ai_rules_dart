@@ -1,6 +1,6 @@
 """Checks of a Dart pub workspace's members, for `pub.from_lock(workspace_members = ...)`."""
 
-load("//dart/pub/private:yq.bzl", "yaml_to_json")
+load("//dart/pub/private:yaml2json.bzl", "yaml_to_json")
 
 visibility(["//dart/..."])
 
@@ -212,7 +212,7 @@ def check_workspaces(ctx, package_tags, lock_tags):
     """Fails when a `workspace_members` lock's members break the pub workspace rules.
 
     Every root and member pubspec, and every `pubspec_overrides.yaml` beside
-    one, of every workspace lock is converted in one `yq` process.
+    one, of every workspace lock is converted in one `yaml2json` process.
 
     Args:
         ctx: The module extension context, used to read the pubspec files.

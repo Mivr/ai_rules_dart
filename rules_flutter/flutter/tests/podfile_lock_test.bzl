@@ -2,7 +2,7 @@
 
 Each lock is the mapping `yaml_to_json` decodes the file to; YAML syntax
 (tabs, flow collections, anchors, quoting) is the converter's business and is
-covered by rules_dart's `yq_test`.
+covered by rules_dart's `yaml2json_test`.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")

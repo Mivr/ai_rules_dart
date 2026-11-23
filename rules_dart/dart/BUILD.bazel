@@ -249,7 +249,7 @@ bzl_library(
         ":repositories",
         "//dart/private:toolchain_selection",
         "//dart/pub:pub_scanner",
-        "//dart/pub/private:yq",
+        "//dart/pub/private:yaml2json",
     ],
 )
 

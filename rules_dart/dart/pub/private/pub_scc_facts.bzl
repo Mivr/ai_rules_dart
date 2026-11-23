@@ -20,7 +20,7 @@ into several names.
 
 Facts are hints, not pins. Every key carries the schema version plus a digest
 of the pubspec reader's sources (`pub.scc.v2.<digest>/`; for rules_dart the
-`yq` release, the conversion and the projection, see `parser_sources.bzl`), so
+`yaml2json` release, the conversion and the projection, see `parser_sources.bzl`), so
 facts written by another version of the extension or another reader never collide: they are
 simply never looked up, and the returned facts — built fresh each evaluation
 holding exactly the packages it planned — drop them. A fact whose key matches

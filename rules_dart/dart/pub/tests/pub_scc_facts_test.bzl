@@ -47,7 +47,7 @@ _OTHER_REF = "2f6098cf40d1b7bdd43ef384dfab82e809c5cee0"
 
 # The schema the key, split, and record tests share: fixed parser texts, so
 # the keys are deterministic and the binding tests pin the changes instead.
-_SCHEMA = parser_schema(["yq.bzl test source", "pubspec_data.bzl test source"])
+_SCHEMA = parser_schema(["yaml2json.bzl test source", "pubspec_data.bzl test source"])
 
 def _hosted(version = "1.4.0", sha256 = _SHA):
     return struct(version = version, sha256 = sha256, url = "https://pub.dev")

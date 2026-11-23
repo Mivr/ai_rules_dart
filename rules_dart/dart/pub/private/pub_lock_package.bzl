@@ -17,7 +17,7 @@ load("//dart/pub/private:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive
 load("//dart/pub/private:pub_scc_verify.bzl", "spoke_planned_deps_error")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
 load("//dart/pub/private:pubspec_data.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint")
-load("//dart/pub/private:yq.bzl", "yaml_to_json")
+load("//dart/pub/private:yaml2json.bzl", "yaml_to_json")
 
 visibility(["//dart/..."])
 
