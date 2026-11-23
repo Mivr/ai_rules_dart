@@ -5,3 +5,6 @@ environment:
 workspace:
   - a
   - b
+  - c
+dependencies:
+  c: any

@@ -13,8 +13,9 @@ use_repo(dart, "dart_toolchains")
 register_toolchains("@dart_toolchains//:all")
 
 # One root lock for the whole pub workspace. `workspace_members` makes the
-# extension check that the root pubspec lists `a` and `b` and that both say
-# `resolution: workspace`. The members are ordinary Bazel packages.
+# extension check that the root pubspec lists `a`, `b` and `c` and that each
+# says `resolution: workspace`. The members, and the root package itself, are
+# ordinary Bazel packages that depend on each other by label.
 pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub", dev_dependency = True)
 pub.from_lock(
     name = "pub_deps",
@@ -22,6 +23,7 @@ pub.from_lock(
     workspace_members = [
         "//a:pubspec.yaml",
         "//b:pubspec.yaml",
+        "//c:pubspec.yaml",
     ],
 )
 
