@@ -106,8 +106,8 @@ dart_format(
     name = "format",
 )
 
-# 4. Target test running on `target_dart` (3.13.4) while all build tools ran on
-# `exec_dart` (3.13.5).
+# 4. Target test running on `target_dart` while all build tools ran on
+# `exec_dart`.
 dart_test(
     name = "sdk_coupling_test",
     size = "small",

@@ -101,7 +101,7 @@ flutter_toolchain = rule(
     implementation = _flutter_toolchain_impl,
     attrs = {
         "version": attr.string(
-            doc = "The Flutter SDK version string (e.g. `3.41.2`).",
+            doc = "The Flutter SDK version string (e.g. `3.47.7`).",
             mandatory = True,
         ),
         "engine_revision": attr.string(

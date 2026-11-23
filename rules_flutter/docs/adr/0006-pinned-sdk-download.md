@@ -9,7 +9,7 @@ unenforceable: "Checksums are checked in download.bzl; hermetic.missing_obligati
 
 The Flutter SDK for a toolchain is a versioned download. Its tag, engine
 revision and digests are listed in `flutter/private/versions.bzl`
-(`FLUTTER_VERSIONS` at `:48`, `ARTIFACT_CHECKSUMS` at `:282`). Every fetch goes
+(`FLUTTER_VERSIONS` at `:50`, `ARTIFACT_CHECKSUMS` at `:231`). Every fetch goes
 through `pinned_download` or `pinned_download_and_extract`
 (`flutter/private/download.bzl:50-92`), which refuse a digest that is not 64
 lowercase hex characters. No `.bzl` file under `flutter/` reads `PATH` or

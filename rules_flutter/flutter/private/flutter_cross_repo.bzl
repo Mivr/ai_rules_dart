@@ -28,7 +28,7 @@ def generate_cross_repo_build(
     """Generates BUILD.bazel content for a cross-compilation toolchain repo.
 
     Args:
-      flutter_version: The Flutter SDK version string (e.g. `"3.41.2"`).
+      flutter_version: The Flutter SDK version string (e.g. `"3.47.7"`).
       engine_revision: The Flutter engine commit SHA string.
       host_platform: Execution host platform string (e.g. `"darwin-arm64"`).
       target_platform: Target platform string (e.g. `"ios-arm64"`, `"android-arm64"`).

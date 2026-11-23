@@ -6,7 +6,7 @@ import 'package:test/test.dart';
 
 void main() {
   test('target test runs on target SDK while build tools ran on exec SDK', () {
-    expect(Platform.version, startsWith('3.13.4'));
+    expect(Platform.version, startsWith('3.13.5'));
   });
 
   test('copy_tree and script codegen produce expected library', () {

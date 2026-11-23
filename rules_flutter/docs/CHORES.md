@@ -40,7 +40,9 @@ The latest tag is the current stable release.
 1. Fetch tags and identify the latest stable version (see above)
 2. Run `bazel run //tools/update_flutter_version -- <new-version>` (requires Flutter reference
    repo at `references/flutter` with tags fetched)
-3. Copy the printed snippets into `flutter/private/versions.bzl`
+3. Copy the printed snippets into `flutter/private/versions.bzl`. Keep the latest
+   patch release of each minor: a new patch replaces the minor's earlier rows
+   (in both dicts) instead of adding to them
 4. Update `flutter_version` in `MODULE.bazel` and all `e2e/*/MODULE.bazel` files
 5. Regenerate lock files
 

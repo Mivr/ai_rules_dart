@@ -122,7 +122,7 @@ Overriding the default is only permitted in the root module.
 flutter_version = tag_class(
     attrs = {
         "version": attr.string(
-            doc = "Flutter release tag to register (e.g. `\"3.44.8\"`). Must " +
+            doc = "Flutter release tag to register (e.g. `\"3.47.7\"`). Must " +
                   "not already be listed in flutter/private/versions.bzl.",
             mandatory = True,
         ),

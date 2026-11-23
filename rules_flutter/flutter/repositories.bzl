@@ -827,7 +827,7 @@ flutter_engine_artifacts = repository_rule(
     doc = "Downloads core Flutter engine artifacts (Dart SDK, host tools, debug patched SDK) for a given host platform.",
     attrs = {
         "flutter_version": attr.string(
-            doc = "The Flutter SDK version (e.g. `3.41.2`). Must be listed in " +
+            doc = "The Flutter SDK version (e.g. `3.47.7`). Must be listed in " +
                   "versions.bzl unless `engine_revision` and the `*_sha256` " +
                   "checksums are given explicitly (a custom `flutter.version` " +
                   "registration), or `local_path` is set.",

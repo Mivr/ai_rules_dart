@@ -24,16 +24,8 @@ _UNPINNED_VERSION = "9.9.9"
 # here, so a listed version cannot lose its module compiler unnoticed. An entry
 # goes when its version is pinned or removed from the table.
 _LISTED_WITHOUT_MODULE_COMPILER = {
-    "3.13.4": "an older patch of 3.13; 3.13.5 is the pinned one",
-    "3.13.2": "an older patch of 3.13; 3.13.5 is the pinned one",
-    "3.12.2": "the front end of 3.12 names `TargetFlags.trackWidgetCreation`, which the tool spells `trackCreationLocations`",
-    "3.12.1": "an older patch of 3.12; 3.12.2 is the latest",
-    "3.12.0": "an older patch of 3.12; 3.12.2 is the latest",
-    "3.11.5": "the front end of 3.11 names `TargetFlags.trackWidgetCreation`, which the tool spells `trackCreationLocations`",
-    "3.11.4": "an older patch of 3.11; 3.11.5 is the latest",
-    "3.11.2": "an older patch of 3.11; 3.11.5 is the latest",
-    "3.11.1": "an older patch of 3.11; 3.11.5 is the latest",
-    "3.11.0": "an older patch of 3.11; 3.11.5 is the latest",
+    "3.12.2": "the 3.12 front end names `TargetFlags.trackWidgetCreation`, which the tool spells `trackCreationLocations`; the rules' own tools (`analyze_runner`, `format_runner`, `link_check`, ...) also use Dart 3.13 syntax",
+    "3.11.5": "the 3.11 front end names `TargetFlags.trackWidgetCreation`, which the tool spells `trackCreationLocations`; the rules' own tools (`analyze_runner`, `format_runner`, `link_check`, ...) also use Dart 3.13 syntax",
 }
 
 def _unpinned_sdk_toolchain_impl(ctx):

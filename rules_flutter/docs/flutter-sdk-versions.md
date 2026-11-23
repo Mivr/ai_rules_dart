@@ -190,7 +190,7 @@ for mirroring stock releases.
 ## Adding a stock release
 
 ```sh
-bazel run //tools/update_flutter_version -- 3.44.8
+bazel run //tools/update_flutter_version -- 3.47.8
 ```
 
 The tool reads the engine revision from the Flutter tag, downloads each

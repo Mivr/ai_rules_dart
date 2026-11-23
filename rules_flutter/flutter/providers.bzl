@@ -20,7 +20,7 @@ declare `toolchains = ["@rules_flutter//flutter:toolchain_type"] + FLUTTER_OPTIO
 (or the specific sub-toolchain types they need) and call \
 `resolve_flutter_sdk_info(ctx)`.""",
     fields = {
-        "version": "str: The Flutter SDK version string (e.g. `3.41.2`).",
+        "version": "str: The Flutter SDK version string (e.g. `3.47.7`).",
         "engine_revision": "str: The engine commit hash.",
         "dart": "File: The `dart` executable from the Flutter-bundled Dart SDK. " +
                 "Use for actions paired with `dart_vm_files`, `dart_pub_files`, " +

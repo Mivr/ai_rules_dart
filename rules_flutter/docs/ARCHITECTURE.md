@@ -363,11 +363,11 @@ separate floor check.
 ### The Flutter SDK is a pinned, versioned download
 
 Each supported release is listed in `flutter/private/versions.bzl`.
-`FLUTTER_VERSIONS` (`flutter/private/versions.bzl:48`) maps a tag to its engine
+`FLUTTER_VERSIONS` (`flutter/private/versions.bzl:50`) maps a tag to its engine
 revision and source-tarball digest. `ARTIFACT_CHECKSUMS`
-(`flutter/private/versions.bzl:282`) maps each engine artifact to its sha256.
+(`flutter/private/versions.bzl:231`) maps each engine artifact to its sha256.
 `flutter_source_sha256` and `flutter_artifact_sha256`
-(`flutter/private/versions.bzl:107` and `:144`) read them, and fail when an
+(`flutter/private/versions.bzl:60` and `:93`) read them, and fail when an
 entry is missing.
 
 The `flutter` module extension (`flutter/extensions.bzl`) declares the

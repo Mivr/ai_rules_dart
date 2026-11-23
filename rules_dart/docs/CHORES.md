@@ -47,7 +47,9 @@ file at runtime — keep file lists current as the repo evolves.
 **Procedure**:
 
 1. Run `dart run tool/fetch_sdk_hashes.dart {version}` and `bazel run //dart/private/tools:update_cross_sdk_versions -- {version}` to get SHA-256 hashes
-2. Add the new version entries to `dart/private/versions.bzl`
+2. Add the new version entries to `dart/private/versions.bzl`. Keep the latest
+   patch release of each minor: a new patch replaces the minor's earlier rows
+   (and their module compiler row) instead of adding to them
 3. Pin the module compiler's sources for the version: download
    `https://github.com/dart-lang/sdk/archive/refs/tags/{version}.tar.gz` and
    `sha256sum` it; the commit is

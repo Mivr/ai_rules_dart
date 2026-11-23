@@ -17,7 +17,7 @@ visibility(["//flutter/tests/..."])
 
 def _latest_version_first_test_impl(ctx):
     env = unittest.begin(ctx)
-    asserts.equals(env, "3.41.2", FLUTTER_VERSIONS.keys()[0])
+    asserts.equals(env, "3.47.7", FLUTTER_VERSIONS.keys()[0])
     return unittest.end(env)
 
 def _engine_revision_format_test_impl(ctx):
@@ -162,8 +162,8 @@ def _artifact_sha256_returns_recorded_value_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(
         env,
-        ARTIFACT_CHECKSUMS["3.47.5"]["linux-x64/artifacts.zip"],
-        flutter_artifact_sha256("3.47.5", "linux-x64/artifacts.zip"),
+        ARTIFACT_CHECKSUMS["3.47.7"]["linux-x64/artifacts.zip"],
+        flutter_artifact_sha256("3.47.7", "linux-x64/artifacts.zip"),
     )
     return unittest.end(env)
 
@@ -368,7 +368,7 @@ def versions_test_suite(name):
     """
     _artifact_checksum_probe(
         name = name + "_missing_artifact_probe",
-        flutter_version = "3.47.5",
+        flutter_version = "3.47.7",
         artifact_path = "missing/artifact.zip",
         tags = ["manual"],
     )
@@ -376,9 +376,9 @@ def versions_test_suite(name):
         name = name + "_missing_artifact_fails",
         target_under_test = ":" + name + "_missing_artifact_probe",
         expected_substrings = [
-            "No sha256 recorded for missing/artifact.zip in Flutter 3.47.5",
+            "No sha256 recorded for missing/artifact.zip in Flutter 3.47.7",
             "missing/artifact.zip",
-            "3.47.5",
+            "3.47.7",
         ],
     )
 
