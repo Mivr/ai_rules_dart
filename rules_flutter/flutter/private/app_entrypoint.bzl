@@ -135,19 +135,15 @@ def app_scheme_location(file):
     root = file.path[:len(file.path) - len(rel)].rstrip("/")
     return struct(uri = "%s:///%s" % (APP_SCHEME, rel), root = root)
 
-def _source_stage_prefix(scope, seen, salt, stable_root):
+def _source_stage_prefix(scope, seen, salt):
     """Content-hashed staging directory prefix for either staging path.
 
-    A fixed `<scope>.incr.stage` name when `stable_root` is True, so adding or
-    removing a source file does not move the root a warm incremental compiler
-    sees; otherwise the manifest-hashed `<scope>.<hash>.stage` name. The hash
-    covers the staged workspace paths (plus `salt`), so a stage directory an
-    earlier build left behind — which stays on disk under local and worker
+    The manifest-hashed `<scope>.<hash>.stage` name. The hash covers the
+    staged workspace paths (plus `salt`), so a stage directory an earlier
+    build left behind — which stays on disk under local and worker
     strategies — is never mounted again once its set changes: a stale entry
     can neither shadow a source nor fail an otherwise correct build.
     """
-    if stable_root:
-        return "%s.incr.stage" % scope
     manifest_items = sorted(seen.keys())
     if salt:
         manifest_items = manifest_items + [salt]
@@ -214,7 +210,7 @@ def _link_staged_files(ctx, seen, stage_prefix):
         files = staged,
     )
 
-def stage_generated_inputs(ctx, files, scope, include_sources = False, salt = "", stable_root = False):
+def stage_generated_inputs(ctx, files, scope, include_sources = False, salt = ""):
     """Stages declared `files` into a per-action multi-root directory.
 
     Instead of mounting `ctx.bin_dir.path` (which leaks stale generated outputs
@@ -241,13 +237,6 @@ def stage_generated_inputs(ctx, files, scope, include_sources = False, salt = ""
         salt: Optional string mixed into the staging directory hash when
             `include_sources = True` so changes to generated wrapper/registrant
             contents or compilation defines produce a distinct staging root.
-        stable_root: If True, stage into a fixed `<scope>.incr.stage`
-            directory instead of hashing the file list into the name, so
-            adding or removing a source file does not change the root path a
-            warm incremental compiler sees. Only the `include_sources` path
-            honours it; the generated-only path always hashes its staged set
-            (which holds no sources, so it is already stable across source
-            add/remove) because a fixed name would remount stale entries.
 
     Returns:
         `struct(root, files)` where `root` is the exec-root-relative staging
@@ -265,7 +254,7 @@ def stage_generated_inputs(ctx, files, scope, include_sources = False, salt = ""
         return _link_staged_files(
             ctx,
             seen,
-            _source_stage_prefix(scope, seen, salt, stable_root),
+            _source_stage_prefix(scope, seen, salt),
         )
 
     for f in files:
@@ -278,9 +267,8 @@ def stage_generated_inputs(ctx, files, scope, include_sources = False, salt = ""
     # The staged set names the directory, exactly like the `include_sources`
     # path: sources never enter `seen`, so adding or removing one does not move
     # the root, while a removed generated file leaves its stale directory
-    # unmounted. `stable_root` is ignored here — a fixed name would remount
-    # stale entries from earlier builds.
-    return _link_staged_files(ctx, seen, _source_stage_prefix(scope, seen, salt, False))
+    # unmounted.
+    return _link_staged_files(ctx, seen, _source_stage_prefix(scope, seen, salt))
 
 def with_root(roots, root):
     """`roots` with `root` appended unless it is None or already there.
