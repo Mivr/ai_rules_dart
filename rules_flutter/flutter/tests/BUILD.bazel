@@ -30,6 +30,7 @@ load(":compile_api_test.bzl", "compile_api_test_suite")
 load(":cpp_client_wrapper_test.bzl", "cpp_client_wrapper_test_suite")
 load(":custom_kernel_defines_test.bzl", "custom_kernel_defines_test_suite")
 load(":debug_modular_app_test.bzl", "debug_modular_app_test_suite")
+load(":stock_dev_files_test.bzl", "stock_dev_files_test_suite")
 load(":define_flagfiles_test.bzl", "define_flagfiles_test_suite")
 load(":defines_config_test.bzl", "defines_config_test_suite")
 load(":defines_files_test.bzl", "defines_files_test_suite")
@@ -327,6 +328,8 @@ registrant_twin_test_suite(name = "registrant_twin_test")
 kernel_target_modular_test_suite(name = "kernel_target_modular_test")
 
 debug_modular_app_test_suite(name = "debug_modular_app_test")
+
+stock_dev_files_test_suite(name = "stock_dev_files_test")
 
 # The twin and the plain module both link: the swapped dill holds the constant
 # registrant URI where the SDK constant is read, the plain one does not.
