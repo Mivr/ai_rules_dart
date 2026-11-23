@@ -23,17 +23,20 @@
   "subsystems": [
     {
       "name": "yaml-reader",
-      "note": "Starlark YAML reader in the Dart rules (PLAN 4.3: delete; yq replaces it)",
+      "note": "The YAML converter and what reads its output: the conversion helper, the SDK-constraint grammar and the checks over decoded pubspecs. Kept under its name so the ledger series continues; it was the Starlark YAML reader (deleted)",
       "paths": [
+        "rules_dart/dart/pub/yaml.bzl",
+        "rules_dart/dart/pub/private/yq*",
         "rules_dart/dart/pub/private/yaml_*.bzl",
         "rules_dart/dart/pub/private/parser_sources.bzl",
-        "rules_dart/dart/pub/yaml_parser.bzl",
-        "rules_dart/dart/pub/tests/yaml_*"
+        "rules_dart/dart/pub/private/pubspec_data.bzl",
+        "rules_dart/dart/pub/tests/yq_*",
+        "rules_dart/dart/pub/tests/pubspec_data_test.bzl"
       ]
     },
     {
       "name": "flutter-lock-scanners",
-      "note": "Flutter's own scanners for `sdks:` in pubspec.lock and for Podfile.lock (delete with the reader)",
+      "note": "Flutter's checks over the decoded `sdks:` block of pubspec.lock and over Podfile.lock (line scanners before the converter; the name keeps the ledger series)",
       "paths": [
         "rules_flutter/flutter/private/pub_lock_sdks.bzl",
         "rules_flutter/flutter/private/podfile_lock*",

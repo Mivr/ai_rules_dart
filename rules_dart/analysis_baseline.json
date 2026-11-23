@@ -612,11 +612,6 @@
   "dart/tests/propagation_fixture/main.dart": {
     "avoid_print": 1
   },
-  "dart/tests/pub_scc_facts/parser_files_test.dart": {
-    "avoid_catches_without_on_clauses": 1,
-    "prefer_final_locals": 1,
-    "use_raw_strings": 2
-  },
   "dart/tests/resource_fixture/lib/marker.dart": {
     "public_member_api_docs": 1
   },

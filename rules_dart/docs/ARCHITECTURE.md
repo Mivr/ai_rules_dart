@@ -207,13 +207,14 @@ One caveat, inherited from the Dart CLI and shared by the `defines` attribute: t
 
 ## Testing
 
-| Test Type             | Location                    | What                                                       |
-| --------------------- | --------------------------- | ---------------------------------------------------------- |
-| Starlark unit tests   | `dart/tests/`               | versions.bzl, common.bzl (package_config), yaml_parser.bzl |
-| Gazelle tests         | `dev/`                      | gazelle_generation_test + shell test                       |
-| E2e integration tests | `e2e/*/`                    | Full build scenarios in isolated workspaces                |
-| CI                    | `.github/workflows/ci.yaml` | All e2e folders on Bazel 9.x                               |
-| BCR presubmit         | `.bcr/presubmit.yml`        | Multi-platform × Bazel 9.x                                 |
+| Test Type             | Location                           | What                                                                 |
+| --------------------- | ---------------------------------- | -------------------------------------------------------------------- |
+| Starlark unit tests   | `dart/tests/`                      | versions.bzl, common.bzl (package_config)                            |
+| Pub unit tests        | `dart/pub/tests/`                  | The YAML conversion helper, pubspec data checks, pub_scc, pin checks |
+| Gazelle tests         | `dev/`                             | gazelle_generation_test + shell test                                 |
+| E2e integration tests | `e2e/*/`                           | Full build scenarios in isolated workspaces                          |
+| CI                    | `../.github/workflows/dart-*.yaml` | All e2e folders on Bazel 9.x                                         |
+| BCR presubmit         | `.bcr/presubmit.yml`               | Multi-platform × Bazel 9.x                                           |
 
 The HOME policy every `bazel run` entry point follows, and the rule for
 adding a new one, is documented in [run_home.md](./run_home.md).

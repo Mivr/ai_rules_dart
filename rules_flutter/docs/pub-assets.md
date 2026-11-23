@@ -123,16 +123,24 @@ the package, the template, and the bound.
 ## What the fetch refuses
 
 Every refusal fails the spoke fetch with
-`flutter.pub spoke for "<package>": pubspec.yaml line <N>: ...`, naming the
-package and the 1-based line of the offending key or list entry, so the fix
-is one editor jump away. A non-string key names its own line, and a leading
-byte-order mark moves no line. Accepted pubspecs parse exactly as before.
+`flutter.pub spoke for "<package>": pubspec.yaml: asset "<entry>": ...`, naming
+the package, the entry that is wrong (`fonts[0]`, `assets[2]`, or the key of
+a section such as `uses-material-design`) and flutter_tools' wording of the
+complaint. It names no line: the pubspec is decoded by the pinned YAML
+converter before any check runs, and the checks see the decoded data. A
+pubspec that is not valid YAML fails earlier, with the converter's error, which
+names the file, the line and the column.
 
-- A `flutter:` section that is neither a map nor absent fails the fetch at
-  the `flutter:` line, as flutter_tools does.
-- A non-string pubspec root key, or a present `name` that is not a string
-  (including an empty value), fails the fetch at the key's line, as
-  flutter_tools does. Any other root key stays allowed.
+The decoded data holds only string keys and spells every number as its text.
+A check that flutter_tools makes only to tell a number from a string (a
+numeric `name`, `family`, `asset` or `pluginClass`) cannot be made, so both
+spellings are accepted; a numeric key reads as its text, and an unknown one
+still fails as an unknown key.
+
+- A `flutter:` section that is neither a map nor absent fails the fetch,
+  naming `flutter`, as flutter_tools does.
+- A present `name` that is not a string (an empty value, a list or a map)
+  fails the fetch, as flutter_tools does. Any other root key stays allowed.
 - A `flutter.assets` or `flutter.shaders` section that is not a list (for
   example a string `assets: assets/logo.png`) fails the fetch, naming the
   package, the key and the expected list shape, as flutter_tools does.
@@ -150,19 +158,19 @@ byte-order mark moves no line. Accepted pubspecs parse exactly as before.
   clean, the way flutter_tools only warns on it.
 - A font `weight` outside 100..900 (for example `weight: 150`), a font
   `style` outside `italic`/`normal`, or any other key in a font file entry
-  fails the fetch at the key's line, as flutter_tools does, whether or not
-  the entry carries `asset`. A non-string
-  key reports twice, the way flutter_tools reports both its checks. An
-  absent `weight` or `style` stays valid and reads as unset.
+  fails the fetch naming the font entry, as flutter_tools does, whether or
+  not the entry carries `asset`. An absent `weight` or `style` stays valid
+  and reads as unset. A `weight` is read as the number its text spells, as
+  flutter_tools reads it: `700`, `"700"`, `0x2BC`, `0o1274` and `+700` are
+  all 700.
 - A whole-number float font `weight` (for example `weight: 400.0`) on an
-  entry carrying `asset` fails
-  the fetch at the key's line: it passes flutter_tools' validation, but
+  entry carrying `asset` fails the fetch naming the font entry: it passes flutter_tools' validation, but
   no build can read it, so the refusal says flutter_tools 3.47.7 cannot
   read it instead of quoting a validation error flutter_tools never prints.
   Without `asset` the build skips the entry before any cast, so the weight
   stays silent there.
-- An unexpected key in a font family entry fails the fetch at the key's
-  line, as flutter_tools does.
+- An unexpected key in a font family entry fails the fetch naming the key,
+  as flutter_tools does.
 - A `platforms` or `flavors` value that is not a list of strings (for example
   a scalar `platforms: web`), or a `platforms` value naming an unknown
   platform (for example `platforms: [tvos]`), fails the fetch, naming the package, the entry
@@ -173,20 +181,20 @@ byte-order mark moves no line. Accepted pubspecs parse exactly as before.
 - Any other unknown key in an entry mapping is ignored, the way flutter_tools
   ignores it.
 - A `uses-material-design` value that is not a bool (for example the string
-  `"yes"`, or an empty value) fails the fetch at its line instead of
+  `"yes"`, or an empty value) fails the fetch naming the key instead of
   silently reading as false, as flutter_tools does.
 - A `licenses` value that is not a list of file paths, a `default-flavor`
   value that is not a string, and the moved `disable-swift-package-manager`
-  key at any value each fail the fetch at their line, as flutter_tools
+  key at any value each fail the fetch naming the key, as flutter_tools
   does.
 - A `module` value that is not a map, or a non-bool `androidX`, a
   non-string `androidPackage`, or a non-string `iosBundleIdentifier` when
-  set, fails the fetch at its line, as flutter_tools does.
+  set, fails the fetch naming the key, as flutter_tools does.
 - A `plugin` value that is not a map (including an empty map), legacy
   `androidPackage`/`iosPrefix`/`pluginClass` keys beside `platforms`, a
   `platforms` value that is not a map, or a platform entry flutter_tools
   rejects (for example an empty `android:` entry, or a non-identifier
-  `pluginClass`) fails the fetch at the entry's line, as flutter_tools
+  `pluginClass`) fails the fetch naming the entry, as flutter_tools
   does. `web` entries and unknown platforms are not validated, the way
   flutter_tools skips them. A `default_package` entry specifies the platform
   default implementation for federated plugins: an application choosing a
@@ -196,9 +204,8 @@ byte-order mark moves no line. Accepted pubspecs parse exactly as before.
   (flutter_tools crashes reading one, so it cannot build), an element
   that is not a map, an element without a string `name`, a `libraries`
   key holding anything but a string list, or malformed element `assets`
-  each fail the fetch at their line, as flutter_tools does. An absent or
+  each fail the fetch naming the entry, as flutter_tools does. An absent or
   empty value stays valid.
-- A non-string key directly under `flutter:` fails the fetch at the key's
-  line, as flutter_tools does. Any other unknown key directly under
-  `flutter:` fails the fetch at the key's line, as flutter_tools does.
-  `generate` and `config` carry no checks and stay accepted at any value.
+- Any key directly under `flutter:` that flutter_tools does not know fails
+  the fetch naming the key, as flutter_tools does. `generate` and `config`
+  carry no checks and stay accepted at any value.

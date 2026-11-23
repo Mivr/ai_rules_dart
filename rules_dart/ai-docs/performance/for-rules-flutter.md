@@ -292,8 +292,9 @@ module (`e2e/codegen` `//source_set_pkg:colocated_test`) and against
   registered by rules_dart (`register_toolchains("//dart:copy_toolchain")`).
   The copy tool is `//dart/private/tools:copy_tree` (mnemonic `DartCopyTree`),
   byte-identical output to `copy_to_directory`'s for the options rules_dart uses.
-- `dart/pub/yaml_parser.bzl` keeps its three functions; the parser behind them
-  is `dart/pub/private/yaml_subset.bzl`.
+- Pubspec and lock files are no longer parsed in Starlark: `yaml_to_json` in
+  `dart/pub/yaml.bzl` converts them with a pinned converter binary (see
+  `docs/pub.md`).
 - Every `MODULE.bazel.lock` in rules_dart was refreshed. A downstream root
   module that commits its lock refreshes it when it bumps rules_dart.
 
