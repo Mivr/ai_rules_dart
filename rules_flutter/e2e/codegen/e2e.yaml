@@ -2,4 +2,19 @@ schema: mivr-e2e-spec/1
 commands:
   - name: test all targets
     run: bazel test //... --test_output=errors
-    min_tests_executed: 22
+    min_tests_executed: 23
+  # Without `pub.project`, the pure-Dart member's test would run outside its
+  # package's directory and miss its fixture; the flutter extension fails
+  # instead, naming the tag to add. Any build in the workspace says so, the
+  # member's own included.
+  - name: missing_pub_project
+    run: bazel build --nobuild //pure_dart:all
+    replace_in_files:
+      - path: MODULE.bazel
+        from: 'pub.project(lock = "//:pubspec.lock")'
+        to: ''
+    expect:
+      non_zero: true
+      output_contains:
+        - 'flutter.pub: the lock //:pubspec.lock names the pure-Dart package //pure_dart'
+        - 'pub.project(lock = "//:pubspec.lock")'

@@ -42,4 +42,10 @@ flutter.pub(
 )
 use_repo(flutter, "deps", "flutter_macos_engine", "flutter_toolchains", "flutter_web_sdk")
 
+# `pure_dart`, a pure-Dart member of this pub workspace, is tested with
+# rules_dart's `dart_test`, whose project defaults come from rules_dart's own
+# index. `pub.project` names this lock to it: no hub and no fetch.
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.project(lock = "//:pubspec.lock")
+
 register_toolchains("@flutter_toolchains//:all")

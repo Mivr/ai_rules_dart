@@ -28,7 +28,7 @@ when the names do, so an edit to the text of an `.arb` file or a fixture
 reruns the actions that read it and nothing else.
 """
 
-load("@rules_dart//dart/pub:project.bzl", "PROJECT_BUILD", "project_bzl", "project_dirs", "project_facts", "project_index", "project_repo_name")
+load("@rules_dart//dart/pub:project.bzl", "DART_PROJECTS_JSON", "PROJECT_BUILD", "project_bzl", "project_dirs", "project_facts", "project_index", "project_repo_name")
 load("@rules_dart//dart/pub:yaml.bzl", "lock_packages_or_error", "yaml_to_json", "yaml_to_json_or_error")
 load("//flutter/private:flutter_pub_path.bzl", "is_absolute_lock_path")
 
@@ -254,6 +254,42 @@ def add_project_hub(hubs, project, hub):
     if hub.name not in [h.name for h in own]:
         own.append(hub)
 
+def _uses_flutter(spec):
+    for key in ("dependencies", "dev_dependencies"):
+        deps = spec.get(key) if type(spec) == "dict" else None
+        for dep in deps.values() if type(deps) == "dict" else []:
+            if type(dep) == "dict" and dep.get("sdk") == "flutter":
+                return True
+    return False
+
+def _check_dart_projects(module_ctx, found, tags):
+    """Fails naming the `pub.project` tag for a pure-Dart project with a `test/` that `@dart_projects` lacks.
+
+    Its `dart_test` comes from rules_dart, whose macros read only
+    `@dart_projects`. `@dart_projects` is read only when such a project exists.
+    """
+    root = module_ctx.path(Label("@@//:MODULE.bazel")).dirname
+    dirs = list(found)
+    tests = [root.get_child(p + "/test" if p else "test") for p in dirs]
+    for path in tests:
+        module_ctx.watch(path)
+    dirs = [dirs[i] for i in range(len(dirs)) if tests[i].exists]
+    specs = yaml_to_json_or_error(module_ctx, [root.get_child(p + "/pubspec.yaml" if p else "pubspec.yaml") for p in dirs]).data or []
+    dart = [dirs[i] for i in range(len(specs)) if not _uses_flutter(specs[i])]
+    known = json.decode(module_ctx.read(DART_PROJECTS_JSON)) if dart else []
+    missing = {}
+    for p in dart:
+        if p not in known:
+            lock = tags[found[p].locks[0]].lock
+            missing.setdefault("//%s:%s" % (lock.package, lock.name), []).append("//" + p)
+    if missing:
+        fail("".join([
+            "flutter.pub: the lock %s names the pure-Dart package %s (no Flutter SDK dependency, a test/ directory), which rules_dart's macros do not know: its dart_test would run outside its package's directory, without its test fixtures and at the default language version. Add to MODULE.bazel:\n\n" % (lock, ", ".join(pkgs)) +
+            '    pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")\n' +
+            '    pub.project(lock = "%s")\n\n' % lock
+            for lock, pkgs in sorted(missing.items())
+        ]))
+
 def register_l10n_repos(module_ctx, pub_yaml):
     """Declares a `flutter_l10n_repo` per project of the root module's locks, and `flutter_projects`.
 
@@ -263,8 +299,10 @@ def register_l10n_repos(module_ctx, pub_yaml):
     """
     tags = [tag for mod in module_ctx.modules if mod.is_root for tag in mod.tags.pub]
     locks = [(tag.lock, lock_packages_or_error(pub_yaml.get(str(tag.lock), {})).packages) for tag in tags]
+    found_dirs = project_dirs(module_ctx, locks)
+    _check_dart_projects(module_ctx, found_dirs, tags)
     projects = {}
-    for project, found in project_dirs(module_ctx, locks).items():
+    for project, found in found_dirs.items():
         hubs = {}
         for i in found.locks:
             packages = locks[i][1] or {}

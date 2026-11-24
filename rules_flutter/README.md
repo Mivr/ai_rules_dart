@@ -1614,6 +1614,17 @@ The `flutter_test_config.dart` that `flutter test` wraps a test in, the one in t
 
 Assets load as under `flutter test`: the runner gives `flutter_tester` the `UNIT_TEST_ASSETS` and `APP_NAME` that `flutter test` gives it, so `package:flutter_test` answers an asset load from the test's bundle at once, and an SVG or image a widget loads is there by the next frame.
 
+Tests are declared in the project's own package, the BUILD file beside its `pubspec.yaml`: a test in a BUILD file below it, such as `test/BUILD.bazel`, gets none of these defaults.
+
+A pure-Dart package of the workspace (no Flutter SDK dependency), tested with rules_dart's `dart_test`, gets the same defaults from rules_dart, whose macros read rules_dart's own index of projects rather than the `flutter` extension's. Name the `flutter.pub` lock to it in `MODULE.bazel`; the tag declares no hub and fetches nothing:
+
+```starlark
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.project(lock = "//:pubspec.lock")
+```
+
+Without it, such a test would run outside its package's directory, without its fixtures and at the default language version, so the `flutter` extension fails instead when a pure-Dart project of a root `flutter.pub` lock has a `test/` directory and rules_dart's index lacks it, printing those two lines for that lock.
+
 #### Golden files
 
 Goldens under the project's `test/` are `data` by default (above). A golden elsewhere, or in a package the extension does not know, must be listed in `data`, or the test cannot see it:

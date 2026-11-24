@@ -1,0 +1,11 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+# A pure-Dart member of the app's pub workspace, tested with rules_dart's
+# `dart_test`. `pub.project` in MODULE.bazel names the workspace's lock to
+# rules_dart, so the test runs in this directory with its fixtures, as
+# `dart test` here does; nothing below restates them.
+dart_test(
+    name = "fixture_test",
+    main = "test/fixture_test.dart",
+    deps = ["@deps//:test"],
+)
