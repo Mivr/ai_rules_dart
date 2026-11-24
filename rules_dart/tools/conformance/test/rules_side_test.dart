@@ -29,9 +29,11 @@ void main() {
       jsonEncode(result('//dir:b_test', '/t/dir/b_test', true)),
       'not json',
     ];
+    // The report path is the host's own spelling of the `file:` URI.
+    String native(String path) => Uri.file(path).toFilePath();
     expect(testReportsFromBuildEvents(lines), {
-      '//:a_test': '/t/a_test/test.xml',
-      '//dir:b_test': '/t/dir/b_test/test.xml',
+      '//:a_test': native('/t/a_test/test.xml'),
+      '//dir:b_test': native('/t/dir/b_test/test.xml'),
     });
   });
 }

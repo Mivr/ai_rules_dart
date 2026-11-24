@@ -30,7 +30,7 @@ void main() {
     writeBazelGraph(s, dir.path, '/repo');
     final libs = Directory(dir.path)
         .listSync(recursive: true)
-        .where((e) => e.path.endsWith('/lib/x.dart'))
+        .where((e) => e.path.replaceAll('\\', '/').endsWith('/lib/x.dart'))
         .length;
     expect(libs, 60);
     final top = File('${dir.path}/l2/p2_4/lib/x.dart').readAsStringSync();

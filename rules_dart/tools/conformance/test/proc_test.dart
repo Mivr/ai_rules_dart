@@ -59,7 +59,8 @@ Call Stack (most recent call first):
       ..createSync(recursive: true)
       ..writeAsStringSync('o');
     final tool = File('${from.path}/tool')..writeAsStringSync('#!/bin/sh\n');
-    Process.runSync('chmod', ['755', tool.path]);
+    // A Windows file has no executable bit to set or to keep.
+    if (!Platform.isWindows) Process.runSync('chmod', ['755', tool.path]);
     final to = Directory('${tmp.path}/to');
     File('${from.path}/keep/ephemeral/gen.txt')
       ..createSync(recursive: true)
@@ -68,6 +69,9 @@ Call Stack (most recent call first):
     expect(File('${to.path}/keep/a.txt').readAsStringSync(), 'a');
     expect(Directory('${to.path}/keep/ephemeral').existsSync(), isFalse);
     expect(Directory('${to.path}/build').existsSync(), isFalse);
-    expect(File('${to.path}/tool').statSync().mode & 0x40, isNot(0));
+    expect(File('${to.path}/tool').existsSync(), isTrue);
+    if (!Platform.isWindows) {
+      expect(File('${to.path}/tool').statSync().mode & 0x40, isNot(0));
+    }
   });
 }

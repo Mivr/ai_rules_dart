@@ -131,16 +131,23 @@ void main() {
     expect(f.calls.last, 'tearDown');
   });
 
-  test('a command over its limit is killed with its tree, and the row '
-      'says the flow exceeded it', () async {
-    final f = _Fake([1, 1, 1, 1, 1], exceedAt: 1);
-    final watch = Stopwatch()..start();
-    final row = await measureFlow(f, _ctx(proc.path));
-    expect(watch.elapsed, lessThan(const Duration(seconds: 20)));
-    expect(row.status, 'exceeded');
-    expect(row.notes, contains('exceeded 0 minutes'));
-    expect(f.calls.last, 'tearDown');
-  });
+  test(
+    'a command over its limit is killed with its tree, and the row '
+    'says the flow exceeded it',
+    () async {
+      final f = _Fake([1, 1, 1, 1, 1], exceedAt: 1);
+      final watch = Stopwatch()..start();
+      final row = await measureFlow(f, _ctx(proc.path));
+      expect(watch.elapsed, lessThan(const Duration(seconds: 20)));
+      expect(row.status, 'exceeded');
+      expect(row.notes, contains('exceeded 0 minutes'));
+      expect(f.calls.last, 'tearDown');
+    },
+    // The harness runs where `/proc` and POSIX process groups are: the fake
+    // flow's command is `sh -c 'sleep & sleep'`, and killing a Windows
+    // process does not kill the grandchildren holding its pipes.
+    skip: Platform.isWindows ? 'the harness is POSIX' : null,
+  );
 
   test('a flow this host cannot run says so', () async {
     final row = await measureFlow(

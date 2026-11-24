@@ -9,13 +9,17 @@ import 'package:conformance/normalise.dart';
 import 'package:crypto/crypto.dart';
 
 /// Every file under [root] (symbolic links followed), as sorted relative
-/// paths.
+/// paths, always separated by `/`: the categories and the item keys name a
+/// file the same on every host.
 List<String> listFiles(Directory root) {
   if (!root.existsSync()) return const [];
   final int skip = root.absolute.path.length + 1;
   return [
     for (final e in root.absolute.listSync(recursive: true, followLinks: true))
-      if (e is File) e.path.substring(skip),
+      if (e is File)
+        Platform.isWindows
+            ? e.path.substring(skip).replaceAll('\\', '/')
+            : e.path.substring(skip),
   ]..sort();
 }
 
