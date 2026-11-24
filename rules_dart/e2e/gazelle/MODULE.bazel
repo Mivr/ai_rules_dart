@@ -9,6 +9,11 @@ bazel_dep(name = "gazelle", version = "0.54.0")
 # the oldest Xcode 27's libc++ accepts without a warning.
 bazel_dep(name = "apple_support", version = "2.10.1")
 
+# The SQLite amalgamation drift's sqlite3 compiles in its build hook (source
+# mode, `hooks: user_defines:` in app/pubspec.yaml) instead of downloading a
+# prebuilt library, which the sandbox refuses.
+bazel_dep(name = "sqlite3", version = "3.53.4")
+
 bazel_dep(name = "hermetic_cc_toolchain", version = "4.3.0", dev_dependency = True)
 
 local_path_override(
@@ -39,6 +44,8 @@ register_toolchains("@dart_toolchains//:all")
 pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
 pub.from_lock(
     name = "pub_deps",
+    # The user define in app/pubspec.yaml names this file; the hook reads it.
+    hook_data = {"@sqlite3//:sqlite3.c": "sqlite3"},
     lock = "//app:pubspec.lock",
 )
 use_repo(pub, "pub_deps")

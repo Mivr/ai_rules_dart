@@ -443,6 +443,8 @@ Three attributes of `flutter.pub` widen what a hook may use, as `pub.from_lock` 
 - `hook_data` maps files outside a package that its hook reads (`{"@sqlite3//:sqlite3.c": "sqlite3"}`);
 - `hook_network` lets one package's hook download, which Bazel then neither pins nor caches by content. Without it, a hook that downloads fails with a message naming the package and both ways out.
 
+An app on `drift` or `sqlite3` 3.x compiles SQLite from source: the `user_defines` and `bazel_dep` / `hook_data` lines are in rules_dart's `docs/pub.md`, "Migrating from `ignore_hooks` and the curated code assets", with `hook_data` on the `flutter.pub` tag.
+
 `e2e/build_hooks` runs `sqlite3` from source, a path package whose hook compiles C, and one with a link hook, on Linux and Android. Overlays (`ext/` and `flutter.plugin_overlays(roots = [...])`) still replace a package's generated BUILD file where its Android code needs one; a hub consults the root module's roots first, then its own module's roots. On macOS and iOS build hooks do not run yet (not yet proven on macOS CI): a package's hook fails the build, naming the package, except for `sqlite3`, `webcrypto` and `objective_c`, which keep their Bazel replacements there (rules_dart's `docs/pub.md`, "Apple targets").
 
 ### Native code from Bazel

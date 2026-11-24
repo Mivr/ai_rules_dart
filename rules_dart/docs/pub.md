@@ -383,8 +383,42 @@ proven on macOS CI.
 `//dart/ext:registry.bzl` are removed, and the curated `//dart/ext/sqlite3` and
 `//dart/ext/webcrypto` assets serve Apple targets only (above). Drop
 `ignore_hooks`: the hooks now run.
-A package whose hook downloads needs a user define or `hook_network`; for
-`sqlite3`, the example above replaces the curated asset. `webcrypto` builds
+A package whose hook downloads needs a user define or `hook_network`.
+
+A `drift` or `sqlite3` user (any lock with `sqlite3` 3.x, which is what
+`drift` resolves to) compiles SQLite from source, with no network at build
+time. Add to the `pubspec.yaml` next to the lock (`path` is relative to that
+file's directory: `external/sqlite3+/sqlite3.c` beside a root lock,
+`../external/sqlite3+/sqlite3.c` for a lock in `app/`, as in
+`e2e/gazelle`):
+
+```yaml
+hooks:
+  user_defines:
+    sqlite3:
+      source: source
+      path: external/sqlite3+/sqlite3.c
+```
+
+and to `MODULE.bazel`, on the `pub.from_lock` (or `flutter.pub`) tag of that
+lock:
+
+```starlark
+bazel_dep(name = "sqlite3", version = "3.53.4")
+
+pub.from_lock(
+    name = "pub_deps",
+    hook_data = {"@sqlite3//:sqlite3.c": "sqlite3"},
+    lock = "//:pubspec.lock",
+)
+```
+
+This replaces the curated asset. `hook_network = ["sqlite3"]` on the tag also
+builds, but downloads a prebuilt library Bazel does not pin; use it only where
+no amalgamation can be provided. A stock `dart test` outside
+Bazel does not have `external/`; there, drop the define or point `path` at a
+local amalgamation.
+`webcrypto` builds
 with CMake, which no C toolchain provides, so it needs `hook_network` and a
 CMake on the hook's `PATH`, or a stock build.
 
