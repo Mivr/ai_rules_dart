@@ -116,8 +116,7 @@ const Map<String, String> hostSkips = {
   'rules_flutter/windows_example': 'Windows: its tests are skipped on Linux',
   'rules_flutter/plugin_example':
       'Linux runner: the desktop sysroot lacks X11/Xlib.h (GTK headers)',
-  'rules_flutter/stock_dev_loop':
-      'dev-loop workspace with no spec; it needs the dev tool and a device',
+  'rules_flutter/stock_dev_loop': 'dev-loop workspace with no spec (build //... passes by hand); its checks need a device',
 };
 
 /// Workspaces whose check is a script that runs Bazel itself, not a spec.
@@ -241,6 +240,30 @@ final class SweepConfig {
   final bool includeUnrunnable;
 }
 
+/// Runs [executable] and returns its exit code and output.
+///
+/// A Bazel client may leave a server running that holds the pipes open, so
+/// the streams are given a few seconds after the exit and then dropped.
+Future<({int code, String out})> _capture(
+  String executable,
+  List<String> args,
+  String cwd,
+) async {
+  final process = await Process.start(executable, args, workingDirectory: cwd);
+  final buffer = StringBuffer();
+  final streams = Future.wait([
+    process.stdout
+        .transform(const SystemEncoding().decoder)
+        .forEach(buffer.write),
+    process.stderr
+        .transform(const SystemEncoding().decoder)
+        .forEach(buffer.write),
+  ]);
+  final code = await process.exitCode;
+  await streams.timeout(const Duration(seconds: 5), onTimeout: () => const []);
+  return (code: code, out: buffer.toString());
+}
+
 /// Builds each module's runner with the client and returns its executable.
 ///
 /// Returns null, after printing why, when a build fails.
@@ -250,23 +273,17 @@ Future<Map<String, String>?> buildRunners(SweepConfig config) async {
     final cwd = m.module == 'rules_dart'
         ? '${config.repoRoot}/rules_dart/tools'
         : '${config.repoRoot}/rules_flutter';
-    final build = await Process.run(config.client, [
-      'build',
-      m.runnerTarget,
-    ], workingDirectory: cwd);
-    if (build.exitCode != 0) {
+    final build = await _capture(config.client, ['build', m.runnerTarget], cwd);
+    if (build.code != 0) {
       stderr
         ..writeln('building ${m.runnerTarget} in $cwd failed:')
-        ..writeln(build.stderr);
+        ..writeln(build.out);
       return null;
     }
-    final info = await Process.run(config.client, [
-      'info',
-      'bazel-bin',
-    ], workingDirectory: cwd);
-    final binDir = (info.stdout as String).trim();
+    // The convenience link, not `info bazel-bin`: the runner is built under a
+    // transition, so its output is not in the plain configuration's directory.
     final package = m.runnerTarget.substring(2).split(':').first;
-    runners[m.module] = '$binDir/$package/e2e_runner';
+    runners[m.module] = '$cwd/bazel-bin/$package/e2e_runner';
   }
   return runners;
 }
@@ -368,10 +385,7 @@ Future<SweepResult> _runOne(
   await done;
   if (script != null) {
     // The script leaves its server and output base behind.
-    await Process.run(config.client, [
-      'clean',
-      '--expunge',
-    ], workingDirectory: ws.path);
+    await _capture(config.client, ['clean', '--expunge'], ws.path);
   }
   final seconds = DateTime.now().difference(started).inSeconds;
   final log = buffer.toString();
