@@ -78,9 +78,8 @@ flutter_library(
     # pubspec.yaml: `sdk: '>=3.10.0 <4.0.0'`. Stock reads the language version
     # from there; the rules take it here, and default to the SDK's own.
     language_version = "3.10",
-    # `lib/main.dart` is the entry point of `:app` and `:web`, and one source
-    # belongs to one target.
-    srcs = glob(["lib/**/*.dart"], exclude = ["lib/main.dart"]),
+    # All of `lib/`: `:app`, `:web` and the tests take `lib/main.dart` from here.
+    srcs = glob(["lib/**/*.dart"]),
     deps = DEPS,
 )
 
@@ -89,17 +88,7 @@ flutter_web_app(
     package_name = "wger",
     compiler = "dart2js",
     pubspec_srcs = PUBSPEC_SRCS,
-    # `lib/main.dart` is the web app's own entry point, so the packages it
-    # imports are its direct deps.
-    deps = [":wger"] + ["@deps//:" + d for d in [
-        "dynamic_color",
-        "extended_image",
-        "flutter",
-        "flutter_riverpod",
-        "logging",
-        "material_ui",
-        "timezone",
-    ]],
+    deps = [":wger"],
 )
 
 [
@@ -121,16 +110,7 @@ flutter_application(
     package_name = "wger",
     main = "lib/main.dart",
     pubspec_srcs = PUBSPEC_SRCS,
-    # `lib/main.dart` imports these packages itself, so they are direct deps.
-    deps = [":wger"] + ["@deps//:" + d for d in [
-        "dynamic_color",
-        "extended_image",
-        "flutter",
-        "flutter_riverpod",
-        "logging",
-        "material_ui",
-        "timezone",
-    ]],
+    deps = [":wger"],
 )
 
 flutter_linux_app(

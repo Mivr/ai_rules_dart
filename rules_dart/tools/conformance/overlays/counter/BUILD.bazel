@@ -1,37 +1,48 @@
 load("@android_model//:defs.bzl", "flutter_android_app")
 load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
-load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library", "flutter_test")
 load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
 load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
 
 exports_files(["pubspec.lock"])
 
-DEPS = [
-    "@deps//:cupertino_icons",
-    "@deps//:flutter",
-]
-
-flutter_web_app(
-    name = "web",
-    package_name = "counter",
-    compiler = "dart2js",
-    deps = DEPS,
-)
-
-flutter_test(
-    name = "widget_test",
+# The project as `flutter create` made it: all of `lib/` in one library, and
+# the programs and the test name only their `main`. `:app` and `:web` take
+# `lib/main.dart` from the library; the test imports it through the library.
+flutter_library(
+    name = "lib",
     package_name = "counter",
     srcs = glob(["lib/**/*.dart"]),
-    main = "test/widget_test.dart",
-    pubspec = "pubspec.yaml",
-    deps = DEPS + ["@deps//:flutter_test"],
+    deps = [
+        "@deps//:cupertino_icons",
+        "@deps//:flutter",
+    ],
 )
 
 flutter_application(
     name = "app",
     package_name = "counter",
     main = "lib/main.dart",
-    deps = DEPS,
+    deps = [":lib"],
+)
+
+flutter_test(
+    name = "widget_test",
+    package_name = "counter",
+    main = "test/widget_test.dart",
+    pubspec = "pubspec.yaml",
+    deps = [
+        ":lib",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+    ],
+)
+
+flutter_web_app(
+    name = "web",
+    package_name = "counter",
+    compiler = "dart2js",
+    deps = [":lib"],
 )
 
 flutter_android_pin(name = "android_pin")

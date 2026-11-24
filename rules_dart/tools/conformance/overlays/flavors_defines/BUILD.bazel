@@ -32,12 +32,11 @@ DEFINES = [
     "RETRIES=5",
 ]
 
-# `lib/main.dart` is the entry point of `:app` and `:web`, and one source
-# belongs to one target: the library holds the rest of `lib/`.
+# All of `lib/`: `:app`, `:web` and the test take `lib/main.dart` from here.
 flutter_library(
     name = "lib",
     package_name = "flavors_defines",
-    srcs = glob(["lib/**/*.dart"], exclude = ["lib/main.dart"]),
+    srcs = glob(["lib/**/*.dart"]),
     deps = DEPS,
 )
 
@@ -47,15 +46,7 @@ flutter_web_app(
     compiler = "dart2js",
     defines = DEFINES,
     pubspec_srcs = PUBSPEC_SRCS,
-    # `lib/main.dart` is the web app's own entry point, so the packages it
-    # imports are its direct deps.
-    deps = [":lib"] + PLUGINS + [
-        "@deps//:flutter",
-        "@deps//:flutter_localizations",
-        "@deps//:path_provider",
-        "@deps//:shared_preferences",
-        "@deps//:url_launcher",
-    ],
+    deps = [":lib"] + PLUGINS,
 )
 
 flutter_application(
@@ -65,14 +56,7 @@ flutter_application(
     flavor = "dev",
     main = "lib/main.dart",
     pubspec_srcs = PUBSPEC_SRCS,
-    # `lib/main.dart` is the app's own entry point, so the packages it imports are its direct deps.
-    deps = [":lib"] + PLUGINS + [
-        "@deps//:flutter",
-        "@deps//:flutter_localizations",
-        "@deps//:path_provider",
-        "@deps//:shared_preferences",
-        "@deps//:url_launcher",
-    ],
+    deps = [":lib"] + PLUGINS,
 )
 
 flutter_android_pin(
@@ -94,23 +78,18 @@ alias(
     actual = ":android_apk",
 )
 
-# The test imports `package:flavors_defines/main.dart`, which no library
-# holds, so the test lists it and the packages it imports.
+# The test imports `package:flavors_defines/main.dart` through the library.
 flutter_test(
     name = "widget_test",
     package_name = "flavors_defines",
-    srcs = ["lib/main.dart"],
     main = "test/widget_test.dart",
     pubspec = "pubspec.yaml",
     pubspec_srcs = PUBSPEC_SRCS,
     deps = [
         ":lib",
         "@deps//:flutter",
-        "@deps//:flutter_localizations",
         "@deps//:flutter_test",
-        "@deps//:path_provider",
         "@deps//:shared_preferences",
-        "@deps//:url_launcher",
     ],
 )
 
