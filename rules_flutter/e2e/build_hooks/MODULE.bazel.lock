@@ -3402,7 +3402,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "hWK5f8agWdEESrjxA8u8tW713gBV7aY4AB1andRHYlg=",
+        "bzlTransitiveDigest": "sb3KWfTEjT2kYXJFv8mnEvrjgv1Wdg+9CUvqqdnfYkc=",
         "usagesDigest": "/nL4XQ/32U3LgNOvCQrn9AThZ0YozA5JJ8P8l6Ex7d0=",
         "recordedInputs": [
           "REPO_MAPPING:,sqlite3 sqlite3+",
@@ -5788,7 +5788,9 @@
             "attributes": {
               "project": "",
               "is_root": true,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]
@@ -5799,7 +5801,9 @@
             "attributes": {
               "project": "native_add",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]
@@ -5810,7 +5814,9 @@
             "attributes": {
               "project": "native_link",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]

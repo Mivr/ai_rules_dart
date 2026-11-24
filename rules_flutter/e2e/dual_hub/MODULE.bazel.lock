@@ -3395,7 +3395,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "hWK5f8agWdEESrjxA8u8tW713gBV7aY4AB1andRHYlg=",
+        "bzlTransitiveDigest": "sb3KWfTEjT2kYXJFv8mnEvrjgv1Wdg+9CUvqqdnfYkc=",
         "usagesDigest": "cZDn3IZHSgznBreQUEAf7HIK8zB8Elx5hpPmPDpiOW0=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4787,7 +4787,9 @@
             "attributes": {
               "project": "hub_a/dirlink_plugin",
               "is_root": false,
-              "hub": "hub_a",
+              "hubs": [
+                "hub_a"
+              ],
               "hub_packages": []
             }
           },

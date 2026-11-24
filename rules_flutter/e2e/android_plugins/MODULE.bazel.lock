@@ -3396,7 +3396,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "hWK5f8agWdEESrjxA8u8tW713gBV7aY4AB1andRHYlg=",
+        "bzlTransitiveDigest": "sb3KWfTEjT2kYXJFv8mnEvrjgv1Wdg+9CUvqqdnfYkc=",
         "usagesDigest": "22a3Sk7CIFVdvUxBQIuEf79xgSQ/RFayyeMt3MUpJCA=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -7702,7 +7702,9 @@
             "attributes": {
               "project": "",
               "is_root": true,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]

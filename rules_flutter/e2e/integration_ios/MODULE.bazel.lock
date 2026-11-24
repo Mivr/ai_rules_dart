@@ -3410,7 +3410,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "aE20FpMfn8IvFrLo/xnADvxlB9L8/nAbg++aivb9dWw=",
+        "bzlTransitiveDigest": "Bp1d5emx6bIj/FtN63enK+8kYM2mpuIoZsTd12x/TOU=",
         "usagesDigest": "Dce3yhqvkFb5oU3hrY3rnCq/nG0LRCpmIrQd/AD2V8g=",
         "recordedInputs": [
           "REPO_MAPPING:,deps__swiftpm-bigint ai_rules_flutter++flutter+deps__swiftpm-bigint",
@@ -10716,7 +10716,14 @@
             "attributes": {
               "project": "",
               "is_root": true,
-              "hub": "deps_pods_wrong",
+              "hubs": [
+                "deps",
+                "deps_mapped",
+                "deps_unpinned",
+                "deps_pods",
+                "deps_pods_unmapped",
+                "deps_pods_wrong"
+              ],
               "hub_packages": [
                 "flutter",
                 "flutter_localizations",
@@ -10729,7 +10736,14 @@
             "attributes": {
               "project": "pod_bigint_plugin",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps",
+                "deps_mapped",
+                "deps_unpinned",
+                "deps_pods",
+                "deps_pods_unmapped",
+                "deps_pods_wrong"
+              ],
               "hub_packages": [
                 "flutter",
                 "flutter_localizations",
@@ -10742,7 +10756,14 @@
             "attributes": {
               "project": "spm_bigint_plugin",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps",
+                "deps_mapped",
+                "deps_unpinned",
+                "deps_pods",
+                "deps_pods_unmapped",
+                "deps_pods_wrong"
+              ],
               "hub_packages": [
                 "flutter",
                 "flutter_localizations",
@@ -10755,7 +10776,14 @@
             "attributes": {
               "project": "spm_graph_plugin",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps",
+                "deps_mapped",
+                "deps_unpinned",
+                "deps_pods",
+                "deps_pods_unmapped",
+                "deps_pods_wrong"
+              ],
               "hub_packages": [
                 "flutter",
                 "flutter_localizations",
@@ -10768,7 +10796,14 @@
             "attributes": {
               "project": "spm_objc_plugin",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps",
+                "deps_mapped",
+                "deps_unpinned",
+                "deps_pods",
+                "deps_pods_unmapped",
+                "deps_pods_wrong"
+              ],
               "hub_packages": [
                 "flutter",
                 "flutter_localizations",
@@ -10781,7 +10816,14 @@
             "attributes": {
               "project": "xcframework_plugin",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps",
+                "deps_mapped",
+                "deps_unpinned",
+                "deps_pods",
+                "deps_pods_unmapped",
+                "deps_pods_wrong"
+              ],
               "hub_packages": [
                 "flutter",
                 "flutter_localizations",

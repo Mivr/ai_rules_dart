@@ -3372,7 +3372,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "hWK5f8agWdEESrjxA8u8tW713gBV7aY4AB1andRHYlg=",
+        "bzlTransitiveDigest": "sb3KWfTEjT2kYXJFv8mnEvrjgv1Wdg+9CUvqqdnfYkc=",
         "usagesDigest": "wON3RlziNJUIYXtV4LSnMjtQVpmDmguG52KXPLxb/PM=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4832,7 +4832,9 @@
             "attributes": {
               "project": "",
               "is_root": true,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]
@@ -4843,7 +4845,9 @@
             "attributes": {
               "project": "acyclic_pkg",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]
@@ -4854,7 +4858,9 @@
             "attributes": {
               "project": "cycle_a",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]
@@ -4865,7 +4871,9 @@
             "attributes": {
               "project": "cycle_b",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]
@@ -4876,7 +4884,9 @@
             "attributes": {
               "project": "tri_a",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]
@@ -4887,7 +4897,9 @@
             "attributes": {
               "project": "tri_b",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]
@@ -4898,7 +4910,9 @@
             "attributes": {
               "project": "tri_c",
               "is_root": false,
-              "hub": "deps",
+              "hubs": [
+                "deps"
+              ],
               "hub_packages": [
                 "flutter"
               ]
