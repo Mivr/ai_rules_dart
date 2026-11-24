@@ -47,7 +47,7 @@ For `platform = "android"`:
      for crashes/ANRs, and collects test results and any uncaught errors.
 """
 
-load("@flutter_l10n//:index.bzl", "L10N_PROJECTS")
+load("@flutter_projects//:index.bzl", "PROJECTS")
 load(
     "@rules_dart//dart:providers.bzl",
     "DartInfo",
@@ -273,11 +273,11 @@ def flutter_integration_test(
     resolved_package_name = package_name or name
 
     # The project's language version, as pub writes it, unless stated.
-    project_language_version(kwargs, L10N_PROJECTS)
+    project_language_version(kwargs, PROJECTS)
 
     # In a package with an l10n.yaml, what gen-l10n writes for it.
     l10n = {"deps": merged_deps, "srcs": kwargs.get("srcs"), "language_version": kwargs.get("language_version", "")}
-    l10n_attach(name, l10n, L10N_PROJECTS, always = True)
+    l10n_attach(name, l10n, PROJECTS, always = True)
     merged_deps = l10n["deps"]
     if type(l10n["srcs"]) == "list":
         kwargs["srcs"] = l10n["srcs"]

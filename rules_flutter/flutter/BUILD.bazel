@@ -130,7 +130,7 @@ bzl_library(
         "//flutter/private:flutter_plugin",
         "//flutter/private:flutter_prebuilt_test",
         "//flutter/private:flutter_test",
-        "@flutter_l10n//:index",
+        "@flutter_projects//:index",
     ],
 )
 
@@ -324,7 +324,7 @@ bzl_library(
         "//flutter/private:flutter_integration_test",
         "//flutter/private:flutter_web_application",
         "@bazel_skylib//rules:expand_template",
-        "@flutter_l10n//:index",
+        "@flutter_projects//:index",
     ],
 )
 

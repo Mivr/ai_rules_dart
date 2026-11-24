@@ -33,12 +33,12 @@ compiler.
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("@rules_dart//dart:providers.bzl", "DartAnalyzableInfo")
+load("@rules_dart//dart/pub:project.bzl", "pubspec_language_version")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 load("//flutter/private:flutter_aot_target.bzl", "flutter_aot_target")
 load("//flutter/private:flutter_application.bzl", "flutter_application")
 load("//flutter/private:flutter_gen_l10n.bzl", "language_version_default")
 load("//flutter/private:flutter_kernel_target.bzl", "flutter_kernel_target")
-load("//flutter/private:flutter_l10n_repo.bzl", "pubspec_language_version")
 load("//flutter/private:flutter_library.bzl", "flutter_library")
 load("//flutter/private:flutter_test.bzl", "flutter_test")
 load("//flutter/private:flutter_web_application.bzl", "flutter_web_bundle")

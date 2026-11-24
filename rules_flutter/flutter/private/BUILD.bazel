@@ -428,6 +428,7 @@ bzl_library(
     deps = [
         ":flutter_assets_tool",
         ":flutter_library",
+        "@rules_dart//dart:project",
     ],
 )
 
@@ -480,7 +481,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":flutter_pub_path",
-        "@rules_dart//dart/pub:pub_lock_package",
+        "@rules_dart//dart/pub:project",
         "@rules_dart//dart/pub:yaml",
     ],
 )
@@ -522,7 +523,7 @@ bzl_library(
         ":flutter_integration_test_ios",
         ":flutter_integration_test_linux",
         ":flutter_integration_test_web",
-        "@flutter_l10n//:index",
+        "@flutter_projects//:index",
         "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",
     ],
