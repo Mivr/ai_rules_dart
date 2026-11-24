@@ -73,6 +73,9 @@ jobs:
           repository-cache: false
           cache-save: false
           bazelrc: |
+            # The patch edits .bzl files an extension loads, so every lockfile
+            # is stale for this checkout: the experiment runs without one.
+            common --lockfile_mode=off
             startup --host_jvm_args=-Xmx2g
             build --local_resources=cpu=2
             build --local_resources=memory=HOST_RAM*.3
