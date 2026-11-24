@@ -25,6 +25,7 @@ The repository is fetched again when `l10n.yaml`, `pubspec.yaml` or anything in
 to the text of an `.arb` file reruns the action and nothing else.
 """
 
+load("@rules_dart//dart/pub:pub_lock_package.bzl", "derive_language_version")
 load("@rules_dart//dart/pub:yaml.bzl", "yaml_to_json", "yaml_to_json_or_error")
 load("//flutter/private:flutter_pub_path.bzl", "is_absolute_lock_path", "is_relative_path_dependency", "workspace_relative_lock_path")
 
@@ -100,16 +101,34 @@ def _package_boundary(project_dir, rel_dir):
 # What the generated files import.
 _IMPORTED = ("flutter", "flutter_localizations", "intl")
 
-def _l10n_bzl(rctx, outputs = [], srcs = [], error = "", package = "", analysis_options = False):
+def _l10n_bzl(rctx, language_version, outputs = [], srcs = [], error = "", package = "", analysis_options = False):
     deps = ["Label(%r)" % ("@%s//:%s" % (rctx.attr.hub, p)) for p in _IMPORTED if p in rctx.attr.hub_packages]
-    return "L10N = struct(\n    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    analysis_options = %r,\n    deps = [%s],\n)\n" % (
+    return "L10N = struct(\n    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    analysis_options = %r,\n    language_version = %r,\n    deps = [%s],\n)\n" % (
         outputs,
         srcs,
         error,
         package,
         analysis_options,
+        language_version,
         ", ".join(deps),
     )
+
+def pubspec_language_version(spec):
+    """The `languageVersion` pub writes for the project: its `environment: sdk:` lower bound.
+
+    pub's `LanguageVersion.fromSdkConstraint`, as rules_dart's
+    `derive_language_version` mirrors it (2.7 for a missing or unbounded
+    constraint).
+
+    Args:
+      spec: The project's decoded `pubspec.yaml`.
+
+    Returns:
+      A `<major>.<minor>` language version.
+    """
+    environment = spec.get("environment") if type(spec) == "dict" else None
+    sdk = environment.get("sdk") if type(environment) == "dict" else None
+    return derive_language_version(sdk if type(sdk) == "string" else "")
 
 def _flutter_l10n_repo_impl(rctx):
     project_dir = rctx.workspace_root
@@ -120,17 +139,22 @@ def _flutter_l10n_repo_impl(rctx):
     rctx.watch(l10n)
     rctx.watch(pubspec)
     rctx.file("BUILD.bazel", "")
-    if not l10n.exists or not pubspec.exists:
-        rctx.file("l10n.bzl", _l10n_bzl(rctx))
+    if not pubspec.exists:
+        rctx.file("l10n.bzl", _l10n_bzl(rctx, ""))
         return
     shown = (rctx.attr.project + "/" if rctx.attr.project else "") + "l10n.yaml"
+    if not l10n.exists:
+        spec = yaml_to_json(rctx, [pubspec], [shown[:-len("l10n.yaml")] + "pubspec.yaml"])[0]
+        rctx.file("l10n.bzl", _l10n_bzl(rctx, pubspec_language_version(spec)))
+        return
     config, spec = yaml_to_json(rctx, [l10n, pubspec], [shown, shown[:-len("l10n.yaml")] + "pubspec.yaml"])
+    language_version = pubspec_language_version(spec)
     flutter = spec.get("flutter")
     generate = type(flutter) == "dict" and flutter.get("generate") == True
     if not generate and not rctx.attr.is_root:
         # A dependency's localizations are its own: the tool generates only
         # the project it builds and the members of its workspace.
-        rctx.file("l10n.bzl", _l10n_bzl(rctx))
+        rctx.file("l10n.bzl", _l10n_bzl(rctx, language_version))
         return
 
     arb_dir = _option(config, "arb-dir", "lib/l10n")
@@ -141,15 +165,15 @@ def _flutter_l10n_repo_impl(rctx):
     if arb_dir == None or output_dir == None or output_file == None:
         # A value of the wrong type. The action still runs, so the tool
         # reports it in its own words.
-        rctx.file("l10n.bzl", _l10n_bzl(rctx, outputs = ["lib/l10n/app_localizations.dart"], package = str(spec.get("name", ""))))
+        rctx.file("l10n.bzl", _l10n_bzl(rctx, language_version, outputs = ["lib/l10n/app_localizations.dart"], package = str(spec.get("name", ""))))
         return
     for what, rel in (("arb-dir", arb_dir), ("output-dir", output_dir)):
         if rel.startswith("..") or is_absolute_lock_path(rel):
-            rctx.file("l10n.bzl", _l10n_bzl(rctx, error = "l10n.yaml: `%s: %s` is outside the project; Bazel builds a project's localizations inside it." % (what, rel)))
+            rctx.file("l10n.bzl", _l10n_bzl(rctx, language_version, error = "l10n.yaml: `%s: %s` is outside the project; Bazel builds a project's localizations inside it." % (what, rel)))
             return
         boundary = _package_boundary(project_dir, rel)
         if boundary:
-            rctx.file("l10n.bzl", _l10n_bzl(rctx, error = (
+            rctx.file("l10n.bzl", _l10n_bzl(rctx, language_version, error = (
                 "l10n.yaml: `%s: %s` is inside %s, which holds a BUILD file and so is a Bazel package of its own; " +
                 "gen-l10n reads and writes the project's own package. Remove that BUILD file."
             ) % (what, rel, boundary)))
@@ -194,6 +218,7 @@ def _flutter_l10n_repo_impl(rctx):
     rctx.watch(options)
     rctx.file("l10n.bzl", _l10n_bzl(
         rctx,
+        language_version,
         outputs = sorted(outputs),
         srcs = srcs,
         package = str(spec.get("name", "")),
@@ -321,9 +346,9 @@ def register_l10n_repos(module_ctx, pub_yaml):
             is_root[member] = True
             hubs[member] = hubs[owner]
         for project in sorted(is_root):
-            l10n = _child(root, project, "l10n.yaml")
-            module_ctx.watch(l10n)
-            if l10n.exists:
+            pubspec = _child(root, project, "pubspec.yaml")
+            module_ctx.watch(pubspec)
+            if pubspec.exists:
                 projects[project] = _repo_name(project)
                 flutter_l10n_repo(
                     name = projects[project],

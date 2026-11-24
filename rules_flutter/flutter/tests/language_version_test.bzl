@@ -31,12 +31,15 @@ leave `dart analyze` running against a different language version than the
 compiler.
 """
 
-load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("@rules_dart//dart:providers.bzl", "DartAnalyzableInfo")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 load("//flutter/private:flutter_aot_target.bzl", "flutter_aot_target")
 load("//flutter/private:flutter_application.bzl", "flutter_application")
+load("//flutter/private:flutter_gen_l10n.bzl", "language_version_default")
 load("//flutter/private:flutter_kernel_target.bzl", "flutter_kernel_target")
+load("//flutter/private:flutter_l10n_repo.bzl", "pubspec_language_version")
+load("//flutter/private:flutter_library.bzl", "flutter_library")
 load("//flutter/private:flutter_test.bzl", "flutter_test")
 load("//flutter/private:flutter_web_application.bzl", "flutter_web_bundle")
 load(":action_content.bzl", "package_entry", "written_json")
@@ -141,6 +144,33 @@ def _aot_test_impl(ctx):
     _assert_config_states_version(env)
     return analysistest.end(env)
 
+def _conflict_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, "One Dart package has one language version")
+    return analysistest.end(env)
+
+def _pubspec_gives_it_test_impl(ctx):
+    """The project index's value: pub's rule over `environment: sdk:`, and the macros' default from it."""
+    env = unittest.begin(ctx)
+    asserts.equals(env, "3.10", pubspec_language_version({"environment": {"sdk": "^3.10.0"}}))
+    asserts.equals(env, "3.10", pubspec_language_version({"environment": {"sdk": ">=3.10.2 <4.0.0"}}))
+    asserts.equals(env, "2.7", pubspec_language_version({"name": "no_environment"}), "pub's default for a missing constraint")
+    asserts.equals(env, "2.7", pubspec_language_version({"environment": {"sdk": "<4.0.0"}}), "pub's default with no lower bound")
+    project = struct(language_version = "3.10")
+    asserts.equals(env, "3.10", language_version_default({}, project), "a target stating none takes the project's")
+    asserts.equals(env, None, language_version_default({}, None), "a package outside the index is left alone")
+    return unittest.end(env)
+
+def _attribute_overrides_test_impl(ctx):
+    env = unittest.begin(ctx)
+    project = struct(language_version = "3.10")
+    asserts.equals(env, None, language_version_default({"language_version": "3.8"}, project), "a stated version is kept")
+    asserts.equals(env, None, language_version_default({"language_version": ""}, project), "an explicit empty one too")
+    return unittest.end(env)
+
+_conflict_test = analysistest.make(_conflict_test_impl, expect_failure = True)
+_pubspec_gives_it_test = unittest.make(_pubspec_gives_it_test_impl)
+_attribute_overrides_test = unittest.make(_attribute_overrides_test_impl)
 _application_test = analysistest.make(_application_test_impl)
 _flutter_test_test = analysistest.make(_flutter_test_test_impl)
 _web_test = analysistest.make(_web_test_impl)
@@ -182,6 +212,31 @@ def _setup_fixtures():
         tags = ["manual"],
     )
 
+    # A library of the package states the version and the app does not: the
+    # app's record inherits it. An app stating another one fails.
+    flutter_library(
+        name = "_lv_library",
+        package_name = _PACKAGE,
+        language_version = _LANGUAGE_VERSION,
+        srcs = [_MAIN],
+        tags = ["manual"],
+    )
+    flutter_application(
+        name = "_lv_inherits",
+        package_name = _PACKAGE,
+        main = _MAIN,
+        tags = ["manual"],
+        deps = [":_lv_library"],
+    )
+    flutter_application(
+        name = "_lv_conflict",
+        package_name = _PACKAGE,
+        language_version = "3.8",
+        main = _MAIN,
+        tags = ["manual"],
+        deps = [":_lv_library"],
+    )
+
     # The two low-level rules. Both build a narrowed attr surface of their own,
     # and both failed at analysis rather than silently — declaring the fixture
     # is most of the test.
@@ -213,6 +268,16 @@ def language_version_test_suite(name):
         name = name + "_application",
         target_under_test = ":_lv_application",
     )
+    _application_test(
+        name = name + "_library_states_it",
+        target_under_test = ":_lv_inherits",
+    )
+    _conflict_test(
+        name = name + "_library_disagrees",
+        target_under_test = ":_lv_conflict",
+    )
+    _pubspec_gives_it_test(name = name + "_pubspec_gives_it")
+    _attribute_overrides_test(name = name + "_attribute_overrides")
     _flutter_test_test(
         name = name + "_flutter_test",
         target_under_test = ":_lv_flutter_test",
@@ -235,6 +300,10 @@ def language_version_test_suite(name):
         name = name,
         tests = [
             ":" + name + "_application",
+            ":" + name + "_library_states_it",
+            ":" + name + "_library_disagrees",
+            ":" + name + "_pubspec_gives_it",
+            ":" + name + "_attribute_overrides",
             ":" + name + "_flutter_test",
             ":" + name + "_web",
             ":" + name + "_kernel",

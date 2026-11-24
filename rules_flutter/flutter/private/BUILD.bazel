@@ -480,6 +480,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":flutter_pub_path",
+        "@rules_dart//dart/pub:pub_lock_package",
         "@rules_dart//dart/pub:yaml",
     ],
 )

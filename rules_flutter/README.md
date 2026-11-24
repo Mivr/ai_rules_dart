@@ -1439,7 +1439,7 @@ flutter_library(
 | `deps` | `dart_library` or `flutter_library` targets. |
 | `data` | The package's own files outside `lib/`: its `pubspec.yaml`, its licence, and the files its pubspec names (assets, fonts, shaders). An app whose pubspec depends on the package bundles them at `packages/<package_name>/...`, as `flutter build` does. See [Assets](docs/assets.md). |
 | `package_name` | The Dart package name. Defaults to the last component of the Bazel package path. |
-| `language_version` | The Dart language version, matching the `sdk:` constraint in `pubspec.yaml`. |
+| `language_version` | The Dart language version. By default, in a project of a `flutter.pub` lock (its directory, a workspace member, a `path:` package), the one `pub get` writes: the lower bound of `environment: sdk:` in `pubspec.yaml`. Otherwise, the one the libraries of the app's own package state; without one, the SDK's. A library and an app of one package that state different ones fail the build. |
 
 ### flutter_application
 
@@ -1478,7 +1478,7 @@ flutter_application(
 | `dart_defines` | A `dart_defines` target: Dart environment defines from `.json`/`.env` files, `-D` flagfiles and values. See *Defines files and `dart_defines`* below. |
 | `defines_files` | Files of Dart environment defines in `.json` or `.env` format; a spelling of `dart_defines` (the `flutter_application` macro makes a `<name>_dart_defines` target of them). Content is parsed in an action and never reaches the compile command line. |
 | `define_flagfiles` | Files holding compiler `-Dname=value` arguments, one per line; a spelling of `dart_defines`, like `defines_files`. |
-| `language_version` | The Dart language version, matching `pubspec.yaml`. |
+| `language_version` | The Dart language version. By default, in a project of a `flutter.pub` lock, the lower bound of `environment: sdk:` in `pubspec.yaml`, as `pub get` writes it. |
 | `obfuscate` | Obfuscate Dart symbols in the AOT output. Pair with `split_debug_info`. Default `False`. |
 | `split_debug_info` | Write debug info to a separate `.symbols` file. Default `False`. |
 | `extra_gen_snapshot_options` | Extra flags for `gen_snapshot`: only the allow-list in `flutter/private/flutter_aot_compile.bzl`. Set `analyze_size = True` on the app target to get the size JSON instead of passing `--print-instructions-sizes-to`. `--no-obfuscate` fails with `obfuscate = True` and `--no-dwarf-stack-traces` fails with `split_debug_info = True`. |

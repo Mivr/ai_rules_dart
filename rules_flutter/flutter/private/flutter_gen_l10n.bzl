@@ -133,6 +133,41 @@ def _under_lib(value):
         return value.repo_name == "" and value.package == native.package_name() and value.name.startswith("lib/")
     return type(value) == "string" and value.startswith("lib/")
 
+# A helper of the macros that sets an argument, not a macro of its own.
+# buildifier: disable=unnamed-macro
+def project_language_version(kwargs, l10n):
+    """Sets `language_version` to the one pub writes for the package's project, unless it is set.
+
+    The project index (`L10N_PROJECTS`) holds, for each project of the main
+    repository the `flutter` extension read, the `languageVersion` `pub get`
+    writes for it: its pubspec's `environment: sdk:` lower bound. A target
+    in that package compiles with it, as stock does, with nothing in the
+    BUILD file; `language_version` overrides it.
+
+    Args:
+      kwargs: The target's arguments; changed in place.
+      l10n: The `L10N_PROJECTS` table of `@flutter_l10n//:index.bzl`.
+    """
+    if native.repo_name():
+        return
+    version = language_version_default(kwargs, l10n.get(native.package_name()))
+    if version:
+        kwargs["language_version"] = version
+
+def language_version_default(kwargs, project):
+    """The language version a target takes from its project, or None to leave its arguments alone.
+
+    Args:
+      kwargs: The target's arguments.
+      project: The package's entry of `L10N_PROJECTS`, or None.
+
+    Returns:
+      The project's language version when `kwargs` states none, else None.
+    """
+    if "language_version" in kwargs or project == None:
+        return None
+    return getattr(project, "language_version", "") or None
+
 def l10n_attach(name, kwargs, l10n, always = False):
     """Gives a target in a project with an `l10n.yaml` what gen-l10n writes.
 

@@ -52,7 +52,7 @@ load("//flutter/private:flutter_aot_target.bzl", _flutter_aot_target = "flutter_
 load("//flutter/private:flutter_application.bzl", _flutter_application = "flutter_application")
 load("//flutter/private:flutter_bundle.bzl", "project_pub_packages", _flutter_pub_packages = "flutter_pub_packages")
 load("//flutter/private:flutter_defines_files.bzl", _dart_defines = "dart_defines")
-load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach")
+load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach", "project_language_version")
 load("//flutter/private:flutter_integration_test.bzl", _flutter_integration_test = "flutter_integration_test")
 load("//flutter/private:flutter_kernel_target.bzl", _flutter_kernel_target = "flutter_kernel_target")
 load("//flutter/private:flutter_library.bzl", _flutter_library = "flutter_library")
@@ -106,6 +106,7 @@ def flutter_application(name, package_name = "", defines_files = None, define_fl
         kwargs["dart_defines"] = ":" + name + "_dart_defines"
     if "pubspec" not in kwargs and native.glob(["pubspec.yaml"], allow_empty = True):
         kwargs["pubspec"] = "pubspec.yaml"
+    project_language_version(kwargs, L10N_PROJECTS)
     l10n_attach(name, kwargs, L10N_PROJECTS)
     project_pub_packages(kwargs)
     _flutter_application(
@@ -138,6 +139,7 @@ def flutter_library(name, **kwargs):
         **kwargs: The `flutter_library` rule's attributes (`srcs`, `deps`,
             `package_name`, `pubspec`, ...), forwarded to it.
     """
+    project_language_version(kwargs, L10N_PROJECTS)
     l10n_attach(name, kwargs, L10N_PROJECTS)
     _flutter_library(name = name, **kwargs)
 
@@ -161,6 +163,7 @@ def flutter_test(name, **kwargs):
         **kwargs: The `flutter_test` rule's attributes (`main`, `srcs`,
             `deps`, `pubspec`, ...), forwarded to it.
     """
+    project_language_version(kwargs, L10N_PROJECTS)
     l10n_attach(name, kwargs, L10N_PROJECTS, always = True)
     project_pub_packages(kwargs)
     _flutter_test(name = name, **kwargs)

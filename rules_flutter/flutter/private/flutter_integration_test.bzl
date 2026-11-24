@@ -65,7 +65,7 @@ load(
     "FLUTTER_DEPS_DOC",
 )
 load("//flutter/private:flutter_bundle.bzl", "project_pub_packages")
-load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach")
+load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach", "project_language_version")
 load(
     "//flutter/private:flutter_integration_test_android.bzl",
     "declare_android_integration_test",
@@ -272,8 +272,11 @@ def flutter_integration_test(
     merged_deps = _merge_integration_test_deps(deps, app_deps, app)
     resolved_package_name = package_name or name
 
+    # The project's language version, as pub writes it, unless stated.
+    project_language_version(kwargs, L10N_PROJECTS)
+
     # In a package with an l10n.yaml, what gen-l10n writes for it.
-    l10n = {"deps": merged_deps, "srcs": kwargs.get("srcs")}
+    l10n = {"deps": merged_deps, "srcs": kwargs.get("srcs"), "language_version": kwargs.get("language_version", "")}
     l10n_attach(name, l10n, L10N_PROJECTS, always = True)
     merged_deps = l10n["deps"]
     if type(l10n["srcs"]) == "list":

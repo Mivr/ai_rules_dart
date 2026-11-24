@@ -286,7 +286,8 @@ def synthesize_app_package(label, packages, package_name, lib_root, language_ver
 
     Returns:
       The packages list with every entry at `lib_root` replaced by one
-      synthesized app entry, carrying `language_version`.
+      synthesized app entry, carrying `language_version`, or, when that is
+      empty, the one the dropped entries state (`inherited_language_version`).
 
     Pub writes the root package's `languageVersion` from its own
     `environment.sdk` lower bound. An absent key is not "the default":
@@ -298,12 +299,50 @@ def synthesize_app_package(label, packages, package_name, lib_root, language_ver
     err = check_foreign_root_package(label, packages, package_name, lib_root)
     if err != None:
         fail(err)
+    language_version = inherited_language_version(label, packages, lib_root, language_version)
 
     return [p for p in packages if p.lib_root != lib_root] + [struct(
         package_name = package_name,
         lib_root = lib_root,
         language_version = language_version,
     )]
+
+def inherited_language_version(label, packages, lib_root, language_version):
+    """The app's language version, or the one its own package's libraries state.
+
+    The records at the app's root are the libraries of the app's own package
+    (a `flutter_library` of `lib/` and the app beside it). An app stating none
+    takes theirs; when the app and a library, or two libraries, state
+    different ones, the build fails naming them, as one package has one
+    language version.
+
+    Args:
+      label: The app/test rule's label, for the message.
+      packages: List of `DartPackageInfo` (from `collect_packages`).
+      lib_root: The app's library root, from `derive_lib_root`.
+      language_version: The app's `language_version` attr, or `""`.
+
+    Returns:
+      The language version of the app's package, or `""`.
+    """
+    stated = {}
+    for p in packages:
+        version = getattr(p, "language_version", "")
+        if p.lib_root == lib_root and version:
+            stated[version] = True
+    if language_version:
+        others = [v for v in sorted(stated) if v != language_version]
+        if others:
+            fail(("%s: `language_version = \"%s\"`, but a library of the same package (rooted at `%s`) " +
+                  "states %s. One Dart package has one language version: state the same one, or none " +
+                  "(the default is the pubspec's `environment: sdk:` lower bound).") %
+                 (label, language_version, lib_root or "the workspace root", ", ".join(["\"%s\"" % v for v in others])))
+        return language_version
+    if len(stated) > 1:
+        fail(("%s: the libraries of this target's package (rooted at `%s`) state the language versions %s. " +
+              "One Dart package has one language version: state the same one on each, or none.") %
+             (label, lib_root or "the workspace root", ", ".join(["\"%s\"" % v for v in sorted(stated)])))
+    return sorted(stated)[0] if stated else ""
 
 def resolve_wrapper_main_import(package_name, lib_root, main_short_path, main_path, wrapper_depth):
     """Import URI a generated wrapper should use to reach the user's `main`.

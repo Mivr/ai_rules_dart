@@ -39,7 +39,7 @@ pipeline is structurally different from AOT platforms.
 
 load("@flutter_l10n//:index.bzl", "L10N_PROJECTS")
 load("//flutter/private:flutter_bundle.bzl", "project_pub_packages")
-load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach")
+load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach", "project_language_version")
 load("//flutter/private:flutter_integration_test.bzl", _flutter_integration_test = "flutter_integration_test")
 load("//flutter/private:flutter_web_application.bzl", _flutter_web_bundle_rule = "flutter_web_bundle")
 
@@ -119,9 +119,12 @@ def flutter_web_app(
     for f in native.glob(["web/**"], allow_empty = True):
         if f not in srcs:
             srcs.append(f)
+    project_language_version(kwargs, L10N_PROJECTS)
     l10n = {"deps": deps, "main": main}
     if "srcs" in kwargs:
         l10n["srcs"] = kwargs["srcs"]
+    if "language_version" in kwargs:
+        l10n["language_version"] = kwargs["language_version"]
     l10n_attach(name, l10n, L10N_PROJECTS)
     if "srcs" in l10n:
         kwargs["srcs"] = l10n["srcs"]

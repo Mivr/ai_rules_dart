@@ -77,9 +77,6 @@ flutter_library(
     package_name = "wger",
     # All of `lib/`: `:app`, `:web` and the tests take `lib/main.dart` from here.
     srcs = glob(["lib/**/*.dart"]),
-    # pubspec.yaml: `sdk: '>=3.10.0 <4.0.0'`. Stock reads the language version
-    # from there; the rules take it here, and default to the SDK's own.
-    language_version = "3.10",
     deps = DEPS,
 )
 
