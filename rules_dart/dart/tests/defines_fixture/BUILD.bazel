@@ -297,27 +297,3 @@ refused_kernel_test(
     ],
     target_under_test = ":kernel_asserts_flag",
 )
-
-# A program whose `main` a library also lists: the shape of a stock project
-# whose `lib/main.dart` sits beside the rest of `lib/`, globbed into the
-# library. Refused, naming both targets and the fix.
-dart_binary(
-    name = "kernel_main_in_lib",
-    compile_mode = "kernel",
-    main = "lib/comma_lib.dart",
-    tags = ["manual"],
-    deps = [":comma_lib"],
-)
-
-refused_kernel_test(
-    name = "kernel_main_in_lib_test",
-    size = "small",
-    messages = [
-        "source dart/tests/defines_fixture/lib/comma_lib.dart is listed by two targets",
-        "//dart/tests/defines_fixture:kernel_main_in_lib and ",
-        "//dart/tests/defines_fixture:comma_lib",
-        "exclude = [\"lib/comma_lib.dart\"]",
-        "only `main`",
-    ],
-    target_under_test = ":kernel_main_in_lib",
-)

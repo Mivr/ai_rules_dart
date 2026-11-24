@@ -9,7 +9,10 @@
 - a `dart_library` with `srcs_dir`: its module compile names the directory
   (`--source-dir`), whose files the compiler finds when it runs;
 - a `dart_library` under an SDK without a module compiler: analysis fails,
-  naming the version.
+  naming the version;
+- a kernel executable whose `main` a library in its `deps` lists: the entry
+  module names `main` by the library's `package:` URI and compiles no file of
+  it, so the library's module is the one definition of `main`.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -46,6 +49,26 @@ def _define_flag_impl(ctx):
     return analysistest.end(env)
 
 modular_define_flag_test = analysistest.make(_define_flag_impl, attrs = {"define": attr.string()})
+
+def _entry_from_library_impl(ctx):
+    env = analysistest.begin(ctx)
+    entry = _entry(env)
+    asserts.equals(env, 1, len(_mnemonics(env, "DartKernelLink")), "one DartKernelLink")
+    if entry:
+        argv = entry.argv
+        i = argv.index("--source") if "--source" in argv else -1
+        asserts.true(env, i >= 0 and argv[i + 1] == ctx.attr.uri, "the entry point is %s: %s" % (ctx.attr.uri, argv))
+        asserts.false(
+            env,
+            any([f.short_path == ctx.attr.main for f in entry.inputs.to_list()]),
+            "the entry does not read %s: the library's module compiles it" % ctx.attr.main,
+        )
+    return analysistest.end(env)
+
+modular_entry_from_library_test = analysistest.make(
+    _entry_from_library_impl,
+    attrs = {"main": attr.string(), "uri": attr.string()},
+)
 
 def _refused_impl(ctx):
     env = analysistest.begin(ctx)

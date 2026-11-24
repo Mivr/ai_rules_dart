@@ -1,0 +1,152 @@
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+load("//dart/tests:one_debug_path_test.bzl", "modular_entry_from_library_test", "refused_kernel_test")
+
+# A stock layout as a person first writes it: the library lists all of `lib/`,
+# `lib/main.dart` included, and the program names that file as its `main`.
+# The library owns `main`: the program's entry module takes it from the
+# library's module, and the program lists nothing else.
+dart_library(
+    name = "lib",
+    package_name = "entry_in_library_fixture",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = ["@ext_pub_deps//:path"],
+)
+
+# `lib/main.dart` imports `package:path`, which only the library lists: the
+# library's own check reads it.
+dart_binary(
+    name = "app",
+    compile_mode = "kernel",
+    main = "lib/main.dart",
+    deps = [":lib"],
+)
+
+modular_entry_from_library_test(
+    name = "app_entry_test",
+    size = "small",
+    main = "dart/tests/entry_in_library_fixture/lib/main.dart",
+    target_under_test = ":app",
+    uri = "package:entry_in_library_fixture/main.dart",
+)
+
+dart_test(
+    name = "app_run_test",
+    size = "small",
+    data = [":app"],
+    main = "app_run_test.dart",
+    deps = ["//dart/runfiles"],
+)
+
+# The template's test: its own `main`, importing `package:<app>/main.dart`
+# through the library.
+dart_test(
+    name = "main_test",
+    size = "small",
+    main = "test/main_test.dart",
+    deps = [
+        ":lib",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# A `dart_test` with no `package:test` runs its `main` directly: here the
+# library's.
+dart_test(
+    name = "library_main_test",
+    size = "small",
+    main = "lib/main.dart",
+    deps = [":lib"],
+)
+
+# A test `main` that a library lists, run by the `package:test` runner.
+dart_test(
+    name = "runner_main_test",
+    size = "small",
+    main = "//dart/tests/entry_in_library_fixture/runner:lib/runner_main.dart",
+    deps = [
+        "//dart/tests/entry_in_library_fixture/runner",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Everything else stays one source, one target.
+
+# A library above the one that lists `main`: `main` comes from a library only
+# when that library is in the program's own `deps`.
+dart_library(
+    name = "facade",
+    package_name = "entry_in_library_fixture",
+    deps = [":lib"],
+)
+
+dart_binary(
+    name = "main_in_indirect_library",
+    compile_mode = "kernel",
+    main = "lib/main.dart",
+    tags = ["manual"],
+    deps = [":facade"],
+)
+
+refused_kernel_test(
+    name = "main_in_indirect_library_test",
+    size = "small",
+    messages = [
+        "source dart/tests/entry_in_library_fixture/lib/main.dart is listed by two targets",
+        "//dart/tests/entry_in_library_fixture:main_in_indirect_library and ",
+        "//dart/tests/entry_in_library_fixture:lib: one source belongs to one target",
+        "only when the library is in ",
+        "//dart/tests/entry_in_library_fixture:main_in_indirect_library's own `deps`: add ",
+    ],
+    target_under_test = ":main_in_indirect_library",
+)
+
+# A source other than `main` that the program and its library both list.
+dart_binary(
+    name = "shared_source",
+    srcs = ["lib/src/greeting.dart"],
+    compile_mode = "kernel",
+    main = "lib/main.dart",
+    tags = ["manual"],
+    deps = [":lib"],
+)
+
+refused_kernel_test(
+    name = "shared_source_test",
+    size = "small",
+    messages = [
+        "source dart/tests/entry_in_library_fixture/lib/src/greeting.dart is listed by two targets",
+        "//dart/tests/entry_in_library_fixture:shared_source and ",
+        "//dart/tests/entry_in_library_fixture:lib",
+    ],
+    target_under_test = ":shared_source",
+)
+
+# A source two libraries list, neither depending on the other.
+dart_library(
+    name = "greeting_twin",
+    package_name = "entry_in_library_fixture",
+    srcs = ["lib/src/greeting.dart"],
+    tags = ["manual"],
+)
+
+dart_binary(
+    name = "two_libraries",
+    compile_mode = "kernel",
+    main = "lib/main.dart",
+    tags = ["manual"],
+    deps = [
+        ":greeting_twin",
+        ":lib",
+    ],
+)
+
+refused_kernel_test(
+    name = "two_libraries_test",
+    size = "small",
+    messages = [
+        "source dart/tests/entry_in_library_fixture/lib/src/greeting.dart is listed by two libraries",
+        "//dart/tests/entry_in_library_fixture:greeting_twin and ",
+        "neither depends on the other",
+    ],
+    target_under_test = ":two_libraries",
+)
