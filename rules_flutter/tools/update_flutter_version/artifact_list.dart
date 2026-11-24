@@ -94,14 +94,10 @@ const artifactSections = [
     ],
   ),
   ArtifactSection(
-    'Android engine (flutter.jar — release and profile for AOT, debug for JIT)',
+    'Android engine (the release flutter.jar that `flutter_android_aar` hands out)',
     [
       'android-arm64-release/artifacts.zip',
       'android-x64-release/artifacts.zip',
-      'android-arm64-profile/artifacts.zip',
-      'android-x64-profile/artifacts.zip',
-      'android-arm64/artifacts.zip',
-      'android-x64/artifacts.zip',
     ],
   ),
   // The gen_snapshot that runs on the build host and targets Android. Flutter

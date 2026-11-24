@@ -7,7 +7,6 @@ See https://docs.bazel.build/versions/main/skylark/deploying.html#dependencies
 load("//flutter/private:android_headless_runtime_repo.bzl", "android_headless_runtime_repo")
 load("//flutter/private:artifact_urls.bzl", "android_engine_artifact_path", "dart_sdk_artifact_path", "desktop_engine_artifact_path", "engine_artifact_url", "gen_snapshot_cross_artifact_path", "host_artifacts_path", "ios_engine_artifact_path", "require_sha256")
 load("//flutter/private:chrome_headless_shell_repo.bzl", "chrome_headless_shell_repo")
-load("//flutter/private:constants.bzl", "ANDROID_ABI_FOR_ARCH")
 load("//flutter/private:download.bzl", "pinned_download_and_extract")
 load("//flutter/private:engine_helpers.bzl", "PLATFORM_PREFIX_TO_OS", "WINDOWS_CPP_CLIENT_WRAPPER_FILES", "cpp_client_wrapper_artifact_path", "dart_binary_name", "dartaotruntime_binary_name", "engine_arch_for_os", "engine_filegroup_for_os", "gen_snapshot_host_platform")
 load(
@@ -126,20 +125,6 @@ def _lazy_repo_file_aliases(os_name, exe_suffix, user_repo_name, platform, repos
             blocks.append(_format_alias(path, "@{}//:{}".format(repos.engine_release_repo, path)))
 
     return "\n\n".join(blocks)
-
-# flutter_android_engine imports (see flutter_android_engine_repo.bzl).
-_ANDROID_PROFILE_ENGINE_BUILD = """\
-load("@rules_flutter//flutter:android.bzl", "flutter_android_engine_jar")
-
-exports_files(["flutter.jar"], visibility = ["//visibility:public"])
-
-flutter_android_engine_jar(
-    name = "stripped",
-    jar = "flutter.jar",
-    android_abi = "{abi}",
-    visibility = ["//visibility:public"],
-)
-"""
 
 def _flutter_engine_artifacts_local_impl(repository_ctx):
     """Sources the core host artifacts out of a pre-extracted local SDK.
@@ -1491,12 +1476,7 @@ def _register_download_web_sky_repos(name, flutter_version, engine_revision, eng
     )
 
 def _register_download_android_repos(name, flutter_version, engine_revision, engine_base_url, checksums):
-    """Android engine repos (lazy — one per ABI, release + debug + apart profile)."""
-
-    # Each repo carries both the release engine (AOT) and the debug engine (JIT);
-    # the flutter_android_engine macro select()s between its two jar targets, so
-    # consumers only need a single `flutter_android_engine_<abi>` use_repo entry —
-    # matching the macOS and iOS engine repos.
+    """Android engine jar repos (lazy — the release `flutter.jar` of each ABI, for `flutter_android_aar`)."""
     android_engine_repos_created = {}
     for _host_platform, targets in CROSS_COMPILATION_PAIRS.items():
         for target_platform in targets:
@@ -1516,28 +1496,6 @@ def _register_download_android_repos(name, flutter_version, engine_revision, eng
                     flutter_version,
                     android_engine_artifact_path(android_arch, "release"),
                     checksums,
-                ),
-                debug_sha256 = flutter_artifact_sha256(
-                    flutter_version,
-                    android_engine_artifact_path(android_arch, "debug"),
-                    checksums,
-                ),
-            )
-
-            # The profile engine, apart so only a profile build fetches it.
-            # flutter_android_engine names it through rules_flutter's own
-            # repo mapping, so consumers need no use_repo entry for it.
-            profile_engine_path = android_engine_artifact_path(android_arch, "profile")
-            flutter_profile_repo(
-                name = name + "_android_engine_" + android_arch + "_profile",
-                engine_revision = engine_revision,
-                engine_base_url = engine_base_url,
-                downloads = {profile_engine_path: ""},
-                sha256s = {
-                    profile_engine_path: flutter_artifact_sha256(flutter_version, profile_engine_path, checksums),
-                },
-                build_file_content = _ANDROID_PROFILE_ENGINE_BUILD.format(
-                    abi = ANDROID_ABI_FOR_ARCH[android_arch],
                 ),
             )
 
@@ -1805,7 +1763,7 @@ def _register_local_web_sky_repos(name, local_path):
     )
 
 def _register_local_android_repos(name, local_path):
-    """Android engine repos (release + debug per ABI, profile apart)."""
+    """Android engine jar repos (the release `flutter.jar` of each ABI)."""
     android_engine_repos_created = {}
     for _host_platform, targets in CROSS_COMPILATION_PAIRS.items():
         for target_platform in targets:
@@ -1820,20 +1778,6 @@ def _register_local_android_repos(name, local_path):
                 name = name + "_android_engine_" + android_arch,
                 engine_revision = "",
                 android_arch = android_arch,
-                local_path = local_path,
-            )
-
-            # The profile engine, apart so only a profile build fetches it.
-            # flutter_android_engine names it through rules_flutter's own
-            # repo mapping, so consumers need no use_repo entry for it.
-            profile_engine_path = android_engine_artifact_path(android_arch, "profile")
-            flutter_profile_repo(
-                name = name + "_android_engine_" + android_arch + "_profile",
-                engine_revision = "",
-                downloads = {profile_engine_path: ""},
-                build_file_content = _ANDROID_PROFILE_ENGINE_BUILD.format(
-                    abi = ANDROID_ABI_FOR_ARCH[android_arch],
-                ),
                 local_path = local_path,
             )
 

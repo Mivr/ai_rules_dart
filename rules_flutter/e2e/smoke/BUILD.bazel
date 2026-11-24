@@ -253,19 +253,15 @@ build_test(
     ],
 )
 
-# Offline mode, mobile engines: Android flutter.jar per ABI (release at the
-# root, debug under debug/, profile apart) and the iOS xcframeworks. Only
-# file targets are built: the Android `stripped` rules would process the
-# placeholder jars, which is a real-SDK job (see e2e/hello_world).
+# Offline mode, mobile engines: the release Android flutter.jar per ABI (what
+# `flutter_android_aar` hands out as `engine_maven`; an app built from its
+# Gradle model takes the engine from the pin) and the iOS xcframeworks. Only
+# file targets are built: the fixture files are placeholders.
 build_test(
     name = "local_mobile_engines_test",
     targets = [
         "@local_android_engine_arm64//:flutter.jar",
-        "@local_android_engine_arm64//:debug/flutter.jar",
-        "@local_android_engine_arm64_profile//:flutter.jar",
         "@local_android_engine_x64//:flutter.jar",
-        "@local_android_engine_x64//:debug/flutter.jar",
-        "@local_android_engine_x64_profile//:flutter.jar",
         "@local_ios_engine//:Flutter_xcframework",
         "@local_ios_engine//:Flutter_xcframework_debug",
         "@local_ios_engine_profile//:Flutter_xcframework",

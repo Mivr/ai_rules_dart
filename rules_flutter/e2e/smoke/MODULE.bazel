@@ -74,13 +74,9 @@ flutter.version(
         "ios-release/artifacts.zip": "3e3e5a772ca311074aaca857dba5cc1f253f3568242debcf07840c75b897584f",
         "ios-profile/artifacts.zip": "b6459899c53709470e52315c5ae1aede2363fb694c4de282c6f8c4e769a7ad58",
         "ios/artifacts.zip": "536f7df16f472b13d58354da464b47191b44215660a797d217fe8eaf557a8f58",
-        # Android engine (flutter.jar — release and profile for AOT, debug for JIT)
+        # Android engine (the release flutter.jar that `flutter_android_aar` hands out)
         "android-arm64-release/artifacts.zip": "8426a3b6f60ba5b5ba1b9684cbfc131df513ffd79f297e3bb29d33cba62c2b7f",
         "android-x64-release/artifacts.zip": "ccb68395a57aff336eceadd4e3b7ba1b0480cd15c252757d1b5ef0203d43e319",
-        "android-arm64-profile/artifacts.zip": "91201fc9ad5a4bfbecd9873b22bd29ad65d34e6e09627b3802e6f658346145e2",
-        "android-x64-profile/artifacts.zip": "0ab59ef4fd2222015865cc2f122ce1d67d024894a9799dace461b7534bb623a9",
-        "android-arm64/artifacts.zip": "9a071a4db1660c56a513bd93951ceba9375541a9f19e2b26f4bedd060bad2220",
-        "android-x64/artifacts.zip": "d169b3e4c04bd50a9650824050c90e23c4347d4d346485a19dd074a6a5926d25",
         # Android cross-compile gen_snapshot (release)
         "android-arm64-release/darwin-x64.zip": "5535e11ad8a7d2d48d9f20766660d4d909ec37ab96f90b84c29080de682ae937",
         "android-arm64-release/linux-x64.zip": "d3732a35d2e5b2e0b7d8d6bb431cedc2fb657583e225317a5a90e7409a09059f",
@@ -116,6 +112,6 @@ flutter.toolchain(
     name = "local",
     local_path = "fake_sdk",
 )
-use_repo(flutter, "custom_linux-x64", "custom_toolchains", "flutter_macos_engine", "flutter_toolchains", "flutter_web_sdk", "local_android_engine_arm64", "local_android_engine_arm64_profile", "local_android_engine_x64", "local_android_engine_x64_profile", "local_cross_linux-x64_android-arm64", "local_cross_linux-x64_android-arm64_profile", "local_cross_linux-x64_android-x64", "local_cross_linux-x64_android-x64_profile", "local_darwin-arm64", "local_darwin-arm64_profile", "local_darwin-x64", "local_desktop_engine_darwin-x64", "local_desktop_engine_darwin-x64_debug", "local_desktop_engine_linux-arm64", "local_desktop_engine_linux-arm64_debug", "local_desktop_engine_linux-x64", "local_desktop_engine_linux-x64_debug", "local_desktop_engine_windows-x64", "local_desktop_engine_windows-x64_debug", "local_dev_root", "local_font_subset_darwin-arm64", "local_font_subset_linux-x64", "local_font_subset_windows-x64", "local_host_tools_release_darwin-arm64", "local_ios_engine", "local_ios_engine_profile", "local_linux-arm64", "local_linux-x64", "local_linux-x64_profile", "local_macos_engine", "local_material_fonts", "local_patched_sdk_product", "local_sky_engine", "local_toolchains", "local_web_sdk", "local_windows-x64")
+use_repo(flutter, "custom_linux-x64", "custom_toolchains", "flutter_macos_engine", "flutter_toolchains", "flutter_web_sdk", "local_android_engine_arm64", "local_android_engine_x64", "local_cross_linux-x64_android-arm64", "local_cross_linux-x64_android-arm64_profile", "local_cross_linux-x64_android-x64", "local_cross_linux-x64_android-x64_profile", "local_darwin-arm64", "local_darwin-arm64_profile", "local_darwin-x64", "local_desktop_engine_darwin-x64", "local_desktop_engine_darwin-x64_debug", "local_desktop_engine_linux-arm64", "local_desktop_engine_linux-arm64_debug", "local_desktop_engine_linux-x64", "local_desktop_engine_linux-x64_debug", "local_desktop_engine_windows-x64", "local_desktop_engine_windows-x64_debug", "local_dev_root", "local_font_subset_darwin-arm64", "local_font_subset_linux-x64", "local_font_subset_windows-x64", "local_host_tools_release_darwin-arm64", "local_ios_engine", "local_ios_engine_profile", "local_linux-arm64", "local_linux-x64", "local_linux-x64_profile", "local_macos_engine", "local_material_fonts", "local_patched_sdk_product", "local_sky_engine", "local_toolchains", "local_web_sdk", "local_windows-x64")
 
 register_toolchains("@flutter_toolchains//:all")

@@ -97,7 +97,6 @@ Some platforms need one more repository from the same extension. Add it to `use_
 |---|---|
 | macOS | `flutter_macos_engine` |
 | iOS | `flutter_ios_engine` |
-| Android | `flutter_android_engine_arm64`, or `flutter_android_engine_x64` for `android_abi = "x64"` |
 | Web | `flutter_web_sdk` |
 
 Static analysis needs nothing extra. rules_dart's analysis resolves `dart:ui` in a `flutter_library`, `flutter_plugin` or `flutter_test` through the `sky_engine` package, which those rules add to the analyzer's closure themselves. Their compiled output does not change.
