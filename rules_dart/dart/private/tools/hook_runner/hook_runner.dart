@@ -41,8 +41,8 @@ Future<void> main(List<String> arguments) async {
     exitCode = 64;
     return;
   }
-  final command = arguments.first;
-  final rest = await _expandParamsFile(arguments.sublist(1));
+  final String command = arguments.first;
+  final List<String> rest = await _expandParamsFile(arguments.sublist(1));
   switch (command) {
     case 'build':
     case 'link':
@@ -101,14 +101,14 @@ ArgParser _compileParser() => ArgParser()
 /// the hook's Dart closure and the SDK, not on the target or the toolchain,
 /// and a cold hook run does not compile it again.
 Future<int> _compileHook(ArgResults args) async {
-  final cwd = Directory.current.absolute.path;
-  final work = Directory.systemTemp.createTempSync('hook_compile_');
+  final String cwd = Directory.current.absolute.path;
+  final Directory work = Directory.systemTemp.createTempSync('hook_compile_');
   try {
     final config = File('${work.path}/package_config.json')
       ..writeAsStringSync(
         packageConfigJson(args['record'] as List<String>, cwd),
       );
-    final result = await Process.run(
+    final ProcessResult result = await Process.run(
       args['dart'] as String,
       [
         '--suppress-analytics',
@@ -155,10 +155,10 @@ const _hookKernelName = 'hook.dill';
 const _hookKernelHashesName = 'hook.dependencies_hash_file.json';
 
 Future<int> _runHook(String hook, ArgResults args) async {
-  final cwd = Directory.current.absolute.path;
+  final String cwd = Directory.current.absolute.path;
   String abs(String p) => p.startsWith('/') ? p : '$cwd/$p';
   final packageName = args['package'] as String;
-  final work = Directory.systemTemp.createTempSync('hook_runner_');
+  final Directory work = Directory.systemTemp.createTempSync('hook_runner_');
   final logs = <LogRecord>[];
   try {
     // The runner keeps its state next to the package config and reads pub's
@@ -184,7 +184,7 @@ Future<int> _runHook(String hook, ArgResults args) async {
 
     final pubspec = args['pubspec'] as String?;
     final userDefines = args['user-defines'] as String?;
-    final pubspecUri = pubspec == null ? null : Uri.file(abs(pubspec));
+    final Uri? pubspecUri = pubspec == null ? null : Uri.file(abs(pubspec));
     File? slice;
     if (pubspecUri != null && userDefines != null) {
       // The runner reads `hooks.user_defines` from the workspace pubspec and
@@ -203,7 +203,9 @@ Future<int> _runHook(String hook, ArgResults args) async {
         );
     }
     final hashes = File('${work.path}/$_hookKernelHashesName')
-      ..writeAsStringSync(jsonEncode({'file_system': [], 'environment': []}));
+      ..writeAsStringSync(
+        jsonEncode({'file_system': <String>[], 'environment': <String>[]}),
+      );
     final fileSystem = _PrecompiledHookFileSystem(
       const LocalFileSystem(),
       kernel: abs(args['hook-kernel'] as String),
@@ -212,7 +214,7 @@ Future<int> _runHook(String hook, ArgResults args) async {
       pubspecSlice: slice?.path,
     );
 
-    final packageConfig = await loadPackageConfigUri(config.uri);
+    final PackageConfig packageConfig = await loadPackageConfigUri(config.uri);
     final layout = PackageLayout.fromPackageConfig(
       fileSystem,
       packageConfig,
@@ -361,16 +363,14 @@ String packageConfigJson(List<String> records, String execRoot) {
         : parts[1];
     packages.add({
       'name': parts[0],
-      'rootUri': Uri.directory(
-        path.isEmpty ? execRoot : '$execRoot/$path',
-      ).toString(),
+      'rootUri': Uri.directory(path.isEmpty ? execRoot : '$execRoot/$path')
+          .toString(),
       'packageUri': 'lib/',
       if (parts.length > 2 && parts[2].isNotEmpty) 'languageVersion': parts[2],
     });
   }
-  return const JsonEncoder.withIndent(
-    '  ',
-  ).convert({'configVersion': 2, 'packages': packages});
+  return const JsonEncoder.withIndent('  ')
+      .convert({'configVersion': 2, 'packages': packages});
 }
 
 /// The build result a link hook sees: every build hook's assets routed to
@@ -423,9 +423,8 @@ void _writeAssetDirectory(
   // The runner's dependency list names absolute sandbox paths: Bazel tracks
   // the inputs itself, and the paths would make the output differ per build.
   relative.remove('dependencies');
-  File(
-    '${out.path}/assets.json',
-  ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(relative));
+  File('${out.path}/assets.json')
+      .writeAsStringSync(const JsonEncoder.withIndent('  ').convert(relative));
 }
 
 /// Copies each data asset [json] holds to the file its name is declared at
@@ -445,8 +444,10 @@ int _copyDeclaredDataAssets(
   final emitted = <String, DataAsset>{
     for (final raw in (json['encodedAssets'] as List?) ?? const [])
       if (EncodedAsset.fromJson(raw as Map<String, Object?>).isDataAsset)
-        DataAsset.fromEncoded(EncodedAsset.fromJson(raw)).name:
-            DataAsset.fromEncoded(EncodedAsset.fromJson(raw)),
+        DataAsset.fromEncoded(EncodedAsset.fromJson(raw))
+            .name: DataAsset.fromEncoded(
+          EncodedAsset.fromJson(raw),
+        ),
   };
   final missing = declared.keys.where((n) => !emitted.containsKey(n)).toList()
     ..sort();
@@ -645,8 +646,7 @@ int writeManifest(ArgResults args) {
 String flutterNativeAssetsJson(List<KernelAsset> assets) {
   final perTarget = <String, Map<String, List<String>>>{};
   for (final asset in assets) {
-    (perTarget[asset.target.toString()] ??= {})[asset.id] = asset.path
-        .toJson();
+    (perTarget[asset.target.toString()] ??= {})[asset.id] = asset.path.toJson();
   }
   return jsonEncode({
     'format-version': const [1, 0, 0],
@@ -696,12 +696,12 @@ KernelAssetPath _kernelPath(
     case 'runfiles':
       return KernelAssetAbsolutePath(Uri.file('$runfilesPrefix$inBundle'));
     default:
-      final from = Directory(
-        relativeTo!,
-      ).absolute.uri.pathSegments.where((s) => s.isNotEmpty).toList();
-      final to = File(
-        '${bundle!}/$inBundle',
-      ).absolute.uri.pathSegments.where((s) => s.isNotEmpty).toList();
+      final from = Directory(relativeTo!).absolute.uri.pathSegments
+          .where((s) => s.isNotEmpty)
+          .toList();
+      final to = File('${bundle!}/$inBundle').absolute.uri.pathSegments
+          .where((s) => s.isNotEmpty)
+          .toList();
       var common = 0;
       while (common < from.length &&
           common < to.length - 1 &&
