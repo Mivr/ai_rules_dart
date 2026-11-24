@@ -2,4 +2,11 @@ schema: mivr-e2e-spec/1
 commands:
   - name: test
     run: bazel test --test_output=errors //...
-    min_tests_executed: 5
+    min_tests_executed: 4
+  - name: sibling shared source is refused
+    run: bazel build //:dup_sibling_test
+    expect:
+      non_zero: true
+      output_contains:
+        - "source lib/sib/common.dart is listed by two libraries, @@//:sib_a and @@//:sib_b"
+        - "one source belongs to one target"

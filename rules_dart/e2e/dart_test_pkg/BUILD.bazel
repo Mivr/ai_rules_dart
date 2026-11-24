@@ -74,10 +74,15 @@ dart_library(
     language_version = "3.11",
 )
 
+# One source listed by two sibling libraries is an analysis error: every debug
+# build is modular, and a module belongs to one target. `//...` skips this
+# target (`manual`); the spec's "sibling shared source is refused" command
+# builds it and asserts the error.
 dart_test(
     name = "dup_sibling_test",
     size = "small",
     main = "test/dup_sibling_test.dart",
+    tags = ["manual"],
     deps = [
         ":sib_a",
         ":sib_b",

@@ -1,0 +1,21 @@
+schema: mivr-e2e-spec/1
+# The canary reads an undeclared host file (`/usr/bin/env`). It builds with the
+# default sandbox, where `/` stays readable, and must fail under the strict
+# hermetic Linux sandbox with the minimal mount set. Bazel keys the action on
+# declared inputs only, so the strict build runs after `bazel clean` with no
+# disk cache: a cached success of the first build must not satisfy it. Linux
+# only, with user namespaces enabled.
+commands:
+  - name: the default build succeeds
+    run: bazel build //:canary
+  - name: clean
+    run: bazel clean
+  - name: the strict build fails naming the undeclared read
+    run: >-
+      bazel build //:canary --disk_cache= --experimental_use_hermetic_linux_sandbox
+      --sandbox_add_mount_pair=/lib64 --sandbox_add_mount_pair=/lib/x86_64-linux-gnu
+      --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/etc/ld.so.cache
+    expect:
+      non_zero: true
+      output_contains:
+        - /usr/bin/env

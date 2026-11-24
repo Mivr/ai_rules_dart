@@ -1,0 +1,9 @@
+schema: mivr-e2e-spec/1
+# The `toolchain_intruder` module tags `dart.toolchain` and is listed ahead of
+# rules_dart, so resolving the scanner's SDK by module order would fetch it from
+# a repository that does not exist.
+commands:
+  - name: the toolchain builds in an intruder graph
+    run: bazel build //:hello
+  - name: the scanner repository materializes from the mapping-based SDK address
+    run: bazel build @dart_pub_scanner//:scanner

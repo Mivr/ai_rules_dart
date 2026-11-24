@@ -1,0 +1,32 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# Runs every e2e workspace of both modules through its module's `e2e_runner`
+# and prints one table:
+#
+#   cd rules_dart/tools
+#   bazel run //e2e_sweep:e2e_sweep -- --client=/path/to/bazel
+#
+# See `bin/e2e_sweep.dart` for the flags.
+dart_library(
+    name = "e2e_sweep_lib",
+    package_name = "e2e_sweep",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+)
+
+dart_binary(
+    name = "e2e_sweep",
+    main = "bin/e2e_sweep.dart",
+    visibility = ["//visibility:public"],
+    deps = [":e2e_sweep_lib"],
+)
+
+dart_test(
+    name = "sweep_test",
+    size = "small",
+    main = "test/sweep_test.dart",
+    deps = [
+        ":e2e_sweep_lib",
+        "@pub_deps//:test",
+    ],
+)

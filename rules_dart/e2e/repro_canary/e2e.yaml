@@ -1,0 +1,7 @@
+schema: mivr-e2e-spec/1
+# The canary's output differs between two builds on purpose. CI builds it under
+# two output bases and compares the digests; the runner has one output base,
+# so this spec only builds it.
+commands:
+  - name: build
+    run: bazel build //:canary
