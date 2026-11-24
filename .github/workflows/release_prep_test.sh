@@ -162,6 +162,7 @@ init_repo() {
       rules_dart/tools rules_flutter/flutter rules_flutter/e2e/smoke rules_flutter/e2e/other
     echo 'module(name = "ai_rules_dart")' >rules_dart/MODULE.bazel
     echo 'x = 1' >rules_dart/dart/defs.bzl
+    # shellcheck disable=SC2016 # the placeholder git expands in the archive
     echo '_STAMP = "$Format:%H$"' >rules_dart/BUILD.bazel
     echo 'smoke' >rules_dart/e2e/smoke/MODULE.bazel
     echo 'other' >rules_dart/e2e/other/MODULE.bazel
@@ -246,7 +247,7 @@ if [ -f "$archive" ]; then
   grep -qx 'rules_dart-0.29.0/e2e/smoke/MODULE.bazel' "$D/list" || fail "e2e/smoke is not in the archive"
   grep -q 'e2e/other\|/dev/\|rules_flutter' "$D/list" && fail "the archive holds what export-ignore removes, or the other module"
   grep -qv '^rules_dart-0.29.0/' "$D/list" && fail "an entry is outside the prefix"
-  tar xzOf "$archive" rules_dart-0.29.0/BUILD.bazel | grep -qx "_STAMP = \"$(git -C "$D/repo" rev-parse rules_dart-v0.29.0^{commit})\"" ||
+  tar xzOf "$archive" rules_dart-0.29.0/BUILD.bazel | grep -qx "_STAMP = \"$(git -C "$D/repo" rev-parse "rules_dart-v0.29.0^{commit}")\"" ||
     fail "export-subst did not stamp BUILD.bazel with the commit"
   want_stdout "urls = [\"https://github.com/Mivr/ai_rules_dart/releases/download/rules_dart-v0.29.0/rules_dart-v0.29.0.tar.gz\"]"
   want_stdout "integrity = \"$(integrity_of "$archive")\""
