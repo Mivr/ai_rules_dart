@@ -753,6 +753,61 @@ List<Flow> catalogue() {
       );
   }
 
+  // The first build on a machine with no cache but the download cache: the
+  // output base expunged and the repository contents cache left out, so
+  // every repository is extracted again and every action runs.
+  flows
+    ..add(
+      BazelFlow(
+        id: 'first.dart_pkg.exe.rules',
+        tool: 'rules_dart',
+        corpus: 'dart_pkg',
+        flow: 'first_build_exe',
+        state: 'no_cache',
+        tags: const {'heavy', 'corpus'},
+        workspace: _corpusRules('dart_pkg'),
+        command: const ['build'],
+        targets: const ['//:calc'],
+        clean: true,
+        cleanArgs: const ['--disk_cache=', '--repo_contents_cache='],
+        extraPrepare: (c, ws, run) => c
+            .bazelIn(ws, 'first.dart_pkg.exe.rules')
+            .must(['clean', '--expunge']),
+      ),
+    )
+    // A web edit of the corpus counter app: the dart2js bundle again after a
+    // body edit, against stock `flutter build web` after the same edit.
+    ..add(
+      BazelFlow(
+        id: 'web.counter.edit.rules',
+        tool: 'rules_flutter',
+        corpus: 'counter',
+        flow: 'web_edit',
+        state: 'edit_body',
+        tags: const {'corpus', 'web'},
+        workspace: _corpusRules('counter'),
+        command: const ['build'],
+        targets: const ['//:web'],
+        edits: const [_mainBody],
+        warm: true,
+      ),
+    )
+    ..add(
+      StockFlow(
+        id: 'web.counter.edit.stock',
+        corpus: 'counter',
+        flow: 'web_edit',
+        state: 'edit_body',
+        tags: const {'corpus', 'web', 'stock'},
+        workspace: _corpusStock('counter'),
+        setUpSteps: const [
+          ['flutter', 'pub', 'get', '--offline'],
+        ],
+        argv: const ['flutter', 'build', 'web'],
+        edits: const [_mainBody],
+      ),
+    );
+
   // What this host cannot run.
   for (final (id, tool, flow, reason) in [
     (

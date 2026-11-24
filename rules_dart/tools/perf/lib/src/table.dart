@@ -259,6 +259,18 @@ String planTable(List<Row> rows) {
       '${_fmt(r['clean.$p.$k.rules'])}; ${_ratio(r['clean.$p.$k.rules'], r['clean.$p.$k.stock']) ?? '-'}',
     );
   }
+  row(
+    'First build with no cache but downloads, corpus dart_pkg exe (output base expunged)',
+    '-',
+    '-',
+    _fmt(r['first.dart_pkg.exe.rules']),
+  );
+  row(
+    'Web: edit to a rebuilt dart2js bundle, corpus counter',
+    '-',
+    '`flutter build web`: ${_fmt(r['web.counter.edit.stock'])}',
+    '${_fmt(r['web.counter.edit.rules'])}; ${_ratio(r['web.counter.edit.rules'], r['web.counter.edit.stock']) ?? '-'}',
+  );
   for (final (name, id) in [
     ('small (petitparser)', 'small'),
     ('500k lines', '500k'),
