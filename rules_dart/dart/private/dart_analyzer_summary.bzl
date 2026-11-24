@@ -1187,8 +1187,14 @@ def _dart_analyzer_summary_impl(target, ctx):
         return [_summary_uncovered_info(dependencies, packaged, inherited_embedder_sdks, packages, own_files, state)]
 
     name = ctx.label.name + ".dart_analyzer_summary"
-    stage_dir = ctx.actions.declare_directory(name + ".summary_stage")
-    stage_root = "%s/%s.summary_root" % (stage_dir.path, name)
+
+    # Short names: the staged sources sit under `<output base>\execroot\_main\
+    # bazel-out\<config>\bin\external\<repo>\`, which is already 140 or more
+    # characters on a Windows runner, and a staged path past 260 is read with
+    # the extended-length spelling or not at all. The stage and its root named
+    # after the target twice cost 63 characters more.
+    stage_dir = ctx.actions.declare_directory(ctx.label.name + ".sstg")
+    stage_root = "%s/r.summary_root" % stage_dir.path
 
     plan = struct(stage_root = stage_root, inherited = inherited, covered = owners != None)
     stage = _summary_stage_all(info, own_records, srcs, plan)
