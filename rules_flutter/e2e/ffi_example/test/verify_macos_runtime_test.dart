@@ -7,10 +7,11 @@
 ///    bundled loose `libadd.dylib` in Contents/Frameworks.
 ///  * native_deps: `mul()` raw-opens `libmul.dylib` by filename, proving the
 ///    loose-library pipeline bundles where the loader expects.
-///  * build-hook code asset: sqlite3's `@Native` bindings resolve against
+///  * sqlite3's code asset: sqlite3's `@Native` bindings resolve against
 ///    the bundled libsqlite3.dylib, which nothing in this workspace names —
-///    the app depends on drift, and package:sqlite3's own build hook
-///    builds the library.
+///    the app depends on drift; on macOS build hooks do not run yet, so
+///    rules_dart's Apple replacement (`//dart/ext/sqlite3`) provides the
+///    library in place of package:sqlite3's hook.
 ///
 /// The binary is launched directly (not via `open`) with TMPDIR pointed at a
 /// directory this test controls, so the marker the app writes in main() lands
@@ -93,7 +94,7 @@ Future<void> main() async {
     }
     print(
       'PASS: @Native asset bind (add), raw filename open (mul) and '
-      'sqlite3's build-hook code asset all worked at runtime.',
+      "sqlite3's code asset all worked at runtime.",
     );
   } finally {
     app?.kill();

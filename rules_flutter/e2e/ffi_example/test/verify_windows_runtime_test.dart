@@ -88,7 +88,7 @@ Future<void> main() async {
     }
     print(
       'PASS: @Native asset bind (add), raw filename open (mul) and '
-      'sqlite3's build-hook code asset all worked at runtime.',
+      "sqlite3's build-hook code asset all worked at runtime.",
     );
   } finally {
     app?.kill();
