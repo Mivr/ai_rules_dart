@@ -368,6 +368,18 @@ class Compiler {
           '${[for (final String output in served) '  served before: $output\n'].join()}'
           '  error: $error\n$stack',
         );
+        // One line on the action's own output, so whoever builds sees it.
+        final notice =
+            '$_tool: recovered from an internal front-end error in '
+            '${request.output} by compiling it again from a fresh state; '
+            '${persistent ? 'the details are in the DartKernel worker log '
+                      '(bazel-workers/ in the output base)' : 'the details are above'}. '
+            'Please report it.';
+        if (persistent) {
+          log.writeln(notice);
+        } else {
+          stderr.writeln(notice);
+        }
         return code;
       } on FormatException {
         rethrow;

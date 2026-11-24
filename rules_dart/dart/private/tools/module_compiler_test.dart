@@ -711,7 +711,14 @@ void main(List<String> args) {
         ),
       );
       expect(result.exitCode, 0, reason: result.output);
-      expect(result.output, isNot(contains('poisoned')));
+      // One line for whoever builds, without the trace.
+      expect(
+        result.output,
+        'module_compiler: recovered from an internal front-end error in '
+        'w1/platform.kmod by compiling it again from a fresh state; the '
+        'details are in the DartKernel worker log (bazel-workers/ in the '
+        'output base). Please report it.\n',
+      );
       for (final String dill in _dills('x/platform.kmod')) {
         expect(_read('w1/platform.kmod/$dill'), _read('x/platform.kmod/$dill'));
       }
