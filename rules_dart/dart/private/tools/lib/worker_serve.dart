@@ -132,10 +132,18 @@ Future<void> serveWorker({
     );
     unawaited(job.cancelled.future.then((_) => answer(job, cancelledResponse)));
     await slots.acquire();
+    if (job.isAnswered()) {
+      slots.release();
+      return;
+    }
+    final Future<WorkResult> work = _guarded(
+      handle,
+      frame,
+      job.cancelled.future,
+    );
     try {
-      if (job.isAnswered()) return;
       final WorkResult? result = await Future.any<WorkResult?>([
-        _guarded(handle, frame, job.cancelled.future),
+        work,
         job.cancelled.future.then((_) => null),
       ]);
       if (result == null) return;
@@ -148,7 +156,10 @@ Future<void> serveWorker({
         ),
       );
     } finally {
-      slots.release();
+      // The slot is the handler's until it returns, also when a cancel
+      // answered the request first: a handler that does not stop on cancel
+      // keeps running, and the next request may not run beside it.
+      unawaited(work.whenComplete(slots.release));
     }
   }
 

@@ -274,6 +274,44 @@ void _registerCancelInMemoryTests() {
     expect(answers.single.output, isEmpty);
   });
 
+  test(
+    'a cancelled request keeps its slot until its handler returns',
+    () async {
+      final release = Completer<void>();
+      final ran = <String>[];
+      var running = 0;
+      var mostAtOnce = 0;
+      final _Rig rig = _createRig(maxConcurrent: 1, (
+        Uint8List frame,
+        Future<void> _,
+      ) async {
+        final String name = _argumentOf(frame);
+        ran.add(name);
+        running++;
+        if (running > mostAtOnce) mostAtOnce = running;
+        // A handler that does not stop on cancel, as the module compiler's.
+        if (name == 'first') await release.future;
+        running--;
+        return (exitCode: 0, output: name);
+      });
+      rig.send(_request(1, ['first']));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      rig.send(_request(1, const [], cancel: true));
+      await rig.waitForAnswers(1);
+      rig.send(_request(2, ['second']));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(ran, ['first']);
+      release.complete();
+      final List<_Answer> answers = await rig.finish();
+      expect(ran, ['first', 'second']);
+      expect(mostAtOnce, 1);
+      expect(answers.map((a) => (a.requestId, a.cancelled)), [
+        (1, true),
+        (2, false),
+      ]);
+    },
+  );
+
   test('a cancelled queued request never runs', () async {
     final release = Completer<void>();
     final ran = <String>[];
