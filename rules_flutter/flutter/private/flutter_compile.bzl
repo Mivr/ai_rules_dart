@@ -6,7 +6,7 @@ Flutter compilation differs from vanilla Dart in that it uses:
 """
 
 load("//flutter:providers.bzl", "resolve_flutter_sdk_info")
-load("//flutter/private:app_entrypoint.bzl", "APP_SCHEME", "app_scheme_location", "app_scheme_rel_path", "stage_generated_inputs", "validate_filesystem_roots")
+load("//flutter/private:app_entrypoint.bzl", "APP_SCHEME", "app_scheme_location", "in_place_roots", "validate_filesystem_roots")
 load(
     "//flutter/private:flutter_compile_params.bzl",
     _flutter_kernel_dills = "flutter_kernel_dills",
@@ -349,40 +349,42 @@ def _add_kernel_mode_args(ctx, args, aot, defines, define_flagfiles):
     for d in defines:
         args.add("-D" + d)
 
-def _mount_kernel_sources(ctx, args, compile_sources, output, filesystem_roots):
-    """Stages generated inputs and mounts the roots the compile resolves under.
+def _mount_kernel_sources(ctx, args, compile_sources, filesystem_roots):
+    """Mounts the roots the compile reads its sources in place from.
 
-    Stages only the generated inputs into a per-action staging root and mounts
-    it first under APP_SCHEME, then the exec root (`.`) for the sources, which
-    are declared as themselves — one `ctx.actions.symlink` per generated file,
-    never per source. The staging root sorts first so a generated file keeps
-    precedence over a source at the same app path. Staging by workspace path
-    keeps every `org-dartlang-app:///` URI (package roots, the entrypoint, the
-    registrant) resolving where it did when every source was staged.
+    Every input is read where it is, under APP_SCHEME at its workspace path:
+    the output directories that hold the generated inputs come first, so a
+    generated file keeps precedence over a source at the same app path, then
+    the exec root (`.`) for the sources (`in_place_roots`), then the caller's
+    `filesystem_roots`. No file is staged, so every `org-dartlang-app:///` URI
+    (package roots, the entrypoint, the registrant) names the same path it
+    always did.
 
-    Under local and worker strategies undeclared files are now visible to the
-    compiler through the exec root. Hermeticity rests on three layers instead
+    Under local and worker strategies undeclared files are visible to the
+    compiler through these roots. Hermeticity rests on three layers instead
     of invisibility: the directive guard refuses disallowed directives before
     the compile, `kernel_filter` verifies the frontend's dependency report
     against the declared-inputs manifest after it (failing closed on anything
     it cannot verify), and the sandbox — or remote execution — exposes only
     declared inputs.
 
-    Returns `struct(stage, mounted_roots)`: the staging result and the
-    exec-root-relative roots mounted via `--filesystem-root`.
+    Args:
+        ctx: The rule context.
+        args: The compiler argv object to append to.
+        compile_sources: The declared main and source `File`s.
+        filesystem_roots: The caller's extra exec-root-relative roots.
+
+    Returns:
+        The exec-root-relative roots mounted via `--filesystem-root`.
     """
-    stage = stage_generated_inputs(ctx, compile_sources, output.basename, include_sources = False)
-    mounted_roots = []
-    if stage.root != None:
-        mounted_roots.append(stage.root)
-    mounted_roots.append(".")
+    mounted_roots = in_place_roots(ctx, compile_sources)
     for r in filesystem_roots:
         if r != None and r != "" and r != "." and r not in mounted_roots:
             mounted_roots.append(r)
     for root in mounted_roots:
         args.add("--filesystem-root", root)
     args.add("--filesystem-scheme", APP_SCHEME)
-    return struct(stage = stage, mounted_roots = mounted_roots)
+    return mounted_roots
 
 def _add_kernel_input_args(args, inputs):
     """Appends the input argv: registrant, caller flags, manifests and entrypoint.
@@ -417,7 +419,7 @@ def _add_kernel_input_args(args, inputs):
     else:
         args.add(inputs.main)
 
-def _kernel_action_inputs(inputs, mount):
+def _kernel_action_inputs(inputs):
     """Assembles the action's declared inputs and outputs.
 
     Args:
@@ -425,11 +427,9 @@ def _kernel_action_inputs(inputs, mount):
             `frontend_server`, `platform_dill`, `srcs`, `from_dill`,
             `native_assets_manifest`, `import_dill`, `output` and
             `recorded_uses`.
-        mount: The `_mount_kernel_sources` result carrying the staging root.
 
     Returns `struct(direct_inputs, outputs)`.
     """
-    stage_files = mount.stage.files
     if inputs.from_dill != None:
         direct_inputs = [
             inputs.main,
@@ -437,14 +437,14 @@ def _kernel_action_inputs(inputs, mount):
             inputs.frontend_server,
             inputs.platform_dill,
             inputs.from_dill,
-        ] + stage_files
+        ]
     else:
         direct_inputs = [
             inputs.main,
             inputs.package_config,
             inputs.frontend_server,
             inputs.platform_dill,
-        ] + inputs.srcs + stage_files
+        ] + inputs.srcs
     if inputs.native_assets_manifest != None:
         direct_inputs.append(inputs.native_assets_manifest)
     if inputs.import_dill != None:
@@ -455,29 +455,7 @@ def _kernel_action_inputs(inputs, mount):
         outputs.append(inputs.recorded_uses)
     return struct(direct_inputs = direct_inputs, outputs = outputs)
 
-def _kernel_entrypoint_spellings(main, mount):
-    """The entrypoint's declared spellings for the dependency-report check.
-
-    The entrypoint's exec path, plus its stage twin when one was staged (a
-    generated entrypoint). `kernel_filter` refuses a
-    compile whose report names none of these.
-
-    Args:
-        main: The entrypoint `.dart` source File.
-        mount: The `_mount_kernel_sources` result carrying the staging root.
-
-    Returns:
-        The list of exec-root-relative paths the report may name the
-        entrypoint under.
-    """
-    spellings = [main.path]
-    if mount.stage.root != None:
-        twin = mount.stage.root + "/" + app_scheme_rel_path(main)
-        if twin in [f.path for f in mount.stage.files]:
-            spellings.append(twin)
-    return spellings
-
-def _write_kernel_manifest(ctx, manifest, inputs, mount):
+def _write_kernel_manifest(ctx, manifest, inputs, mounted_roots):
     """Writes the declared-inputs manifest `kernel_filter` guards against.
 
     Args:
@@ -486,16 +464,15 @@ def _write_kernel_manifest(ctx, manifest, inputs, mount):
         inputs: struct with the compile inputs: `compile_sources`, `main`,
             `package_config`, `platform_dill`, `from_dill`, `import_dill`,
             `native_assets_manifest` and `output`.
-        mount: The `_mount_kernel_sources` result carrying the staging root
-            and the mounted filesystem roots.
+        mounted_roots: The `--filesystem-root` values from `_mount_kernel_sources`.
 
-    The declared sources, then the staging root's symlinks to the generated
-    inputs, then every other file the compiler may read (the package config,
-    the platform dill, the summary dills, the native-assets manifest), the
-    mounted filesystem roots the directive guard resolves through, the
-    entrypoint's declared spellings (its exec path, plus its stage twin when
-    staged) the report check requires the report to name, and the output
-    dill the refusal path deletes. Every entry names a Starlark-declared
+    The declared sources, then an empty `# staged` section (the compile reads
+    every input in place, so no input has a second spelling), then every other
+    file the compiler may read (the package config, the platform dill, the
+    summary dills, the native-assets manifest), the mounted filesystem roots
+    the directive guard resolves through, the entrypoint's exec path the
+    report check requires the report to name, and the output dill the refusal
+    path deletes. Every entry names a Starlark-declared
     `File` (or an action-constructed root/output string): `kernel_filter`
     derives nothing from the compile argv, so a flag smuggled into
     `vm_flags` or `extra_flags` cannot widen what the compile may read.
@@ -514,13 +491,11 @@ def _write_kernel_manifest(ctx, manifest, inputs, mount):
         content = "\n".join(
             [f.path for f in inputs.compile_sources if f != None] +
             ["# staged"] +
-            [f.path for f in mount.stage.files] +
             ["# allowed-reads"] +
             [f.path for f in allowed_reads] +
             ["# filesystem-roots"] +
-            mount.mounted_roots +
-            ["# entrypoint"] +
-            _kernel_entrypoint_spellings(inputs.main, mount) +
+            mounted_roots +
+            ["# entrypoint", inputs.main.path] +
             ["# output", inputs.output.path],
         ) + "\n",
     )
@@ -592,7 +567,7 @@ def flutter_kernel_compile_action(ctx, tools, sources, outputs, options, dills, 
     # exec path: compiling the exec path keys the root library by a
     # sandbox-specific `file://` URI, which poisons the whole dill with
     # absolute host paths. A source `main` resolves through the mounted exec
-    # root, a generated one through the staging root. Callers passing an
+    # root, a generated one through its output directory. Callers passing an
     # explicit URI — every stock rule — are unaffected.
     entrypoint_uri = _default_entrypoint_uri(
         entrypoint_uri = sources.entrypoint_uri,
@@ -624,11 +599,10 @@ def flutter_kernel_compile_action(ctx, tools, sources, outputs, options, dills, 
     )
 
     compile_sources = [sources.main] if dills.from_dill != None else [sources.main] + sources.srcs
-    mount = _mount_kernel_sources(
+    mounted_roots = _mount_kernel_sources(
         ctx,
         args,
         compile_sources,
-        outputs.output,
         sources.filesystem_roots,
     )
     inputs = struct(
@@ -652,8 +626,8 @@ def flutter_kernel_compile_action(ctx, tools, sources, outputs, options, dills, 
 
     env = _kernel_action_env(output = outputs.output, dartaotruntime = tools.dartaotruntime)
 
-    action_io = _kernel_action_inputs(inputs = inputs, mount = mount)
-    _write_kernel_manifest(ctx = ctx, manifest = manifest, inputs = inputs, mount = mount)
+    action_io = _kernel_action_inputs(inputs = inputs)
+    _write_kernel_manifest(ctx = ctx, manifest = manifest, inputs = inputs, mounted_roots = mounted_roots)
 
     _run_kernel_action(ctx = ctx, run = struct(
         args = args,

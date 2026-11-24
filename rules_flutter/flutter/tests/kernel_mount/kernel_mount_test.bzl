@@ -1,12 +1,13 @@
 """Analysis tests for the whole-program kernel mount.
 
 Every `flutter_kernel_compile_action` — `flutter_test` fallbacks, app
-kernels, integration tests, the public API — stages only its generated inputs
-and mounts that stage before the exec root, so each source is declared once
-and an extra consumer over the same closure adds symlinks only for its own
-generated files. These tests pin that shape: single declaration with a
-generated-only stage, no per-dependency symlinks across two compiles, and
-stage-before-exec-root ordering so a generated file keeps precedence.
+kernels, integration tests, the public API — reads every input in place: it
+mounts the output directories of its generated inputs, then the exec root, so
+each source and each generated file is declared once, as itself, and an extra
+consumer over the same closure registers no action per file. These tests pin
+that shape: single declaration, no symlink across two compiles, and
+generated-roots-before-exec-root ordering so a generated file keeps
+precedence.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -124,7 +125,7 @@ def _mounted_roots(argv):
     return [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--filesystem-root"]
 
 def _declared_once_test_impl(ctx):
-    """Each source is declared exactly once; the stage holds only the generated file."""
+    """Each source and the generated file are declared exactly once, as themselves."""
     env = analysistest.begin(ctx)
     compiles = _kernel_compiles(env)
     asserts.equals(env, 1, len(compiles), "expected one FlutterKernelCompile, got %d" % len(compiles))
@@ -133,14 +134,13 @@ def _declared_once_test_impl(ctx):
         for name in ctx.attr.source_names:
             hits = [p for p in paths if p.endswith("/" + name)]
             asserts.equals(env, 1, len(hits), "source %s must be declared exactly once, got %r" % (name, hits))
-        staged = [p for p in paths if ".stage/" in p]
-        asserts.true(env, len(staged) > 0, "expected staged symlinks for the generated file")
-        for p in staged:
-            asserts.true(env, p.endswith("/" + ctx.attr.generated_name), "the stage holds only the generated file, got %s" % p)
+        generated = [p for p in paths if p.endswith("/" + ctx.attr.generated_name)]
+        asserts.equals(env, 1, len(generated), "the generated file must be declared exactly once, got %r" % generated)
+        asserts.equals(env, [], [p for p in paths if ".stage/" in p], "no input is staged")
     return analysistest.end(env)
 
 def _shared_closure_test_impl(ctx):
-    """Two compiles over one closure stage no symlink per dependency source."""
+    """Two compiles over one closure register no symlink at all."""
     env = analysistest.begin(ctx)
     actions = analysistest.target_actions(env)
     asserts.equals(
@@ -150,29 +150,35 @@ def _shared_closure_test_impl(ctx):
         "expected two FlutterKernelCompile actions",
     )
     staged = [f.path for a in actions if a.mnemonic == "Symlink" for f in a.outputs.to_list()]
-    for name in ctx.attr.source_names:
-        asserts.equals(
-            env,
-            [],
-            [p for p in staged if p.endswith("/" + name)],
-            "no symlink may stage dependency source %s" % name,
-        )
-    asserts.equals(env, 2, len(staged), "each compile stages only the shared generated file, got %r" % (staged,))
-    for p in staged:
-        asserts.true(env, p.endswith("/" + ctx.attr.generated_name), "the stages hold only the generated file, got %s" % p)
+    asserts.equals(env, [], staged, "no compile stages a source or a generated file")
+    for a in actions:
+        if a.mnemonic != "FlutterKernelCompile":
+            continue
+        paths = _input_paths(a)
+        for name in ctx.attr.source_names + [ctx.attr.generated_name]:
+            asserts.equals(
+                env,
+                1,
+                len([p for p in paths if p.endswith("/" + name)]),
+                "each compile declares %s once, as itself, got %r" % (name, paths),
+            )
     return analysistest.end(env)
 
 def _precedence_test_impl(ctx):
-    """The generated-only stage mounts before the exec root."""
+    """The generated file's output directory mounts before the exec root."""
     env = analysistest.begin(ctx)
     compiles = _kernel_compiles(env)
     asserts.equals(env, 1, len(compiles), "expected one FlutterKernelCompile, got %d" % len(compiles))
     if len(compiles) == 1:
         roots = _mounted_roots(compiles[0].argv)
-        asserts.true(env, len(roots) >= 2, "expected the stage plus the exec root, got %r" % (roots,))
+        asserts.true(env, len(roots) >= 2, "expected the generated root plus the exec root, got %r" % (roots,))
         if len(roots) >= 2:
-            asserts.true(env, roots[0].endswith(".stage"), "the generated-only stage mounts first, got %r" % (roots,))
-            asserts.true(env, "." in roots[1:], "the exec root mounts after the stage, got %r" % (roots,))
+            asserts.true(
+                env,
+                roots[0].startswith("bazel-out/") and roots[0].endswith("/bin"),
+                "the generated file's output directory mounts first, got %r" % (roots,),
+            )
+            asserts.true(env, "." in roots[1:], "the exec root mounts after it, got %r" % (roots,))
     return analysistest.end(env)
 
 _declared_once_test = analysistest.make(
@@ -182,7 +188,7 @@ _declared_once_test = analysistest.make(
             doc = "Source basenames each declared exactly once.",
         ),
         "generated_name": attr.string(
-            doc = "Generated basename staged alone.",
+            doc = "Generated basename declared once.",
         ),
     },
 )
@@ -190,10 +196,10 @@ _shared_closure_test = analysistest.make(
     _shared_closure_test_impl,
     attrs = {
         "source_names": attr.string_list(
-            doc = "Source basenames with no staging symlink.",
+            doc = "Source basenames each compile declares once.",
         ),
         "generated_name": attr.string(
-            doc = "Generated basename staged once per compile.",
+            doc = "Generated basename each compile declares once.",
         ),
     },
 )

@@ -34,11 +34,12 @@ def _flag_values(argv, flag):
     return [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == flag]
 
 def _assert_multi_root_and_package_config(env, action):
-    """FlutterKernelCompile mounts a generated-only stage before the exec root.
+    """FlutterKernelCompile reads every input in place: generated roots, then the exec root.
 
-    Sources are declared as themselves and read in place; only generated
-    inputs are staged, with the stage mounted first so a generated file keeps
-    precedence over a source at the same app path. Hermeticity rests on three
+    Sources and generated files are declared as themselves and read where they
+    are. The output directories that hold the generated inputs are mounted
+    first, so a generated file keeps precedence over a source at the same app
+    path, then the exec root. No input is staged. Hermeticity rests on three
     layers rather than invisibility: the directive guard refuses disallowed
     directives before the compile, `kernel_filter` verifies the frontend's
     dependency report against the `--declared-inputs` manifest after it
@@ -47,51 +48,18 @@ def _assert_multi_root_and_package_config(env, action):
     """
     argv = action.argv if action else []
     roots = _flag_values(argv, "--filesystem-root")
-    for r in roots:
-        asserts.false(
-            env,
-            r.endswith("/bin"),
-            "FlutterKernelCompile must never mount whole bin_dir, got %r" % roots,
-        )
     input_paths = [f.path for f in action.inputs.to_list()] if action else []
-    staged = [p for p in input_paths if ".stage/" in p]
-    if not staged:
-        asserts.equals(
-            env,
-            ["."],
-            roots,
-            "with no generated inputs only the exec root is mounted, got %r" % roots,
-        )
-    else:
-        asserts.equals(
-            env,
-            2,
-            len(roots),
-            "expected the generated-only stage plus the exec root, got %r" % roots,
-        )
-        if len(roots) == 2:
-            asserts.true(
-                env,
-                roots[0].startswith("bazel-out/") and ".dill." in roots[0] and roots[0].endswith(".stage"),
-                "the first --filesystem-root must be the action-scoped hashed .stage dir, got %r" % roots[0],
-            )
-            asserts.equals(
-                env,
-                ".",
-                roots[1],
-                "the exec root mounts after the stage, got %r" % roots,
-            )
-            for p in staged:
-                asserts.true(
-                    env,
-                    p.startswith(roots[0] + "/"),
-                    "staged input %r must live under the mounted stage %r" % (p, roots[0]),
-                )
-                asserts.true(
-                    env,
-                    any([q.startswith("bazel-out/") and q.endswith("/" + p[len(roots[0]) + 1:]) and ".stage/" not in q for q in input_paths]),
-                    "staged input %r must twin a declared generated file: no source may be staged" % p,
-                )
+    asserts.equals(env, [], [p for p in input_paths if ".stage/" in p], "no input is staged")
+    generated_roots = {}
+    for f in (action.inputs.to_list() if action else []):
+        if not f.is_source and f.extension == "dart":
+            generated_roots[f.root.path] = True
+    asserts.equals(
+        env,
+        generated_roots.keys() + ["."],
+        roots,
+        "expected the generated inputs' output directories, then the exec root, got %r" % roots,
+    )
     asserts.equals(env, ["org-dartlang-app"], _flag_values(argv, "--filesystem-scheme"))
 
     manifests = _flag_values(argv, "--declared-inputs")
@@ -277,7 +245,7 @@ _shadow_consumer_main = rule(
 )
 
 def _stale_probe_analysis_test_impl(ctx):
-    """Generated inputs are staged while sources are read in place; undeclared bazel-out files stay out."""
+    """Generated inputs and sources are read in place; undeclared bazel-out files stay out."""
     env = analysistest.begin(ctx)
     kernels = [a for a in analysistest.target_actions(env) if a.mnemonic == "FlutterKernelCompile"]
     asserts.equals(env, 1, len(kernels), "expected one FlutterKernelCompile")
@@ -285,23 +253,16 @@ def _stale_probe_analysis_test_impl(ctx):
         action = kernels[0]
         _assert_multi_root_and_package_config(env, action)
         input_paths = [f.path for f in action.inputs.to_list()]
-        staged_seed = [p for p in input_paths if p.endswith(".stage/flutter/tests/lib/stale_probe_seed.dart")]
+        seed = [p for p in input_paths if p.endswith("/bin/flutter/tests/lib/stale_probe_seed.dart")]
         asserts.equals(
             env,
             1,
-            len(staged_seed),
-            "expected declared generated file staged in .stage, got %r" % input_paths,
+            len(seed),
+            "expected the declared generated file as an input, read in place, got %r" % input_paths,
         )
-        staged = [p for p in input_paths if ".stage/" in p]
-        for p in staged:
-            asserts.true(
-                env,
-                p.endswith("/stale_probe_seed.dart"),
-                "the stage holds only the declared generated file, got %r" % p,
-            )
 
         # The declared main is a source: it is an input exactly once, as
-        # itself, and never appears under `.stage/`.
+        # itself.
         unstaged_main = [p for p in input_paths if p.endswith("flutter/tests/lib/web_fixture_main.dart") and ".stage/" not in p and "/bin/" not in p]
         asserts.equals(
             env,
@@ -309,23 +270,16 @@ def _stale_probe_analysis_test_impl(ctx):
             unstaged_main,
             "expected the declared main as itself exactly once, got %r" % input_paths,
         )
-        staged_main = [p for p in input_paths if ".stage/" in p and p.endswith("/web_fixture_main.dart")]
-        asserts.equals(
-            env,
-            [],
-            staged_main,
-            "a declared source must never appear under .stage/, got %r" % staged_main,
-        )
 
         # The stale sibling in bazel-out is in no output group the compile
-        # declares, so it reaches neither the inputs nor the staging root.
-        # The seed's staged twin resolves the generated import, and the
-        # declared main resolves in place through the mounted exec root — the
+        # declares, so it is no input. The seed resolves the generated import
+        # through its output directory, and the declared main resolves in
+        # place through the mounted exec root — the
         # accompanying build test only passes when the main resolves to the
         # declared source. The stale file holds no valid Dart, and it is not
         # a declared input, so the sandbox exposes it nowhere; anywhere else
         # the dependency report would refuse the undeclared read.
-        unstaged = [p for p in input_paths if p.endswith("bin/flutter/tests/lib/web_fixture_main.dart") and ".stage/" not in p]
+        unstaged = [p for p in input_paths if p.endswith("bin/flutter/tests/lib/web_fixture_main.dart")]
         asserts.equals(
             env,
             [],

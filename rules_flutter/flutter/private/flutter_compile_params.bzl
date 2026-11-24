@@ -41,9 +41,9 @@ def flutter_kernel_sources(
         when the dev tool's incremental dill keys the library by the *same*
         URI as the running program.
       filesystem_roots: Extra exec-root-relative directories mounted under
-        `APP_SCHEME` after the generated-only staging root and the exec root
-        (`.`), which the compile always mounts: sources are declared as
-        themselves and read in place, while only generated inputs are staged.
+        `APP_SCHEME` after the generated inputs' output directories and the exec
+        root (`.`), which the compile always mounts: sources and generated
+        files are declared as themselves and read in place.
         Undeclared files are visible through the exec root under local and
         worker strategies, so hermeticity rests on three layers rather than
         invisibility — the directive guard before the compile, the frontend's
@@ -166,7 +166,7 @@ def flutter_kernel_dills(from_dill = None, import_dill = None):
     Args:
       from_dill: Optional pre-linked modular `.dill` File passed via
         `--from-dill` to initialize `frontend_server` without re-parsing
-        transitive sources. When set, only `main` is staged as a source; the
+        transitive sources. When set, only `main` is declared as a source; the
         rest arrives through the dill.
       import_dill: Optional pre-compiled summary `.dill` File passed via
         `--import-dill=<path>` and added to the action inputs. Libraries
