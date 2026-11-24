@@ -21,6 +21,77 @@ void main() {
     tmp.deleteSync(recursive: true);
   });
 
+  group('windowsExtendedPath', () {
+    const cwd = r'D:\a\_temp\ob\execroot\_main';
+
+    test('an absolute path gets the extended-length prefix', () {
+      expect(windowsExtendedPath(r'D:\a\b\lib', cwd: cwd), r'\\?\D:\a\b\lib');
+    });
+
+    test('forward slashes, repeated separators and dots are normalized', () {
+      expect(
+        windowsExtendedPath('D:/a//b/./c/../lib/', cwd: cwd),
+        r'\\?\D:\a\b\lib',
+      );
+    });
+
+    test('a relative path, as Bazel names an output, resolves against cwd', () {
+      expect(
+        windowsExtendedPath('bazel-out/bin/x.summary_root', cwd: cwd),
+        r'\\?\D:\a\_temp\ob\execroot\_main\bazel-out\bin\x.summary_root',
+      );
+    });
+
+    test('a path that climbs out of the drive stays on it', () {
+      expect(windowsExtendedPath(r'D:\a\..\..\x', cwd: cwd), r'\\?\D:\x');
+      expect(windowsExtendedPath(r'D:\..', cwd: cwd), r'\\?\D:\');
+    });
+
+    test('a network share keeps its server and share', () {
+      expect(
+        windowsExtendedPath(r'\\server\share\a\..\b', cwd: cwd),
+        r'\\?\UNC\server\share\b',
+      );
+      expect(
+        windowsExtendedPath(r'\\server\share\..\..\b', cwd: cwd),
+        r'\\?\UNC\server\share\b',
+      );
+    });
+
+    test('a path already extended is returned as it is', () {
+      const path = r'\\?\D:\a\b';
+      expect(windowsExtendedPath(path, cwd: cwd), path);
+    });
+
+    test(
+      'a path of a staged summary tree, past 260 characters, is kept whole',
+      () {
+        final String deep = [
+          r'D:\a\_temp\e2e_38d15b8c\ob\execroot\_main',
+          r'bazel-out\x64_windows-fastbuild-ST-af20dd4d9e84\bin\external',
+          'ai_rules_dart++pub+dart_pub__collection',
+          'collection.dart_analyzer_summary.summary_stage',
+          'collection.dart_analyzer_summary.summary_root',
+          r'lib\src\combined_wrappers',
+        ].join(r'\');
+        expect(deep.length, greaterThan(260));
+        expect(windowsExtendedPath(deep, cwd: cwd), r'\\?\' + deep);
+      },
+    );
+  });
+
+  test('readStagedDartSources keys files by the root as given', () {
+    final root = Directory('${tmp.path}/stage/lib/src')
+      ..createSync(recursive: true);
+    File('${root.path}/a.dart').writeAsStringSync("import 'b.dart';");
+    File('${root.path}/note.txt').writeAsStringSync('x');
+    final Map<String, String> sources = readStagedDartSources([
+      '${tmp.path}/stage',
+    ]);
+    expect(sources.keys, ['${tmp.path}/stage/lib/src/a.dart']);
+    expect(sources.values.single, "import 'b.dart';");
+  });
+
   group('resolveStagedRelativeTarget', () {
     test('sibling and nested relatives stay inside', () {
       expect(

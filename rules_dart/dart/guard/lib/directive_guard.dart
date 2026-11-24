@@ -1301,6 +1301,44 @@ List<String> findDisallowedDirectives(
   return errors;
 }
 
+/// The spelling of [path] that Windows accepts past `MAX_PATH` (260 characters):
+/// absolute, with `\` separators, no `.` or `..` segment and no repeated
+/// separator, behind `\\?\` (`\\?\UNC\` for a network share). Windows
+/// reads such a path as it is and does not normalize it, so every one of those
+/// is done here. A path already in that form is returned as it is. [cwd] makes
+/// a relative [path] absolute.
+///
+/// A staged tree sits under Bazel's output base, so a package of a few nested
+/// directories passes 260 characters easily, and a directory listing of a path
+/// that long fails with "The system cannot find the path specified" unless the
+/// path has this form.
+String windowsExtendedPath(String path, {required String cwd}) {
+  if (path.startsWith(r'\\?\')) return path;
+  String native = path.replaceAll('/', r'\');
+  final bool drive = RegExp(r'^[A-Za-z]:\\').hasMatch(native);
+  final bool unc = native.startsWith(r'\\');
+  if (!drive && !unc) {
+    final String base = cwd.replaceAll('/', r'\');
+    native = native.startsWith(r'\')
+        ? base.substring(0, 2) + native
+        : '$base\\$native';
+  }
+  final out = <String>[];
+  for (final String part in native.split(r'\')) {
+    if (part.isEmpty || part == '.') continue;
+    if (part == '..') {
+      // Never above the drive (`C:`) or the share (`server`, `share`).
+      if (out.length > (unc ? 2 : 1)) out.removeLast();
+      continue;
+    }
+    out.add(part);
+  }
+  final String joined = out.join(r'\');
+  return unc
+      ? r'\\?\UNC\' + joined
+      : r'\\?\' + joined + (out.length == 1 ? r'\' : '');
+}
+
 /// The contents of every `.dart` file under [roots], keyed by path, skipping
 /// only directories that do not exist and files that vanish before they are
 /// read (the compiler reports those itself). Files that do not decode as UTF-8
@@ -1312,11 +1350,18 @@ List<String> findDisallowedDirectives(
 /// Staged trees hold symlinks (`ctx.actions.symlink`), which list as `Link`,
 /// not `File`: links to `.dart` files are read through the link, so a `file:`
 /// import staged as a symlink is still refused. Keys use `/` separators on
-/// every platform, so diagnostics read the same on Windows and POSIX.
+/// every platform, so diagnostics read the same on Windows and POSIX, and
+/// spell the root as the caller gave it. On Windows the tree is listed and read
+/// under the extended-length spelling of each root ([windowsExtendedPath]), so
+/// a staged path past 260 characters is scanned like any other, never skipped.
 Map<String, String> readStagedDartSources(Iterable<String> roots) {
   final contents = <String, String>{};
+  final bool windows = Platform.isWindows;
   for (final root in roots) {
-    final dir = Directory(root);
+    final String listed = windows
+        ? windowsExtendedPath(root, cwd: Directory.current.path)
+        : root;
+    final dir = Directory(listed);
     if (!dir.existsSync()) continue;
     for (final FileSystemEntity entity in dir.listSync(
       recursive: true,
@@ -1324,7 +1369,15 @@ Map<String, String> readStagedDartSources(Iterable<String> roots) {
     )) {
       if (entity is! File && entity is! Link) continue;
       if (!entity.path.endsWith('.dart')) continue;
-      final String key = entity.path.replaceAll(r'\', '/');
+      // The root as given plus what the listing found below it.
+      final String below = entity.path.startsWith(listed)
+          ? entity.path.substring(listed.length)
+          : entity.path;
+      final String key =
+          (windows
+                  ? '${root.replaceFirst(RegExp(r'[\\/]+$'), '')}$below'
+                  : entity.path)
+              .replaceAll(r'\', '/');
       try {
         // Malformed sequences become U+FFFD, never a skipped file: the front
         // end accepts the file, so the guard scans what it can.
