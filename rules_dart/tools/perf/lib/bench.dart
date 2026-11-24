@@ -14,6 +14,7 @@
 /// ```
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'src/check.dart';
@@ -55,6 +56,9 @@ run and check options:
   --stock-env=FILE       a shell file whose exports make the stock tools'
                          environment (default: this process's environment)
   --runs=N               runs per flow, at least 5 for a baseline (default 5)
+  --command-limit=MIN    the longest one command (set-up or timed) may run;
+                         a flow that exceeds it is recorded as exceeded
+                         (default 45)
   --passes=N             measure each flow N times back to back (default 1);
                          `agree --rows=FILE` compares the first two
   --noisy-load=X         1-minute load above which a run is noisy (default:
@@ -182,7 +186,32 @@ List<Flow> selectFlows(List<Flow> flows, String spec) {
   return out;
 }
 
+/// `flutter-<version>+dart-<version>` of the stock tools, or `dart-<version>`
+/// without Flutter, or `unknown`.
+Future<String> _sdk(Map<String, String> env) async {
+  try {
+    final f = await runCmd(
+      Cmd(['flutter', '--version', '--machine'], cwd: '/', env: env),
+    );
+    if (f.ok) {
+      final j = jsonDecode(f.stdout.substring(f.stdout.indexOf('{')));
+      return 'flutter-${j['frameworkVersion']}+dart-${(j['dartSdkVersion'] as String).split(' ').first}';
+    }
+  } on Object {
+    // No Flutter on PATH.
+  }
+  try {
+    final d = await runCmd(Cmd(['dart', '--version'], cwd: '/', env: env));
+    final m = RegExp(r'version: (\S+)').firstMatch(d.stdout + d.stderr);
+    if (m != null) return 'dart-${m.group(1)}';
+  } on Object {
+    // No Dart on PATH.
+  }
+  return 'unknown';
+}
+
 Future<Ctx> _ctx(_Opts o) async {
+  final stockEnv = await _stockEnv(o['stock-env']);
   final scratch = o.required('scratch');
   Directory(scratch).createSync(recursive: true);
   final ws = Platform.environment['BUILD_WORKSPACE_DIRECTORY'];
@@ -194,6 +223,10 @@ Future<Ctx> _ctx(_Opts o) async {
   final runs = int.tryParse(o['runs'] ?? '5');
   if (runs == null || runs < 1)
     throw const UsageError('--runs must be at least 1');
+  final limit = int.tryParse(o['command-limit'] ?? '45');
+  if (limit == null || limit < 1)
+    throw const UsageError('--command-limit must be at least 1 minute');
+  commandLimit = Duration(minutes: limit);
   final options = <String, String>{};
   for (final kv in o.all('option')) {
     final eq = kv.indexOf('=');
@@ -210,7 +243,8 @@ Future<Ctx> _ctx(_Opts o) async {
         .split(' ')
         .where((s) => s.isNotEmpty)
         .toList(),
-    stockEnv: await _stockEnv(o['stock-env']),
+    stockEnv: stockEnv,
+    sdk: await _sdk(stockEnv),
     runs: runs,
     noisyLoad:
         double.tryParse(o['noisy-load'] ?? '') ??

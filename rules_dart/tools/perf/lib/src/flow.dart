@@ -57,7 +57,7 @@ final class Ctx {
     this.options = const {},
     this.host = const Host(),
     this.commit,
-    this.sdk = 'flutter-3.47.7+dart-3.13.5',
+    this.sdk = 'unknown',
   });
 
   /// The repository root, holding `rules_dart/` and `rules_flutter/`.
@@ -248,6 +248,10 @@ Future<Row> measureFlow(Flow flow, Ctx c, {void Function(String)? say}) async {
   } on NotAvailable catch (e) {
     status = 'not_available';
     notes.write('; NOT AVAILABLE HERE: ${e.reason}');
+  } on Exceeded catch (e) {
+    status = 'exceeded';
+    notes.write('; EXCEEDED after ${runs.length} runs: $e');
+    say?.call('  EXCEEDED: $e');
   } on Object catch (e) {
     status = 'failed';
     notes.write('; FAILED after ${runs.length} runs: $e');

@@ -115,14 +115,20 @@ String _library(GraphSpec s, int l, int i) {
   b
     ..writeln('}')
     ..writeln()
+    // Memoized, so a call is linear in the libraries below it: without it
+    // every library calls three of the layer below, 3^depth calls in all.
+    ..writeln('final _memo = <int, int>{};')
+    ..writeln()
     ..writeln('/// f.')
     ..writeln(bodyAnchor)
+    ..writeln('  final known = _memo[x];')
+    ..writeln('  if (known != null) return known;')
     ..writeln('  var acc = Model$l${'x'}$i($i).id + x;');
   for (final (dl, di) in deps) {
     b.writeln('  acc += ${GraphSpec.pkg(dl, di)}.f(x);');
   }
   b
-    ..writeln('  return acc;')
+    ..writeln('  return _memo[x] = acc;')
     ..writeln('}');
   if (s.flutter) {
     b
@@ -191,7 +197,6 @@ void writeBazelGraph(
       ..writeln(
         'flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")',
       )
-      ..writeln('flutter.toolchain(flutter_version = "3.47.7")')
       ..writeln('flutter.pub(name = "deps", lock = "//:pubspec.lock")')
       ..writeln('use_repo(flutter, "deps", "flutter_toolchains")')
       ..writeln('register_toolchains("@flutter_toolchains//:all")');
@@ -201,7 +206,6 @@ void writeBazelGraph(
       ..writeln(
         'dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")',
       )
-      ..writeln('dart.toolchain(dart_version = "3.13.5")')
       ..writeln('use_repo(dart, "dart_toolchains")')
       ..writeln('register_toolchains("@dart_toolchains//:all")');
     if (hub) {
@@ -425,7 +429,6 @@ void writePerSourceProbe(String out, String repo) {
         'bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")\n'
         'local_path_override(module_name = "ai_rules_dart", path = "$repo/rules_dart")\n\n'
         'dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")\n'
-        'dart.toolchain(dart_version = "3.13.5")\n'
         'use_repo(dart, "dart_toolchains")\n'
         'register_toolchains("@dart_toolchains//:all")\n',
   );
@@ -555,7 +558,6 @@ void writeCodegenPackage(
         'bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")\n'
         'local_path_override(module_name = "ai_rules_dart", path = "$repo/rules_dart")\n\n'
         'dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")\n'
-        'dart.toolchain(dart_version = "3.13.5")\n'
         'use_repo(dart, "dart_toolchains")\n'
         'register_toolchains("@dart_toolchains//:all")\n\n'
         'pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")\n'

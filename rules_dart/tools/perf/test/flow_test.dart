@@ -4,6 +4,7 @@ import 'package:perf/src/bazel.dart';
 import 'package:perf/src/flow.dart';
 import 'package:perf/src/flows/common.dart';
 import 'package:perf/src/host.dart';
+import 'package:perf/src/proc.dart';
 import 'package:perf/src/workspace.dart';
 import 'package:test/test.dart';
 
@@ -16,12 +17,14 @@ final class _Fake extends Flow {
     this.failAt,
     this.warm = false,
     this.unavailable,
+    this.exceedAt,
   });
 
   final List<double> values;
   final int? killAt;
   final int? failAt;
   final String? unavailable;
+  final int? exceedAt;
   @override
   final bool warm;
   final calls = <String>[];
@@ -55,6 +58,14 @@ final class _Fake extends Flow {
   Future<Measured> measure(Ctx c, int run) async {
     calls.add('measure $run');
     if (run == failAt) throw StateError('boom');
+    if (run == exceedAt) {
+      // A child that leaves a grandchild holding the output pipes: only a
+      // kill of the whole tree lets the call return before the sleeps end.
+      await runCmd(
+        Cmd(['sh', '-c', 'sleep 60 & sleep 60; wait'], cwd: '/'),
+        timeout: const Duration(milliseconds: 300),
+      );
+    }
     if (run == killAt || killAt == -1) {
       File(log!).writeAsStringSync('KILLED_UNKNOWN\n', mode: FileMode.append);
     }
@@ -117,6 +128,17 @@ void main() {
     final row = await measureFlow(f, _ctx(proc.path));
     expect(row.status, 'failed');
     expect(row.notes, contains('boom'));
+    expect(f.calls.last, 'tearDown');
+  });
+
+  test('a command over its limit is killed with its tree, and the row '
+      'says the flow exceeded it', () async {
+    final f = _Fake([1, 1, 1, 1, 1], exceedAt: 1);
+    final watch = Stopwatch()..start();
+    final row = await measureFlow(f, _ctx(proc.path));
+    expect(watch.elapsed, lessThan(const Duration(seconds: 20)));
+    expect(row.status, 'exceeded');
+    expect(row.notes, contains('exceeded 0 minutes'));
     expect(f.calls.last, 'tearDown');
   });
 

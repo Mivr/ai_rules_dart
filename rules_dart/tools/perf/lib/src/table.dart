@@ -19,6 +19,9 @@ const dartMnemonics = {
 String _fmt(Row? r) {
   if (r == null) return 'not run';
   if (r.status == 'not_available') return 'not available here';
+  if (r.status == 'exceeded') {
+    return 'exceeded ${RegExp(r'exceeded (\d+) minutes').firstMatch(r.notes)?.group(1) ?? '?'} minutes${r.noisy ? ' *' : ''}';
+  }
   if (r.status != 'ok' || r.median == null) {
     return 'failed (see ledger)';
   }

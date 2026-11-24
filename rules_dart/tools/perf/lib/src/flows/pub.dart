@@ -150,7 +150,6 @@ final class PubFlow extends Flow {
       'bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")\n'
       'local_path_override(module_name = "ai_rules_dart", path = "${c.repo}/rules_dart")\n\n'
       'dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")\n'
-      'dart.toolchain(dart_version = "3.13.5")\n'
       'use_repo(dart, "dart_toolchains")\n'
       'register_toolchains("@dart_toolchains//:all")\n\n'
       'pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")\n'

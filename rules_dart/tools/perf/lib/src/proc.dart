@@ -63,7 +63,66 @@ final class Done {
   }
 }
 
-/// Runs [cmd], appending its output to [log] when given.
+/// The longest one command may run, unless a call gives its own timeout;
+/// null for no limit. `bench run --command-limit=MINUTES` sets it.
+Duration? commandLimit;
+
+/// A command that ran longer than its limit and was killed, with every
+/// process below it. A flow that meets it is recorded as exceeded: that is
+/// its result.
+final class Exceeded implements Exception {
+  /// [cmd] exceeded [limit].
+  const Exceeded(this.cmd, this.limit);
+
+  /// The command.
+  final Cmd cmd;
+
+  /// The limit it exceeded.
+  final Duration limit;
+
+  @override
+  String toString() =>
+      'exceeded ${limit.inMinutes} minutes: ${cmd.argv.join(' ')}';
+}
+
+/// Kills [root] and every process below it (from `/proc`), children first
+/// found, so none is left holding the output pipes.
+void killTree(int root) {
+  final children = <int, List<int>>{};
+  try {
+    for (final e in Directory('/proc').listSync(followLinks: false)) {
+      final pid = int.tryParse(
+        e.uri.pathSegments.lastWhere((p) => p.isNotEmpty),
+      );
+      if (pid == null) continue;
+      try {
+        final stat = File('/proc/$pid/stat').readAsStringSync();
+        final ppid = int.parse(
+          stat.substring(stat.lastIndexOf(')') + 2).split(' ')[1],
+        );
+        (children[ppid] ??= []).add(pid);
+      } on Object {
+        // Gone already.
+      }
+    }
+  } on FileSystemException {
+    // A process left while listing: kill what was found.
+  }
+  final all = <int>[];
+  final todo = [root];
+  while (todo.isNotEmpty) {
+    final pid = todo.removeLast();
+    all.add(pid);
+    todo.addAll(children[pid] ?? const []);
+  }
+  for (final pid in all) {
+    Process.killPid(pid, ProcessSignal.sigkill);
+  }
+}
+
+/// Runs [cmd], appending its output to [log] when given. A command that
+/// runs longer than [timeout] (default [commandLimit]) is killed with its
+/// process tree and throws [Exceeded].
 Future<Done> runCmd(
   Cmd cmd, {
   void Function(int pid)? started,
@@ -82,13 +141,16 @@ Future<Done> runCmd(
   final err = StringBuffer();
   final a = p.stdout.transform(utf8.decoder).listen(out.write).asFuture<void>();
   final b = p.stderr.transform(utf8.decoder).listen(err.write).asFuture<void>();
-  var code = timeout == null
+  final limit = timeout ?? commandLimit;
+  var exceeded = false;
+  final code = limit == null
       ? await p.exitCode
       : await p.exitCode.timeout(
-          timeout,
+          limit,
           onTimeout: () {
-            p.kill(ProcessSignal.sigkill);
-            return -9;
+            exceeded = true;
+            killTree(p.pid);
+            return p.exitCode;
           },
         );
   await Future.wait([a, b]);
@@ -106,6 +168,7 @@ Future<Done> runCmd(
     '${done.stdout}${done.stderr}\n',
     mode: FileMode.append,
   );
+  if (exceeded) throw Exceeded(cmd, limit!);
   return done;
 }
 
