@@ -3410,7 +3410,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "tUM7+RbPQfLRSy8oIQmsKReB7Mjk13GCmAGsmu4+jaI=",
+        "bzlTransitiveDigest": "rkRFplq6ghQ8aYx0ua41arF8jjQNBktMM41LvKsvS5s=",
         "usagesDigest": "Dce3yhqvkFb5oU3hrY3rnCq/nG0LRCpmIrQd/AD2V8g=",
         "recordedInputs": [
           "REPO_MAPPING:,deps__swiftpm-bigint ai_rules_flutter++flutter+deps__swiftpm-bigint",
@@ -10397,6 +10397,9 @@
                 "deps_pods": "deps",
                 "deps_pods_unmapped": "deps",
                 "deps_pods_wrong": "deps"
+              },
+              "by_package": {
+                "": "deps"
               }
             }
           },

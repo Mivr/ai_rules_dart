@@ -3402,7 +3402,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "SxSjwyX0meeTBACpPwwYSguMUd7DxsqEqufkcKexE9o=",
+        "bzlTransitiveDigest": "skOao9V9/cHFcjD3rf2FBvUZ2BoMNs8Y2ZnpOxzDOVs=",
         "usagesDigest": "/nL4XQ/32U3LgNOvCQrn9AThZ0YozA5JJ8P8l6Ex7d0=",
         "recordedInputs": [
           "REPO_MAPPING:,sqlite3 sqlite3+",
@@ -5630,6 +5630,9 @@
             "attributes": {
               "hubs": {
                 "deps": "deps"
+              },
+              "by_package": {
+                "": "deps"
               }
             }
           },
