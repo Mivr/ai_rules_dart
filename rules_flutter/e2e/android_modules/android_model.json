@@ -1,6 +1,6 @@
 {
     "android_plugins": [
-        
+
     ],
     "artifacts": {
         "androidx/activity/activity/1.8.1/activity-1.8.1.aar": {
@@ -9,10 +9,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.activity",
                 "proguard": false,
@@ -32,10 +32,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.annotation.experimental",
                 "proguard": false,
@@ -71,10 +71,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.arch.core",
                 "proguard": false,
@@ -110,10 +110,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core.ktx",
                 "proguard": false,
@@ -133,10 +133,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core.ktx",
                 "proguard": false,
@@ -156,10 +156,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core",
                 "proguard": true,
@@ -179,10 +179,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.customview",
                 "proguard": false,
@@ -202,10 +202,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.exifinterface",
                 "proguard": true,
@@ -225,10 +225,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.fragment",
                 "proguard": true,
@@ -248,10 +248,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.interpolator",
                 "proguard": false,
@@ -287,10 +287,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.livedata.core.ktx",
                 "proguard": false,
@@ -310,10 +310,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.livedata.core",
                 "proguard": false,
@@ -333,10 +333,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.livedata",
                 "proguard": false,
@@ -356,10 +356,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.process",
                 "proguard": true,
@@ -379,10 +379,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.runtime",
                 "proguard": true,
@@ -402,10 +402,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.viewmodel.savedstate",
                 "proguard": true,
@@ -425,10 +425,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.viewmodel",
                 "proguard": true,
@@ -448,10 +448,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.loader",
                 "proguard": false,
@@ -471,10 +471,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.profileinstaller",
                 "proguard": false,
@@ -494,10 +494,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.savedstate",
                 "proguard": true,
@@ -517,10 +517,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.startup",
                 "proguard": true,
@@ -540,10 +540,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.tracing",
                 "proguard": false,
@@ -563,10 +563,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.versionedparcelable",
                 "proguard": true,
@@ -586,10 +586,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.viewpager",
                 "proguard": false,
@@ -609,10 +609,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.window.extensions.core",
                 "proguard": true,
@@ -632,10 +632,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.window.java",
                 "proguard": false,
@@ -655,10 +655,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.window",
                 "proguard": true,
@@ -854,10 +854,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "com.getkeepsafe.relinker",
                 "proguard": false,
@@ -1907,7 +1907,7 @@
                     23,
                     4,
                     [
-                        
+
                     ]
                 ],
                 [
@@ -1933,7 +1933,7 @@
                     47,
                     1,
                     [
-                        
+
                     ]
                 ],
                 [
@@ -1948,7 +1948,7 @@
                     51,
                     1,
                     [
-                        
+
                     ]
                 ]
             ]
@@ -2085,7 +2085,7 @@
     "projects": {
         ":app": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -2141,11 +2141,11 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "application_id": "dev.rdf.counter",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "bundle": {
@@ -2193,12 +2193,12 @@
                     },
                     "compile": "cp_4b02c48b9e0f",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": true,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
                             "-Wno-dev",
@@ -2206,17 +2206,17 @@
                             "-DCMAKE_BUILD_TYPE=debug"
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -2231,17 +2231,17 @@
                         "language_version": null,
                         "module_name": "android:app_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
                         "applicationName": "android.app.Application"
@@ -2293,10 +2293,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": false,
                         "merges": [
@@ -2304,14 +2304,14 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
                         "text:proguard-android-optimize.txt"
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_65ed13334b34",
                     "shrink_resources": false,
@@ -2320,22 +2320,22 @@
                     },
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
                             "app:android/app/src/main/assets"
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "app:android/app/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/app/src/main/kotlin",
@@ -2349,10 +2349,10 @@
                             "app:android/app/src/main/res"
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36,
@@ -2361,11 +2361,11 @@
                 },
                 "profile": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "application_id": "dev.rdf.counter",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "profile",
                     "bundle": {
@@ -2413,12 +2413,12 @@
                     },
                     "compile": "cp_f17f8500cd66",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": true,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
                             "-Wno-dev",
@@ -2426,17 +2426,17 @@
                             "-DCMAKE_BUILD_TYPE=profile"
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -2451,17 +2451,17 @@
                         "language_version": null,
                         "module_name": "android:app_profile",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
                         "applicationName": "android.app.Application"
@@ -2513,10 +2513,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": false,
                         "merges": [
@@ -2524,14 +2524,14 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
                         "text:proguard-android-optimize.txt"
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_259b8cc62705",
                     "shrink_resources": false,
@@ -2540,22 +2540,22 @@
                     },
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
                             "app:android/app/src/main/assets"
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "app:android/app/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/app/src/main/kotlin",
@@ -2569,10 +2569,10 @@
                             "app:android/app/src/main/res"
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36,
@@ -2581,11 +2581,11 @@
                 },
                 "release": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "application_id": "dev.rdf.counter",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "release",
                     "bundle": {
@@ -3398,12 +3398,12 @@
                     },
                     "compile": "cp_9e4d16a541ed",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": false,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
                             "-Wno-dev",
@@ -3411,17 +3411,17 @@
                             "-DCMAKE_BUILD_TYPE=release"
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -3430,23 +3430,23 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "17",
                         "language_version": null,
                         "module_name": "android:app_release",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
                         "applicationName": "android.app.Application"
@@ -3498,10 +3498,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": false,
                         "merges": [
@@ -3509,7 +3509,7 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
@@ -3517,7 +3517,7 @@
                         "text:flutter_proguard_rules.pro"
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_b50b7d552282",
                     "shrink_resources": true,
@@ -3526,22 +3526,22 @@
                     },
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
                             "app:android/app/src/main/assets"
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "app:android/app/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/app/src/main/kotlin",
@@ -3554,10 +3554,10 @@
                             "app:android/app/src/main/res"
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36,
@@ -3568,7 +3568,7 @@
         },
         ":java_lib": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -3608,20 +3608,20 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "annotation_processors": "cp_cfc7dcd119a6",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "compile": "cp_cd85d3b07669",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": true,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -3630,32 +3630,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "21",
                         "language_version": null,
                         "module_name": "android:java_lib_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 24,
                     "namespace": "dev.rdf.javalib",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -3694,10 +3694,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -3705,34 +3705,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_cd85d3b07669",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "app:android/java_lib/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/java_lib/src/main/java"
@@ -3741,33 +3741,33 @@
                             "app:android/java_lib/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36
                 },
                 "release": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "annotation_processors": "cp_cfc7dcd119a6",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "release",
                     "compile": "cp_cd85d3b07669",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": false,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -3776,32 +3776,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "21",
                         "language_version": null,
                         "module_name": "android:java_lib_release",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 24,
                     "namespace": "dev.rdf.javalib",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -3840,10 +3840,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -3851,34 +3851,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_cd85d3b07669",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "app:android/java_lib/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/java_lib/src/main/java"
@@ -3887,13 +3887,13 @@
                             "app:android/java_lib/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36
@@ -3902,7 +3902,7 @@
         },
         ":kapt_lib": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -3943,20 +3943,20 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "annotation_processors": "cp_cfc7dcd119a6",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "compile": "cp_cd85d3b07669",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": true,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline",
@@ -3967,32 +3967,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "17",
                         "language_version": null,
                         "module_name": "android:kapt_lib_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
                             "kotlin-annotation-processing-gradle-2.4.0.jar"
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 24,
                     "namespace": "dev.rdf.kaptlib",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -4031,10 +4031,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -4042,34 +4042,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_cd85d3b07669",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
                             "app:android/kapt_lib/src/main/assets"
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
-                            
+
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/kapt_lib/src/main/kotlin"
@@ -4078,33 +4078,33 @@
                             "app:android/kapt_lib/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36
                 },
                 "release": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "annotation_processors": "cp_cfc7dcd119a6",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "release",
                     "compile": "cp_cd85d3b07669",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": false,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline",
@@ -4115,32 +4115,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "17",
                         "language_version": null,
                         "module_name": "android:kapt_lib_release",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
                             "kotlin-annotation-processing-gradle-2.4.0.jar"
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 24,
                     "namespace": "dev.rdf.kaptlib",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -4179,10 +4179,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -4190,34 +4190,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_cd85d3b07669",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
                             "app:android/kapt_lib/src/main/assets"
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
-                            
+
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/kapt_lib/src/main/kotlin"
@@ -4226,13 +4226,13 @@
                             "app:android/kapt_lib/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36
@@ -4241,7 +4241,7 @@
         },
         ":ksp_lib": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -4282,19 +4282,19 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "compile": "cp_d7d3f6924a82",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": true,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -4303,13 +4303,13 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "17",
                         "language_version": null,
                         "module_name": "android:ksp_lib_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
                             "annotations-13.0.jar",
@@ -4317,21 +4317,21 @@
                             "symbol-processing-api-2.3.14.jar"
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "ksp_processors": "cp_28a6ae22a2c8",
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 24,
                     "namespace": "dev.rdf.ksplib",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -4370,10 +4370,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -4381,34 +4381,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_d7d3f6924a82",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
-                            
+
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/ksp_lib/src/main/kotlin"
@@ -4420,29 +4420,29 @@
                             "app:android/ksp_lib/src/main/res"
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36
                 },
                 "release": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "release",
                     "compile": "cp_d7d3f6924a82",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": false,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -4451,13 +4451,13 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "17",
                         "language_version": null,
                         "module_name": "android:ksp_lib_release",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
                             "annotations-13.0.jar",
@@ -4465,21 +4465,21 @@
                             "symbol-processing-api-2.3.14.jar"
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "ksp_processors": "cp_28a6ae22a2c8",
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 24,
                     "namespace": "dev.rdf.ksplib",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -4518,10 +4518,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -4529,34 +4529,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_d7d3f6924a82",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
-                            
+
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/ksp_lib/src/main/kotlin"
@@ -4568,10 +4568,10 @@
                             "app:android/ksp_lib/src/main/res"
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36
@@ -4580,7 +4580,7 @@
         }
     },
     "pub_packages": {
-        
+
     },
     "pubspec_version_markers": {
         "code": 1073741823,

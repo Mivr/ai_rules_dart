@@ -10,10 +10,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.activity.ktx",
                 "proguard": false,
@@ -33,10 +33,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.activity",
                 "proguard": false,
@@ -56,10 +56,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.annotation.experimental",
                 "proguard": false,
@@ -95,10 +95,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.appcompat.resources",
                 "proguard": false,
@@ -118,10 +118,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.appcompat",
                 "proguard": true,
@@ -149,10 +149,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.arch.core",
                 "proguard": false,
@@ -172,10 +172,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.asynclayoutinflater",
                 "proguard": false,
@@ -219,10 +219,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.coordinatorlayout",
                 "proguard": true,
@@ -242,10 +242,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core.ktx",
                 "proguard": false,
@@ -265,10 +265,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core.ktx",
                 "proguard": false,
@@ -288,10 +288,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core.ktx",
                 "proguard": false,
@@ -311,10 +311,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core",
                 "proguard": true,
@@ -334,10 +334,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.cursoradapter",
                 "proguard": false,
@@ -357,10 +357,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.customview",
                 "proguard": false,
@@ -380,10 +380,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.customview",
                 "proguard": false,
@@ -403,10 +403,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.datastore.datastore",
                 "proguard": true,
@@ -433,7 +433,7 @@
                     "jni/x86_64/libdatastore_shared_counter.so"
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.datastore.core",
                 "proguard": true,
@@ -462,10 +462,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.datastore.preferences",
                 "proguard": true,
@@ -486,10 +486,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.datastore.preferences.core",
                 "proguard": true,
@@ -526,10 +526,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.documentfile",
                 "proguard": false,
@@ -549,10 +549,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.drawerlayout",
                 "proguard": false,
@@ -572,10 +572,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.exifinterface",
                 "proguard": true,
@@ -595,10 +595,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.fragment.ktx",
                 "proguard": false,
@@ -618,10 +618,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.fragment",
                 "proguard": true,
@@ -641,10 +641,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.interpolator",
                 "proguard": false,
@@ -664,10 +664,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.legacy.coreui",
                 "proguard": false,
@@ -687,10 +687,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.legacy.coreutils",
                 "proguard": false,
@@ -726,10 +726,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.livedata.core.ktx",
                 "proguard": false,
@@ -749,10 +749,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.livedata.core",
                 "proguard": false,
@@ -772,10 +772,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.livedata",
                 "proguard": false,
@@ -795,10 +795,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.process",
                 "proguard": true,
@@ -818,10 +818,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.ktx",
                 "proguard": false,
@@ -841,10 +841,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.runtime",
                 "proguard": true,
@@ -864,10 +864,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.viewmodel.ktx",
                 "proguard": false,
@@ -887,10 +887,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.viewmodel.savedstate",
                 "proguard": true,
@@ -910,10 +910,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.viewmodel",
                 "proguard": true,
@@ -933,10 +933,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.loader",
                 "proguard": false,
@@ -956,10 +956,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.localbroadcastmanager",
                 "proguard": false,
@@ -979,10 +979,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.preference",
                 "proguard": true,
@@ -1002,10 +1002,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.print",
                 "proguard": false,
@@ -1025,10 +1025,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.profileinstaller",
                 "proguard": false,
@@ -1048,10 +1048,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.recyclerview",
                 "proguard": true,
@@ -1071,10 +1071,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.savedstate.ktx",
                 "proguard": false,
@@ -1094,10 +1094,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.savedstate",
                 "proguard": true,
@@ -1117,10 +1117,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.slidingpanelayout",
                 "proguard": false,
@@ -1140,10 +1140,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.startup",
                 "proguard": true,
@@ -1163,10 +1163,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.swiperefreshlayout",
                 "proguard": false,
@@ -1186,10 +1186,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.tracing",
                 "proguard": false,
@@ -1209,10 +1209,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.transition",
                 "proguard": true,
@@ -1232,10 +1232,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.vectordrawable.animated",
                 "proguard": true,
@@ -1255,10 +1255,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.vectordrawable",
                 "proguard": false,
@@ -1278,10 +1278,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.versionedparcelable",
                 "proguard": true,
@@ -1301,10 +1301,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.viewpager",
                 "proguard": false,
@@ -1324,10 +1324,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.window.extensions.core",
                 "proguard": true,
@@ -1347,10 +1347,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.window.java",
                 "proguard": false,
@@ -1370,10 +1370,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.window",
                 "proguard": true,
@@ -1569,10 +1569,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "com.getkeepsafe.relinker",
                 "proguard": false,
@@ -2386,14 +2386,14 @@
                     0,
                     2,
                     [
-                        
+
                     ]
                 ],
                 [
                     33,
                     3,
                     [
-                        
+
                     ]
                 ]
             ]
@@ -2405,14 +2405,14 @@
                     0,
                     1,
                     [
-                        
+
                     ]
                 ],
                 [
                     72,
                     3,
                     [
-                        
+
                     ]
                 ]
             ]
@@ -2434,7 +2434,7 @@
     "projects": {
         ":app": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -2490,11 +2490,11 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "application_id": "com.example.flutterapp",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "bundle": {
@@ -2542,12 +2542,12 @@
                     },
                     "compile": "cp_85f01db03912",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": true,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
                             "-Wno-dev",
@@ -2555,17 +2555,17 @@
                             "-DCMAKE_BUILD_TYPE=debug"
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -2580,17 +2580,17 @@
                         "language_version": null,
                         "module_name": "android:app_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
                         "applicationName": "android.app.Application"
@@ -2642,10 +2642,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": false,
                         "merges": [
@@ -2653,14 +2653,14 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
                         "text:proguard-android-optimize.txt"
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_a506e98bcae9",
                     "shrink_resources": false,
@@ -2669,22 +2669,22 @@
                     },
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "app:android/app/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/app/src/main/kotlin",
@@ -2698,10 +2698,10 @@
                             "app:android/app/src/main/res"
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36,
@@ -2712,7 +2712,7 @@
         },
         ":jni": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -2762,10 +2762,10 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "compile": "cp_ac0d81ce5975",
@@ -2775,23 +2775,23 @@
                     "debuggable": true,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
-                            
+
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -2800,32 +2800,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "21",
                         "language_version": null,
                         "module_name": "com.github.dart_lang.jni:jni_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 21,
                     "namespace": "com.github.dart_lang.jni",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -2864,10 +2864,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -2875,35 +2875,35 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_830ca09e19d7",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
                             "pub:hosted/pub.dev/jni-1.2.1/java/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
@@ -2913,13 +2913,13 @@
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 35
@@ -2928,7 +2928,7 @@
         },
         ":shared_preferences_android": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -2975,10 +2975,10 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "compile": "cp_34c4841d9fc0",
@@ -2987,7 +2987,7 @@
                     ],
                     "debuggable": true,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-Xlint:deprecation",
@@ -2998,32 +2998,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "17",
                         "language_version": null,
                         "module_name": "io.flutter.plugins.sharedpreferences:shared_preferences_android_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 24,
                     "namespace": "io.flutter.plugins.sharedpreferences",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -3062,10 +3062,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -3073,34 +3073,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_c81332e7b9ce",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
-                            
+
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "pub:hosted/pub.dev/shared_preferences_android-2.5.4/android/src/main/kotlin"
@@ -3109,13 +3109,13 @@
                             "pub:hosted/pub.dev/shared_preferences_android-2.5.4/android/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36

@@ -880,7 +880,9 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
   }
   def out = new File((app.findProperty('rdf.out') ?: new File(root.projectDir, 'android_model.json')).toString())
   out.parentFile.mkdirs()
-  out.setText(JsonOutput.prettyPrint(JsonOutput.toJson(model)) + '\n', 'UTF-8')
+  // prettyPrint indents the empty line of an empty list; the file is written without
+  // trailing whitespace, as the repository's whitespace hooks leave a text file.
+  out.setText(JsonOutput.prettyPrint(JsonOutput.toJson(model)).replaceAll('(?m)[ \\t]+$', '') + '\n', 'UTF-8')
   println "rdf: wrote ${out} (${projects.size()} projects, ${ctx.artifacts.size()} artifacts)"
 }
 

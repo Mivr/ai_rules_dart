@@ -171,4 +171,3 @@ flutter_library = rule(
     fragments = BUILD_HOOK_FRAGMENTS,
     doc = "Collects Flutter sources and the package's own files, propagates DartInfo and FlutterInfo. Does not compile.",
 )
-

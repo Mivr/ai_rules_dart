@@ -12,10 +12,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.activity",
                 "proguard": false,
@@ -35,10 +35,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.annotation.experimental",
                 "proguard": false,
@@ -74,10 +74,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.arch.core",
                 "proguard": false,
@@ -113,10 +113,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core.ktx",
                 "proguard": false,
@@ -136,10 +136,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core.ktx",
                 "proguard": false,
@@ -159,10 +159,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.core",
                 "proguard": true,
@@ -182,10 +182,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.customview",
                 "proguard": false,
@@ -205,10 +205,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.exifinterface",
                 "proguard": true,
@@ -228,10 +228,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.fragment",
                 "proguard": true,
@@ -251,10 +251,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.interpolator",
                 "proguard": false,
@@ -290,10 +290,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.livedata.core.ktx",
                 "proguard": false,
@@ -313,10 +313,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.livedata.core",
                 "proguard": false,
@@ -336,10 +336,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.livedata",
                 "proguard": false,
@@ -359,10 +359,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.process",
                 "proguard": true,
@@ -382,10 +382,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.runtime",
                 "proguard": true,
@@ -405,10 +405,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.viewmodel.savedstate",
                 "proguard": true,
@@ -428,10 +428,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.lifecycle.viewmodel",
                 "proguard": true,
@@ -451,10 +451,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.loader",
                 "proguard": false,
@@ -474,10 +474,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.profileinstaller",
                 "proguard": false,
@@ -497,10 +497,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.savedstate",
                 "proguard": true,
@@ -520,10 +520,10 @@
                 "baseline_prof": true,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.startup",
                 "proguard": true,
@@ -543,10 +543,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.tracing",
                 "proguard": false,
@@ -566,10 +566,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.versionedparcelable",
                 "proguard": true,
@@ -589,10 +589,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.viewpager",
                 "proguard": false,
@@ -612,10 +612,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.window.extensions.core",
                 "proguard": true,
@@ -635,10 +635,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.window.java",
                 "proguard": false,
@@ -658,10 +658,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "androidx.window",
                 "proguard": true,
@@ -857,10 +857,10 @@
                 "baseline_prof": false,
                 "classes": true,
                 "jni": [
-                    
+
                 ],
                 "libs": [
-                    
+
                 ],
                 "namespace": "com.getkeepsafe.relinker",
                 "proguard": false,
@@ -1632,7 +1632,7 @@
                     0,
                     1,
                     [
-                        
+
                     ]
                 ]
             ]
@@ -1844,7 +1844,7 @@
     "projects": {
         ":app": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -1900,11 +1900,11 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "application_id": "dev.rdf.counter",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "bundle": {
@@ -1952,12 +1952,12 @@
                     },
                     "compile": "cp_3e47ec8e1e3c",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": true,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
                             "-Wno-dev",
@@ -1965,17 +1965,17 @@
                             "-DCMAKE_BUILD_TYPE=debug"
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -1990,17 +1990,17 @@
                         "language_version": null,
                         "module_name": "android:app_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
                         "applicationName": "android.app.Application"
@@ -2052,10 +2052,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": false,
                         "merges": [
@@ -2063,14 +2063,14 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
                         "text:proguard-android-optimize.txt"
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_babb3e08ef33",
                     "shrink_resources": false,
@@ -2079,22 +2079,22 @@
                     },
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "app:android/app/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/app/src/main/kotlin",
@@ -2108,10 +2108,10 @@
                             "app:android/app/src/main/res"
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36,
@@ -2120,11 +2120,11 @@
                 },
                 "profile": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "application_id": "dev.rdf.counter",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "profile",
                     "bundle": {
@@ -2172,12 +2172,12 @@
                     },
                     "compile": "cp_53315fdc09f7",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": true,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
                             "-Wno-dev",
@@ -2185,17 +2185,17 @@
                             "-DCMAKE_BUILD_TYPE=profile"
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -2210,17 +2210,17 @@
                         "language_version": null,
                         "module_name": "android:app_profile",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
                         "applicationName": "android.app.Application"
@@ -2272,10 +2272,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": false,
                         "merges": [
@@ -2283,14 +2283,14 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
                         "text:proguard-android-optimize.txt"
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_e575b475ac18",
                     "shrink_resources": false,
@@ -2299,22 +2299,22 @@
                     },
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "app:android/app/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/app/src/main/kotlin",
@@ -2328,10 +2328,10 @@
                             "app:android/app/src/main/res"
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36,
@@ -2340,11 +2340,11 @@
                 },
                 "release": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "application_id": "dev.rdf.counter",
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "release",
                     "bundle": {
@@ -3114,12 +3114,12 @@
                     },
                     "compile": "cp_ae273eefdfdc",
                     "consumer_proguard_files": [
-                        
+
                     ],
                     "debuggable": false,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
                             "-Wno-dev",
@@ -3127,17 +3127,17 @@
                             "-DCMAKE_BUILD_TYPE=release"
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -3146,23 +3146,23 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "17",
                         "language_version": null,
                         "module_name": "android:app_release",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
                         "applicationName": "android.app.Application"
@@ -3214,10 +3214,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": false,
                         "merges": [
@@ -3225,7 +3225,7 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
@@ -3233,7 +3233,7 @@
                         "text:flutter_proguard_rules.pro"
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_03cdbba8a058",
                     "shrink_resources": true,
@@ -3242,22 +3242,22 @@
                     },
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "app:android/app/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "app:android/app/src/main/kotlin",
@@ -3270,10 +3270,10 @@
                             "app:android/app/src/main/res"
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 36,
@@ -3284,7 +3284,7 @@
         },
         ":jni": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -3334,10 +3334,10 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "compile": "cp_ac0d81ce5975",
@@ -3347,23 +3347,23 @@
                     "debuggable": true,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
-                            
+
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -3372,32 +3372,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "21",
                         "language_version": null,
                         "module_name": "com.github.dart_lang.jni:jni_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 21,
                     "namespace": "com.github.dart_lang.jni",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -3436,10 +3436,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -3447,35 +3447,35 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_830ca09e19d7",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
                             "pub:hosted/pub.dev/jni-1.2.1/java/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
@@ -3485,23 +3485,23 @@
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 35
                 },
                 "profile": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "profile",
                     "compile": "cp_4c391740415d",
@@ -3511,23 +3511,23 @@
                     "debuggable": true,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
-                            
+
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -3536,32 +3536,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "21",
                         "language_version": null,
                         "module_name": "com.github.dart_lang.jni:jni_profile",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 21,
                     "namespace": "com.github.dart_lang.jni",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -3600,10 +3600,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -3611,35 +3611,35 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_f36b4ec49849",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
                             "pub:hosted/pub.dev/jni-1.2.1/java/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
@@ -3649,23 +3649,23 @@
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 35
                 },
                 "release": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "release",
                     "compile": "cp_97374e220e52",
@@ -3675,23 +3675,23 @@
                     "debuggable": false,
                     "external_native_build": {
                         "abi_filters": [
-                            
+
                         ],
                         "arguments": [
-                            
+
                         ],
                         "c_flags": [
-                            
+
                         ],
                         "cpp_flags": [
-                            
+
                         ],
                         "targets": [
-                            
+
                         ]
                     },
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -3700,32 +3700,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "21",
                         "language_version": null,
                         "module_name": "com.github.dart_lang.jni:jni_release",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 21,
                     "namespace": "com.github.dart_lang.jni",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -3764,10 +3764,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -3775,35 +3775,35 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_032a90fb23f6",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
                             "pub:hosted/pub.dev/jni-1.2.1/java/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/java",
@@ -3813,13 +3813,13 @@
                             "pub:hosted/pub.dev/jni-1.2.1/android/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 35
@@ -3828,7 +3828,7 @@
         },
         ":jni_flutter": {
             "build_features": {
-                
+
             },
             "build_tools": "36.0.0",
             "build_types": [
@@ -3875,10 +3875,10 @@
             "variants": {
                 "debug": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "debug",
                     "compile": "cp_8b564effd716",
@@ -3887,7 +3887,7 @@
                     ],
                     "debuggable": true,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -3896,32 +3896,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "21",
                         "language_version": null,
                         "module_name": "com.github.dart_lang.jni_flutter:jni_flutter_debug",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 21,
                     "namespace": "com.github.dart_lang.jni_flutter",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -3960,10 +3960,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -3971,34 +3971,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_6c0d404b9b19",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
@@ -4007,23 +4007,23 @@
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 35
                 },
                 "profile": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "profile",
                     "compile": "cp_2143be43fb51",
@@ -4032,7 +4032,7 @@
                     ],
                     "debuggable": true,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -4041,32 +4041,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "21",
                         "language_version": null,
                         "module_name": "com.github.dart_lang.jni_flutter:jni_flutter_profile",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 21,
                     "namespace": "com.github.dart_lang.jni_flutter",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -4105,10 +4105,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -4116,34 +4116,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_31676c8af273",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
@@ -4152,23 +4152,23 @@
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 35
                 },
                 "release": {
                     "annotation_processor_args": {
-                        
+
                     },
                     "build_config_fields": {
-                        
+
                     },
                     "build_type": "release",
                     "compile": "cp_9280d6b1e237",
@@ -4177,7 +4177,7 @@
                     ],
                     "debuggable": false,
                     "flavors": [
-                        
+
                     ],
                     "javac_args": [
                         "-XDstringConcat=inline"
@@ -4186,32 +4186,32 @@
                         "all_warnings_as_errors": false,
                         "api_version": null,
                         "free_compiler_args": [
-                            
+
                         ],
                         "jvm_target": "21",
                         "language_version": null,
                         "module_name": "com.github.dart_lang.jni_flutter:jni_flutter_release",
                         "opt_in": [
-                            
+
                         ],
                         "plugin_jars": [
-                            
+
                         ],
                         "plugin_options": [
-                            
+
                         ]
                     },
                     "ksp_args": {
-                        
+
                     },
                     "manifest_placeholders": {
-                        
+
                     },
                     "max_sdk": null,
                     "min_sdk": 21,
                     "namespace": "com.github.dart_lang.jni_flutter",
                     "ndk_abi_filters": [
-                        
+
                     ],
                     "packaging": {
                         "dex_use_legacy": null,
@@ -4250,10 +4250,10 @@
                             "/NOTICE.txt"
                         ],
                         "jni_excludes": [
-                            
+
                         ],
                         "jni_pick_firsts": [
-                            
+
                         ],
                         "jni_use_legacy": null,
                         "merges": [
@@ -4261,34 +4261,34 @@
                             "jacoco-agent.properties"
                         ],
                         "pick_firsts": [
-                            
+
                         ]
                     },
                     "proguard_files": [
-                        
+
                     ],
                     "res_values": {
-                        
+
                     },
                     "runtime": "cp_bc61055d8c91",
                     "sources": {
                         "aidl": [
-                            
+
                         ],
                         "assets": [
-                            
+
                         ],
                         "baseline_profiles": [
-                            
+
                         ],
                         "java": [
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
                         ],
                         "java_resources": [
-                            
+
                         ],
                         "jni_libs": [
-                            
+
                         ],
                         "kotlin": [
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/java"
@@ -4297,13 +4297,13 @@
                             "pub:hosted/pub.dev/jni_flutter-1.1.0/android/src/main/AndroidManifest.xml"
                         ],
                         "res": [
-                            
+
                         ],
                         "shaders": [
-                            
+
                         ],
                         "startup_profiles": [
-                            
+
                         ]
                     },
                     "target_sdk": 35

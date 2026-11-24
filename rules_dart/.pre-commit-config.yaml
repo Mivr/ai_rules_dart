@@ -26,11 +26,12 @@ repos:
       - id: detect-private-key
       # Vendored third-party code, kept byte-for-byte as the SDK ships it.
       # The git bundle below is a binary fixture: rewriting its bytes would
-      # corrupt it.
+      # corrupt it. The reference outputs are what stock `build_runner` wrote,
+      # compared byte-for-byte with what the rules' build writes.
       - id: end-of-file-fixer
-        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
+        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$|^e2e/build_runner/reference/
       - id: trailing-whitespace
-        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
+        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$|^e2e/build_runner/reference/
   # Check formatting and lint for starlark code. This is the only buildifier
   # entry point; both hooks read the warning set from the root
   # `.buildifier.json`. The format hook runs with `-lint=off`, so formatting
