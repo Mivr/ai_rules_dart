@@ -169,6 +169,31 @@ def _add_project_files(kwargs, attr, files):
 
 # A helper of the macros that sets an argument, not a macro of its own.
 # buildifier: disable=unnamed-macro
+def project_license(kwargs, l10n):
+    """Adds the project's licence file to `pubspec_srcs`, so `NOTICES` holds it as stock's does.
+
+    The tool's `LicenseCollector` reads a `NOTICES` or `LICENSE` file at the
+    root of every package of the package config, the project's own included.
+    For a target in a project's package (`L10N_PROJECTS`) that has one and
+    whose `pubspec` is that package's `pubspec.yaml`, the file is staged with
+    the files the pubspec names.
+
+    Args:
+      kwargs: The target's arguments; changed in place.
+      l10n: The `L10N_PROJECTS` table of `@flutter_l10n//:index.bzl`.
+    """
+    pubspec = kwargs.get("pubspec")
+    if native.repo_name() or type(pubspec) not in ("string", "Label"):
+        return
+    if native.package_relative_label(pubspec) != native.package_relative_label("pubspec.yaml"):
+        return
+    project = l10n.get(native.package_name())
+    license = getattr(project, "license", "") if project != None else ""
+    if license:
+        _add_project_files(kwargs, "pubspec_srcs", [license])
+
+# A helper of the macros that sets an argument, not a macro of its own.
+# buildifier: disable=unnamed-macro
 def project_test_data(kwargs, l10n):
     """Adds the fixtures of the project's test tree to a test's `data`.
 

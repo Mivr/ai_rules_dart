@@ -190,6 +190,7 @@ Three attributes deserve a note:
 
 - `package_name` must match the `name:` field in `pubspec.yaml`. Hot reload and code generation both rely on it.
 - `pubspec_srcs` lists the files `pubspec.yaml` names: its assets, fonts and shaders. The pubspec says what the bundle holds, as it does for `flutter build`, including the Material icon font when it sets `uses-material-design: true`. See [Assets](#assets).
+- `NOTICES` holds the project's own licence as stock's does: for an app, web app or test in a project's package whose `pubspec` is that package's `pubspec.yaml`, the project's `NOTICES` or `LICENSE` file (the tool's `LicenseCollector` looks for them in that order) is staged with the files the pubspec names.
 - The package config the bundle reads is the one `pub get` writes: every package of the project's lock: the `flutter.pub` hub whose lock is in the target's package or the nearest enclosing one, or else the hub the first of `deps` from one comes from, so `NOTICES` holds the dev dependencies' licences too, as stock's does. `pub_packages` (`@<hub>//packages`) overrides it. An app with no package from a hub gets the packages of `deps`; then a regular dependency the pubspec names that `deps` do not reach fails the build, naming the target and the package to add to `deps`.
 
 Build it, or run it with hot reload:

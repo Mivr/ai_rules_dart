@@ -39,7 +39,7 @@ pipeline is structurally different from AOT platforms.
 
 load("@flutter_l10n//:index.bzl", "L10N_PROJECTS")
 load("//flutter/private:flutter_bundle.bzl", "project_pub_packages")
-load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach", "project_language_version")
+load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach", "project_language_version", "project_license")
 load("//flutter/private:flutter_integration_test.bzl", _flutter_integration_test = "flutter_integration_test")
 load("//flutter/private:flutter_web_application.bzl", _flutter_web_bundle_rule = "flutter_web_bundle")
 
@@ -115,6 +115,7 @@ def flutter_web_app(
     """
     if "pubspec" not in kwargs and native.glob(["pubspec.yaml"], allow_empty = True):
         kwargs["pubspec"] = "pubspec.yaml"
+    project_license(kwargs, L10N_PROJECTS)
     srcs = list(kwargs.pop("pubspec_srcs", []))
     for f in native.glob(["web/**"], allow_empty = True):
         if f not in srcs:
