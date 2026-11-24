@@ -1186,6 +1186,55 @@ class _SortedListings extends ForwardingFileSystem {
   @override
   Directory get systemTempDirectory =>
       _SortedDirectory(this, delegate.systemTempDirectory);
+
+  @override
+  File file(dynamic path) => _ReadingCopyFile(this, delegate.file(path));
+}
+
+/// A file whose copy, on Windows, reads and writes the bytes.
+///
+/// A staged file is a link to its input. Windows' `CopyFileW`, which
+/// `File.copy` calls, reports a link to an input under the execution root
+/// as missing ("cannot find the file specified") although the same link
+/// reads: the first run of this tool on Windows failed to copy the material
+/// fonts that way. Reading and writing is what a copy of a file amounts to.
+class _ReadingCopyFile extends ForwardingFileSystemEntity<File, io.File>
+    with ForwardingFile {
+  _ReadingCopyFile(this.fileSystem, this.delegate);
+
+  @override
+  final _SortedListings fileSystem;
+
+  @override
+  final io.File delegate;
+
+  @override
+  File wrapFile(io.File delegate) => _ReadingCopyFile(fileSystem, delegate);
+
+  @override
+  Directory wrapDirectory(io.Directory delegate) =>
+      _SortedDirectory(fileSystem, delegate);
+
+  @override
+  Link wrapLink(io.Link delegate) => fileSystem.delegate.link(delegate.path);
+
+  @override
+  File copySync(String newPath) {
+    if (!const LocalPlatform().isWindows) {
+      return super.copySync(newPath);
+    }
+    final File copy = fileSystem.file(newPath)
+      ..writeAsBytesSync(readAsBytesSync());
+    return copy;
+  }
+
+  @override
+  Future<File> copy(String newPath) async {
+    if (!const LocalPlatform().isWindows) {
+      return super.copy(newPath);
+    }
+    return copySync(newPath);
+  }
 }
 
 class _SortedDirectory
@@ -1204,7 +1253,7 @@ class _SortedDirectory
       _SortedDirectory(fileSystem, delegate);
 
   @override
-  File wrapFile(io.File delegate) => fileSystem.delegate.file(delegate.path);
+  File wrapFile(io.File delegate) => _ReadingCopyFile(fileSystem, delegate);
 
   @override
   Link wrapLink(io.Link delegate) => fileSystem.delegate.link(delegate.path);
