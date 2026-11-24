@@ -85,7 +85,12 @@ flutter_web_app(
     package_name = "wger",
     compiler = "dart2js",
     pubspec_srcs = PUBSPEC_SRCS,
-    deps = [":wger"],
+    # `flutter build web` registers the web plugins of every package of the
+    # lock, dev dependencies included; the rules register those of `deps`.
+    deps = [
+        ":wger",
+        "@deps//:flutter_native_splash",
+    ],
 )
 
 # Project files outside `test/` that a test reads by a path relative to the

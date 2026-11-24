@@ -193,18 +193,27 @@ def _plugins_without_agent_test_impl(ctx):
     return unittest.end(env)
 
 def _web_registrant_keeps_function_shape_test_impl(ctx):
-    """Web keeps the plain registerPlugins() function shape.
+    """Web keeps `flutter build web`'s registrant: a `registerPlugins` function.
 
-    It is called by the web bootstrap wrapper, not the engine hook.
+    It is called by the web bootstrap wrapper, not the engine hook. As the
+    Flutter tool writes it, the plugins come sorted by package name, each
+    registers with the registrar, and the registrar is installed as the
+    platform message handler last, without which no method channel reaches
+    a web plugin.
     """
     env = unittest.begin(ctx)
-    plugins = [struct(
-        name = "url_launcher_web",
-        platforms = {"web": {"pluginClass": "UrlLauncherPlugin"}},
-    )]
+    plugins = [
+        struct(name = "url_launcher_web", platforms = {"web": {"pluginClass": "UrlLauncherPlugin"}}),
+        struct(name = "camera_web", platforms = {"web": {"pluginClass": "CameraPlugin"}}),
+    ]
     result = make_registrant_content(plugins, target_platform = "web")
-    asserts.true(env, "void registerPlugins() {" in result)
+    asserts.true(env, "void registerPlugins([final Registrar? pluginRegistrar]) {" in result, result)
     asserts.true(env, "_PluginRegistrant" not in result)
+    camera = result.find("  CameraPlugin.registerWith(registrar);")
+    launcher = result.find("  UrlLauncherPlugin.registerWith(registrar);")
+    handler = result.find("  registrar.registerMessageHandler();")
+    asserts.true(env, camera != -1 and camera < launcher and launcher < handler, result)
+    asserts.true(env, result.find("import 'package:camera_web/") < result.find("import 'package:url_launcher_web/"), result)
     return unittest.end(env)
 
 _t0_test = unittest.make(_no_plugins_returns_empty_test_impl)

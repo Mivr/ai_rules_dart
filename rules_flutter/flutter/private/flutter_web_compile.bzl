@@ -29,6 +29,27 @@ def web_renderer_defines(renderer):
         "FLUTTER_WEB_USE_SKWASM=false",
     ]
 
+def web_canvaskit_url_defines(defines, engine_revision, use_local_canvaskit = False):
+    """The CanvasKit URL define `flutter build web` adds, unless `defines` set it.
+
+    The tool's `Dart2WebTarget.computeDartDefines`: without
+    `--no-web-resources-cdn` (`use_local_canvaskit`), every web compile
+    carries `FLUTTER_WEB_CANVASKIT_URL` naming the engine's CanvasKit on the
+    CDN, and a `--dart-define` of the key wins. The engine reads it as its
+    default `canvasKitBaseUrl`, so it is part of the compiled program.
+
+    Args:
+        defines: The target's KEY=VALUE defines.
+        engine_revision: The Flutter engine's commit hash.
+        use_local_canvaskit: Whether the bundle serves its own renderer.
+
+    Returns:
+        A list with the define, or an empty list.
+    """
+    if use_local_canvaskit or [d for d in defines if d.startswith("FLUTTER_WEB_CANVASKIT_URL=")]:
+        return []
+    return ["FLUTTER_WEB_CANVASKIT_URL=https://www.gstatic.com/flutter-canvaskit/%s/" % engine_revision]
+
 def web_build_mode(ctx):
     """The web build mode for the current Bazel compilation mode.
 
