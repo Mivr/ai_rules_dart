@@ -123,7 +123,7 @@ commands:
     expect:
       non_zero: true
       output_contains:
-        - "Couldn't read file \"undeclared_include/shared.yaml\""
+        - 'Couldn''t read file "undeclared_include/shared.yaml"'
   - name: an undeclared relative include fails the analysis without the sandbox
     run: bazel test --spawn_strategy=standalone --output_groups=-dart_analyze,-dart_format,+dart_analyze //undeclared_include
     expect:
@@ -135,7 +135,7 @@ commands:
     expect:
       non_zero: true
       output_contains:
-        - "Couldn't read file \"undeclared_include/shared.yaml\""
+        - 'Couldn''t read file "undeclared_include/shared.yaml"'
   - name: the format check runs only when requested
     run: bazel build --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,-dart_format //fmt
   - name: dart_analysis_test fails on a manual target's violation

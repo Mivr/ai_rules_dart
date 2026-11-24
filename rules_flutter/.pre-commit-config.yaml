@@ -69,7 +69,14 @@ repos:
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v3.1.0
     hooks:
+      # Files a tool writes and checks byte for byte, or whose bytes a lockfile
+      # digests, stay as the tool writes them: android_model.json (Gradle)
+      # and pub_plan.json (`//dart/pub/plan`; a digest in every lockfile).
+      # The `web/` directories are `flutter create` output, kept as generated
+      # (a template placeholder such as `{{flutter_service_worker_version}}`
+      # is not JavaScript).
       - id: prettier
+        exclude: (^|/)android_model\.json$|(^|/)pub_plan\.json$|(^|/)web/
   - repo: https://github.com/google/yamlfmt
     rev: v0.21.0
     hooks:

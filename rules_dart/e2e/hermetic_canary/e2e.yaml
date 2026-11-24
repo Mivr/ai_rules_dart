@@ -12,9 +12,7 @@ commands:
     run: bazel clean
   - name: the strict build fails naming the undeclared read
     run: >-
-      bazel build //:canary --disk_cache= --experimental_use_hermetic_linux_sandbox
-      --sandbox_add_mount_pair=/lib64 --sandbox_add_mount_pair=/lib/x86_64-linux-gnu
-      --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/etc/ld.so.cache
+      bazel build //:canary --disk_cache= --experimental_use_hermetic_linux_sandbox --sandbox_add_mount_pair=/lib64 --sandbox_add_mount_pair=/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/etc/ld.so.cache
     expect:
       non_zero: true
       output_contains:

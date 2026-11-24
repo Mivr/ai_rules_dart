@@ -9,9 +9,9 @@ commands:
     run: bazel build //:sources_test
     replace_in_files:
       pubspec.lock:
-        - find: "path: \"pkgs/greet\""
-          replace: "path: \"../../outside_greet\""
+        - find: 'path: "pkgs/greet"'
+          replace: 'path: "../../outside_greet"'
     expect:
       non_zero: true
       output_contains:
-        - "pub package \"greet\" in @@//:pubspec.lock is a path dependency on \"../../outside_greet\", which is outside the module"
+        - 'pub package "greet" in @@//:pubspec.lock is a path dependency on "../../outside_greet", which is outside the module'

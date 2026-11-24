@@ -226,10 +226,10 @@ gazelle(
 The hub is the one `# gazelle:dart_pub_deps_repo` names, or `pub_deps`. Two
 directives change that, for the directory and below:
 
-| Directive                         | Meaning                                                                           |
-| --------------------------------- | --------------------------------------------------------------------------------- |
-| `# gazelle:dart_build_runner hub` | Read the builders of the pub hub `hub`.                                           |
-| `# gazelle:dart_build_runner off` | Write no code generation: per-directory rules, as for a lock without builders.    |
+| Directive                         | Meaning                                                                        |
+| --------------------------------- | ------------------------------------------------------------------------------ |
+| `# gazelle:dart_build_runner hub` | Read the builders of the pub hub `hub`.                                        |
+| `# gazelle:dart_build_runner off` | Write no code generation: per-directory rules, as for a lock without builders. |
 
 The lock must be in a Bazel package (a `BUILD.bazel` next to `pubspec.lock`,
 empty is enough) for `pub.from_lock(lock = ...)` to name it.
@@ -323,7 +323,7 @@ Where the guess can be wrong:
 - A named file no builder writes (no annotation, a builder switched off or its
   `generate_for` narrowed in `build.yaml`, a hand-written part named like a
   generated one) is declared anyway. The build fails, naming the file:
-  `` No builder wrote `lib/src/plain.g.dart` of package app; ... ``. Remove the
+  ``No builder wrote `lib/src/plain.g.dart` of package app; ...``. Remove the
   `part`, add the annotation, or switch Gazelle off for the package.
 - A builder option that changes `build_extensions` (mockito's
   `build_extensions`) is not seen: Gazelle uses the extensions the builder

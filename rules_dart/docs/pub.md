@@ -245,15 +245,15 @@ becomes a silently empty hub:
 `dart pub get` took it from when it wrote the lock. The lock is the input:
 nothing is resolved again.
 
-| Lock entry | `dart pub get` | `pub.from_lock()` | rules_flutter's `flutter.pub` |
-|---|---|---|---|
-| `source: hosted`, any server (`description.url`) | downloads the archive the server lists | a package repository; the archive comes from the listing's `archive_url`, pinned by the lock's `sha256` | the same |
-| `hosted` on a server that needs a token | sends the token `dart pub token add` stored | the same requests, with the token from a credential helper (below) | the same |
-| `source: git` (`url`, `ref`, `path`, `resolved-ref`) | checks out `resolved-ref`; `path` is the package's directory in the repository | a package repository from the commit `resolved-ref` names, at `path`; `ref` (a branch, say) is not read | the same |
-| `source: path` inside the module | reads the directory | the module's own `dart_library` `//<dir>:<name>`; the hub aliases it (below) | a package repository linking the directory's files |
-| `source: path` outside the module, or absolute | reads the directory | fails the evaluation, naming the package and the path | the same |
-| `source: sdk` | takes the package from the Flutter SDK | the hub's target fails when used, naming the package and `flutter.pub` | the SDK's packages; `sky_engine` through the toolchain; any other name fails the evaluation |
-| any other `source` | — | fails the evaluation, naming the package and the source | the same |
+| Lock entry                                           | `dart pub get`                                                                 | `pub.from_lock()`                                                                                       | rules_flutter's `flutter.pub`                                                               |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `source: hosted`, any server (`description.url`)     | downloads the archive the server lists                                         | a package repository; the archive comes from the listing's `archive_url`, pinned by the lock's `sha256` | the same                                                                                    |
+| `hosted` on a server that needs a token              | sends the token `dart pub token add` stored                                    | the same requests, with the token from a credential helper (below)                                      | the same                                                                                    |
+| `source: git` (`url`, `ref`, `path`, `resolved-ref`) | checks out `resolved-ref`; `path` is the package's directory in the repository | a package repository from the commit `resolved-ref` names, at `path`; `ref` (a branch, say) is not read | the same                                                                                    |
+| `source: path` inside the module                     | reads the directory                                                            | the module's own `dart_library` `//<dir>:<name>`; the hub aliases it (below)                            | a package repository linking the directory's files                                          |
+| `source: path` outside the module, or absolute       | reads the directory                                                            | fails the evaluation, naming the package and the path                                                   | the same                                                                                    |
+| `source: sdk`                                        | takes the package from the Flutter SDK                                         | the hub's target fails when used, naming the package and `flutter.pub`                                  | the SDK's packages; `sky_engine` through the toolchain; any other name fails the evaluation |
+| any other `source`                                   | —                                                                              | fails the evaluation, naming the package and the source                                                 | the same                                                                                    |
 
 `dependency_overrides`, in `pubspec.yaml` or in `pubspec_overrides.yaml`, need
 nothing of their own: `dart pub get` writes the overriding package into the

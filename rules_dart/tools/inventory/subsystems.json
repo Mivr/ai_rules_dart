@@ -1,6 +1,19 @@
 {
   "source_extensions": [
-    "dart", "bzl", "bazel", "py", "sh", "kt", "java", "swift", "m", "mm", "h", "c", "cc", "cpp"
+    "dart",
+    "bzl",
+    "bazel",
+    "py",
+    "sh",
+    "kt",
+    "java",
+    "swift",
+    "m",
+    "mm",
+    "h",
+    "c",
+    "cc",
+    "cpp"
   ],
   "test_paths": [
     "**/test/**",
@@ -133,10 +146,7 @@
     {
       "name": "pub-ext",
       "note": "The lock of rules_dart's own builders (dart/ext) and rules_flutter's Android overlays for pub plugins (ext/); the curated native code assets went with T31 (S13)",
-      "paths": [
-        "rules_dart/dart/ext/**",
-        "rules_flutter/ext/**"
-      ]
+      "paths": ["rules_dart/dart/ext/**", "rules_flutter/ext/**"]
     },
     {
       "name": "swiftpm-cocoapods",

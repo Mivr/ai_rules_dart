@@ -8,6 +8,6 @@ commands:
     expect:
       non_zero: true
       output_contains:
-        - 'The build hook of package:sqlite3 tried to download at build time.'
-        - '`hooks: user_defines: sqlite3:`'
+        - "The build hook of package:sqlite3 tried to download at build time."
+        - "`hooks: user_defines: sqlite3:`"
         - 'list "sqlite3" in `hook_network`'

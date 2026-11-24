@@ -72,8 +72,13 @@ repos:
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v3.1.0
     hooks:
+      # Files a tool writes and checks byte for byte, or whose bytes a lockfile
+      # digests, stay as the tool writes them: android_model.json (Gradle),
+      # pub_plan.json (`//dart/pub/plan`; a digest in every lockfile),
+      # debt.json (`inventory:lint --update-debt`) and the builders.json the
+      # pub hubs write.
       - id: prettier
-        exclude: ^third_party/dart_linter/
+        exclude: ^third_party/dart_linter/|(^|/)android_model\.json$|(^|/)pub_plan\.json$|^tools/inventory/debt\.json$|^dev/testdata/[^/]+/builders\.json$
   - repo: https://github.com/google/yamlfmt
     rev: v0.21.0
     hooks:
