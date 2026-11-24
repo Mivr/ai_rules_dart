@@ -94,7 +94,7 @@ fail() {
 run_gate() {
   RC=0
   env PATH="$work/bin:$PATH" FAKE_GH_DIR="$D" GH_TOKEN=test REPO=example/repo \
-    RELEASE_GATE_POLL_SECONDS=0 "$@" bash "$gate" "$tag" "$sha" >"$D/out" 2>&1 || RC=$?
+    RELEASE_GATE_POLL_SECONDS=0 RELEASE_GATE_WORKFLOWS="ci.yaml full.yaml" "$@" bash "$gate" "$tag" "$sha" >"$D/out" 2>&1 || RC=$?
 }
 
 dispatch_count() {
@@ -299,6 +299,30 @@ fixture "$D/full.yaml.dispatched.json" "$dispatch_pass"
 run_gate
 want_exit 0
 want_dispatches 2
+finish_case
+
+# The module's own workflow files are the default: this repository's runs are
+# listed under `flutter-ci.yaml` and `flutter-full.yaml`, not `ci.yaml` and `full.yaml`.
+start_case default_names_are_the_modules
+fixture "$D/flutter-ci.yaml.json" "$(mkrun 11 schedule main "$sha" completed success)"
+fixture "$D/flutter-full.yaml.json" "$(mkrun 12 schedule main "$sha" completed success)"
+run_gate RELEASE_GATE_WORKFLOWS=
+want_exit 0
+want_dispatches 0
+want_output "release_gate: flutter-ci.yaml: reusing nightly run"
+want_output "release_gate: flutter-full.yaml: reusing nightly run"
+finish_case
+
+start_case default_names_dispatch_the_modules
+fixture "$D/flutter-ci.yaml.dispatched.json" "$dispatch_pass"
+fixture "$D/flutter-full.yaml.dispatched.json" "$dispatch_pass"
+fixture "$D/flutter-ci.yaml.json"
+fixture "$D/flutter-full.yaml.json"
+run_gate RELEASE_GATE_WORKFLOWS=
+want_exit 0
+want_dispatches 2
+want_dispatch "run flutter-ci.yaml --repo example/repo --ref $tag"
+want_dispatch "run flutter-full.yaml --repo example/repo --ref $tag"
 finish_case
 
 echo "release_gate_test: $PASS passed, $FAILS failed"

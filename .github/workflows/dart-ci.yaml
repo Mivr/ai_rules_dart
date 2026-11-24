@@ -42,9 +42,10 @@ concurrency:
 jobs:
   # The Dart Full matrix as a reusable workflow: what runs only on a Mac
   # (`test-macos`) and its Linux companions. Only a dispatch with `full` set
-  # runs it, so a push, a pull request and the nightly never see it. Not in
-  # `conclusion.needs`: it is read on its own. In the call `github.event_name`
-  # is `workflow_dispatch`.
+  # runs it, so a push, a pull request and the nightly see it skipped, which
+  # `conclusion` accepts. It is in `conclusion.needs`: a red leg makes the
+  # run, and so the release gate's reading of it, red. In the call
+  # `github.event_name` is `workflow_dispatch`.
   full:
     name: full
     if: github.event_name == 'workflow_dispatch' && inputs.full != 'none'
@@ -2300,6 +2301,7 @@ jobs:
   # on "all matrix jobs were successful".
   conclusion:
     needs:
+      - full
       - test
       - e2e-floor
       - mac-smoke

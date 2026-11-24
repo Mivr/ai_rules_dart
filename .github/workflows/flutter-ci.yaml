@@ -131,8 +131,9 @@ env:
 jobs:
   # The Flutter Full matrix as a reusable workflow: the macOS legs (Apple
   # toolchains, bundles, the iOS simulator, plugins with native code) and the
-  # Android example. Only a dispatch with `full` set runs it. Not in
-  # `conclusion.needs`: it is read on its own. In the call
+  # Android example. Only a dispatch with `full` set runs it; elsewhere it is
+  # skipped, which `conclusion` accepts. It is in `conclusion.needs`: a red leg
+  # makes the run, and so the release gate's reading of it, red. In the call
   # `github.event_name` is `workflow_dispatch`.
   full:
     name: full
@@ -1611,7 +1612,7 @@ jobs:
         run: bazel test --config=strict //... --test_output=errors
   conclusion:
     name: Conclusion
-    needs: [e2e-macos-apple, e2e-macos-toolchain, unit-tests, flake-sweep, e2e-linux-app, e2e-linux-small, e2e-linux-examples, e2e-linux-pub-scc, e2e-linux-integration, e2e-linux-android, e2e-windows, repo-checks, dart-tool-tests, pre-commit, reproducibility]
+    needs: [full, e2e-macos-apple, e2e-macos-toolchain, unit-tests, flake-sweep, e2e-linux-app, e2e-linux-small, e2e-linux-examples, e2e-linux-pub-scc, e2e-linux-integration, e2e-linux-android, e2e-windows, repo-checks, dart-tool-tests, pre-commit, reproducibility]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10

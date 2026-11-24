@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release gate for a tag. Each of ci.yaml and full.yaml must pass on the tagged
+# Release gate for a tag. Each of the module's CI and Full workflows must pass on the tagged
 # commit, found in this order:
 #   a. a successful run on that sha that is a nightly (`schedule`), a push to
 #      main (push CI, and Full, which runs on every push to main), or a
@@ -23,7 +23,14 @@
 #                                  to show up in the run list)
 set -o errexit -o nounset -o pipefail
 
-workflows=(ci.yaml full.yaml)
+# The module's CI and Full workflow files: this repository holds both modules,
+# so the names carry the module's prefix. A test names its own through
+# RELEASE_GATE_WORKFLOWS (space separated).
+read -r -a workflows <<<"${RELEASE_GATE_WORKFLOWS:-flutter-ci.yaml flutter-full.yaml}"
+# A dispatch of the CI workflow with its `full` input set carries the Full
+# workflow's jobs as `full / ...` jobs of that one run. Such a run is judged
+# as a CI run (its conclusion includes them, as the workflow's `conclusion` job
+# lists `full`); it is not a Full proof, which is a run of the Full workflow.
 
 if [ "$#" -ne 2 ]; then
   echo "usage: release_gate.sh <tag> <sha>" >&2
