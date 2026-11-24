@@ -3,7 +3,6 @@
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//flutter:defs.bzl", "flutter_application", "flutter_library")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
-load(":action_content.bzl", "written_json")
 
 visibility(["//flutter/tests/..."])
 
@@ -36,18 +35,6 @@ def _flavored_compile_defines_test_impl(ctx):
         expected_define in argv,
         "expected %s in kernel compile argv, got: %s" % (expected_define, argv),
     )
-    if ctx.attr.check_dev_config:
-        config = written_json(env, "_dev_config.json")
-        if config != None:
-            dart_defines = config.get("dartDefines", [])
-            asserts.true(
-                env,
-                "FLUTTER_APP_FLAVOR=" + ctx.attr.expected_flavor in dart_defines,
-                "expected FLUTTER_APP_FLAVOR=%s in dev-config dartDefines, got: %s" % (
-                    ctx.attr.expected_flavor,
-                    dart_defines,
-                ),
-            )
     return analysistest.end(env)
 
 def _unflavored_compile_defines_test_impl(ctx):
@@ -62,16 +49,6 @@ def _unflavored_compile_defines_test_impl(ctx):
         flavor_args,
         "unflavored application must not carry FLUTTER_APP_FLAVOR, got: %s" % flavor_args,
     )
-    config = written_json(env, "_dev_config.json")
-    if config != None:
-        dart_defines = config.get("dartDefines", [])
-        flavor_defines = [d for d in dart_defines if "FLUTTER_APP_FLAVOR" in d]
-        asserts.equals(
-            env,
-            [],
-            flavor_defines,
-            "unflavored application dev-config must not carry FLUTTER_APP_FLAVOR, got: %s" % flavor_defines,
-        )
     return analysistest.end(env)
 
 def _expect_failure_test_impl(ctx):
@@ -100,7 +77,6 @@ _flavored_compile_defines_test = analysistest.make(
     _flavored_compile_defines_test_impl,
     attrs = {
         "expected_flavor": attr.string(mandatory = True),
-        "check_dev_config": attr.bool(default = True),
     },
     config_settings = _DBG,
 )
@@ -109,7 +85,6 @@ _flavored_opt_defines_test = analysistest.make(
     _flavored_compile_defines_test_impl,
     attrs = {
         "expected_flavor": attr.string(mandatory = True),
-        "check_dev_config": attr.bool(default = False),
     },
     config_settings = _OPT,
 )
@@ -118,7 +93,6 @@ _flavored_profile_defines_test = analysistest.make(
     _flavored_compile_defines_test_impl,
     attrs = {
         "expected_flavor": attr.string(mandatory = True),
-        "check_dev_config": attr.bool(default = False),
     },
     config_settings = _PROFILE,
 )

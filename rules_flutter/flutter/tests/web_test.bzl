@@ -214,32 +214,17 @@ def _dbg_web_defines_test_impl(ctx):
     _assert_optimization_level(env, _action(env, "FlutterDart2Wasm"), 0)
     _assert_optimization_level(env, _action(env, "FlutterDart2JS"), 1)
 
-    # The dbg dev-loop contract: the target's outputs still carry the dev
-    # config and the DDC side-files the dev tool's DWDS loop stages.
+    # The dbg outputs still carry the DDC side-files.
     basenames = _default_basenames(env)
     for expected in [
-        "_web_fixture_dev_config.json",
-        "_web_fixture.dev_package_config.json",
         "_web_fixture_ddc_outline.dill",
         "_web_fixture_ddc_libraries.json",
         "_web_fixture_ddc_dart_sdk.js",
         "_web_fixture_ddc_module_loader.js",
         "_web_fixture_ddc_stack_trace_mapper.js",
-        "_web_fixture.agent_extensions.dart",
         "_web_fixture_dev_flutter_bootstrap.js",
     ]:
         asserts.true(env, expected in basenames, "%s missing from dbg outputs: %s" % (expected, basenames))
-
-    # The dev server answers `/flutter_bootstrap.js` with the file this names.
-    # Named rather than found by suffix, so a run cannot pick up a sibling
-    # target's bootstrap and boot the wrong app.
-    dev_config = written_json(env, "_dev_config.json")
-    if dev_config != None:
-        asserts.true(
-            env,
-            dev_config["flutterBootstrapJs"].endswith("_web_fixture_dev_flutter_bootstrap.js"),
-            "the dev config must name the dev loop's bootstrap: %s" % dev_config.get("flutterBootstrapJs"),
-        )
     return analysistest.end(env)
 
 _dbg_web_defines_test = analysistest.make(
@@ -414,179 +399,6 @@ _profile_flag_web_defines_test = analysistest.make(
     config_settings = {
         "//command_line_option:compilation_mode": "opt",
         str(Label("//flutter:profile")): True,
-    },
-)
-
-def _dev_config_test_impl(ctx):
-    """`_dev_config.json` is the artifact the whole DDC dev loop hangs off.
-
-    The dev tool reads every key below by name — a run whose `_dev_config.json`
-    is missing ends deliberately, quoting the file (`web_e2e_test.dart`), so a
-    file that is *present but wrong* is the failure with no guard at all. The
-    dbg-outputs test above only proves it was written; this proves what is in it.
-
-    `expect_entrypoint` is passed in rather than derived, because deriving it
-    here would just re-run the rule's own `main.short_path` arithmetic and
-    agree with itself.
-    """
-    env = analysistest.begin(ctx)
-    config = written_json(env, "_dev_config.json")
-    if config == None:
-        return analysistest.end(env)
-
-    # The synthetic entrypoint the dev tool compiles. Getting this wrong is a
-    # frontend server that compiles the wrong library and an app that never
-    # starts, so both branches of the rule's `<pkg>/lib/` strip are pinned —
-    # see the two fixtures in `_setup_web_fixtures`.
-    asserts.equals(env, ctx.attr.expect_entrypoint, config["appEntrypoint"])
-
-    # Staged beside the synthetic entrypoint and imported by it. Named by the
-    # build precisely so the dev tool never has to search for it.
-    asserts.true(
-        env,
-        config["agentExtensions"].endswith(".agent_extensions.dart"),
-        "agentExtensions must name the staged file, got %r" % config["agentExtensions"],
-    )
-
-    # Replayed as -D on the resident frontend server, so a reload recompiles
-    # under the same environment the initial build used.
-    asserts.equals(env, ["from.attr=1"], config["dartDefines"])
-
-    # The dev loop asserts native nullability through its own bootstrap rather
-    # than a compiler flag, so the value has to travel to it explicitly or a
-    # `native_null_assertions = False` app would keep checking under
-    # `flutter_bazel run` while its bundle had stopped.
-    asserts.equals(env, True, config["nativeNullAssertions"])
-
-    # A fixture with no web plugins. The empty state must be expressible and
-    # asserted: the dev tool distinguishes "this app has no registrant" from
-    # "the registrant went missing", and a sentinel here would collapse the two.
-    asserts.equals(env, "", config["webPluginRegistrant"])
-
-    # Always written in dbg — the dev package config is what lets a
-    # source-assembled app resolve `package:` URIs across the live tree rather
-    # than the frozen assembled copy, and every dbg web run is a dev-loop run.
-    asserts.true(
-        env,
-        config["devPackageConfig"].endswith(".dev_package_config.json"),
-        "devPackageConfig must name the dbg dev package config, got %r" %
-        config["devPackageConfig"],
-    )
-
-    # Codegen keys in their non-codegen state. A plain app must contribute no
-    # filesystem roots and no generated sources; phantom entries here would put
-    # the frontend server on a multi-root layout it has no sources for.
-    asserts.equals(env, [], config["filesystemRoots"])
-    asserts.equals(env, [], config["generatedSourcePaths"])
-    asserts.equals(env, [], config["generatedSourceUris"])
-
-    # The scheme the dev tool hands its frontend server as
-    # `--filesystem-scheme`; the URIs it then invalidates are built on it, so
-    # the two sides have to name the same one.
-    asserts.equals(env, "org-dartlang-app", config["filesystemScheme"])
-
-    # The app itself, which is how the dev tool maps a live edit of a file
-    # back to the `package:` URI to invalidate. The fixture declares no `srcs`,
-    # so its `main` is the only first-party source here — and it is listed
-    # under this target's own package, not the workspace root.
-    #
-    # An app record claiming `lib_root = ""` would match no file of a package
-    # that does not sit at the workspace root, so a live edit to such an app's
-    # `main` would map to no package at all.
-    asserts.equals(
-        env,
-        [{"name": "web_fixture", "libRoot": "flutter/tests"}],
-        config["sourcePackages"],
-    )
-
-    # The tools the dev tool spawns or reads by path. None may be empty: an
-    # empty path here surfaces as a spawn failure deep in the dev loop, far
-    # from the build that wrote it.
-    for key in [
-        "engineRevision",
-        "flutterVersion",
-        "dartSdkRoot",
-        "dartaotruntime",
-        "frontendServer",
-        "patchedSdkRoot",
-    ]:
-        asserts.true(env, len(config[key]) > 0, "%s must not be empty" % key)
-    return analysistest.end(env)
-
-_dev_config_test = analysistest.make(
-    _dev_config_test_impl,
-    config_settings = {
-        "//command_line_option:compilation_mode": "dbg",
-        str(Label("//flutter:profile")): False,
-    },
-    attrs = {"expect_entrypoint": attr.string(mandatory = True)},
-)
-
-def _main_outside_lib_test_impl(ctx):
-    """A `main` outside the package's `lib/` reaches the dev loop by its path.
-
-    It has no `package:` URI, so the dev config names it under the app scheme
-    — the same `org-dartlang-app:///<workspace path>` the dev tool's compiler
-    resolves through `--filesystem-root` — and carries the root that makes it
-    resolve: the exec root, for a source file. `flutter run -t` accepts a
-    `main` anywhere, and so does this.
-
-    The rule used to refuse this shape in `-c dbg` only, so a bundle built green
-    in every other mode and failed on the first `flutter_bazel run`; before
-    that it fabricated `package:<name>/main.dart`, which could name another
-    app's entrypoint.
-    """
-    env = analysistest.begin(ctx)
-    config = written_json(env, "_dev_config.json")
-    if config == None:
-        return analysistest.end(env)
-    asserts.equals(
-        env,
-        "org-dartlang-app:///flutter/tests/web_fixture_main.dart",
-        config["appEntrypoint"],
-    )
-    asserts.equals(env, [""], config["filesystemRoots"])
-    asserts.equals(env, "org-dartlang-app", config["filesystemScheme"])
-
-    # And the dev loop is told which workspace file carries that URI, so an
-    # edit to it reloads instead of mapping to no package and being dropped.
-    asserts.equals(
-        env,
-        [{"path": "flutter/tests/web_fixture_main.dart", "uri": "org-dartlang-app:///flutter/tests/web_fixture_main.dart"}],
-        config["appSources"],
-    )
-    return analysistest.end(env)
-
-_main_outside_lib_test = analysistest.make(
-    _main_outside_lib_test_impl,
-    config_settings = {
-        "//command_line_option:compilation_mode": "dbg",
-        str(Label("//flutter:profile")): False,
-    },
-)
-
-def _dev_config_overrides_test_impl(ctx):
-    """The dev-config keys carry the target's values, not fixed ones.
-
-    The main dev-config test reads a fixture that sets neither, so both keys
-    sit at their defaults there and an implementation that hardcoded them
-    would pass. This fixture sets both away from their defaults, which is the
-    only way the *writing* side is pinned — the dev tool's tests cover the
-    reading side and cannot see a build that never wrote the value.
-    """
-    env = analysistest.begin(ctx)
-    config = written_json(env, "_dev_config.json")
-    if config == None:
-        return analysistest.end(env)
-    asserts.equals(env, False, config["nativeNullAssertions"])
-    asserts.equals(env, ["test-experiment"], config["enableExperiments"])
-    return analysistest.end(env)
-
-_dev_config_overrides_test = analysistest.make(
-    _dev_config_overrides_test_impl,
-    config_settings = {
-        "//command_line_option:compilation_mode": "dbg",
-        str(Label("//flutter:profile")): False,
     },
 )
 
@@ -1001,8 +813,7 @@ def _setup_web_fixtures():
     )
 
     # A `main` beside the package's `lib/` rather than inside it, which has no
-    # `package:` URI at all; `_main_outside_lib_test` pins how the dev loop
-    # reaches it instead.
+    # `package:` URI at all.
     flutter_web_bundle(
         name = "_web_pkg_root_main_fixture",
         package_name = "web_fixture",
@@ -1115,16 +926,6 @@ def _setup_web_fixtures():
         tags = ["manual"],
         pubspec = _WEB_PROJECT_PUBSPEC,
         pubspec_srcs = _WEB_PROJECT_SRCS,
-    )
-
-    # Both dev-config-carried settings, away from their defaults.
-    flutter_web_bundle(
-        name = "_web_dev_overrides_fixture",
-        package_name = "web_fixture",
-        main = "lib/web_fixture_main.dart",
-        enable_experiments = ["test-experiment"],
-        native_null_assertions = False,
-        tags = ["manual"],
     )
 
     # Release is the only mode that would have stripped, so it is the only
@@ -1781,19 +1582,6 @@ def web_test_suite(name):
         expected_basename = "libraries.windows-x64.json",
     )
 
-    # The entrypoint names the file this target actually compiles. It used to
-    # be asserted as `package:web_fixture/main.dart` — a library this package
-    # does not contain, which the app record then resolved to the *workspace
-    # root's* `lib/main.dart`. The expectation pinned the defect.
-    _dev_config_test(
-        name = name + "_dev_config",
-        target_under_test = ":_web_fixture",
-        expect_entrypoint = "package:web_fixture/web_fixture_main.dart",
-    )
-    _main_outside_lib_test(
-        name = name + "_main_outside_lib",
-        target_under_test = ":_web_pkg_root_main_fixture",
-    )
     _wasm_source_map_test(
         name = name + "_wasm_source_map",
         target_under_test = ":_web_map_fixture",
@@ -1866,10 +1654,6 @@ def web_test_suite(name):
     build_test(
         name = name + "_conditional_icon_build",
         targets = [":_web_cond_fixture"],
-    )
-    _dev_config_overrides_test(
-        name = name + "_dev_config_overrides",
-        target_under_test = ":_web_dev_overrides_fixture",
     )
     _dump_info_test(
         name = name + "_dump_info",

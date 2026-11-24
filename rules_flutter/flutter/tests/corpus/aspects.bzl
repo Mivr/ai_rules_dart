@@ -6,8 +6,7 @@ wrapper makes the two public aspects real attribute applications, so the
 corpus' aspect fixtures are analysed like any other target.
 """
 
-load("//flutter:dev_files.bzl", "flutter_dev_files")
-load("//flutter:native_hot_patch.bzl", "flutter_native_hot_patch_aspect")
+load("//flutter:dev_files.bzl", "flutter_dev_files", "flutter_dev_packages")
 
 visibility(["//flutter/tests/..."])
 
@@ -19,7 +18,7 @@ _corpus_aspects = rule(
     implementation = _corpus_aspects_impl,
     attrs = {
         "dep": attr.label(
-            aspects = [flutter_dev_files, flutter_native_hot_patch_aspect],
+            aspects = [flutter_dev_files, flutter_dev_packages],
             mandatory = True,
         ),
     },

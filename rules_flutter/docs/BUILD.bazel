@@ -56,14 +56,6 @@ starlark_doc_extract(
 )
 
 starlark_doc_extract(
-    name = "native_hot_patch.doc_extract",
-    src = "//flutter:native_hot_patch.bzl",
-    deps = [
-        "//flutter:native_hot_patch",
-    ],
-)
-
-starlark_doc_extract(
     name = "providers.doc_extract",
     src = "//flutter:providers.bzl",
     deps = [
@@ -110,7 +102,6 @@ filegroup(
         ":ios.doc_extract",
         ":macos.doc_extract",
         ":native_assets.doc_extract",
-        ":native_hot_patch.doc_extract",
         ":providers.doc_extract",
         ":repositories.doc_extract",
         ":toolchain.doc_extract",
@@ -133,7 +124,6 @@ dart_test(
         "//flutter:ios",
         "//flutter:macos",
         "//flutter:native_assets",
-        "//flutter:native_hot_patch",
         "//flutter:providers",
         "//flutter:providers.bzl",
         "//flutter:repositories",

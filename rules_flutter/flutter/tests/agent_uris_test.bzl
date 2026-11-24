@@ -1,4 +1,4 @@
-"""A debug kernel names the agent files by constant URIs; a release one has no agent."""
+"""A debug kernel names its plugin registrant by a constant URI; a release one has no constant layout."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//flutter/private:app_entrypoint.bzl", "app_scheme_rel_path")
@@ -34,7 +34,7 @@ def _constant_uris_impl(ctx):
     sources = _sources(argv)
     asserts.true(env, _REGISTRANT_URI in sources, "the registrant must be a --source: %r" % sources)
     paths = [f.path for a in entries for f in a.inputs.to_list()]
-    for name in ["agent_extensions.dart", "native_agent_extensions.dart", "plugin_registrant.dart"]:
+    for name in ["plugin_registrant.dart", "registrant_lookup.dart"]:
         asserts.true(
             env,
             any([p.endswith("/_flutter_debug_agent/" + name) for p in paths]),
@@ -45,7 +45,7 @@ def _constant_uris_impl(ctx):
 def _no_constant_layout_impl(ctx):
     env = analysistest.begin(ctx)
     argv = _compile_argv(env)
-    asserts.equals(env, [], [a for a in argv if a.startswith(_DEFINE)], "no constant registrant outside debug")
+    asserts.equals(env, [], [a for a in argv if a.startswith(_DEFINE + "org-dartlang-app:///_flutter_debug_agent/")], "no constant registrant outside debug")
     for a in argv:
         asserts.false(env, "_flutter_debug_agent" in a, "constant layout leaked into %r" % a)
     return analysistest.end(env)
@@ -68,7 +68,7 @@ def _rel_path_impl(ctx):
 _rel_path_test = unittest.make(_rel_path_impl)
 
 def agent_uris_test_suite(name):
-    """Tests that the debug agent, native agent and registrant sit at constant URIs.
+    """Tests that the debug registrant sits at a constant URI.
 
     Args:
         name: The test suite name.
@@ -78,8 +78,11 @@ def agent_uris_test_suite(name):
         package_name = "inputs_fixture",
         main = "lib/language_version_main.dart",
         tags = ["manual"],
-        # The agent imports `flutter`: a program without it stages no agent.
-        deps = ["//flutter/tests/registrant_twin_fixture/app"],
+        # A Dart plugin is what makes a registrant.
+        deps = [
+            "//flutter/tests/registrant_twin_fixture/app",
+            "//flutter/tests/registrant_twin_fixture/plugin",
+        ],
     )
     flutter_kernel_target(
         name = "_agent_uris_kernel_aot",

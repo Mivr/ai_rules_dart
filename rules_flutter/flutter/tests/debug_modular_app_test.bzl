@@ -27,7 +27,8 @@ visibility(["//flutter/tests/..."])
 _DBG = {"//command_line_option:compilation_mode": "dbg", str(Label("//flutter:profile")): False}
 _DBG_GLOBAL_DEFINE = _DBG | {str(Label("//flutter:extra_dart_defines")): ["GLOBAL=1"]}
 _OPT = {"//command_line_option:compilation_mode": "opt", str(Label("//flutter:profile")): False}
-_DEPS = ["//flutter/tests/registrant_twin_fixture/app"]
+# A Dart plugin is what makes a registrant.
+_DEPS = ["//flutter/tests/registrant_twin_fixture/app", "//flutter/tests/registrant_twin_fixture/plugin"]
 _APP = {
     # Off unless a fixture asks for tracking: the default (on) has its own fixture, `_modular_app_default`.
     "track_widget_creation": False,
@@ -276,12 +277,12 @@ def debug_modular_app_test_suite(name):
         "tracking_flavor": {"track_widget_creation": True, "flavor": "prod"},
         "tracking_native_asset": {
             "track_widget_creation": True,
-            "deps": ["//flutter/tests/modular_app_native_fixture:plugin"],
+            "deps": _DEPS + ["//flutter/tests/modular_app_native_fixture:plugin"],
         },
         "widget_tracking": {"track_widget_creation": True},
         # The closure holds the registrant twin of the SDK `flutter` module (`_DEPS`), so the generated registrant is in play.
         "registrant": {},
-        "native_asset": {"deps": ["//flutter/tests/modular_app_native_fixture:plugin"]},
+        "native_asset": {"deps": _DEPS + ["//flutter/tests/modular_app_native_fixture:plugin"]},
     }
     for variant, extra in variants.items():
         flutter_application(name = "_modular_app_" + variant, **(_APP | {"deps": _DEPS} | extra))

@@ -6,7 +6,6 @@ load(
     "//dart/private:common.bzl",
     "check_single_root_package",
     "check_unreplaced_hooks",
-    "generate_dev_package_config",
     "generate_package_config",
     "generate_package_config_content",
     "jit_train_key",
@@ -260,141 +259,6 @@ def _gpc_mixed_root_real_and_source_less_test_impl(ctx):
     asserts.false(env, '"name": "ghost"' in result)
     return unittest.end(env)
 
-# --- generate_dev_package_config tests (hot-reload multi-root) ---
-#
-# Reads `is_source` in addition to `short_path`/`path`, so use a fake that
-# carries it.
-
-def _fake_dev_src(short_path, path, is_source):
-    return struct(
-        short_path = short_path,
-        path = path,
-        is_source = is_source,
-        is_directory = False,
-    )
-
-def _gdpc_no_assembly_matches_normal_test_impl(ctx):
-    # No generated files anywhere → no scheme, no filesystem roots, and the
-    # rootUris are the ordinary relative ones (behaves like the normal config).
-    env = unittest.begin(ctx)
-
-    # `dep` is an external repo: under bzlmod its files use the `../<repo>`
-    # short_path convention while their exec `path` stays under `external/`.
-    pkgs = [_fake_pkg("app", ""), _fake_pkg("dep", "../dep")]
-    srcs = [
-        _fake_dev_src("lib/main.dart", "lib/main.dart", True),
-        _fake_dev_src("../dep/lib/d.dart", "external/dep/lib/d.dart", True),
-    ]
-    res = generate_dev_package_config(pkgs, srcs, _fake_config("bazel-out/k8/bin"))
-    asserts.equals(env, [], res.filesystem_roots)
-    asserts.equals(env, [], res.generated_source_paths)
-    asserts.false(env, "org-dartlang-app" in res.content, "no scheme when nothing assembled")
-    asserts.true(env, '"name": "app"' in res.content)
-    asserts.true(env, '"name": "dep"' in res.content)
-    return unittest.end(env)
-
-def _gdpc_assembled_app_uses_scheme_and_roots_test_impl(ctx):
-    # App package (root, lib_root="") mixes a source main.dart with a generated
-    # user.g.dart → its rootUri becomes `org-dartlang-app:///` and both the
-    # source exec root ("") and the generated exec root ("bazel-out/k8/bin")
-    # are reported, source first. The pub dep stays relative.
-    env = unittest.begin(ctx)
-    pkgs = [_fake_pkg("app", ""), _fake_pkg("dep", "../dep")]
-    srcs = [
-        _fake_dev_src("lib/main.dart", "lib/main.dart", True),
-        _fake_dev_src("lib/user.dart", "lib/user.dart", True),
-        _fake_dev_src("lib/user.g.dart", "bazel-out/k8/bin/lib/user.g.dart", False),
-        _fake_dev_src("../dep/lib/d.dart", "external/dep/lib/d.dart", True),
-    ]
-    res = generate_dev_package_config(pkgs, srcs, _fake_config("bazel-out/k8/bin"))
-    asserts.equals(env, "org-dartlang-app", res.scheme)
-    asserts.true(
-        env,
-        '"name": "app", "rootUri": "org-dartlang-app:///"' in res.content,
-        "assembled app package gets a scheme rootUri",
-    )
-    asserts.false(env, "org-dartlang-app:///.." in res.content, "external dep keeps relative rootUri")
-    asserts.true(env, '"name": "dep"' in res.content)
-
-    # Source root first ("" = execroot), then the generated bazel-out dir.
-    asserts.equals(env, ["", "bazel-out/k8/bin"], res.filesystem_roots)
-    asserts.equals(env, ["bazel-out/k8/bin/lib/user.g.dart"], res.generated_source_paths)
-    asserts.equals(env, ["package:app/user.g.dart"], res.generated_source_uris)
-    return unittest.end(env)
-
-def _gdpc_non_root_assembled_package_test_impl(ctx):
-    # A non-root package that is itself assembled gets `scheme:///<lib_root>`.
-    env = unittest.begin(ctx)
-    pkgs = [_fake_pkg("sub", "pkgs/sub")]
-    srcs = [
-        _fake_dev_src("pkgs/sub/lib/a.dart", "pkgs/sub/lib/a.dart", True),
-        _fake_dev_src("pkgs/sub/lib/a.g.dart", "bazel-out/k8/bin/pkgs/sub/lib/a.g.dart", False),
-    ]
-    res = generate_dev_package_config(pkgs, srcs, _fake_config("bazel-out/k8/bin"))
-    asserts.true(
-        env,
-        '"name": "sub", "rootUri": "org-dartlang-app:///pkgs/sub"' in res.content,
-    )
-    asserts.equals(env, ["", "bazel-out/k8/bin"], res.filesystem_roots)
-    return unittest.end(env)
-
-def _gdpc_source_packages_lists_first_party_test_impl(ctx):
-    # source_packages = (name, lib_root) for every package contributing a
-    # FIRST-PARTY source file (is_source, short_path not under external/ or ../).
-    # Pub/external deps are excluded (not editable, never watched). Order follows
-    # `packages`.
-    env = unittest.begin(ctx)
-
-    # `pubdep` is external: its files carry the real `../<repo>` short_path, so
-    # this exercises the `../`-prefix arm of the first-party exclusion (an
-    # `external/`-prefixed short_path never occurs under bzlmod).
-    pkgs = [
-        _fake_pkg("app", ""),
-        _fake_pkg("dep", "pkgs/dep"),
-        _fake_pkg("pubdep", "../pubdep"),
-    ]
-    srcs = [
-        _fake_dev_src("lib/main.dart", "lib/main.dart", True),
-        _fake_dev_src("pkgs/dep/lib/d.dart", "pkgs/dep/lib/d.dart", True),
-        _fake_dev_src("../pubdep/lib/p.dart", "external/pubdep/lib/p.dart", True),
-    ]
-    res = generate_dev_package_config(pkgs, srcs, _fake_config("bazel-out/k8/bin"))
-    asserts.equals(env, [("app", ""), ("dep", "pkgs/dep")], res.source_packages)
-    return unittest.end(env)
-
-def _gdpc_source_packages_excludes_generated_only_test_impl(ctx):
-    # A package whose only contributed file is generated (is_source=False) is not
-    # an editable source package → excluded from source_packages.
-    env = unittest.begin(ctx)
-    pkgs = [_fake_pkg("app", ""), _fake_pkg("genonly", "pkgs/genonly")]
-    srcs = [
-        _fake_dev_src("lib/main.dart", "lib/main.dart", True),
-        _fake_dev_src(
-            "pkgs/genonly/lib/g.g.dart",
-            "bazel-out/k8/bin/pkgs/genonly/lib/g.g.dart",
-            False,
-        ),
-    ]
-    res = generate_dev_package_config(pkgs, srcs, _fake_config("bazel-out/k8/bin"))
-    asserts.equals(env, [("app", "")], res.source_packages)
-    return unittest.end(env)
-
-def _gdpc_source_packages_includes_assembled_test_impl(ctx):
-    # The feature's target case: an ASSEMBLED package (hand-written source +
-    # generated member straddling tree and bazel-out) is still editable via its
-    # source member, so it must appear in source_packages with its REAL lib_root
-    # (not the assembled/scheme one). Guards against a regression where the
-    # assembly path stops contributing to the path->package: map.
-    env = unittest.begin(ctx)
-    pkgs = [_fake_pkg("sub", "pkgs/sub")]
-    srcs = [
-        _fake_dev_src("pkgs/sub/lib/a.dart", "pkgs/sub/lib/a.dart", True),
-        _fake_dev_src("pkgs/sub/lib/a.g.dart", "bazel-out/k8/bin/pkgs/sub/lib/a.g.dart", False),
-    ]
-    res = generate_dev_package_config(pkgs, srcs, _fake_config("bazel-out/k8/bin"))
-    asserts.equals(env, [("sub", "pkgs/sub")], res.source_packages)
-    return unittest.end(env)
-
 def _check_single_root_ok_test_impl(ctx):
     # One root package (or none) is fine — no error.
     env = unittest.begin(ctx)
@@ -582,12 +446,6 @@ _t11_test = unittest.make(_gpc_source_less_lib_root_skipped_test_impl)
 _t12_test = unittest.make(_gpc_all_source_less_test_impl)
 _t13_test = unittest.make(_gpc_root_package_no_srcs_still_falls_back_test_impl)
 _t14_test = unittest.make(_gpc_mixed_root_real_and_source_less_test_impl)
-_t15_test = unittest.make(_gdpc_no_assembly_matches_normal_test_impl)
-_t16_test = unittest.make(_gdpc_assembled_app_uses_scheme_and_roots_test_impl)
-_t17_test = unittest.make(_gdpc_non_root_assembled_package_test_impl)
-_t18_test = unittest.make(_gdpc_source_packages_lists_first_party_test_impl)
-_t19_test = unittest.make(_gdpc_source_packages_excludes_generated_only_test_impl)
-_t20_test = unittest.make(_gdpc_source_packages_includes_assembled_test_impl)
 _t21_test = unittest.make(_check_single_root_ok_test_impl)
 _t22_test = unittest.make(_check_single_root_conflict_test_impl)
 _t32_test = unittest.make(_hooks_ok_test_impl)
@@ -623,12 +481,6 @@ def common_test_suite(name):
         _t12_test,
         _t13_test,
         _t14_test,
-        _t15_test,
-        _t16_test,
-        _t17_test,
-        _t18_test,
-        _t19_test,
-        _t20_test,
         _t21_test,
         _t22_test,
         _t32_test,

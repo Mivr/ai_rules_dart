@@ -1,9 +1,9 @@
 """A debug `flutter_kernel_target` whose closure holds the registrant twin compiles modularly.
 
-The entry module carries the staged agent, native agent and registrant, and the link uses the twin
-in place of the plain SDK `flutter` module. A define stays modular: it is the configuration of the
-target's `deps`, so every dependency module compiles with it, and so does the entry. A closure without
-`flutter` (so without the twin) links its modules too, and stages no agent, which imports `flutter`.
+The entry module carries the staged registrant, and the link uses the twin in place of the plain SDK
+`flutter` module. A define stays modular: it is the configuration of the target's `deps`, so every
+dependency module compiles with it, and so does the entry. A closure without `flutter` (so without the
+twin, and with no plugin) links its modules too, and stages nothing at the constant layout.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -13,10 +13,9 @@ load("//flutter/private:flutter_kernel_target.bzl", "flutter_kernel_target")
 visibility(["//flutter/tests/..."])
 
 _DBG = {"//command_line_option:compilation_mode": "dbg", str(Label("//flutter:profile")): False}
-_TWIN_DEPS = ["//flutter/tests/registrant_twin_fixture/app"]
+# A Dart plugin is what makes a registrant.
+_TWIN_DEPS = ["//flutter/tests/registrant_twin_fixture/app", "//flutter/tests/registrant_twin_fixture/plugin"]
 _ENTRY_FILES = [
-    "/_flutter_debug_agent/agent_extensions.dart",
-    "/_flutter_debug_agent/native_agent_extensions.dart",
     "/_flutter_debug_agent/plugin_registrant.dart",
     "/_flutter_debug_agent/registrant_lookup.dart",
 ]
@@ -51,13 +50,13 @@ def assert_kernel_target_dbg_modular(env):
         asserts.false(env, any([".flutter.flutter.kmod" in p for p in paths]), "the link drops the plain SDK module")
 
 def _no_flutter_impl(ctx):
-    """A closure without `flutter` (so no twin) links its modules, with no agent: the agent imports `flutter`."""
+    """A closure without `flutter` (so no twin, and no plugin) links its modules, with nothing at the constant layout."""
     env = analysistest.begin(ctx)
     asserts.equals(env, [], _by_mnemonic(env, "FlutterKernelCompile"), "no whole-program compile")
     asserts.equals(env, 1, len(_by_mnemonic(env, "DartKernelLink")), "one DartKernelLink")
     for action in _by_mnemonic(env, "DartKernel"):
         for f in action.inputs.to_list():
-            asserts.false(env, "_flutter_debug_agent" in f.path, "no agent is staged: %s" % f.path)
+            asserts.false(env, "_flutter_debug_agent" in f.path, "nothing is staged: %s" % f.path)
     return analysistest.end(env)
 
 _ActionsInfo = provider(

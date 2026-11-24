@@ -28,7 +28,6 @@ load(
     _collect_packages = "collect_packages",
     _collect_transitive_resources = "collect_transitive_resources",
     _collect_transitive_srcs = "collect_transitive_srcs",
-    _generate_dev_package_config = "generate_dev_package_config",
     _generate_package_config = "generate_package_config",
     _generate_package_config_content = "generate_package_config_content",
     _generate_stable_package_config = "generate_stable_package_config",
@@ -190,11 +189,6 @@ collect_transitive_resources = _collect_transitive_resources
 # which is the simpler prefix-based variant for static staging-directory layouts.)
 generate_package_config = _generate_package_config
 
-# Hot-reload variant of the above: emits `<scheme>:///` rootUris for packages
-# whose sources straddle the tree and `bazel-out` (codegen), plus the filesystem
-# roots the frontend_server must search so live source edits and generated files
-# both resolve. See `generate_dev_package_config` for the returned struct.
-generate_dev_package_config = _generate_dev_package_config
 generate_package_config_content = _generate_package_config_content
 runfiles_path = _runfiles_path
 derive_lib_root = _derive_lib_root

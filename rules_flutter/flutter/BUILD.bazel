@@ -58,8 +58,6 @@ flutter_android_engine(
 # DevTools can attach. Applies with `-c opt` only:
 #
 #   bazel build -c opt --@rules_flutter//flutter:profile //app
-#
-# `flutter_bazel run --profile` sets both.
 bool_flag(
     name = "profile",
     build_setting_default = False,
@@ -154,7 +152,6 @@ string_flag(
 # Extra Dart environment defines folded into every Dart compile after any
 # target-level `defines`. Repeatable:
 #   bazel build //app --@rules_flutter//flutter:extra_dart_defines=FOO=bar
-# `flutter_bazel run --dart-define FOO=bar` forwards here.
 dart_defines_flag(
     name = "extra_dart_defines",
     build_setting_default = [],
@@ -182,7 +179,6 @@ exports_files(
         "linux.bzl",
         "macos.bzl",
         "native_assets.bzl",
-        "native_hot_patch.bzl",
         "providers.bzl",
         "repositories.bzl",
         "toolchain.bzl",
@@ -345,15 +341,6 @@ bzl_library(
         "//flutter/private:flutter_data_asset",
         "//flutter/private:flutter_native_asset",
         "//flutter/private:flutter_native_assets",
-    ],
-)
-
-bzl_library(
-    name = "native_hot_patch",
-    srcs = ["native_hot_patch.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":providers",
     ],
 )
 

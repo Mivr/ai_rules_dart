@@ -1,8 +1,9 @@
-"""The aspect that requests the files the dev loop reads.
+"""The aspects that request the files the dev loop reads.
 
-The dev tool reads build outputs off disk to drive a running app. Bazel
-materializes an output when it belongs to a target named on the command line,
-and a launchable target names only its bundle.
+`flutter_dev` (`tools/flutter_dev`) reads build outputs off disk and hands the
+app to the stock `flutter` tool. Bazel materializes an output when it belongs to
+a target named on the command line, and a launchable target names only its
+bundle.
 
 This cannot be an output group on that target: on Apple platforms it is
 `rules_apple`'s `macos_application` / `ios_application`. Nor a sibling target:
@@ -11,11 +12,8 @@ those rules apply a split transition to their `deps`, so the
 (`…-ST-<hash>`) nothing can name and no sibling re-derives. An aspect rides the
 existing dep edges in the configuration they already have.
 
-The group is the `flutter_application`'s own `DefaultInfo` rather than a
-hand-listed subset, so the two cannot drift.
-
-Two more groups serve `flutter_dev` (`tools/flutter_dev`), which hands the app
-to the stock `flutter` tool and needs only what that tool and the IDE read:
+`flutter_dev_files` fills two groups, with only what the stock tool and the IDE
+read:
 
 - `flutter_stock_dev`: per application, its package config and a JSON file
   naming that config, the package and the Flutter version of the toolchain.
@@ -38,11 +36,6 @@ load("@rules_dart//dart:utils.bzl", "owned_package_records")
 load("//flutter:providers.bzl", "FlutterApplicationInfo")
 
 visibility("public")
-
-# The output group the dev tool requests. Named for what it is rather than for
-# who wants it: a release build has no use for these, but they are not "debug"
-# either — the release pipeline simply never asks.
-DEV_FILES_GROUP = "flutter_dev_files"
 
 # The groups `flutter_dev` requests (see the module docstring).
 STOCK_DEV_GROUP = "flutter_stock_dev"
@@ -78,13 +71,11 @@ def _stock_dev_info(target, ctx):
     return [info, app.package_config]
 
 def _flutter_dev_files_aspect_impl(target, ctx):
-    files = []
     stock = []
     generated = []
 
-    # The application itself. Its DefaultInfo is the whole interface.
+    # The application itself.
     if FlutterApplicationInfo in target:
-        files.append(target[DefaultInfo].files)
         stock.append(depset(_stock_dev_info(target, ctx)))
 
     # Each generated source with the target that generates it, so the tool can rebuild that
@@ -113,13 +104,12 @@ def _flutter_dev_files_aspect_impl(target, ctx):
         for dep in deps:
             if type(dep) == "Target" and OutputGroupInfo in dep:
                 groups = dep[OutputGroupInfo]
-                for name, into in [(DEV_FILES_GROUP, files), (STOCK_DEV_GROUP, stock), (STOCK_DEV_GENERATED_GROUP, generated)]:
+                for name, into in [(STOCK_DEV_GROUP, stock), (STOCK_DEV_GENERATED_GROUP, generated)]:
                     group = getattr(groups, name, None)
                     if group != None:
                         into.append(group)
 
     return [OutputGroupInfo(**{
-        DEV_FILES_GROUP: depset(transitive = files),
         STOCK_DEV_GROUP: depset(transitive = stock),
         STOCK_DEV_GENERATED_GROUP: depset(transitive = generated),
     })]
@@ -128,13 +118,13 @@ flutter_dev_files = aspect(
     implementation = _flutter_dev_files_aspect_impl,
     attr_aspects = ["*"],
     toolchains = [config_common.toolchain_type(_FLUTTER_TOOLCHAIN, mandatory = False)],
-    doc = """Collects the `flutter_application` outputs the dev tool reads.
+    doc = """Collects the `flutter_application` outputs `flutter_dev` reads.
 
-Applied by the dev tool, not by users:
+Applied by `flutter_dev`, not by users:
 
     bazel build //:app \\
       --aspects=@rules_flutter//flutter:dev_files.bzl%flutter_dev_files \\
-      --output_groups=+flutter_dev_files
+      --output_groups=+flutter_stock_dev,+flutter_stock_dev_generated
 
 Requesting the group is what makes those files top-level, so bazel writes them
 to this machine even when a cache served the actions that produced them.

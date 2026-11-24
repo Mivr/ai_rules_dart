@@ -129,10 +129,6 @@ def _assert_compile_defines(env, actions, flavor, mode):
     elif mode == "opt":
         asserts.true(env, "-Ddart.vm.product=true" in argv, "missing product define in %s" % argv)
     if mode == "dbg":
-        dev_cfg = json.decode(_written_content(env, actions, "_dev_config.json") or "{}")
-        defines = dev_cfg.get("dartDefines", [])
-        asserts.true(env, "FLUTTER_APP_FLAVOR=" + flavor in defines, "missing %s in dev_config: %s" % (flavor, defines))
-        asserts.false(env, "FLUTTER_APP_FLAVOR=" + other in defines, "unexpected %s in dev_config: %s" % (other, defines))
         asserts.equals(env, [], _by_mnemonic(actions, "FlutterAotMacho"), "dbg must not run AOT")
     else:
         aots = _by_mnemonic(actions, "FlutterAotMacho")
@@ -141,26 +137,19 @@ def _assert_compile_defines(env, actions, flavor, mode):
         asserts.true(env, any([p.endswith("_app_%s.dill" % flavor) for p in aot_inputs]), "AOT must read %s dill: %s" % (flavor, aot_inputs))
         asserts.false(env, any([("_app_%s" % other) in p for p in aot_inputs]), "AOT must not read %s: %s" % (other, aot_inputs))
 
-def _assert_dart_registrant(env, actions, flavor, is_dbg):
-    """Checks the Dart plugin registrant (and dev registrant in debug) for `flavor`."""
+def _assert_dart_registrant(env, actions, flavor):
+    """Checks the Dart plugin registrant for `flavor`."""
     other = _other(flavor)
     reg_writes = [
         a
         for a in actions
         if a.mnemonic == "FileWrite" and
-           a.outputs.to_list()[0].basename.endswith("plugin_registrant.dart") and
-           ".dev_plugin_registrant." not in a.outputs.to_list()[0].basename
+           a.outputs.to_list()[0].basename.endswith("plugin_registrant.dart")
     ]
     asserts.equals(env, 1, len(reg_writes), "expected one Dart plugin_registrant.dart")
     src = reg_writes[0].content if reg_writes else ""
     asserts.true(env, ("FlavorDart%sPlugin.registerWith();" % _title(flavor)) in src, "missing %s Dart plugin in %s" % (flavor, src))
     asserts.false(env, ("FlavorDart%sPlugin" % _title(other)) in src, "unexpected %s Dart plugin in %s" % (other, src))
-    if is_dbg:
-        asserts.true(env, ("FLUTTER_APP_FLAVOR=" + flavor) in src, "missing %s flavor in build_info registrant: %s" % (flavor, src))
-        asserts.false(env, ("FLUTTER_APP_FLAVOR=" + other) in src, "unexpected %s flavor in build_info registrant: %s" % (other, src))
-        dev_src = _written_content(env, actions, ".dev_plugin_registrant.ios.dart")
-        asserts.true(env, ("FlavorDart%sPlugin.registerWith();" % _title(flavor)) in dev_src, "missing %s in dev iOS registrant" % flavor)
-        asserts.false(env, ("FlavorDart%sPlugin" % _title(other)) in dev_src, "unexpected %s in dev iOS registrant" % other)
 
 def _assert_swift_registrant(env, actions, flavor):
     """Checks the generated Swift `GeneratedPluginRegistrant` for `flavor`."""
@@ -207,7 +196,7 @@ def _xtool_ios_app_test_impl(ctx):
     _assert_no_own_dart_or_assets(env)
     _assert_own_flavor_files(env, tut, prefix, flavor)
     _assert_compile_defines(env, actions, flavor, mode)
-    _assert_dart_registrant(env, actions, flavor, mode == "dbg")
+    _assert_dart_registrant(env, actions, flavor)
     _assert_swift_registrant(env, actions, flavor)
 
     runners = _by_mnemonic(analysistest.target_actions(env), "FlutterXtoolRunner")
@@ -232,7 +221,7 @@ def _ios_slice_test_impl(ctx):
     _assert_no_own_dart_or_assets(env)
     _assert_own_flavor_files(env, tut, ctx.attr.prefix, flavor)
     _assert_compile_defines(env, actions, flavor, mode)
-    _assert_dart_registrant(env, actions, flavor, mode == "dbg")
+    _assert_dart_registrant(env, actions, flavor)
     return analysistest.end(env)
 
 def _ios_registrant_test_impl(ctx):
@@ -325,7 +314,7 @@ def _ios_pair_test_impl(ctx):
     for flavor, target in [("dev", pair.dev), ("prod", pair.prod)]:
         actions = _package_actions(target)
         _assert_compile_defines(env, actions, flavor, "dbg")
-        _assert_dart_registrant(env, actions, flavor, True)
+        _assert_dart_registrant(env, actions, flavor)
         _assert_swift_registrant(env, actions, flavor)
     return analysistest.end(env)
 

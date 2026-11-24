@@ -146,9 +146,7 @@ class MyApp extends StatelessWidget {
                 'sqlite3 $sqliteVersion',
                 style: const TextStyle(fontSize: 32),
               ),
-              // Called on every build rather than once in `main`, so a hot
-              // reload shows what `mul` answers now: `mul` is patchable, and
-              // an edit to `native/mul.c` reaches this line without a restart.
+              // Called on every build rather than once in `main`.
               Text(
                 'live 3 × 4 = ${mul(3, 4)}',
                 key: const ValueKey('liveMul'),

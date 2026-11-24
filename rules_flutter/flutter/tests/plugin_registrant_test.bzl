@@ -180,63 +180,8 @@ def _platform_no_match_returns_empty_test_impl(ctx):
     asserts.equals(env, "", result)
     return unittest.end(env)
 
-def _agent_only_registrant_test_impl(ctx):
-    """An agent import alone still generates a registrant.
-
-    With zero Dart plugins but an agent import, a registrant is generated —
-    it is what registers the agent extensions pre-main.
-    """
-    env = unittest.begin(ctx)
-    result = make_registrant_content([], agent_import = "app.agent_extensions.dart")
-    asserts.true(env, "import 'app.agent_extensions.dart' as agent;" in result)
-    asserts.true(env, "agent.registerRulesFlutterAgentExtensions();" in result)
-    asserts.true(env, "class _PluginRegistrant {" in result)
-    asserts.true(env, "@pragma('vm:entry-point')" in result)
-    return unittest.end(env)
-
-def _plugins_and_agent_test_impl(ctx):
-    """Agent registration precedes plugin registration inside register()."""
-    env = unittest.begin(ctx)
-    plugins = [struct(
-        name = "my_plugin",
-        platforms = {"macos": {"dartPluginClass": "MyPlugin"}},
-    )]
-    result = make_registrant_content(
-        plugins,
-        target_platform = "macos",
-        agent_import = "app.agent_extensions.dart",
-    )
-    asserts.true(env, "agent.registerRulesFlutterAgentExtensions();" in result)
-    asserts.true(env, "MyPlugin.registerWith();" in result)
-    asserts.true(
-        env,
-        result.index("registerRulesFlutterAgentExtensions") < result.index("MyPlugin.registerWith"),
-    )
-    return unittest.end(env)
-
-def _native_agent_registrant_test_impl(ctx):
-    """The native-only agent is imported and registered after the shared one."""
-    env = unittest.begin(ctx)
-    result = make_registrant_content(
-        [],
-        target_platform = "android",
-        agent_import = "app.agent_extensions.dart",
-        native_agent_import = "app.native_agent_extensions.dart",
-    )
-    asserts.true(env, "import 'app.native_agent_extensions.dart' as native_agent;" in result)
-    asserts.true(env, "native_agent.registerRulesFlutterNativeAgentExtensions();" in result)
-    asserts.true(
-        env,
-        result.index("agent.registerRulesFlutterAgentExtensions") < result.index("native_agent.registerRulesFlutterNativeAgentExtensions"),
-    )
-
-    # `dart:ffi` does not exist on web, so the native half never reaches it.
-    web = make_registrant_content([], target_platform = "web", native_agent_import = "app.native_agent_extensions.dart")
-    asserts.true(env, "native_agent" not in web)
-    return unittest.end(env)
-
 def _plugins_without_agent_test_impl(ctx):
-    """Without an agent import (release/profile), no agent reference appears."""
+    """A registrant registers its plugins and nothing else."""
     env = unittest.begin(ctx)
     plugins = [struct(
         name = "my_plugin",
@@ -250,18 +195,16 @@ def _plugins_without_agent_test_impl(ctx):
 def _web_registrant_keeps_function_shape_test_impl(ctx):
     """Web keeps the plain registerPlugins() function shape.
 
-    It is called by the web bootstrap wrapper, not the engine hook, and
-    never gets an agent.
+    It is called by the web bootstrap wrapper, not the engine hook.
     """
     env = unittest.begin(ctx)
     plugins = [struct(
         name = "url_launcher_web",
         platforms = {"web": {"pluginClass": "UrlLauncherPlugin"}},
     )]
-    result = make_registrant_content(plugins, target_platform = "web", agent_import = "ignored.dart")
+    result = make_registrant_content(plugins, target_platform = "web")
     asserts.true(env, "void registerPlugins() {" in result)
     asserts.true(env, "_PluginRegistrant" not in result)
-    asserts.true(env, "ignored.dart" not in result)
     return unittest.end(env)
 
 _t0_test = unittest.make(_no_plugins_returns_empty_test_impl)
@@ -271,14 +214,11 @@ _t3_test = unittest.make(_multiple_dart_plugins_test_impl)
 _t4_test = unittest.make(_mixed_native_and_dart_plugins_test_impl)
 _t5_test = unittest.make(_multi_platform_plugin_registers_once_test_impl)
 _t6_test = unittest.make(_dart_file_name_override_test_impl)
-_t7_test = unittest.make(_agent_only_registrant_test_impl)
 _t8_test = unittest.make(_platform_filters_web_only_test_impl)
 _t9_test = unittest.make(_platform_filters_android_only_test_impl)
 _t10_test = unittest.make(_platform_no_match_returns_empty_test_impl)
-_t11_test = unittest.make(_plugins_and_agent_test_impl)
 _t12_test = unittest.make(_plugins_without_agent_test_impl)
 _t13_test = unittest.make(_web_registrant_keeps_function_shape_test_impl)
-_t14_test = unittest.make(_native_agent_registrant_test_impl)
 
 def _android_registrant_names_the_declared_package_test_impl(ctx):
     """The registrant constructs `<package>.<pluginClass>`, as flutter_tools does."""
@@ -465,14 +405,11 @@ def plugin_registrant_test_suite(name):
         _t4_test,
         _t5_test,
         _t6_test,
-        _t7_test,
         _t8_test,
         _t9_test,
         _t10_test,
-        _t11_test,
         _t12_test,
         _t13_test,
-        _t14_test,
         _t15_test,
         _t16_test,
         _t17_test,

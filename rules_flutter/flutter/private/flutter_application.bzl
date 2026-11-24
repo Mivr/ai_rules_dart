@@ -13,20 +13,18 @@ This rule produces outputs that platform-specific wrappers consume:
 3. ICU data file (icudtl.dat)
 """
 
-load("@apple_support//lib:apple_support.bzl", "apple_support")
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "DartDefinesInfo", "MODULAR_KERNEL_ATTRS", "MODULAR_KERNEL_TOOLCHAINS", "dart_link_hook_actions", "link_hook_runner_attr")
 load("//flutter:providers.bzl", "FlutterApplicationInfo", "FlutterInfo")
-load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "FLUTTER_DEPS_DOC", "PLATFORM_CONSTRAINT_ATTRS", "check_unreplaced_hooks", "collect_binding_contracts", "collect_native_libs", "declare_flutter_assets_dir", "detect_target_platform", "flutter_build_mode", "flutter_compile_kernel", "host_target_arch", "launch_build_args", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
-load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "bundle_shader_sources", "flutter_bundle")
+load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "FLUTTER_DEPS_DOC", "PLATFORM_CONSTRAINT_ATTRS", "check_unreplaced_hooks", "collect_native_libs", "declare_flutter_assets_dir", "detect_target_platform", "flutter_build_mode", "flutter_compile_kernel", "host_target_arch", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
+load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle")
 load("//flutter/private:flutter_aot_compile.bzl", "flutter_aot_elf_action", "flutter_aot_gen_snapshot_flags", "flutter_aot_macho_action", "macho_snapshot_options")
 load("//flutter/private:flutter_defines_files.bzl", "DART_DEFINES_DOC", "app_defines_transition", "effective_flavor")
 load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
 load("//flutter/private:flutter_kernel_module.bzl", "flutter_app_kernel_module_aspect")
 load("//flutter/private:flutter_native_assets.bzl", "collect_application_native_assets", "collect_bundled_code_asset_files", "write_native_assets_manifest")
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "layering_check_for", "layering_toolchains")
-load("//flutter/private:native_sources.bzl", "collect_native_source_pairs")
 
 visibility(["//flutter/..."])
 
@@ -100,7 +98,6 @@ def _compile_application_kernel(
         ctx,
         flutter_sdk_info,
         target_platform,
-        is_ios,
         assets,
         flutter_assets,
         recorded_uses):
@@ -116,16 +113,6 @@ def _compile_application_kernel(
             track_widget_creation = ctx.attr.track_widget_creation and flutter_build_mode(ctx) != "release",
             assets_dir = flutter_assets,
             recorded_uses = recorded_uses,
-            platform_build_args = launch_build_args(
-                target_platform,
-                is_simulator = is_ios and apple_support.target_environment_from_rule_ctx(ctx) == "simulator",
-                is_arm64 = ctx.target_platform_has_constraint(
-                    ctx.attr._arm64_constraint[platform_common.ConstraintValueInfo],
-                ),
-                is_x86_64 = ctx.target_platform_has_constraint(
-                    ctx.attr._x86_64_constraint[platform_common.ConstraintValueInfo],
-                ),
-            ),
         ),
     )
 
@@ -243,161 +230,6 @@ def _index_bundled_libraries(native_libs, bundled_code_assets):
         bundled_native_libs[lib.path] = lib
     return bundled_native_libs
 
-def _index_library_pairs(bundled_native_libs, pairs, files_field):
-    """Indexes per-library file lists on the bundled paths.
-
-    A library with no entry is an empty list rather than a missing key: the
-    dev tool has to tell "nothing describes this one" from "this one is not
-    bundled", and they mean opposite things for a reload.
-
-    Returns:
-      An `(index, files)` tuple; `files` holds every listed File for
-      declaration as an output.
-    """
-    index = {path: [] for path in bundled_native_libs}
-    files = []
-    for pair in pairs:
-        if pair.library.path in index:
-            listed = getattr(pair, files_field)
-            index[pair.library.path] = [f.path for f in listed]
-            files.extend(listed)
-    return index, files
-
-def _application_dep_pairs(ctx, collect_native, field):
-    """Collects per-library pairs from native_deps plus deps' `FlutterInfo`."""
-    return collect_native(ctx.attr.native_deps) + [
-        p
-        for dep in ctx.attr.deps
-        if FlutterInfo in dep
-        for p in getattr(dep[FlutterInfo], field).to_list()
-    ]
-
-def _write_dev_config(
-        ctx,
-        flutter_sdk_info,
-        compilation,
-        bundled_native_libs,
-        binding_contracts,
-        native_lib_sources,
-        contract_files):
-    """Writes the hot-reload dev config (debug only) and returns extra default files.
-
-    Mirrors flutter_web_application's `_dev_config.json`. Tells the dev tool
-    the authoritative entrypoint URI and — for a source-assembled (codegen)
-    app — the multi-root layout + generated source paths/URIs, so it never
-    infers any of this from package_config rootUri shapes. The dev tool
-    discovers this by building the flutter_application target directly (its
-    DefaultInfo). When `generatedSourceUris` is non-empty the dev tool
-    rebuilds this same app target on change to regenerate codegen outputs (a
-    narrow codegen-only rebuild would prune the flutter SDK from the execroot
-    symlink forest and break the next full compile).
-    """
-    extra_files = []
-    dev_config_file = ctx.actions.declare_file(ctx.label.name + "_dev_config.json")
-    ctx.actions.write(
-        output = dev_config_file,
-        content = json.encode({
-            "engineRevision": flutter_sdk_info.engine_revision,
-            "flutterVersion": flutter_sdk_info.version,
-            "dartSdkRoot": flutter_sdk_info.dartaotruntime.path.rsplit("/bin/", 1)[0],
-            "dartaotruntime": flutter_sdk_info.dartaotruntime.path,
-            "frontendServer": flutter_sdk_info.frontend_server.path,
-            "patchedSdkRoot": flutter_sdk_info.platform_kernel_dill.path.rsplit("/", 1)[0],
-            "appEntrypoint": compilation.app_entrypoint_uri,
-            # Merged user defines (attr + extra_dart_defines flag). The
-            # dev tool replays these as -D on its resident frontend_server
-            # so hot reload/restart recompiles keep the same environment.
-            "dartDefines": compilation.dart_defines,
-            # Generated plugin registrants, keyed by platform
-            # (exec-relative paths, "" when that platform has no Dart
-            # plugins and no agent). One per platform because this dev
-            # build runs in the host configuration while the app can be
-            # running elsewhere; the dev tool selects by the platform the
-            # app reports (build_info.targetPlatform), compiles that file
-            # into its dills via --source, and advertises it with
-            # -Dflutter.dart_plugin_registrant so the engine's pre-main
-            # hook keeps firing — with the right plugin set — after hot
-            # restart.
-            "dartPluginRegistrants": {
-                platform: registrant.path if registrant else ""
-                for platform, registrant in compilation.dev_plugin_registrants.items()
-            },
-            "devPackageConfig": compilation.dev_package_config.path,
-            "filesystemRoots": compilation.dev_filesystem_roots,
-            "filesystemScheme": compilation.dev_filesystem_scheme,
-            "generatedSourcePaths": compilation.dev_generated_source_paths,
-            "generatedSourceUris": compilation.dev_generated_source_uris,
-            # Every bundled shader, by bundle path, with the workspace
-            # files it is compiled from. The dev tool watches those and
-            # has the app reload a shader whose compiled bytes changed.
-            "shaders": bundle_shader_sources(ctx),
-            # The loose native libraries this build writes, from the
-            # same list `default_files` carries so the two cannot drift —
-            # `native_deps` and Native Assets code assets alike, because a
-            # process maps both and can replace neither. A `dlopen`ing app has these mapped for the life
-            # of its process, and a hot reload that rebuilds this target to
-            # regenerate codegen sources rebuilds them too — so comparing
-            # them across those rebuilds is how the dev tool learns that an
-            # increment would be injected over stale machine code, without
-            # paying a second build in the app's launch configuration.
-            # Empty unless the app bundles `native_deps`.
-            "nativeLibs": bundled_native_libs.keys(),
-            # Per library, the files its bindings were generated from. A
-            # reload compares these bytes to decide whether an increment is
-            # one the library the running process already has can serve —
-            # see `NativeLibsWatch` in the dev tool. Empty list: nothing
-            # declared, so the reload cannot know and will not guess.
-            "nativeLibContracts": binding_contracts,
-            # Per library, the first-party sources it is built from, so a
-            # reload can see a native edit in an app that runs no build of
-            # its own — every app without generated sources. Stat-ed on each
-            # reload; see `native_sources.bzl`.
-            "nativeLibSources": native_lib_sources,
-            # First-party source packages (app + local deps) the dev tool
-            # maps live edits back to via its SourceUriResolver. libRoot is
-            # workspace-relative.
-            "sourcePackages": [
-                {"name": sp[0], "libRoot": sp[1]}
-                for sp in compilation.dev_source_packages
-            ],
-            # The sources outside every package the app compiles under the
-            # app scheme — a `main` outside its package's `lib/` and the
-            # `srcs` beside it — with the URI the compiler keys each by.
-            # Empty for a `main` with a `package:` URI.
-            "appSources": compilation.dev_app_sources,
-        }),
-    )
-    extra_files.append(dev_config_file)
-    extra_files.append(compilation.dev_package_config)
-
-    # The dev registrants are inputs to no action — without this they are
-    # declared but never materialized by the bare build, and the dev tool
-    # would absolutize a dangling path.
-    for registrant in compilation.dev_plugin_registrants.values():
-        if registrant:
-            extra_files.append(registrant)
-
-    # The generated sources `_dev_config.json` points the frontend_server
-    # at. These *are* inputs to the kernel compile, which is why they
-    # looked safe — but an input is materialized on the machine that ran
-    # the action, and a cache hit runs none. Declaring them is what makes
-    # the paths in the config true.
-    extra_files.extend(compilation.dev_generated_source_files)
-
-    # And the binding contracts, which have it worse than the generated
-    # sources: a contract is an input to no action of this target at all.
-    # Nothing but the dev tool ever reads its bytes, so a *generated*
-    # contract is written only if some other action happens to produce it —
-    # a bridge generator that emits its interface description beside the
-    # Dart it also emits does, and a rule that emits the description alone
-    # does not. The first case works by luck and the second one names a
-    # path in the config that this build never writes, which the dev tool
-    # reports at launch as a build that declared a file it did not write.
-    # Declaring them is what makes the paths true, and what makes the
-    # reload's own rebuild refresh them.
-    extra_files.extend(contract_files)
-    return extra_files
-
 def _application_default_files(
         flutter_assets,
         package_config,
@@ -411,7 +243,7 @@ def _application_default_files(
 
     The code-asset libraries join `default_files` with the manifest that names
     them. Declaring an output is what makes its path true: the manifest is
-    built here and the dev tool reads these files back off this target, and a
+    built here and launchers read these files back off this target, and a
     path named by a build that did not write it fails far from its cause.
     """
     default_files = [
@@ -471,68 +303,6 @@ def _application_providers(flutter_sdk_info, is_debug, outputs, plugins):
     providers.append(OutputGroupInfo(**output_groups))
     return providers
 
-def _application_default_files_with_dev_config(ctx, flutter_sdk_info, compilation, is_debug, built):
-    """The application's default files, plus the hot-reload dev config on a debug build.
-
-    Args:
-      ctx: The rule context.
-      flutter_sdk_info: The resolved `FlutterSdkInfo`.
-      compilation: The kernel compilation struct.
-      is_debug: Whether this is a debug build.
-      built: A struct of the files built so far: `flutter_assets`, `native_assets_manifest_file`, `native_libs`,
-        `bundled_code_assets` and `aot_output`.
-
-    Returns:
-      The list of default output Files.
-    """
-    bundled_native_libs = _index_bundled_libraries(built.native_libs, built.bundled_code_assets)
-
-    # What each of those libraries' bindings were generated from, when its build
-    # said so — see `flutter_native_library`. Keyed by the same paths, so a
-    # library with no contract is an empty list rather than a missing key: the dev
-    # tool has to tell "nothing describes this one" from "this one is not
-    # bundled", and they mean opposite things for a reload.
-    binding_contracts, contract_files = _index_library_pairs(
-        bundled_native_libs,
-        _application_dep_pairs(ctx, collect_binding_contracts, "binding_contracts"),
-        "contract",
-    )
-
-    # And what each is built from, on the same keys, so a reload can tell that a
-    # library went stale in an app that runs no build of its own.
-    native_lib_sources, _ = _index_library_pairs(
-        bundled_native_libs,
-        _application_dep_pairs(ctx, collect_native_source_pairs, "native_lib_sources"),
-        "sources",
-    )
-
-    default_files = _application_default_files(
-        built.flutter_assets,
-        compilation.package_config,
-        built.native_assets_manifest_file,
-        bundled_native_libs,
-        built.aot_output,
-        is_debug,
-        compilation.kernel_dill,
-        built.size_output,
-    )
-
-    # Hot-reload dev config (debug only), mirroring flutter_web_application's
-    # `_dev_config.json`.
-    if is_debug and compilation.dev_package_config != None:
-        default_files.extend(
-            _write_dev_config(
-                ctx,
-                flutter_sdk_info,
-                compilation,
-                bundled_native_libs,
-                binding_contracts,
-                native_lib_sources,
-                contract_files,
-            ),
-        )
-    return default_files
-
 def _prepare_native_assets(ctx, flutter_sdk_info, target_platform):
     """Aggregates transitive Native Assets and writes the application manifest."""
 
@@ -567,12 +337,9 @@ def _flutter_application_impl(ctx):
     # kernel compile (the frontend_server reads it via --native-assets).
     assets = _prepare_native_assets(ctx, flutter_sdk_info, platform.target_platform)
 
-    # Declared before the kernel compile that will later feed it, because a
-    # debug app carries this path inside itself: `flutter_compile_kernel`
-    # bakes it into `rules_flutter.build_info.assetsDir`, and the dev tool
-    # matches the running app's reported value against the tree it watches
-    # and rebuilds. Declaring an output is independent of registering the
-    # action that fills it, so the ordering costs nothing.
+    # Declared before the kernel compile, which is told whether the app has one.
+    # Declaring an output is independent of registering the action that fills
+    # it, so the ordering costs nothing.
     flutter_assets = declare_flutter_assets_dir(ctx)
 
     # Link hooks run over the uses the AOT compile records, so only a
@@ -586,7 +353,6 @@ def _flutter_application_impl(ctx):
         ctx,
         flutter_sdk_info,
         platform.target_platform,
-        platform.is_ios,
         assets,
         flutter_assets,
         recorded_uses,
@@ -645,7 +411,16 @@ def _flutter_application_impl(ctx):
         aot_output = aot.aot_output,
         size_output = aot.size_output,
     )
-    default_files = _application_default_files_with_dev_config(ctx, flutter_sdk_info, compilation, is_debug, built)
+    default_files = _application_default_files(
+        built.flutter_assets,
+        compilation.package_config,
+        built.native_assets_manifest_file,
+        _index_bundled_libraries(built.native_libs, built.bundled_code_assets),
+        built.aot_output,
+        is_debug,
+        compilation.kernel_dill,
+        built.size_output,
+    )
 
     outputs = struct(
         kernel_dill = compilation.kernel_dill,
@@ -695,12 +470,6 @@ flutter_application = rule(
         PLATFORM_CONSTRAINT_ATTRS,
         link_hook_runner_attr(),
         LAYERING_CHECK_ATTRS,
-        # Simulator-vs-device is an Apple *environment* constraint, not an OS
-        # one, so it needs apple_support's own attrs on top of the OS set.
-        # `launch_build_args` turns it into `--ios_multi_cpus=sim_arm64` or
-        # `=arm64`, which is the difference between a dev-loop rebuild landing
-        # in the app's output tree and landing in one it never reads.
-        apple_support.platform_constraint_attrs(),
     ),
     toolchains = [
         "@rules_flutter//flutter:toolchain_type",

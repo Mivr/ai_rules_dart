@@ -46,8 +46,6 @@ def _groups_impl(ctx):
     generated = [f for f in target[OutputGroupInfo].flutter_stock_dev_generated.to_list() if f.extension == "dart"]
     asserts.false(env, generated[0].is_source, "only generated sources are linked")
     asserts.equals(env, "flutter/tests/lib/stock_dev_generated.dart", generated[0].short_path)
-    old = _basenames(target, "flutter_dev_files")
-    asserts.true(env, "_stock_dev_app.dill" in old, "the old group keeps the kernel: %s" % old)
     return analysistest.end(env)
 
 _groups_test = analysistest.make(_groups_impl, config_settings = _DBG)

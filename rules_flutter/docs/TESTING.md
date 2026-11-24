@@ -423,10 +423,8 @@ plain `-c dbg`.
 
 **Diagnose — diff the staged copy against its source.** For the loud variant the
 error names the staged path; for the quiet variant, diff the file you just edited.
-The two build-emitted package configs give the mapping with no guessing:
-`app.package_config.json` carries each package's staged `*.pkgsrcs` root, and
-`app.dev_package_config.json` carries the same package's source root as
-`org-dartlang-app:///<dir>`.
+The build-emitted `app.package_config.json` carries each package's staged
+`*.pkgsrcs` root; the package's source root is its directory in the workspace.
 
 ```sh
 cd e2e/codegen

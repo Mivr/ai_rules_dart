@@ -1,12 +1,9 @@
-"""The URI a native app's `main` is compiled under, in the build and the dev loop.
+"""The URI a native app's `main` is compiled under.
 
-Hot reload applies an edit only when the dev tool's compiler names a library
-exactly as the running kernel does. A `main` under its package's `lib/` has a
-`package:` URI that is the same in the build's sandbox and the workspace. One
-outside it — `flutter run -t test_driver/app.dart` — has no such URI, so both
-sides name it under the app scheme instead, with the same root mounted. These
-tests pin both halves: the build's kernel compile and the `_dev_config.json`
-the dev tool compiles from.
+A `main` under its package's `lib/` has a `package:` URI that is the same in the
+build's sandbox and the workspace. One outside it — `flutter run -t
+test_driver/app.dart` — has no such URI, so it is named under the app scheme
+instead. These tests pin the build's kernel compile.
 
 The generated plugin registrant rides the same scheme, since a frontend_server
 mounts one scheme at a time.
@@ -137,26 +134,6 @@ def _outside_lib_test_impl(ctx):
     sources = _flag_values(argv, "--source")
     asserts.equals(env, _OUTSIDE_LIB_URI, sources[0] if sources else None)
 
-    # The dev loop names it the same way, from the same root — `""` is the
-    # exec root in the dev config's exec-root-relative convention.
-    config = written_json(env, "_dev_config.json")
-    if config != None:
-        asserts.equals(env, _OUTSIDE_LIB_URI, config["appEntrypoint"])
-        asserts.equals(env, [""], config["filesystemRoots"])
-        asserts.equals(env, "org-dartlang-app", config["filesystemScheme"])
-
-        # The `main`, and the sibling it imports: both reach the dev loop's
-        # edit-to-URI map, the sibling because it is declared in `srcs` —
-        # the build's compile refuses anything it does not declare, so this
-        # is every file outside a package the app can read.
-        asserts.equals(
-            env,
-            [
-                {"path": "flutter/tests/web_fixture_main.dart", "uri": _OUTSIDE_LIB_URI},
-                {"path": "flutter/tests/app_entrypoint_sibling.dart", "uri": "org-dartlang-app:///flutter/tests/app_entrypoint_sibling.dart"},
-            ],
-            config["appSources"],
-        )
     return analysistest.end(env)
 
 def _in_lib_test_impl(ctx):
@@ -170,13 +147,6 @@ def _in_lib_test_impl(ctx):
         sources[0] if sources else None,
     )
 
-    # Nothing for the dev loop to mount: the entrypoint resolves through the
-    # package config, and the dev tool compiles its own registrant as a file.
-    config = written_json(env, "_dev_config.json")
-    if config != None:
-        asserts.equals(env, "package:%s/web_fixture_main.dart" % _PACKAGE, config["appEntrypoint"])
-        asserts.equals(env, [], config["filesystemRoots"])
-        asserts.equals(env, [], config["appSources"])
     return analysistest.end(env)
 
 def _opt_in_lib_test_impl(ctx):

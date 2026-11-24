@@ -20,7 +20,6 @@ load(":apple_private_headers_test.bzl", "apple_private_headers_test_suite")
 load(":apple_shared_engine_test.bzl", "apple_shared_engine_test_suite")
 load(":architecture_fixtures.bzl", "architecture_fixtures")
 load(":artifact_urls_test.bzl", "artifact_urls_test_suite")
-load(":build_info_registrant_test.bzl", "build_info_registrant_test_suite")
 load(":common_test.bzl", "common_test_suite")
 load(":compile_api_test.bzl", "compile_api_test_suite")
 load(":cpp_client_wrapper_test.bzl", "cpp_client_wrapper_test_suite")
@@ -70,7 +69,6 @@ load(":macos_test.bzl", "macos_apple_plugin_test_suite", "macos_test_suite")
 load(":manifest_merge_test.bzl", "manifest_merge_test_suite")
 load(":modular_api_test.bzl", "modular_api_test_suite")
 load(":native_assets_test.bzl", "bridge_probe", "native_assets_test_suite")
-load(":native_hot_patch_test.bzl", "native_hot_patch_test_suite")
 load(":native_sources_test.bzl", "native_sources_test_suite")
 load(":objc_drift_test.bzl", "objc_drift_test_suite")
 load(":path_android_maven_test.bzl", "path_android_maven_test_suite")
@@ -232,8 +230,6 @@ defines_config_test_suite(name = "defines_config_test")
 
 define_flagfiles_test_suite(name = "define_flagfiles_test")
 
-build_info_registrant_test_suite(name = "build_info_registrant_test")
-
 defines_files_test_suite(name = "defines_files_test")
 
 
@@ -380,8 +376,6 @@ xtool_hub_toolchains_test_suite(name = "xtool_hub_toolchains_test")
 xtool_static_xcframework_test_suite(name = "xtool_static_xcframework_test")
 
 native_assets_test_suite(name = "native_assets_test")
-
-native_hot_patch_test_suite(name = "native_hot_patch_test")
 
 native_sources_test_suite(name = "native_sources_test")
 

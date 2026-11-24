@@ -175,8 +175,7 @@ def _flutter_test_sources(ctx):
     # Per-target bootstrap. Imports the user's test via its `package:` URI when
     # `main` sits under `<lib_root>/lib/` and via `org-dartlang-app:///<stable_path>`
     # otherwise. Written by the shared helper, which also stages the golden
-    # comparator next to it (a symlink, as `flutter_application` stages
-    # `agent_extensions/agent.dart`) exactly when the suite carries
+    # comparator next to it (a symlink) exactly when the suite carries
     # `package:flutter_test`.
     lib_root = derive_lib_root(ctx.label.workspace_root, ctx.label.package)
     bootstrap = ctx.actions.declare_file(ctx.label.name + "_bootstrap.dart")

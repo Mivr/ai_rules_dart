@@ -1,4 +1,4 @@
-"""A kernel target in a second package, for the constant debug agent URI test."""
+"""A kernel target in a second package, for the constant debug registrant URI test."""
 
 load("//flutter/private:flutter_kernel_target.bzl", "flutter_kernel_target")
 
@@ -8,6 +8,9 @@ flutter_kernel_target(
     main = "main.dart",
     tags = ["manual"],
     visibility = ["//flutter/tests:__pkg__"],
-    # The agent imports `flutter`: a program without it stages no agent.
-    deps = ["//flutter/tests/registrant_twin_fixture/app"],
+    # A Dart plugin is what makes a registrant.
+    deps = [
+        "//flutter/tests/registrant_twin_fixture/app",
+        "//flutter/tests/registrant_twin_fixture/plugin",
+    ],
 )

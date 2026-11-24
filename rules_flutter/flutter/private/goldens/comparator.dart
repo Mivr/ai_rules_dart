@@ -43,8 +43,7 @@
 // `flutter test`.
 //
 // Imports only `package:flutter_test` and `dart:*`. Staged next to the
-// generated bootstrap by `flutter_test` and imported from it by basename, the
-// same way `agent_extensions/agent.dart` reaches an application's kernel.
+// generated bootstrap by `flutter_test` and imported from it by basename.
 
 import 'dart:io';
 import 'dart:typed_data';

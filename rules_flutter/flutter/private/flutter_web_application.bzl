@@ -19,35 +19,29 @@ so we skip the frontend_server kernel compilation step used by desktop/mobile.
 """
 
 load("@rules_dart//dart:providers.bzl", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "MODULAR_KERNEL_TOOLCHAINS", "collect_packages", "collect_transitive_srcs", "colocate_packages", "dart_analyzable_info_with_package", "dart_package_identity", "derive_lib_root", "generate_dev_package_config", "generate_package_config")
+load("@rules_dart//dart:utils.bzl", "MODULAR_KERNEL_TOOLCHAINS", "collect_packages", "collect_transitive_srcs", "colocate_packages", "dart_analyzable_info_with_package", "dart_package_identity", "derive_lib_root", "generate_package_config")
 load("//flutter:providers.bzl", "FlutterNativeLibraryInfo")
 load(
     "//flutter/private:app_entrypoint.bzl",
-    "APP_SCHEME",
-    "app_main_location",
     "app_scheme_rel_path",
-    "app_scheme_sources",
     "compile_kernel_package_config",
     "package_lib_prefix",
     "resolve_wrapper_main_import",
     "synthesize_app_package",
-    "with_root",
 )
 load(
     "//flutter/private:common.bzl",
-    "AGENT_EXTENSIONS_ATTR",
     "COPY_TO_DIRECTORY_TOOLCHAINS",
     "FLUTTER_APPLICATION_ATTRS",
     "FLUTTER_DEPS_DOC",
     "KERNEL_COMPILE_ATTRS",
     "merge_dart_defines",
-    "resolve_dev_generated_sources",
     "resolve_exec_dart_vm",
     "resolve_flutter_sdk_info",
 )
 load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
 load("//flutter/private:flutter_kernel_module.bzl", "MODULAR_KERNEL_ATTRS", "flutter_kernel_module_aspect")
-load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "bundle_shader_sources", write_web_bundle = "flutter_web_bundle")
+load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", write_web_bundle = "flutter_web_bundle")
 load(
     "//flutter/private:flutter_web_compile.bzl",
     "flutter_dart2js_action",
@@ -139,47 +133,6 @@ def _web_collect_sources(ctx):
     # the assembled (codegen-co-located) copies of its package siblings.
     packages = synthesize_app_package(ctx.label, packages, ctx.attr.package_name, lib_root, ctx.attr.language_version)
     return struct(all_srcs = all_srcs, packages = packages, lib_root = lib_root)
-
-def _web_prepare_dev_config(ctx, packages, all_srcs, lib_root):
-    """Computes the hot-reload dev package_config inputs (debug only).
-
-    A multi-root dev package_config so a source-assembled (codegen) app
-    resolves package: URIs across the live source tree + generated bazel-out
-    roots, instead of the frozen assembled `.pkgsrcs` dir the build config
-    uses. Computed pre-colocation (lib_root + File.is_source intact). See
-    rules_dart generate_dev_package_config. Returns None in release builds.
-    """
-    dev_package_config = ctx.actions.declare_file(ctx.label.name + ".dev_package_config.json")
-    dev_pc = generate_dev_package_config(packages, all_srcs + [ctx.file.main], dev_package_config, scheme = APP_SCHEME)
-    ctx.actions.write(dev_package_config, dev_pc.content)
-
-    # A `main` with no `package:` URI is imported by the dev loop's
-    # synthetic entrypoint under the app scheme, from this root.
-    dev_filesystem_roots = with_root(
-        dev_pc.filesystem_roots,
-        app_main_location(ctx.attr.package_name, lib_root, ctx.file.main).root,
-    )
-
-    # The same declaration the native rule makes, for the same reason and
-    # against the same failure: the dev config sends the frontend_server to
-    # read these paths, and a cache hit runs no action, so a file that is only
-    # an action *input* is never written to this machine. Without this the web
-    # dev loop fails at assembly with "the build declared files it did not
-    # write" — and only once a disk or remote cache holds those actions, which
-    # is why it took a second full-suite run to see it.
-    dev_generated_source_files = resolve_dev_generated_sources(
-        dev_pc.generated_source_paths,
-        all_srcs + [ctx.file.main],
-    )
-    return struct(
-        dev_package_config = dev_package_config,
-        dev_filesystem_roots = dev_filesystem_roots,
-        dev_filesystem_scheme = dev_pc.scheme,
-        dev_generated_source_paths = dev_pc.generated_source_paths,
-        dev_generated_source_uris = dev_pc.generated_source_uris,
-        dev_generated_source_files = dev_generated_source_files,
-        dev_source_packages = dev_pc.source_packages,
-    )
 
 def _web_inject_registrant(ctx, packages, all_srcs):
     """Generates the web plugin registrant, stubbing flutter_web_plugins.
@@ -436,20 +389,6 @@ def _web_native_module_files(ctx):
         for f in dep[FlutterNativeLibraryInfo].libraries.to_list()
     ]
 
-def _web_native_module_contracts(ctx):
-    """Indexes each declared module's binding source files, keyed by File.
-
-    Keyed by File so the dev config can key by the same path the module
-    list carries.
-    """
-    native_module_contracts = {}
-    for dep in ctx.attr.native_modules:
-        info = dep[FlutterNativeLibraryInfo]
-        contracts = info.binding_contract.to_list()
-        for f in info.libraries.to_list():
-            native_module_contracts[f] = contracts
-    return native_module_contracts
-
 def _web_write_bundle(ctx, flutter_sdk_info, program, build):
     """Writes the web directory: the asset tool's output, plus the declared native modules.
 
@@ -609,175 +548,23 @@ def _web_stage_ddc_files(ctx, dev_bootstrap_js):
     ctx.actions.symlink(output = ddc_stack_trace_mapper_js, target_file = ctx.file._ddc_stack_trace_mapper_js)
     ddc_files.append(ddc_stack_trace_mapper_js)
 
-    # AI-agent service extensions, staged for the dev tool to import from
-    # its synthetic entrypoint (see the `agentExtensions` dev-config key).
-    #
-    # Staged only here, in the DDC branch, rather than compiled into the
-    # bundle the way the native rules compile it into their kernel. The
-    # bundle is built by dart2wasm/dart2js, where `dart:developer`'s
-    # `registerExtension` is a no-op stub — and the runs that serve the
-    # bundle (`--wasm`, release) have no VM service to register against
-    # either. Only the DDC dev loop can carry these.
-    staged_agent = ctx.actions.declare_file(ctx.label.name + ".agent_extensions.dart")
-    ctx.actions.symlink(output = staged_agent, target_file = ctx.file._agent_extensions_src)
-    ddc_files.append(staged_agent)
-
     # The dev loop's bootstrap, declared a top-level debug output so it is
     # materialized locally for the dev server to read and serve.
     ddc_files.append(dev_bootstrap_js)
-    return ddc_files, staged_agent
+    return ddc_files
 
-def _web_dev_config_content(ctx, flutter_sdk_info, debug, staged_agent):
-    """Builds the web dev-loop config content.
-
-    The synthetic-main entrypoint the dev tool imports: the `main`'s
-    `package:` URI, backed by the record `synthesize_app_package` wrote
-    above, or — for a `main` outside the package's `lib/`, which
-    `flutter run -t` allows — its app-scheme URI, which the dev loop
-    resolves through the root `dev_filesystem_roots` carries for it.
-
-    Never a URI derived any other way. An earlier version fabricated
-    `package:<name>/main.dart` for a `main` it could not place, which
-    named some other app's entrypoint whenever the workspace root held
-    one, and the dev loop booted that program with nothing reporting a
-    mismatch.
+def _web_debug_result(ctx, debug, output_dir, output_groups, analyzable_info):
+    """Assembles the debug-mode providers: the DDC files and the package configs.
 
     Args:
         ctx: The rule context of the rule implementation that calls this helper.
-        flutter_sdk_info: The Flutter SDK info struct (engine revision,
-            version and host tool paths).
-        debug: The debug struct (`defines`, `lib_root`, `registrant`,
-            `dev_bootstrap_js`, `dev`, `build_package_config`,
-            `config_file`).
-        staged_agent: The staged AI-agent service extensions File.
-    """
-    app_entrypoint = app_main_location(ctx.attr.package_name, debug.lib_root, ctx.file.main).uri
-
-    # The dart-sdk root is derived from the module loader path:
-    # .../dart-sdk/lib/dev_compiler/ddc/ddc_module_loader.js → .../dart-sdk
-    dart_sdk_root = ctx.file._ddc_module_loader_js.path.rsplit("/lib/", 1)[0]
-    return json.encode({
-        "engineRevision": flutter_sdk_info.engine_revision,
-        "flutterVersion": flutter_sdk_info.version,
-        "dartSdkRoot": dart_sdk_root,
-        "dartaotruntime": flutter_sdk_info.dartaotruntime.path,
-        "frontendServer": flutter_sdk_info.frontend_server.path,
-        "patchedSdkRoot": flutter_sdk_info.platform_kernel_dill.path.rsplit("/", 1)[0],
-        "appEntrypoint": app_entrypoint,
-        # The generated web plugin registrant (`registerPlugins()`). The
-        # bundled build reaches it through the wrapper main's relative
-        # import; DDC dev mode builds its own synthetic entrypoint, so the
-        # dev tool needs the path named explicitly — it stages the file
-        # beside that entrypoint and imports it the same way. Empty when
-        # the app has no web plugins.
-        "webPluginRegistrant": debug.registrant.path if debug.registrant else "",
-        # The staged AI-agent service extensions. Same staging contract as
-        # `webPluginRegistrant`: the build names the file, the dev tool
-        # copies it beside its synthetic entrypoint and imports it. Always
-        # present in this branch — a dbg web run is a dev-loop run.
-        "agentExtensions": staged_agent.path,
-        # The bootstrap the dev server answers `/flutter_bootstrap.js`
-        # with: this target's template, substituted with the DDC build
-        # config the dev loop runs under. Named here rather than found by
-        # suffix because it is one file per target, and a run that served
-        # another target's would boot the wrong app.
-        "flutterBootstrapJs": debug.dev_bootstrap_js.path,
-        # Merged user defines (attr + extra_dart_defines flag). The dev
-        # tool replays these as -D on its resident frontend_server so
-        # hot reload/restart recompiles keep the same environment.
-        "dartDefines": debug.defines,
-        # Whether the DDC dev loop asserts native nullability, so a run of
-        # this app checks what its built bundle checks. The dev loop
-        # applies it through the SDK options in its generated bootstrap
-        # rather than as a compiler flag, which is why it travels as a
-        # value here instead of joining `dartDefines`.
-        "nativeNullAssertions": ctx.attr.native_null_assertions,
-        # The dev loop's frontend_server parses the same source these
-        # experiments change, so without them a `flutter_bazel run` of an
-        # experiment-using app fails to parse code its bundle compiles
-        # cleanly. The dev tool's side of this is #58-#67.
-        "enableExperiments": ctx.attr.enable_experiments,
-        # Codegen hot-reload: dev package_config + multi-root layout +
-        # generated source paths/URIs (empty for non-codegen apps).
-        "devPackageConfig": debug.dev.dev_package_config.path if debug.dev.dev_package_config else "",
-        # The BUILD package_config, for the one consumer that needs file
-        # paths rather than live sources: DWDS, which reads a `package:`
-        # URI's source off disk to show it in the debugger.
-        #
-        # Named separately from `devPackageConfig` because the two are not
-        # interchangeable and only the call site knows which it wants. A
-        # source-assembled package's dev `rootUri` is
-        # `<filesystemScheme>:///<lib_root>`, which the frontend_server
-        # resolves through `--filesystem-root` but `Uri.toFilePath()`
-        # cannot: DWDS asked through it gets "Cannot extract a file path
-        # from a org-dartlang-app URI" and shows no source at all. This
-        # one's rootUris are ordinary relative paths, so they resolve.
-        "buildPackageConfig": debug.build_package_config.path if debug.build_package_config else debug.config_file.path,
-        "filesystemRoots": debug.dev.dev_filesystem_roots,
-        "filesystemScheme": debug.dev.dev_filesystem_scheme,
-        "generatedSourcePaths": debug.dev.dev_generated_source_paths,
-        "generatedSourceUris": debug.dev.dev_generated_source_uris,
-        # See flutter_application's dev config.
-        "shaders": bundle_shader_sources(ctx),
-        # The native modules the page instantiates, and per module the files
-        # its bindings were generated from. A reload cannot replace an
-        # instantiated module any more than a process can replace a `dlopen`ed
-        # image, so the dev tool compares these the same way — see
-        # `NativeLibsWatch`. The built file rather than its served copy: the
-        # copy derives from it, and this is the path the rebuild rewrites.
-        #
-        # Declared, never inferred. This directory also holds Flutter's own
-        # `main.dart.wasm`, which changes on every Dart edit, so a watch that
-        # recognised a module by extension would flag every reload.
-        "nativeLibs": [f.path for f in _web_native_module_files(ctx)],
-        "nativeLibContracts": {
-            f.path: [c.path for c in contracts]
-            for f, contracts in _web_native_module_contracts(ctx).items()
-        },
-        # First-party source packages (app + local deps) the dev tool maps
-        # live edits back to via its SourceUriResolver. libRoot is
-        # workspace-relative.
-        "sourcePackages": [
-            {"name": sp[0], "libRoot": sp[1]}
-            for sp in debug.dev.dev_source_packages
-        ],
-        # The sources outside every package the app compiles under the app
-        # scheme — a `main` outside its package's `lib/` and the `srcs`
-        # beside it — with the URI the compiler keys each by. Empty for a
-        # `main` with a `package:` URI.
-        "appSources": app_scheme_sources(
-            ctx.attr.package_name,
-            debug.lib_root,
-            ctx.file.main,
-            ctx.files.srcs,
-        ),
-    })
-
-def _web_debug_result(ctx, flutter_sdk_info, debug, output_dir, output_groups, analyzable_info):
-    """Assembles the debug-mode providers: DDC files plus the dev config.
-
-    Args:
-        ctx: The rule context of the rule implementation that calls this helper.
-        flutter_sdk_info: The Flutter SDK info struct (engine revision,
-            version and host tool paths).
-        debug: The debug struct (`defines`, `lib_root`, `registrant`,
-            `dev_bootstrap_js`, `dev`, `build_package_config`,
-            `build_package_dirs`, `config_file`).
+        debug: The debug struct (`registrant`, `dev_bootstrap_js`,
+            `build_package_config`, `build_package_dirs`, `config_file`).
         output_dir: The bundled web directory.
         output_groups: The bundler's output groups.
         analyzable_info: The Dart analysis closure.
     """
-    ddc_files, staged_agent = _web_stage_ddc_files(ctx, debug.dev_bootstrap_js)
-
-    # Dev config JSON with engine revision, version, and host tool paths.
-    dev_config_content = _web_dev_config_content(ctx, flutter_sdk_info, debug, staged_agent)
-    dev_config = ctx.actions.declare_file(ctx.label.name + "_dev_config.json")
-    ctx.actions.write(dev_config, dev_config_content)
-    ddc_files.append(dev_config)
-    if debug.dev:
-        ddc_files.extend(debug.dev.dev_generated_source_files)
-        if debug.dev.dev_package_config:
-            ddc_files.append(debug.dev.dev_package_config)
+    ddc_files = _web_stage_ddc_files(ctx, debug.dev_bootstrap_js)
     if debug.build_package_config:
         ddc_files.append(debug.build_package_config)
     ddc_files.extend(debug.build_package_dirs)
@@ -792,14 +579,6 @@ def _web_debug_result(ctx, flutter_sdk_info, debug, output_dir, output_groups, a
     if debug.registrant:
         ddc_files.append(debug.registrant)
 
-    # And the declared modules' binding contracts, which are an input to no
-    # action here at all — nothing but the dev tool reads their bytes. A
-    # *generated* contract is otherwise a path in the config that this build
-    # never writes, unless some other action happens to produce it. See
-    # `flutter_application`, which declares them for the same reason.
-    for contracts in _web_native_module_contracts(ctx).values():
-        ddc_files.extend(contracts)
-
     return [DefaultInfo(files = depset([output_dir] + ddc_files)), output_groups, analyzable_info]
 
 def _flutter_web_bundle_impl(ctx):
@@ -808,7 +587,7 @@ def _flutter_web_bundle_impl(ctx):
     flutter_sdk_info = resolve_flutter_sdk_info(ctx)
 
     # Merged once for all compile actions below (dart2wasm, dart2js, icon
-    # tree-shake kernel) and the dev-config emission.
+    # tree-shake kernel).
     user_defines = merge_dart_defines(ctx)
 
     # The build mode drives the mode defines of every compile action below,
@@ -822,9 +601,6 @@ def _flutter_web_bundle_impl(ctx):
     all_srcs = sources.all_srcs
     packages = sources.packages
     lib_root = sources.lib_root
-
-    # Hot-reload dev metadata (debug only).
-    dev = _web_prepare_dev_config(ctx, packages, all_srcs, lib_root) if is_debug else None
 
     # Generate web wrapper main with ui_web.bootstrapEngine().
     plugins, registrant, packages, all_srcs = _web_inject_registrant(ctx, packages, all_srcs)
@@ -881,16 +657,13 @@ def _flutter_web_bundle_impl(ctx):
     # The dev tool discovers these in the build output list (same pattern as native).
     if is_debug:
         debug = struct(
-            defines = user_defines,
-            lib_root = lib_root,
             registrant = registrant,
             dev_bootstrap_js = dev_bootstrap_js,
-            dev = dev,
             build_package_config = build_package_config,
             build_package_dirs = build_package_dirs,
             config_file = config_file,
         )
-        return _web_debug_result(ctx, flutter_sdk_info, debug, output_dir, output_groups, analyzable_info)
+        return _web_debug_result(ctx, debug, output_dir, output_groups, analyzable_info)
 
     return [DefaultInfo(files = depset([output_dir])), output_groups, analyzable_info]
 
@@ -1017,8 +790,7 @@ flutter_web_bundle = rule(
                   "much later, as a failure in code that did nothing wrong. Set False to drop " +
                   "the checks once an interop surface is trusted. Applies to the dart2js " +
                   "compile in both `compiler` modes — a dart2wasm target also builds the JS " +
-                  "fallback. The DDC dev loop applies these checks too, and reads this value " +
-                  "from the build's dev config, so the two agree.",
+                  "fallback.",
             default = True,
         ),
         "dump_info": attr.bool(
@@ -1042,8 +814,7 @@ flutter_web_bundle = rule(
                   "(e.g. [\"records\"]), matching `flutter build web --enable-experiment`. " +
                   "Reaches both web compilers and the kernel compile the icon tree-shaker " +
                   "reads, since an experiment changes how the source parses and every step " +
-                  "that parses it has to agree. The dev loop compiles with DDC instead and " +
-                  "reads the list from this build's dev config.",
+                  "that parses it has to agree.",
         ),
         "frequency_based_minification": attr.bool(
             doc = "Whether dart2js's minifier may choose short names by how often an " +
@@ -1088,7 +859,7 @@ flutter_web_bundle = rule(
                   "off, and drops `toString()` bodies the way release does — so it measures " +
                   "what release does — but is left unminified and unstripped so the profile " +
                   "names a frame reports are readable. It is not a debug build: none of the " +
-                  "dev-loop side files are produced, so `flutter_bazel run` cannot serve it.",
+                  "DDC side files are produced.",
             default = False,
         ),
         "native_modules": attr.label_list(
@@ -1184,7 +955,7 @@ build knows which served file is a native module.
             executable = True,
             cfg = "exec",
         ),
-    }) | AGENT_EXTENSIONS_ATTR,
+    }),
     toolchains = [
         "@rules_flutter//flutter:toolchain_type",
         config_common.toolchain_type("@rules_flutter//flutter/private:product_tools_toolchain_type", mandatory = False),
