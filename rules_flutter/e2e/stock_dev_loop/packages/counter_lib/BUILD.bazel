@@ -1,4 +1,4 @@
-load("@rules_flutter//flutter:defs.bzl", "flutter_library")
+load("@rules_flutter//flutter:defs.bzl", "flutter_library", "flutter_test")
 
 flutter_library(
     name = "counter_lib",
@@ -7,4 +7,21 @@ flutter_library(
     data = ["pubspec.yaml"],
     visibility = ["//visibility:public"],
     deps = ["@deps//:flutter"],
+)
+
+# A test of this project, which is not at the workspace root: it runs in this
+# directory, as `flutter test` runs it, and reads its default fixtures (the
+# files under `test/`) and its golden by their paths in the project.
+flutter_test(
+    name = "counter_lib_test",
+    package_name = "counter_lib",
+    size = "small",
+    main = "test/counter_lib_test.dart",
+    pubspec = "pubspec.yaml",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        ":counter_lib",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+    ],
 )

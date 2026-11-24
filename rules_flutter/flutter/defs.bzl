@@ -158,7 +158,8 @@ def flutter_test(name, **kwargs):
     In a project's own package, every file under `test/` that is not Dart
     source is `data` of the test by default (fixtures, goldens), as
     `flutter test` lets a test read the project; other project files a test
-    reads by path go in `data`.
+    reads by path go in `data`. The test runs in the project's directory,
+    as under `flutter test`.
 
     A legacy macro over the `flutter_test` rule (the kind `bazel query`
     reports): its arguments are the rule's attributes, listed in the README

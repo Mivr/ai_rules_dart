@@ -64,28 +64,37 @@ void installBazelGoldenFileComparator() {
   if (testPath == null || testPath.isEmpty) {
     throw StateError(
       'flutter_test: FLUTTER_TEST_PATH is not set, so the golden comparator '
-      'has no test file to root itself at. The rule always sets it; this '
-      'means the test was launched by something other than the flutter_test '
-      'runner.',
+      'cannot name the test file in the source tree. The rule always sets '
+      'it; this means the test was launched by something other than the '
+      'flutter_test runner.',
+    );
+  }
+
+  final testFile = env['FLUTTER_TEST_FILE'];
+  if (testFile == null || testFile.isEmpty) {
+    throw StateError(
+      'flutter_test: FLUTTER_TEST_FILE is not set, so the golden comparator '
+      'has no test file to root itself at. The flutter_test runner always '
+      'sets it; this means the test was launched by something else.',
     );
   }
 
   final update = env['FLUTTER_TEST_UPDATE_GOLDENS'] == '1';
 
   goldenFileComparator = BazelGoldenFileComparator(
-    // `Uri.base` is the runfiles workspace root (the runner leaves the
-    // tester's working directory there) and `FLUTTER_TEST_PATH` is the test
-    // source's `short_path`, so this resolves to the test file — and
-    // `LocalFileComparator` roots goldens at its *directory*. That is
-    // upstream's whole convention: `matchesGoldenFile('goldens/x.png')` reads
-    // `<dir of the test file>/goldens/x.png`.
+    // `FLUTTER_TEST_FILE` is the test file's absolute path in runfiles (the
+    // tester runs in the project's directory, so `Uri.base` is not where
+    // `FLUTTER_TEST_PATH` is relative to), and `LocalFileComparator` roots
+    // goldens at its *directory*, as `flutter test`'s absolute test URI does.
+    // That is upstream's whole convention: `matchesGoldenFile('goldens/x.png')`
+    // reads `<dir of the test file>/goldens/x.png`.
     //
     // Under the sandbox that directory holds only what the target declared, so
     // a golden that exists in the source tree but was never added to `data`
     // fails as "non-existent" rather than being read behind Bazel's back. That
     // is the property that keeps a cached result honest, and it is why no
     // "find the workspace and read from there" shortcut belongs here.
-    Uri.base.resolve(testPath),
+    Uri.file(testFile),
     outputsDir: _dirUri(env['TEST_UNDECLARED_OUTPUTS_DIR']),
     failureHintDir: _failureHintDir(env['TEST_TARGET']),
     updateDir: update ? _updateDir(env, testPath) : null,

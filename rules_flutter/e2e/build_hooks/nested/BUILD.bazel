@@ -1,0 +1,16 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_test")
+
+# A test in a package below the workspace root: it runs in this directory (its
+# project's without a `pubspec`), and the native-assets manifest names the
+# hook's library relative to it.
+flutter_test(
+    name = "nested_hooks_test",
+    package_name = "build_hooks",
+    size = "small",
+    main = "nested_hooks_test.dart",
+    deps = [
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:native_add",
+    ],
+)

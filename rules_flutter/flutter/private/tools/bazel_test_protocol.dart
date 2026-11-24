@@ -426,6 +426,27 @@ String _existingRunfile(
   return path;
 }
 
+/// The directory `flutter_tester` runs in: the test's project directory, as
+/// `flutter test` runs it in the directory of the project's `pubspec.yaml`.
+///
+/// `FLUTTER_TEST_PROJECT_DIR` is that directory's path under [workspaceRoot]
+/// (the runfiles directory of the main repository, the test's own working
+/// directory), as `short_path` spells it: empty at the workspace root,
+/// `../<repo>/...` in another repository. The result is absolute and
+/// normalised. An unset key (a `flutter_prebuilt_test`), or a directory that
+/// is not in runfiles, leaves [workspaceRoot].
+String testerWorkingDirectory(
+  Map<String, String> env,
+  String workspaceRoot,
+  bool Function(String) directoryExists,
+) {
+  final String? project = env['FLUTTER_TEST_PROJECT_DIR'];
+  final Uri root = Directory(workspaceRoot).absolute.uri;
+  if (project == null || project.isEmpty) return root.toFilePath();
+  final String candidate = root.resolve('$project/').toFilePath();
+  return directoryExists(candidate) ? candidate : root.toFilePath();
+}
+
 /// One case's outcome, for the JUnit report.
 class TestCaseResult {
   new passed(this.name, this.elapsed, this.output)

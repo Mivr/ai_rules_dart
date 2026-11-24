@@ -559,6 +559,43 @@ void main() {
     });
   });
 
+  group('testerWorkingDirectory', () {
+    bool exists(String path) =>
+        {'/r/_main/', '/r/_main/app/', '/r/other/pkg/'}.contains(path);
+
+    test('is the project directory under the workspace root', () {
+      expect(
+        testerWorkingDirectory(
+          {'FLUTTER_TEST_PROJECT_DIR': 'app'},
+          '/r/_main',
+          exists,
+        ),
+        '/r/_main/app/',
+      );
+    });
+
+    test('is normalised for a project of another repository', () {
+      expect(
+        testerWorkingDirectory(
+          {'FLUTTER_TEST_PROJECT_DIR': '../other/pkg'},
+          '/r/_main',
+          exists,
+        ),
+        '/r/other/pkg/',
+      );
+    });
+
+    test('is the workspace root for a project there, or none', () {
+      for (final env in [
+        <String, String>{},
+        {'FLUTTER_TEST_PROJECT_DIR': ''},
+        {'FLUTTER_TEST_PROJECT_DIR': 'absent'},
+      ]) {
+        expect(testerWorkingDirectory(env, '/r/_main', exists), '/r/_main/');
+      }
+    });
+  });
+
   group('resolveTestRunfiles', () {
     Map<String, String> env({
       String? baseDill = 'base-key',

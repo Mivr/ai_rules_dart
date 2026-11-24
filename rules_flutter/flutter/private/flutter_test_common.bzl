@@ -308,7 +308,8 @@ def make_test_selection(
         enable_impeller = False,
         include_tags = [],
         exclude_tags = [],
-        coverage_libraries = []):
+        coverage_libraries = [],
+        project_dir = None):
     """How one `flutter_tester` run selects and displays its suite.
 
     Args:
@@ -323,10 +324,13 @@ def make_test_selection(
         coverage_libraries: Library URI prefixes a coverage run is scoped to,
             from `test_coverage_libraries`. Empty (the default) leaves the
             coverage request unscoped.
+        project_dir: The directory `flutter_tester` runs in, as a `short_path`
+            (`""` at the workspace root): the project's, as `flutter test`
+            runs the tester in it. None keeps the runfiles workspace root.
 
     Returns:
         A struct with `test_path`, `enable_impeller`, `include_tags`,
-        `exclude_tags` and `coverage_libraries`.
+        `exclude_tags`, `coverage_libraries` and `project_dir`.
     """
     return struct(
         test_path = test_path,
@@ -334,6 +338,7 @@ def make_test_selection(
         include_tags = include_tags,
         exclude_tags = exclude_tags,
         coverage_libraries = coverage_libraries,
+        project_dir = project_dir,
     )
 
 def _base_runner_env(ctx, flutter_sdk_info, artifacts, selection):
@@ -349,6 +354,8 @@ def _base_runner_env(ctx, flutter_sdk_info, artifacts, selection):
         # The package's name, the tester's `APP_NAME` as `flutter test` sets it.
         "FLUTTER_TEST_APP_NAME": getattr(ctx.attr, "package_name", "") or "",
     }
+    if selection.project_dir != None:
+        env["FLUTTER_TEST_PROJECT_DIR"] = selection.project_dir
     if artifacts.assets_dir != None:
         env["FLUTTER_TEST_ASSETS"] = runfiles_path(artifacts.assets_dir, workspace_name)
     if artifacts.base_dill != None:

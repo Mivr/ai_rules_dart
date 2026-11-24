@@ -11,7 +11,7 @@ failures a wrong declaration gets.
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("@rules_dart//dart:providers.bzl", "DartInfo", "DartPackageInfo")
 load("//flutter:native_assets.bzl", "flutter_data_asset")
-load("//flutter/private:code_assets.bzl", "native_asset_framework_name")
+load("//flutter/private:code_assets.bzl", "native_asset_framework_name", "runfiles_relative")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
@@ -65,6 +65,22 @@ def _framework_name_impl(ctx):
     return unittest.end(env)
 
 _framework_name_test = unittest.make(_framework_name_impl)
+
+def _runfiles_relative_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A test's libraries, seen from the project directory it runs in.
+    asserts.equals(env, "t.native_assets/", runfiles_relative("_main/app", "_main/app/t.native_assets"))
+    asserts.equals(env, "app/t.native_assets/", runfiles_relative("_main", "_main/app/t.native_assets"))
+    asserts.equals(env, "../b/t.native_assets/", runfiles_relative("_main/a", "_main/b/t.native_assets"))
+
+    # Another repository's, from the main one, and the other way round.
+    asserts.equals(env, "../repo/pkg/t.native_assets/", runfiles_relative("_main", "repo/pkg/t.native_assets"))
+    asserts.equals(env, "../../_main/t.native_assets/", runfiles_relative("_main/../repo/pkg", "_main/t.native_assets"))
+    asserts.equals(env, "", runfiles_relative("_main/a/", "_main/a"))
+    return unittest.end(env)
+
+_runfiles_relative_test = unittest.make(_runfiles_relative_impl)
 
 def _actions(env, mnemonic):
     return [a for a in analysistest.target_actions(env) if a.mnemonic == mnemonic]
@@ -193,19 +209,21 @@ def native_assets_test_suite(name):
         target_compatible_with = HOST_COMPATIBLE,
     )
 
-    # A test runs out of runfiles, so the manifest names each library by its
-    # path under the runfiles root.
+    # A test runs out of runfiles, in its project's directory (its package's,
+    # without a `pubspec`), so the manifest names each library by its path in
+    # runfiles relative to that directory.
     _manifest_test(
         name = name + "_test_manifest",
         target_under_test = "//flutter/tests/dart_asset_fixture/app:assets_test",
         style = "runfiles",
-        runfiles_prefix = "flutter/tests/dart_asset_fixture/app/assets_test.native_assets/",
+        runfiles_prefix = "assets_test.native_assets/",
         target_compatible_with = HOST_COMPATIBLE,
     )
 
     small_unittest_suite(
         name + "_pure",
         _framework_name_test,
+        _runfiles_relative_test,
     )
 
     native.test_suite(

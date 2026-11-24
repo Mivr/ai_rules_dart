@@ -139,10 +139,22 @@ def _check_flutter_test_deps(ctx, closure):
     if hook_err != None:
         fail(hook_err)
 
+def _project_dir(ctx):
+    # The test's project directory as a `short_path` (`""` at the workspace
+    # root, `../<repo>/...` in another repository): the `pubspec`'s directory,
+    # or the package's without one. `flutter_tester` runs there, as under
+    # `flutter test`.
+    if ctx.file.pubspec:
+        return ctx.file.pubspec.short_path.rpartition("/")[0]
+    if ctx.label.workspace_name:
+        return "/".join(["..", ctx.label.workspace_name] + ([ctx.label.package] if ctx.label.package else []))
+    return ctx.label.package
+
 def _flutter_test_native_assets(ctx):
     # The closure's code assets, as for `flutter_application`; the test runs
-    # out of runfiles, so the manifest names each library by its path there.
-    return flutter_code_assets(ctx, runfiles = True)
+    # out of runfiles, so the manifest names each library by its path there,
+    # relative to the project directory the tester runs in.
+    return flutter_code_assets(ctx, runfiles = True, runfiles_cwd = _project_dir(ctx))
 
 def _flutter_test_sources(ctx, closure):
     # Per-target bootstrap. Imports the user's test via its `package:` URI when
@@ -278,12 +290,14 @@ def _flutter_test_run(ctx, artifacts, native_assets):
                 ctx.file.main,
                 ctx.files.srcs,
             ),
+            project_dir = _project_dir(ctx),
         ),
         user_env = ctx.attr.env,
         data = ctx.attr.data,
         # The code assets' bundle directory ships here, at the
-        # runfiles-relative path the manifest names.
-        extra_files = native_assets.bundled,
+        # runfiles-relative path the manifest names; the `pubspec` makes the
+        # project directory the tester runs in exist in runfiles.
+        extra_files = native_assets.bundled + ([ctx.file.pubspec] if ctx.file.pubspec else []),
     )
     return struct(
         executable = runner.executable,
@@ -435,7 +449,8 @@ _TEST_ATTRS["deps"] = attr.label_list(
 # them from the test's directory in runfiles, so a PNG that exists in the source
 # tree but is not a declared input fails as "non-existent file" rather than
 # being read behind Bazel's back — which is what keeps a cached pass honest.
-# The usual spelling is `data = glob(["test/goldens/**"])`.
+# The `flutter_test` macro adds the files under the project's `test/` by
+# default; a golden elsewhere is named here.
 _TEST_ATTRS["data"] = attr.label_list(
     allow_files = True,
     doc = "Runtime data deps. Available in test runfiles. Use for " +

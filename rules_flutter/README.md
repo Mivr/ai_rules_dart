@@ -1607,7 +1607,7 @@ Bazel's test protocol applies, as it does to `dart_test`:
 
   Forget it and the test fails as the Dart VM reports a missing file, `PathNotFoundException: Cannot open file, path = 'android/app/src/main/AndroidManifest.xml'`; the runner does not add a hint, since it would have to read the test's output to know.
 
-The test runs in the runfiles directory of the main repository, so these paths resolve as under `flutter test` for a project at the root of the workspace. A project in a subdirectory reads them under the subdirectory's path.
+The test runs in its project's directory, as under `flutter test`: the directory of its `pubspec` (its Bazel package's without one), in runfiles. So these paths, and `File('pubspec.yaml')`, resolve as under `flutter test` for a project in a subdirectory of the workspace too. The runner hands `flutter_tester` absolute paths, goldens are read relative to the test file, and coverage reports name sources by their URIs, so none of them depends on that directory.
 
 A `flutter_test_config.dart` among the test's `srcs` wraps the test as under `flutter test`: the one in the test's directory or the nearest above it, up to the project's directory, has its `testExecutable` run around the test's `main`. It has to be in `srcs` to be found.
 
