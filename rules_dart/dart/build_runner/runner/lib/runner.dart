@@ -490,7 +490,9 @@ class _Runner {
         'Package directories: ${model.dirs}\n'
         'First inputs: ${request.inputs.take(5).join(', ')}\n'
         'Execution root: ${request.execRoot}, output directory: '
-        '${request.binDir}',
+        '${request.binDir}\n'
+        'Declared (a sample): ${state.fs.declared.join(', ')}\n'
+        'Asked for and not found (the first): ${state.fs.misses.join(', ')}',
       );
       return false;
     }
@@ -955,6 +957,20 @@ class _DeclaredFilesystem implements Filesystem {
   final Map<String, Uint8List> written = {};
   final Set<String> _deleted = {};
 
+  /// The first paths the build asked for that no input or output answered:
+  /// a path spelled another way than the declared one finds nothing here.
+  final List<String> misses = [];
+
+  /// A sample of the declared paths, to read [misses] against.
+  List<String> get declared => [
+    ..._disk.keys.where((k) => k.endsWith('.dart')).take(5),
+  ];
+
+  void _miss(String path) {
+    // Every package is probed for a `build.yaml` it may not have.
+    if (misses.length < 5 && !path.endsWith('build.yaml')) misses.add(path);
+  }
+
   void addDisk(String path, String diskPath) {
     _disk[path] = diskPath;
     _deleted.remove(path);
@@ -978,9 +994,13 @@ class _DeclaredFilesystem implements Filesystem {
       written[p.join(rootPath, '.dart_tool', 'build', 'generated', root, asset)];
 
   @override
-  bool existsSync(String path) =>
-      written.containsKey(path) ||
-      (_disk.containsKey(path) && !_deleted.contains(path));
+  bool existsSync(String path) {
+    final found =
+        written.containsKey(path) ||
+        (_disk.containsKey(path) && !_deleted.contains(path));
+    if (!found) _miss(path);
+    return found;
+  }
 
   @override
   Uint8List readAsBytesSync(String path) {
@@ -988,7 +1008,10 @@ class _DeclaredFilesystem implements Filesystem {
     if (w != null) return w;
     if (_deleted.contains(path)) throw FileSystemException('deleted', path);
     final d = _disk[path];
-    if (d == null) throw FileSystemException('not a declared input', path);
+    if (d == null) {
+      _miss(path);
+      throw FileSystemException('not a declared input', path);
+    }
     return File(d).readAsBytesSync();
   }
 
