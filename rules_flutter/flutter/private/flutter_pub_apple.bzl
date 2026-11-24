@@ -23,7 +23,7 @@ load(
     _select_apple_swiftpm_deps = "select_apple_swiftpm_deps",
 )
 load(":flutter_pub_apple_pods.bzl", "detect_apple_cocoapods_deps")
-load(":flutter_pub_lock_hub.bzl", "read_hub_pub_packages")
+load(":flutter_pub_lock_hub.bzl", "hub_package_finder")
 load(":flutter_pub_plugin_deps.bzl", "mapped_apple_plugin_deps")
 load(":flutter_pub_walk.bzl", "PUB_WALK_BOUND", "has_files_under_walk")
 load(":podspec_read.bzl", "detect_apple_podspecs")
@@ -833,7 +833,8 @@ def apple_swiftpm_pins(
         hub_name,
         lock_packages = [],
         lock_label = "",
-        scc_targets = {}):
+        scc_targets = {},
+        find_package = None):
     """Assemble one plugin's view of the hub's SwiftPM pins.
 
     The resolved file supplies the pinned identities and revisions; the
@@ -851,6 +852,8 @@ def apple_swiftpm_pins(
         lock_packages: The package names in the hub's `pubspec.lock`.
         lock_label: The hub's `pubspec.lock` label, for messages.
         scc_targets: Mapping `package -> "@<scc_repo>//:<package>"` for SCC members.
+        find_package: A spoke's `hub_package_finder`, used instead of
+            `lock_packages` and `scc_targets` when given.
 
     Returns:
         `struct(ok, error, pins)`: `pins` is
@@ -877,6 +880,7 @@ def apple_swiftpm_pins(
             lock_packages = lock_packages,
             lock_label = lock_label,
             scc_targets = scc_targets,
+            find_package = find_package,
         ),
     )
 
@@ -889,7 +893,10 @@ def _apple_swiftpm_pins(ctx, resolved_label, checksums_label, hub_name):
     `Package.swift` is found, so a pure-Dart spoke keeps its marker when
     a pin or a checksum is added, removed or changed. A plugin that
     links a pin reads the checksum table, so changing that pin's digest
-    re-fetches the plugin and its refusal names the missing entry.
+    re-fetches the plugin and its refusal names the missing entry. The
+    hub's package list is not read here: `find_package`
+    (`hub_package_finder`) reads it only for a sibling plugin that is not
+    one of the plugin's own dependencies.
 
     Args:
         ctx: The spoke's repository context.
@@ -899,22 +906,19 @@ def _apple_swiftpm_pins(ctx, resolved_label, checksums_label, hub_name):
 
     Returns:
         `(pins, error)`: `struct(resolved, pinned, unpinned, hub,
-        lock_packages, lock_label, scc_targets)` for the plugin's manifest
+        lock_label, find_package)` for the plugin's manifest
         reader, or None and the refusal.
     """
-    hub = read_hub_pub_packages(ctx)
-    lock_packages = hub.packages
+    find_package = hub_package_finder(ctx)
     lock_label = str(ctx.attr.pubspec_lock) if ctx.attr.pubspec_lock != None else ""
-    scc_targets = hub.scc_targets
     if resolved_label == None:
         return struct(
             resolved = "",
             pinned = [],
             unpinned = {},
             hub = hub_name,
-            lock_packages = lock_packages,
             lock_label = lock_label,
-            scc_targets = scc_targets,
+            find_package = find_package,
         ), None
     label = str(resolved_label)
     checksums_content = ctx.read(checksums_label) if checksums_label != None else None
@@ -925,9 +929,8 @@ def _apple_swiftpm_pins(ctx, resolved_label, checksums_label, hub_name):
         label,
         checksums_text,
         hub_name,
-        lock_packages,
-        lock_label,
-        scc_targets,
+        lock_label = lock_label,
+        find_package = find_package,
     )
     if not built.ok:
         return None, built.error

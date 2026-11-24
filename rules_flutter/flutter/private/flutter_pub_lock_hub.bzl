@@ -121,6 +121,46 @@ def read_hub_pub_packages(ctx):
     data = json.decode(ctx.read(label))
     return struct(packages = data["packages"], scc_targets = data["scc_targets"])
 
+def hub_package_finder(ctx):
+    """How a spoke finds another package of its hub by name, from its own slice of the plan first.
+
+    A spoke's own planned dependencies (`planned_deps`) and those of them in a
+    dependency cycle (`cycle_deps`, each to its merged repository) answer
+    without reading anything. Only a name outside them reads the hub's
+    `pub_packages.json` (`read_hub_pub_packages`), once: so a plugin that
+    names only its own dependencies does not depend on every package of the
+    lock, and is not fetched again when another package is added. A member
+    of a merged cycle has no `cycle_deps` and always reads the hub's list.
+
+    Args:
+        ctx: The spoke's repository context (or a member facade).
+
+    Returns:
+        A function of a package name (matched without regard to case) that
+        returns `struct(name, scc_target)` (the name as the lock spells it,
+        and `@<merged repository>//:<name>` for a cycle member, else None),
+        or None when the hub's lock has no such package.
+    """
+    own = getattr(ctx.attr, "planned_deps", None) if hasattr(ctx.attr, "cycle_deps") else None
+    cycles = getattr(ctx.attr, "cycle_deps", {})
+    read = {}
+
+    def find(name):
+        lowered = name.lower()
+        for dep in own or []:
+            if dep.lower() == lowered:
+                repo = cycles.get(dep)
+                return struct(name = dep, scc_target = "@%s//:%s" % (repo, dep) if repo else None)
+        if "hub" not in read:
+            read["hub"] = read_hub_pub_packages(ctx)
+        hub = read["hub"]
+        for locked in hub.packages:
+            if locked.lower() == lowered:
+                return struct(name = locked, scc_target = hub.scc_targets.get(locked))
+        return None
+
+    return find
+
 def hub_lock_packages_build_content(packages):
     """Renders the hub's `packages/BUILD.bazel`: every package of the lock as one target.
 

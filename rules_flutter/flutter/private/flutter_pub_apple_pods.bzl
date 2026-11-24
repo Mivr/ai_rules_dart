@@ -14,7 +14,7 @@ load(
     "read_ios_pod_native_deps",
 )
 load("//flutter/private:podfile_lock.bzl", "read_podfile_lock")
-load(":flutter_pub_lock_hub.bzl", "read_hub_pub_packages")
+load(":flutter_pub_lock_hub.bzl", "hub_package_finder")
 
 visibility(["//flutter/..."])
 
@@ -329,15 +329,21 @@ def _plugin_pod_target(pod_res, spoke, platform):
 
     Args:
         pod_res: Resolution struct with `package` and optional `hub`.
-        spoke: Spoke struct with `hub_name` and optional `scc_targets`.
+        spoke: Spoke struct with `hub_name` and optional `find_package`
+            (`hub_package_finder`) or `scc_targets`.
         platform: Platform string ("ios" or "macos").
 
     Returns:
         The target label string.
     """
-    scc_targets = spoke.scc_targets if hasattr(spoke, "scc_targets") and spoke.scc_targets else {}
-    if pod_res.package in scc_targets:
-        scc_repo = scc_targets[pod_res.package].partition("//:")[0]
+    find = getattr(spoke, "find_package", None)
+    if find != None:
+        found = find(pod_res.package)
+        scc_target = found.scc_target if found != None else None
+    else:
+        scc_target = (getattr(spoke, "scc_targets", None) or {}).get(pod_res.package)
+    if scc_target:
+        scc_repo = scc_target.partition("//:")[0]
         return "{repo}//:{pkg}_apple_{plat}".format(
             repo = scc_repo,
             pkg = pod_res.package,
@@ -440,7 +446,7 @@ def _resolve_spoke_from_lock(ctx, matching_entries, spoke, apple, fail_fn):
         lock_label = spoke.lock_label,
         hub_name = hub_name,
         podfile = spoke.podfile,
-        scc_targets = read_hub_pub_packages(ctx).scc_targets,
+        find_package = hub_package_finder(ctx),
     )
     macos_labels = []
     if apple.macos_srcs:

@@ -5,6 +5,7 @@ load(
     "//flutter/private:flutter_pub_apple_deps.bzl",
     "select_apple_swiftpm_deps",
 )
+load("//flutter/private:flutter_pub_lock_hub.bzl", "hub_package_finder")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
@@ -405,6 +406,109 @@ def _unpinned_url_product_still_refuses_test_impl(ctx):
     asserts.true(env, "Package.resolved" in selected.error)
     return unittest.end(env)
 
+def _spoke_ctx(reads, planned_deps = None, cycle_deps = None, packages = _FIREBASE_LOCK, scc_targets = {}):
+    """A spoke's repository context as `hub_package_finder` sees it; `reads` collects every file read.
+
+    Without `cycle_deps` it is a merged cycle's member facade, which has no slice of the plan.
+    """
+    attrs = {"hub_packages": "@deps//:pub_packages.json"}
+    if cycle_deps != None:
+        attrs["planned_deps"] = planned_deps or []
+        attrs["cycle_deps"] = cycle_deps
+
+    def read(label):
+        reads.append(str(label))
+        return json.encode({"packages": packages, "scc_targets": scc_targets})
+
+    return struct(attr = struct(**attrs), read = read)
+
+def _finder_pins(ctx):
+    return struct(
+        resolved = "//app:Package.resolved",
+        pinned = [],
+        unpinned = {},
+        hub = "deps",
+        lock_label = _LOCK_LABEL,
+        find_package = hub_package_finder(ctx),
+    )
+
+def _own_dependency_sibling_reads_no_hub_file_test_impl(ctx):
+    """firebase_auth's `../firebase_core`, one of its own dependencies, needs nothing of the hub."""
+    env = unittest.begin(ctx)
+    reads = []
+    selected = _select(
+        _FIREBASE_AUTH_SIBLING_MANIFEST,
+        package_name = "firebase_auth",
+        pins = _finder_pins(_spoke_ctx(reads, planned_deps = ["firebase_core", "flutter"], cycle_deps = {})),
+    )
+    asserts.true(env, selected.ok)
+    asserts.equals(env, ["@deps__firebase_core//:firebase_core_apple_ios"], selected.labels)
+    asserts.equals(env, [], reads)
+    return unittest.end(env)
+
+def _own_dependency_sibling_in_a_cycle_test_impl(ctx):
+    """A sibling in a dependency cycle names its merged repository, from the spoke's own slice."""
+    env = unittest.begin(ctx)
+    reads = []
+    selected = _select(
+        _FIREBASE_AUTH_SIBLING_MANIFEST,
+        package_name = "firebase_auth",
+        pins = _finder_pins(_spoke_ctx(
+            reads,
+            planned_deps = ["firebase_core"],
+            cycle_deps = {"firebase_core": "deps__scc_firebase_core"},
+        )),
+    )
+    asserts.true(env, selected.ok)
+    asserts.equals(env, ["@deps__scc_firebase_core//:firebase_core_apple_ios"], selected.labels)
+    asserts.equals(env, [], reads)
+    return unittest.end(env)
+
+def _other_sibling_reads_the_hub_once_test_impl(ctx):
+    """A sibling outside the plugin's own dependencies is looked up in the hub's list, read once."""
+    env = unittest.begin(ctx)
+    reads = []
+    pins = _finder_pins(_spoke_ctx(reads, planned_deps = ["flutter"], cycle_deps = {}))
+    for _ in range(2):
+        selected = _select(_FIREBASE_AUTH_SIBLING_MANIFEST, package_name = "firebase_auth", pins = pins)
+        asserts.true(env, selected.ok)
+        asserts.equals(env, ["@deps__firebase_core//:firebase_core_apple_ios"], selected.labels)
+    asserts.equals(env, ["@deps//:pub_packages.json"], reads)
+    return unittest.end(env)
+
+def _cycle_member_facade_reads_the_hub_test_impl(ctx):
+    """A merged cycle's member has no slice of the plan: the hub's list names the sibling's repository."""
+    env = unittest.begin(ctx)
+    reads = []
+    selected = _select(
+        _FIREBASE_AUTH_SIBLING_MANIFEST,
+        package_name = "firebase_auth",
+        pins = _finder_pins(_spoke_ctx(reads, scc_targets = {"firebase_core": "@deps__scc_x//:firebase_core"})),
+    )
+    asserts.true(env, selected.ok)
+    asserts.equals(env, ["@deps__scc_x//:firebase_core_apple_ios"], selected.labels)
+    asserts.equals(env, ["@deps//:pub_packages.json"], reads)
+    return unittest.end(env)
+
+def _sibling_missing_from_the_lock_refuses_test_impl(ctx):
+    """A sibling in neither the plugin's dependencies nor the lock still gets message 7."""
+    env = unittest.begin(ctx)
+    reads = []
+    selected = _select(
+        _FIREBASE_AUTH_SIBLING_MANIFEST,
+        package_name = "firebase_auth",
+        pins = _finder_pins(_spoke_ctx(reads, planned_deps = [], cycle_deps = {}, packages = ["firebase_auth", "flutter"])),
+    )
+    asserts.true(env, not selected.ok)
+    asserts.true(env, "firebase_core" in selected.error)
+    asserts.true(env, _LOCK_LABEL in selected.error)
+    return unittest.end(env)
+
+_own_dependency_sibling_reads_no_hub_file_test = unittest.make(_own_dependency_sibling_reads_no_hub_file_test_impl)
+_own_dependency_sibling_in_a_cycle_test = unittest.make(_own_dependency_sibling_in_a_cycle_test_impl)
+_other_sibling_reads_the_hub_once_test = unittest.make(_other_sibling_reads_the_hub_once_test_impl)
+_cycle_member_facade_reads_the_hub_test = unittest.make(_cycle_member_facade_reads_the_hub_test_impl)
+_sibling_missing_from_the_lock_refuses_test = unittest.make(_sibling_missing_from_the_lock_refuses_test_impl)
 _firebase_auth_sibling_path_ios_test = unittest.make(_firebase_auth_sibling_path_ios_test_impl)
 _firebase_auth_sibling_path_macos_test = unittest.make(_firebase_auth_sibling_path_macos_test_impl)
 _google_mobile_ads_sibling_path_test = unittest.make(_google_mobile_ads_sibling_path_test_impl)
@@ -434,6 +538,11 @@ def flutter_pub_apple_deps_test_suite(name):
         _flutterframework_path_product_is_skipped_test,
         _url_and_id_products_still_resolve_test,
         _unpinned_url_product_still_refuses_test,
+        _own_dependency_sibling_reads_no_hub_file_test,
+        _own_dependency_sibling_in_a_cycle_test,
+        _other_sibling_reads_the_hub_once_test,
+        _cycle_member_facade_reads_the_hub_test,
+        _sibling_missing_from_the_lock_refuses_test,
     )
     native.test_suite(
         name = name,

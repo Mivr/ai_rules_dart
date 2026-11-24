@@ -160,16 +160,29 @@ def _apple_pins_lock_label(pins):
             return value
     return ""
 
-def _apple_pins_lock_packages(pins):
-    """The hub's lock package names carried by the pin struct.
+def _apple_pins_find_package(pins, name):
+    """Finds a package of the hub's lock by name, through the pin struct.
+
+    A spoke's pin struct carries `find_package` (`hub_package_finder`), which
+    reads the hub's whole package list only for a name outside the plugin's
+    own dependencies; a struct built from values carries `lock_packages`
+    and `scc_targets`.
 
     Args:
         pins: The hub's pin struct for one plugin.
+        name: The package name, matched without regard to case.
 
     Returns:
-        The package names, or an empty list when none were supplied.
+        `struct(name, scc_target)`, or None when the lock has no such package.
     """
-    return getattr(pins, "lock_packages", [])
+    find = getattr(pins, "find_package", None)
+    if find != None:
+        return find(name)
+    scc_targets = getattr(pins, "scc_targets", None) or {}
+    for locked_name in getattr(pins, "lock_packages", []):
+        if locked_name.lower() == name.lower():
+            return struct(name = locked_name, scc_target = scc_targets.get(locked_name))
+    return None
 
 def _apple_path_refusal(plugin_name, manifest_dir, package_name, path, lock_label):
     """Message 7 for a path dependency that is not a locked sibling plugin.
@@ -221,11 +234,11 @@ def _apple_sibling_plugin_label(plugin_name, manifest_dir, decl, platform, pins)
     package_name = _apple_path_package_name(decl)
     segment = _apple_relative_path_step(decl.ref)
     canonical = ""
+    scc_target = None
     if segment and segment.lower() == package_name.lower():
-        for locked_name in _apple_pins_lock_packages(pins):
-            if locked_name.lower() == package_name.lower():
-                canonical = locked_name
-                break
+        found = _apple_pins_find_package(pins, package_name)
+        if found != None:
+            canonical, scc_target = found.name, found.scc_target
     if not canonical or canonical.lower() == plugin_name.lower():
         return struct(
             ok = False,
@@ -238,9 +251,8 @@ def _apple_sibling_plugin_label(plugin_name, manifest_dir, decl, platform, pins)
             ),
             labels = [],
         )
-    scc_targets = pins.scc_targets if hasattr(pins, "scc_targets") and pins.scc_targets else {}
-    if canonical in scc_targets:
-        scc_repo = scc_targets[canonical].partition("//:")[0]
+    if scc_target:
+        scc_repo = scc_target.partition("//:")[0]
         return struct(
             ok = True,
             error = "",

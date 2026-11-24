@@ -1200,9 +1200,16 @@ _FLUTTER_SPOKE_ATTRS = {
         doc = "Name of the hub repo (for the hub's files).",
         mandatory = True,
     ),
+    "cycle_deps": attr.string_dict(
+        doc = "The package's own planned dependencies that are members of a dependency " +
+              "cycle, each to its merged repository: the slice of the plan an Apple plugin " +
+              "needs to name a sibling plugin's library without reading `hub_packages`.",
+        default = {},
+    ),
     "hub_packages": attr.label(
         doc = "The hub's `pub_packages.json`, read only by an Apple plugin that names a " +
-              "sibling plugin, so no other spoke depends on the hub's package list.",
+              "sibling plugin outside its own dependencies (`planned_deps`), so no other " +
+              "spoke depends on the hub's package list.",
         allow_single_file = True,
         default = None,
     ),

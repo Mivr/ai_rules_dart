@@ -677,12 +677,13 @@ def _plan_hub_graph(module_ctx, hub, plans):
     sccs = plan_scope_sccs(sorted(raw.keys()), {}, [hub.hub_name], hub.hub_name, kept)
     return struct(raw = raw, kept = kept, sccs = sccs)
 
-def _flutter_spoke_attrs(hub, name, hook_settings):
-    """The attributes every Flutter package repository of the hub shares, plus its own native and hook ones."""
+def _flutter_spoke_attrs(hub, name, graph, hook_settings):
+    """The attributes every Flutter package repository of the hub shares, plus its own native, cycle and hook ones."""
     pub_tag = hub.pub_tag
     swiftpm_attrs = pub_spoke_swiftpm_attrs(pub_tag, include_ios_native_deps = True, plugin_name = name)
     return dict(
         hub_name = hub.hub_name,
+        cycle_deps = {dep: graph.sccs.members[dep] for dep in graph.raw[name] if dep in graph.sccs.members},
         hub_packages = "@%s//:pub_packages.json" % hub.hub_name,
         plugin_defines = pub_tag.ios_plugin_defines.get(name, []),
         overlay_roots = hub.overlay_roots,
@@ -786,7 +787,7 @@ def _emit_pub_hub(module_ctx, hub, plans, hook_settings):
                 url = plans[name]["archive_url"],
                 planned_deps = graph.raw[name],
                 deps = own_dep_labels(name, graph.kept[name], labels),
-                **_flutter_spoke_attrs(hub, name, hook_settings)
+                **_flutter_spoke_attrs(hub, name, graph, hook_settings)
             )
 
     for name in sorted(hub.git.keys()):
@@ -799,7 +800,7 @@ def _emit_pub_hub(module_ctx, hub, plans, hook_settings):
                 version = pkg.version,
                 planned_deps = graph.raw[name],
                 deps = own_dep_labels(name, graph.kept[name], labels),
-                **dict(git_attrs, **_flutter_spoke_attrs(hub, name, hook_settings))
+                **dict(git_attrs, **_flutter_spoke_attrs(hub, name, graph, hook_settings))
             )
 
     for name in sorted(hub.path_pkgs.keys()):
@@ -812,7 +813,7 @@ def _emit_pub_hub(module_ctx, hub, plans, hook_settings):
                 version = path_info.version,
                 planned_deps = graph.raw[name],
                 deps = own_dep_labels(name, graph.kept[name], labels),
-                **_flutter_spoke_attrs(hub, name, hook_settings)
+                **_flutter_spoke_attrs(hub, name, graph, hook_settings)
             )
 
     _emit_scc_spokes(hub, plans, graph, labels)
