@@ -492,7 +492,10 @@ class _Runner {
         'Execution root: ${request.execRoot}, output directory: '
         '${request.binDir}\n'
         'Declared (a sample): ${state.fs.declared.join(', ')}\n'
-        'Asked for and not found (the first): ${state.fs.misses.join(', ')}',
+        'Asked for and not found (the first): ${state.fs.misses.join(', ')}\n'
+        'Builder phases: ${state.plan.buildStepPlan.buildPhases.inBuildPhases.length}'
+        ', of the root package: '
+        '${state.plan.buildStepPlan.buildPhases.inBuildPhases.where((phase) => phase.package == root).length}',
       );
       return false;
     }
