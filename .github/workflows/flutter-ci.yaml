@@ -1480,7 +1480,7 @@ jobs:
       - name: Check rules_android_maven pins in Android workspaces
         if: ${{ !cancelled() }}
         run: bazel run //tools/check_maven_pins
-      - name: Host SDK, web SDK, sky_engine, dev_root, fonts, gen_l10n, a tool_deps spoke, sysroot, Chrome and Linux runtime
+      - name: Host SDK, web SDK, sky_engine, dev_root, fonts, a tool_deps spoke, sysroot, Chrome and Linux runtime
         if: ${{ !cancelled() }}
         run: >
           bazel run //tools/repo_contents_cache --
@@ -1490,7 +1490,6 @@ jobs:
           @flutter_dev_root
           @flutter_material_fonts
           @@+flutter+flutter_font_subset_linux-x64
-          @flutter_gen_l10n
           @@+flutter+tool_deps__args
           @@+flutter+flutter_linux_sysroot_x64
           @flutter_chrome_headless_shell
