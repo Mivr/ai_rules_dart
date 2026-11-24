@@ -21,8 +21,11 @@ commands:
       test_xml_contains:
         - <testsuite name="integration_test/red_test.dart"
         - <failure
+  # The plugin's Apple side is a target that fails analysis with the refusal
+  # (a `Package.swift` the reader refuses no longer fails the spoke's fetch, so
+  # an app for web or Android still builds): build it to see the message.
   - name: SwiftPM unpinned red path
-    run: bazel query @deps_unpinned__spm_bigint_plugin//:all
+    run: bazel build @deps_unpinned__spm_bigint_plugin//:spm_bigint_plugin_apple_ios_unbuildable
     expect:
       non_zero: true
       output_contains:
