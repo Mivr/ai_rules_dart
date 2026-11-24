@@ -279,7 +279,9 @@ rules that produce `FlutterInfo`. Constructing it here means enumerating and \
 merging each field by hand, and a field left empty rather than forwarded \
 silently discards every dependency's contribution.""",
     fields = {
-        "plugins": "list[struct]: Plugin metadata. Each struct has: name (str), platforms (dict of platform -> {pluginClass, dartPluginClass, package}).",
+        "plugins": "depset[struct] (preorder): Plugin metadata of the closure, this target's own first, then each dependency's in turn. Each entry has: name (str), platforms (the platform -> {pluginClass, dartPluginClass, package} dict as nested tuples, so a depset can hold it), implements (str) and direct (bool). `plugin_metadata()` in `//flutter/private:flutter_info.bzl` gives the struct with `platforms` as a dict; a name can appear in more than one entry, and the first wins.",
+        "own_plugins": "tuple[str]: The names of the plugins this target itself declares.",
+        "near_plugins": "tuple[str]: The names of the plugins this target's direct dependencies declare. With `own_plugins`, what an application needs to tell which plugins its own pubspec depends on, without reading the closure.",
         "transitive_native_libs": "depset[File]: Shared libs from plugin native_deps, merged transitively.",
         "native_lib_sources": "depset[struct]: Per library, the first-party sources it is built from — `native_deps` entries and Native Asset libraries alike. Each struct has: library (File), sources (tuple[File]). A hot reload stats these to notice that a library went stale in an app whose reload runs no build of its own; see `native_sources.bzl`.",
         "binding_contracts": "depset[struct]: Per-library binding contracts contributed by transitive `flutter_native_library` wrappers in a plugin's `native_deps`. Each struct has: library (File), contract (tuple[File]). Paired rather than flattened because the dev tool's question is per library — a rebuilt library whose contract is unchanged may still take an increment, and one with no contract may not.",

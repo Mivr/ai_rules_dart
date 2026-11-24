@@ -136,24 +136,75 @@ def _merge_native_channels(dep_infos, channels):
         ),
     )
 
-def _copy_plugin_with_direct(p, direct):
-    """Copies a plugin struct with an updated direct flag."""
+_SCALARS = ("string", "bool", "int", "float", "NoneType")
+
+def _freeze_value(v):
+    """A hashable stand-in for one platform entry's value: itself when scalar, else its JSON."""
+    return v if type(v) in _SCALARS else struct(json = json.encode(v))
+
+def _thaw_value(v):
+    """The value `_freeze_value` stood in for."""
+    return json.decode(v.json) if type(v) == "struct" else v
+
+def _freeze_platforms(platforms):
+    """The `platforms` dict of a plugin as nested tuples, in its own order, so a depset can hold it."""
+    if type(platforms) != "dict":
+        return _freeze_value(platforms)
+    frozen = []
+    for platform, info in platforms.items():
+        if type(info) == "dict":
+            frozen.append((platform, tuple([(k, _freeze_value(v)) for k, v in info.items()])))
+        else:
+            frozen.append((platform, _freeze_value(info)))
+    return tuple(frozen)
+
+def _thaw_platforms(frozen):
+    """The `platforms` dict `_freeze_platforms` froze, in the same order."""
+    if type(frozen) != "tuple":
+        return _thaw_value(frozen)
+    platforms = {}
+    for platform, info in frozen:
+        if type(info) == "tuple":
+            platforms[platform] = {k: _thaw_value(v) for k, v in info}
+        else:
+            platforms[platform] = _thaw_value(info)
+    return platforms
+
+def plugin_entry(p):
+    """The entry a `FlutterInfo.plugins` depset holds for a plugin struct.
+
+    A depset element must be hashable, and a plugin's `platforms` is a dict,
+    so the entry holds it as nested tuples; `plugin_metadata` gives the plugin
+    struct back.
+
+    Args:
+      p: A plugin struct (`name`, `platforms`, `implements`, `direct`).
+
+    Returns:
+      `struct(name, platforms, implements, direct)`, hashable.
+    """
     return struct(
         name = p.name,
-        platforms = p.platforms,
-        implements = getattr(p, "implements", ""),
-        direct = direct,
-        _depth = getattr(p, "_depth", 0),
+        platforms = _freeze_platforms(p.platforms),
+        implements = getattr(p, "implements", "") or "",
+        direct = getattr(p, "direct", False),
     )
 
-def _copy_plugin_with_depth(p, depth):
-    """Copies a plugin struct with an updated depth value."""
+def plugin_metadata(entry, direct = None):
+    """The plugin struct of a `FlutterInfo.plugins` entry, its `platforms` a dict again.
+
+    Args:
+      entry: An element of a `FlutterInfo.plugins` depset (`plugin_entry`).
+      direct: Overrides the entry's own `direct` mark when not None.
+
+    Returns:
+      `struct(name, platforms, implements, direct)`.
+    """
     return struct(
-        name = p.name,
-        platforms = p.platforms,
-        implements = getattr(p, "implements", ""),
-        direct = getattr(p, "direct", False),
-        _depth = depth,
+        name = entry.name,
+        platforms = _thaw_platforms(entry.platforms),
+        implements = entry.implements,
+        direct = entry.direct if direct == None else direct,
     )
 
 def _is_pub_package(dep):
@@ -176,102 +227,82 @@ def _is_pub_package(dep):
             return True
     return False
 
-def _is_direct_plugin(is_plugin_target, is_pub_package, p):
-    """Determines whether a plugin struct should be marked direct.
-
-    Flutter counts only the dependencies of the application's own pubspec. A
-    plugin is direct when the dependency is that plugin itself, or when it is a
-    library the application owns that depends on the plugin. The plugin
-    dependencies of a third-party pub package never make a plugin direct.
-
-    Args:
-        is_plugin_target: Whether the dependency is itself a plugin.
-        is_pub_package: Whether the dependency is a third-party pub package.
-        p: The plugin struct, with its depth relative to the dependency.
-
-    Returns:
-        True when the plugin is direct.
-    """
-    if getattr(p, "direct", False):
-        return True
-    depth = getattr(p, "_depth", 0)
-    if is_plugin_target:
-        return depth == 0
-    if is_pub_package:
-        return False
-    return depth == 1
-
-def dedup_plugins(all_plugins):
-    """Deduplicates plugin structs by name, keeping first occurrence.
+def merge_plugin_entries(entries, direct = {}):
+    """One plugin struct per name from `FlutterInfo.plugins` entries, the first of each name kept.
 
     A plugin reached through two paths in the dependency graph — the common
-    case for a federated pub plugin — must be registered once. Deduplication
-    never loses the direct mark and keeps the shallowest depth over all paths,
-    so the result does not depend on the order the paths are listed in.
+    case for a federated pub plugin — is registered once. A name is direct
+    when it is in `direct` or when any of its entries is declared direct, so
+    the result does not depend on the order the paths are listed in.
 
     Args:
-        all_plugins: List of plugin structs.
+      entries: `plugin_entry` structs, in the registrants' order.
+      direct: Names to mark direct, as keys.
 
     Returns:
-        List of unique plugin structs, in first-seen order.
+      List of `plugin_metadata` structs, in first-seen order.
     """
+    marked = dict(direct)
+    for entry in entries:
+        if entry.direct:
+            marked[entry.name] = True
     seen = {}
-    unique = []
-    for p in all_plugins:
-        if p.name not in seen:
-            seen[p.name] = len(unique)
-            unique.append(p)
-            continue
-        idx = seen[p.name]
-        merged = unique[idx]
-        if getattr(p, "_depth", 0) < getattr(merged, "_depth", 0):
-            merged = _copy_plugin_with_depth(merged, getattr(p, "_depth", 0))
-        if getattr(p, "direct", False) and not getattr(merged, "direct", False):
-            merged = _copy_plugin_with_direct(merged, True)
-        unique[idx] = merged
-    return unique
+    plugins = []
+    for entry in entries:
+        if entry.name not in seen:
+            seen[entry.name] = True
+            plugins.append(plugin_metadata(entry, direct = entry.name in marked))
+    return plugins
+
+def _direct_names(dep, info):
+    """The plugins a dependency of an application makes direct, by name.
+
+    Flutter counts only the dependencies of the application's own pubspec. A
+    plugin is direct when the dependency is that plugin itself (it declares
+    plugins: those), or when it is a library the application owns that
+    depends on the plugin (the plugins its direct dependencies declare). The
+    plugin dependencies of a third-party pub package never make a plugin
+    direct. Both come from the dependency's own provider, so this reads no
+    closure.
+    """
+    if info.own_plugins:
+        return info.own_plugins
+    if _is_pub_package(dep):
+        return ()
+    return info.near_plugins
 
 def collect_flutter_plugin_deps(deps):
     """Collects the plugin sets `deps` propagate on `FlutterInfo`.
 
     An application and a platform integration-test rule both read the same
     channels off their dependencies; collecting them here keeps one definition
-    of what a plugin dependency contributes.
+    of what a plugin dependency contributes. Both are terminal: the plugin
+    depset is expanded here, once.
 
     Args:
         deps: Targets that may provide `FlutterInfo`.
 
     Returns:
-        A struct with `all_plugins` (deduplicated) and one depset per plugin
-        library kind, plus `apple_privacy_manifests`.
+        A struct with `all_plugins` (one plugin struct per name, in the
+        registrants' order: each dependency's own plugins before its
+        dependencies'), and one depset per plugin library kind, plus
+        `apple_privacy_manifests`.
     """
-    all_dep_plugins = []
-    apple_plugin_lib_depsets = []
-    linux_plugin_lib_depsets = []
-    windows_plugin_lib_depsets = []
-    apple_privacy_manifest_depsets = []
-    for dep in deps:
-        if FlutterInfo not in dep:
-            continue
-        info = dep[FlutterInfo]
-        is_plugin_target = any([getattr(p, "_depth", 0) == 0 for p in info.plugins])
-        is_pub_package = _is_pub_package(dep)
-        for p in info.plugins:
-            direct = _is_direct_plugin(is_plugin_target, is_pub_package, p)
-            if direct != getattr(p, "direct", False):
-                all_dep_plugins.append(_copy_plugin_with_direct(p, direct))
-            else:
-                all_dep_plugins.append(p)
-        apple_plugin_lib_depsets.append(info.apple_plugin_libraries)
-        linux_plugin_lib_depsets.append(info.linux_plugin_libraries)
-        windows_plugin_lib_depsets.append(info.windows_plugin_libraries)
-        apple_privacy_manifest_depsets.append(info.apple_privacy_manifests)
+    infos = [(dep, dep[FlutterInfo]) for dep in deps if FlutterInfo in dep]
+    direct = {}
+    for dep, info in infos:
+        for name in _direct_names(dep, info):
+            direct[name] = True
+
+    # lint-allow: depset-flatten terminal: an application registers its closure's plugins, once
+    entries = depset(order = "preorder", transitive = [info.plugins for _, info in infos]).to_list()
+    all_plugins = merge_plugin_entries(entries, direct)
     return struct(
-        all_plugins = dedup_plugins(all_dep_plugins),
-        apple_plugin_libraries = depset(transitive = apple_plugin_lib_depsets),
-        apple_privacy_manifests = depset(transitive = apple_privacy_manifest_depsets),
-        linux_plugin_libraries = depset(transitive = linux_plugin_lib_depsets),
-        windows_plugin_libraries = depset(transitive = windows_plugin_lib_depsets),
+        all_plugins = all_plugins,
+        apple_plugin_libraries = depset(transitive = [info.apple_plugin_libraries for _, info in infos]),
+        apple_privacy_manifests = depset(transitive = [info.apple_privacy_manifests for _, info in infos]),
+        linux_plugin_libraries = depset(transitive = [info.linux_plugin_libraries for _, info in infos]),
+        windows_plugin_libraries = depset(transitive = [info.windows_plugin_libraries for _, info in infos]),
     )
 
 def flutter_info(
@@ -322,25 +353,25 @@ def flutter_info(
         native_channels = flutter_native_channels()
     dep_infos = [dep[FlutterInfo] for dep in deps if FlutterInfo in dep]
 
-    dep_plugins = []
+    near = {}
     for info in dep_infos:
-        for p in info.plugins:
-            d = getattr(p, "_depth", 0)
-            dep_plugins.append(_copy_plugin_with_depth(p, d + 1))
-
-    own_plugins = []
-    for p in plugins:
-        own_plugins.append(_copy_plugin_with_depth(p, 0))
+        for name in info.own_plugins:
+            near[name] = True
 
     assets = _merge_asset_channels(dep_infos, asset_channels)
     libraries = _merge_plugin_libraries(dep_infos, plugin_libraries)
     native = _merge_native_channels(dep_infos, native_channels)
 
     return FlutterInfo(
-        # A list, not a depset: the structs carry a `platforms` dict, which is
-        # unhashable. Order is meaningful to the registrant generators, and
-        # this target's own plugins come first.
-        plugins = dedup_plugins(own_plugins + dep_plugins),
+        # Preorder: the registrants' order is this target's own plugins, then
+        # each dependency's in turn, the first of a name kept.
+        plugins = depset(
+            [plugin_entry(p) for p in plugins],
+            order = "preorder",
+            transitive = [info.plugins for info in dep_infos],
+        ),
+        own_plugins = tuple([p.name for p in plugins]),
+        near_plugins = tuple(near.keys()),
         transitive_native_libs = native.transitive_native_libs,
         native_lib_sources = native.native_lib_sources,
         binding_contracts = native.binding_contracts,

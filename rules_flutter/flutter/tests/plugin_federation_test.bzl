@@ -3,7 +3,7 @@
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "dart_info_no_package")
-load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps", "dedup_plugins", "flutter_info")
+load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps", "flutter_info", "merge_plugin_entries", "plugin_entry")
 load("//flutter/private:plugin_federation.bzl", "resolve_federated_plugins")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
@@ -235,11 +235,11 @@ def _dedup_preserves_direct_test_impl(ctx):
     p_trans = struct(name = "pkg", platforms = {}, implements = "", direct = False)
     p_direct = struct(name = "pkg", platforms = {}, implements = "", direct = True)
 
-    first_trans = dedup_plugins([p_trans, p_direct])
+    first_trans = merge_plugin_entries([plugin_entry(p_trans), plugin_entry(p_direct)])
     asserts.equals(env, 1, len(first_trans))
     asserts.true(env, getattr(first_trans[0], "direct", False))
 
-    first_direct = dedup_plugins([p_direct, p_trans])
+    first_direct = merge_plugin_entries([plugin_entry(p_direct), plugin_entry(p_trans)])
     asserts.equals(env, 1, len(first_direct))
     asserts.true(env, getattr(first_direct[0], "direct", False))
     return unittest.end(env)

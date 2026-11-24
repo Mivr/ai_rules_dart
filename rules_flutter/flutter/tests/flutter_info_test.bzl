@@ -97,7 +97,7 @@ def _forwards_every_channel_test_impl(ctx):
         [p for p in assets if p.endswith("_dep.png")] != [],
         "dependency's file missing from apple_privacy_manifests: %s" % assets,
     )
-    asserts.equals(env, ["dep_plugin", "own_plugin"], sorted([p.name for p in info.plugins]))
+    asserts.equals(env, ["dep_plugin", "own_plugin"], sorted([p.name for p in info.plugins.to_list()]))
     asserts.equals(env, ["dep_pkg", "own_pkg"], _field(info.binding_contracts, "library"))
 
     # A channel neither target contributes on is still a real, empty depset —
@@ -129,7 +129,7 @@ def _skips_deps_without_flutter_info_test_impl(ctx):
     # One dep is a plain `dart_library`: `DartInfo`, no `FlutterInfo`. Analysis
     # reaching this point at all is the assertion — reading the provider off it
     # would fail — and the sibling dep's contribution must still arrive.
-    asserts.equals(env, ["dep_plugin"], sorted([p.name for p in info.plugins]))
+    asserts.equals(env, ["dep_plugin"], sorted([p.name for p in info.plugins.to_list()]))
 
     return analysistest.end(env)
 
@@ -147,7 +147,7 @@ def _single_channel_test_impl(ctx):
     # reads them all off every dep, so a missing one is an analysis error and an
     # empty one is the honest "contributes nothing here".
     asserts.equals(env, [], info.binding_contracts.to_list())
-    asserts.equals(env, [], info.plugins)
+    asserts.equals(env, [], info.plugins.to_list())
     asserts.equals(env, [], info.data_assets.to_list())
     asserts.equals(env, [], info.apple_privacy_manifests.to_list())
 
