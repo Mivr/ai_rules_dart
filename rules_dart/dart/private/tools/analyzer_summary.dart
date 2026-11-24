@@ -470,9 +470,9 @@ String? _layOutSummary(AnalyzerArgs args, String stageDir) {
     };
     final String rootUri;
     if (root != null) {
-      rootUri = p.posix.relative(root, from: configDir);
+      rootUri = packageRootUri(root, configDir);
     } else if (libRoot.isEmpty) {
-      rootUri = p.posix.relative('.', from: configDir);
+      rootUri = packageRootUri('.', configDir);
     } else {
       continue;
     }
@@ -490,6 +490,20 @@ String? _layOutSummary(AnalyzerArgs args, String stageDir) {
     '${entries.join(',\n')}\n  ]\n}\n',
   );
   return null;
+}
+
+/// The `rootUri` of a `package_config.json` in [configDir] for the package
+/// rooted at [root]: the relative path with `/` separators, whatever the
+/// platform. Bazel passes paths with `/` and [configDir] is normalized with
+/// the platform's separators, so on Windows the two must be normalized by the
+/// same context before they are compared; `p.posix.relative` of a `/` path
+/// from a `\` one climbs out of a single segment and names a directory that
+/// does not exist, and every package of the summary then fails to resolve.
+String packageRootUri(String root, String configDir, {p.Context? context}) {
+  final p.Context ctx = context ?? p.context;
+  return ctx
+      .split(ctx.relative(ctx.normalize(root), from: ctx.normalize(configDir)))
+      .join('/');
 }
 
 /// `mangle_package_dir`: path-hostile characters become `_`.

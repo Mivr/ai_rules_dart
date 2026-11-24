@@ -25,6 +25,7 @@ import 'analyzer_summary.dart'
         disposedContextCollectionsCount,
         inferSummarizeRoot,
         onContextCollectionDisposed,
+        packageRootUri,
         reportAnalyzeFindings,
         resolveProjectSource,
         runSingleRequest;
@@ -36,6 +37,54 @@ import 'analyzer_summary_test_support.dart'
         defineSummaryTripleQuotedImportGuardTest;
 
 void main() {
+  group('packageRootUri', () {
+    final windows = p.Context(
+      style: p.Style.windows,
+      current: r'D:\a\_temp\ob\execroot\_main',
+    );
+
+    test('on Windows, a slash root against a backslash config directory', () {
+      // What the action passes: Bazel's `/` for the root, the platform's `\`
+      // for the directory of `--packages` once it is normalized.
+      final String configDir = windows.dirname(
+        windows.normalize('bazel-out/x64/bin/lib/t.sstg/t.package_config.json'),
+      );
+      expect(
+        packageRootUri(
+          'bazel-out/x64/bin/lib/t.sstg/r.summary_root/_deps/dio',
+          configDir,
+          context: windows,
+        ),
+        'r.summary_root/_deps/dio',
+      );
+      expect(
+        packageRootUri(
+          'bazel-out/x64/bin/lib/t.sstg/r.summary_root',
+          configDir,
+          context: windows,
+        ),
+        'r.summary_root',
+      );
+    });
+
+    test('a root above the config directory climbs with `..` and `/`', () {
+      expect(
+        packageRootUri(
+          'bazel-out/x64/bin/lib',
+          r'bazel-out\x64\bin\lib\s',
+          context: windows,
+        ),
+        '..',
+      );
+      expect(packageRootUri('.', r'bazel-out\x64', context: windows), '../..');
+    });
+
+    test('on this platform it is the posix relative path', () {
+      expect(packageRootUri('/a/b/c', '/a/b'), 'c');
+      expect(packageRootUri('/a', '/a/b'), '..');
+    });
+  });
+
   late Directory tempDir;
 
   setUp(() {
