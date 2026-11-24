@@ -9,13 +9,32 @@ import 'dart:convert';
 import 'dart:io';
 
 Future<void> main(List<String> args) async {
-  if (args.isNotEmpty && args.first == 'compile') {
-    _runWebCompile(args.sublist(1));
-    return;
+  try {
+    if (args.isNotEmpty && args.first == 'compile') {
+      _runWebCompile(args.sublist(1));
+    } else {
+      stderr.writeln('Usage: web_template compile wasm|js <args>');
+      exitCode = 64;
+    }
+  } on _CompileExit catch (e) {
+    exitCode = e.code;
   }
-  stderr.writeln('Usage: web_template compile wasm|js <args>');
-  exit(64);
+  // `exit()` would end the process with the compiler's messages still in the
+  // stdout and stderr buffers: a failing compile reported nothing. Returning
+  // lets the VM drain them first.
+  await stdout.flush();
+  await stderr.flush();
 }
+
+/// Ends the compile with [code] once `main` has flushed stdout and stderr.
+class _CompileExit implements Exception {
+  const new(this.code);
+
+  final int code;
+}
+
+/// Stops the compile with exit code [code]; see [_CompileExit].
+Never _exit(int code) => throw _CompileExit(code);
 
 /// Runs `dart2wasm` or `dart2js` directly via `dartaotruntime`, bypassing
 /// `dartdev` (which probes `execroot/bin` outside declared inputs) and
@@ -29,7 +48,7 @@ void _runWebCompile(List<String> args) {
     _runDart2Js(args.sublist(1));
   } else {
     stderr.writeln('web_template compile: unknown subcommand "$subcommand"');
-    exit(64);
+    _exit(64);
   }
 }
 
@@ -98,7 +117,7 @@ void _rewritePackageConfig(
           'web_template compile: package ${p['name']} root $rootUri resolves '
           'outside the declared inputs ($fsPath); refusing to compile.',
         );
-        exit(1);
+        _exit(1);
       }
     }
     p['rootUri'] = 'org-dartlang-app:///$rel';
@@ -228,7 +247,7 @@ void _checkReadSet(
       'of this action. List the file in the `srcs` of the target that owns it.',
     );
   }
-  exit(1);
+  _exit(1);
 }
 
 void _runDart2Wasm(List<String> args) {
@@ -254,7 +273,7 @@ void _runDart2Wasm(List<String> args) {
     stderr.writeln(
       'web_template compile wasm: --packages, -o, and entrypoint are required',
     );
-    exit(64);
+    _exit(64);
   }
 
   _compileWasm(
@@ -439,7 +458,7 @@ void _compileWasm(_WebCompileRequest req) {
     if (res.exitCode != 0) {
       stdout.write(res.stdout as String);
       stderr.write(res.stderr as String);
-      exit(res.exitCode);
+      _exit(res.exitCode);
     }
     if (req.declaredInputs != null) {
       _checkReadSet(
@@ -906,7 +925,7 @@ String? _compileDart2Js(_WebCompileRequest req, {required String? outJs}) {
   if (res.exitCode != 0) {
     stdout.write(res.stdout as String);
     stderr.write(res.stderr as String);
-    exit(res.exitCode);
+    _exit(res.exitCode);
   }
   if (req.declaredInputs != null && outJs != null) {
     final deps = File('$outJs.deps');
@@ -915,7 +934,7 @@ String? _compileDart2Js(_WebCompileRequest req, {required String? outJs}) {
         'web_template compile: dart2js wrote no dependency report at '
         '${deps.path}, so its reads cannot be checked; refusing the output.',
       );
-      exit(1);
+      _exit(1);
     }
     _checkReadSet(
       req.declaredInputs,

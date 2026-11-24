@@ -56,6 +56,46 @@ void main() {
       return (code: code, out: '$out', err: '$err');
     }
 
+    test('a failing compile passes its whole stderr through', () async {
+      writeWork('lib/main.dart', 'void main() {}\n');
+      final script = File('${dir.path}/fail.dart')
+        ..writeAsStringSync(
+          'import "dart:io";\n'
+          'Future<void> main() async {\n'
+          '  for (var i = 0; i < 20000; i++) {\n'
+          '    stderr.writeln("error line \$i");\n'
+          '  }\n'
+          '  exitCode = 1;\n'
+          '}\n',
+        );
+      final ({int code, String err, String out}) r = await run([
+        '--declared-inputs',
+        writeManifest(['lib/main.dart']),
+        '--',
+        Platform.resolvedExecutable,
+        script.path,
+      ]);
+      expect(r.code, 1);
+      expect(r.err, contains('error line 0\n'));
+      expect(r.err, contains('error line 19999\n'));
+    });
+
+    test('a compile that fails silently is reported', () async {
+      writeWork('lib/main.dart', 'void main() {}\n');
+      final script = File(
+        '${dir.path}/silent.dart',
+      )..writeAsStringSync('import "dart:io";\nvoid main() => exitCode = 3;\n');
+      final ({int code, String err, String out}) r = await run([
+        '--declared-inputs',
+        writeManifest(['lib/main.dart']),
+        '--',
+        Platform.resolvedExecutable,
+        script.path,
+      ]);
+      expect(r.code, 3);
+      expect(r.err, contains('exited with code 3 and printed nothing'));
+    });
+
     test('a successful compile passes its output through', () async {
       writeWork('lib/main.dart', 'void main() {}\n');
       final script = File('${dir.path}/fake.dart')

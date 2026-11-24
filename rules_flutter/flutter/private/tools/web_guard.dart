@@ -30,7 +30,12 @@ import 'dart:io';
 import 'directive_guard.dart';
 
 Future<void> main(List<String> argv) async {
-  exit(await runGuarded(argv, stdout, stderr));
+  // Not `exit()`: it ends the process before stdout and stderr drain, and a
+  // failing compile then reported nothing. The guarded command's own output is
+  // relayed whatever its exit code.
+  exitCode = await runGuarded(argv, stdout, stderr);
+  await stdout.flush();
+  await stderr.flush();
 }
 
 /// Runs the command [argv] names after `--` once its declared sources pass
@@ -196,7 +201,17 @@ Future<int> _runGuardedCommand(
   StringSink err,
 ) async {
   final ProcessResult result = await Process.run(executable, cmdArgs);
-  out.write(result.stdout as String);
-  err.write(result.stderr as String);
+  final stdoutText = result.stdout as String;
+  final stderrText = result.stderr as String;
+  out.write(stdoutText);
+  err.write(stderrText);
+  if (result.exitCode != 0 &&
+      stdoutText.trim().isEmpty &&
+      stderrText.trim().isEmpty) {
+    err.writeln(
+      'web_guard: the compile exited with code ${result.exitCode} and printed '
+      'nothing.',
+    );
+  }
   return result.exitCode;
 }
