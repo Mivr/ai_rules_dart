@@ -164,6 +164,10 @@ jobs:
           case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
           mkdir -p "$dir"
           echo "build --disk_cache=$dir" >> ~/.bazelrc
+      # plugin_example, min_versions and pub_scc pin an Android model, whose
+      # fetch needs the platforms of the pins in the SDK: the macOS image has
+      # fewer than the Linux one (platforms;android-34 is missing).
+      - uses: ./rules_flutter/.github/actions/android-ndk
       - name: bazel test Apple bundles (e2e/hello_world)
         working-directory: rules_flutter/e2e/hello_world
         run: bazel test //:macos_bundle_build_test //:ios_bundle_build_test --test_output=errors
@@ -1531,8 +1535,14 @@ jobs:
           module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: false
+      # The target Java runtime is the runner's `local_jdk`, which is a JDK
+      # newer (27) than the one that runs javac (the `remotejdk_25` of
+      # `--tool_java_runtime_version` in .bazelrc), and javac refuses to
+      # compile for it ("not recent enough to compile for the Java 27
+      # runtime"). Pin the target to the tools' own JDK, as .bazelrc does for
+      # the tools, so the job does not depend on the runner image's JDK.
       - name: bazel test --lockfile_mode=off //... --test_output=errors
-        run: bazel test --lockfile_mode=off //... --test_output=errors
+        run: bazel test --lockfile_mode=off --java_runtime_version=remotejdk_25 --java_language_version=25 //... --test_output=errors
   # Burn-in for the incompatible flags Bazel has yet to flip: runs the root
   # tests under `--config=strict` (tools/strict.bazelrc). Non-blocking, so the
   # job carries `continue-on-error` and is absent from `conclusion.needs`. It
