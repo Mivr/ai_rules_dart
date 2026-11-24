@@ -48,33 +48,19 @@
     "lifted_by": [],
     "symbol": "`@rules_swift//swift:swift.bzl` (`swift_library`) and the `SwiftInfo`/`swift_interop_info` surface at `compatibility_level = 3`"
   },
-  "rules_android": {
-    "floor": "0.8.0",
-    "current": "0.8.0",
-    "resolved": "0.8.0",
-    "lifted_by": [],
-    "symbol": "`@rules_android//flags:apk_signing_method` and the `apk_signing_v*` config_settings"
-  },
   "rules_kotlin": {
-    "floor": "2.1.10",
+    "floor": "2.3.0",
     "current": "2.4.20",
-    "resolved": "2.1.10",
+    "resolved": "2.3.0",
     "lifted_by": [],
-    "symbol": "`@rules_kotlin//kotlin:android.bzl` (`kt_android_library`)"
+    "symbol": "`@rules_kotlin//kotlin:jvm.bzl` (`kt_jvm_library`) and `//kotlin:core.bzl` (`define_kt_toolchain`, `kt_kotlinc_options`, `kt_ksp_plugin`), with a compiler that reads the Kotlin 2.4 standard library of a Flutter 3.47 app"
   },
   "rules_java": {
     "floor": "9.0.0",
     "current": "9.9.0",
     "resolved": "9.3.0",
-    "lifted_by": ["rules_android"],
-    "symbol": "`@rules_java//java:java_import.bzl`, `@rules_java//java/common:java_info.bzl` (`JavaInfo`) and the Java toolchain rules"
-  },
-  "rules_jvm_external": {
-    "floor": "6.8",
-    "current": "7.1",
-    "resolved": "6.9",
-    "lifted_by": ["rules_android"],
-    "symbol": "`@rules_jvm_external//:extensions.bzl` with `maven.install`/`maven.artifact`, `use_starlark_android_rules` and `aar_import_bzl_label`"
+    "lifted_by": ["rules_kotlin"],
+    "symbol": "`@rules_java//java:defs.bzl` (`java_binary`, `java_import`, `java_library`, `java_plugin`, `java_test`), `@rules_java//java/common:java_info.bzl` (`JavaInfo`) and the Java toolchain rules"
   },
   "ai_rules_dart": {
     "floor": "0.28.3",
@@ -82,13 +68,6 @@
     "resolved": "0.28.3",
     "lifted_by": [],
     "symbol": "`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `@rules_dart//dart/pub:pub_scc.bzl`, `@rules_dart//dart/pub:yaml.bzl` and `dart_analysis_config(baseline = ...)`"
-  },
-  "rules_go": {
-    "floor": "0.59.0",
-    "current": "0.64.2",
-    "resolved": "0.64.2",
-    "lifted_by": ["ai_rules_dart"],
-    "symbol": "`@rules_go//go/config:pure` and the Bazel 9 `CcInfo` import in `go/private/rules/cross.bzl`"
   },
   "llvm": {
     "floor": "0.8.17",

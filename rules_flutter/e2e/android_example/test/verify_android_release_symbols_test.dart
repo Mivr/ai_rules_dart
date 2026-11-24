@@ -56,8 +56,8 @@ void main() {
     if (!ok) failures.add(expected);
   }
 
-  final release = _readApk('$root/app_release.apk');
-  final plain = _readApk('$root/app_release_plain.apk');
+  final release = _readApk('$root/app_release_apk.apk');
+  final plain = _readApk('$root/app_release_plain_apk.apk');
   final libApp = _entry(release, _libAppEntry);
   final plainLibApp = _entry(plain, _libAppEntry);
   _checkObfuscation(check, libApp, plainLibApp);

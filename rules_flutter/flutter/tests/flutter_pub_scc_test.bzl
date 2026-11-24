@@ -29,8 +29,6 @@ load(
     "//flutter/private:flutter_pub_lock_hub.bzl",
     "hub_pub_packages_json",
     "hub_scc_targets",
-    "make_flutter_pub_hub_android_build_content",
-    "make_hub_scc_build_content",
 )
 load("//flutter/private:flutter_pub_package.bzl", "spoke_dep_labels")
 load(
@@ -42,9 +40,7 @@ load(
 )
 load(
     "//flutter/private:flutter_pub_scc_build.bzl",
-    "adapt_scc_member_android_overlay_content",
     "adapt_scc_member_overlay_content",
-    "make_scc_member_android_build_content",
     "make_scc_member_build_content",
     "make_scc_merged_spoke_build_content",
     "scc_flutter_test_package_bzl_content",
@@ -58,80 +54,6 @@ load("//flutter/tests:fake_yaml2json.bzl", "FAKE_YAML2JSON_OS", "fake_yaml2json_
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
-
-def _hub_build_content_empty_scc_test_impl(ctx):
-    """With no cycle the hub gets no `scc` package and android/BUILD is unchanged."""
-    env = unittest.begin(ctx)
-
-    asserts.equals(env, {}, hub_scc_targets({}))
-    asserts.equals(env, "", make_hub_scc_build_content({}))
-    base_android = make_flutter_pub_hub_android_build_content(["bar", "foo"], "deps")
-    explicit_android = make_flutter_pub_hub_android_build_content(["bar", "foo"], "deps", scc_targets = {})
-    asserts.equals(env, base_android, explicit_android)
-    asserts.equals(
-        env,
-        {"packages": ["bar", "foo"], "scc_targets": {}},
-        json.decode(hub_pub_packages_json(["foo", "bar"], {})),
-    )
-
-    return unittest.end(env)
-
-def _hub_build_content_with_sccs_test_impl(ctx):
-    """The hub routes cycle members to the merged repository, with Android edges."""
-    env = unittest.begin(ctx)
-
-    merged_members = {
-        "cycle_a": "deps__scc__cycle_a__cycle_b",
-        "cycle_b": "deps__scc__cycle_a__cycle_b",
-    }
-    asserts.equals(
-        env,
-        {"cycle_a": "//scc:cycle_a", "cycle_b": "//scc:cycle_b"},
-        hub_scc_targets(merged_members),
-    )
-    asserts.equals(
-        env,
-        {"test": "@deps__scc__test__x//:test", "x": "//scc:x"},
-        hub_scc_targets({"test": "deps__scc__test__x", "x": "deps__scc__test__x"}),
-    )
-
-    scc_content = make_hub_scc_build_content(merged_members)
-    for needle in [
-        'load(":scc_android_edge.bzl", "flutter_pub_scc_android_edge")',
-        '"//conditions:default": "@deps__scc__cycle_a__cycle_b//:cycle_a"',
-        '"@rules_flutter//flutter/private/android_model:android_without_model": ":_scc_android_cycle_a"',
-        'deps = ["@deps__scc__cycle_a__cycle_b//:cycle_a"]',
-        '"//conditions:default": "@deps__scc__cycle_a__cycle_b//:cycle_b"',
-        '"@rules_flutter//flutter/private/android_model:android_without_model": ":_scc_android_cycle_b"',
-        '"@deps__scc__cycle_a__cycle_b//cycle_a/android:lib"',
-    ]:
-        asserts.true(env, needle in scc_content, needle + "\n" + scc_content)
-
-    scc_targets = {m: "@%s//:%s" % (merged_members[m], m) for m in merged_members}
-    asserts.equals(
-        env,
-        scc_targets,
-        json.decode(hub_pub_packages_json(["cycle_a", "cycle_b", "singleton_pkg"], merged_members))["scc_targets"],
-    )
-    packages = ["cycle_a", "cycle_b", "singleton_pkg"]
-    android_content = make_flutter_pub_hub_android_build_content(packages, "deps", scc_targets = scc_targets)
-    asserts.true(
-        env,
-        '"@deps__scc__cycle_a__cycle_b//cycle_a/android:lib"' in android_content,
-        android_content,
-    )
-    asserts.true(
-        env,
-        '"@deps__scc__cycle_a__cycle_b//cycle_b/android:lib"' in android_content,
-        android_content,
-    )
-    asserts.true(
-        env,
-        '"@deps__singleton_pkg//android:lib"' in android_content,
-        android_content,
-    )
-
-    return unittest.end(env)
 
 def _spoke_dep_labels_routing_test_impl(ctx):
     """Spoke deps go through the hub; SwiftPM and CocoaPods sibling plugins resolve via scc_targets."""
@@ -378,49 +300,6 @@ def _merged_spoke_build_2cycle_test_impl(ctx):
 
     return unittest.end(env)
 
-def _merged_spoke_android_and_overlay_test_impl(ctx):
-    """Android subpackage BUILD and overlay adaptation for SCC members."""
-    env = unittest.begin(ctx)
-
-    android_build = make_scc_member_android_build_content("cycle_a", hub_name = "deps", android_plugin = True)
-    asserts.true(env, 'actual = "@deps-android-cycle_a//android:lib"' in android_build, android_build)
-    asserts.true(env, "load(" not in android_build, android_build)
-
-    empty_android_build = make_scc_member_android_build_content("cycle_b", hub_name = "deps", android_plugin = False)
-    asserts.true(env, "kt_android_library" in empty_android_build, empty_android_build)
-    asserts.true(env, "srcs = []" in empty_android_build, empty_android_build)
-
-    overlay_top = """load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
-
-flutter_plugin(
-    name = "jni",
-    srcs = glob(["lib/**/*.dart"], allow_empty = True),
-    package_name = "jni",
-    visibility = ["//visibility:public"],
-)
-
-filegroup(
-    name = "jni_java_support_srcs",
-    srcs = glob(["java/**/*.java"]),
-    visibility = ["//android:__pkg__"],
-)
-"""
-    adapted_top = adapt_scc_member_overlay_content("jni", "3.4", "1.0.0", None, overlay_top)
-    asserts.true(env, 'name = "_flutter_info"' in adapted_top, adapted_top)
-    asserts.true(env, "    srcs = [],\n" in adapted_top, adapted_top)
-    asserts.true(env, 'srcs = glob(["java/**/*.java"])' in adapted_top, adapted_top)
-    asserts.true(env, '"//jni/android:__pkg__"' in adapted_top, adapted_top)
-    asserts.true(env, 'dart_package_member(\n    name = "jni",' in adapted_top, adapted_top)
-
-    overlay_android = 'kt_android_library(name = "lib", srcs = ["//:jni_java_support_srcs"])\n'
-    adapted_android = adapt_scc_member_android_overlay_content("jni", overlay_android)
-    asserts.true(env, '"//jni:jni_java_support_srcs"' in adapted_android, adapted_android)
-
-    via_dispatcher = make_scc_member_android_build_content("jni", overlay_content = overlay_android)
-    asserts.equals(env, adapted_android, via_dispatcher)
-
-    return unittest.end(env)
-
 def _merged_spoke_build_3cycle_test_impl(ctx):
     """Merged spoke BUILD for a 3-cycle includes all 3 members (and test runner support)."""
     env = unittest.begin(ctx)
@@ -632,13 +511,10 @@ def _check_windows_refusals(env, ws_root, win_root_real):
     ok_drive = resolve_path_pubspec(drive_root, "D:/", "deps", "pkg", "pkg", "windows")
     asserts.equals(env, None, ok_drive.error)
 
-_hub_build_content_empty_scc_test = unittest.make(_hub_build_content_empty_scc_test_impl)
-_hub_build_content_with_sccs_test = unittest.make(_hub_build_content_with_sccs_test_impl)
 _spoke_dep_labels_routing_test = unittest.make(_spoke_dep_labels_routing_test_impl)
 _cycle_breaks_before_scc_2cycle_test = unittest.make(_cycle_breaks_before_scc_2cycle_test_impl)
 _cycle_breaks_before_scc_3cycle_test = unittest.make(_cycle_breaks_before_scc_3cycle_test_impl)
 _merged_spoke_build_2cycle_test = unittest.make(_merged_spoke_build_2cycle_test_impl)
-_merged_spoke_android_and_overlay_test = unittest.make(_merged_spoke_android_and_overlay_test_impl)
 _merged_spoke_build_3cycle_test = unittest.make(_merged_spoke_build_3cycle_test_impl)
 _windows_path_pubspec_test = unittest.make(_windows_path_pubspec_test_impl)
 
@@ -646,13 +522,10 @@ def flutter_pub_scc_test_suite(name):
     """Defines the flutter.pub SCC planner and spoke test suite."""
     small_unittest_suite(
         name,
-        _hub_build_content_empty_scc_test,
-        _hub_build_content_with_sccs_test,
         _spoke_dep_labels_routing_test,
         _cycle_breaks_before_scc_2cycle_test,
         _cycle_breaks_before_scc_3cycle_test,
         _merged_spoke_build_2cycle_test,
-        _merged_spoke_android_and_overlay_test,
         _merged_spoke_build_3cycle_test,
         _windows_path_pubspec_test,
     )

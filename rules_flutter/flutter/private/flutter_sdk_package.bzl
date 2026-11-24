@@ -213,22 +213,6 @@ def _flutter_sdk_package_impl(repository_ctx):
         hub_name = repository_ctx.attr.hub_name,
     ))
 
-    # Emit an empty `android/BUILD.bazel` so the hub's aggregator
-    # (`@<hub>//android:all_android_plugin_libs`) can depend on every
-    # spoke uniformly, including SDK-provided packages like
-    # `package:flutter` and `package:flutter_test`. Loaded lazily — only
-    # parsed when something queries `@<spoke>//android:lib`, so non-Android
-    # workspaces never pay the `@rules_kotlin` cost.
-    repository_ctx.file("android/BUILD.bazel", """\
-load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
-
-kt_android_library(
-    name = "lib",
-    srcs = [],
-    visibility = ["//visibility:public"],
-)
-""")
-
     return download_mode_metadata(repository_ctx)
 
 flutter_sdk_package = repository_rule(

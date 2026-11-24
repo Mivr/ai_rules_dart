@@ -1,14 +1,6 @@
-/// Android application bundling tool for `flutter_android_bundle`.
+/// The Dart payload tool of `flutter_android_bundle` and `flutter_android_aar`.
 ///
-/// Replaces shell actions with hermetic Dart commands:
-///   - `native-libs-jar`: Validates that every native library is an ELF binary
-///     matching the target Android ABI's `e_machine`, then packages all
-///     `lib/<abi>/<basename>=<src>` entries into the output `.jar` via `zipper`.
-///     Each `--lib-dir <dir>` adds every file of a directory as
-///     `lib/<abi>/<name>` (an app's bundled code assets, a directory whose
-///     files are known only when it is built).
-///   - `empty-jar`: Writes a minimal valid 22-byte empty ZIP (End of Central
-///     Directory record) for debug/JIT builds with no native libraries.
+/// Two commands:
 ///   - `debug-assets`: Copies the `flutter_assets` tree (dereferencing
 ///     symlinks), `kernel_blob.bin`, and optional `vm_snapshot_data` /
 ///     `isolate_snapshot_data` into the debug assets directory.
@@ -16,16 +8,10 @@
 ///     ELF-validated), its `flutter_assets` tree (under `assets/`), the
 ///     manifest, an empty `classes.jar` and an empty `R.txt` into an Android
 ///     library archive.
-///   - `apk-overlay`: Injects the Flutter payload (`native_libs.jar` entries
-///     plus the `flutter_assets` tree) into an unsigned base APK after
-///     resource linking, so Dart edits re-run only this step plus the stock
-///     `zipalign`/`apksigner` steps instead of aapt2 and the dex chain.
 library;
 
 import 'dart:io';
 import 'dart:typed_data';
-
-import 'apk_overlay.dart' show runApkOverlay;
 
 import 'zip_writer.dart' show ZipEntry, encodeDeterministicZip;
 
@@ -82,80 +68,6 @@ void validateAndroidElf(
   }
 }
 
-/// Writes the 22-byte empty ZIP/JAR to [outputPath].
-void writeEmptyJar(String outputPath) {
-  final file = File(outputPath);
-  file.parent.createSync(recursive: true);
-  file.writeAsBytesSync(emptyJarBytes, flush: true);
-}
-
-/// Validates each `lib/<abi>/<name>=<src>` entry in [entries] as an ELF shared
-/// object for [abi] ([wantMachine]) and packages them into [outputPath] using
-/// [zipperPath].
-Future<void> packageNativeLibsJar({
-  required String outputPath,
-  required String abi,
-  required int wantMachine,
-  String? zipperPath,
-  required List<String> entries,
-}) async {
-  if (entries.isEmpty) {
-    writeEmptyJar(outputPath);
-    return;
-  }
-
-  final zipEntries = <ZipEntry>[];
-  for (final spec in entries) {
-    final int eq = spec.indexOf('=');
-    if (eq <= 0 || eq == spec.length - 1) {
-      throw ArgumentError.value(
-        spec,
-        'entries',
-        'expected <jar_entry>=<source_path>',
-      );
-    }
-    final String entryPath = spec.substring(0, eq);
-    final String srcPath = spec.substring(eq + 1);
-    final RandomAccessFile raf = File(srcPath).openSync();
-    final Uint8List header;
-    try {
-      header = raf.readSync(20);
-    } finally {
-      raf.closeSync();
-    }
-    validateAndroidElf(
-      header,
-      path: srcPath,
-      wantMachine: wantMachine,
-      abi: abi,
-    );
-
-    // Normalize file mode bits: only the executable bit of the source is
-    // honoured; all other permission bits come from a fixed, host-independent
-    // value (0644 / 0755), matching xtool_pack.dart. Host umask and source
-    // stat.mode beyond the executable bit never leak into the jar.
-    final int sourceMode = File(srcPath).statSync().mode;
-    final isExecutable = (sourceMode & 0x49) != 0;
-    final Uint8List bytes = File(srcPath).readAsBytesSync();
-    // Stored, never deflated: the APK stores native libraries uncompressed
-    // so zipalign can page-align them, and the APK overlay copies them
-    // without inflating — which is also what lets libraries over 64 MiB
-    // through, at any size below the ZIP32 limits.
-    zipEntries.add(
-      ZipEntry(
-        path: entryPath,
-        data: bytes,
-        isExecutable: isExecutable,
-        storeOnly: true,
-      ),
-    );
-  }
-
-  File(outputPath).parent.createSync(recursive: true);
-  final Uint8List zipBytes = encodeDeterministicZip(zipEntries);
-  File(outputPath).writeAsBytesSync(zipBytes, flush: true);
-}
-
 /// Copies [assetsDir] (dereferencing symlinks) into [outputDir] and adds
 /// `kernel_blob.bin` plus optional `vm_snapshot_data` and
 /// `isolate_snapshot_data`.
@@ -208,141 +120,19 @@ void _copyDirectoryDereferencingLinks(Directory src, Directory dst) {
 Future<void> runAndroidBundle(List<String> args) async {
   if (args.isEmpty) {
     throw ArgumentError(
-      'Expected subcommand: "native-libs-jar", "empty-jar", "debug-assets", "aar", or "apk-overlay".',
+      'Expected subcommand: "debug-assets" or "aar".',
     );
   }
   final String subcommand = args.first;
   final List<String> rest = args.sublist(1);
   switch (subcommand) {
-    case 'native-libs-jar':
-      await _runNativeLibsJar(rest);
-    case 'empty-jar':
-      _runEmptyJar(rest);
     case 'debug-assets':
       _runDebugAssets(rest);
-    case 'apk-overlay':
-      runApkOverlay(rest);
     case 'aar':
       _runAar(rest);
     default:
       throw ArgumentError('Unknown subcommand: $subcommand');
   }
-}
-
-Future<void> _runNativeLibsJar(List<String> args) async {
-  String? output;
-  String? abi;
-  int? machine;
-  String? zipper;
-  final entries = <String>[];
-  final libDirs = <String>[];
-
-  for (var i = 0; i < args.length; i++) {
-    final String arg = args[i];
-    switch (arg) {
-      case '--output':
-        if (i + 1 >= args.length) {
-          throw ArgumentError('Missing value for --output');
-        }
-        output = args[++i];
-      case '--lib-dir':
-        if (i + 1 >= args.length) {
-          throw ArgumentError('Missing value for --lib-dir');
-        }
-        libDirs.add(args[++i]);
-      case '--abi':
-        if (i + 1 >= args.length) {
-          throw ArgumentError('Missing value for --abi');
-        }
-        abi = args[++i];
-      case '--machine':
-        if (i + 1 >= args.length) {
-          throw ArgumentError('Missing value for --machine');
-        }
-        machine = int.parse(args[++i]);
-      case '--zipper':
-        if (i + 1 >= args.length) {
-          throw ArgumentError('Missing value for --zipper');
-        }
-        zipper = args[++i];
-      default:
-        if (arg.startsWith('--')) {
-          throw ArgumentError('Unknown option for native-libs-jar: $arg');
-        }
-        entries.add(arg);
-    }
-  }
-
-  if (output == null || abi == null || machine == null) {
-    throw ArgumentError(
-      'Usage: android_bundle.dart native-libs-jar --output <jar> --abi <abi> '
-      '--machine <machine> [--lib-dir <dir>]... [<entry=src>...]',
-    );
-  }
-  entries.addAll(libDirEntries(abi, libDirs, entries));
-
-  await packageNativeLibsJar(
-    outputPath: output,
-    abi: abi,
-    wantMachine: machine,
-    zipperPath: zipper,
-    entries: entries,
-  );
-}
-
-/// The `lib/<abi>/<name>=<path>` entries of every file in [dirs], in name
-/// order.
-///
-/// Fails when a name is already packaged by [entries] or by another
-/// directory: Android loads a library by its name, so only one could load.
-List<String> libDirEntries(
-  String abi,
-  List<String> dirs,
-  List<String> entries,
-) {
-  final seen = <String, String>{
-    for (final e in entries) e.substring(0, e.indexOf('=')): e.substring(e.indexOf('=') + 1),
-  };
-  final added = <String>[];
-  for (final dir in dirs) {
-    final files = Directory(dir)
-        .listSync(followLinks: true)
-        .whereType<File>()
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
-    for (final file in files) {
-      final name = 'lib/$abi/${file.uri.pathSegments.last}';
-      final previous = seen[name];
-      if (previous != null) {
-        throw ArgumentError(
-          'two native libraries would both be packaged as $name: '
-          '$previous and ${file.path}. Android can only load one.',
-        );
-      }
-      seen[name] = file.path;
-      added.add('$name=${file.path}');
-    }
-  }
-  return added;
-}
-
-void _runEmptyJar(List<String> args) {
-  String? output;
-  for (var i = 0; i < args.length; i++) {
-    final String arg = args[i];
-    if (arg == '--output') {
-      if (i + 1 >= args.length) {
-        throw ArgumentError('Missing value for --output');
-      }
-      output = args[++i];
-    } else {
-      throw ArgumentError('Unknown option for empty-jar: $arg');
-    }
-  }
-  if (output == null) {
-    throw ArgumentError('Usage: android_bundle.dart empty-jar --output <jar>');
-  }
-  writeEmptyJar(output);
 }
 
 void _runDebugAssets(List<String> args) {

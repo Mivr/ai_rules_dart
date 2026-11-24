@@ -1,25 +1,7 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 
 # Android targets from a pinned Gradle model: see extension.bzl.
 exports_files(["debug.keystore"])
-
-# True in the configuration of an app that `flutter_android_app` of a pin builds (the app's Dart
-# payload is built under it). The plugins' Android code then comes from the pin.
-bool_flag(
-    name = "plugins_from_model",
-    build_setting_default = False,
-    visibility = ["//visibility:public"],
-)
-
-# The condition under which a pub plugin's Dart package brings its own Android library: an Android
-# build that is not built from a pin.
-config_setting(
-    name = "android_without_model",
-    constraint_values = ["@platforms//os:android"],
-    flag_values = {":plugins_from_model": "False"},
-    visibility = ["//visibility:public"],
-)
 
 # The build actions and the provider a test runner reads from an app's APK.
 bzl_library(
@@ -27,4 +9,28 @@ bzl_library(
     srcs = ["rules.bzl"],
     visibility = ["//visibility:public"],
     deps = ["@rules_java//java/common"],
+)
+
+bzl_library(
+    name = "names",
+    srcs = ["names.bzl"],
+    visibility = ["//flutter:__subpackages__"],
+)
+
+bzl_library(
+    name = "extension",
+    srcs = ["extension.bzl"],
+    visibility = ["//flutter:__subpackages__"],
+    deps = [
+        ":names",
+        "//flutter/private:download",
+        "@rules_dart//dart/pub:yaml",
+    ],
+)
+
+bzl_library(
+    name = "pin",
+    srcs = ["pin.bzl"],
+    visibility = ["//flutter:__subpackages__"],
+    deps = ["@rules_java//java:core_rules"],
 )

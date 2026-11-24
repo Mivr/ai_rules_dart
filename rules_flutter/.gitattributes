@@ -35,7 +35,6 @@
 /e2e/package-lock.json export-ignore
 /e2e/aar_host/ export-ignore
 /e2e/android_example/ export-ignore
-/e2e/android_no_go_sdk/ export-ignore
 /e2e/android_sharedprefs/ export-ignore
 /e2e/codegen/ export-ignore
 /e2e/cross_compile_example/ export-ignore
@@ -59,7 +58,6 @@
 /e2e/multi_window_example/ export-ignore
 /e2e/plugin_example/ export-ignore
 /e2e/podfile_lock_red/ export-ignore
-/e2e/pub_android_lazy/ export-ignore
 /e2e/pub_cycle_breaks/ export-ignore
 /e2e/pub_flutter_shape_red/ export-ignore
 /e2e/pub_hosted_escape/ export-ignore

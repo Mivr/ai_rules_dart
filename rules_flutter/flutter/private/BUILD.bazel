@@ -24,27 +24,6 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
-config_setting(
-    name = "apk_signing_v1_dbg",
-    flag_values = {"@rules_android//flags:apk_signing_method": "v1"},
-    values = {"compilation_mode": "dbg"},
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "apk_signing_v2_dbg",
-    flag_values = {"@rules_android//flags:apk_signing_method": "v2"},
-    values = {"compilation_mode": "dbg"},
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "apk_signing_v4_dbg",
-    flag_values = {"@rules_android//flags:apk_signing_method": "v4"},
-    values = {"compilation_mode": "dbg"},
-    visibility = ["//visibility:public"],
-)
-
 # Profile mode: `-c opt` with `--@rules_flutter//flutter:profile`. Selects the
 # profile engine and gen_snapshot. The flag under any other `-c` matches
 # neither this nor `//flutter:release`; `flutter_application` refuses it.
@@ -218,69 +197,12 @@ bzl_library(
 )
 
 bzl_library(
-    name = "flutter_android_aab",
-    srcs = ["flutter_android_aab.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_android_apk_overlay",
-        "@bazel_skylib//rules:write_file",
-    ],
-)
-
-bzl_library(
-    name = "flutter_android_apk_overlay",
-    srcs = ["flutter_android_apk_overlay.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_android_binary_proxy",
-        "@bazel_skylib//rules:common_settings",
-        "@rules_android//providers:providers_bzl",
-        "@rules_java//java/common",
-    ],
-)
-
-bzl_library(
     name = "flutter_android_application",
     srcs = ["flutter_android_application.bzl"],
     visibility = ["//visibility:public"],
     deps = [
         ":common",
         "//flutter:providers",
-    ],
-)
-
-bzl_library(
-    name = "flutter_android_binary_proxy",
-    srcs = ["flutter_android_binary_proxy.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_drive_test",
-        "@rules_android//providers:providers_bzl",
-        "@rules_java//java/common",
-    ],
-)
-
-bzl_library(
-    name = "flutter_android_engine",
-    srcs = ["flutter_android_engine.bzl"],
-    visibility = [
-        "//docs:__subpackages__",
-        "//flutter:__subpackages__",
-    ],
-    deps = [
-        "@rules_java//java:core_rules",
-    ],
-)
-
-bzl_library(
-    name = "flutter_android_engine_jar",
-    srcs = ["flutter_android_engine_jar.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":common",
-        "@rules_cc//cc:action_names_bzl",
-        "@rules_cc//cc:find_cc_toolchain_bzl",
-        "@rules_cc//cc/common",
     ],
 )
 
@@ -294,60 +216,6 @@ bzl_library(
         ":download",
         ":local_sdk",
         ":repo_metadata",
-    ],
-)
-
-bzl_library(
-    name = "flutter_android_manifest_merge",
-    srcs = ["flutter_android_manifest_merge.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_android_registrant",
-        "@rules_android//providers:providers_bzl",
-    ],
-)
-
-bzl_library(
-    name = "flutter_android_plugin_closure",
-    srcs = ["flutter_android_plugin_closure.bzl"],
-    visibility = [
-        "//docs:__subpackages__",
-        "//flutter:__subpackages__",
-    ],
-    deps = [
-        ":common",
-        ":flutter_android_application",
-        ":plugin_federation",
-        "//flutter:providers",
-        "@rules_android//providers:providers_bzl",
-        "@rules_cc//cc/common",
-        "@rules_java//java:core_rules",
-        "@rules_java//java/common",
-    ],
-)
-
-bzl_library(
-    name = "flutter_android_plugin_library",
-    srcs = ["flutter_android_plugin_library.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_android_plugin_closure",
-        "@bazel_skylib//rules:write_file",
-    ],
-)
-
-bzl_library(
-    name = "flutter_android_registrant",
-    srcs = ["flutter_android_registrant.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":common",
-        ":constants",
-        ":flutter_android_aab",
-        ":flutter_android_application",
-        ":plugin_registrant",
-        "//flutter:providers",
-        "@bazel_skylib//rules:expand_template",
     ],
 )
 
@@ -995,7 +863,6 @@ bzl_library(
         ":flutter_library",
         ":native_sources",
         "//flutter:providers",
-        "@rules_android//providers:providers_bzl",
         "@rules_cc//cc/common",
         "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",
@@ -1032,23 +899,6 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         "@rules_dart//dart:utils",
-    ],
-)
-
-bzl_library(
-    name = "flutter_pub_android_package",
-    srcs = ["flutter_pub_android_package.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_pub_apple",
-        ":flutter_pub_git",
-        ":flutter_pub_maven",
-        ":flutter_pub_mirror",
-        ":flutter_pubspec",
-        ":gradle",
-        ":starlark_literal",
-        "@rules_dart//dart/pub:pub_lock_package",
-        "@rules_dart//dart/pub:yaml",
     ],
 )
 
@@ -1255,12 +1105,6 @@ bzl_library(
 )
 
 bzl_library(
-    name = "flutter_pub_maven",
-    srcs = ["flutter_pub_maven.bzl"],
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
     name = "flutter_pub_mirror",
     srcs = ["flutter_pub_mirror.bzl"],
     visibility = ["//visibility:public"],
@@ -1281,19 +1125,16 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":asset_uri",
-        ":flutter_pub_android_package",
         ":flutter_pub_apple",
         ":flutter_pub_apple_local",
         ":flutter_pub_git",
         ":flutter_pub_lock_hub",
-        ":flutter_pub_maven",
         ":flutter_pub_mirror",
         ":flutter_pub_package_helpers",
         ":flutter_pub_plugin_defines",
         ":flutter_pub_plugin_deps",
         ":flutter_pub_walk",
         ":flutter_pubspec",
-        ":gradle",
         ":starlark_literal",
         ":swiftpm_resolved",
         "@rules_dart//dart/pub:pub_lock_package",
@@ -1343,7 +1184,6 @@ bzl_library(
     srcs = ["flutter_pub_scc_build.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":flutter_pub_android_package",
         ":flutter_pub_apple",
         ":flutter_pub_package_helpers",
         ":starlark_literal",
@@ -1357,7 +1197,6 @@ bzl_library(
     deps = [
         ":asset_uri",
         ":download",
-        ":flutter_pub_android_package",
         ":flutter_pub_apple",
         ":flutter_pub_apple_local",
         ":flutter_pub_git",
@@ -1607,73 +1446,6 @@ bzl_library(
         ":xtool_version",
         "//flutter:providers",
         "@rules_cc//cc/common",
-    ],
-)
-
-bzl_library(
-    name = "gradle",
-    srcs = ["gradle.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":gradle_deps",
-        ":gradle_model",
-        ":gradle_plugin",
-        ":gradle_readers",
-    ],
-)
-
-bzl_library(
-    name = "gradle_deps",
-    srcs = ["gradle_deps.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":gradle_model",
-        ":gradle_parse",
-    ],
-)
-
-bzl_library(
-    name = "gradle_lex",
-    srcs = ["gradle_lex.bzl"],
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
-    name = "gradle_model",
-    srcs = ["gradle_model.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":gradle_lex",
-        ":gradle_parse",
-    ],
-)
-
-bzl_library(
-    name = "gradle_parse",
-    srcs = ["gradle_parse.bzl"],
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
-    name = "gradle_plugin",
-    srcs = ["gradle_plugin.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":gradle_deps",
-        ":gradle_lex",
-        ":gradle_model",
-    ],
-)
-
-bzl_library(
-    name = "gradle_readers",
-    srcs = ["gradle_readers.bzl"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":gradle_lex",
-        ":gradle_model",
-        ":gradle_parse",
-        ":gradle_plugin",
     ],
 )
 

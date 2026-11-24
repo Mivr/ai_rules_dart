@@ -20,12 +20,9 @@ forward.
 | `apple_support` | 2.2.0 | `@apple_support//constraints:{device,simulator}`, `@apple_support//platforms:ios_arm64` and the `@apple_support//crosstool:setup.bzl` `apple_cc_configure_extension` that `MODULE.bazel` joins. |
 | `rules_apple` | 4.5.3 | `@rules_apple//apple:ios.bzl`, `@rules_apple//apple:macos.bzl`, `@rules_apple//apple:versioning.bzl`, the framework/app-intent imports and the internal `AppleBundleInfo` constructor. |
 | `rules_swift` | 3.5.0 | `@rules_swift//swift:swift.bzl` (`swift_library`) and the `SwiftInfo`/`swift_interop_info` surface, at `compatibility_level = 3`. |
-| `rules_android` | 0.8.0 | `@rules_android//flags:apk_signing_method` through the `apk_signing_v*` config_settings; the `flags/` package does not exist in 0.7.2 or 0.7.3. |
-| `rules_kotlin` | 2.1.10 | `@rules_kotlin//kotlin:android.bzl` for `kt_android_library`, loaded by `flutter_android_app`. |
-| `rules_java` | 9.0.0 | `@rules_java//java:java_import.bzl`, `@rules_java//java/common:java_info.bzl` (`JavaInfo`) and the Java toolchain rules. |
-| `rules_jvm_external` | 6.8 | `@rules_jvm_external//:extensions.bzl` with `maven.install`/`maven.artifact`, `use_starlark_android_rules` and `aar_import_bzl_label`. |
+| `rules_kotlin` | 2.3.0 | `@rules_kotlin//kotlin:jvm.bzl` (`kt_jvm_library`) and `//kotlin:core.bzl` (`define_kt_toolchain`, `kt_kotlinc_options`, `kt_ksp_plugin`), which compile an app's and its plugins' Kotlin from the pinned Gradle model. A Flutter 3.47 app resolves the Kotlin 2.4.0 standard library; the compiler of `rules_kotlin` 2.2 and older refuses its metadata. |
+| `rules_java` | 9.0.0 | `@rules_java//java:defs.bzl` (`java_binary`, `java_import`, `java_library`, `java_plugin`, `java_test`), `@rules_java//java/common:java_info.bzl` (`JavaInfo`) and the Java toolchain rules. |
 | `ai_rules_dart` (repo `rules_dart`) | 0.28.3 | `@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `@rules_dart//dart/pub:pub_scc.bzl` and `@rules_dart//dart/pub:yaml.bzl` (`yaml_to_json`), and `dart_analysis_config(baseline = ...)`. The floor is the first `rules_dart` release cut from this repository that has every one of them; this repository's own builds take the sibling `rules_dart/` directory, whatever the number says. No release has `yaml.bzl` yet, so 0.28.3 is a placeholder until one is cut (a BCR entry is pending too). |
-| `rules_go` | 0.59.0 | `@rules_go//go/config:pure` and the Bazel 9 `CcInfo` import in `go/private/rules/cross.bzl`; 0.50.0 through 0.58.3 fail to load on Bazel 9. |
 | `llvm` | 0.8.17 | `@llvm//extensions:llvm_toolchain_minimal.bzl` and the `llvm-toolchain-minimal-<os>-<cpu>` repos, on the opt-in xtool Darwin SDK path and for this repository's own hermetic tests. |
 
 `dev_dependency` declarations (`rules_multitool`, `buildifier_prebuilt`,
@@ -45,13 +42,15 @@ requirements:
 | `package_metadata` | 0.0.5 | 0.0.13 | `ai_rules_dart` | Its own `bazel_dep` asks for 0.0.13. |
 | `rules_cc` | 0.2.20 | 0.2.26 | `ai_rules_dart` | Its own `bazel_dep` asks for 0.2.26. `llvm` 0.8.17 asks for 0.2.22, which is lower. |
 | `apple_support` | 2.2.0 | 2.9.1 | `rules_cc` 0.2.26 | `rules_cc` 0.2.25 and newer add a regular `bazel_dep` on `apple_support`; 0.2.26 asks for 2.9.1. `rules_cc` reaches that version through `ai_rules_dart`. |
-| `rules_java` | 9.0.0 | 9.3.0 | `rules_android` 0.8.0 | Its own `bazel_dep` asks for 9.3.0. |
-| `rules_jvm_external` | 6.8 | 6.9 | `rules_android` 0.8.0 | Its own `bazel_dep` asks for 6.9. |
-| `rules_go` | 0.59.0 | 0.64.2 | `ai_rules_dart` | Its own `bazel_dep` asks for 0.64.2. `llvm` 0.8.17 asks for 0.62.0, which is lower. |
+| `rules_java` | 9.0.0 | 9.3.0 | `rules_kotlin` 2.3.0 | Its dependency `rules_android` 0.7.1 asks for 9.3.0 (`rules_kotlin` itself asks for 8.9.0). |
 
 Every other floor resolves at its declared version in that graph: `platforms`
-1.1.0, `rules_apple` 4.5.3, `rules_swift` 3.5.0, `rules_android` 0.8.0,
-`rules_kotlin` 2.1.10 and `llvm` 0.8.17. `ai_rules_dart` is the sibling
+1.1.0, `rules_apple` 4.5.3, `rules_swift` 3.5.0, `rules_kotlin` 2.3.0 and
+`llvm` 0.8.17. (`rules_flutter` no longer declares `rules_android`,
+`rules_jvm_external` or `rules_go`: an app's Android side is built by AGP's own
+tools from the pinned Gradle model. `rules_kotlin` still brings `rules_android`
+and `rules_jvm_external` into the module graph, and `ai_rules_dart` brings
+`rules_go`; no repository of theirs is fetched by a Flutter Android build.) `ai_rules_dart` is the sibling
 `rules_dart/` directory in `e2e/min_versions`: its declared floor is checked,
 but it has no resolved version.
 
@@ -91,12 +90,9 @@ leak into a consumer graph:
 | `rules_swift` | 4.1.2 |
 | `rules_kotlin` | 2.4.20 |
 | `rules_java` | 9.9.0 |
-| `rules_jvm_external` | 7.1 |
-| `rules_go` | 0.64.2 |
 | `llvm` | 0.8.19 |
 
-`platforms` 1.1.0 and `rules_android` 0.8.0 are already current at their floor,
-so they need no override. `ai_rules_dart` is the sibling `rules_dart/` directory
+`platforms` 1.1.0 is already current at its floor, so it needs no override. `ai_rules_dart` is the sibling `rules_dart/` directory
 through a `local_path_override`, which supplies the version the source
 `MODULE.bazel` intentionally leaves out.
 
@@ -115,19 +111,6 @@ which may be *older and heavier* than the current release's:
   want the newer Apple tree, add your own `bazel_dep(name = "rules_apple",
   version = "5.2.0")`: MVS then selects 5.2.0 for everyone, at the cost of
   tracking Apple's releases yourself.
-- `rules_android` stays at 0.8.0 with no lower option: the signing overlay
-  reads `@rules_android//flags:apk_signing_method`, and that package exists
-  only in 0.8.0+ (0.7.2 and 0.7.3 have no `flags/` directory at all), so
-  every Android app fails at analysis with anything older. There is no
-  version-tolerant way to read their flag.
-- `rules_go` floors at 0.59.0 — the lowest rules_go that builds on Bazel 9
-  (0.50.0 through 0.58.3 fail to load: `go/private/rules/cross.bzl` uses the
-  native `CcInfo` symbol Bazel 9 removed; the `rules_cc` import landed in
-  0.59.0). In practice `rules_android` already imposes the same floor, and
-  the floor never binds anyway: `ai_rules_dart` requires 0.64.2, so
-  every graph selects that (`bazel mod explain rules_go` — verified even in
-  the workspaces that declare only the 0.59.0 minimum). The floor is a
-  Bazel 9 load minimum, not a tested configuration.
 - `rules_swift` and `apple_support` now have real floors (3.5.0 at
   compatibility level 3, and 2.2.0). They do **not** float below those
   versions: a consumer that declares nothing gets at least the floor, and
@@ -142,13 +125,10 @@ analysis. Starlark cannot catch a missing external package or a symbol a `.bzl`
 load needs and turn it into a custom version error, so this repository keeps
 the path's floor at the version it needs instead of narrowing it:
 
-- **Android APK signing:** `flutter_android_app`'s overlay reads
-  `@rules_android//flags:apk_signing_method`, which exists only from
-  `rules_android` 0.8.0. A consumer on an older `rules_android` fails at
-  analysis with a missing-package error naming `@rules_android//flags`, not a
-  tailored version message. Mirroring the flag with our own default would
-  sign differently from the consumer's `android_binary`, so the floor stays
-  at 0.8.0.
+- **Android Kotlin:** an app built from its pinned Gradle model compiles Kotlin
+  with `rules_kotlin` on the Kotlin standard library the model resolved. An
+  older `rules_kotlin` fails in the Kotlin compile action ("module was compiled
+  with an incompatible version of Kotlin"), so the floor stays at 2.3.0.
 - **xtool Darwin SDK:** `flutter.darwin_sdk` resolves llvm's
   `llvm-toolchain-minimal-<os>-<cpu>` repos through the extension and the
   `@flutter_xtool_darwin_sdk` repo rule. An older `llvm` fails at analysis
@@ -182,19 +162,17 @@ the install instructions take it from the fork's GitHub release (see
 For a plain consumer (e.g. `e2e/smoke`) today:
 
 - `rules_python` arrives via `rules_dart → protobuf → rules_pkg`,
-  via `rules_android` (directly, plus through `abseil-py` and
+  via `rules_android` (which `rules_kotlin` brings; plus through `abseil-py` and
   `rules_robolectric`), via `rules_apple`, via `llvm`, and via
   `re2 → pybind11_bazel`. None of these is `rules_flutter`'s own dep —
   removing ours (done) is all we can do; the rest belongs to those
   rulesets. Its `pypi__*` bootstrap hub repos materialize only when
   something evaluates `rules_python`'s toolchain extension.
 - `rules_go` arrives via `rules_dart` (directly and through `gazelle`)
-  and via `rules_android`. The `go_toolchains`/`nogo` hub repos belong to
-  its `go_sdk` extension. Our own pinned `go_sdk.download` (Go 1.26.2,
-  checksummed) is a regular dependency: it is evaluated in every consumer
-  and sorts first in the toolchain order, but toolchain registration is
-  lazy, so a plain consumer's `bazel build`/`bazel test` never fetches the
-  SDK archive — only resolving a Go toolchain (the Android host tools) does.
+  and via `rules_android` (which `rules_kotlin` brings). The
+  `go_toolchains`/`nogo` hub repos belong to its `go_sdk` extension.
+  `rules_flutter` declares no Go SDK and no Go setting: nothing in a Flutter
+  build resolves a Go toolchain.
 - `llvm`'s `bazel_lib`, `rules_shell`, `tar.bzl`, `with_cfg.bzl`,
   `zlib-ng`, `zstd` module deps resolve in the graph but fetch only if
   something references them — for a plain consumer, nothing does.
@@ -240,11 +218,3 @@ Concretely, a consumer that never opts into xtool pays:
 An opting-in consumer configures only the SDK — a nonexistent bundle path
 fails the fetch on the path error before any LLVM download starts
 (`e2e/xtool_sdk_invalid` pins this red path in CI).
-
-## Android Maven lock files (`rules_android_maven`)
-
-Android builds resolve artifacts through `rules_android_maven`, a `maven.install` defined across `rules_android`, `rules_flutter`, and consumer workspaces.
-
-To ensure hermetic builds and prevent unchecksummed downloads, consumers should pin this install at the root of their workspace by adding `lock_file = "//:rules_android_maven_install.json",` to their `maven.install(name = "rules_android_maven", ...)` (or declaring one with just the name) and generating the lock with `bazel run @rules_android_maven//:pin`.
-
-`rules_flutter` intentionally does not ship a lock file in its own `MODULE.bazel`. Under `rules_jvm_external` (6.9 `private/extensions/maven.bzl:630-637` and 7.1 `private/extensions/maven.bzl:784-793`), a dependency module's lock file is only used when the consumer's root module declares no same-named install; a root module's install always replaces the lock entry (defaulting to none if the root does not set `lock_file`). As a result, a library-level lock would silently stop applying as soon as a consumer adds or bumps an artifact. Additionally, `rules_jvm_external` allows only one module in the graph to pin an install name (6.9 `:653-661`, 7.1 `:810-817`). Root-level pinning guarantees that the merged artifact graph carries complete SHA-256 checksums and enforces `fail_if_repin_required`.

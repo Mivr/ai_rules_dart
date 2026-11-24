@@ -5,9 +5,9 @@
 `generate_dart_plugin_registrant` (`flutter/private/plugin_registrant.bzl`) and
 passes its URI to `FlutterKernelCompile` (`flutter/private/common.bzl`) without
 placing the `.dart` source in `DefaultInfo`. Attaching an aspect across
-`flutter_android_registrant`'s `application` edge inspects the application in
-the same Android platform configuration `flutter_android_registrant` transitions
-to, verifies `FlutterKernelCompile` consumes `<name>_plugin_registrant.dart`
+`flutter_android_bundle`'s `application` edge inspects the application in
+the Android platform configuration the bundle transitions to, verifies
+`FlutterKernelCompile` consumes `<name>_plugin_registrant.dart`
 under `-Dflutter.dart_plugin_registrant=` (or, for a modular debug build, that the entry module's inputs
 hold it), and exposes the file for testing.
 """
@@ -129,10 +129,10 @@ def _android_dart_registrant_impl(ctx):
     Returns:
         `DefaultInfo` exposing `<name>.dart`.
     """
-    files = ctx.attr.registrant[_DartRegistrantInfo].files.to_list()
+    files = ctx.attr.bundle[_DartRegistrantInfo].files.to_list()
     if len(files) != 1:
         fail("expected 1 Dart plugin registrant from %s, got %d" % (
-            ctx.attr.registrant.label,
+            ctx.attr.bundle.label,
             len(files),
         ))
     out = ctx.actions.declare_file(ctx.label.name + ".dart")
@@ -142,11 +142,11 @@ def _android_dart_registrant_impl(ctx):
 android_dart_registrant = rule(
     implementation = _android_dart_registrant_impl,
     attrs = {
-        "registrant": attr.label(
+        "bundle": attr.label(
             mandatory = True,
             aspects = [_dart_registrant_aspect],
             doc = (
-                "A `flutter_android_registrant` target whose Android-transitioned " +
+                "A `flutter_android_bundle` target whose Android-transitioned " +
                 "`application` owns the Dart plugin registrant."
             ),
         ),

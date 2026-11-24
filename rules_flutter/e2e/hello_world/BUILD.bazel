@@ -1,15 +1,9 @@
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("@rules_android//android:rules.bzl", "android_binary")
 load("@rules_apple//apple:ios.bzl", "ios_application")
 load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
 load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_test")
-load(
-    "@rules_flutter//flutter:android.bzl",
-    "ANDROID_MIN_SDK_VERSION",
-    "ANDROID_TARGET_SDK_VERSION",
-    "FLUTTER_APK_AAPT_NO_COMPRESS_EXTENSIONS",
-    "flutter_android_app",
-)
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_aot_target", "flutter_application", "flutter_kernel_target", "flutter_library", "flutter_prebuilt_test", "flutter_test")
 load(
     "@rules_flutter//flutter:ios.bzl",
@@ -29,7 +23,6 @@ load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
 load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app", "flutter_xtool_macos_bundle")
 load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
 load("@rules_flutter//flutter:windows.bzl", "flutter_windows_app")
-load(":android_apk_overlay_test.bzl", "android_apk_overlay_test_suite")
 load(":custom_modular_test_kernel.bzl", "custom_modular_app_kernel", "custom_modular_test_kernel")
 load(":custom_test_kernel.bzl", "custom_test_kernel")
 
@@ -217,113 +210,19 @@ ios_application(
 )
 
 # -- Android app ---------------------------------------------------------------
+#
+# The app's stock Android project (android/), built from its pinned Gradle model:
+# `bazel run //:android_pin` writes android_model.json. `:hello_world_android` is the debug build as
+# split APKs, `:hello_world_android_apk` the same app as one APK.
+
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["debug"],
+)
 
 flutter_android_app(
     name = "hello_world_android",
-    package_name = "com.example.helloworld",
-    app_name = "Hello World",
     application = ":hello_world_app",
-    # Android cross-builds fine on macOS/Linux (covered by those CI runners),
-    # but the rules_android resource compiler launches its JVM with -Xms3G,
-    # which eagerly commits 3 GiB and OOMs on the GitHub windows-latest runner's
-    # small fixed pagefile. This is a CI-runner resource limit, not a platform
-    # incompatibility, so the Windows CI job filters this tag out via
-    # --build_tag_filters rather than marking the target Windows-incompatible.
-    tags = ["no-windows-ci"],
-)
-
-# -- Release-signed Android app ------------------------------------------------
-#
-# The same app signed with a throwaway caller keystore instead of the debug
-# key: `testdata/release.p12` (PKCS#12, alias `release`, password in
-# `testdata/release.pass`) exercises the `keystore` /
-# `keystore_password_file` / `key_alias` attributes of `flutter_android_app`.
-# `:verify_android_release_signing_test` parses the APK Signing Block of this
-# APK and the debug-signed `:hello_world_android` and pins the release signer
-# to the fixture certificate.
-flutter_android_app(
-    name = "hello_world_android_release_signed",
-    package_name = "com.example.helloworld",
-    app_name = "Hello World",
-    application = ":hello_world_app",
-    key_alias = "release",
-    keystore = "testdata/release.p12",
-    keystore_password_file = "testdata/release.pass",
-    # See hello_world_android: skipped on the Windows CI runner (pagefile OOM)
-    # via --build_tag_filters/--test_tag_filters. Builds normally everywhere else.
-    tags = ["no-windows-ci"],
-)
-
-# Red-path twin of the target above, wired to the wrong password
-# (`testdata/wrong.pass`): building it must fail in apksigner. Tagged
-# "manual" so `//...` stays green; the e2e-linux-app CI job builds it
-# explicitly and greps the failure for apksigner's wrong-password message.
-flutter_android_app(
-    name = "hello_world_android_release_wrong_password",
-    package_name = "com.example.helloworld",
-    app_name = "Hello World",
-    application = ":hello_world_app",
-    key_alias = "release",
-    keystore = "testdata/release.p12",
-    keystore_password_file = "testdata/wrong.pass",
-    tags = [
-        "manual",
-        "no-windows-ci",
-    ],
-)
-
-# -- Android reference binary (old pipeline) -----------------------------------
-#
-# The same app assembled the pre-overlay way: a single android_binary whose
-# dex chain sees the native-libs java_import and whose assets carry the
-# flutter_assets tree, instead of the payload-free base binary plus the
-# post-link splice. It reuses the macro's own internal targets — the bundle,
-# the fully merged manifest, the registrant, the engine, the discovered
-# Kotlin runner — plus the bundle's mobile-install assets, and the same
-# aapt2 no-compress list the overlay applies, so `:verify_android_apk_parity_test`
-# can compare the two APKs entry by entry (names, methods, CRCs).
-#
-# Tagged manual: it exists for the parity test's data dependency, not for
-# wildcard builds.
-
-filegroup(
-    name = "__hello_world_android_reference_assets",
-    srcs = [":__hello_world_android_bundle"],
-    output_group = "mobile_install",
-    tags = [
-        "manual",
-        "no-windows-ci",
-    ],
-)
-
-android_binary(
-    name = "hello_world_android_reference",
-    assets = [":__hello_world_android_reference_assets"],
-    assets_dir = "assets",
-    manifest = ":__hello_world_android_manifest_with_library_permissions",
-    manifest_values = {
-        "applicationId": "com.example.helloworld",
-        "minSdkVersion": ANDROID_MIN_SDK_VERSION,
-        "targetSdkVersion": ANDROID_TARGET_SDK_VERSION,
-    },
-    nocompress_extensions = FLUTTER_APK_AAPT_NO_COMPRESS_EXTENSIONS,
-    resource_files = glob(["android/app/src/main/res/**"]),
-    tags = [
-        "manual",
-        "no-windows-ci",
-    ],
-    target_compatible_with = select({
-        "@platforms//os:ios": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":__hello_world_android_android_plugins",
-        ":__hello_world_android_engine",
-        ":__hello_world_android_native_libs",
-        ":__hello_world_android_registrant",
-        ":__hello_world_android_runner",
-        "@deps//android:all_android_plugin_libs",
-    ],
 )
 
 # -- Other platforms -----------------------------------------------------------
@@ -995,60 +894,33 @@ dart_binary(
 build_test(
     name = "android_build_test",
     size = "small",
-    # See hello_world_android: skipped on the Windows CI runner (pagefile OOM)
-    # via --build_tag_filters/--test_tag_filters. Builds normally everywhere else.
-    tags = ["no-windows-ci"],
-    targets = [":hello_world_android"],
-)
-
-android_apk_overlay_test_suite(
-    name = "android_apk_overlay_test",
-    app_name = "hello_world_android",
-    # See hello_world_android: skipped on the Windows CI runner (pagefile OOM)
-    # via --build_tag_filters/--test_tag_filters. Builds normally everywhere else.
-    tags = ["no-windows-ci"],
-)
-
-# APK parity: the overlay APK must carry the same entries, stored or deflated
-# the same way, with the same CRCs, as the reference android_binary built the
-# old way. Runs apksigner verify and zipalign -c over the overlay APK first.
-dart_test(
-    name = "verify_android_apk_parity_test",
-    size = "medium",
-    data = [
+    targets = [
         ":hello_world_android",
-        ":hello_world_android_reference",
-        "@androidsdk//:apksigner",
-        "@androidsdk//:zipalign",
+        ":hello_world_android_apk",
     ],
-    env = {
-        # Repo-root-relative runfiles paths: extension repos have no stable
-        # apparent-name symlink in the runfiles tree, so locate by rlocation.
-        "APKSIGNER": "$(rlocationpath @androidsdk//:apksigner)",
-        "ZIPALIGN": "$(rlocationpath @androidsdk//:zipalign)",
-    },
-    main = "test/verify_android_apk_parity_test.dart",
-    # See hello_world_android: skipped on the Windows CI runner (pagefile OOM)
-    # via --build_tag_filters/--test_tag_filters. Builds normally everywhere else.
-    tags = ["no-windows-ci"],
 )
 
-# Release signing: the release-signed APK above must carry the fixture
-# certificate in its APK Signing Block (v3 preferred, v2 accepted), matching
-# the pinned fingerprint, while the debug-signed APK carries a different
-# signer — proving the APK was signed by the caller's keystore and not the
-# debug key. Parses the block by hand; no apksigner/keytool runs here.
-dart_test(
-    name = "verify_android_release_signing_test",
-    size = "small",
-    data = [
-        ":hello_world_android",
-        ":hello_world_android_release_signed",
+# What was built: the runner activity and the registrant, the engine, the kernel of a debug build
+# in its own split, and the manifest's version from the pubspec.
+flutter_android_apk_test(
+    name = "android_apk_test",
+    app = "hello_world_android",
+    classes = [
+        "Lcom/example/helloworld/MainActivity;",
+        "Lio/flutter/plugins/GeneratedPluginRegistrant;",
+        "Lio/flutter/embedding/android/FlutterActivity;",
     ],
-    main = "test/verify_android_release_signing_test.dart",
-    # See hello_world_android: skipped on the Windows CI runner (pagefile OOM)
-    # via --build_tag_filters/--test_tag_filters. Builds normally everywhere else.
-    tags = ["no-windows-ci"],
+    entries = [
+        "assets/flutter_assets/kernel_blob.bin",
+        "lib/arm64-v8a/libflutter.so",
+        "lib/x86_64/libflutter.so",
+    ],
+    split_classes = {"app": "Lcom/example/helloworld/MainActivity;"},
+    split_entries = {"dart": "assets/flutter_assets/kernel_blob.bin"},
+    splits = [
+        "app",
+        "dart",
+    ],
 )
 
 # Platform-conditional pub assets: the Android APK must carry the fixture
@@ -1062,29 +934,24 @@ dart_test(
     data = [
         "fonts/HelloSans-Bold.ttf",
         "fonts/HelloSans-Regular.ttf",
-        ":hello_world_android",
+        ":hello_world_android_apk",
     ],
     main = "test/verify_android_platform_assets_test.dart",
-    # See hello_world_android: skipped on the Windows CI runner (pagefile OOM)
-    # via --build_tag_filters/--test_tag_filters. Builds normally everywhere else.
-    tags = ["no-windows-ci"],
 )
 
-# Runtime verifier for the overlay APK: installs :hello_world_android on a
+# Runtime verifier for the APK: installs :hello_world_android_apk on a
 # connected emulator or device, waits for RESUMED, and asserts the app stays
-# alive with no crash — proving the injected libapp.so and flutter_assets
-# actually boot. Tagged "manual" + "exclusive" because it needs a live
+# alive with no crash. Tagged "manual" + "exclusive" because it needs a live
 # device; run explicitly per docs/TESTING.md.
 dart_test(
     name = "verify_android_app_test",
     size = "large",
-    data = [":hello_world_android"],
+    data = [":hello_world_android_apk"],
     main = "test/verify_android_app_test.dart",
     tags = [
         "android",
         "exclusive",
         "manual",
-        "no-windows-ci",
     ],
 )
 

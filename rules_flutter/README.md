@@ -49,7 +49,7 @@ If `flutter build` works for you, here is what Bazel adds:
 | All | Bazel 9 or newer. The rules download Flutter 3.47.7 themselves. |
 | macOS | Xcode, for `rules_apple` and `rules_swift`. |
 | iOS | Xcode. The simulator needs no signing identity. A physical device does; see [Running on an iOS device](#running-on-an-ios-device). |
-| Android | The Android SDK and NDK, with `ANDROID_HOME` and `ANDROID_NDK_HOME` set. `unzip` must be on PATH on every host or remote executor that builds Android targets, since rules_android 0.8 runs the host `unzip`. See [Android](#android). |
+| Android | The Android SDK and NDK, with `ANDROID_HOME` and `ANDROID_NDK_HOME` set. See [Android](#android). |
 | Linux | A C++ toolchain. From macOS, an LLVM cross-toolchain. |
 | Windows | MSVC for native builds. From macOS or Linux, a C++ cross-toolchain, debug builds only. |
 | Web | Nothing extra. Compiling Dart to WASM or JavaScript is fully hermetic. |
@@ -131,8 +131,8 @@ with the matching `local_path_override` (or `--override_module`) for `ai_rules_f
 Two settings are required. Paste them into your project's `.bazelrc`:
 
 ```bazelrc
-# rules_flutter's Java dependencies (rules_jvm_external 7+, rules_android 0.8+)
-# ship tool jars compiled for Java 21+. Bazel's default tool JDK is older.
+# The Android tools an app's pin names (AGP's R8, manifest merger, bundletool)
+# are compiled for Java 21+. Bazel's default tool JDK is older.
 common --tool_java_language_version=25
 common --tool_java_runtime_version=remotejdk_25
 
@@ -222,9 +222,9 @@ flutter_application(
 
 `flutter.pub` plans the lock with rules_dart's pub planner, the one `pub.from_lock` uses: the first evaluation asks each hosted package's server for its listing (`<url>/api/packages/<name>`, what `dart pub get` reads; the archive only when the server has no listing), records the dependency names it learns as lockfile facts, and later evaluations make no request. Each package gets its own repository, which fetches only its own archive and checks its pubspec against the planned names, so adding or removing a package refetches no other package. A module that ships a lock to its users can ship its plan with it, `flutter.pub(plan = ...)`, written by `bazel run @rules_dart//dart/pub/plan -- write --lock <pubspec.lock> --out <plan.json>`: its users then plan it with no request at all.
 
-Plugins need no special treatment. A pub package that is a Flutter plugin arrives as a plugin target, and the platform macros register it and build its native code. On Android `flutter_android_app` packages the Kotlin and Java of the plugins your app's Dart dependencies reach, and no others, so an unrelated plugin in the lock never changes the app. The hub also exposes `@deps//android:all_android_plugin_libs`, the Android library of every plugin in the lock, for a target that names it.
+Plugins need no special treatment. A pub package that is a Flutter plugin arrives as a plugin target, and the platform macros register it and build its native code. On Android a plugin's Kotlin and Java are not built from the pub repositories: the app's Android side comes from its pinned Gradle model, which holds each plugin's own Gradle project and the registrant the Flutter tool wrote, so the app has the plugins of its `pubspec.yaml`, as a stock build does.
 
-A plugin's Gradle build is not read while the hub's spokes are fetched. Each Android plugin has its own repository, and its `android/build.gradle` (`build.gradle.kts`) is read only when an Android target analyses the spoke's `android:lib` alias. An iOS-, macOS-, web- or Dart-only build therefore resolves the hub without reading any Gradle model, so an untranslatable Android dependency cannot fail it. A wildcard query over the hub (`bazel query @deps//...`) reaches the Android targets and therefore fetches those plugin repositories.
+No Gradle file is read by the pub layer or by any rule: an iOS-, macOS-, web- or Dart-only build resolves the hub without touching a plugin's Android directory.
 
 Permissions a plugin declares in its own manifest, such as `record_android`'s `RECORD_AUDIO`, reach the app's manifest as they do under Gradle. You don't need `--merge_android_manifest_permissions`.
 
@@ -273,47 +273,13 @@ The app's `pubspec.yaml` says what its asset bundle holds, as it does for `flutt
 
 ### Android from the Gradle model
 
-An app's Android side can be built from a pin file that Gradle writes once (`bazel run //:android_pin`):
-one library per plugin project, one import per Maven artifact by hash, AGP's own tools, split APKs for
-the debug loop and the whole APK equal to `flutter build apk --debug`. BOMs, kapt, KSP and any Maven
-coordinate work, because Gradle resolved them. See [docs/android-model.md](docs/android-model.md).
-
-### Android native (Gradle) dependencies
-
-A plugin's `android/build.gradle` (`build.gradle.kts`) runtime dependencies (`implementation`, `api`, `runtimeOnly`) are translated to `@rules_android_maven` labels automatically. This happens in the plugin's own Android repository, and only when an Android target needs it: the spoke fetch itself never reads the Gradle model. Gradle evaluates exactly one build file per project directory, so when both files are present the repository reads `build.gradle` for everything — dependencies, namespace, native-build and ProGuard detection alike. Common AndroidX artifacts are built in; anything else must be mapped in `MODULE.bazel`:
-
-```starlark
-flutter.pub(
-    name = "deps",
-    lock = "//:pubspec.lock",
-    android_maven_deps = {
-        "com.example:thing": "@rules_android_maven//:com_example_thing_thing",
-    },
-)
-```
-
-A plugin dependency found in neither table fails that Android repository's fetch naming the package, the build file, and every offending entry — a missing native library would otherwise compile and crash on the device. A coordinate that genuinely needs no label goes in `android_maven_ignore`; declarations that are not Maven coordinates at all (version-catalog `libs.*` refs, variables, local jars) need a plugin overlay instead, via `flutter.plugin_overlays`.
-
-The parser reads the build script statement by statement (comments stripped outside string literals; statements split on newlines, `;`, `{` and `}` at bracket depth 0, so a parenthesised call spanning lines reads as one statement), so layout is insignificant: a single-line `dependencies { implementation '...' }`, two declarations on one line separated by `;`, and Gradle's `add('implementation', '...')` (single- or double-quoted, both DSLs) all resolve. Only `dependencies` blocks outside `buildscript` count. `apply from:` scripts in every DSL spelling (`apply from: 'x.gradle'`, `apply(from: 'x.gradle')`, `apply(from = "x.gradle.kts")`) are read when the path stays inside the package, recursively, with cycle detection and a depth cap. The Android namespace is read from the same statement model (`namespace` in any `android` block, even on one line or nested, or top-level `android.namespace = ...`; the last declaration wins; commented-out or string-embedded declarations never count). Anything unmodellable fails the fetch instead of dropping the dependency: nested blocks such as `constraints {}`, `dependencies` mentions outside the block form (`project.dependencies.add(...)`), map notation, catalog refs, variables, interpolated coordinates, an unbalanced bracket, a non-literal namespace, and `apply from:` with a URL, an absolute or escaping path, a missing file, or a non-literal argument. The plugin's Android namespace must be a valid Java package name, and every `android_maven_deps` value must be a label (`@...` or `//...`); anything else fails naming the plugin or the key.
-
-#### Pinning Maven dependencies
-
-Every Android build should pin `@rules_android_maven` to avoid resolving artifacts dynamically with Coursier on every cold fetch. To pin the merged install in your root workspace:
-
-1. Add `lock_file = "//:rules_android_maven_install.json",` to your own `maven.install(name = "rules_android_maven", ...)` declaration (or declare one with just the name if your root adds no extra artifacts):
-
-```starlark
-maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
-maven.install(
-    name = "rules_android_maven",
-    lock_file = "//:rules_android_maven_install.json",
-)
-use_repo(maven, "rules_android_maven")
-```
-
-2. Run `bazel run @rules_android_maven//:pin` to generate the lock file, and check it in.
-
-`rules_flutter` does not ship a lock file in its own `MODULE.bazel`: under `rules_jvm_external` (6.9 `private/extensions/maven.bzl:630-637` and 7.1 `private/extensions/maven.bzl:784-793`), a dependency module's lock is used only when the consumer's root declares no same-named install, and a root install always replaces it (with none when the root declares no lock). A library lock would therefore stop applying as soon as a consumer adds or bumps an artifact. Furthermore, `rules_jvm_external` permits only one module to pin a given install name (:653-661). Pinning at the workspace root ensures hermetic, sha256-verified downloads for the union of all declared artifacts.
+An app's Android side is its stock Android project (`android/`), built from a pin file that Gradle
+writes once (`bazel run //:android_pin`): one library per plugin project, one import per Maven
+artifact by hash, AGP's own tools (D8, R8, the manifest merger, aapt2, the signer, bundletool). Debug
+builds as split APKs for the edit loop and as one APK equal to `flutter build apk --debug`, profile
+and release APKs, one APK per ABI, and app bundles are variants of that one project. BOMs, kapt, KSP
+and any Maven coordinate work, because Gradle resolved them. No Gradle file is read by the rules,
+and no Gradle runs in a build. See [docs/android-model.md](docs/android-model.md).
 
 ### iOS native (SwiftPM) dependencies
 
@@ -482,7 +448,7 @@ What a plain consumer's module graph pulls in, by feature. Floors are what `rule
 |---|---|---|
 | Every app | `ai_rules_dart` 0.28.3 (repo_name `rules_dart`; the `Mivr` fork release, taken via `archive_override` above), `bazel_skylib`, `platforms`, `package_metadata` | Dart compilation, hooks, codegen. |
 | iOS / macOS bundles | `rules_apple` ≥ 4.5.3, `rules_swift`, `apple_support`, `rules_cc` | 4.5.3 is the proven floor: `e2e/min_versions` pins it exactly and builds both Apple legs. `rules_swift`/`apple_support` float to the graph's maxima (4.5.3 accepts Swift at compatibility level 3). |
-| Android APK | `rules_android` 0.8.0, `rules_kotlin`, `rules_java`, `rules_jvm_external` 7.1, `rules_go` ≥ 0.59.0 | 0.8.0 is the floor: the signing overlay reads `rules_android`'s `apk_signing_method` flag, which exists only in 0.8.0+. The pinned `go_sdk.download` (Go 1.26.2, checksummed) in `rules_flutter`'s `MODULE.bazel` applies to every consumer without its own `go_sdk` block — it sorts before `rules_android`'s bundled unpinned 1.22.4 whatever order the root lists the modules in, while a root `go_sdk` block still wins; plain consumers fetch no Go SDK until a Go toolchain resolves. The `.bazelrc` Java settings above are required, and the build host needs `unzip` and `python3` for the AAR extractors. |
+| Android (APK, bundle, AAR) | `rules_kotlin` ≥ 2.3.0, `rules_java` | The app's Android side is built from its pinned Gradle model with AGP's own tools, fetched by the hashes in the pin: no `rules_android`, no `rules_jvm_external`, no Maven lock file and no Go toolchain. `rules_kotlin` compiles the Kotlin of the app and its plugins on the standard library Gradle resolved; 2.3.0 is the oldest release whose compiler reads the Kotlin 2.4.0 of a Flutter 3.47 app, and each workspace declares the release it wants (`e2e/min_versions` builds on the floor). |
 | xtool Darwin backend (opt-in) | `llvm` 0.8.19, exec-host toolchain archive only | Needs only `flutter.darwin_sdk(url = ..., sha256 = ...)` or `flutter.darwin_sdk(path = ...)` in the root module — no other `MODULE.bazel` lines. Plain consumers fetch no LLVM archive and register no LLVM toolchain (see `docs/dependencies.md`). |
 | Repository tools | Resolved inside `rules_flutter` | `rules_flutter_tool_deps` is the ruleset's own isolated `pub.from_lock` hub in rules_dart's `pub` extension, shipped with its plan, so a consumer makes no pub request for it and never names it. |
 | No feature | No `rules_python` | The iOS screenshot/tunnel helpers are `dart_binary` drivers over a host `python3` (a documented host prerequisite like Xcode), so neither this repo's graph nor any consumer's contains `rules_python`. |
@@ -1038,196 +1004,62 @@ An extension can have a higher `minimum_os_version` than the app. rules_apple ac
 
 ### Android
 
-Run `flutter create --platforms=android .` first so `android/app/src/main/` exists with its manifest, resources, and Kotlin sources.
+```starlark
+# MODULE.bazel
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
+
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
+
+register_toolchains("@android_model//:kotlin_toolchain")
+```
 
 ```starlark
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
-
-flutter_android_app(
-    name = "my_app_android",
-    application = ":my_app",
-    package_name = "com.example.myapp",
-)
-```
-
-Add these to `MODULE.bazel`:
-
-```starlark
-bazel_dep(name = "rules_android_ndk", version = "0.1.5")
-
-use_repo(flutter, "deps", "flutter_toolchains", "flutter_android_engine_arm64")
-
-# The NDK CC toolchain, used for native and FFI deps built for Android and
-# to strip the engine's native libraries, as a Gradle build does.
-android_ndk_repository_extension = use_extension(
-    "@rules_android_ndk//:extension.bzl",
-    "android_ndk_repository_extension",
-)
-use_repo(android_ndk_repository_extension, "androidndk")
-register_toolchains("@androidndk//:all")
-```
-
-**Environment variables.** Two are needed, and both are read by repository rules while Bazel fetches:
-
-| Variable | Value | Read by |
-|---|---|---|
-| `ANDROID_HOME` | The SDK root, for example `~/Library/Android/sdk`. | `rules_android` |
-| `ANDROID_NDK_HOME` | A versioned NDK directory, for example `$ANDROID_HOME/ndk/28.2.13676358`. | `rules_android_ndk` |
-
-`ANDROID_NDK_HOME` has to name the versioned directory, not the `ndk/` folder above it. Pointing at the parent fails with a message that mentions neither the variable nor the mistake:
-
-```
-Error in readdir: can't readdir(), not a directory:
-  .../Android/sdk/ndk/toolchains/llvm/prebuilt/darwin-x86_64
-```
-
-Exporting the variables in your shell works. To put them in `.bazelrc`, use `--repo_env`. `--action_env` only reaches build actions, and repository rules never see it:
-
-```bazelrc
-common --repo_env=ANDROID_HOME=/path/to/Android/sdk
-common --repo_env=ANDROID_NDK_HOME=/path/to/Android/sdk/ndk/28.2.13676358
-```
-
-**Persistent workers.** No Android worker flag is enabled: the preset and `e2e/android_example/.bazelrc` leave aapt2, desugar and dex at Bazel's defaults, because the gain was not measured (see [docs/perf-android-workers.md](docs/perf-android-workers.md)). Nothing needs turning off. To try workers yourself, add the flags to your own `.bazelrc.user`, and remove them to go back.
-
-With `ANDROID_NDK_HOME` unset, the build stops during fetch:
-
-```
-ERROR: An error occurred during the fetch of repository
-  'rules_android_ndk++android_ndk_repository_extension+androidndk':
-  Error in fail: Either the ANDROID_NDK_HOME environment variable or the
-  path attribute of android_ndk_repository must be set.
-```
-
-No platform flags are needed to build. `flutter_android_app` transitions the application, including its AOT compile and FFI deps, to the Android platform for its `android_abi`:
-
-```sh
-bazel build //:my_app_android
-```
-
-**Pure Go host tools.** `flutter_android_app` builds rules_android's Go host tools in rules_go pure mode: without a C++ toolchain, so the hermetic LLVM runtimes are never compiled from source. The APK is unchanged (only the host tools' own binaries differ). The setting is scoped to the app — desktop builds and your own Go targets keep their configuration. Opt out with `--@rules_flutter//flutter:android_pure_go=false`; you need that only if the app's own subtree contains cgo Go code, which pure mode cannot compile. Hand-assembled Tier-2 `android_binary` targets are unaffected either way: add the global `--@rules_go//go/config:pure=true` yourself if you want the same saving there and have no cgo Go code.
-
-**Release signing.** The APK signs with the debug keystore, as an `android_binary` does. In debug builds (`-c dbg`), the default signature scheme is `v2` alone when `minSdkVersion` is 24 or higher, falling back to `v1_v2` below 24 (the repo's minimum SDK `21` requires v1 JAR signatures to install on Android API 21–23); an explicit `@rules_android//flags:apk_signing_method` flag overrides this default. To sign the APK with a release key, pass `keystore` (a `.jks` or PKCS#12 `.p12` file) together with `keystore_password_file` and `key_alias`; set `key_password_file` as well when the key has its own password. Both passwords travel as `file:` references to file inputs, so their text never appears on the command line. When `key_password_file` is unset, `--key-pass` is omitted and apksigner unlocks the key with the keystore password. Only each file's first line is read, so end it with a newline. A `keystore` without its password file or alias fails analysis naming the missing attribute. When `keystore` is unset, the `//flutter:android_release_keystore`, `//flutter:android_release_keystore_password_file` and `//flutter:android_release_key_alias` flags supply the same three values, so CI can inject a secret without editing BUILD files; an explicit attribute always wins over its flag. Every secret setting must name a target with exactly one file: a flag or attribute pointing at an empty or multi-file target fails analysis naming the setting, the target and the file count, instead of silently falling back to debug signing. Never hide a secret behind an `allow_empty` glob — a CI secret that was never written would otherwise have shipped a debug-signed release. Google Play requires an Android App Bundle for new apps, not an APK: build one with `flutter_android_aab` (see "Android App Bundle (AAB) for Google Play" below).
-
-The release signing action always runs locally (`no-remote`): Bazel never uploads the keystore or the password files to a remote executor or a remote cache. A password file's content digest would otherwise land in the shared action cache, an execution log or a build event stream, where it is an offline brute-force oracle for a human-chosen password. Keep the secrets out of version control — have CI write them to gitignored files and point the flags at those — and out of remote and disk caches: a secret checked into the source tree is still an action input whose digest is recorded in the local disk cache and in any build event output you keep.
-
-```sh
-# //secret is a gitignored directory the CI job populates, never committed:
-bazel build //:my_app_android \
-  --@rules_flutter//flutter:android_release_keystore=//secret:upload \
-  --@rules_flutter//flutter:android_release_keystore_password_file=//secret:store_pass \
-  --@rules_flutter//flutter:android_release_key_alias=upload
-```
-
-| Attribute | Description |
-|---|---|
-| `application` | A `flutter_application` target. Required. |
-| `package_name` | The Android package name, for example `"com.example.myapp"`. Required. |
-| `app_name` | Display name. Defaults to the target name. |
-| `android_abi` | `"arm64"` (default) or `"x64"`. Selects the engine and the Android platform. |
-| `min_sdk_version` | Minimum Android SDK version. |
-| `target_sdk_version` | Target Android SDK version. |
-| `manifest` | A manifest you wrote yourself, used verbatim. Placeholders like `${applicationName}` are not substituted, so do not pass `flutter create`'s own manifest here; let the macro discover that one. |
-| `debug_manifest` | A variant manifest whose permissions merge into `-c dbg` builds only. `None` (default) discovers `android/app/src/debug/AndroidManifest.xml`. A label overrides discovery. `False` disables variant handling. |
-| `profile_manifest` | The same for profile builds. `None` (default) discovers `android/app/src/profile/AndroidManifest.xml`. |
-| `permissions` | Permission names added to the manifest in every compilation mode, for example `["android.permission.INTERNET"]`. See [Release builds and permissions](#release-builds-and-permissions). |
-| `keystore` | Release keystore (`.jks` or PKCS#12 `.p12`) signing the APK instead of the debug key. Needs `keystore_password_file` and `key_alias`. See [Release signing](#release-signing). |
-| `keystore_password_file` | File holding the keystore password, read by apksigner through `--ks-pass file:<path>`. Falls back to the `//flutter:android_release_keystore_password_file` flag. |
-| `key_alias` | Alias of the signing key inside `keystore`. Falls back to the `//flutter:android_release_key_alias` flag. |
-| `key_password_file` | File holding the signing key's own password, read through `--key-pass file:<path>`. When unset, `--key-pass` is omitted and the keystore password unlocks the key. |
-| `analyze_size` | Emit an instructions-size JSON breakdown (`<name>_size.json`) from `gen_snapshot`. Included in default outputs and exposed via the `analyze_size` output group. Default `False`. |
-| `multidex` | Defaults to `"native"`. |
-
-**Split APKs (debug).** In a debug build `flutter_android_app` can also emit the Dart payload (`flutter_assets/`, including the kernel blob) as its own split APK, and everything else (engine, dex, resources, manifest, native libraries) as a base APK. Both are signed with the app's signing configuration. They are two output groups, not default outputs, and a release build leaves both empty:
-
-```
-bazel build //:my_app_android -c dbg --output_groups=base_apk,payload_apk
-```
-
-A Dart edit changes only the payload split, so the base APK's bytes, and the inputs of its signing action, stay the same and the base is not re-signed. The single `<name>.apk` stays the default output and is what a release build produces.
-
-**Code-size analysis.** Set `analyze_size = True` on `flutter_android_app` to pass `--print-instructions-sizes-to` to `gen_snapshot` and produce a `<name>_size.json` instruction-size breakdown. The file is a default output and also readable through the `analyze_size` output group:
-
-```starlark
-flutter_android_app(
-    name = "my_app_android",
-    application = ":my_app",
-    package_name = "com.example.myapp",
-    analyze_size = True,
-)
-```
-
-Fetch it directly with:
-
-```sh
-bazel build //:my_app_android --output_groups=analyze_size
-```
-
-`analyze_size` works in every compilation mode that runs `gen_snapshot` (release and profile builds); in debug mode, where `gen_snapshot` does not run, it fails analysis.
-
-<details>
-<summary>Composable rules</summary>
-
-```starlark
-load("@rules_flutter//flutter:android.bzl",
-    "flutter_android_bundle",
-    "flutter_android_engine",
-    "flutter_android_manifest_gen",
-    "flutter_android_manifest_merge",
-    "flutter_android_permissions_manifest",
-    "flutter_android_runner_lib_gen")
-load("@rules_android//android:rules.bzl", "android_binary")
-
-flutter_android_bundle(name = "my_bundle", application = ":my_app")
-flutter_android_engine(name = "my_engine")
-flutter_android_manifest_gen(name = "my_manifest", package_name = "com.example.myapp")
-
-flutter_android_runner_lib_gen(
-    name = "my_runner",
-    package_name = "com.example.myapp",
-    engine = ":my_engine",
-)
-
-android_binary(
-    name = "my_apk",
-    manifest = ":my_manifest",
-    multidex = "native",
-    deps = [":my_bundle_native_libs", ":my_engine", ":my_runner"],
-)
-```
-
-`flutter_android_bundle` output groups:
-
-| Group | Contents |
-|---|---|
-| `native_libs` | `libapp.so` (AOT code) plus any `native_deps` libraries |
-| `flutter_assets` | The `flutter_assets/` tree |
-| `mobile_install` | JNI-structured symlinks and assets for `bazel mobile-install` |
-
-</details>
-
-#### Android App Bundle (AAB) for Google Play
-
-Google Play requires an Android App Bundle for new apps. `flutter_android_aab` takes the same `application` and `package_name` attributes as `flutter_android_app` and emits `<name>.aab`. It wires the same runner, plugin registrant and manifest, then builds the bundle with rules_android 0.8.0's public `android_application` macro (`@rules_android//android:rules.bzl`) and a minimal bundle config. The proto-format resource link, the module conversion and `bundletool build-bundle` are that macro's own actions, with the bundletool of its toolchain: the `com.android.tools.build:bundletool` Maven artifact locked by version and sha256 in `rules_android_maven_install.json`, so a missing or wrong checksum fails the build. The native libraries per ABI and `flutter_assets` go into the bundle's base module. Like `flutter_android_app`, it needs the Android SDK and NDK. rules_android 0.8.0 is the floor the rule was built against.
-
-```starlark
-load("@rules_flutter//flutter:android.bzl", "flutter_android_aab")
+# BUILD.bazel, beside pubspec.yaml
+load("@android_model//:defs.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application")
 
 flutter_application(name = "my_app", main = "lib/main.dart", deps = [...])
 
-flutter_android_aab(
-    name = "my_app_aab",
-    application = ":my_app",
-    package_name = "com.example.myapp",
-)
+flutter_android_pin(name = "android_pin")
+
+flutter_android_app(name = "app", application = ":my_app")
+
+flutter_android_app(name = "app_release", application = ":my_app", variant = "release")
 ```
 
-`bazel build //:my_app_aab` produces `my_app_aab.aab`. Pass `keystore`, `keystore_password_file` and `key_alias` (and `key_password_file` when the key has its own password), or set the `//flutter:android_release_*` flags, and the bundle is signed with `jarsigner` from the Bazel-managed JDK toolchain; the passwords are read from their files at execution time. **Without a keystore the bundle is unsigned**: the rule never debug-signs a release bundle, so sign it before uploading to Google Play. The `e2e/android_example` workspace runs `bundletool validate` and `bundletool dump manifest` on the produced bundle.
+The app has its stock Android project (`flutter create --platforms=android .`). `bazel run
+//:android_pin` runs the project's own Gradle wrapper once and writes `android_model.json`; check it
+in. A build takes `android.jar` and the NDK's `llvm-strip` from the Android SDK (`ANDROID_HOME`, with
+`--repo_env`) and everything else by the hashes in the pin.
+
+| Target | What |
+|---|---|
+| `//:app` | The debug build as split APKs (an edit rewrites its own split); `bazel run //:app_install` sends the changed splits to a device. |
+| `//:app_apk` | The same app as one APK, as `flutter build apk --debug` gives. |
+| `//:app_release_apk` | What `flutter build apk --release` gives; with `split_per_abi = True`, `//:app_release_apk_arm64_v8a` and the like. |
+| `//:app_release_bundle` | What `flutter build appbundle` gives. |
+| `//:app_release_mapping`, `_debug_info`, `_obfuscation_map` | R8's mapping file; the Dart symbols and obfuscation map when the application sets `split_debug_info` and `obfuscate`. |
+| `//:app_release_sign`, `_bundle_sign` | `bazel run` targets that sign a release whose signing configuration is not the debug one, outside the build. |
+
+`flutter_android_app` takes `application`, `variant` (a variant of the Gradle project: `debug`,
+`profile`, `release`, `devRelease`, ...), `abis`, `split_per_abi`, `native_built_elsewhere` and `aars`.
+The application id, manifests, resources, SDK levels, signing configuration, flavors and plugins are
+the Gradle project's. `flutter_android_apk_test` and `flutter_android_bundle_test` (same `defs.bzl`)
+check what was built. Release signing, what differs from the stock outputs, what is not built and
+how it fails, and the note for moving from the removed `android_binary`-based macros are in
+[docs/android-model.md](docs/android-model.md).
+
+`flutter_android_bundle` (`@rules_flutter//flutter:android.bzl`) is the Dart payload alone for one
+ABI: the AOT library, the native libraries of the Dart graph and `flutter_assets`.
 
 #### Android library (AAR) for a native host app
 
-`flutter_android_aar` packages a `flutter_application` as an Android library, for a monorepo whose host app is native Android. It uses no Gradle and no host tool; the archive is made by one action over declared inputs.
+`flutter_android_aar` packages a `flutter_application` as an Android library, for a native Android
+app that embeds a Flutter module (add-to-app). The archive is made by one action over declared
+inputs.
 
 ```starlark
 load("@rules_flutter//flutter:android.bzl", "flutter_android_aar")
@@ -1249,44 +1081,16 @@ flutter_android_aar(
 | `package_name` | The package written to the AAR's `AndroidManifest.xml`. |
 | `android_abi` | `"arm64-v8a"` (default) or `"x86_64"`. An unknown ABI fails analysis naming `android_abi`. |
 
-`<name>.aar` holds `jni/<abi>/libapp.so` (the AOT-compiled Dart library for `android_abi`), `assets/flutter_assets/`, `AndroidManifest.xml`, an empty `classes.jar` and an empty `R.txt`. Only release (`-c opt`) and profile (`--//flutter:profile`) are packaged; a debug build fails analysis naming `flutter_android_aar` and `debug`, because a debug AAR needs the JIT kernel, which this rule does not package.
+`<name>.aar` holds `jni/<abi>/libapp.so` (the AOT-compiled Dart library for `android_abi`),
+`assets/flutter_assets/`, `AndroidManifest.xml`, an empty `classes.jar` and an empty `R.txt`. Only
+release and profile builds: a debug build fails analysis.
 
-Output groups:
-
-| Group | Contents |
-|---|---|
-| `engine_maven` | The pinned release `flutter.jar` for `android_abi` (the Java embedding classes and `libflutter.so`), taken from the `flutter_android_engine_<abi>` repository and its `release_sha256` pin. The rule adds no download and no checksum of its own. Release and profile both use the release `flutter.jar`. |
-
-A host app consumes the AAR with `aar_import` and the engine jar with `java_import`, selecting the group with a filegroup:
-
-```starlark
-load("@rules_android//android:rules.bzl", "aar_import", "android_binary", "android_library")
-load("@rules_java//java:java_import.bzl", "java_import")
-
-filegroup(
-    name = "module_engine",
-    srcs = [":module_aar"],
-    output_group = "engine_maven",
-)
-
-aar_import(name = "module_import", aar = ":module_aar")
-
-java_import(name = "module_engine_import", jars = [":module_engine"])
-
-android_library(
-    name = "host_lib",
-    srcs = glob(["src/**/*.kt"]),
-    deps = [":module_import", ":module_engine_import"],
-)
-
-android_binary(
-    name = "host_app",
-    manifest = "AndroidManifest.xml",
-    deps = [":host_lib"],
-)
-```
-
-Running the host app with the embedded module on an emulator is not covered yet: a later item adds an end-to-end workspace that does it, and the host-side snippet above is not built by CI until then.
+A host app built by Bazel from its own pin carries the AAR with
+`flutter_android_app(aars = [":module_aar"])` and names the Flutter engine and its Java embedding in
+its Gradle file, so that they are in the pin; `e2e/aar_host` is such an app and runs on the emulator
+in its test. See "A Flutter module in a native app" in [docs/android-model.md](docs/android-model.md).
+The `engine_maven` output group still hands out the pinned release `flutter.jar` of the rules' own
+engine repository, for a host that is not built from a pin.
 
 ### Linux
 
@@ -1549,14 +1353,11 @@ flutter_ios_app(
     bundle_id = "com.example.myapp",
     additional_entitlements = ["entitlements/Network.entitlements"],
 )
-
-flutter_android_app(
-    name = "my_app_android",
-    application = ":my_app",
-    package_name = "com.example.myapp",
-    permissions = ["android.permission.INTERNET"],
-)
 ```
+
+On Android the permission goes where a stock app has it: `<uses-permission
+android:name="android.permission.INTERNET"/>` in `android/app/src/main/AndroidManifest.xml`. The
+manifests of the variant are merged as AGP merges them.
 
 where `entitlements/Network.entitlements` is an ordinary plist:
 
@@ -1668,7 +1469,7 @@ flutter_application(
 | `link_hook_assets` | The data assets packages' link hooks emit, each `package:<package>/<name>`. See [Link hooks](#link-hooks). |
 | `min_os_version` | Minimum Apple deployment target, passed to `gen_snapshot` as `--macho-min-os-version`. |
 
-**Obfuscated releases.** `obfuscate` renames Dart identifiers and forces `--strip`, so pair it with `split_debug_info` to keep the symbols for deobfuscation. `gen_snapshot` also writes an obfuscation map next to the snapshot; fetch it with `bazel build :my_app --output_groups=obfuscation_map` (or read `FlutterApplicationInfo.obfuscation_map`). For an Android build, read the `debug_info` (`.symbols`) and `obfuscation_map` output groups of the `flutter_android_bundle` (`__<name>_bundle` of a `flutter_android_app`): they hold the files of the build that ships in the APK. `extra_gen_snapshot_options` is an allow-list: only flags that read or write no file and change neither the snapshot kind, outputs, target nor debugging info. `--save-obfuscation-map` and `--save-debugging-info` fail analysis — use `obfuscate` and `split_debug_info` instead; `--print-instructions-sizes-to` fails analysis — use `analyze_size = True` instead — and `--no-strip` fails with `obfuscate`.
+**Obfuscated releases.** `obfuscate` renames Dart identifiers and forces `--strip`, so pair it with `split_debug_info` to keep the symbols for deobfuscation. `gen_snapshot` also writes an obfuscation map next to the snapshot; fetch it with `bazel build :my_app --output_groups=obfuscation_map` (or read `FlutterApplicationInfo.obfuscation_map`). For an Android build, `<name>_debug_info` (`.symbols`) and `<name>_obfuscation_map` of a profile or release `flutter_android_app` hold the files of the build that ships in the APK, per ABI. `extra_gen_snapshot_options` is an allow-list: only flags that read or write no file and change neither the snapshot kind, outputs, target nor debugging info. `--save-obfuscation-map` and `--save-debugging-info` fail analysis — use `obfuscate` and `split_debug_info` instead; `--print-instructions-sizes-to` fails analysis — use `analyze_size = True` instead — and `--no-strip` fails with `obfuscate`.
 
 **Application flavors.** The `flavor` attribute selects the application flavor, defining `FLUTTER_APP_FLAVOR=<flavor>` in every compile mode (read via `appFlavor` from `package:flutter/services.dart`) and bundling the pubspec's assets as `flutter build --flavor` does (unconditional entries and matching flavor entries are kept; non-matching entries are omitted). Declare one target per flavor, and let platform app targets wrap each flavor's application target:
 
@@ -1994,7 +1795,7 @@ flutter_plugin(
 | `dart_plugin_class` | The Dart class registered with the engine at startup. |
 | `plugin_class` | The native plugin class, for plugins with a native registration. |
 | `android_package` | The Java package of the Android `plugin_class`. Required when `platforms` lists `android` with a `plugin_class`. |
-| `android_libs` | `flutter_android_plugin_library` targets auto-wired into `flutter_android_app` and `flutter_integration_test(platform = "android")`. |
+| (Android) | A plugin's Kotlin or Java is its own Android project (`android/build.gradle`), built as part of the Gradle model of the app that depends on the package. |
 | `linux_libs` | `flutter_linux_plugin_library` targets auto-wired into `flutter_linux_app` and `flutter_integration_test(platform = "linux")`. |
 | `native_deps` | Shared libraries bundled for `dart:ffi`. |
 | `code_assets` | `dart_code_asset` targets the package's Dart binds with `@Native`, usually inside a `select()` on platform. A package's own `hook/build.dart` needs none. |
@@ -2003,7 +1804,7 @@ flutter_plugin(
 | `package_name`, `language_version`, `version` | The package's name, language version, and version. |
 | `link_hook` | The package's `hook/link.dart`. See [Link hooks](#link-hooks). `flutter_library` takes it too. |
 
-A plugin's native code is its own target. Swift goes in a `flutter_apple_plugin_library` per platform, passed as `apple_libs`. Kotlin or Java goes in a `flutter_android_plugin_library` passed as `android_libs` on `flutter_plugin` (or listed directly in `flutter_android_app(deps = ...)`), which packages it, registers its plugin class and merges its `manifest` (receivers, services, permissions) into the app's. Its `flutter_engine` is a `flutter_android_engine(neverlink = True)`: the plugin compiles against the engine and the app ships its own, of the app's ABI. `e2e/plugin_example/glass_plugin` and `e2e/integration_android/android_greeting_plugin` show both.
+A plugin's native code is its own target. Swift goes in a `flutter_apple_plugin_library` per platform, passed as `apple_libs`. Kotlin or Java stays in the plugin's stock Android project (`android/build.gradle`, its manifest with receivers, services and permissions): an app that names the package as a path dependency has that project in its Gradle build and so in its pin, and the pin's targets compile it, register its plugin class through the Flutter tool's registrant and merge its manifest. `e2e/plugin_example/glass_plugin` and `e2e/integration_android/android_greeting_plugin` show both.
 
 A plugin may mix Objective-C and Swift in one `flutter_apple_plugin_library`. The Swift half compiles into the `<module_name>` module and publishes `<module_name>-Swift.h`; the Objective-C half compiles after it and reaches Swift with `#import "<module_name>-Swift.h"`. Only the declarations Swift marks `@objc` appear in that header. In the other direction, Swift reaches the plugin's Objective-C declarations through a `<module_name>-Bridging-Header.h` or by importing the headers-only `<module_name>_objc` Clang module. The public target still carries both halves' objects, headers, `SwiftInfo` and `FlutterApplePluginInfo`, so `apple_libs` on `flutter_plugin` and the runner link them unchanged. Pure-Swift and pure-ObjC plugins keep their single-layer shape. `e2e/plugin_example/mixed_plugin` is the build fixture.
 

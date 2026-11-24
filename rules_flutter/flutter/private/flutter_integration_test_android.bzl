@@ -152,7 +152,6 @@ def _android_integration_app_providers(ctx, setup, sources, native_assets, kerne
             apple_privacy_manifests = sources.plugins.apple_privacy_manifests,
             plugins = sources.plugins.all_plugins,
             apple_plugin_libraries = sources.plugins.apple_plugin_libraries,
-            android_plugin_libraries = sources.plugins.android_plugin_libraries,
             linux_plugin_libraries = sources.plugins.linux_plugin_libraries,
             windows_plugin_libraries = sources.plugins.windows_plugin_libraries,
         ),

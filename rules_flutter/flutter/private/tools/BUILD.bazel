@@ -9,7 +9,6 @@ load(":flutter_sdk_kernel_binary.bzl", "flutter_sdk_kernel_binary")
 exports_files(
     [
         "android_bundle.dart",
-        "apk_overlay.dart",
         "bundle_app.dart",
         "chmod.dart",
         "code_resources.dart",
@@ -32,11 +31,9 @@ exports_files(
         "macho_ranges.dart",
         "macho_strip.dart",
         "macho_stub.dart",
-        "merge_android_manifests.dart",
         "merge_plists.dart",
         "plist_info.dart",
         "plist_parse.dart",
-        "strip_native_libs.dart",
         "web_guard.dart",
         "web_template.dart",
         "xtool_framework.dart",
@@ -46,10 +43,6 @@ exports_files(
         "xtool_stub.dart",
         "zip_reader.dart",
         "zip_writer.dart",
-        "zlib_raw_match.dart",
-        "zlib_raw_state.dart",
-        "zlib_raw_tables.dart",
-        "zlib_raw_trees.dart",
         "flutter_test_runner.dart",
         "flutter_drive_runner.dart",
         "flutter_integration_test_runner.dart",
@@ -88,14 +81,8 @@ exports_files(
 dart_binary(
     name = "android_bundle",
     srcs = [
-        "apk_overlay.dart",
         "crc32.dart",
-        "zip_reader.dart",
         "zip_writer.dart",
-        "zlib_raw_match.dart",
-        "zlib_raw_state.dart",
-        "zlib_raw_tables.dart",
-        "zlib_raw_trees.dart",
     ],
     compile_mode = "exe",
     main = "android_bundle.dart",
@@ -260,27 +247,9 @@ dart_binary(
 )
 
 dart_binary(
-    name = "merge_android_manifests",
-    compile_mode = "exe",
-    main = "merge_android_manifests.dart",
-    target_compatible_with = HOST_COMPATIBLE,
-    visibility = ["//flutter:__subpackages__"],
-)
-
-dart_binary(
     name = "merge_plists",
     compile_mode = "exe",
     main = "merge_plists.dart",
-    target_compatible_with = HOST_COMPATIBLE,
-    visibility = ["//flutter:__subpackages__"],
-)
-
-dart_binary(
-    name = "strip_native_libs",
-    srcs = ["chmod.dart"],
-    compile_mode = "kernel",
-    main = "strip_native_libs.dart",
-    modular_kernel = False,
     target_compatible_with = HOST_COMPATIBLE,
     visibility = ["//flutter:__subpackages__"],
 )
@@ -368,9 +337,7 @@ _UNIT_TESTS = {
     "macho_payload_floor_test": ("macho_edit.dart", []),
     "macho_section_type_test": ("macho_edit.dart", []),
     "sha256_test": ("sha256.dart", []),
-    "merge_android_manifests_test": ("merge_android_manifests.dart", []),
     "merge_plists_test": ("merge_plists.dart", []),
-    "strip_native_libs_test": ("strip_native_libs.dart", []),
     "chmod_test": ("chmod.dart", []),
     "web_guard_test": (
         "web_guard.dart",
@@ -378,8 +345,6 @@ _UNIT_TESTS = {
     ),
     "web_template_test": ("web_template.dart", []),
     "xtool_pack_test": ("xtool_pack.dart", []),
-    "apk_overlay_test": ("apk_overlay.dart", []),
-    "zlib_raw_static_test": ("zlib_raw_trees.dart", []),
     "flutter_test_runner_test": (
         "flutter_test_runner.dart",
         [
@@ -433,28 +398,8 @@ _UNIT_TESTS = {
 # runner carries it too.
 _TOOL_SRCS = {
     "android_bundle.dart": [
-        "apk_overlay.dart",
         "crc32.dart",
-        "zip_reader.dart",
         "zip_writer.dart",
-        "zlib_raw_match.dart",
-        "zlib_raw_state.dart",
-        "zlib_raw_tables.dart",
-        "zlib_raw_trees.dart",
-    ],
-    "apk_overlay.dart": [
-        "crc32.dart",
-        "zip_reader.dart",
-        "zip_writer.dart",
-        "zlib_raw_match.dart",
-        "zlib_raw_state.dart",
-        "zlib_raw_tables.dart",
-        "zlib_raw_trees.dart",
-    ],
-    "zlib_raw_trees.dart": [
-        "sha256.dart",
-        "zlib_raw_state.dart",
-        "zlib_raw_tables.dart",
     ],
     "xtool_pack.dart": [
         # xtool_pack_test reads produced archives back itself, so the test
@@ -555,7 +500,6 @@ _TOOL_SRCS = {
     ],
     "web_guard.dart": ["directive_guard.dart"],
     "bundle_app.dart": ["chmod.dart"],
-    "strip_native_libs.dart": ["chmod.dart"],
 }
 
 _TEST_DATA = {

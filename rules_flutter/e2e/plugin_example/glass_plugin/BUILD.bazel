@@ -1,4 +1,3 @@
-load("@rules_flutter//flutter:android.bzl", "flutter_android_engine", "flutter_android_plugin_library")
 load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
 load("@rules_flutter//flutter:macos.bzl", "flutter_apple_plugin_library")
 
@@ -43,20 +42,5 @@ flutter_apple_plugin_library(
     platform = "ios",
 )
 
-# Compile-only: the app packages its own engine, of its own ABI.
-flutter_android_engine(
-    name = "android_engine",
-    neverlink = True,
-    tags = ["manual"],
-)
-
-# A workspace plugin's Android code goes to the app by hand: the app's
-# automatic wiring covers only plugins from the pub hub.
-flutter_android_plugin_library(
-    name = "glass_plugin_android",
-    srcs = glob(["android/src/main/kotlin/**/*.kt"]),
-    flutter_engine = ":android_engine",
-    java_package = "com.example.glass_plugin",
-    manifest = "android/src/main/AndroidManifest.xml",
-    visibility = ["//visibility:public"],
-)
+# The Android side (android/) is a stock plugin project: an app that depends on this package by path
+# has it in its Gradle build, and so in its pin (see //glass_app).

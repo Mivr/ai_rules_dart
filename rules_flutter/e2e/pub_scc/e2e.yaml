@@ -1,5 +1,8 @@
 schema: mivr-e2e-spec/1
+# No Android leg: cycle_a and cycle_b are Android plugins whose pubspecs name each other, and the stock
+# Gradle build refuses them ("Circular dependency between the following tasks"), so there is no stock
+# output to be equal to. The pin step reports the cycle. See BUILD.bazel.
 commands:
   - name: test all targets
     run: bazel test //... --test_output=errors
-    min_tests_executed: 5
+    min_tests_executed: 2

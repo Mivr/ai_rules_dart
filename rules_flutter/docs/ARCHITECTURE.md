@@ -47,12 +47,7 @@ a facade. In the tree:
   create, for example `flutter/private/flutter_sdk_package.bzl:54`. That text is
   written into consumer-side repositories; it is not a load from this tree.
 
-Two real exceptions exist today. Neither is a pattern to copy:
-
-- `flutter/private/flutter_integration_android_app.bzl:7` loads
-  `//flutter:android.bzl` for two version constants.
-- `flutter/private/flutter_integration_test.bzl:65` loads the same file for the
-  same constants.
+No private file loads a public entry point today.
 
 Outside `flutter/`, this repository has two places that load private files:
 `dart/flutter_sdk_binary.bzl:13` loads `//flutter/private:run_home.bzl`, and
@@ -300,8 +295,8 @@ accepts only targets that provide `FlutterApplicationInfo`:
   does not read `FlutterApplicationInfo`. See the note above.
 
 Each platform's `*_registrant` rule generates the plugin registrant for its
-platform. Platform rules add the host packaging: manifest merging
-(`flutter/private/flutter_android_manifest_merge.bzl`), plist merging
+platform (Android's is the Flutter tool's own, carried by the app's pinned
+Gradle model). Platform rules add the host packaging: plist merging
 (`flutter/private/flutter_plist_merge.bzl`), and the runner libraries
 (`flutter_linux_runner_lib`, `flutter_windows_runner_lib`).
 

@@ -62,6 +62,7 @@ final class Bundle {
           if (jniExcludes.matches(name)) continue;
           Path first = natives.get(name);
           if (first == null) {
+            Apk.checkElf(name, file);
             natives.put(name, file);
           } else if (!jniPickFirsts.matches(name) && Files.mismatch(first, file) != -1) {
             throw new IOException(name + " comes from " + first + " and from " + file + " with different content; "
@@ -73,7 +74,11 @@ final class Bundle {
           Apk.ZipIn in = new Apk.ZipIn(Paths.get(part));
           open.add(in);
           for (Apk.Entry e : in.entries) {
-            if (!e.name.endsWith("/") && !z.has(e.name)) z.copy(in, e, e.name, 1);
+            if (e.name.endsWith("/") || z.has(e.name)) continue;
+            boolean lib = e.name.startsWith("lib/") && e.name.endsWith(".so");
+            if (lib && jniExcludes.matches(e.name)) continue;
+            if (lib) Apk.checkElf(e.name, in.content(e));
+            z.copy(in, e, e.name, 1);
           }
         }
         for (String spec : a.all("--root-entry")) {

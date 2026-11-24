@@ -134,6 +134,7 @@ public final class AndroidTool {
         case "pincheck": return PinCheck.run(rest, err);
         case "gradle-aar": return GradleAar.run(rest, err);
         case "aarparts": return Aar.parts(rest, err);
+        case "nativedir": return Apk.nativeDir(rest, err);
         default:
           err.println("unknown command " + tool);
           return 2;

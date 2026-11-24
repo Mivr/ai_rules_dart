@@ -99,7 +99,7 @@ void main() {
 
   test('a rule whose scope has no files is a setup error, not a pass', () {
     expect(
-      () => _lint({'rules_flutter/e2e/app/MODULE.bazel': null}),
+      () => _lint({'rules_dart/dart/toolchain.bzl': null}),
       throwsA(isA<SetupException>()),
     );
   });

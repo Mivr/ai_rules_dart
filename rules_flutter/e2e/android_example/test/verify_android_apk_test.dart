@@ -55,7 +55,7 @@ void main() {
     exit(1);
   }
 
-  final apkPath = '$testSrcDir/$testWorkspace/app.apk';
+  final apkPath = '$testSrcDir/$testWorkspace/app_profile_apk.apk';
   if (!File(apkPath).existsSync()) {
     stderr.writeln('APK not found at $apkPath');
     exit(1);

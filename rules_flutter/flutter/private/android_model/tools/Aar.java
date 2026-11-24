@@ -35,7 +35,9 @@ final class Aar {
           hasClasses = true;
         } else if (n.startsWith("jni/") && n.endsWith(".so")) {
           // Stored: the packer puts a stored library at a page boundary.
-          part.add("lib/" + n.substring(4), in.content(e), Apk.STORE, 4);
+          byte[] lib = in.content(e);
+          Apk.checkElf("lib/" + n.substring(4), lib);
+          part.add("lib/" + n.substring(4), lib, Apk.STORE, 4);
         } else if (n.startsWith("assets/")) {
           part.copy(in, e, n, 4);
         } else if (n.startsWith("res/") || n.startsWith("libs/") || (n.equals("R.txt") && e.usize > 0)) {

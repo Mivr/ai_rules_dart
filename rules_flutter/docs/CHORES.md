@@ -98,8 +98,7 @@ in the table; a bump leaves it alone.
 - Every `e2e/*/MODULE.bazel` and `e2e/_overlay_tests/*/MODULE.bazel` — these
   declare their own `bazel_dep`s rather than inheriting the root's, so a floor
   change leaves them behind. `bazel_skylib`, `rules_cc` and `apple_support`
-  appear in most; `rules_android`, `rules_kotlin`, `rules_java`,
-  `rules_jvm_external` and `rules_go` in the three Android ones; `llvm` only
+  appear in most; `rules_kotlin` in the Android ones; `llvm` only
   in `cross_compile_example`
 
 **Procedure**:

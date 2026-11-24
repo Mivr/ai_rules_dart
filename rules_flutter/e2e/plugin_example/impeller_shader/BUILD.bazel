@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_bundle")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application")
 load("@rules_flutter//flutter:ios.bzl", "flutter_ios_app", "flutter_ios_simulator_build_test")
 load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app")
@@ -35,9 +35,9 @@ flutter_ios_app(
     tags = ["manual"],
 )
 
-flutter_android_app(
+# The app's Dart payload for Android (the shaders compiled for it), without an Android project.
+flutter_android_bundle(
     name = "app_android",
-    package_name = "com.example.impellershader",
     application = ":app_flutter",
     tags = ["manual"],
 )

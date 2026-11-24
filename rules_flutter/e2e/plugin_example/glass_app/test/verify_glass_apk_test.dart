@@ -1,4 +1,4 @@
-/// Verifies that `//glass_app:glass_android` packages `//glass_plugin` and
+/// Verifies that `//glass_app:glass_android_apk` packages `//glass_plugin` and
 /// none of the unrelated pub-lock plugins (`record_android`, `jni`, etc.):
 /// `//glass_plugin`'s boot receiver, permission and plugin class are in the
 /// APK, while `record_android`'s `RECORD_AUDIO` permission and `jni`'s DEX
@@ -31,7 +31,7 @@ void main() {
   final base =
       '${Platform.environment['TEST_SRCDIR']}/'
       '${Platform.environment['TEST_WORKSPACE']}';
-  final apk = '$base/glass_app/glass_android.apk';
+  final apk = '$base/glass_app/glass_android_apk.apk';
   final tmp = Directory.systemTemp.createTempSync('glass_apk_');
   try {
     final unzip = Process.runSync('unzip', ['-q', apk, '-d', tmp.path]);
@@ -57,7 +57,7 @@ void main() {
     )) {
       failed = true;
     }
-    if (File('${tmp.path}/lib/arm64-v8a/libdartjni.so').existsSync()) {
+    if (File('${tmp.path}/lib/x86_64/libdartjni.so').existsSync()) {
       stderr.writeln('FAIL: unused lock plugin libdartjni.so packaged in APK');
       failed = true;
     } else {

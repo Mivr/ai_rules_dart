@@ -36,10 +36,6 @@ load(
 )
 load("//flutter/private:download.bzl", "pinned_download")
 load(
-    "//flutter/private:flutter_pub_android_package.bzl",
-    "fail_on_outside_package_path",
-)
-load(
     "//flutter/private:flutter_pub_apple.bzl",
     "detect_apple_plugin_sources",
 )
@@ -68,6 +64,7 @@ load(
 )
 load(
     "//flutter/private:flutter_pub_path.bzl",
+    "fail_on_outside_package_path",
     "is_absolute_lock_path",
     "normalize_realpath",
 )
@@ -82,7 +79,6 @@ load(
 load(
     "//flutter/private:flutter_pub_scc_build.bzl",
     "adapt_scc_member_overlay_content",
-    "make_scc_member_android_build_content",
     "make_scc_member_build_content",
     "make_scc_merged_spoke_build_content",
     "scc_flutter_test_package_bzl_content",
@@ -309,11 +305,11 @@ def _member_target_aliases(name, member_build):
     return aliases
 
 def _emit_single_member_build(ctx, name, p, plugin_block, asset_block):
-    """Writes `<name>/BUILD.bazel` and `<name>/android/BUILD.bazel` for one member."""
+    """Writes `<name>/BUILD.bazel` for one member."""
     mctx = _member_spoke_ctx(ctx, name)
     hooks = _detect_member_hooks(ctx, name)
     assets = spoke_asset_inputs(mctx, name, asset_block)
-    overlay_content, overlay_android_content = resolve_overlay_roots(
+    overlay_content = resolve_overlay_roots(
         mctx,
         ctx.attr.overlay_roots,
         name,
@@ -343,13 +339,6 @@ def _emit_single_member_build(ctx, name, p, plugin_block, asset_block):
             overlay_content,
         )
         ctx.file(name + "/BUILD.bazel", member_build)
-        ctx.file(
-            name + "/android/BUILD.bazel",
-            make_scc_member_android_build_content(
-                package_name = name,
-                overlay_content = overlay_android_content,
-            ),
-        )
         return _member_target_aliases(name, member_build)
 
     apple = None
@@ -379,13 +368,6 @@ def _emit_single_member_build(ctx, name, p, plugin_block, asset_block):
     if apple != None:
         member_build = apply_apple_native_deps(mctx, name, apple, member_build)
     ctx.file(name + "/BUILD.bazel", member_build)
-
-    android_build = make_scc_member_android_build_content(
-        package_name = name,
-        hub_name = ctx.attr.hub_name,
-        android_plugin = bool(plugin_block.platforms.get("android", {})),
-    )
-    ctx.file(name + "/android/BUILD.bazel", android_build)
     return _member_target_aliases(name, member_build)
 
 def _emit_scc_member_builds(ctx, member_names, parsed):

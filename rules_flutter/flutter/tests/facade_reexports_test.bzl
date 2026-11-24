@@ -8,7 +8,7 @@ and asserted non-None.
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("@rules_dart//dart:providers.bzl", "DartTestRunnerInfo", "DartTestRunnerSnapshotInfo")
-load("//flutter:android.bzl", "flutter_android_engine", "flutter_android_engine_jar")
+load("//flutter:android.bzl", "android_model", "flutter_android_aar", "flutter_android_bundle", "flutter_android_pin")
 load("//flutter:ios.bzl", "flutter_ios_framework")
 load("//flutter:macos.bzl", "flutter_apple_plugin_objc_library", "flutter_apple_plugin_objc_settings")
 load("//flutter:providers.bzl", "FlutterLinuxPluginInfo", "FlutterWindowsPluginInfo")
@@ -36,10 +36,12 @@ load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 visibility(["//flutter/tests/..."])
 
 def _android_facade_test_impl(ctx):
-    """Asserts Android engine symbols are exported on `//flutter:android.bzl`."""
+    """Asserts the Android symbols are exported on `//flutter:android.bzl`."""
     env = unittest.begin(ctx)
-    asserts.true(env, flutter_android_engine != None)
-    asserts.true(env, flutter_android_engine_jar != None)
+    asserts.true(env, android_model != None)
+    asserts.true(env, flutter_android_pin != None)
+    asserts.true(env, flutter_android_aar != None)
+    asserts.true(env, flutter_android_bundle != None)
     return unittest.end(env)
 
 def _apple_facades_test_impl(ctx):

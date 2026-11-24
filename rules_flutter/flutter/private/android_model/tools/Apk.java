@@ -301,6 +301,74 @@ final class Apk {
     return dot > slash ? name.substring(dot + 1).toLowerCase(java.util.Locale.ROOT) : "";
   }
 
+  /** The ELF machine (`e_machine`) of each Android ABI's native libraries. */
+  static final Map<String, Integer> ELF_MACHINE = Map.of("armeabi-v7a", 40, "arm64-v8a", 183, "x86", 3, "x86_64", 62);
+
+  /**
+   * A native library packaged as `lib/<abi>/<name>` must be an ELF file of that ABI's machine: a
+   * library built for another platform (the host's, when a transition is missing) would be packaged
+   * without complaint and fail on the device, at `dlopen`.
+   */
+  static void checkElf(String entry, byte[] head) throws IOException {
+    String[] parts = entry.split("/");
+    Integer want = parts.length == 3 ? ELF_MACHINE.get(parts[1]) : null;
+    if (want == null) return;
+    boolean elf = head.length >= 20 && head[0] == 0x7f && head[1] == 'E' && head[2] == 'L' && head[3] == 'F';
+    int machine = elf ? ((head[18] & 0xff) | ((head[19] & 0xff) << 8)) : -1;
+    if (machine != want) {
+      throw new IOException(entry + " is not a native library of " + parts[1] + ": "
+          + (elf ? "its ELF machine is " + machine + ", and " + parts[1] + " is " + want : "it is not an ELF file")
+          + ". A library in an Android app must be built for the app's ABI.");
+    }
+  }
+
+  static void checkElf(String entry, Path file) throws IOException {
+    byte[] head = new byte[20];
+    int n;
+    try (java.io.InputStream in = Files.newInputStream(file)) {
+      n = in.readNBytes(head, 0, 20);
+    }
+    checkElf(entry, n == 20 ? head : new byte[0]);
+  }
+
+  /**
+   * `nativedir --abi <abi> --strip <llvm-strip> --out part.zip <dir>...`: the native libraries of
+   * directories whose content is known only when it is built (the libraries of build hooks), as one
+   * zip part under `lib/<abi>/`, each checked to be of the ABI and stripped as AGP strips.
+   */
+  static int nativeDir(List<String> args, java.io.PrintStream err) throws Exception {
+    AndroidTool.Args a = new AndroidTool.Args(args, List.of());
+    String abi = a.one("--abi");
+    String strip = a.one("--strip");
+    Path tmp = Files.createTempFile(Paths.get(a.one("--out")).toAbsolutePath().getParent(), "strip", ".so");
+    try (ZipWriter z = new ZipWriter(Paths.get(a.one("--out")))) {
+      for (String dir : a.rest) {
+        List<Path> files;
+        try (Stream<Path> s = Files.walk(Paths.get(dir), java.nio.file.FileVisitOption.FOLLOW_LINKS)) {
+          files = s.filter(Files::isRegularFile).sorted().toList();
+        }
+        for (Path f : files) {
+          String entry = "lib/" + abi + "/" + f.getFileName();
+          if (!entry.endsWith(".so")) {
+            err.println(f + ": a file that is not a shared library (.so) in a directory of native libraries; an APK loads only lib/<abi>/*.so");
+            return 1;
+          }
+          if (z.has(entry)) {
+            err.println(entry + " comes from two directories of native libraries; Android can load only one");
+            return 1;
+          }
+          checkElf(entry, f);
+          Process p = new ProcessBuilder(strip, "--strip-unneeded", "-o", tmp.toString(), f.toString()).inheritIO().start();
+          if (p.waitFor() != 0) return 1;
+          z.add(entry, Files.readAllBytes(tmp), STORE, 4);
+        }
+      }
+    } finally {
+      Files.deleteIfExists(tmp);
+    }
+    return 0;
+  }
+
   /** `zip --out part.zip [--store] name=path ...`: files, or whole directories under a prefix, as one zip part. */
   static void zip(List<String> args) throws Exception {
     AndroidTool.Args a = new AndroidTool.Args(args, List.of("--store", "--release"));
@@ -493,6 +561,7 @@ final class Apk {
           if (jniExcludes.matches(name)) continue;
           Path first = natives.get(name);
           if (first == null) {
+            checkElf(name, file);
             natives.put(name, file);
           } else if (!jniPickFirsts.matches(name) && Files.mismatch(first, file) != -1) {
             throw new IOException(name + " comes from " + first + " and from " + file + " with different content; "
@@ -516,6 +585,7 @@ final class Apk {
             // stored library at a page boundary like any other.
             boolean lib = e.name.startsWith("lib/") && e.name.endsWith(".so");
             if (lib && (jniExcludes.matches(e.name) || (!abis.isEmpty() && !abis.contains(e.name.split("/")[1])))) continue;
+            if (lib) checkElf(e.name, in.content(e));
             z.copy(in, e, e.name, lib && e.method == 0 ? pageAlign : 4);
           }
         }

@@ -28,6 +28,8 @@ typedef _Install = ({
 });
 
 /// Checks every `maven.install` in `<module>/e2e/*` and `<module>/e2e/*/*`.
+/// A tree without any install has nothing to check: the Android workspaces
+/// take their Maven artifacts by hash from a pinned Gradle model.
 ///
 /// Each install must name one `lock_file` inside its workspace. The lock must
 /// exist, be a JSON object of version 2 or 3 with artifacts, carry a 64-hex
@@ -36,7 +38,6 @@ typedef _Install = ({
 List<Finding> checkMavenLocks(SourceTree tree, {required String module}) {
   final modulePattern = RegExp('^$module/e2e/[^/]+(/[^/]+)?/MODULE\\.bazel\$');
   final findings = <Finding>[];
-  var installs = 0;
   for (final String path in tree.paths.where(modulePattern.hasMatch)) {
     final String text = tree.read(path);
     final lines = Lines(text);
@@ -45,7 +46,6 @@ List<Finding> checkMavenLocks(SourceTree tree, {required String module}) {
       path.length - '/MODULE.bazel'.length,
     );
     for (final _Install install in _installs(text)) {
-      installs++;
       for (final String problem in _problems(tree, workspace, install)) {
         final int line = lines.of(install.offset);
         if (isAllowed(lines, mavenLockRule, line)) continue;
@@ -60,9 +60,6 @@ List<Finding> checkMavenLocks(SourceTree tree, {required String module}) {
         );
       }
     }
-  }
-  if (installs == 0) {
-    throw SetupException('no maven.install found under $module/e2e');
   }
   return findings;
 }

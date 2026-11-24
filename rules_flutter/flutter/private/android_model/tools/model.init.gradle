@@ -624,6 +624,22 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
       }
     }
   }
+  // Library projects that depend on each other (two plugins whose pubspecs name each other): Gradle
+  // cannot order their compile tasks either, and says so only when it builds.
+  def edges = [:]
+  projects.each { pp, pj -> pj.variants.each { vn, vj -> [vj.runtime, vj.compile].each { id ->
+    ctx.classpaths[id].each { e -> if (e.startsWith('project:')) edges.computeIfAbsent(pp, { [] as LinkedHashSet }) << e.substring(8, e.lastIndexOf('@')) }
+  } } }
+  def state = [:]
+  def visit
+  visit = { String n, List path ->
+    if (state[n] == 2) return
+    if (state[n] == 1) { problems << "project ${n} is in a dependency cycle (its classpath reaches itself); Gradle reports a circular dependency between tasks when it builds such projects"; return }
+    state[n] = 1
+    (edges[n] ?: []).each { m -> visit(m, path + [m]) }
+    state[n] = 2
+  }
+  projects.keySet().each { visit(it, [it]) }
   def usedCp = [] as Set
   projects.each { pp, pj ->
     pj.variants.keySet().toList().each { vn -> if (!reach.contains(pp + '@' + vn)) pj.variants.remove(vn) }
@@ -711,10 +727,15 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
     // bundletool, at the version AGP itself builds bundles with.
     tools.bundletool = rdfTry({ agpCl.loadClass('com.android.tools.build.bundletool.model.version.BundleToolVersion').getMethod('getCurrentVersion').invoke(null).toString() })
     if (tools.bundletool) detached('bundletool', ["com.android.tools.build:bundletool:${tools.bundletool}"])
+    // aapt2 is published per AGP build: `<AGP version>-<build number>`, and AGP carries the number.
+    // (Not read from the Gradle home: a home that has built nothing yet has no aapt2.)
     def aapt2 = rdfTry({
-      new File(g.gradleUserHomeDir, 'caches/modules-2/files-2.1/com.android.tools.build/aapt2').list().findAll { it.startsWith(tools.agp + '-') }.sort().last() })
+      def props = new Properties()
+      agpCl.getResourceAsStream('com/android/build/gradle/internal/res/aapt2_version.properties').withCloseable { props.load(it) }
+      props.getProperty('aapt2Version') ? tools.agp + '-' + props.getProperty('aapt2Version') : null })
     tools.aapt2 = aapt2
-    if (aapt2) ['linux', 'osx', 'windows'].each { os -> rdfTry({ detached('aapt2_' + os, ["com.android.tools.build:aapt2:${aapt2}:${os}"]) }) }
+    if (!aapt2) problems << "AGP ${tools.agp} does not say which aapt2 it uses (no aapt2_version.properties)"
+    else ['linux', 'osx', 'windows'].each { os -> rdfTry({ detached('aapt2_' + os, ["com.android.tools.build:aapt2:${aapt2}:${os}"]) }) }
   }
   model.tool_classpaths = toolSets
   ctx.pruneArtifacts(toolSets.values().flatten() as Set)

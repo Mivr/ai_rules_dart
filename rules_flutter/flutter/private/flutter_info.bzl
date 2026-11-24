@@ -45,33 +45,28 @@ def flutter_asset_channels(apple_privacy_manifests = []):
 
 def flutter_plugin_libraries(
         apple_plugin_libraries = [],
-        android_plugin_libraries = [],
         linux_plugin_libraries = [],
         windows_plugin_libraries = []):
     """Groups what a target contributes to the per-platform plugin channels.
 
     One channel per platform rather than one tagged union, because the
     integration mechanisms genuinely differ: Apple carries compiled
-    `CcInfo`/`SwiftInfo` to link against, Android carries `JavaInfo` and
-    resource manifests, Linux and Windows carry source bundles their runner
+    `CcInfo`/`SwiftInfo` to link against, Linux and Windows carry source bundles their runner
     folds into its own compile. Apple multiplexes macOS and iOS in one channel
     precisely because those two do share a mechanism.
 
     Args:
       apple_plugin_libraries: Apple plugin library structs this target declares
         (`platform`, `label`, `cc_info`, `swift_info`, `package`).
-      android_plugin_libraries: Android plugin library structs this target
-        declares (`label`, `java_info`, `resources_info`, `package`).
       linux_plugin_libraries: Linux plugin source bundles this target declares
         (`label`, `srcs`, `hdrs`, `include_dirs`, `package`).
       windows_plugin_libraries: Windows plugin source bundles, same shape.
 
     Returns:
-      A struct carrying the four channels above.
+      A struct carrying the three channels above.
     """
     return struct(
         apple_plugin_libraries = apple_plugin_libraries,
-        android_plugin_libraries = android_plugin_libraries,
         linux_plugin_libraries = linux_plugin_libraries,
         windows_plugin_libraries = windows_plugin_libraries,
     )
@@ -118,10 +113,6 @@ def _merge_plugin_libraries(dep_infos, channels):
         apple_plugin_libraries = depset(
             direct = channels.apple_plugin_libraries,
             transitive = [info.apple_plugin_libraries for info in dep_infos],
-        ),
-        android_plugin_libraries = depset(
-            direct = channels.android_plugin_libraries,
-            transitive = [info.android_plugin_libraries for info in dep_infos],
         ),
         linux_plugin_libraries = depset(
             direct = channels.linux_plugin_libraries,
@@ -256,7 +247,6 @@ def collect_flutter_plugin_deps(deps):
     """
     all_dep_plugins = []
     apple_plugin_lib_depsets = []
-    android_plugin_lib_depsets = []
     linux_plugin_lib_depsets = []
     windows_plugin_lib_depsets = []
     apple_privacy_manifest_depsets = []
@@ -273,13 +263,11 @@ def collect_flutter_plugin_deps(deps):
             else:
                 all_dep_plugins.append(p)
         apple_plugin_lib_depsets.append(info.apple_plugin_libraries)
-        android_plugin_lib_depsets.append(info.android_plugin_libraries)
         linux_plugin_lib_depsets.append(info.linux_plugin_libraries)
         windows_plugin_lib_depsets.append(info.windows_plugin_libraries)
         apple_privacy_manifest_depsets.append(info.apple_privacy_manifests)
     return struct(
         all_plugins = dedup_plugins(all_dep_plugins),
-        android_plugin_libraries = depset(transitive = android_plugin_lib_depsets),
         apple_plugin_libraries = depset(transitive = apple_plugin_lib_depsets),
         apple_privacy_manifests = depset(transitive = apple_privacy_manifest_depsets),
         linux_plugin_libraries = depset(transitive = linux_plugin_lib_depsets),
@@ -357,7 +345,6 @@ def flutter_info(
         native_lib_sources = native.native_lib_sources,
         binding_contracts = native.binding_contracts,
         apple_plugin_libraries = libraries.apple_plugin_libraries,
-        android_plugin_libraries = libraries.android_plugin_libraries,
         linux_plugin_libraries = libraries.linux_plugin_libraries,
         windows_plugin_libraries = libraries.windows_plugin_libraries,
         apple_privacy_manifests = assets.apple_privacy_manifests,

@@ -258,7 +258,6 @@ def _aotless_application_impl(ctx):
         apple_privacy_manifests = depset(),
         plugins = [],
         apple_plugin_libraries = depset(),
-        android_plugin_libraries = depset(),
         linux_plugin_libraries = depset(),
         windows_plugin_libraries = depset(),
     )]

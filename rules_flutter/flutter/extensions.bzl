@@ -33,20 +33,17 @@ load(
 load("@rules_dart//dart/pub:yaml.bzl", "lock_packages", "yaml_to_json")
 load("//flutter/private:artifact_urls.bzl", "source_strip_prefix")
 load("//flutter/private:flutter_assets_tool_repo.bzl", "flutter_assets_tool_repo")
-load("//flutter/private:flutter_pub_android_package.bzl", "android_package_repo_name", "flutter_pub_android_package")
 load("//flutter/private:flutter_pub_apple_pods.bzl", "hub_cocoapods_attrs")
 load("//flutter/private:flutter_pub_apple_pods_hub.bzl", "hub_podfile_lock")
 load("//flutter/private:flutter_pub_cycle_breaks.bzl", "apply_cycle_breaks", "cycle_breaks_lock_error")
 load("//flutter/private:flutter_pub_git.bzl", "git_package_subdir")
 load("//flutter/private:flutter_pub_lock_hub.bzl", "flutter_pub_hub_files", "hub_package_graph", "hub_scc_targets", "ios_native_deps_json")
-load("//flutter/private:flutter_pub_maven.bzl", "path_spoke_maven_inputs")
 load(
     "//flutter/private:flutter_pub_overlays.bzl",
     "hub_overlay_roots",
-    "overlay_replaces_spoke",
     "spoke_overlay_roots",
 )
-load("//flutter/private:flutter_pub_package.bzl", "flutter_pub_git_package", "flutter_pub_package", "flutter_pub_path_package", "is_maven_dep_label")
+load("//flutter/private:flutter_pub_package.bzl", "flutter_pub_git_package", "flutter_pub_package", "flutter_pub_path_package")
 load("//flutter/private:flutter_l10n_repo.bzl", "register_l10n_repos")
 load("//flutter/private:flutter_pub_hubs.bzl", "register_pub_hubs_index")
 load("//flutter/private:flutter_pub_path.bzl", "collect_path_deps", "foreign_lock_path_error", "is_absolute_lock_path", "is_relative_path_dependency", "workspace_relative_lock_path")
@@ -54,7 +51,6 @@ load("//flutter/private:flutter_pub_plugin_defines.bzl", "ios_plugin_defines_loc
 load("//flutter/private:flutter_pub_plugin_deps.bzl", "ios_plugin_deps_lock_error")
 load("//flutter/private:flutter_pub_scc_spoke.bzl", "flutter_pub_scc_package")
 load("//flutter/private:flutter_pub_tag.bzl", "flutter_pub_tag", "validate_swift_package_product_deps")
-load("//flutter/private:flutter_pubspec.bzl", "parse_flutter_plugin_block")
 load("//flutter/private:flutter_sdk_package.bzl", "declare_sdk_source", "declare_sdk_spokes", "flutter_sdk_local_source_repo")
 load("//flutter/private:pub_lock_sdks.bzl", "hosted_package_sha256", "lock_flutter_constraint", "version_below_lower_bound")
 load("//flutter/private:swiftpm_package.bzl", "swiftpm_package")
@@ -83,28 +79,6 @@ def _unserved_sdk_package_error(hub_name, name, info):
         "flutter.pub does not serve: it serves {served} from the Flutter SDK. Remove the dependency, " +
         "run `flutter pub get`, and commit the lock."
     ).format(hub = hub_name, pkg = name, sdk = sdk, served = ", ".join(sorted(_FLUTTER_SDK_PACKAGES.keys())))
-
-def _fail_on_invalid_maven_deps(hub_name, android_maven_deps):
-    """Refuse an `android_maven_deps` value that is not a Bazel label.
-
-    Every value lands in a generated spoke deps list; a non-label is
-    refused here, naming the hub and key, rather than emitted into
-    BUILD text.
-    """
-    for _maven_key in android_maven_deps.keys():
-        _maven_label = android_maven_deps[_maven_key]
-        if not is_maven_dep_label(_maven_label):
-            fail((
-                "flutter.pub(name = \"{hub}\"): android_maven_deps[{key}] " +
-                "is not a valid Bazel label ({label}). Map the " +
-                "coordinate to a label in another repository " +
-                "(\"@...\") or an absolute label (\"//...\") with no " +
-                "quotes, backslashes or newlines."
-            ).format(
-                hub = hub_name,
-                key = _maven_key,
-                label = _maven_label,
-            ))
 
 flutter_toolchain = tag_class(
     attrs = {
@@ -557,61 +531,6 @@ def _classify_lock_packages(hub_name, lock_label, lock_pkgs):
             ).format(hub = hub_name, pkg = name, version = info.get("version", ""), source = source))
     return hosted, git, path_pkgs, sdk_flutter, all_package_names
 
-def _workspace_root_of_lock(module_ctx, lock_label):
-    """The workspace root holding a root-module lock file.
-
-    A path dependency is workspace-relative, so the Android repository
-    probe needs the root, not the lock's own directory. The lock is known
-    to belong to the root module (see `foreign_lock_path_error`), so walk
-    up its label's package components from the file's directory.
-
-    Args:
-        module_ctx: The module extension context.
-        lock_label: The tag's lock label, in the root module.
-
-    Returns:
-        The absolute workspace root path string.
-    """
-    root = str(module_ctx.path(lock_label).dirname)
-    package = lock_label.package
-    if package:
-        for _segment in package.split("/"):
-            root = root.rpartition("/")[0]
-    return root
-
-def _path_packages_declaring_android(module_ctx, workspace_root, path_pkgs):
-    """The path packages whose pubspec declares the `android` platform.
-
-    The extension reads only the packages' own pubspecs, all in one `yaml2json`
-    run, so a path package with no Android platform gets no Android
-    repository at all. A missing pubspec reads as no Android platform; the
-    path spoke's fetch reports the real problem.
-
-    Args:
-        module_ctx: The module extension context.
-        workspace_root: The absolute workspace root.
-        path_pkgs: Dict of path package name to its lock info struct.
-
-    Returns:
-        Dict of package name to True for each package whose
-        `flutter.plugin.platforms.android` is present.
-    """
-    names = []
-    paths = []
-    for name in sorted(path_pkgs.keys()):
-        pubspec_path = workspace_root + "/" + path_pkgs[name].path + "/pubspec.yaml"
-        if not module_ctx.path(pubspec_path).exists:
-            continue
-        module_ctx.watch(pubspec_path)
-        names.append(name)
-        paths.append(pubspec_path)
-    pubspecs = yaml_to_json(module_ctx, paths, [path_pkgs[name].path + "/pubspec.yaml" for name in names])
-    return {
-        name: True
-        for name, pubspec in zip(names, pubspecs)
-        if parse_flutter_plugin_block(pubspec).platforms.get("android", {})
-    }
-
 def _create_swiftpm_spokes(hub_name, pub_tag, module_ctx):
     """Creates one `swiftpm_package` spoke per SwiftPM pin.
 
@@ -687,7 +606,6 @@ def _collect_pub_hub(pub_tag, selected_info, user_overlay_roots, pub_yaml):
     podfile, lock_label = hub_podfile_lock(pub_tag, pub_yaml)
 
     validate_swift_package_product_deps(hub_name, pub_tag.swift_package_product_deps)
-    _fail_on_invalid_maven_deps(hub_name, pub_tag.android_maven_deps)
     lock_data = pub_yaml[str(pub_tag.lock)]
     lock_pkgs = lock_packages(lock_data, str(pub_tag.lock))
 
@@ -848,12 +766,9 @@ def _emit_pub_hub(module_ctx, hub, plans, hook_settings):
 
     Every package repository's attributes are its own: its coordinates, the
     names planning used, its own dependency labels (each the hub's alias,
-    `@<hub>//:<dep>`), and the hub-wide plugin configuration. A package that
-    an overlay replaces gets no Android repository: its spoke emits the
-    overlay's Android template or the empty stub. Every other hosted package,
-    and every path package that declares the `android` platform, gets a
-    `<hub>-android-<package>` repository holding its Gradle model, fetched only
-    when an Android target analyses the spoke's `android:lib` alias.
+    `@<hub>//:<dep>`), and the hub-wide plugin configuration. A plugin's
+    Android code is not built from these repositories: an app's Android side
+    comes from its pinned Gradle model (see //flutter/private/android_model).
     """
     hub_name = hub.hub_name
     pub_tag = hub.pub_tag
@@ -871,20 +786,7 @@ def _emit_pub_hub(module_ctx, hub, plans, hook_settings):
                 url = plans[name]["archive_url"],
                 planned_deps = graph.raw[name],
                 deps = own_dep_labels(name, graph.kept[name], labels),
-                android_maven_deps = pub_tag.android_maven_deps,
-                android_maven_ignore = pub_tag.android_maven_ignore,
                 **_flutter_spoke_attrs(hub, name, hook_settings)
-            )
-        if not overlay_replaces_spoke(module_ctx, hub.overlay_roots, name, pkg.version):
-            flutter_pub_android_package(
-                name = android_package_repo_name(hub_name, name),
-                package_name = name,
-                version = pkg.version,
-                hub_name = hub_name,
-                sha256 = pkg.sha256,
-                url = plans[name]["archive_url"],
-                android_maven_deps = pub_tag.android_maven_deps,
-                android_maven_ignore = pub_tag.android_maven_ignore,
             )
 
     for name in sorted(hub.git.keys()):
@@ -897,23 +799,9 @@ def _emit_pub_hub(module_ctx, hub, plans, hook_settings):
                 version = pkg.version,
                 planned_deps = graph.raw[name],
                 deps = own_dep_labels(name, graph.kept[name], labels),
-                android_maven_deps = pub_tag.android_maven_deps,
-                android_maven_ignore = pub_tag.android_maven_ignore,
                 **dict(git_attrs, **_flutter_spoke_attrs(hub, name, hook_settings))
             )
-        if not overlay_replaces_spoke(module_ctx, hub.overlay_roots, name, pkg.version):
-            flutter_pub_android_package(
-                name = android_package_repo_name(hub_name, name),
-                package_name = name,
-                version = pkg.version,
-                hub_name = hub_name,
-                android_maven_deps = pub_tag.android_maven_deps,
-                android_maven_ignore = pub_tag.android_maven_ignore,
-                **git_attrs
-            )
 
-    maven = path_spoke_maven_inputs(pub_tag)
-    declares_android = _path_packages_declaring_android(module_ctx, _workspace_root_of_lock(module_ctx, pub_tag.lock), hub.path_pkgs)
     for name in sorted(hub.path_pkgs.keys()):
         path_info = hub.path_pkgs[name]
         if name not in graph.sccs.members:
@@ -924,19 +812,7 @@ def _emit_pub_hub(module_ctx, hub, plans, hook_settings):
                 version = path_info.version,
                 planned_deps = graph.raw[name],
                 deps = own_dep_labels(name, graph.kept[name], labels),
-                android_maven_deps = maven.deps,
-                android_maven_ignore = maven.ignore,
                 **_flutter_spoke_attrs(hub, name, hook_settings)
-            )
-        if name in declares_android and not overlay_replaces_spoke(module_ctx, hub.overlay_roots, name, path_info.version):
-            flutter_pub_android_package(
-                name = android_package_repo_name(hub_name, name),
-                package_name = name,
-                version = path_info.version,
-                hub_name = hub_name,
-                path = path_info.path,
-                android_maven_deps = maven.deps,
-                android_maven_ignore = maven.ignore,
             )
 
     _emit_scc_spokes(hub, plans, graph, labels)

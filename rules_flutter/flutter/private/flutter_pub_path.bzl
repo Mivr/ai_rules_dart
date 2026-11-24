@@ -8,7 +8,7 @@ needs.
 """
 
 load("@rules_dart//dart/pub:yaml.bzl", "pubspec_deps", "yaml_to_json")
-load("//flutter/private:flutter_pub_mirror.bzl", "detect_case_insensitive_host", "path_spoke_resolves_outside")
+load("//flutter/private:flutter_pub_mirror.bzl", "detect_case_insensitive_host", "outside_workspace_refusal", "path_spoke_resolves_outside")
 
 visibility(["//flutter/..."])
 
@@ -321,3 +321,74 @@ def collect_path_deps(module_ctx, hub_name, path_pkgs, lock_label = None):
     # Every path package's pubspec in one `yaml2json` run.
     data = yaml_to_json(module_ctx, pubspec_files, [path_pkgs[name].path + "/pubspec.yaml" for name in names])
     return {name: sorted(pubspec_deps(pubspec)) for name, pubspec in zip(names, data)}
+
+def fail_on_outside_package_path(ctx, package_name, segments, workspace_realpath, case_insensitive = False):
+    """Fail when the package dir or any parent component leaves the workspace.
+
+    A path whose intermediate directory is a link out of the workspace
+    (`third_party -> /host`) would otherwise be accepted: lexically the
+    entry stays inside, but the resolved tree is host bytes. Each prefix
+    of the workspace-relative path is resolved and refused, naming the
+    package, the offending prefix, and its real path, when it lands
+    outside the main workspace's real root. Missing prefixes stop the
+    walk: the caller reports the missing directory itself.
+
+    Args:
+        ctx: The repository context.
+        package_name: The pub package being linked, for the refusal.
+        segments: The workspace-relative path split on `/`.
+        workspace_realpath: The workspace root's resolved real path.
+        case_insensitive: True when the fetch host proves case-insensitive.
+    """
+    prefix = []
+    for segment in segments:
+        prefix.append(segment)
+        node = ctx.workspace_root.get_child(*prefix)
+        if not node.exists:
+            break
+        target_realpath = str(node.realpath)
+        if path_spoke_resolves_outside(workspace_realpath, target_realpath, case_insensitive):
+            fail(outside_workspace_refusal(package_name, "/".join(prefix), target_realpath))
+
+def path_package_root(ctx):
+    """Resolve a path package's workspace-root directory, refusing escapes.
+
+    Every path spoke uses this one validation: an absolute path, a `.`/`..`
+    segment, a missing directory, or any parent component resolving outside
+    the workspace fails.
+
+    Args:
+        ctx: A repository context with `path`, `package_name`.
+
+    Returns:
+        `struct(src, segments, workspace_realpath, package_realpath,
+        case_insensitive)` for the package directory.
+    """
+    rel = ctx.attr.path
+    if rel.startswith("/") or rel in ("", "."):
+        fail("flutter.pub spoke for \"{pkg}\": path dependency {path} is not a workspace-relative package directory. Refusing it rather than resolving outside the workspace.".format(
+            pkg = ctx.attr.package_name,
+            path = repr(rel),
+        ))
+    segments = rel.split("/")
+    if ".." in segments or "." in segments or "" in segments:
+        fail("flutter.pub spoke for \"{pkg}\": path dependency {path} escapes its directory. Refusing it rather than resolving outside the workspace.".format(
+            pkg = ctx.attr.package_name,
+            path = repr(rel),
+        ))
+    src = ctx.workspace_root.get_child(*segments)
+    if not src.exists:
+        fail("flutter.pub spoke for \"{pkg}\": path dependency {path} does not exist under the workspace. Refusing it rather than emitting an empty package.".format(
+            pkg = ctx.attr.package_name,
+            path = repr(rel),
+        ))
+    workspace_realpath = str(ctx.workspace_root.realpath)
+    case_insensitive = detect_case_insensitive_host(ctx, segments)
+    fail_on_outside_package_path(ctx, ctx.attr.package_name, segments, workspace_realpath, case_insensitive)
+    return struct(
+        src = src,
+        segments = segments,
+        workspace_realpath = workspace_realpath,
+        package_realpath = str(src.realpath),
+        case_insensitive = case_insensitive,
+    )

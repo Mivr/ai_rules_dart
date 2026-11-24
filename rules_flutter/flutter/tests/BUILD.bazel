@@ -4,15 +4,7 @@ load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 load("//flutter/private:flutter_aot_target.bzl", "flutter_aot_target")
 load(":action_inputs_test.bzl", "action_inputs_test_suite")
 load(":agent_uris_test.bzl", "agent_uris_test_suite")
-load(":analyze_size_test.bzl", "analyze_size_test_suite")
-load(":android_aab_signing_test.bzl", "android_aab_signing_test_suite")
 load(":android_aar_test.bzl", "android_aar_test_suite")
-load(":android_debug_signing_test.bzl", "android_debug_signing_test_suite")
-load(":android_plugin_closure_test.bzl", "android_plugin_closure_test_suite")
-load(":android_plugin_scale_test.bzl", "android_plugin_scale_test_suite")
-load(":android_pure_go_test.bzl", "android_pure_go_test_suite")
-load(":android_release_signing_test.bzl", "android_release_signing_test_suite")
-load(":android_shared_engine_test.bzl", "android_shared_engine_test_suite")
 load(":aot_flags_test.bzl", "aot_flags_test_suite")
 load(":app_entrypoint_test.bzl", "app_entrypoint_test_suite")
 load(":apple_objc_deps_test.bzl", "apple_objc_deps_test_suite")
@@ -40,7 +32,6 @@ load(":flutter_integration_test_test.bzl", "flutter_integration_test_test_suite"
 load(":flutter_library_test.bzl", "flutter_library_test_suite")
 load(":flutter_plugin_test.bzl", "flutter_plugin_test_suite")
 load(":flutter_prebuilt_test.bzl", "flutter_prebuilt_test_suite")
-load(":flutter_pub_android_edge_test.bzl", "flutter_pub_android_edge_test_suite")
 load(":flutter_pub_apple_deps_test.bzl", "flutter_pub_apple_deps_test_suite")
 load(":flutter_pub_apple_pods_test.bzl", "flutter_pub_apple_pods_test_suite")
 load(":flutter_pub_apple_test.bzl", "flutter_pub_apple_test_suite")
@@ -53,7 +44,6 @@ load(":flutter_pubspec_test.bzl", "flutter_pubspec_test_suite")
 load(":flutter_sdk_package_test.bzl", "flutter_sdk_package_test_suite")
 load(":flutter_test_bootstrap_test.bzl", "flutter_test_bootstrap_test_suite")
 load(":flutter_test_coverage_test.bzl", "flutter_test_coverage_test_suite")
-load(":gradle_model_test.bzl", "gradle_model_test_suite")
 load(":ios_integration_test_test.bzl", "ios_integration_test_test_suite")
 load(":ios_plugin_deps_test.bzl", "ios_plugin_deps_test_suite")
 load(":ios_split_debug_assets_test.bzl", "ios_split_debug_assets_test_suite")
@@ -65,12 +55,10 @@ load(":linux_runner_defines_test.bzl", "linux_runner_defines_test_suite")
 load(":linux_sysroot_link_test.bzl", "linux_sysroot_link_test_suite")
 load(":local_sdk_test.bzl", "local_sdk_test_suite")
 load(":macos_test.bzl", "macos_apple_plugin_test_suite", "macos_test_suite")
-load(":manifest_merge_test.bzl", "manifest_merge_test_suite")
 load(":modular_api_test.bzl", "modular_api_test_suite")
 load(":native_assets_test.bzl", "native_assets_test_suite")
 load(":native_sources_test.bzl", "native_sources_test_suite")
 load(":objc_drift_test.bzl", "objc_drift_test_suite")
-load(":path_android_maven_test.bzl", "path_android_maven_test_suite")
 load(":path_package_test.bzl", "path_package_test_suite")
 load(":platform_bundle_test.bzl", "platform_bundle_test_suite")
 load(":plist_merge_test.bzl", "plist_merge_test_suite")
@@ -134,40 +122,6 @@ dart_library(
     visibility = ["//visibility:public"],
 )
 
-dart_test(
-    name = "android_apk_overlay_test",
-    size = "small",
-    data = [
-        "//flutter/private/tools:android_bundle",
-    ],
-    env = {
-        "ANDROID_BUNDLE": "$(rlocationpath //flutter/private/tools:android_bundle)",
-    },
-    main = "android_apk_overlay_test.dart",
-    deps = [
-        "@tool_deps//:test",
-        "@rules_dart//dart/runfiles",
-    ],
-)
-
-# Build test for the debug split APKs: a kernel blob edit changes only the
-# payload split, and each split is reproducible.
-dart_test(
-    name = "android_split_apk_test",
-    size = "small",
-    data = [
-        "//flutter/private/tools:android_bundle",
-    ],
-    env = {
-        "ANDROID_BUNDLE": "$(rlocationpath //flutter/private/tools:android_bundle)",
-    },
-    main = "android_split_apk_test.dart",
-    deps = [
-        "@tool_deps//:test",
-        "@rules_dart//dart/runfiles",
-    ],
-)
-
 # Inspects the AAR `flutter_android_aar` produces: it builds the Dart AOT
 # library for Android, so it runs on Linux CI.
 dart_test(
@@ -191,21 +145,7 @@ dart_test(
 
 action_inputs_test_suite(name = "action_inputs_test")
 
-android_pure_go_test_suite(name = "android_pure_go_test")
-
 android_aar_test_suite(name = "android_aar_test")
-
-android_shared_engine_test_suite(name = "android_shared_engine_test")
-
-android_aab_signing_test_suite(name = "android_aab_signing_test")
-
-android_plugin_closure_test_suite(name = "android_plugin_closure_test")
-
-android_plugin_scale_test_suite(name = "android_plugin_scale_test")
-
-android_release_signing_test_suite(name = "android_release_signing_test")
-
-android_debug_signing_test_suite(name = "android_debug_signing_test")
 
 versions_test_suite(name = "versions_test")
 
@@ -246,8 +186,6 @@ macos_test_suite(name = "macos_test")
 
 macos_apple_plugin_test_suite(name = "macos_apple_plugin_test")
 
-manifest_merge_test_suite(name = "manifest_merge_test")
-
 plist_merge_test_suite(name = "plist_merge_test")
 
 web_test_suite(name = "web_test")
@@ -272,8 +210,6 @@ flutter_pub_apple_deps_test_suite(name = "flutter_pub_apple_deps_test")
 
 flutter_pub_package_test_suite(name = "flutter_pub_package_test")
 
-flutter_pub_android_edge_test_suite(name = "flutter_pub_android_edge_test")
-
 flutter_pub_plugin_defines_test_suite(name = "flutter_pub_plugin_defines_test")
 
 flutter_pub_cycle_breaks_test_suite(name = "flutter_pub_cycle_breaks_test")
@@ -295,8 +231,6 @@ plugin_federation_test_suite(name = "plugin_federation_test")
 plugin_registrant_test_suite(name = "plugin_registrant_test")
 
 objc_drift_test_suite(name = "objc_drift_test")
-
-path_android_maven_test_suite(name = "path_android_maven_test")
 
 path_package_test_suite(name = "path_package_test")
 
@@ -416,8 +350,6 @@ build_test(
 )
 
 
-gradle_model_test_suite(name = "gradle_model_test")
-
 # Regression: `flutter_aot_target` with obfuscation and split debug info must
 # run gen_snapshot successfully and produce the debugging-info output.
 flutter_aot_target(
@@ -437,8 +369,6 @@ build_test(
 )
 
 aot_flags_test_suite(name = "aot_flags_test")
-
-analyze_size_test_suite(name = "analyze_size_test")
 
 flutter_pub_scc_test_suite(name = "flutter_pub_scc_test")
 

@@ -1,9 +1,10 @@
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_apple//apple:ios.bzl", "ios_application")
 load("@rules_apple//apple:macos.bzl", "macos_application")
 load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
 load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_test")
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
 load(
     "@rules_flutter//flutter:ios.bzl",
@@ -33,7 +34,6 @@ load(
 )
 load("@rules_flutter//flutter:web.bzl", "flutter_web_bundle")
 load("@rules_flutter//flutter:windows.bzl", "flutter_windows_app")
-load(":debug_apk.bzl", "debug_apk")
 
 exports_files(["pubspec.lock"])
 
@@ -249,29 +249,38 @@ flutter_windows_app(
 # =============================================================================
 # Android build
 #
-# `flutter_android_app` auto-wires the registrant and the hub aggregator.
-# Every plugin in pubspec.lock with a `flutter.plugin.platforms.android.package`
-# block contributes its Kotlin/Java sources via @deps//android:all_android_plugin_libs.
-# `flutter create` output under android/app/src/main/ supplies the manifest,
-# resources, and Kotlin runner.
+# The app's Android side is its stock Android project (android/), built from
+# the pinned Gradle model: `bazel run //:android_pin` writes
+# android_model.json. Every Android plugin of the pubspec is one library
+# target from its own Gradle project, on the Maven graph Gradle resolved.
 # =============================================================================
 
-flutter_android_app(
-    name = "plugin_android",
-    package_name = "com.example.plugin_example",
-    application = ":plugin_app",
-    proguard_specs = ["app_proguard.pro"],
+flutter_android_pin(
+    name = "android_pin",
+    variants = [
+        "debug",
+        "release",
+    ],
 )
 
-# The same app for x86_64. Its APK must carry the x86_64 engine and no other:
-# a plugin that packaged its own (always arm64) engine would make Android
-# install this APK on an arm64 device and crash at launch.
+# `//:plugin_android` is the debug app as split APKs, `//:plugin_android_apk` as one APK.
 flutter_android_app(
-    name = "plugin_android_x64",
-    package_name = "com.example.plugin_example",
-    android_abi = "x64",
+    name = "plugin_android",
     application = ":plugin_app",
-    proguard_specs = ["app_proguard.pro"],
+    # package:jni builds libdartjni.so with CMake in Gradle; here the Dart side builds it.
+    native_built_elsewhere = [":jni"],
+)
+
+# The release app: R8 over the whole program with the app's and the plugins' keep rules.
+flutter_android_app(
+    name = "plugin_android_release",
+    abis = [
+        "arm64-v8a",
+        "x86_64",
+    ],
+    application = ":plugin_app",
+    native_built_elsewhere = [":jni"],
+    variant = "release",
 )
 
 # =============================================================================
@@ -315,58 +324,47 @@ build_test(
     targets = [":plugin_windows"],
 )
 
-build_test(
-    name = "android_bundle_build_test",
-    size = "small",
-    tags = ["android"],
-    targets = [":plugin_android"],
-)
-
-# The plugin_android APK rebuilt under -c dbg, so the default-configuration
-# APK verifier can assert debug-only content (the merged debug variant
-# manifest's INTERNET permission) without building the test under -c dbg.
-debug_apk(
-    name = "plugin_android_dbg",
-    apk = ":plugin_android",
-    tags = ["android"],
-)
-
-# APK content verifier: asserts every plugin's native pieces are packaged —
-# including package:jni's libdartjni.so (jnigen plugins load it via
-# System.loadLibrary), its shared Java support classes, and that every
-# packaged .so is ELF for the declared ABI. Verifies the ambient APK
-# (release), the -c dbg APK, asserting INTERNET is present iff debug, and the
-# x64 APK, asserting it carries no ABI but x86_64.
-dart_test(
-    name = "verify_android_apk_test",
-    size = "medium",
-    data = [
-        ":plugin_android",
-        ":plugin_android_dbg",
-        ":plugin_android_x64",
+# What the debug APK holds: every plugin's native pieces, including package:jni's libdartjni.so
+# (jnigen plugins load it with System.loadLibrary), its shared Java support classes, a plugin's own
+# resources (record_android's R class) and the engine of every ABI.
+flutter_android_apk_test(
+    name = "android_apk_test",
+    app = "plugin_android",
+    classes = [
+        "Lio/flutter/plugins/GeneratedPluginRegistrant;",
+        "Lcom/github/dart_lang/jni/JniPlugin;",
+        "Lcom/github/dart_lang/jni/PortContinuation;",
+        "Lcom/github/dart_lang/jni/PortProxyBuilder;",
+        "Lcom/github/dart_lang/jni_flutter/JniFlutterPlugin;",
+        "Lcom/llfbandit/record/RecordPlugin;",
+        "Lcom/llfbandit/record/R$drawable;",
     ],
-    main = "test/verify_android_apk_test.dart",
+    entries = [
+        "assets/flutter_assets/kernel_blob.bin",
+        "lib/arm64-v8a/libflutter.so",
+        "lib/x86_64/libflutter.so",
+        "lib/arm64-v8a/libdartjni.so",
+        "lib/x86_64/libdartjni.so",
+    ],
     tags = ["android"],
 )
 
-# Overlay BuildConfig verifier: builds the audio_session and jni overlays'
-# generated `_build_config_src` stubs (plain `write_file` outputs, so no
-# Android toolchain is needed) and checks each holds valid Java text: no
-# backslash, and `LIBRARY_PACKAGE_NAME` equal to the file's own `package`
-# line. The heredoc `cat` genrules those overlays ship regressed to
-# double-escaped output once; this pins the rewritten bytes instead.
-#
-# The spoke repos carry no apparent name in this workspace (`use_repo`
-# exports only the `deps` hub), so the targets are named by canonical
-# label — the same form the hub's own aggregator uses for them.
-dart_test(
-    name = "verify_build_config_test",
-    size = "small",
-    data = [
-        "@@ai_rules_flutter++flutter+deps__audio_session//android:_build_config_src",
-        "@@ai_rules_flutter++flutter+deps__jni//android:_build_config_src",
+# What the release APK holds: the AOT library per ABI and no kernel, and package:jni's classes
+# under their own names (its consumer rules keep them).
+flutter_android_apk_test(
+    name = "android_release_apk_test",
+    absent_entries = ["assets/flutter_assets/kernel_blob.bin"],
+    app = "plugin_android_release",
+    classes = [
+        "Lcom/github/dart_lang/jni/JniPlugin;",
+        "Lcom/github/dart_lang/jni/PortContinuation;",
     ],
-    main = "test/verify_build_config_test.dart",
+    entries = [
+        "lib/arm64-v8a/libapp.so",
+        "lib/x86_64/libapp.so",
+        "lib/arm64-v8a/libdartjni.so",
+    ],
+    tags = ["android"],
 )
 
 # Runtime verifier for the Android APK. Installs on a connected emulator or
@@ -378,7 +376,7 @@ dart_test(
 dart_test(
     name = "verify_android_app_test",
     size = "large",
-    data = [":plugin_android"],
+    data = [":plugin_android_apk"],
     main = "test/verify_android_app_test.dart",
     tags = [
         "android",

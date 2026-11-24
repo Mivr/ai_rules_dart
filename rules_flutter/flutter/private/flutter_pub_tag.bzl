@@ -126,21 +126,6 @@ flutter_pub_tag = tag_class(
                   "by default and never given a built-in default.",
             default = {},
         ),
-        "android_maven_deps": attr.string_dict(
-            doc = "`group:artifact` -> Bazel label additions to the built-in " +
-                  "mapping from a plugin's `android/build.gradle*` runtime " +
-                  "dependencies to `@rules_android_maven` labels. A plugin dep " +
-                  "found in neither table fails the spoke fetch; mapping it " +
-                  "here is the fix for external artifacts. The label must " +
-                  "resolve in the workspace's `rules_android_maven` install.",
-            default = {},
-        ),
-        "android_maven_ignore": attr.string_list(
-            doc = "`group:artifact` coordinates that need no Bazel label and " +
-                  "must not fail the spoke fetch as unknown. This is a " +
-                  "declaration you make deliberately; it is never a default.",
-            default = [],
-        ),
         "swift_package_resolved": attr.label(
             doc = "Label of the Xcode `Package.resolved` file pinning the " +
                   "app's SwiftPM dependencies " +

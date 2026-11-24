@@ -9,12 +9,6 @@ load(
     "make_dart_package_member_build_content",
 )
 load(
-    "//flutter/private:flutter_pub_android_package.bzl",
-    "android_package_repo_name",
-    "android_spoke_alias_content",
-    "make_android_subpackage_build_content",
-)
-load(
     "//flutter/private:flutter_pub_apple.bzl",
     "apple_plugin_targets",
     "desktop_plugin_target",
@@ -352,9 +346,6 @@ def adapt_scc_member_overlay_content(package_name, language_version, version, pl
     dart_content = _render_dart_member_content(package_name, language_version, version, plugin)
     dart_loads, dart_body = _split_loads_and_body(dart_content)
     rewritten = overlay_content.replace(
-        '"//android:__pkg__"',
-        '"//' + package_name + '/android:__pkg__"',
-    ).replace(
         '"//:',
         '"//' + package_name + ":",
     )
@@ -369,53 +360,4 @@ def adapt_scc_member_overlay_content(package_name, language_version, version, pl
         dart_body + "\n\n" +
         ov_body + "\n\n" +
         'exports_files(glob(["**/*"], exclude = ["BUILD*", "WORKSPACE*"]))\n'
-    )
-
-def adapt_scc_member_android_overlay_content(package_name, overlay_android_content):
-    """Rewrites root-relative labels in an SCC member's `android/BUILD.bazel.tpl`.
-
-    Args:
-        package_name: Pub package name of the SCC member, used as the label prefix.
-        overlay_android_content: Text of the member's `android/BUILD.bazel.tpl` overlay.
-
-    Returns:
-        The overlay text with root-relative labels rewritten under `//<package_name>`.
-    """
-    return overlay_android_content.replace(
-        '"//android:__pkg__"',
-        '"//' + package_name + '/android:__pkg__"',
-    ).replace(
-        '"//:',
-        '"//' + package_name + ":",
-    )
-
-def make_scc_member_android_build_content(
-        package_name,
-        hub_name = "",
-        android_plugin = False,
-        overlay_content = ""):
-    """Generates `<m>/android/BUILD.bazel` content for one member of an SCC spoke.
-
-    Follows the lazy Android repository model: an Android plugin member aliases
-    `@<hub>-android-<member>//android:lib`, an overlaid member adapts its
-    `android/BUILD.bazel.tpl`, and every other member emits the empty
-    `kt_android_library` stub.
-
-    Args:
-        package_name: The member package name.
-        hub_name: The `flutter.pub` hub name, used for the Android repo alias.
-        android_plugin: Whether `flutter.plugin.platforms.android` is declared.
-        overlay_content: Optional substituted `android/BUILD.bazel.tpl` content.
-
-    Returns:
-        The content string for the member `android/BUILD.bazel` file.
-    """
-    if overlay_content:
-        return adapt_scc_member_android_overlay_content(package_name, overlay_content)
-    if android_plugin:
-        return android_spoke_alias_content(android_package_repo_name(hub_name, package_name))
-    return make_android_subpackage_build_content(
-        android_src_dir = "",
-        java_package = "",
-        extra_maven_labels = [],
     )

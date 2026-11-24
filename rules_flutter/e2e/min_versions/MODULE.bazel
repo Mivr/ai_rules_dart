@@ -4,8 +4,6 @@ module(name = "rules_flutter_min_versions")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
 bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
-bazel_dep(name = "rules_android", version = "0.8.0")
-bazel_dep(name = "rules_android_ndk", version = "0.1.5")
 
 # rules_android's SDK template loads rules_shell; the repository rule below
 # generates that package from this root module, so the mapping must be a
@@ -30,9 +28,8 @@ bazel_dep(name = "rules_cc", version = "0.2.20")
 bazel_dep(name = "apple_support", version = "2.2.0")
 bazel_dep(name = "rules_apple", version = "4.5.3")
 bazel_dep(name = "rules_swift", version = "3.5.0")
-bazel_dep(name = "rules_kotlin", version = "2.1.10")
+bazel_dep(name = "rules_kotlin", version = "2.3.0")
 bazel_dep(name = "rules_java", version = "9.0.0")
-bazel_dep(name = "rules_jvm_external", version = "6.8")
 
 local_path_override(
     module_name = "ai_rules_flutter",
@@ -101,13 +98,8 @@ single_version_override(
 )
 
 single_version_override(
-    module_name = "rules_android",
-    version = "0.8.0",
-)
-
-single_version_override(
     module_name = "rules_kotlin",
-    version = "2.1.10",
+    version = "2.3.0",
 )
 
 single_version_override(
@@ -124,15 +116,6 @@ resolved_module_versions = use_repo_rule("//:resolved_module_versions.bzl", "res
 resolved_module_versions(
     name = "resolved_module_versions",
     floors = "@rules_flutter//flutter/tests:dependency_floors.json",
-)
-
-# Pinned past the 0.1.5 release for 16KB page alignment (same as
-# e2e/integration_android).
-archive_override(
-    module_name = "rules_android_ndk",
-    sha256 = "0f566314be1257379d42630e068618169e410e4ecf964b28e0c72559e2196658",
-    strip_prefix = "rules_android_ndk-987213e7f982de48696f3b9cd031ff4e3e065c7c",
-    urls = ["https://github.com/bazelbuild/rules_android_ndk/archive/987213e7f982de48696f3b9cd031ff4e3e065c7c.tar.gz"],
 )
 
 flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
@@ -156,7 +139,6 @@ flutter.pub(
 use_repo(
     flutter,
     "deps",
-    "flutter_android_engine_arm64",
     "flutter_ios_engine",
     "flutter_macos_engine",
     "flutter_toolchains",
@@ -164,200 +146,9 @@ use_repo(
 
 register_toolchains("@flutter_toolchains//:all")
 
-# Override rules_android's Go SDK with sha256-pinned 1.26.2 archives. rules_go
-# declares only the 0.59.0 minimum here (same as rules_flutter's own
-# MODULE.bazel) — MVS still selects 0.64.2 through rules_dart, so the proxy's
-# pure-Go transition is proven against the resolved version, never the floor.
-bazel_dep(name = "rules_go", version = "0.59.0")
+# The app's Android side is built from the pinned Gradle model, written by `bazel run //:android_pin`.
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
 
-go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(
-    sdks = {
-        "darwin_amd64": ("go1.26.2.darwin-amd64.tar.gz", "bc3f1500d9968c36d705442d90ba91addf9271665033748b82532682e90a7966"),
-        "darwin_arm64": ("go1.26.2.darwin-arm64.tar.gz", "32af1522bf3e3ff3975864780a429cc0b41d190ec7bf90faa661d6d64566e7af"),
-        "linux_amd64": ("go1.26.2.linux-amd64.tar.gz", "990e6b4bbba816dc3ee129eaeaf4b42f17c2800b88a2166c265ac1a200262282"),
-        "linux_arm64": ("go1.26.2.linux-arm64.tar.gz", "c958a1fe1b361391db163a485e21f5f228142d6f8b584f6bef89b26f66dc5b23"),
-    },
-    version = "1.26.2",
-)
-
-# rules_android's remote Android tools (aapt2, the resource merger and friends
-# are downloaded by the extension below).
-#
-# Host prerequisites for the Android leg: rules_android's AAR extractors run
-# `unzip` (shell) and `python3` (shebang) from the action environment, which
-# under Bazel's default strict action env carries neither a PATH nor the
-# client's tools — both must exist in the default lookup locations
-# (/usr/bin on stock CI images; GitHub's ubuntu-latest and macos-latest
-# qualify). A host without them fails every aar_import at execution, and the
-# shell extractor's missing-file fallback can additionally leave an empty
-# manifest behind, so a later stage fails instead. Analysis and the Dart leg
-# need neither.
-remote_android_extensions = use_extension(
-    "@rules_android//bzlmod_extensions:android_extensions.bzl",
-    "remote_android_tools_extensions",
-)
-use_repo(remote_android_extensions, "android_tools")
-
-# rules_android's SDK BUILD uses rules_java's remote tooling, so the generated
-# repository needs that repo in this root's mapping too.
-rules_java_toolchains = use_extension("@rules_java//java:extensions.bzl", "toolchains")
-use_repo(rules_java_toolchains, "remote_java_tools")
-
-# The Android SDK and NDK are downloaded from Google with pinned sha256
-# values by `//:android_repositories.bzl`, not read from `ANDROID_HOME` /
-# `ANDROID_NDK_HOME`. The gate and a bare host export neither variable, and
-# this workspace is the proof that the floors build there; CI images no
-# longer change what the Android leg compiles against. `override_repo`
-# replaces the repos rules_android/rules_android_ndk declare, so their own
-# toolchain defaults (including `@androidsdk//:fail`) see the pinned packages.
-# The NDK repository is empty on non-Linux hosts, where only the Apple legs
-# run.
-android_sdk = use_repo_rule("//:android_repositories.bzl", "android_sdk")
-
-android_sdk(name = "android_sdk_dist")
-
-android_sdk_repository_extension = use_extension(
-    "@rules_android//rules/android_sdk_repository:rule.bzl",
-    "android_sdk_repository_extension",
-)
-android_sdk_repository_extension.configure(api_level = 35)
-use_repo(android_sdk_repository_extension, "androidsdk")
-
-override_repo(
-    android_sdk_repository_extension,
-    androidsdk = "android_sdk_dist",
-)
-
-register_toolchains(
-    "@androidsdk//:sdk-toolchain",
-    "@androidsdk//:all",
-)
-
-android_ndk = use_repo_rule("//:android_repositories.bzl", "android_ndk")
-
-android_ndk(name = "android_ndk_dist")
-
-android_ndk_repository_extension = use_extension(
-    "@rules_android_ndk//:extension.bzl",
-    "android_ndk_repository_extension",
-)
-use_repo(android_ndk_repository_extension, "androidndk")
-
-override_repo(
-    android_ndk_repository_extension,
-    androidndk = "android_ndk_dist",
-)
-
-register_toolchains("@androidndk//:all")
-
-# Fix protobuf version mismatch: rules_android pins protobuf-java 4.33.4
-# but the resolved protobuf module is 34.0 (gencode 4.34.0).  The root module's
-# maven.install tags take precedence, so we re-declare the two affected repos
-# with bumped protobuf jars. rules_jvm_external itself is already declared at
-# its 6.8 floor above; a second bazel_dep would be a duplicate repo name.
-
-maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
-maven.install(
-    name = "android_ide_common_30_1_3",
-    aar_import_bzl_label = "@rules_android//rules:rules.bzl",
-    artifacts = [
-        "com.android.tools.layoutlib:layoutlib-api:30.1.3",
-        "com.android.tools.build:manifest-merger:30.1.3",
-        "com.android.tools:common:30.1.3",
-        "com.android.tools:repository:30.1.3",
-        "com.android.tools.analytics-library:protos:30.1.3",
-        "com.android.tools.analytics-library:shared:30.1.3",
-        "com.android.tools.analytics-library:tracker:30.1.3",
-        "com.android.tools:annotations:30.1.3",
-        "com.android.tools:sdk-common:30.1.3",
-        "com.android.tools.build:builder:7.1.3",
-        "com.android.tools.build:builder-model:7.1.3",
-        "com.google.protobuf:protobuf-java:4.34.0",
-        "com.google.protobuf:protobuf-java-util:4.34.0",
-    ],
-    lock_file = "//:android_ide_common_30_1_3_install.json",
-    repositories = [
-        "https://maven.google.com",
-        "https://maven-central.storage-download.googleapis.com/maven2",
-        "https://repo1.maven.org/maven2",
-    ],
-    use_starlark_android_rules = True,
-)
-maven.install(
-    name = "rules_android_maven",
-    aar_import_bzl_label = "@rules_android//rules:rules.bzl",
-    artifacts = [
-        # The Flutter engine's androidx runtime artifacts, plus everything
-        # rules_android's own install of the same name declares (same-name
-        # installs merge, so this is the union).
-        "androidx.privacysandbox.tools:tools:1.0.0-alpha06",
-        "androidx.privacysandbox.tools:tools-apigenerator:1.0.0-alpha06",
-        "androidx.privacysandbox.tools:tools-apipackager:1.0.0-alpha06",
-        "androidx.test:core:1.6.0-alpha01",
-        "androidx.test.ext:junit:1.2.0-alpha01",
-        "com.android.tools.apkdeployer:apkdeployer:8.11.0-alpha10",
-        "com.android.tools.build:bundletool:1.18.2",
-        "com.android.tools:desugar_jdk_libs_minimal:2.1.5",
-        "com.android.tools:desugar_jdk_libs_configuration_minimal:2.1.5",
-        "com.android.tools:desugar_jdk_libs_nio:2.1.5",
-        "com.android.tools:desugar_jdk_libs_configuration_nio:2.1.5",
-        "com.android.tools:desugar_jdk_libs_configuration:2.1.5",
-        "com.android.tools:r8:8.9.35",
-        "org.bouncycastle:bcprov-jdk18on:1.77",
-        "org.hamcrest:hamcrest-core:2.2",
-        "org.robolectric:robolectric:4.14.1",
-        "com.google.flogger:flogger:0.8",
-        "com.google.flogger:flogger-system-backend:0.8",
-        "com.google.guava:guava:32.1.2-jre",
-        "com.google.guava:failureaccess:1.0.1",
-        "info.picocli:picocli:4.7.4",
-        "jakarta.inject:jakarta.inject-api:2.0.1",
-        "junit:junit:4.13.2",
-        "com.beust:jcommander:1.82",
-        "com.google.protobuf:protobuf-java:4.34.0",
-        "com.google.protobuf:protobuf-java-util:4.34.0",
-        "com.google.code.findbugs:jsr305:3.0.2",
-        "androidx.databinding:databinding-compiler:8.7.0",
-        "org.ow2.asm:asm:9.6",
-        "org.ow2.asm:asm-commons:9.6",
-        "org.ow2.asm:asm-tree:9.6",
-        "org.ow2.asm:asm-util:9.6",
-        "com.android:zipflinger:8.7.0",
-        "com.android.tools.build:gradle:8.7.0",
-        "com.android:signflinger:8.7.0",
-        "com.android.tools.build:aapt2-proto:8.6.1-11315950",
-        "com.android.tools.build:apksig:8.7.0",
-        "com.android.tools.build:apkzlib:8.7.0",
-        "com.google.auto.value:auto-value:1.11.0",
-        "com.google.auto.value:auto-value-annotations:1.11.0",
-        "com.google.auto:auto-common:1.2.2",
-        "com.google.auto.service:auto-service:1.1.1",
-        "com.google.auto.service:auto-service-annotations:1.1.1",
-        "com.google.errorprone:error_prone_annotations:2.33.0",
-        "com.google.errorprone:error_prone_type_annotations:2.33.0",
-        "com.google.errorprone:error_prone_check_api:2.33.0",
-        "com.google.errorprone:error_prone_core:2.33.0",
-        "com.google.guava:guava-testlib:33.2.1-jre",
-        "com.google.jimfs:jimfs:1.2",
-        "com.google.testing.compile:compile-testing:0.18",
-        "com.google.testparameterinjector:test-parameter-injector:1.16",
-        "com.google.truth:truth:1.4.0",
-        "com.google.truth.extensions:truth-java8-extension:1.4.0",
-        "com.google.truth.extensions:truth-liteproto-extension:1.4.0",
-        "com.google.truth.extensions:truth-proto-extension:1.4.0",
-        "org.mockito:mockito-core:5.4.0",
-    ],
-    lock_file = "//:rules_android_maven_install.json",
-    repositories = [
-        "https://maven.google.com",
-        "https://maven-central.storage-download.googleapis.com/maven2",
-        "https://repo1.maven.org/maven2",
-    ],
-    use_starlark_android_rules = True,
-)
-use_repo(
-    maven,
-    "android_ide_common_30_1_3",
-    "rules_android_maven",
-)
+register_toolchains("@android_model//:kotlin_toolchain")

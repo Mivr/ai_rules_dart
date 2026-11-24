@@ -1,18 +1,13 @@
 """E2e: an Android app on `shared_preferences` registers its Android plugin in both registrants."""
 
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
-load(
-    "@rules_flutter//flutter:android.bzl",
-    "flutter_android_registrant",
-)
+load("@rules_flutter//flutter:android.bzl", "flutter_android_bundle", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
-load(":android_cc_toolchain.bzl", "declare_android_cc_toolchains")
 load(":dart_registrant.bzl", "android_dart_registrant")
 
 exports_files(["pubspec.lock"])
-
-declare_android_cc_toolchains(name = "android_cc")
 
 flutter_application(
     name = "app_flutter",
@@ -25,25 +20,46 @@ flutter_application(
     ],
 )
 
-# The Java registrant the app compiles: `GeneratedPluginRegistrant.java`.
-flutter_android_registrant(
-    name = "app_registrant",
+# `bazel run //:android_pin` writes android_model.json from the app's Android project.
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["debug"],
+)
+
+# The debug app. Its Java registrant is the one the Flutter tool wrote when the model was pinned.
+flutter_android_app(
+    name = "app_android",
+    application = ":app_flutter",
+    # package:jni builds libdartjni.so with CMake in Gradle; here the Dart side builds it.
+    native_built_elsewhere = [":jni"],
+)
+
+# The Android `GeneratedPluginRegistrant` and the plugin class it registers are in the APK.
+flutter_android_apk_test(
+    name = "app_apk_test",
+    app = "app_android",
+    classes = [
+        "Lio/flutter/plugins/GeneratedPluginRegistrant;",
+        "Lio/flutter/plugins/sharedpreferences/SharedPreferencesPlugin;",
+    ],
+)
+
+# The app's Dart payload in the Android configuration, as the app above packages it.
+flutter_android_bundle(
+    name = "app_payload",
     application = ":app_flutter",
 )
 
 # The Android-configured Dart registrant `generate_dart_plugin_registrant` writes.
 android_dart_registrant(
     name = "app_dart_registrant",
-    registrant = ":app_registrant",
+    bundle = ":app_payload",
 )
 
 build_test(
     name = "android_registrant_build_test",
     size = "small",
-    targets = [
-        ":app_dart_registrant",
-        ":app_registrant",
-    ],
+    targets = [":app_dart_registrant"],
 )
 
 dart_analysis_options(
@@ -67,14 +83,13 @@ flutter_library(
     ],
 )
 
-# Reads the generated Dart and Java plugin registrants and fails unless
-# `shared_preferences_android` is registered in both.
+# Reads the generated Dart plugin registrant and fails unless `shared_preferences_android` is
+# registered in it. (`:app_apk_test` checks the Java side in the APK.)
 dart_test(
     name = "registrants_test",
     size = "small",
     data = [
         ":app_dart_registrant",
-        ":app_registrant",
     ],
     main = "test/registrants_test.dart",
 )

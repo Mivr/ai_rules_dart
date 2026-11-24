@@ -165,10 +165,8 @@ cd e2e/windows_example && bazel test //...  # Windows-only (target_compatible_wi
 - macOS-only targets (macos bundle tests, ios_example) are skipped on other platforms via `target_compatible_with`.
 - Linux-only targets (linux bundle tests, linux_example) are skipped on macOS/Windows.
 - Windows-only targets (windows_example) are skipped on macOS/Linux.
-- `android_example` and `hello_world` (Android targets) require `ANDROID_HOME` to be set to the Android SDK path (e.g. `export ANDROID_HOME=$HOME/Library/Android/sdk` on macOS) and `ANDROID_NDK_HOME` to the NDK path (e.g. `export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<version>`, the versioned directory, not its `ndk/` parent). Any workspace that registers the host NDK toolchain needs both even for non-Android targets, because toolchain resolution fetches the repository. In a `.bazelrc` these need `--repo_env`, not `--action_env` — repository rules never see `--action_env`. `e2e/min_versions` is the exception: it downloads its Android SDK and NDK from pinned, checksummed Google archives, so it needs neither variable. Its Android leg is Linux-only (`target_compatible_with`), so macOS skips that leg and runs the Apple legs without an NDK.
-- A plugin's or AAR's `<uses-permission>` (e.g. `record_android`'s RECORD_AUDIO) reaches the APK without `--merge_android_manifest_permissions`: `flutter_android_app` lifts library permissions into the app's manifest itself, and no e2e workspace sets the flag, so the suite shows it is not needed. `plugin_example`'s `verify_android_apk_test` and `glass_app:verify_glass_apk_test` check it.
-- `flutter_android_app` merges `android/app/src/debug/AndroidManifest.xml` (where `flutter create` declares `android.permission.INTERNET`) into `-c dbg` APKs only, mirroring Gradle's variant merge. Debug APKs therefore host the Dart VM service out of the box; release APKs stay permission-free. `plugin_example`'s and `hello_world`'s flutter-create manifests are kept pristine to cover this path; `android_example` declares INTERNET in its hand-written `src/main` manifest and has no variant manifests, covering the no-op path. `verify_android_apk_test` in `plugin_example` is mode-aware: it asserts INTERNET present + `kernel_blob.bin` under `-c dbg`, and INTERNET absent + `libapp.so` in default (release) builds.
-- Android builds need no platform flags: `flutter_android_bundle` transitions the application to the Android platform matching its `android_abi`, and packaging hard-fails on any non-ELF native library. `verify_android_apk_test` in `e2e/android_example` asserts every packaged `.so` is ELF with the ABI's machine type, and that every androidx class the engine needs at runtime (including the profileinstaller → concurrent-futures → listenablefuture chain) is defined in the APK's dex — so a missing runtime dep fails in CI without an emulator.
+- The Android workspaces (`android_example`, `android_plugins`, `android_modules`, `android_sharedprefs`, `aar_host`, `integration_android`, `plugin_example`, `hello_world`, `min_versions`, `stock_dev_loop`, `android_model_red`) need `ANDROID_HOME` set to the Android SDK path for repository rules (`--repo_env=ANDROID_HOME=...`); those with native code (FFI libraries, `package:jni`) also need `ANDROID_NDK_HOME`, the versioned NDK directory. Each builds its Android side from its checked-in pin (`android_model.json`); `bazel run //:android_pin -- --check` says whether a pin is what Gradle gives now.
+- Android builds need no platform flags: `flutter_android_app` builds the Dart payload for each ABI of the app through `flutter_android_bundle`, which transitions the application to the matching Android platform.
 - If Xcode beta causes `local_config_xcode` errors, add `--repo_env=DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`.
 - **After an Xcode upgrade**, a workspace that has not built since can fail with
   `Running '…/xcode-locator <old version>' failed with code 1 … indicates that
@@ -234,7 +232,7 @@ cd e2e/windows_example && bazel test //...  # Windows-only (target_compatible_wi
 | integration_android | End-to-end Android `flutter_integration_test` running a counter + asset app and a Kotlin method-channel plugin in a hermetic headless Android emulator with KVM |
 | integration_ios | End-to-end iOS simulator `flutter_integration_test` running a counter + asset app and a Swift method-channel plugin on a booted simulator (macOS-only targets skip elsewhere; the Dart-side build and analysis tests run everywhere). Each test gets a distinct bundle id (`com.example.<package path>.<name>.<label hash>`), a per-run harness token, and the `exclusive` tag, so simulator runs cannot collide |
 | multi_window_example | Multi-window macOS + multi-scene iOS builds with FlutterEngineGroup; macOS bundle verification |
-| android_example | Android APK build (3 approaches: flutter_android_app, Bazel-generated manifest, custom manifest) + APK content verification + web build |
+| android_example | The stock Android project from its pinned Gradle model: debug (split APKs and one APK), profile, release with obfuscation and split debug info, the app bundle, an FFI library; APK and bundle content verification + web build |
 | linux_example | Linux desktop app (2 approaches: flutter_linux_app, Bazel-generated runner) + bundle structure verification |
 | windows_example | Windows desktop app (3 approaches: flutter_windows_app, Bazel-generated runner, custom cc_binary) + bundle structure verification |
 
@@ -255,7 +253,7 @@ cd e2e/windows_example && bazel test //...  # Windows-only (target_compatible_wi
 |---|---|
 | macOS | `:verify_macos_app_test` (manual stdout check). |
 | iOS Simulator | Manual: `flutter_dev run` on a booted simulator, and read the `plugin_example_results` line. |
-| Android | `:android_bundle_build_test` (build), `:verify_android_apk_test` (APK content: `libdartjni.so` present + ELF/ABI-valid, jni support classes in dex — runs in `bazel test //...`), `:verify_android_app_test` (manual: install on emulator/device, RESUMED + crash-buffer fail-fast, asserts the `plugin_example_results` logcat line reports a real `/data/user/0/…` path from path_provider — proves jnigen plugin registration end to end). |
+| Android | `:android_apk_test` and `:android_release_apk_test` (APK content: `libdartjni.so` per ABI, jni support classes in dex, the AOT library and no kernel in release; they run in `bazel test //...`), `//glass_app:glass_apk_test` (a workspace plugin as a path dependency), `:verify_android_app_test` (manual, on a device). |
 | Linux | `:linux_bundle_build_test` (build only). Visual verification on the GCP VM is manual (see § Linux visual verification). |
 | Windows | `:windows_bundle_build_test` (build only). Visual verification on the GCP VM is manual (see § Windows visual verification). |
 
@@ -274,16 +272,14 @@ for arbitrary Gradle native builds; instead:
    Android bundle's platform transition) and ships the `.so` through
    `flutter_plugin.native_deps` behind a
    `select({"@platforms//os:android": …})`. The library flows through the
-   existing transitive native-libs pathway into the bundle's
-   `native_libs.jar` at `lib/<abi>/`, subject to the same ELF/ABI machine
-   validation as every other packaged library. `ext/jni/1/` is the
-   canonical example (note `shared_lib_name` must yield the exact filename
-   `System.loadLibrary` resolves).
-2. Packages declaring `externalNativeBuild` that no overlay handles fail
-   the Android build at load time with a message pointing at
-   `flutter.plugin_overlays` — never a silently incomplete APK.
-   Non-Android platforms are unaffected (the check lives in the spoke's
-   `android/` sub-package, loaded only via the hub's Android aggregator).
+   transitive native-libs pathway into the app's Dart payload and is packaged
+   at `lib/<abi>/`. `ext/jni/1/` is the canonical example (note
+   `shared_lib_name` must yield the exact filename `System.loadLibrary`
+   resolves). The app says `native_built_elsewhere = [":jni"]`, because its
+   Gradle model records the CMake build.
+2. A project whose model records CMake or ndk-build and that the app does
+   not list in `native_built_elsewhere` fails the Android build, naming the
+   project: never a silently incomplete APK.
 
 ### Build hooks (no authoring needed)
 

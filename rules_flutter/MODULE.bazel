@@ -82,35 +82,21 @@ bazel_dep(name = "rules_apple", version = "4.5.3")
 # consumer whose own stack asks for 4.x still resolves higher by MVS.
 bazel_dep(name = "rules_swift", version = "3.5.0")
 
-# rules_android 0.8.0 is the floor. flutter_android_app's signing overlay
-# reads `@rules_android//flags:apk_signing_method` through the
-# `apk_signing_v*` config_settings, and that package exists only in 0.8.0+
-# (0.7.2 and 0.7.3 have no `flags/` directory at all) — with anything older
-# every Android app fails at analysis with "no such package
-# '@rules_android//flags'". There is no version-tolerant way to read their
-# flag, and mirroring it with our own default would silently sign
-# differently from the android_binary for consumers who set theirs.
-bazel_dep(name = "rules_android", version = "0.8.0")
+# rules_kotlin 2.3.0 is the floor: an app built from its pinned Gradle model
+# compiles its own and its plugins' Kotlin with `kt_jvm_library`,
+# `kt_kotlinc_options` and `kt_ksp_plugin` (`@rules_kotlin//kotlin:jvm.bzl`,
+# `//kotlin:core.bzl`), on the Kotlin standard library the Gradle model
+# resolved. A Flutter 3.47 app resolves Kotlin 2.4.0, whose metadata the
+# compiler of rules_kotlin 2.2 and older refuses; 2.3.0 is the oldest release
+# that reads it. e2e/min_versions pins it and builds the Android leg.
+bazel_dep(name = "rules_kotlin", version = "2.3.0")
 
-# rules_kotlin 2.1.10 is the floor: flutter_android_app loads
-# `@rules_kotlin//kotlin:android.bzl` for `kt_android_library`, and this is
-# the oldest release we support on the Bazel 9 / rules_android 0.8.0
-# toolchain. e2e/min_versions pins it and builds the Android leg.
-bazel_dep(name = "rules_kotlin", version = "2.1.10")
-
-# rules_java 9.0.0 is the floor: our Android/JVM macros load
-# `@rules_java//java:java_import.bzl`,
-# `@rules_java//java/common:java_info.bzl` (`JavaInfo`) and the Java
-# toolchain rules. rules_android 0.8.0 asks for at least 9.3.0, so a
-# consumer resolves 9.3.0 through it; that lift belongs to rules_android.
+# rules_java 9.0.0 is the floor: the Android model's rules load
+# `@rules_java//java:defs.bzl` (`java_binary`, `java_import`, `java_library`,
+# `java_plugin`, `java_test`) and `@rules_java//java/common:java_info.bzl`
+# (`JavaInfo`), and use the Java toolchain. rules_kotlin 2.3.0 asks for a newer
+# release, which a consumer resolves through it.
 bazel_dep(name = "rules_java", version = "9.0.0")
-
-# rules_jvm_external 6.8 is the floor: this module's `maven` extension and
-# the Android overlays use `@rules_jvm_external//:extensions.bzl` with
-# `maven.install`/`maven.artifact`, `use_starlark_android_rules` and
-# `aar_import_bzl_label`. rules_android 0.8.0 asks for at least 6.9, so a
-# consumer resolves 6.9 through it; that lift belongs to rules_android.
-bazel_dep(name = "rules_jvm_external", version = "6.8")
 
 # Minimum rules_dart with the APIs rules_flutter loads
 # (`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`,
@@ -135,16 +121,6 @@ bazel_dep(name = "rules_jvm_external", version = "6.8")
 # (0.64.2); docs/dependencies.md attributes every one of those lifts, and
 # `e2e/min_versions` checks them against the sibling's `MODULE.bazel`.
 bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
-
-# rules_go 0.59.0 is the floor: it is the lowest rules_go that builds on
-# Bazel 9 (0.50.0 through 0.58.3 fail to load because
-# `go/private/rules/cross.bzl` uses the native `CcInfo` symbol Bazel 9
-# removed; the rules_cc import landed in 0.59.0). It also matches the floor
-# rules_android 0.8.0 imposes, so our own declaration binds nothing new.
-# ai_rules_dart asks for 0.64.2, which a consumer resolves through
-# it. flutter_android_app's proxy transition sets `@rules_go//go/config:pure`,
-# which must resolve in every consumer, so this stays a regular dependency.
-bazel_dep(name = "rules_go", version = "0.59.0")
 
 bazel_dep(name = "rules_multitool", version = "1.11.1", dev_dependency = True)
 bazel_dep(name = "buildifier_prebuilt", version = "10.1.0", dev_dependency = True)
@@ -244,54 +220,8 @@ single_version_override(
 )
 
 single_version_override(
-    module_name = "rules_jvm_external",
-    version = "7.1",
-)
-
-single_version_override(
-    module_name = "rules_go",
-    version = "0.64.2",
-)
-
-single_version_override(
     module_name = "llvm",
     version = "0.8.19",
-)
-
-# Pinned Go toolchain for every Android consumer without its own `go_sdk`
-# block. This stays a regular (non-dev) dependency so the download below is
-# evaluated in every consumer: rules_go registers Go toolchains in module
-# order, and this module (a direct dependency) is always visited before
-# rules_android (transitive), so the pinned SDK sorts before rules_android's
-# own unpinned 1.22.4 download whatever order the root lists the modules in.
-# A root `go_sdk` block still wins: rules_go considers the root module first.
-# Plain consumers pay no fetch: toolchain registration is lazy, so the SDK
-# archive downloads only when a Go toolchain actually resolves (the Android
-# host tools such as `ak`), and `bazel build`/`bazel test` without Android
-# never touches it. rules_go itself stays a regular dependency:
-# flutter_android_app's proxy transition sets `@rules_go//go/config:pure`,
-# which must resolve in every consumer.
-# The 0.59.0 floor is the lowest rules_go that builds on Bazel 9: 0.50.0
-# through 0.58.3 fail to load (`go/private/rules/cross.bzl` uses the native
-# `CcInfo` symbol Bazel 9 removed; the rules_cc import landed in 0.59.0).
-# It also matches the floor rules_android 0.8.0 already imposes, while
-# ai_rules_dart asks for 0.64.2, so the floor binds nothing new in a
-# consumer graph.
-#
-# rules_android ships its own Go SDK (0.8.0 downloads 1.22.4 without
-# checksums, below its own go.mod floor of 1.24.2), so without the download
-# below an Android app builds its host tools with a broken, unverified
-# toolchain. `e2e/android_no_go_sdk` (no `go_sdk` block of its own) proves a
-# `flutter_android_app` analyzes against the pinned 1.26.2.
-go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(
-    sdks = {
-        "darwin_amd64": ("go1.26.2.darwin-amd64.tar.gz", "bc3f1500d9968c36d705442d90ba91addf9271665033748b82532682e90a7966"),
-        "darwin_arm64": ("go1.26.2.darwin-arm64.tar.gz", "32af1522bf3e3ff3975864780a429cc0b41d190ec7bf90faa661d6d64566e7af"),
-        "linux_amd64": ("go1.26.2.linux-amd64.tar.gz", "990e6b4bbba816dc3ee129eaeaf4b42f17c2800b88a2166c265ac1a200262282"),
-        "linux_arm64": ("go1.26.2.linux-arm64.tar.gz", "c958a1fe1b361391db163a485e21f5f228142d6f8b584f6bef89b26f66dc5b23"),
-    },
-    version = "1.26.2",
 )
 
 # Hermetic LLVM C++ toolchains for this repo's own builds only. Consumers
@@ -333,66 +263,6 @@ flutter.toolchain(flutter_version = "3.47.7")
 use_repo(flutter, "flutter_android_engine_arm64", "flutter_android_engine_arm64_profile", "flutter_android_engine_x64", "flutter_android_engine_x64_profile", "flutter_android_headless_runtime", "flutter_chrome_headless_shell", "flutter_dev_root", "flutter_ios_engine", "flutter_ios_engine_profile", "flutter_l10n", "flutter_linux_headless_runtime", "flutter_macos_engine", "flutter_material_fonts", "flutter_pub_hubs", "flutter_sdk_source", "flutter_sky_engine", "flutter_toolchains", "flutter_web_sdk", "flutter_xtool_darwin_sdk")
 
 register_toolchains("@flutter_toolchains//:all")
-
-# AndroidX dependencies the Flutter Android embedding (flutter.jar) requires
-# at runtime, mirroring the dependency list of Flutter's official
-# io.flutter:flutter_embedding_* Maven POM, plus androidx.annotation needed to
-# compile the runner Kotlin sources. Uses the "rules_android_maven" repo name
-# so rules_jvm_external merges these artifacts with rules_android's own maven
-# deps in downstream workspaces — user modules inherit them and only declare
-# artifacts their own code uses.
-maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
-maven.install(
-    name = "rules_android_maven",
-    artifacts = [
-        "androidx.annotation:annotation:1.9.1",
-        "androidx.core:core:1.17.0",
-        "androidx.exifinterface:exifinterface:1.4.1",
-        "androidx.fragment:fragment:1.8.9",
-        "androidx.lifecycle:lifecycle-common:2.10.0",
-        "androidx.lifecycle:lifecycle-runtime:2.10.0",
-        # androidx.lifecycle is an atomic version group (siblings depend on
-        # exact [version] ranges), so the members fragment pulls in
-        # transitively must be pinned to the same version for coursier to
-        # resolve.
-        "androidx.lifecycle:lifecycle-livedata:2.10.0",
-        "androidx.lifecycle:lifecycle-livedata-core:2.10.0",
-        "androidx.lifecycle:lifecycle-viewmodel:2.10.0",
-        "androidx.lifecycle:lifecycle-viewmodel-savedstate:2.10.0",
-        "androidx.tracing:tracing:1.2.0",
-        "androidx.window:window:1.3.0",
-        "androidx.window:window-java:1.3.0",
-        "com.getkeepsafe.relinker:relinker:1.4.5",
-        # The bundled `ext/jni` overlay's Java support classes implement
-        # kotlin.coroutines.Continuation (PortContinuation returns
-        # Dispatchers.getIO()), so every workspace using a jnigen-based
-        # plugin needs these on the plugin's compile classpath and in the
-        # APK dex.
-        "org.jetbrains.kotlin:kotlin-stdlib:2.1.20",
-        "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0",
-    ],
-    repositories = [
-        "https://maven.google.com",
-        "https://maven-central.storage-download.googleapis.com/maven2",
-        "https://repo1.maven.org/maven2",
-    ],
-)
-
-# lifecycle-runtime pulls in androidx.profileinstaller, whose
-# AbstractResolvableFuture implements com.google.guava's ListenableFuture and
-# runs in every app shortly after launch. In workspaces where guava is also
-# resolved (rules_android's tooling depends on it), coursier would otherwise
-# select guava's empty "9999.0" listenablefuture placeholder, leaving the
-# interface undefined in the APK dex and crashing the profile installer with
-# NoClassDefFoundError. Force the real jar.
-maven.artifact(
-    name = "rules_android_maven",
-    artifact = "listenablefuture",
-    force_version = True,
-    group = "com.google.guava",
-    version = "1.0",
-)
-use_repo(maven, "rules_android_maven")
 
 multitool = use_extension(
     "@rules_multitool//multitool:extension.bzl",

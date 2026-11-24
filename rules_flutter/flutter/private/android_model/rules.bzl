@@ -622,6 +622,29 @@ rdf_native_libs = rule(
     },
 )
 
+def _rdf_native_dir_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".zip")
+    args = _tool_args(ctx, "nativedir")
+    args.add("--abi", ctx.attr.abi)
+    args.add("--strip", ctx.executable.strip)
+    args.add("--out", out)
+    args.add_all(ctx.files.srcs, expand_directories = False)
+    _tool(ctx, args, depset(ctx.files.srcs + [ctx.executable.strip]), [out], "RdfNativeDir", "Native libraries of %{label}")
+    return [DefaultInfo(files = depset([out]))]
+
+rdf_native_dir = rule(
+    doc = """Directories of native libraries whose names are known only when they are built (the
+    libraries of build hooks), as one zip part under `lib/<abi>/`: each checked to be of the ABI,
+    and stripped.""",
+    implementation = _rdf_native_dir_impl,
+    attrs = {
+        "abi": attr.string(mandatory = True),
+        "srcs": attr.label_list(allow_files = True, doc = "Directories."),
+        "strip": attr.label(executable = True, cfg = "exec", allow_single_file = True, mandatory = True),
+        "tool": attr.label(executable = True, cfg = "exec", mandatory = True),
+    },
+)
+
 # ---------------------------------------------------------------------------------------------------
 # A zip part: files that go into an APK as they are (assets), compressed once here.
 
@@ -975,13 +998,17 @@ rdf_aar_parts = rule(
 # Small adapters.
 
 def _rdf_output_group_impl(ctx):
-    return [DefaultInfo(files = getattr(ctx.attr.src[OutputGroupInfo], ctx.attr.group))]
+    groups = ctx.attr.src[OutputGroupInfo]
+    if ctx.attr.optional and not hasattr(groups, ctx.attr.group):
+        return [DefaultInfo(files = depset())]
+    return [DefaultInfo(files = getattr(groups, ctx.attr.group))]
 
 rdf_output_group = rule(
     doc = "The files of one output group of a target.",
     implementation = _rdf_output_group_impl,
     attrs = {
         "group": attr.string(mandatory = True),
+        "optional": attr.bool(doc = "No files, not an error, when the target has no such group."),
         "src": attr.label(mandatory = True),
     },
 )

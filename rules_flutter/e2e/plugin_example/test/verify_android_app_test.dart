@@ -31,7 +31,7 @@ Future<void> main() async {
     exit(1);
   }
 
-  final apkPath = '$testSrcDir/$testWorkspace/plugin_android.apk';
+  final apkPath = '$testSrcDir/$testWorkspace/plugin_android_apk.apk';
   if (!File(apkPath).existsSync()) {
     stderr.writeln('APK not found at $apkPath');
     exit(1);

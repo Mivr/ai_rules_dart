@@ -32,7 +32,7 @@ it (for CI). Two pins of the same inputs are the same bytes.
 `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "rules_kotlin", version = "2.4.20")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")  # 2.3.0 or newer
 
 android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
 android_model.pin(model = "//:android_model.json")
@@ -79,9 +79,25 @@ the workspace other than the app (a library module of the app, a plugin under de
 dependency) is built through a link to its directory, so an edit there rebuilds that project only. The
 app's own sources are read in the package that calls `flutter_android_app`.
 
+A plugin of the pub cache is fetched once more for this, by the same hash, although the pub layer has
+the same archive: the Android model is its own module extension, and a repository of one extension
+cannot name the repositories of another unless the user lists each one. Bazel's download cache
+serves both, so nothing is downloaded twice. A plugin of the Flutter SDK itself (integration_test)
+is linked from the SDK of the build.
+
+The Dart side's native libraries (FFI libraries, the libraries of build hooks, which are a directory
+whose names are known only when it is built) are packaged under `lib/<abi>/` with the Gradle side's.
+Every native library is checked where it is packaged: a file under `lib/<abi>/` that is not an ELF
+library of that ABI's machine fails the build, naming the file, instead of failing on the device.
+
 The tools are AGP's own, at the versions the pin records: D8 and L8 from R8, the manifest merger, the
 resource compiler and aapt2, the R class writer, the APK signer. Kotlin is compiled by `rules_kotlin`,
-kapt and KSP included. `rules_android` and `rules_jvm_external` are not used.
+kapt and KSP included; its compiler must read the Kotlin standard library the model resolved (for the
+Kotlin 2.4.0 of a Flutter 3.47 app: `rules_kotlin` 2.3.0 or newer). `rules_android` and
+`rules_jvm_external` are not used, and `rules_flutter` does not depend on them.
+
+The pin belongs to one Flutter version: the Java embedding and `libflutter.so` are Maven artifacts of
+that version's engine. A build whose Flutter SDK has another engine fails and says to pin again.
 
 An edit rebuilds its own part: a Kotlin edit in the app compiles the app's library, dexes one jar and
 packages one split; a Dart edit builds the kernel and packages the `dart` split, and runs no compile,
@@ -197,9 +213,13 @@ Android projects in the host's Gradle build.
 
 ## What is not built, and how it fails
 
-Nothing is left out silently. The pin fails on a Gradle plugin class the rules cannot stand in for
+Nothing is left out silently. What a new pin repairs (a variant the pin does not hold, a feature the
+rules do not build) fails when the app is built, not when its package is loaded, so that the pin
+target beside it still runs. The pin fails on a Gradle plugin class the rules cannot stand in for
 (google-services is handled: the values it generates are recorded), on a project outside the app, the
-pub cache and the Bazel workspace, and on an app variant with several outputs. Generating the targets
+pub cache and the Bazel workspace, on an app variant with several outputs, and on library projects
+that depend on each other (two plugins whose pubspecs name each other: Gradle reports a circular
+dependency between their tasks when it builds them). Generating the targets
 fails, naming the project and the feature, on: data binding, view binding, Compose, RenderScript, ML
 model binding, prefab; AIDL and shader sources; Java resource directories; a Kotlin compiler plugin
 other than kapt and KSP; a Kotlin compiler argument the rules do not know; annotation processor
@@ -229,17 +249,51 @@ an app built with `split_per_abi`.
 The pin records aapt2 for Linux, macOS and Windows, and the hub picks the host's and the NDK's host
 directory. Only Linux x86_64 has been run.
 
-## Moving from `flutter_android_app` of `@rules_flutter//flutter:android.bzl`
+## Integration and drive tests
 
-That macro (an `android_binary` with the Flutter payload spliced in, plugins read from their Gradle
-files by a lexer) still exists beside this path until every workspace has moved. An app is on one
-path or the other: built from a pin, its Dart packages bring no Android library of their own.
+`flutter_integration_test(platform = "android", android_app = flutter_android_app)` builds the test
+app's Android side with the app macro of the pin (pass the function loaded from the pin's
+`defs.bzl`; `android_variant = "devDebug"` for a flavor), so the test runs the app's own Android
+project with the plugins of its pubspec, integration_test's included, as `flutter test
+integration_test` does. `flutter_drive_test(app = ":app_apk")` takes the whole APK of a debug app.
+Both run on the pinned headless emulator. `e2e/integration_android` has both.
 
-- Add the app's stock Android project if it has only `android/app/src/main`, run the pin and check
-  `android_model.json` in.
-- `MODULE.bazel`: add the `android_model` lines above. The Android SDK and NDK repositories of
-  `rules_android`, the `rules_android_maven` install with its lock file, `android_maven_deps` and
-  `android_maven_ignore` of `flutter.pub`, and the Go SDK override are not needed by this path.
-- `BUILD.bazel`: load `flutter_android_app` from `@android_model//:defs.bzl`. `package_name`,
-  `permissions`, `manifest` and the like go: the application id, the manifests, the resources and the
-  SDK levels are the Gradle project's.
+## Moving from the removed `android_binary` macros
+
+`flutter_android_app` and `flutter_android_aab` of `@rules_flutter//flutter:android.bzl` (an
+`android_binary` with the Flutter payload spliced in, plugins read from their Gradle files by a
+lexer), the composable pieces around them (`flutter_android_engine`, `flutter_android_registrant`,
+`flutter_android_manifest_gen`, `flutter_android_runner_lib_gen`, `flutter_android_plugin_library`,
+`flutter_android_manifest_merge`, `flutter_android_apk_overlay`, ...) and the Android side of the pub
+layer are removed. An app's Android side is built one way.
+
+- **The Android project.** Add the app's stock Android project if it has only `android/app/src/main`
+  (`flutter create --platforms=android .`), run `flutter pub get`, then `bazel run //:android_pin`, and
+  check `android_model.json` in.
+- **`MODULE.bazel`.** Add the `android_model` lines above and `rules_kotlin`. Remove the Android SDK
+  repository of `rules_android`, the `rules_android_maven` install and its lock file, the `go_sdk`
+  block, and `android_maven_deps` and `android_maven_ignore` of `flutter.pub` (both attributes are
+  gone). Keep `rules_android_ndk` if the app has native code on the Dart side (FFI libraries,
+  `package:jni`).
+- **`BUILD.bazel`.** Load `flutter_android_app` from `@android_model//:defs.bzl`.
+
+| Before | Now |
+|---|---|
+| `package_name`, `app_name`, `min_sdk_version`, `target_sdk_version` | `applicationId`, `android:label`, `minSdk`, `targetSdk` of the Gradle project |
+| `manifest`, `debug_manifest`, `profile_manifest`, `permissions`, `resources` | the manifests and `res/` of `android/app/src/main`, `src/debug`, `src/profile` |
+| `android_abi = "x64"` | `abis = ["x86_64"]`; by default the ABIs of the Gradle project |
+| `-c dbg`, `-c opt`, `--@rules_flutter//flutter:profile` choosing the mode | `variant = "debug"`, `"profile"`, `"release"` (or a flavor's) |
+| `keystore`, `keystore_password_file`, `key_alias`, the `//flutter:android_release_*` flags | the signing configuration of the Gradle file, and `bazel run //:<name>_sign` with `android/key.properties` or the environment (see "Signing") |
+| `flutter_android_aab` | `//:<name>_bundle` of any `flutter_android_app` |
+| `proguard_specs` | `proguardFiles` of the release build type |
+| `deps = [":my_plugin_android"]`, `flutter_plugin(android_libs = ...)`, `flutter_android_plugin_library` | the plugin's own `android/build.gradle`; the app names the package as a path dependency in `pubspec.yaml` |
+| `@<hub>//android:all_android_plugin_libs` | gone: an app has the plugins of its pubspec |
+| `analyze_size = True` | `flutter_android_bundle(analyze_size = True, flutter_mode = "release")` |
+| `//flutter:android_pure_go` | gone: no Go tool is built |
+| `flutter_integration_test(android_package, android_deps, pub_hub_name)` | `android_app = flutter_android_app` |
+| `flutter_drive_test(app = ":app", package_name = ...)` | `app = ":app_apk"` |
+
+What changes in behaviour: an app has every Android plugin of its pubspec, as a stock build does (the
+old macro packaged only the plugins the Dart graph of the target reached); a debug build is the
+`debug` variant whatever `-c` says; and `INTERNET` in a release build comes from the main manifest
+only, as in a stock project.

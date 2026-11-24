@@ -11,11 +11,7 @@ load("@rules_dart//dart:defs.bzl", "dart_library")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("//flutter:providers.bzl", "FlutterInfo")
 load("//flutter/private:flutter_library.bzl", "flutter_library")
-load(
-    "//flutter/private:flutter_pub_scc_build.bzl",
-    "adapt_scc_member_android_overlay_content",
-    "scc_flutter_test_package_bzl_content",
-)
+load("//flutter/private:flutter_pub_scc_build.bzl", "scc_flutter_test_package_bzl_content")
 load("//flutter/private:flutter_pub_scc_target.bzl", "flutter_pub_scc_member_target")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
@@ -41,11 +37,6 @@ def _scc_content_test_impl(ctx):
     content = scc_flutter_test_package_bzl_content()
     asserts.true(env, 'load("@rules_flutter//flutter:providers.bzl", "FlutterInfo")' in content, content)
     asserts.true(env, "for p in (DartKernelInfo, DartAnalyzableInfo, FlutterInfo):" in content, content)
-    adapted = adapt_scc_member_android_overlay_content(
-        "pkg_a",
-        'deps = ["//:lib"], visibility = ["//android:__pkg__"]',
-    )
-    asserts.equals(env, 'deps = ["//pkg_a:lib"], visibility = ["//pkg_a/android:__pkg__"]', adapted)
     return unittest.end(env)
 
 _scc_content_test = unittest.make(_scc_content_test_impl)

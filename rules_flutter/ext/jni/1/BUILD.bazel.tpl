@@ -10,11 +10,11 @@
 # native-libs pathway FFI plugin libraries travel — so the Android bundle
 # packages it at `lib/<abi>/libdartjni.so` next to libapp.so.
 #
-# The Android Java side additionally compiles `java/src/main/java` (shared
-# JNI support classes — PortContinuation, PortProxyBuilder, PortCleaner,
-# JniUtils — which dartjni.c looks up via JNI at runtime); Gradle folds that
-# directory in via `sourceSets { main { java { srcDirs '../java/...' } } }`.
-# The `android/` sub-package overlay consumes it via :jni_java_support_srcs.
+# The Android Java side (the plugin class and the shared JNI support classes
+# under `java/src/main/java`, which dartjni.c looks up via JNI at runtime) is
+# the package's own Gradle project, built from the app's pinned Gradle model.
+# The model records that Gradle builds this C library with CMake; the app says
+# `native_built_elsewhere = [":jni"]`, because it is built here.
 #
 # Placeholders (HUB_NAME, PKG, VERSION, LANGUAGE_VERSION, DEPS — written in
 # braces below, and deliberately not in this comment, because substitution
@@ -47,14 +47,6 @@ flutter_plugin(
     deps = [
         {DEPS}
     ],
-)
-
-# Shared Java support classes, consumed by the android/ sub-package's
-# kt_android_library (a Bazel glob cannot cross the package boundary).
-filegroup(
-    name = "jni_java_support_srcs",
-    srcs = glob(["java/src/main/java/**/*.java"]),
-    visibility = ["//android:__pkg__"],
 )
 
 # Mirrors `add_library(jni SHARED ...)` in src/CMakeLists.txt: the same three

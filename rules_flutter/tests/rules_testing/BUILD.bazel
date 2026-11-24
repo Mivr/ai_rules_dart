@@ -1,4 +1,3 @@
-load(":android_rules_test.bzl", "android_rules_test_suite")
 load(":aot_guards_test.bzl", "aot_guards_test_suite")
 load(":architecture_invariants_test.bzl", "architecture_invariants_analysis_tests")
 load(":defs_rules_test.bzl", "defs_rules_test_suite")
@@ -9,8 +8,6 @@ load(":macos_rules_test.bzl", "macos_rules_test_suite")
 load(":native_assets_rules_test.bzl", "native_assets_rules_test_suite")
 load(":web_rules_test.bzl", "web_rules_test_suite")
 load(":windows_rules_test.bzl", "windows_rules_test_suite")
-
-android_rules_test_suite(name = "android_rules_test")
 
 defs_rules_test_suite(name = "defs_rules_test")
 

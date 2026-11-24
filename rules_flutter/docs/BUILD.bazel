@@ -4,16 +4,12 @@ load("@rules_dart//dart:defs.bzl", "dart_test")
 # `starlark_doc_extract` refuses a load closure that reaches a Starlark module
 # with no `bzl_library` target.
 #
-# - `android.bzl`: its closure loads `@rules_android//android:rules.bzl` and
-#   `@rules_kotlin//kotlin:android.bzl`.
-# - `defs.bzl`, `linux.bzl` and `web.bzl`: `flutter_integration_test`
-#   (`flutter/private/flutter_integration_test.bzl`) brings those same two
-#   modules into each closure; its `platform = "android"` macro body declares
-#   `android_binary` and `kt_android_library`, and Bazel 9.3.0 has no
-#   `native.android_binary`.
-#   rules_android 0.8.0's `android/BUILD` declares no targets, and
-#   rules_kotlin 2.4.20's release `kotlin/BUILD` leaves `android.bzl` out of
-#   every target, so no `bzl_library` can cover them.
+# - `android.bzl`, `defs.bzl`, `linux.bzl` and `web.bzl`: until the Android
+#   side moved to the pinned Gradle model their closures reached
+#   `@rules_android//android:rules.bzl` and `@rules_kotlin//kotlin:android.bzl`,
+#   which no `bzl_library` covers. They no longer do; extracting the four has
+#   not been tried yet (`android.bzl` now reaches the Android model's
+#   extension and pin, which have `bzl_library` targets).
 # - `extensions.bzl`: its closure loads `@rules_dart//dart/pub:pub_scan.bzl`,
 #   `@rules_dart//dart/pub:pub_archive_scan.bzl` and
 #   `@rules_dart//dart/pub:pub_scanner_sdk.bzl`, which have no `bzl_library`

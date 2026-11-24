@@ -75,25 +75,25 @@ void main() {
     );
   });
 
-  test('android_bundle jars match the kernel build bytes', () async {
+  test('android_bundle writes the same AAR as the kernel build', () async {
     final String exe = _exe('ANDROID_BUNDLE');
     File('${work.path}/libapp.so').writeAsBytesSync(_fakeLibrary());
-    final ProcessResult empty = await run(exe, <String>[
-      'empty-jar', '--output', 'empty.jar', //
+    File('${work.path}/AndroidManifest.xml').writeAsStringSync('<manifest/>\n');
+    Directory('${work.path}/flutter_assets').createSync();
+    File('${work.path}/flutter_assets/a.txt').writeAsStringSync('asset\n');
+    final ProcessResult aar = await run(exe, <String>[
+      'aar', '--output', 'module.aar', '--manifest', 'AndroidManifest.xml', //
+      '--assets-dir',
+      'flutter_assets',
+      '--lib',
+      'arm64-v8a',
+      '183',
+      'libapp.so',
     ]);
-    expect(empty.exitCode, 0, reason: '${empty.stderr}');
+    expect(aar.exitCode, 0, reason: '${aar.stderr}');
     expect(
-      _hex('${work.path}/empty.jar'),
-      '8739c76e681f900923b900c9df0ef75cf421d39cabb54650c4b9ad19b6a76d85',
-    );
-    final ProcessResult libs = await run(exe, <String>[
-      'native-libs-jar', '--output', 'libs.jar', '--abi', 'arm64-v8a', //
-      '--machine', '183', 'lib/arm64-v8a/libapp.so=libapp.so',
-    ]);
-    expect(libs.exitCode, 0, reason: '${libs.stderr}');
-    expect(
-      _hex('${work.path}/libs.jar'),
-      'cef9f5502d78bab47069d18ad4ab0350af5479a1da4472717500dfc60ccc9a1f',
+      _hex('${work.path}/module.aar'),
+      '8012f6f99838b6f32882066c89f25b9636d712d3cdb5504578a381325ca50685',
     );
   });
 

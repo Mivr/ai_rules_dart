@@ -1,6 +1,7 @@
+load("@android_model//:defs.bzl", "flutter_android_app")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_dart//dart:defs.bzl", "dart_test")
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_kernel_target")
 load("@rules_flutter//flutter:ios.bzl", "flutter_ios_app", "flutter_ios_simulator_build_test")
 load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app")
@@ -45,16 +46,22 @@ build_test(
     targets = [":app_kernel"],
 )
 
+# The Android leg: the stock Android project (android/), built from its pinned Gradle model with the
+# minimum supported rules_kotlin. `bazel run //:android_pin` writes android_model.json.
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["debug"],
+)
+
 flutter_android_app(
     name = "app_android",
-    package_name = "com.example.minversions",
     application = ":app",
 )
 
 build_test(
     name = "android_build_test",
     target_compatible_with = ["@platforms//os:linux"],
-    targets = [":app_android"],
+    targets = [":app_android_apk"],
 )
 
 flutter_ios_app(

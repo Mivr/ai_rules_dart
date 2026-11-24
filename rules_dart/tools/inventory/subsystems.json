@@ -173,22 +173,11 @@
     },
     {
       "name": "android",
-      "note": "Gradle translation, APK overlay, manifest merge and the zlib port",
+      "note": "Android from the pinned Gradle model: target generation, the actions, the Java tool over AGP's libraries and the pin step's init script",
       "paths": [
-        "rules_flutter/flutter/private/gradle*",
-        "rules_flutter/flutter/private/flutter_pub_android_package.bzl",
-        "rules_flutter/flutter/private/flutter_android_apk_overlay.bzl",
-        "rules_flutter/flutter/private/flutter_android_plugin_closure.bzl",
-        "rules_flutter/flutter/private/flutter_android_manifest_merge.bzl",
-        "rules_flutter/flutter/private/tools/apk_overlay.dart",
-        "rules_flutter/flutter/private/tools/merge_android_manifests.dart",
-        "rules_flutter/flutter/private/tools/zlib_raw_*",
-        "rules_flutter/flutter/private/tools/test/apk_overlay_test.dart",
-        "rules_flutter/flutter/private/tools/test/merge_android_manifests_test.dart",
-        "rules_flutter/flutter/private/tools/test/zlib_raw_*",
-        "rules_flutter/flutter/tests/gradle*",
-        "rules_flutter/flutter/tests/*android_manifest*",
-        "rules_flutter/flutter/tests/*apk_overlay*"
+        "rules_flutter/flutter/private/android_model/**",
+        "rules_flutter/flutter/private/flutter_android_application.bzl",
+        "rules_flutter/flutter/android.bzl"
       ]
     },
     {

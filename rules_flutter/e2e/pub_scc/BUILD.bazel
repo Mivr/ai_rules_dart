@@ -1,6 +1,4 @@
-load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_dart//dart:defs.bzl", "dart_test")
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application")
 load(
     "@rules_flutter//flutter:ios.bzl",
@@ -52,45 +50,10 @@ dart_test(
     ],
 )
 
-flutter_android_app(
-    name = "app_android",
-    package_name = "dev.example.pubscc",
-    application = ":app",
-)
-
-build_test(
-    name = "android_build_test",
-    target_compatible_with = ["@platforms//os:linux"],
-    targets = [":app_android"],
-)
-
-build_test(
-    name = "android_aggregator_test",
-    target_compatible_with = ["@platforms//os:linux"],
-    targets = ["@deps//android:all_android_plugin_libs"],
-)
-
-dart_test(
-    name = "verify_android_apk_test",
-    size = "small",
-    srcs = [
-        "test/verify_android_apk_test.dart",
-        "test/zip_archive.dart",
-    ],
-    data = [
-        ":__app_android_registrant_src",
-        ":app_android",
-    ],
-    env = {
-        "APK_RLOCATION": "$(rlocationpaths :app_android)",
-        "REGISTRANT_RLOCATION": "$(rlocationpaths :__app_android_registrant_src)",
-    },
-    main = "test/verify_android_apk_test.dart",
-    target_compatible_with = ["@platforms//os:linux"],
-    deps = [
-        "@rules_dart//dart/runfiles",
-    ],
-)
+# No Android leg: `cycle_a` and `cycle_b` are Android plugins whose pubspecs name each other, and the
+# stock Gradle build cannot order their compile tasks ("Circular dependency between the following
+# tasks: :cycle_a:bundleLibCompileToJarDebug ..."). The pin step says the same when it is run on such
+# an app. The cycle is a property of the Dart packages, which the targets above and the iOS leg build.
 
 flutter_ios_app(
     name = "app_ios",

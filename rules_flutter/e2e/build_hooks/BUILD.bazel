@@ -1,5 +1,6 @@
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_test")
 load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
 
@@ -41,14 +42,33 @@ flutter_linux_app(
     target_compatible_with = ["@platforms//os:linux"],
 )
 
-# A debug APK for an x86_64 emulator; the hooks run with the NDK's clang for
-# that ABI.
+# The app's Android side is its stock Android project (android/), built from the pinned Gradle model:
+# `bazel run //:android_pin` writes android_model.json.
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["debug"],
+)
+
+# The debug app for an x86_64 emulator (`//:app_x64` as split APKs, `//:app_x64_apk` as one APK); the
+# hooks run with the NDK's clang for that ABI, and their libraries are packaged under `lib/x86_64/`.
 flutter_android_app(
     name = "app_x64",
-    package_name = "com.example.flutterapp",
-    android_abi = "x64",
+    abis = ["x86_64"],
     application = ":app_flutter",
-    tags = ["manual"],
+)
+
+# The three hook libraries are in the APK, for the app's ABI and no other.
+flutter_android_apk_test(
+    name = "app_x64_apk_test",
+    absent_entries = ["lib/arm64-v8a/**"],
+    app = "app_x64",
+    entries = [
+        "lib/x86_64/libflutter.so",
+        "lib/x86_64/libnative_add.so",
+        "lib/x86_64/libnative_link.so",
+        "lib/x86_64/libsqlite3.so",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 build_test(

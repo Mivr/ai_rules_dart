@@ -122,7 +122,7 @@ void main() {
     stderr.writeln('Missing TEST_SRCDIR or TEST_WORKSPACE env vars');
     exit(1);
   }
-  final apk = '$testSrcDir/$testWorkspace/hello_world_android.apk';
+  final apk = '$testSrcDir/$testWorkspace/hello_world_android_apk.apk';
   if (!File(apk).existsSync()) {
     stderr.writeln('APK not found at $apk');
     exit(1);

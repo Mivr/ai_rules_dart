@@ -194,7 +194,7 @@ void main() {
     },
   );
 
-  test('a repository with no install at all is a setup error', () {
-    expect(() => _check(module: '# nothing\n'), throwsA(isA<SetupException>()));
+  test('a repository with no install at all has nothing to report', () {
+    expect(_check(module: '# nothing\n'), isEmpty);
   });
 }

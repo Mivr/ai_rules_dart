@@ -464,16 +464,8 @@ def plugin_extra_targets(
         plugin_defines = []):
     """The per-platform plugin library targets, joined for the template.
 
-    NOTE: Android Kotlin/Java sources are NOT compiled in the top-level
-    spoke BUILD. Instead, they're exposed via a sibling `android/`
-    sub-package (see make_android_subpackage_build_content) which loads
-    @rules_android + @rules_kotlin lazily — only when something queries
-    `@<spoke>//android:lib`. Mac-only / web-only workspaces never trigger
-    the parse and don't pay the @rules_android / @rules_kotlin cost.
-    The application-side `flutter_android_app` macro depends on the hub's
-    `android/all_android_plugin_libs` aggregator, which deps on every
-    spoke's `android:lib` — so Android-targeted builds pick up all
-    plugin libraries automatically.
+    A plugin's Android Kotlin/Java sources are not built from the spoke: an
+    app's Android side comes from its pinned Gradle model.
 
     Args:
         name: The pub package name used for the target names.

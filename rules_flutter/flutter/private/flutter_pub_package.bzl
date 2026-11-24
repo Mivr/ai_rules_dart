@@ -35,13 +35,6 @@ load("//flutter/private:flutter_pub_plugin_deps.bzl", "check_plugin_native_deps"
 load("//flutter/private:flutter_pubspec.bzl", "parse_flutter_assets_block", "parse_flutter_plugin_block")
 load(":asset_uri.bzl", "normalize_spoke_asset_block")
 load(
-    ":flutter_pub_android_package.bzl",
-    "android_package_repo_name",
-    "android_spoke_alias_content",
-    "path_package_root",
-    _android_make_subpackage_build_content = "make_android_subpackage_build_content",
-)
-load(
     ":flutter_pub_apple.bzl",
     _detect_apple_plugin_sources = "detect_apple_plugin_sources",
     _has_files_under = "has_files_under",
@@ -52,8 +45,6 @@ load(
 )
 load(":flutter_pub_apple_local.bzl", "apply_apple_native_deps")
 load(":flutter_pub_git.bzl", "fetch_git_package")
-load(":flutter_pub_lock_hub.bzl", "android_plugin_libs_arg", "overlay_with_android_edge")
-load(":flutter_pub_maven.bzl", _maven_deps_attr = "maven_deps_attr", _maven_ignore_attr = "maven_ignore_attr")
 load(
     ":flutter_pub_mirror.bzl",
     "link_scoped_file_entry",
@@ -61,6 +52,7 @@ load(
     "make_link_scope",
     "mirror_tree_bounded",
 )
+load(":flutter_pub_path.bzl", "path_package_root")
 load(
     ":flutter_pub_package_helpers.bzl",
     _check_pubspec_identity_mismatch = "check_pubspec_identity_mismatch",
@@ -74,14 +66,6 @@ load(
     _spoke_data_patterns = "spoke_data_patterns",
 )
 load(":flutter_pub_walk.bzl", "PUB_WALK_BOUND", "heredoc_blocks_bound_error")
-load(
-    ":gradle.bzl",
-    _gradle_is_java_package_name = "is_java_package_name",
-    _gradle_is_maven_dep_label = "is_maven_dep_label",
-    _gradle_maven_labels_for_gradle = "maven_labels_for_gradle",
-    _gradle_parse_android_manifest_package = "parse_android_manifest_package",
-    _gradle_parse_gradle_android_namespace = "parse_gradle_android_namespace",
-)
 load(":starlark_literal.bzl", "decode_starlark_escapes", "starlark_string_literal")
 load(":swiftpm_resolved.bzl", "pub_spoke_swiftpm_rule_attrs")
 
@@ -92,114 +76,6 @@ missing_pubspec_refusal = _missing_pubspec_refusal
 parse_pubspec_identity = _parse_pubspec_identity
 pubspec_name_refusal = _pubspec_name_refusal
 pubspec_version_refusal = _pubspec_version_refusal
-
-def parse_gradle_android_namespace(content, language = "groovy"):
-    """Extract `android.namespace` from a Gradle build script.
-
-    Moved to `//flutter/private:gradle.bzl`; kept here with the same
-    signature so existing loads keep working.
-
-    Args:
-        content: Gradle build script text to scan.
-        language: Gradle DSL of the script, `"groovy"` or `"kotlin"`. Defaults to `"groovy"`.
-
-    Returns:
-        The `android.namespace` string, as returned by the gradle helper.
-    """
-    return _gradle_parse_gradle_android_namespace(content, language)
-
-def parse_android_manifest_package(content):
-    """Extract the `package` attribute from an AndroidManifest.xml.
-
-    Moved to `//flutter/private:gradle.bzl`; kept here with the same
-    signature so existing loads keep working.
-
-    Args:
-        content: AndroidManifest.xml text to scan.
-
-    Returns:
-        The manifest `package` attribute, as returned by the gradle helper.
-    """
-    return _gradle_parse_android_manifest_package(content)
-
-def maven_labels_for_gradle(content, mapping, ignore, read_script = None, language = "groovy"):
-    """Translate a Gradle build file's runtime deps to Bazel labels.
-
-    Moved to `//flutter/private:gradle.bzl`; kept here with the same
-    signature so existing loads keep working.
-
-    Args:
-        content: Gradle build script text whose runtime dependencies are translated.
-        mapping: Dict mapping Maven coordinates to Bazel labels.
-        ignore: Coordinates to skip when translating dependencies.
-        read_script: Optional callable used to read referenced scripts. Defaults to `None`.
-        language: Gradle DSL of the script, `"groovy"` or `"kotlin"`. Defaults to `"groovy"`.
-
-    Returns:
-        The Bazel label list produced by the gradle helper.
-    """
-    return _gradle_maven_labels_for_gradle(content, mapping, ignore, read_script, language)
-
-def is_java_package_name(value):
-    """True when `value` is a well-formed Java package name.
-
-    Moved to `//flutter/private:gradle.bzl`; kept here with the same
-    signature so existing loads keep working.
-
-    Args:
-        value: Candidate string to validate as a Java package name.
-
-    Returns:
-        True when `value` is a well-formed Java package name, otherwise False.
-    """
-    return _gradle_is_java_package_name(value)
-
-def is_maven_dep_label(value):
-    """True when `value` is a plausible Bazel label for `android_maven_deps`.
-
-    Moved to `//flutter/private:gradle.bzl`; kept here with the same
-    signature so existing loads keep working.
-
-    Args:
-        value: Candidate string to validate as a Maven dependency label.
-
-    Returns:
-        True when `value` is a plausible Maven dependency label, otherwise False.
-    """
-    return _gradle_is_maven_dep_label(value)
-
-def make_android_subpackage_build_content(
-        android_src_dir,
-        java_package,
-        extra_maven_labels,
-        android_manifest = "",
-        consumer_proguard_specs = [],
-        has_resources = False):
-    """Generate `android/BUILD.bazel` content for a Flutter plugin.
-
-    Moved to `//flutter/private:flutter_pub_android_package.bzl`, where the
-    lazy Android repository uses it; kept here with the same signature so
-    existing loads keep working.
-
-    Args:
-        android_src_dir: Source dir under the repository root, or empty.
-        java_package: The plugin's Android namespace, or empty.
-        extra_maven_labels: Translated `@rules_android_maven` labels.
-        android_manifest: Repository-relative manifest path, or empty.
-        consumer_proguard_specs: Android-subpackage-relative keep-rule paths.
-        has_resources: True when `android/src/main/res/` holds files.
-
-    Returns:
-        Generated BUILD content as a string.
-    """
-    return _android_make_subpackage_build_content(
-        android_src_dir = android_src_dir,
-        java_package = java_package,
-        extra_maven_labels = extra_maven_labels,
-        android_manifest = android_manifest,
-        consumer_proguard_specs = consumer_proguard_specs,
-        has_resources = has_resources,
-    )
 
 # C/C++ source extensions for Linux/Windows plugin libraries.
 _DESKTOP_SRC_EXTENSIONS = ("cc", "cpp", "c", "h", "hh", "hpp")
@@ -353,11 +229,9 @@ def make_flutter_plugin_build_content(
     `flutter_linux_plugin_library` /
     `flutter_windows_plugin_library` sub-targets.
 
-    Android Kotlin/Java sources are exposed via a sibling `android/`
-    sub-package (see `make_android_subpackage_build_content`). The
-    sub-package is loaded only when something queries
-    `@<spoke>//android:lib` — non-Android workspaces don't pay the
-    `@rules_android` / `@rules_kotlin` cost.
+    A plugin's Android sources are not built from this repository: an app's
+    Android side comes from its pinned Gradle model, which names the plugin's
+    own Gradle project.
 
     Args:
         name: Target name (also the `package_name`).
@@ -405,21 +279,12 @@ def make_flutter_plugin_build_content(
         plugin_defines,
     )
 
-    # NB: Android sources are no longer surfaced via a top-level filegroup.
-    # See `make_android_subpackage_build_content` — the spoke's `android/`
-    # sub-package wraps them in a kt_android_library that the hub's
-    # aggregator (`@<hub>//android:all_android_plugin_libs`) depends on.
-
     apple_libs_arg = _plugin_apple_libs_arg(name, apple_macos_srcs_dirs, apple_ios_srcs_dirs)
 
     # Branch labels compose the classified package name with fixed
     # suffixes; nothing walked or declared reaches them unquoted.
     linux_libs_arg = '    linux_libs = [":%s_linux"],\n' % name if linux_src_dir else ""
     windows_libs_arg = '    windows_libs = [":%s_windows"],\n' % name if windows_src_dir else ""
-
-    # Android sources travel through a sibling `android/` sub-package. The plugin
-    # reaches it through `android_libs`, selected only under the Android platform,
-    # so an app's plugin closure finds the library on the Dart graph.
 
     # Apple PrivacyInfo.xcprivacy files: thread through `apple_privacy_files`
     # on the flutter_plugin so they propagate via FlutterInfo to the platform
@@ -441,7 +306,7 @@ flutter_plugin(
     plugin_platforms_json = {plugin_platforms_json_literal},
     language_version = "{language_version}",
 {version}{apple_libs_arg}{linux_libs_arg}{windows_libs_arg}\
-{android_libs_arg}{apple_privacy_files_arg}{asset_attrs}{pub_attrs}    visibility = ["//visibility:public"],
+{apple_privacy_files_arg}{asset_attrs}{pub_attrs}    visibility = ["//visibility:public"],
 )
 {extra_targets}
 """.format(
@@ -457,7 +322,6 @@ flutter_plugin(
         apple_libs_arg = apple_libs_arg,
         linux_libs_arg = linux_libs_arg,
         windows_libs_arg = windows_libs_arg,
-        android_libs_arg = android_plugin_libs_arg(plugin_platforms_json),
         apple_privacy_files_arg = apple_privacy_files_arg,
         pub_attrs = pub_attrs,
     )
@@ -793,19 +657,10 @@ def _overlay_template(ctx, root_label, package_name, version, lang_version, labe
     which `{DEPS}` expands into. `guard_hub_deps` rejects a template that
     hand-writes those labels instead — see `find_hardcoded_hub_dep`. Only the
     top-level BUILD sets it: `{DEPS}` is a Dart dependency list, so it is not
-    the right substitute for a sibling label in an `android/` sub-package.
+    the right substitute for a label elsewhere.
 
-    Currently called for two relpaths:
-
-    * `BUILD.bazel.tpl` — the spoke's top-level BUILD that fully
-      replaces the auto-generated content.
-    * `android/BUILD.bazel.tpl` — the Android sub-package BUILD,
-      replacing the empty-stub `kt_android_library(srcs=[])` that
-      otherwise fires when a top-level overlay short-circuits the
-      regular auto-gen path. Plugins whose Android side needs real
-      sources / extra maven labels (e.g. ones whose Java references
-      transitive deps not in the curated `_MAVEN_COORD_TO_LABEL`)
-      ship this alongside the top-level overlay.
+    Called for `BUILD.bazel.tpl`, the spoke's top-level BUILD that fully
+    replaces the auto-generated content.
     """
     anchor = ctx.path(root_label)
     ctx.watch(anchor)
@@ -889,9 +744,8 @@ def _resolve_overlay(ctx, overlay_root_label, package_name, version, language_ve
     """Resolve the top-level BUILD.bazel.tpl overlay.
 
     Equivalent to `_overlay_template(..., "BUILD.bazel.tpl")`.
-    Kept as a separate helper because the top-level lookup is the most
-    common call shape; consumers wanting the Android sub-package
-    template call `_overlay_template` directly.
+    Kept as a separate helper because the top-level lookup is the
+    common call shape.
     """
     return _overlay_template(
         ctx,
@@ -907,11 +761,10 @@ def _resolve_overlay(ctx, overlay_root_label, package_name, version, language_ve
 resolve_overlay = _resolve_overlay
 
 def resolve_overlay_roots(ctx, overlay_roots, package_name, version, language_version, dep_labels):
-    """Resolve `(overlay_content, overlay_android_content)` across `overlay_roots`.
+    """Resolve the overlay BUILD content of a package across `overlay_roots`.
 
     Walks `overlay_roots` in order and stops on the first root that supplies a
-    top-level `BUILD.bazel.tpl` for `package_name` at `version`, then looks up
-    the matching `android/BUILD.bazel.tpl` from that same root.
+    top-level `BUILD.bazel.tpl` for `package_name` at `version`.
 
     Args:
         ctx: The repository rule context (`repository_ctx`).
@@ -922,11 +775,8 @@ def resolve_overlay_roots(ctx, overlay_roots, package_name, version, language_ve
         dep_labels: Sibling spoke label strings for `{DEPS}` substitution.
 
     Returns:
-        A `(overlay_content, overlay_android_content)` tuple of substituted
-        BUILD contents (each `""` when no matching template was found).
+        The substituted BUILD content, or `""` when no template was found.
     """
-    overlay_content = ""
-    overlay_android_content = ""
     for overlay_label in overlay_roots:
         overlay_content = _resolve_overlay(
             ctx,
@@ -937,21 +787,8 @@ def resolve_overlay_roots(ctx, overlay_roots, package_name, version, language_ve
             dep_labels,
         )
         if overlay_content:
-            # Look up the matching `android/BUILD.bazel.tpl` from the same
-            # overlay root. Plugins whose Android side has real sources
-            # ship one alongside the top-level BUILD; plugins that don't
-            # leave it absent and the empty-stub fallback fires below.
-            overlay_android_content = _overlay_template(
-                ctx,
-                overlay_label,
-                package_name,
-                version,
-                language_version,
-                dep_labels,
-                "android/BUILD.bazel.tpl",
-            )
-            break
-    return overlay_content, overlay_android_content
+            return overlay_content
+    return ""
 
 def read_spoke_pubspec_data(ctx, path = "pubspec.yaml", label = None):
     """Reads a pubspec the spoke fetched or linked, as decoded data.
@@ -1026,20 +863,6 @@ def _spoke_asset_inputs(ctx, package_name, asset_block):
         has_contributions = bool(asset_block.fonts) or bool(asset_block.assets) or bool(asset_block.shaders),
     )
 
-def _write_overlay_spoke(ctx, overlay_content, overlay_android_content):
-    """Emits an overlay's BUILD content, replacing auto-generation entirely.
-
-    When the overlay ships an `android/BUILD.bazel.tpl`, it is used verbatim and
-    its plugin gains the Android edge. Otherwise an empty stub is emitted so
-    `@<spoke>//android:lib` exists uniformly across overlay-and-no-Android
-    plugins (audio_session declares Android sources and ships the full
-    sub-package; an overlay without one gets the stub).
-    """
-    if overlay_android_content:
-        overlay_content = overlay_with_android_edge(overlay_content, ctx.attr.package_name)
-    ctx.file("BUILD.bazel", overlay_content)
-    ctx.file("android/BUILD.bazel", overlay_android_content or _android_make_subpackage_build_content("", "", []))
-
 def _detect_desktop_plugin_sources(ctx, package_name, plugin_block):
     """Detects Linux/Windows sources when pluginClass is set on that platform.
 
@@ -1056,7 +879,7 @@ def _detect_desktop_plugin_sources(ctx, package_name, plugin_block):
     return struct(linux = linux_src_dir, windows = windows_src_dir)
 
 def _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets):
-    """Builds a `flutter_plugin` spoke and its Android sub-package inputs."""
+    """Builds a `flutter_plugin` spoke."""
     package_name = ctx.attr.package_name
     apple = _detect_apple_plugin_sources(ctx, package_name, pubspec.plugin_block)
     desktop = _detect_desktop_plugin_sources(ctx, package_name, pubspec.plugin_block)
@@ -1083,10 +906,7 @@ def _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets):
         plugin_defines = ctx.attr.plugin_defines,
     )
     build_content = apply_apple_native_deps(ctx, package_name, apple, build_content)
-    return struct(
-        build_content = build_content,
-        android_plugin = bool(pubspec.plugin_block.platforms.get("android", {})),
-    )
+    return struct(build_content = build_content)
 
 def _build_library_spoke_content(ctx, pubspec, dep_labels, assets):
     """Builds a `flutter_library` spoke for asset/font/shader contributions.
@@ -1104,7 +924,7 @@ def _build_library_spoke_content(ctx, pubspec, dep_labels, assets):
         hooks = _hooks_block(ctx),
         data_patterns = assets.data_patterns,
     )
-    return struct(build_content = build_content, android_plugin = False)
+    return struct(build_content = build_content)
 
 def _build_dart_spoke_content(ctx, pubspec, dep_labels):
     """Builds a plain `dart_library` spoke via rules_dart's generator."""
@@ -1124,15 +944,12 @@ def _build_dart_spoke_content(ctx, pubspec, dep_labels):
             "dart_test_package(",
             'load(":flutter_test_package.bzl", "flutter_test_package")\n\nflutter_test_package(',
         )
-    return struct(build_content = build_content, android_plugin = False)
+    return struct(build_content = build_content)
 
 def _build_spoke_content(ctx, pubspec, dep_labels, assets):
     """Builds the spoke BUILD content for whichever branch the pubspec selects.
 
-    Returns `struct(build_content, android_plugin)`: `android_plugin` says
-    whether the package declares an `android` platform, so the follow-up
-    `android/BUILD.bazel` aliases its lazy Android repository instead of an
-    empty stub.
+    Returns `struct(build_content)`.
     """
     if pubspec.plugin_block.present:
         return _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets)
@@ -1199,7 +1016,7 @@ def path_spoke_platform_dirs(plugin_block):
     """The platform directories the spoke generator reads for a plugin.
 
     Pure testable core of the link plan: a declared platform's directory
-    is where the generator probes for manifests, Gradle files, and native
+    is where the generator probes for manifests and native
     sources, so only declared platforms get linked.
 
     Args:
@@ -1337,11 +1154,8 @@ def spoke_dep_labels(deps, asset_block):
 def _generate_spoke(ctx, pubspec_data = None):
     """Runs the shared spoke pipeline: pubspec in, BUILD content out.
 
-    The Android half is never read here. An Android plugin's
-    `android/BUILD.bazel` is only an alias to its Lazily fetched Android
-    repository; every other package keeps the empty stub the hub aggregator
-    depends on. Overlays that ship `android/BUILD.bazel.tpl` keep replacing
-    both exactly as before.
+    The package's Android directory is never read here: an app's Android
+    side is built from its pinned Gradle model.
     """
     pubspec = _read_spoke_pubspec(ctx, pubspec_data)
     dep_labels = spoke_dep_labels(_verify_spoke_deps(ctx, pubspec), pubspec.asset_block)
@@ -1354,7 +1168,7 @@ def _generate_spoke(ctx, pubspec_data = None):
     # `@rules_flutter//ext/` tree). On match, the overlay replaces
     # auto-generation entirely; the user takes responsibility for the
     # spoke's BUILD content.
-    overlay_content, overlay_android_content = resolve_overlay_roots(
+    overlay_content = resolve_overlay_roots(
         ctx,
         ctx.attr.overlay_roots,
         ctx.attr.package_name,
@@ -1369,21 +1183,12 @@ def _generate_spoke(ctx, pubspec_data = None):
     check_plugin_native_deps(ctx, ctx.attr.package_name, apple, bool(overlay_content))
 
     if overlay_content:
-        _write_overlay_spoke(ctx, overlay_content, overlay_android_content)
+        # An overlay replaces auto-generation entirely.
+        ctx.file("BUILD.bazel", overlay_content)
         return
 
     spoke = _build_spoke_content(ctx, pubspec, dep_labels, assets)
     ctx.file("BUILD.bazel", spoke.build_content)
-
-    # Always emit `android/BUILD.bazel`. An Android plugin gets only an alias
-    # to its own Android repository, so this fetch never reads the package's
-    # Android directory or its Gradle build; Bazel fetches and analyses that
-    # repository only when an Android target analyses the alias. Every other
-    # package keeps the empty stub the hub aggregator depends on.
-    repo = android_package_repo_name(ctx.attr.hub_name, ctx.attr.package_name)
-    stub = _android_make_subpackage_build_content("", "", [])
-    alias = android_spoke_alias_content(repo) if spoke.android_plugin else stub
-    ctx.file("android/BUILD.bazel", alias)
 
 spoke_asset_inputs = _spoke_asset_inputs
 detect_desktop_plugin_sources = _detect_desktop_plugin_sources
@@ -1393,7 +1198,7 @@ detect_desktop_plugin_sources = _detect_desktop_plugin_sources
 # overlays that can replace its BUILD file.
 _FLUTTER_SPOKE_ATTRS = {
     "hub_name": attr.string(
-        doc = "Name of the hub repo (for the Android repository and the hub's files).",
+        doc = "Name of the hub repo (for the hub's files).",
         mandatory = True,
     ),
     "hub_packages": attr.label(
@@ -1403,8 +1208,6 @@ _FLUTTER_SPOKE_ATTRS = {
         default = None,
     ),
     "plugin_defines": plugin_defines_attr,
-    "android_maven_deps": _maven_deps_attr,
-    "android_maven_ignore": _maven_ignore_attr,
     "overlay_roots": attr.label_list(
         doc = "BUILD.bazel anchors for overlay trees. Each label points at " +
               "an `ext/BUILD.bazel` (or equivalent) that anchors a directory " +
@@ -1446,8 +1249,7 @@ flutter_pub_path_package = repository_rule(
     doc = "Symlinks a workspace-local `path:` pub package into a spoke and emits the same `flutter_plugin` / `flutter_library` / `dart_library` the hosted rule would. The `flutter pub get` analog for path dependencies: hermetic (workspace-relative only, watched for changes) and fail-closed on anything resolving outside the workspace's real root; the package's pubspec `name` and `version` must match the lock entry, since overlays are selected by lock name and version.",
 )
 
-# A git package's coordinates in the lock, as `flutter_pub_git_package` and
-# the Android repository of a git plugin take them.
+# A git package's coordinates in the lock, as `flutter_pub_git_package` takes them.
 GIT_PACKAGE_ATTRS = {
     "url": attr.string(
         doc = "The git remote (the lock entry's `description.url`).",

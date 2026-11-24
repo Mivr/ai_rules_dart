@@ -1,14 +1,14 @@
-/// Both plugin registrants of the app name `shared_preferences_android`.
+/// The Dart plugin registrant of the app names `shared_preferences_android`.
 ///
 /// A missing registration is invisible at build time and surfaces on the
 /// device as a `MissingPluginException` from `SharedPreferences.getInstance()`.
-/// This test reads the two generated files the build produces and fails,
-/// naming the plugin and the file, unless each registers it:
+/// This test reads the generated file the build produces and fails, naming
+/// the plugin and the file, unless it registers the plugin by its
+/// `dartPluginClass` (`SharedPreferencesAndroid`, from its `pubspec.yaml`).
 ///
-/// - the Dart registrant, by the plugin's `dartPluginClass`
-///   (`SharedPreferencesAndroid`, from its `pubspec.yaml`), and
-/// - the Android `GeneratedPluginRegistrant.java`, by its `pluginClass`
-///   (`io.flutter.plugins.sharedpreferences.SharedPreferencesPlugin`).
+/// The Android side (`GeneratedPluginRegistrant` and the plugin's
+/// `pluginClass`) is checked in the APK by `//:app_apk_test`: the Java
+/// registrant is the one the Flutter tool wrote, carried by the pin.
 ///
 /// The Dart registrant is `app_dart_registrant.dart`, symlinked from the
 /// `app_flutter_plugin_registrant.dart` file `generate_dart_plugin_registrant`
@@ -20,12 +20,7 @@ import 'dart:io';
 
 const _plugin = 'shared_preferences_android';
 const _dartPluginClass = 'SharedPreferencesAndroid';
-const _javaPluginClass =
-    'io.flutter.plugins.sharedpreferences.SharedPreferencesPlugin';
-
 const _dartRegistrant = 'app_dart_registrant.dart';
-const _javaRegistrant =
-    'app_registrant/io/flutter/plugins/GeneratedPluginRegistrant.java';
 
 String _read(String relativePath) {
   final srcDir = Platform.environment['TEST_SRCDIR'];
@@ -62,7 +57,6 @@ bool _check({
 
 void main() {
   final dart = _read(_dartRegistrant);
-  final java = _read(_javaRegistrant);
   final results = [
     _check(
       file: _dartRegistrant,
@@ -75,14 +69,6 @@ void main() {
       content: dart,
       registration: "import 'package:$_plugin/$_plugin.dart'",
       what: 'import of package:$_plugin',
-    ),
-    _check(
-      file: _javaRegistrant,
-      content: java,
-      registration: RegExp(
-        '\\.add\\(\\s*new\\s+${RegExp.escape(_javaPluginClass)}\\(\\)',
-      ),
-      what: 'plugins.add(new $_javaPluginClass()) call',
     ),
   ];
   if (results.contains(false)) {

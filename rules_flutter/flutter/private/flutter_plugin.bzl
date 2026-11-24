@@ -17,11 +17,9 @@ Platform-specific native dependencies use select() in BUILD files:
     )
 """
 
-load("@rules_android//providers:providers.bzl", "AndroidLibraryResourceClassJarProvider", "StarlarkAndroidResourcesInfo")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_dart//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "BUILD_HOOK_ATTRS", "BUILD_HOOK_FRAGMENTS", "MODULAR_KERNEL_TOOLCHAINS", "dart_info", "declare_hooks", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset", "register_hook_actions")
-load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("@rules_swift//swift:swift.bzl", "SwiftInfo")
 load("//flutter:providers.bzl", "FlutterApplePluginInfo", "FlutterDataAssetInfo", "FlutterInfo")
 load("//flutter/private:common.bzl", "collect_binding_contracts", "collect_native_libs")
@@ -238,24 +236,6 @@ def _extra_windows_plugin_libraries(ctx, package_name):
         package_name,
     )
 
-def _resource_class_jars(lib):
-    """The resource class jars an Android library target provides, or None."""
-    if AndroidLibraryResourceClassJarProvider in lib:
-        return lib[AndroidLibraryResourceClassJarProvider].jars
-    return None
-
-def _extra_android_plugin_libraries(ctx, package_name):
-    entries = []
-    for lib in ctx.attr.android_libs:
-        entries.append(struct(
-            label = lib.label,
-            java_info = lib[JavaInfo],
-            resources_info = lib[StarlarkAndroidResourcesInfo] if StarlarkAndroidResourcesInfo in lib else None,
-            resource_class_jars = _resource_class_jars(lib),
-            package = package_name,
-        ))
-    return entries
-
 def _collect_plugin_asset_infos(assets, provider, provider_name, rule_name, attr_name):
     """Collect one `data_assets` attr into provider structs."""
     infos = []
@@ -326,7 +306,6 @@ def _plugin_flutter_info(ctx, package_name, plugin, extra):
         ),
         plugin_libraries = flutter_plugin_libraries(
             apple_plugin_libraries = extra.apple,
-            android_plugin_libraries = extra.android,
             linux_plugin_libraries = extra.linux,
             windows_plugin_libraries = extra.windows,
         ),
@@ -378,7 +357,6 @@ def _flutter_plugin_impl(ctx):
     # corresponding runner can fold them into its compile.
     extra_linux_plugin_libraries = _extra_linux_plugin_libraries(ctx, package_name)
     extra_windows_plugin_libraries = _extra_windows_plugin_libraries(ctx, package_name)
-    extra_android_plugin_libraries = _extra_android_plugin_libraries(ctx, package_name)
 
     extra_data_assets = _extra_data_assets(ctx)
 
@@ -397,7 +375,6 @@ def _flutter_plugin_impl(ctx):
         binding_contracts = binding_contracts,
         native_lib_sources = native_lib_sources,
         apple = extra_apple_plugin_libraries,
-        android = extra_android_plugin_libraries,
         linux = extra_linux_plugin_libraries,
         windows = extra_windows_plugin_libraries,
         privacy = extra_apple_privacy_manifests,
@@ -442,10 +419,9 @@ flutter_plugin = rule(
             doc = "Java package of the Android `plugin_class`, as " +
                   "`flutter.plugin.platforms.android.package` in a pubspec. " +
                   "Required when `platforms` lists android with a " +
-                  "`plugin_class`. Its Kotlin/Java goes to the app via " +
-                  "`android_libs` on `flutter_plugin` or as a " +
-                  "`flutter_android_plugin_library` in " +
-                  "`flutter_android_app(deps = ...)`.",
+                  "`plugin_class`. Its Kotlin/Java is built from the plugin's " +
+                  "own Android project (`android/`), as part of the Gradle " +
+                  "model of the app that depends on it.",
         ),
         "dart_plugin_class": attr.string(
             doc = "Dart-only plugin class name (for Dart-side registration).",
@@ -497,11 +473,6 @@ flutter_plugin = rule(
         "ios_libs": attr.label_list(
             doc = "iOS Apple plugin libraries providing `CcInfo` (and optionally `SwiftInfo`). Routed to the iOS runner aggregator.",
             providers = [CcInfo],
-            cfg = native_defines_reset,
-        ),
-        "android_libs": attr.label_list(
-            doc = "Android plugin libraries (`flutter_android_plugin_library`, `kt_android_library`, `android_library`, or `java_library`) providing `JavaInfo`. Propagated through `FlutterInfo.android_plugin_libraries` so `flutter_android_app` and `flutter_integration_test(platform = \"android\")` compile and package them automatically.",
-            providers = [JavaInfo],
             cfg = native_defines_reset,
         ),
         "linux_libs": attr.label_list(

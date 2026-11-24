@@ -278,7 +278,6 @@ def _application_providers(flutter_sdk_info, is_debug, outputs, plugins):
             apple_privacy_manifests = plugins.apple_privacy_manifests,
             plugins = plugins.all_plugins,
             apple_plugin_libraries = plugins.apple_plugin_libraries,
-            android_plugin_libraries = plugins.android_plugin_libraries,
             linux_plugin_libraries = plugins.linux_plugin_libraries,
             windows_plugin_libraries = plugins.windows_plugin_libraries,
         ),
