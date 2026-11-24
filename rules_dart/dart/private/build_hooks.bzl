@@ -318,6 +318,11 @@ def _toolchain_tools(ctx, cc_toolchain, target):
             ))
         exports = "".join(["export %s='%s'\n" % (k, v.replace("'", "'\\''")) for k, v in sorted(env.items())])
 
+        # `wrapped_clang` stops with "DEVELOPER_DIR not set": Bazel sets it for
+        # its own Apple actions, and the hook runner hands the tools a clean
+        # environment (`PATH=/usr/bin`). The Xcode the host selects is the one.
+        exports += 'export DEVELOPER_DIR="${DEVELOPER_DIR:-$(/usr/bin/xcode-select -p)}"\n'
+
     # The toolchain's flags name exec-root-relative paths, and the hook runs in
     # its package root, so each tool runs from the exec root; every path a hook
     # passes is absolute.
@@ -330,8 +335,11 @@ if [ "$1" = "--version" ]; then
   err="$TMPDIR/clang_version.$$"
   '{cc}' --version 2>"$err"
   status=$?
-  if [ "$status" -ne 0 ] && [ -s "$err" ]; then cat "$err" >&2; fi
-  rm -f "$err"
+  # Shell built-ins only: the hook's PATH is /usr/bin, which has neither
+  # `cat` nor `rm` on macOS (they are in /bin).
+  if [ "$status" -ne 0 ] && [ -s "$err" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do printf '%s\n' "$line" >&2; done <"$err"
+  fi
   exit 0
 fi
 # Paths the hook passes are absolute and differ per sandbox: keep them out of
@@ -357,8 +365,8 @@ exec '{cc}' {cflags} {lflags} "$@"{undefined_version}{strip}
         # Apple's linker has no such option.
         undefined_version = "" if apple else " -Wl,--undefined-version",
     ))
-    ar_tool = _wrapper(ctx, "ar", "cd \"$BAZEL_EXECROOT\" || exit 1\nexec '%s' \"$@\"\n" % ar)
-    ld_tool = _wrapper(ctx, "ld", "cd \"$BAZEL_EXECROOT\" || exit 1\nexec '%s' \"$@\"\n" % ld)
+    ar_tool = _wrapper(ctx, "ar", exports + "cd \"$BAZEL_EXECROOT\" || exit 1\nexec '%s' \"$@\"\n" % ar)
+    ld_tool = _wrapper(ctx, "ld", exports + "cd \"$BAZEL_EXECROOT\" || exit 1\nexec '%s' \"$@\"\n" % ld)
     return struct(cc = clang.path, ar = ar_tool.path, ld = ld_tool.path, files = [clang, ar_tool, ld_tool], developer_prompt = None)
 
 def _record_arg(pkg):
