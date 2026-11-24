@@ -378,6 +378,12 @@
     "avoid_print": 1,
     "no_wildcard_variable_uses": 1
   },
+  "dart/tests/executable_defines_fixture/base/lib/base_lib.dart": {
+    "do_not_use_environment": 1
+  },
+  "dart/tests/executable_defines_fixture/lib/env_lib.dart": {
+    "do_not_use_environment": 1
+  },
   "dart/tests/format_fixture/short/bin/short_main.dart": {
     "avoid_print": 1,
     "require_trailing_commas": 2
