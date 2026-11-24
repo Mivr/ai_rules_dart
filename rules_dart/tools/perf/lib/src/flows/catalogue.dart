@@ -522,7 +522,9 @@ List<Flow> catalogue() {
     edits: edits,
     clean: clean,
     cleanArgs: cleanArgs,
-    warmUp: !clean,
+    // A clean flow builds once untimed too, so every timed run starts with
+    // the external repositories fetched and the outputs cleaned.
+    warmUp: true,
   );
   StockFlow gradle(
     String id,
@@ -725,7 +727,9 @@ List<Flow> catalogue() {
           targets: [target],
           clean: true,
           cleanArgs: const ['--disk_cache='],
-          warmUp: false,
+          // One untimed build first: the timed runs start with the
+          // repositories fetched and the outputs cleaned.
+          warmUp: true,
         ),
       )
       ..add(
@@ -740,7 +744,9 @@ List<Flow> catalogue() {
             ['rm', '-rf', 'build', '.dart_tool'],
             [dart ? 'dart' : 'flutter', 'pub', 'get', '--offline'],
           ],
-          warmUp: false,
+          // The same for the stock tools: the Gradle daemon is up and the
+          // pub cache filled before the first timed run.
+          warmUp: true,
           argv: stockArgv,
         ),
       );
