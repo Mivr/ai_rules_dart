@@ -4,6 +4,7 @@ load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("//flutter:providers.bzl", "FlutterApplePluginInfo", "FlutterInfo")
+load("//flutter/private:flutter_bundle.bzl", "FlutterPubPackagesInfo", "flutter_pub_packages")
 load("//flutter/private:flutter_plugin.bzl", "build_plugin_struct", "flutter_plugin")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
@@ -144,6 +145,20 @@ _t4_test = unittest.make(_implements_field_test_impl)
 
 _UNIT_TESTS = (_t0_test, _t1_test, _t2_test, _t3_test, _t4_test)
 
+def _lock_android_plugins_test_impl(ctx):
+    """A hub's `packages` names the lock's plugins that have an Android side, with their versions.
+
+    Of three packages: a plugin with an Android implementation, a plugin for iOS only, and an
+    app-facing plugin that hands Android to the first (`default_package`) and depends on it, so
+    the first is in its closure too. Only the first is an Android plugin of the lock, once.
+    """
+    env = analysistest.begin(ctx)
+    info = analysistest.target_under_test(env)[FlutterPubPackagesInfo]
+    asserts.equals(env, ["lock_android_plugin 1.2.3"], info.android_plugins)
+    return analysistest.end(env)
+
+_lock_android_plugins_test = analysistest.make(_lock_android_plugins_test_impl)
+
 def flutter_plugin_test_suite(name):
     """Defines unit and analysis tests for `flutter_plugin` and Apple plugin library routing.
 
@@ -237,6 +252,46 @@ def flutter_plugin_test_suite(name):
         target_under_test = ":" + name + "_bare_apple_libs_plugin",
     )
 
+    # The Android plugins of a lock, as the stale check of an Android pin reads them.
+    flutter_plugin(
+        name = name + "_lock_android_plugin",
+        package_name = "lock_android_plugin",
+        android_package = "com.example.lock",
+        platforms = ["android", "ios"],
+        plugin_class = "LockPlugin",
+        version = "1.2.3",
+        tags = ["manual"],
+    )
+    flutter_plugin(
+        name = name + "_lock_ios_plugin",
+        package_name = "lock_ios_plugin",
+        platforms = ["ios"],
+        plugin_class = "LockIosPlugin",
+        version = "2.0.0",
+        tags = ["manual"],
+    )
+    flutter_plugin(
+        name = name + "_lock_facing_plugin",
+        package_name = "lock_facing_plugin",
+        plugin_platforms_json = json.encode({"android": {"default_package": "lock_android_plugin"}}),
+        version = "3.0.0",
+        deps = [":" + name + "_lock_android_plugin"],
+        tags = ["manual"],
+    )
+    flutter_pub_packages(
+        name = name + "_lock_packages",
+        deps = [
+            ":" + name + "_lock_facing_plugin",
+            ":" + name + "_lock_ios_plugin",
+            ":" + name + "_lock_android_plugin",
+        ],
+        tags = ["manual"],
+    )
+    _lock_android_plugins_test(
+        name = name + "_lock_android_plugins",
+        target_under_test = ":" + name + "_lock_packages",
+    )
+
     small_unittest_suite(name + "_unit", *_UNIT_TESTS)
 
     native.test_suite(
@@ -246,5 +301,6 @@ def flutter_plugin_test_suite(name):
             ":" + name + "_provider_routing",
             ":" + name + "_explicit_attr_routing",
             ":" + name + "_bare_apple_libs_fails",
+            ":" + name + "_lock_android_plugins",
         ],
     )

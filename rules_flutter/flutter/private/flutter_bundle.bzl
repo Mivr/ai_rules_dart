@@ -26,6 +26,7 @@ load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "dart_info_no_package", "owned_package_records")
 load("//flutter:providers.bzl", "FlutterInfo")
 load("//flutter/private:flutter_assets_tool.bzl", "flutter_assets_tool_of")
+load("//flutter/private:flutter_info.bzl", "plugin_metadata")
 
 visibility(["//flutter/..."])
 
@@ -505,7 +506,7 @@ def implements_android(plugin):
     the platform to another package (`default_package`), as the Flutter tool decides it.
 
     Args:
-        plugin: A plugin record of `FlutterInfo.plugins`.
+        plugin: A plugin struct (`plugin_metadata` of an entry of `FlutterInfo.plugins`).
 
     Returns:
         True or False.
@@ -514,16 +515,30 @@ def implements_android(plugin):
     return type(android) == "dict" and "default_package" not in android
 
 def _android_plugins(deps):
-    """`<name> <version>` of the plugins among `deps` that have an Android implementation."""
-    plugins = []
+    """`<name> <version>` of the plugins `deps` themselves define that have an Android implementation.
+
+    `deps` are the packages of one lock, a target each. A dependency says which plugins it defines
+    (`FlutterInfo.own_plugins`) and at which version (its own package records); what a plugin is on
+    each platform is in the entries of `FlutterInfo.plugins`, which hold the dependency's closure,
+    so the entries are read once for all of them and kept by name.
+    """
+    versions = {}
+    closures = []
     for dep in deps:
-        if FlutterInfo not in dep:
+        if FlutterInfo not in dep or not dep[FlutterInfo].own_plugins:
             continue
-        versions = {record.package_name: record.version for record in owned_package_records(dep[DartInfo])}
-        for plugin in dep[FlutterInfo].plugins:
-            if getattr(plugin, "_depth", 0) == 0 and implements_android(plugin):
-                plugins.append("%s %s" % (plugin.name, versions.get(plugin.name, "")))
-    return sorted(plugins)
+        owned = {record.package_name: record.version for record in owned_package_records(dep[DartInfo])}
+        for name in dep[FlutterInfo].own_plugins:
+            versions[name] = owned.get(name, "")
+        closures.append(dep[FlutterInfo].plugins)
+
+    # lint-allow: depset-flatten terminal: one target per hub names the plugins of its lock's packages, once
+    entries = depset(transitive = closures).to_list()
+    found = {}
+    for entry in entries:
+        if entry.name in versions and entry.name not in found:
+            found[entry.name] = implements_android(plugin_metadata(entry))
+    return sorted(["%s %s" % (name, versions[name]) for name, android in found.items() if android])
 
 def _flutter_pub_packages_impl(ctx):
     return [
