@@ -175,6 +175,16 @@ jobs:
             scope: all
             shard: none
             cache-save: false
+          # macOS-only targets, as ios_example's: the macOS app and the
+          # multi-window macOS app.
+          - workspace: macos_example
+            scope: all
+            shard: none
+            cache-save: false
+          - workspace: multi_window_example
+            scope: all
+            shard: none
+            cache-save: false
           - workspace: ffi_plugin_example
             scope: all
             shard: none

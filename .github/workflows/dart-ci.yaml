@@ -128,6 +128,8 @@ jobs:
               e2e/hello_world
               e2e/isolated_hub
               e2e/analysis
+              e2e/build_runner
+              e2e/pub_sources
           - os: ubuntu-latest
             shard: 3
             parallelism: 3
@@ -145,6 +147,7 @@ jobs:
               e2e/guard_reuse
               e2e/root_sdk_pin
               e2e/sdk_coupling
+              e2e/build_hooks
           - os: windows-latest
             shard: 1
             parallelism: 3

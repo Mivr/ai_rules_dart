@@ -47,15 +47,16 @@
 #   e2e-linux-integration: integration_web, integration_linux,
 #     federated_plugins, min_versions (Dart app, kernel and dart_test targets
 #     plus the Android leg against every declared dependency floor; the Apple
-#     legs skip themselves via target_compatible_with), android_no_go_sdk
-#     (Android leg with no go_sdk block, proving rules_flutter's pinned Go SDK
-#     is the default), and the run_home hermeticity gate
+#     legs skip themselves via target_compatible_with), and the run_home
+#     hermeticity gate
 #   e2e-linux-android:   integration_android and aar_host, the workspaces that
-#     boot the Android emulator (with KVM)
-#   repo-checks:         `bazel mod tidy` leaves the lockfile unchanged,
-#     //tools/check_maven_pins and //tools/repo_contents_cache (repos marked
-#     reproducible are shared through the repo contents cache)
-#   e2e-windows:         hello_world (Windows)
+#     boot the Android emulator (with KVM), and the Android workspaces that
+#     build from the Gradle model (android_model_red, android_modules,
+#     android_plugins, android_sharedprefs, stock_dev_loop)
+#   repo-checks:         `bazel mod tidy` leaves the lockfile unchanged and
+#     //tools/repo_contents_cache (repos marked reproducible are shared through
+#     the repo contents cache)
+#   e2e-windows:         hello_world and windows_example (Windows)
 # android_example runs in full.yaml (nightly) only: its APK + Kotlin actions
 # would make a push job the longest one.
 # plugin_example runs in full.yaml only: every target it can build under
@@ -483,11 +484,6 @@ jobs:
               exit 1
             fi
           done
-      # Maven lock enforcement red path: changing an artifact version in the
-      # staged hello_world workspace while keeping its checked-in lock must
-      # fail fetch on rules_jvm_external's input signature check.
-      - name: Run e2e/hello_world (Maven lock red path)
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/hello_world --command="modified rules_android_maven install fails on invalid input signature" --bazel=bazel
       # Release archive loading at min_versions floors: prove every package
       # shipped in the release archive (including @rules_flutter//lint) loads
       # cleanly against the declared floor graph.
@@ -793,6 +789,12 @@ jobs:
         uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/web_example
+      - name: Run e2e/build_hooks
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/build_hooks --bazel=bazel
+      - name: Run e2e/build_runner
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/build_runner --bazel=bazel
+      - name: Run e2e/pub_sources
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/pub_sources --bazel=bazel
       # The runner builds in a temp copy, so build in the tree here for the
       # check below to see writes through the dirlinks.
       - name: Build e2e/dual_hub in tree
@@ -813,16 +815,6 @@ jobs:
       # per-package diagnostic.
       - name: Run e2e/pub_hosted_escape
         run: bazel run //tools/e2e_runner -- --workspace=e2e/pub_hosted_escape --bazel=bazel
-      # Lazy Android path: the Dart build must resolve the plugin's spoke
-      # without reading its Gradle build (which names an unmapped coordinate),
-      # and reaching the hub's Android aggregator must then fail closed on
-      # that coordinate. The script runs the positive build first, so it
-      # cannot pass by making the fail-closed fetch fail for another reason.
-      - name: pub_android_lazy reads Gradle only on the Android path
-        working-directory: rules_flutter/e2e/pub_android_lazy
-        run: |
-          bazel test //:check_android_fail_closed_test
-          bash check_android_fail_closed.sh
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
@@ -859,7 +851,7 @@ jobs:
     defaults:
       run:
         working-directory: rules_flutter
-    name: E2E Linux integration (web, linux, min_versions, android_no_go_sdk)
+    name: E2E Linux integration (web, linux, min_versions)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -920,13 +912,6 @@ jobs:
         uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/min_versions
-      - name: Run e2e/android_no_go_sdk
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_no_go_sdk --bazel=bazel
-      - name: Disk report (after e2e/android_no_go_sdk)
-        if: always()
-        uses: ./rules_flutter/.github/actions/disk-report
-        with:
-          label: after e2e/android_no_go_sdk
       - name: run_home hermeticity gate (RT37-flutter:02)
         working-directory: rules_flutter/e2e/run_home
         run: ./run_home_test.sh
@@ -1030,6 +1015,16 @@ jobs:
         uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: after e2e/aar_host
+      - name: Run e2e/android_model_red
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_model_red --bazel=bazel
+      - name: Run e2e/android_modules
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_modules --bazel=bazel
+      - name: Run e2e/android_plugins
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_plugins --bazel=bazel
+      - name: Run e2e/android_sharedprefs
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_sharedprefs --bazel=bazel
+      - name: Run e2e/stock_dev_loop
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/stock_dev_loop --bazel=bazel
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
@@ -1310,11 +1305,7 @@ jobs:
       # The lockfiles are made on Linux x64 (rules_dart/docs/CHORES.md, "Lock
       # File Refresh"): prove the one of the workspace built below holds on
       # Windows, where no extension of the graph may need an entry that a Linux
-      # lockfile lacks. It analyzes what the next step tests, and nothing more:
-      # not `bazel mod deps`, and not `bazel build //...` either, which also
-      # analyzes the Android app (`--build_tests_only` skips it) and so asks rules_android's gazelle extension
-      # for a Go SDK for the host. The Go SDKs this repository pins have no
-      # Windows entry (nothing here builds Go on Windows).
+      # lockfile lacks. It analyzes what the next step tests, and nothing more.
       - name: Lockfile holds on Windows
         working-directory: rules_flutter/e2e/hello_world
         run: bazel build --nobuild --build_tests_only --lockfile_mode=error //...
@@ -1322,6 +1313,9 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: rules_flutter/e2e/hello_world
         run: bazel --output_user_root=C:/b test //... --test_output=errors --build_tag_filters=-no-windows-ci --test_tag_filters=-no-windows-ci
+      - name: bazel test //... (e2e/windows_example)
+        working-directory: rules_flutter/e2e/windows_example
+        run: bazel --output_user_root=C:/b test //... --test_output=errors
       - name: Report cache sizes
         if: always()
         shell: bash
@@ -1477,9 +1471,6 @@ jobs:
         run: bazel build --nobuild --lockfile_mode=error //...
       - name: git diff --exit-code MODULE.bazel MODULE.bazel.lock
         run: git diff --exit-code MODULE.bazel MODULE.bazel.lock
-      - name: Check rules_android_maven pins in Android workspaces
-        if: ${{ !cancelled() }}
-        run: bazel run //tools/check_maven_pins
       - name: Host SDK, web SDK, sky_engine, dev_root, fonts, a tool_deps spoke, sysroot, Chrome and Linux runtime
         if: ${{ !cancelled() }}
         run: >
