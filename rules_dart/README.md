@@ -17,15 +17,15 @@ Bazel rule set for building Dart applications and libraries.
 
 ## Installation
 
-Add to your `MODULE.bazel`:
+`ai_rules_dart` is released from [`Mivr/ai_rules_dart`](https://github.com/Mivr/ai_rules_dart), the repository that holds `rules_dart` and `rules_flutter`, each with its own tags and releases (`rules_dart-v<version>`). The notes of a release carry the block to paste, with the archive's real `integrity` hash, so every downloaded byte is verified. Add to your `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "ai_rules_dart", version = "0.18.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "<version>", repo_name = "rules_dart")
 archive_override(
     module_name = "ai_rules_dart",
-    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/v0.18.0/rules_dart-v0.18.0.tar.gz"],
-    integrity = "sha256-9sFt975mhYbFlKNUJ0F9dExQzCu6yv9Dc+WEGsxVuO0=",
-    strip_prefix = "rules_dart-0.18.0",
+    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/rules_dart-v<version>/rules_dart-v<version>.tar.gz"],
+    integrity = "<sha256-... from the release notes>",
+    strip_prefix = "rules_dart-<version>",
 )
 
 dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")

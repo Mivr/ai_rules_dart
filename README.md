@@ -15,4 +15,8 @@ commit.
 The GitHub workflows of both modules live in `.github/workflows/`, named `dart-*.yaml` and `flutter-*.yaml`.
 Each module's `AGENTS.md` and `CONTRIBUTING.md` describe how to work in it.
 
+Each module is released on its own tag line (`rules_dart-v<version>`, `rules_flutter-v<version>`) from this
+repository, with its own archive, notes and registry entry; [RELEASING.md](RELEASING.md) has the steps and what is
+switched off until the owner turns it on.
+
 Both modules are licensed under the Apache License 2.0; see [LICENSE](LICENSE).

@@ -11,7 +11,7 @@ Bump Bazel to version $ARGUMENTS.
 
 3. Determine if the **major** version changed (e.g. 8.x to 9.x). If so:
 
-   - Update `.bcr/presubmit.yml` — change the `bazel:` matrix value (e.g. `"8.x"` to `"9.x"`)
+   - Update `.bcr/rules_dart/presubmit.yml` (at the repository root) — change the `bazel:` matrix value (e.g. `"8.x"` to `"9.x"`)
    - Update `docs/ARCHITECTURE.md` — any prose mentioning the major Bazel version
 
 4. Regenerate all lock files: `cd tools && bazel run //refresh_locks`

@@ -113,9 +113,13 @@ bazel_dep(name = "rules_java", version = "9.0.0")
 # take both modules from their GitHub releases (see README.md).
 # This repo's own builds use the sibling `rules_dart` directory through the
 # local_path_override below, and so do the e2e workspaces: the number here
-# does not change what they build. No release has `yaml.bzl` yet, so 0.28.3
-# is a placeholder until rules_dart is released from this repository; until
-# then a consumer that resolves it from the registry fails at load.
+# does not change what they build. A release sets the number: `cd
+# rules_dart/tools && bazel run //release:release -- floor set X.Y.Z` writes it
+# here, in the floor table, the docs, the README and the e2e workspaces, and
+# `floor check` fails when they differ (see RELEASING.md). Until the first
+# rules_dart release cut from this repository the number is a placeholder (0.28.3
+# has no `yaml.bzl`), and a consumer that resolves it from the registry fails at
+# load.
 # ai_rules_dart also brings its own higher floors for rules_cc
 # (0.2.26), bazel_skylib (1.9.2), package_metadata (0.0.13) and rules_go
 # (0.64.2); docs/dependencies.md attributes every one of those lifts, and

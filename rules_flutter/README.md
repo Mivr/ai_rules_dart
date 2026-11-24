@@ -56,24 +56,24 @@ If `flutter build` works for you, here is what Bazel adds:
 
 ### MODULE.bazel
 
-`ai_rules_flutter` is released from this repository together with [`Mivr/ai_rules_dart`](https://github.com/Mivr/ai_rules_dart), which it builds on. Take both from the GitHub releases with `archive_override` in your root `MODULE.bazel`:
+`ai_rules_flutter` is released from [`Mivr/ai_rules_dart`](https://github.com/Mivr/ai_rules_dart), the repository that holds both modules, together with `ai_rules_dart`, which it builds on. Each module has its own tags and releases: `rules_flutter-v<version>` and `rules_dart-v<version>`. The notes of a `rules_flutter` release carry the block below with the archives' real versions and `integrity` hashes. Take both modules from that release with `archive_override` in your root `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "ai_rules_flutter", version = "0.20.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.18.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_flutter", version = "<version>", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
 
 archive_override(
     module_name = "ai_rules_flutter",
-    urls = ["https://github.com/Mivr/ai_rules_flutter/releases/download/v0.20.0/rules_flutter-v0.20.0.tar.gz"],
-    integrity = "sha256-1AyJQxzuzfL4p4A8wex8VUZerGOXIokNlhPv+2yYNug=",
-    strip_prefix = "rules_flutter-0.20.0",
+    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/rules_flutter-v<version>/rules_flutter-v<version>.tar.gz"],
+    integrity = "<sha256-... from the release notes>",
+    strip_prefix = "rules_flutter-<version>",
 )
 
 archive_override(
     module_name = "ai_rules_dart",
-    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/v0.18.0/rules_dart-v0.18.0.tar.gz"],
-    integrity = "sha256-9sFt975mhYbFlKNUJ0F9dExQzCu6yv9Dc+WEGsxVuO0=",
-    strip_prefix = "rules_dart-0.18.0",
+    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/rules_dart-v0.28.3/rules_dart-v0.28.3.tar.gz"],
+    integrity = "<sha256-... from the release notes>",
+    strip_prefix = "rules_dart-0.28.3",
 )
 
 flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
@@ -87,7 +87,7 @@ use_repo(flutter, "deps", "flutter_toolchains")
 register_toolchains("@flutter_toolchains//:all")
 ```
 
-Keep the `ai_rules_dart` override in your root `MODULE.bazel` at or above the floor that rules_flutter's `MODULE.bazel` names in its `bazel_dep` on `ai_rules_dart`: an older one fails to load, on the first `@rules_dart` file it lacks.
+Keep the `ai_rules_dart` override in your root `MODULE.bazel` at or above the floor that rules_flutter's `MODULE.bazel` names in its `bazel_dep` on `ai_rules_dart`: an older one fails to load, on the first `@rules_dart` file it lacks. The release notes name the `rules_dart` release that is the floor. A Bazel Central Registry entry, when there is one, makes the `archive_override` blocks unnecessary.
 
 `flutter.toolchain` downloads the Flutter SDK and engine. `flutter.pub` reads your `pubspec.lock` and creates a repository, here named `deps`, with one target per package: `@deps//:flutter`, `@deps//:flutter_test`, `@deps//:collection`, and so on. See [Pub packages](#pub-packages).
 
@@ -109,21 +109,22 @@ Two extensions cover the rest. A root-registered custom release (an older stable
 
 #### Overriding `rules_dart`
 
-`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl` and `@rules_dart//dart:utils.bzl`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.28.3, released on GitHub under that module name with `repo_name = "rules_dart"`. The block above gives the latest released, CI-tested pair: `ai_rules_flutter` 0.20.0 with `ai_rules_dart` 0.18.0. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
+`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl` and `@rules_dart//dart:utils.bzl`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.28.3, released on GitHub under that module name with `repo_name = "rules_dart"`. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
 
-To live at the heads instead of these releases (local development against a checkout of each repository's `main`), replace the two `archive_override` blocks with overrides onto your clones. Because Bzlmod ignores module overrides in non-root modules, the overrides go in your root `MODULE.bazel`:
+To live at the heads instead of these releases (local development against a checkout of this repository), replace the two `archive_override` blocks with overrides onto your clone, which holds both modules. Because Bzlmod ignores module overrides in non-root modules, the overrides go in your root `MODULE.bazel`:
 
 ```starlark
 bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
 
 git_override(
     module_name = "ai_rules_dart",
-    commit = "e7163aab8f9171f54693cd1b99feb7d3cee9602d",
+    commit = "<a commit of Mivr/ai_rules_dart>",
     remote = "https://github.com/Mivr/ai_rules_dart.git",
+    strip_prefix = "rules_dart",
 )
 ```
 
-with the matching `local_path_override` (or `--override_module`) for `ai_rules_flutter` itself, as the `e2e/*` workspaces show.
+with the matching `strip_prefix = "rules_flutter"` override (or a `local_path_override`, or `--override_module`) for `ai_rules_flutter` itself, as the `e2e/*` workspaces show.
 
 ### .bazelrc
 

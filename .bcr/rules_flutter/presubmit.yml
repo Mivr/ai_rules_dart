@@ -1,3 +1,8 @@
+# The test module is e2e/smoke of the release archive (the module's directory,
+# `rules_flutter-v<version>.tar.gz`), so everything it names is in the archive. Run by
+# hand on Linux with Bazel 9.3.0 against the archives of a rehearsal release
+# (see RELEASING.md at the repository root); the other platforms and Bazel
+# versions of the matrix have not been run.
 bcr_test_module:
   module_path: "e2e/smoke"
   matrix:

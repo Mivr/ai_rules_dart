@@ -22,7 +22,7 @@ forward.
 | `rules_swift` | 3.5.0 | `@rules_swift//swift:swift.bzl` (`swift_library`) and the `SwiftInfo`/`swift_interop_info` surface, at `compatibility_level = 3`. |
 | `rules_kotlin` | 2.3.0 | `@rules_kotlin//kotlin:jvm.bzl` (`kt_jvm_library`) and `//kotlin:core.bzl` (`define_kt_toolchain`, `kt_kotlinc_options`, `kt_ksp_plugin`), which compile an app's and its plugins' Kotlin from the pinned Gradle model. A Flutter 3.47 app resolves the Kotlin 2.4.0 standard library; the compiler of `rules_kotlin` 2.2 and older refuses its metadata. |
 | `rules_java` | 9.0.0 | `@rules_java//java:defs.bzl` (`java_binary`, `java_import`, `java_library`, `java_plugin`, `java_test`), `@rules_java//java/common:java_info.bzl` (`JavaInfo`) and the Java toolchain rules. |
-| `ai_rules_dart` (repo `rules_dart`) | 0.28.3 | `@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `@rules_dart//dart/pub:pub_scc.bzl` and `@rules_dart//dart/pub:yaml.bzl` (`yaml_to_json`), and `dart_analysis_config(baseline = ...)`. The floor is the first `rules_dart` release cut from this repository that has every one of them; this repository's own builds take the sibling `rules_dart/` directory, whatever the number says. No release has `yaml.bzl` yet, so 0.28.3 is a placeholder until one is cut (a BCR entry is pending too). |
+| `ai_rules_dart` (repo `rules_dart`) | 0.28.3 | `@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `@rules_dart//dart/pub:pub_scc.bzl` and `@rules_dart//dart/pub:yaml.bzl` (`yaml_to_json`), and `dart_analysis_config(baseline = ...)`. The floor is the first `rules_dart` release cut from this repository that has every one of them; this repository's own builds take the sibling `rules_dart/` directory, whatever the number says. The number is written by `bazel run //release:release -- floor set X.Y.Z` (in `rules_dart/tools`) when `rules_dart` is released, and `floor check` fails when this table, `MODULE.bazel`, the floor table and the README differ. Until the first `rules_dart` release cut from this repository it is a placeholder: 0.28.3 has no `yaml.bzl`. |
 | `llvm` | 0.8.17 | `@llvm//extensions:llvm_toolchain_minimal.bzl` and the `llvm-toolchain-minimal-<os>-<cpu>` repos, on the opt-in xtool Darwin SDK path and for this repository's own hermetic tests. |
 
 `dev_dependency` declarations (`rules_multitool`, `buildifier_prebuilt`,
@@ -141,16 +141,18 @@ that never builds them; it only says what rules_flutter supports when it does.
 
 ## BCR
 
-`e2e/smoke` is the BCR test module (`.bcr/presubmit.yml`). It takes
+`e2e/smoke` is the BCR test module (`.bcr/rules_flutter/presubmit.yml`, at the
+repository root). It takes
 `ai_rules_flutter` through a `local_path_override` and names its own current
 dependencies, so it checks that a consumer on those releases still resolves
 and builds; it does not pin the floors (that is `e2e/min_versions`' job). The
 root-only `single_version_override` lines are not part of what BCR publishes:
 Bazel applies them only to the root module's own resolution, and
 `e2e/smoke` is a different root, so they cannot leak into the BCR graph. The
-`ai_rules_dart` fork itself has no BCR entry yet, so the BCR test module and
-the install instructions take it from the fork's GitHub release (see
-`README.md`).
+`ai_rules_dart` has no BCR entry yet, so the install instructions take it from
+its GitHub release (see `README.md`). In a checkout `e2e/smoke` takes the sibling
+`rules_dart/` through `.bazelrc.checkout`; the release archive leaves that file
+out, and a registry that serves `ai_rules_dart` at the floor resolves it.
 
 ## Heavy transitive repos, and who brings them
 

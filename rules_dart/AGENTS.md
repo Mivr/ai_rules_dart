@@ -46,6 +46,17 @@ other trailers, with no blank line inside that paragraph. Mark breaking changes
 with `!` in the subject (`feat(ios)!: ...`), not a `BREAKING CHANGE:` footer,
 which git does not treat as a trailer.
 
+**Which module.** This repository holds two modules, each released on its own
+tag line (`rules_dart-v…`, `rules_flutter-v…`) with its own notes. A commit's
+trailers go into the notes of each module whose directory the commit touches,
+and into no other: a commit that touches only `rules_flutter/` is in
+`rules_flutter`'s notes. A commit that touches both is in both, with the same
+entries (`release_prep.sh` and `cliff.toml`'s `include_paths` do this, and so
+does `next` in `//release:release`, which decides the next version of a module
+from the commits that touch it). If the two modules need different words, make
+two commits. A commit that touches neither (root files, `.github/`) is in no
+notes and should say `Changelog: skip`.
+
 **Checks.** `cd tools && bazel run //changelog:check` checks the commit subject and
 the trailers. It runs as the `commit-msg` hook, and in CI on every push where
 the repo has CI. To install the hook, `uv tool install prek`, then
@@ -60,5 +71,6 @@ This is a Dart family of projects. Write repo tooling in Dart, as a
 scripts. When a rule can call a tool directly (multitool's `workspace_root`
 with `args`, say), use it rather than a script that only forwards arguments.
 Shell is acceptable only where an outside interface requires it, such as the
-`release_prep.sh` the bazel-contrib release workflow calls; keep it to the
-lines that interface needs.
+`.github/workflows/release_prep.sh` (at the repository root) the bazel-contrib
+release workflow calls; keep it to the lines that interface needs, and what can
+be decided in Dart (`//release:release` in `rules_dart/tools`) is decided there.

@@ -69,12 +69,12 @@ in the table; a bump leaves it alone.
   otherwise fetches the newest release, so a missing file silently runs a
   different Bazel than the rest of the sweep.
   `find . -name .bazelversion -not -path '*/bazel-*'` is the list.
-- `.bcr/presubmit.yml` — `bazel:` matrix value (if major version changes)
+- `.bcr/rules_flutter/presubmit.yml` (repository root) — `bazel:` matrix value (if major version changes)
 
 **Procedure**:
 
 1. Update all `.bazelversion` files to the new version
-2. If the major version changed, update `.bcr/presubmit.yml` matrix
+2. If the major version changed, update the `.bcr/rules_flutter/presubmit.yml` matrix
 3. Regenerate lock files
 
 **Verification**: `bazel build //...` passes.
@@ -173,17 +173,25 @@ and building it is the only thing that catches either of these:
   shipped package globs, and that `glob` then fails the whole archive at load
   time with "glob pattern didn't match anything, but allow_empty is set to
   False". The archive does not build at all, and nothing in CI looks at it.
-- **`e2e/smoke` has to stay in.** `.bcr/presubmit.yml` names it as
-  `module_path`, and BCR resolves that inside the extracted archive. It was
-  excluded along with the rest of `e2e/`.
+- **`e2e/smoke` has to stay in.** `.bcr/rules_flutter/presubmit.yml` (at the
+  repository root) names it as `module_path`, and BCR resolves that inside the
+  extracted archive. It was excluded along with the rest of `e2e/`.
+- **Nothing in the archive may reach outside it.** The archive holds this module
+  only, so `e2e/smoke` cannot name `../../../rules_dart`: its `MODULE.bazel` names
+  a `rules_dart` release, and `e2e/smoke/.bazelrc.checkout` (left out of the
+  archive) overrides it with the sibling directory in a checkout.
+- **A tree is not a commit.** `release_prep.sh` runs `git archive <tag>` inside
+  `rules_flutter/`; `git archive <tag>:rules_flutter` would archive a tree, and
+  `export-subst` expands only for a commit.
 
-So `/e2e/` is excluded workspace by workspace rather than wholesale. **A new e2e
-workspace needs a line here**, or it ships in the archive: the whole tree is 12MB
-against a 1.5MB archive.
+`/e2e/*` is excluded wholesale and `/e2e/smoke` put back, so a new e2e workspace
+is left out without a line here: the whole tree is 12MB against a 1.5MB archive.
 
-**Verification**: `git archive --format=tar HEAD | tar t` and check that
-`e2e/smoke/` is present and no other e2e workspace is. To check it builds, extract the archive somewhere clean and run
-`bazel build --nobuild //...` — the load phase is what these mistakes break.
+**Verification**: `cd rules_flutter && git archive --format=tar HEAD | tar t` and
+check that `e2e/smoke/` is present and no other e2e workspace is. To check it
+builds, extract the archive somewhere clean and run `bazel build --nobuild //...`
+— the load phase is what these mistakes break. `RELEASING.md` (repository root)
+rehearses the whole release, archive and registry entry included, without a tag.
 
 ---
 
@@ -193,7 +201,7 @@ against a 1.5MB archive.
 
 **Files**:
 
-- `.bcr/presubmit.yml` — module_path, platform matrix, bazel matrix
+- `.bcr/rules_flutter/presubmit.yml` (repository root) — module_path, platform matrix, bazel matrix
 
 **Procedure**: Update the YAML to match current requirements.
 

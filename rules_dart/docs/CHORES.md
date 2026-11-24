@@ -103,14 +103,14 @@ Change them only when the version they name leaves the table.
 - `.github/workflows/ci.yaml` — `bazel_versions:` must match `.bazelversion`; the
   reusable workflow sets `USE_BAZEL_VERSION` from it, so a stale value means CI
   never tests the version developers run locally
-- `.bcr/presubmit.yml` — `bazel:` matrix value (if major version changes)
+- `.bcr/rules_dart/presubmit.yml` (repository root) — `bazel:` matrix value (if major version changes)
 - `docs/ARCHITECTURE.md` — prose naming the major Bazel version, currently
   "Bazel 9.x" (if major version changes)
 
 **Procedure**:
 
 1. Update all `.bazelversion` files to the new version
-2. If the major version changed, update `.bcr/presubmit.yml` matrix and `docs/ARCHITECTURE.md`
+2. If the major version changed, update the `.bcr/rules_dart/presubmit.yml` matrix and `docs/ARCHITECTURE.md`
 3. Regenerate lock files: `cd tools && bazel run //refresh_locks`
 4. Run `bazel test //dart/tests/...` to verify
 
@@ -275,7 +275,7 @@ cannot, it is a cross-only target and costs no checksums.
 - `docs/ARCHITECTURE.md` — platform list, toolchain counts, cross matrix
 
 Explicitly **not** needed: a new key in each `TOOL_VERSIONS` entry (`hostPlatforms`
-in `update_cross_sdk_versions.dart` stays as it is) and `.bcr/presubmit.yml`. A
+in `update_cross_sdk_versions.dart` stays as it is) and `.bcr/rules_dart/presubmit.yml`. A
 cross toolchain reuses the host SDK's `dart` binary, so no SDK archive is
 downloaded for the target and no archive checksum exists to fetch. BCR CI has no
 runner for these CPUs either.
@@ -298,7 +298,7 @@ file /tmp/x /tmp/x.aot
 - `dart/private/tools/update_cross_sdk_versions.dart` — add to `hostPlatforms`
   and `crossTargets`, then run it with `--force` (it hashes every artifact again)
   and fill the new key of every `TOOL_VERSIONS` entry by hand
-- `.bcr/presubmit.yml` — add to the matrix if BCR has a runner
+- `.bcr/rules_dart/presubmit.yml` — add to the matrix if BCR has a runner
 
 **Verification**: `bazel test //dart/tests/...` — `toolchains_test.bzl` asserts
 the table invariants, including that every pinned version's checksum set matches
@@ -363,8 +363,10 @@ Each in-repo Dart package is publishable to pub.dev. Maintenance includes:
   `cd tools && bazel run //refresh_locks`.
 - **Version**: Committed as `0.0.0-dev`. The real version is injected from
   the git tag at publish time by the release workflow.
-- **Publishing**: Handled automatically by the `pub-publish` job in the
-  release workflow (`.github/workflows/release.yaml`).
+- **Publishing**: Not part of the release workflow: the `pub-publish` job
+  was removed on 2026-10-15 ("disable BCR and pub.dev publishing on fork
+  releases"). Whether `dart/runfiles` goes to pub.dev with a release is the
+  owner's call (`RELEASING.md`, repository root).
 
 **Verification**: `dart pub get` succeeds; `dart pub outdated` reports no
 critical updates.
@@ -399,7 +401,7 @@ outdated dependencies.
 
 **Files**:
 
-- `.bcr/presubmit.yml` — module_path, platform matrix, bazel matrix
+- `.bcr/rules_dart/presubmit.yml` (repository root) — module_path, platform matrix, bazel matrix
 
 **Procedure**: Update the YAML to match current requirements.
 
