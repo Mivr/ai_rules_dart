@@ -276,6 +276,9 @@ Future<int> _run(String command, ArgResults args) async {
         } on Exception catch (e) {
           // `copyAssets` reports what failed through the logger first.
           logger.printError('$e');
+          if (e is FileSystemException && e.path != null) {
+            _describePath(fs, e.path!, logger);
+          }
           if (command != 'gen-l10n') {
             _explainMissingFiles(fs, project, args, logger);
           }
@@ -318,6 +321,20 @@ void _link(FileSystem fs, String at, String target) {
   final Link link = fs.link(at);
   link.parent.createSync(recursive: true);
   link.createSync(_abs(target));
+}
+
+/// One file of the project at [at]: a link to the input, and on Windows a
+/// copy. A staged link there is one the tool's own `File.copy` could not open
+/// ("cannot find the file specified") in the first run of this tool on
+/// Windows, whatever the listing said of it; the project files are the
+/// pubspec's assets and sources, which the tool reads or copies anyway.
+void _stageProjectFile(FileSystem fs, String at, String target) {
+  if (!const LocalPlatform().isWindows) {
+    _link(fs, at, target);
+    return;
+  }
+  fs.file(at).parent.createSync(recursive: true);
+  fs.file(_abs(target)).copySync(at);
 }
 
 /// A Flutter root holding only the files this action declares, each where
@@ -390,7 +407,7 @@ Directory _stageProject(
     if (rel.startsWith('/') || fs.path.split(rel).contains('..')) {
       throw ArgumentError('project file "$rel" is not inside the project');
     }
-    _link(fs, fs.path.join(staged.path, rel), file);
+    _stageProjectFile(fs, fs.path.join(staged.path, rel), file);
   });
   final Directory dartTool = staged.childDirectory('.dart_tool')
     ..createSync(recursive: true);
@@ -955,6 +972,27 @@ Future<void> _genL10n(Environment environment, ArgResults args) async {
           )..parent.createSync(recursive: true)).path,
         );
   }
+}
+
+/// What a path the tool failed on is, as the host sees it: its type without
+/// following links, its target when it is a link, and whether it reads.
+void _describePath(FileSystem fs, String path, Logger logger) {
+  final FileSystemEntityType type = fs.typeSync(path, followLinks: false);
+  final b = StringBuffer('$path: ${type.toString()} (not following links)');
+  if (type == FileSystemEntityType.link) {
+    try {
+      b.write(', a link to ${fs.link(path).targetSync()}');
+    } on FileSystemException catch (e) {
+      b.write(', its target unreadable: $e');
+    }
+  }
+  b.write(', exists following links: ${fs.typeSync(path) != FileSystemEntityType.notFound}');
+  try {
+    b.write(', reads ${fs.file(path).readAsBytesSync().length} bytes');
+  } on FileSystemException catch (e) {
+    b.write(', does not read: ${e.osError?.message ?? e.message}');
+  }
+  logger.printError(b.toString());
 }
 
 /// A project file staged as a link whose target is not there: the action was
