@@ -94,15 +94,22 @@ void main() {
       Directory('${tmp.path}/t/sub').createSync(recursive: true);
       File('${tmp.path}/t/a.txt').writeAsStringSync('');
       File('${tmp.path}/t/sub/b.txt').writeAsStringSync('');
+      // Windows lists below the root with `\`; a root spelled with `/` and
+      // the entries compare by their `/` spelling.
+      String fwd(String path) => path.replaceAll(r'\', '/');
       final Set<String> found = {
-        for (final FileSystemEntity e in listTreeSync('${tmp.path}/t')) e.path,
+        for (final FileSystemEntity e in listTreeSync('${tmp.path}/t'))
+          fwd(e.path),
       };
       expect(found, {
-        '${tmp.path}/t/a.txt',
-        '${tmp.path}/t/sub',
-        '${tmp.path}/t/sub/b.txt',
+        fwd('${tmp.path}/t/a.txt'),
+        fwd('${tmp.path}/t/sub'),
+        fwd('${tmp.path}/t/sub/b.txt'),
       });
-      expect(longPath('${tmp.path}/t'), '${tmp.path}/t');
+      expect(
+        longPath('${tmp.path}/t'),
+        Platform.isWindows ? startsWith(r'\\?\') : '${tmp.path}/t',
+      );
     });
   });
 
@@ -114,7 +121,10 @@ void main() {
     final Map<String, String> sources = readStagedDartSources([
       '${tmp.path}/stage',
     ]);
-    expect(sources.keys, ['${tmp.path}/stage/lib/src/a.dart']);
+    // The keys are `/`-separated, the root's own `\` included.
+    expect(sources.keys, [
+      '${tmp.path}/stage/lib/src/a.dart'.replaceAll(r'\', '/'),
+    ]);
     expect(sources.values.single, "import 'b.dart';");
   });
 

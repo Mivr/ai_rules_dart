@@ -20,6 +20,10 @@ String input(String path, [String content = '// x\n']) {
 
 String read(String path) => File(path).readAsStringSync();
 
+/// [path] spelled with `/` only: Windows reports a link's target and a
+/// listing's entries with `\`, a path built from `tmp.path` and `/` has both.
+String fwd(String path) => path.replaceAll(r'\', '/');
+
 void main() {
   setUp(() => tmp = Directory.systemTemp.createTempSync('project_layout.'));
   tearDown(() => tmp.deleteSync(recursive: true));
@@ -49,9 +53,12 @@ void main() {
     );
     layOutProject(manifest, project);
 
-    expect(Link('$project/src/pkg/a/lib/a.dart').targetSync(), lib);
-    expect(Link('$project/src/pkg/b/lib/b.dart').targetSync(), dep);
-    expect(Link('${tmp.path}/out/t.extpkgs/ext/lib/e.dart').targetSync(), ext);
+    expect(fwd(Link('$project/src/pkg/a/lib/a.dart').targetSync()), fwd(lib));
+    expect(fwd(Link('$project/src/pkg/b/lib/b.dart').targetSync()), fwd(dep));
+    expect(
+      fwd(Link('${tmp.path}/out/t.extpkgs/ext/lib/e.dart').targetSync()),
+      fwd(ext),
+    );
     expect(
       read('$project/.dart_tool/src_manifest.txt'),
       'analysis_options.yaml\npkg/a/lib/a.dart\npkg/a/pubspec.yaml\n'
@@ -173,7 +180,7 @@ void main() {
         ),
         throwsA(
           isA<LayoutException>().having(
-            (e) => e.message,
+            (e) => fwd(e.message),
             'message',
             allOf(
               startsWith(
@@ -238,8 +245,8 @@ void main() {
       project,
     );
     expect(
-      Link('$project/src/gen/pkg/pubspec.yaml').targetSync(),
-      '${tmp.path}/in/gen/pkg/pubspec.yaml',
+      fwd(Link('$project/src/gen/pkg/pubspec.yaml').targetSync()),
+      fwd('${tmp.path}/in/gen/pkg/pubspec.yaml'),
     );
     expect(
       read('$project/analysis_options.yaml'),
@@ -282,10 +289,10 @@ void main() {
             allOf(
               startsWith(
                 'Two inputs would be staged at '
-                '`${tmp.path}/out/t.proj/src/gen/pkg/lib/x.dart`:\n',
+                '`${fwd(tmp.path)}/out/t.proj/src/gen/pkg/lib/x.dart`:\n',
               ),
-              contains('${tmp.path}/in/gen/pkg/lib/x.dart'),
-              contains('${tmp.path}/in/copy/x.dart'),
+              contains('${fwd(tmp.path)}/in/gen/pkg/lib/x.dart'),
+              contains('${fwd(tmp.path)}/in/copy/x.dart'),
             ),
           ),
         ),

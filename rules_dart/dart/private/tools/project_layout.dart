@@ -676,7 +676,11 @@ void _linkDirectory(LayoutFile dir, String dest, _Placed placed) {
   ).listSync(recursive: true)..sort((a, b) => a.path.compareTo(b.path));
   for (final e in entries) {
     if (e is! File) continue;
-    final String rel = e.path.substring(root.length + 1);
+    // A staged path is `/`-separated whatever the host, as a short path is: a
+    // file listed beside this directory names the same destination.
+    final String rel = e.path
+        .substring(root.length + 1)
+        .replaceAll(Platform.pathSeparator, '/');
     placed.link('$dest/$rel', e.path, '${dir.shortPath}/$rel');
   }
 }

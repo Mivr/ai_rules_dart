@@ -34,7 +34,7 @@ List<String> _dills(String dir) => [
   for (final FileSystemEntity entity in Directory(
     '${_ws.path}/$dir',
   ).listSync()..sort((a, b) => a.path.compareTo(b.path)))
-    if (entity.path.endsWith('.dill')) entity.path.split('/').last,
+    if (entity.path.endsWith('.dill')) entity.uri.pathSegments.last,
 ];
 
 /// The request that compiles package [name] (every file below `<name>/lib`)
