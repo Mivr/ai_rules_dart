@@ -536,10 +536,50 @@ class Compiler {
         }
       }
 
+      // An entry point a dependency module defines (an app's `lib/main.dart`
+      // that its library lists) is not compiled again: the program's `main`
+      // is that library's, under the library's own URI, and the link reaches
+      // its module through the entry's imports.
+      Library? linkedMain;
+      Procedure? linkedMainProcedure;
+      if (r.entry &&
+          r.sources.isNotEmpty &&
+          !own.any((l) => l.importUri == r.sources.first)) {
+        linkedMain = _dependencyLibrary(r.sources.first, component, [
+          for (final Uri dill in outlines)
+            state.workerInputCache![dill]!.component,
+        ]);
+        if (linkedMain == null) {
+          log.writeln(
+            '$_tool: the entry point ${r.sources.first} is neither a source '
+            'of this compile nor a library of a dependency module.',
+          );
+          return 1;
+        }
+        linkedMainProcedure = _mainOf(linkedMain);
+        if (linkedMainProcedure == null) {
+          log.writeln(
+            '$_tool: the entry point ${linkedMain.importUri} declares no '
+            'top-level `main`.',
+          );
+          return 1;
+        }
+      }
+
       await compiler.context.runInContext((_) async {
         _makeStable(component);
         if (!r.entry) component.setMainMethodAndMode(null, true);
-        await _write(r, component, own, leftOut, fileSystem);
+        if (linkedMainProcedure != null) {
+          component.setMainMethodAndMode(linkedMainProcedure.reference, true);
+        }
+        await _write(
+          r,
+          component,
+          own,
+          leftOut,
+          fileSystem,
+          linkedImports: [if (linkedMain != null) _key(linkedMain.fileUri, r)],
+        );
       });
       // What was left out was decided on everything the first attempt read,
       // which the kept compile no longer shows: every input then counts as
@@ -551,6 +591,9 @@ class Compiler {
       final needed = <Uri?>{
         for (final Library library in result.neededDillLibraries!)
           fromDill[library.importUri],
+        // The module that defines the entry point is needed whatever the
+        // front end read of it: the program's `main` is there.
+        if (linkedMain != null) fromDill[linkedMain.importUri],
       };
       _writeUnused(r, [
         for (final String dir in r.inputModules)
@@ -871,13 +914,44 @@ class Compiler {
       _fileOf(library.fileUri.resolve(part.partUri)),
   ];
 
+  /// The library [uri] names in the compile's result or in a dependency
+  /// outline, or null.
+  Library? _dependencyLibrary(
+    Uri uri,
+    Component component,
+    List<Component> dependencies,
+  ) {
+    for (final Component c in [component, ...dependencies]) {
+      for (final Library library in c.libraries) {
+        if (library.importUri == uri) return library;
+      }
+    }
+    return null;
+  }
+
+  /// The top-level `main` of [library], as the front end finds it for an
+  /// entry point it compiles: declared there, or exported by it.
+  Procedure? _mainOf(Library library) {
+    for (final Procedure procedure in library.procedures) {
+      if (procedure.name.text == 'main' && procedure.isStatic) {
+        return procedure;
+      }
+    }
+    for (final Reference reference in library.additionalExports) {
+      final TreeNode? node = reference.node;
+      if (node is Procedure && node.name.text == 'main') return node;
+    }
+    return null;
+  }
+
   Future<void> _write(
     Request r,
     Component component,
     List<Library> own,
     Map<Uri, _LeftOut> leftOut,
-    FileSystem fileSystem,
-  ) async {
+    FileSystem fileSystem, {
+    List<String> linkedImports = const [],
+  }) async {
     own.sort((a, b) => '${a.fileUri}'.compareTo('${b.fileUri}'));
     final List<Uri> ownFiles = own.expand(_filesOf).toList();
     final String output = r.output!;
@@ -904,7 +978,8 @@ class Compiler {
         {
           'dill': _entryDill,
           'defines': const <String>[],
-          'imports': importsOf(own.toSet()),
+          'imports': {...importsOf(own.toSet()), ...linkedImports}.toList()
+            ..sort(),
         },
       ];
     } else {

@@ -410,6 +410,81 @@ void main(List<String> args) {
     expect(lines[2], contains('package:leaf/mixins.dart:3:23'));
   });
 
+  group('an entry point a dependency module defines', () {
+    // An app's `lib/main.dart` that its library lists: the entry names it by
+    // its `package:` URI and declares no file for it.
+    List<String> linkedEntry(List<String> deps) => [
+      ..._common('out/entry.package_config.json', deps),
+      for (final String dep in deps) ...['--input-kmod', 'out/$dep.koutline'],
+      '--source',
+      'package:app/main.dart',
+      '--no-drop',
+      '--output',
+      'out/entry.kmod',
+      '--excluded-output',
+      'out/entry.excluded',
+      '--unused-inputs-list',
+      'out/entry.unused',
+    ];
+
+    setUp(() {
+      _write(
+        'app/lib/main.dart',
+        _main.replaceFirst(
+          'void main() {',
+          "void main() {\n  print(StackTrace.current.toString().split('\\n').first);",
+        ),
+      );
+    });
+
+    test("runs that library's main, under its package: URI, compiled once", () {
+      _compile(_moduleArgs('leaf'));
+      _compile(_moduleArgs('mid', deps: ['leaf']));
+      _compile(_moduleArgs('top', deps: ['leaf', 'mid']));
+      _compile(_moduleArgs('app', deps: ['leaf', 'mid', 'top']));
+      _compile(linkedEntry(['leaf', 'mid', 'top', 'app']));
+      // The entry defines no library: `main.dart` is the app module's.
+      final index = jsonDecode(_text('out/entry.kmod/index.json')) as Map;
+      final kernel = (index['sccs'] as List).single as Map;
+      expect(kernel['imports'], ['app/lib/main.dart']);
+      // The app module is used: the program's `main` is there.
+      expect(_text('out/entry.unused'), isNot(contains('app.koutline')));
+      final ProcessResult result = _runLinked('out/entry.kmod', [
+        'out/app.kmod',
+        'out/leaf.kmod',
+        'out/mid.kmod',
+        'out/top.kmod',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final List<String> lines = const LineSplitter().convert(
+        result.stdout as String,
+      );
+      expect(lines[0], contains('main (package:app/main.dart:5:'));
+      expect(lines[1], 'HELLO TOP! 8 0 1');
+    });
+
+    test('fails when the library declares no main', () {
+      _write('app/lib/main.dart', "String notMain() => 'x';\n");
+      _compile(_moduleArgs('leaf'));
+      _compile(_moduleArgs('app', deps: ['leaf']));
+      final ProcessResult result = _run(linkedEntry(['leaf', 'app']));
+      expect(result.exitCode, 1);
+      expect(
+        result.stderr,
+        contains(
+          'the entry point package:app/main.dart declares no '
+          'top-level `main`',
+        ),
+      );
+    });
+
+    test('fails when no dependency module defines it', () {
+      _compile(_moduleArgs('leaf'));
+      final ProcessResult result = _run(linkedEntry(['leaf']));
+      expect(result.exitCode, isNot(0));
+    });
+  });
+
   test('the same request gives the same bytes in a worker and by itself, '
       'whatever order names the inputs', () async {
     _compile(_moduleArgs('leaf'));
