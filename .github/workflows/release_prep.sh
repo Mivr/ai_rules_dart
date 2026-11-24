@@ -7,9 +7,9 @@
 # root, with the checked-out tag as its argument, and a hard-coded path. The
 # tag says which module it is: rules_dart-v0.29.0 or rules_flutter-v0.30.3.
 #
-#   rules_<module>-v<version>.tar.gz       the module only, `git archive` of
-#                                          <tag>:rules_<module>, under the
-#                                          prefix rules_<module>-<version>/
+#   rules_<module>-v<version>.tar.gz       the module only (`git archive` of the
+#                                          tag, run in rules_<module>/), under
+#                                          the prefix rules_<module>-<version>/
 #   rules_<module>-v<version>.docs.tar.gz  the generated API docs
 #
 # Both are written to $RELEASE_OUT (default: the current directory). What
@@ -49,15 +49,17 @@ integrity_of() {
 
 # The archive. The prefix is what GitHub's own source archives use, so a
 # consumer can switch from this artifact to a source archive with the same
-# strip_prefix. `gzip -n` drops the file name and time from the header: the
-# same tag always yields the same bytes, and the same sha256.
+# strip_prefix. `gzip -n` drops the file name and time from the header, and
+# every entry has the time of the tagged commit: the same tag always yields the
+# same bytes, and the same sha256.
+# Run inside the module's directory, `git archive <tag>` archives that
+# directory alone, with paths relative to it. It is not `<tag>:<module>`: the
+# tree of a directory is not a commit, and `export-subst` (the stamp in
+# rules_dart/BUILD.bazel) expands only for a commit.
 # NB: what is left out of the archive is configured in <module>/.gitattributes.
 git rev-parse --verify --quiet "${TAG}:${MODULE}" >/dev/null ||
   die "tag ${TAG} has no ${MODULE}/ directory"
-# The tree of a directory has no time of its own, so every entry gets the time
-# of the tagged commit (`--mtime`, git 2.39).
-git archive --format=tar --mtime="$(git log -1 --format=%cI "${TAG}^{commit}")" \
-  --prefix="${PREFIX}/" "${TAG}:${MODULE}" | gzip -n >"$OUT/$ARCHIVE"
+(cd "$ROOT/$MODULE" && git archive --format=tar --prefix="${PREFIX}/" "$TAG") | gzip -n >"$OUT/$ARCHIVE"
 INTEGRITY="$(integrity_of "$OUT/$ARCHIVE")"
 
 # What a consumer pastes into MODULE.bazel. Neither module is on the Bazel

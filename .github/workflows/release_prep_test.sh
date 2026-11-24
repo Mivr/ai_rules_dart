@@ -162,11 +162,12 @@ init_repo() {
       rules_dart/tools rules_flutter/flutter rules_flutter/e2e/smoke rules_flutter/e2e/other
     echo 'module(name = "ai_rules_dart")' >rules_dart/MODULE.bazel
     echo 'x = 1' >rules_dart/dart/defs.bzl
+    echo '_STAMP = "$Format:%H$"' >rules_dart/BUILD.bazel
     echo 'smoke' >rules_dart/e2e/smoke/MODULE.bazel
     echo 'other' >rules_dart/e2e/other/MODULE.bazel
     echo 'dev' >rules_dart/dev/f.dart
     echo 'tools' >rules_dart/tools/MODULE.bazel
-    printf '/e2e/* export-ignore\n/e2e/smoke -export-ignore\n/dev/ export-ignore\n' >rules_dart/.gitattributes
+    printf '/e2e/* export-ignore\n/e2e/smoke -export-ignore\n/dev/ export-ignore\n/BUILD.bazel export-subst\n' >rules_dart/.gitattributes
     : >rules_dart/cliff.toml
     printf 'module(name = "ai_rules_flutter")\nbazel_dep(name = "bazel_skylib", version = "1.9.2")\nbazel_dep(name = "ai_rules_dart", version = "0.28.9", repo_name = "rules_dart")\n' >rules_flutter/MODULE.bazel
     echo 'y = 1' >rules_flutter/flutter/defs.bzl
@@ -245,6 +246,8 @@ if [ -f "$archive" ]; then
   grep -qx 'rules_dart-0.29.0/e2e/smoke/MODULE.bazel' "$D/list" || fail "e2e/smoke is not in the archive"
   grep -q 'e2e/other\|/dev/\|rules_flutter' "$D/list" && fail "the archive holds what export-ignore removes, or the other module"
   grep -qv '^rules_dart-0.29.0/' "$D/list" && fail "an entry is outside the prefix"
+  tar xzOf "$archive" rules_dart-0.29.0/BUILD.bazel | grep -qx "_STAMP = \"$(git -C "$D/repo" rev-parse rules_dart-v0.29.0^{commit})\"" ||
+    fail "export-subst did not stamp BUILD.bazel with the commit"
   want_stdout "urls = [\"https://github.com/Mivr/ai_rules_dart/releases/download/rules_dart-v0.29.0/rules_dart-v0.29.0.tar.gz\"]"
   want_stdout "integrity = \"$(integrity_of "$archive")\""
   want_stdout 'strip_prefix = "rules_dart-0.29.0"'

@@ -1,7 +1,7 @@
 # Exclude development-only files from release archives.
 #
-# `release_prep.sh` archives this directory alone (`git archive
-# <tag>:rules_flutter`), so every pattern is relative to rules_flutter/. Each is
+# `release_prep.sh` archives this directory alone (`git archive <tag>` run in
+# rules_flutter/), so every pattern is relative to rules_flutter/. Each is
 # anchored with a leading `/`. Without one, `git archive` matches the basename
 # at any depth, so an unanchored `e2e/` would also strip any nested `e2e/`
 # directory and the published archive could fail to load.
