@@ -32,13 +32,12 @@ network or workspace.
 `expected.json` is the contract's data: when a later item fixes a refusal, edit
 its entry there; do not add plugin names to the runner.
 
-Because Android Gradle evaluation is deferred to the lazy Android repository,
-the spoke query evaluates only the Apple layer. Seven plugins (`firebase_core`,
-`firebase_auth`, `cloud_firestore`, `firebase_messaging`, `google_sign_in_ios`,
+A spoke has no Android targets (a plugin's Android side is built from the app's
+pinned Gradle model, see `docs/android-model.md`), so the spoke query evaluates
+only the Apple layer. Seven plugins (`firebase_core`, `firebase_auth`,
+`cloud_firestore`, `firebase_messaging`, `google_sign_in_ios`,
 `sentry_flutter`, and `stripe_ios`) refuse because the hub sets no
-`swift_package_resolved`. The other seven resolve cleanly (`ok`). The deferred
-Android Gradle refusal is checked by `check_android_refusal.sh` when building
-an Android target (`@deps__google_mlkit_commons//android:lib`).
+`swift_package_resolved`. The other seven resolve cleanly (`ok`).
 
 ### CocoaPods mode (`run_pods_matrix.py`)
 

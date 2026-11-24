@@ -10,11 +10,6 @@
     "avoid_catching_errors": 1,
     "avoid_redundant_argument_values": 2
   },
-  "flutter/private/tools/apk_overlay.dart": {
-    "prefer_const_constructors": 2,
-    "sort_constructors_first": 1,
-    "unnecessary_parenthesis": 1
-  },
   "flutter/private/tools/bazel_test_protocol.dart": {
     "comment_references": 5
   },
@@ -173,14 +168,6 @@
     "dangling_library_doc_comments": 1,
     "process_requires_environment": 1
   },
-  "flutter/private/tools/merge_android_manifests.dart": {
-    "dangling_library_doc_comments": 1,
-    "prefer_foreach": 2,
-    "simplify_variable_pattern": 1,
-    "sort_constructors_first": 10,
-    "unintended_html_in_doc_comment": 2,
-    "unnecessary_raw_strings": 1
-  },
   "flutter/private/tools/merge_plists.dart": {
     "comment_references": 1,
     "dangling_library_doc_comments": 1,
@@ -204,11 +191,6 @@
   },
   "flutter/private/tools/sha256.dart": {
     "unnecessary_ignore": 1
-  },
-  "flutter/private/tools/strip_native_libs.dart": {
-    "dangling_library_doc_comments": 1,
-    "process_requires_environment": 1,
-    "unintended_html_in_doc_comment": 4
   },
   "flutter/private/tools/test/android_bundle_test.dart": {
     "directives_ordering": 1,
@@ -276,10 +258,6 @@
     "dangling_library_doc_comments": 1,
     "prefer_const_constructors": 2,
     "prefer_foreach": 1
-  },
-  "flutter/private/tools/test/merge_android_manifests_test.dart": {
-    "missing_whitespace_between_adjacent_strings": 7,
-    "use_raw_strings": 1
   },
   "flutter/private/tools/test/merge_plists_test.dart": {
     "avoid_escaping_inner_quotes": 2
@@ -369,22 +347,6 @@
     "specify_nonobvious_property_types": 2,
     "type_annotate_public_apis": 2,
     "unnecessary_parenthesis": 3
-  },
-  "flutter/private/tools/zlib_raw_match.dart": {
-    "omit_obvious_local_variable_types": 1,
-    "parameter_assignments": 2
-  },
-  "flutter/private/tools/zlib_raw_state.dart": {
-    "sort_constructors_first": 2,
-    "unnecessary_parenthesis": 1
-  },
-  "flutter/private/tools/zlib_raw_trees.dart": {
-    "avoid_multiple_declarations_per_line": 1,
-    "comment_references": 1,
-    "omit_obvious_local_variable_types": 9,
-    "parameter_assignments": 3,
-    "sort_constructors_first": 1,
-    "unnecessary_parenthesis": 1
   },
   "flutter/tests/analyze_fixture/lib/geometry.dart": {
     "public_member_api_docs": 2

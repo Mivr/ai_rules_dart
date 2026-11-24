@@ -64,14 +64,10 @@ requests; the workspace checks them against the requests in the sibling
 `rules_dart/MODULE.bazel`, so a change there that moves one fails
 `//:dependency_floors_test` until this table follows.
 
-That workspace also downloads its Android SDK and NDK from Google with
-checked-in sha256 values (`e2e/min_versions/android_repositories.bzl`) instead
-of reading `ANDROID_HOME`/`ANDROID_NDK_HOME`. The floor build is therefore the
-same on a developer host, a CI image with a preinstalled SDK, and the gate,
-whose clean environment exports neither variable. The NDK repository is empty
-on non-Linux hosts, where `//:android_build_test` is reported incompatible, so
-macOS proves the Apple legs, the Dart app and the resolved floor table while
-the Linux job builds the Android leg against the same floors.
+Its Android leg (`//:android_build_test`) builds the app from its pinned
+Gradle model, with the Android SDK that `ANDROID_HOME` names, as every Android
+workspace does (see `docs/android-model.md`); macOS proves the Apple legs, the
+Dart app and the resolved floor table.
 
 ## This repository's own builds
 

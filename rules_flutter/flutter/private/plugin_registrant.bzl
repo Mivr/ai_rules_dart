@@ -623,10 +623,8 @@ def generate_native_plugin_registrant(ctx, plugins, target_platform, exclude_plu
     elif target_platform == "android":
         content = make_android_registrant_content(native_plugins) if native_plugins else _EMPTY_ANDROID_REGISTRANT
 
-        # Android needs the file in a `io/flutter/plugins/` subdir so
-        # kt_android_library / android_library picks up the right
-        # Java package layout. Caller (flutter_android_registrant)
-        # places it accordingly.
+        # Android needs the file in a `io/flutter/plugins/` subdir, the
+        # Java package layout; the caller places it accordingly.
         ext = ".java"
     else:
         return None

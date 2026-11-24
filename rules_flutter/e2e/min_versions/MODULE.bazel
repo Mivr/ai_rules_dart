@@ -1,24 +1,18 @@
-"e2e: minimum supported rules_apple/rules_android floors"
+"e2e: the minimum supported versions of the modules rules_flutter depends on"
 
 module(name = "rules_flutter_min_versions")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
 bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
 
-# rules_android's SDK template loads rules_shell; the repository rule below
-# generates that package from this root module, so the mapping must be a
-# direct (dev-only) edge here. Other modules in this graph already select
-# 0.8.0, so this fixture declaration lifts nothing.
-bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
-
 # Every regular dependency is declared at the floor rules_flutter supports,
 # never at the release this repository compiles. The comments in the root
 # MODULE.bazel name the symbol that sets each floor; this workspace is the
 # proof that the set builds together. Some of these floors are lifted by
 # another module's own requirement (ai_rules_dart asks for newer
-# rules_cc, bazel_skylib, package_metadata and rules_go; rules_android 0.8.0
-# asks for newer rules_java and rules_jvm_external, and the newer rules_cc
-# asks for newer apple_support). Those modules stay at the floor here and MVS
+# rules_cc, bazel_skylib and package_metadata; rules_kotlin asks for newer
+# rules_java, and the newer rules_cc asks for newer apple_support). Those
+# modules stay at the floor here and MVS
 # selects the lift, which `//:dependency_floors_test` asserts and attributes;
 # pinning them down with an override would hide the graph a consumer gets.
 bazel_dep(name = "bazel_skylib", version = "1.8.0")
@@ -70,13 +64,12 @@ register_toolchains(
 # makes MVS ignore any other requester, so this workspace keeps testing the
 # release rules_flutter promises instead of floating with the graph. The
 # Apple pair is the proven floor from the original workspace; rules_kotlin,
-# llvm, rules_android and platforms are the remaining floors no other module
-# asks to raise.
+# llvm and platforms are the remaining floors no other module asks to raise.
 #
 # The lifted floors are deliberately NOT overridden here: ai_rules_dart
-# asks for newer rules_cc, bazel_skylib, package_metadata and rules_go;
-# rules_android 0.8.0 asks for rules_java 9.3.0 and rules_jvm_external 6.9;
-# rules_cc 0.2.26 asks for apple_support 2.9.1. Forcing those below their
+# asks for newer rules_cc, bazel_skylib and package_metadata; rules_kotlin
+# asks for a newer rules_java; rules_cc 0.2.26 asks for apple_support 2.9.1.
+# Forcing those below their
 # requester's floor would build a graph no consumer can get (and would hide a
 # real requirement), so they stay declared at the floor and
 # `//:dependency_floors_test` asserts the lifted value and its source. The

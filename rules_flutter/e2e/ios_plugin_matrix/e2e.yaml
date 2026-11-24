@@ -113,11 +113,3 @@ commands:
     expect:
       non_zero: true
       output_contains: 'Flutter plugin "stripe_ios" depends on pod "Stripe" (26.13.0 in @@//:Podfile.lock), which no Bazel target provides. Map it with flutter.pub(ios_pod_deps = {"Stripe": "<label>"})'
-  - name: Android refusal on google_mlkit_commons
-    run: bazel build @deps__google_mlkit_commons//android:lib
-    expect:
-      non_zero: true
-      output_contains:
-        - 'flutter.pub spoke for "google_mlkit_commons"'
-        - declares Android dependencies rules_flutter cannot translate to Bazel labels
-        - com.google.mlkit:vision-common

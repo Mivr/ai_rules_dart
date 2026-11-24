@@ -9,12 +9,12 @@ load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app")
 exports_files(["MODULE.bazel"])
 
 # One minimal app per native platform, built against the minimum supported
-# rules_apple/rules_android (pinned in MODULE.bazel). The Android leg is
+# rules_apple, rules_swift, rules_kotlin and rules_java (pinned in MODULE.bazel). The Android leg is
 # Linux-only through target_compatible_with, so `bazel test //...` on Linux
 # builds the Dart app plus the Android leg while the Apple legs skip
 # themselves through target_compatible_with; on macOS the Dart app and both
 # Apple legs run and the Android leg is reported incompatible. Loading this
-# package on any host already proves every rules_apple/rules_swift/rules_android
+# package on any host already proves every rules_apple/rules_swift/rules_kotlin
 # load in our macros resolves against the floors.
 
 flutter_application(

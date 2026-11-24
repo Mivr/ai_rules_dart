@@ -67,11 +67,8 @@ void main() {
     );
   }
 
-  // Workspace-only fixtures, not rules_flutter floors: the module under test,
-  // the archive-pinned NDK extension and rules_android's SDK-template shell
-  // dependency that `//:android_repositories.bzl` maps for its generated
-  // repository.
-  const fixtures = {'ai_rules_flutter', 'rules_android_ndk', 'rules_shell'};
+  // Not a rules_flutter floor: the module under test.
+  const fixtures = {'ai_rules_flutter'};
 
   // The sibling `rules_dart` of this checkout, taken through a
   // `local_path_override`: it is declared at its floor, but it has no resolved

@@ -1,7 +1,7 @@
 """Bounded lexer for SwiftPM `Package.swift` manifests.
 
 Turns the manifest text into a token list for `swiftpm_manifest.bzl`. The
-pattern follows the Gradle lexer (`gradle_lex.bzl`): one bounded `for` loop
+pattern is one bounded `for` loop
 over the input dispatches per-state step functions through a handler table
 holding a mutable context dict (Starlark has no `while`, and the contract
 forbids recursion here).
