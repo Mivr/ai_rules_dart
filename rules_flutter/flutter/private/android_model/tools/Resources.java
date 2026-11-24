@@ -104,7 +104,8 @@ final class Resources {
               d.getGenerateSymbolsPathData(), d.getVisibility(), d.getRequirePngCrunching(), false, null, true, d.getVerbose(), f);
           ResourceCompiler.compileResource(file, dir.toFile(), options, logger);
         } else {
-          native_.add(f);
+          // aapt2 reads the resource directory out of the path, at the host's separator.
+          native_.add(HostPaths.forHost(f));
         }
       }
       if (!native_.isEmpty()) {

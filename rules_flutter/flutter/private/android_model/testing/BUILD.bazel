@@ -1,4 +1,4 @@
-load("@rules_java//java:defs.bzl", "java_library")
+load("@rules_java//java:defs.bzl", "java_library", "java_test")
 
 # What the tests of the Android e2e workspaces check built APKs with (see apk_test.bzl).
 java_library(
@@ -10,4 +10,17 @@ java_library(
     ],
     javacopts = ["-XepDisableAllChecks"],
     visibility = ["//visibility:public"],
+)
+
+# The form of a path handed to a native program (aapt2 on Windows), checked on every host.
+java_test(
+    name = "host_paths_test",
+    size = "small",
+    srcs = [
+        "HostPathsTest.java",
+        "//flutter/private/android_model/tools:HostPaths.java",
+    ],
+    javacopts = ["-XepDisableAllChecks"],
+    main_class = "rules_flutter.android.HostPathsTest",
+    use_testrunner = False,
 )

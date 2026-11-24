@@ -9,6 +9,7 @@ exports_files([
     "Bundle.java",
     "Dexing.java",
     "GradleAar.java",
+    "HostPaths.java",
     "PinCheck.java",
     "Release.java",
     "Resources.java",

@@ -42,7 +42,7 @@ load(
     "rdf_zip_part",
 )
 
-_TOOL_SOURCES = ["Aar.java", "AndroidTool.java", "Apk.java", "Bundle.java", "Dexing.java", "GradleAar.java", "PinCheck.java", "Release.java", "Resources.java", "Sign.java"]
+_TOOL_SOURCES = ["Aar.java", "AndroidTool.java", "Apk.java", "Bundle.java", "Dexing.java", "GradleAar.java", "HostPaths.java", "PinCheck.java", "Release.java", "Resources.java", "Sign.java"]
 
 # ABIs the Dart side can build native code for (the AOT library of a profile or release build, FFI
 # libraries, code assets).
