@@ -291,6 +291,7 @@ bzl_library(
         "//dart/private:dart_test",
         "//dart/private:dart_test_runner",
         "//dart/private:download",
+        "//dart/private:entry_point",
         "//dart/private:kernel_params",
         "//dart/private:source_set",
     ],

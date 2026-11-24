@@ -22,6 +22,8 @@ load(
     "derive_lib_root",
     "duplicated_source_message",
     "duplicated_source_owners",
+    "entry_point_library",
+    "entry_sources_from_library",
     "first_per_package",
     "kernel_link_action",
     "kernel_package_config",
@@ -118,7 +120,7 @@ def _dedup_module_sources(sources):
         if prev == None:
             by_uri[s.uri] = s
             order.append(s.uri)
-        elif prev.file.is_source and not s.file.is_source:
+        elif prev.file != None and s.file != None and prev.file.is_source and not s.file.is_source:
             by_uri[s.uri] = s
     return [by_uri[u] for u in order]
 
@@ -131,7 +133,8 @@ def _kernel_module_staged_inputs(ctx, sources, output, extra_inputs, packages, s
         content = kernel_package_config(packages, scheme = scheme),
     )
 
-    stage_candidates = [s.file for s in sources]
+    # An entry point a dependency module defines has no file here.
+    stage_candidates = [s.file for s in sources if s.file != None]
     if extra_inputs != None:
         stage_candidates = stage_candidates + extra_inputs.to_list()
 
@@ -280,7 +283,7 @@ def flutter_kernel_module_action(ctx, tools, module, options):
     direct_inputs = [
         package_config,
         platform,
-    ] + [s.file for s in sources] + stage.files + [
+    ] + [s.file for s in sources if s.file != None] + stage.files + [
         f
         for f in [getattr(options, "define_file", None), getattr(options, "native_assets", None)]
         if f != None
@@ -956,7 +959,9 @@ def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None
     Args:
       ctx: The rule context.
       flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
-      own_files: The target's own `.dart` files (`[ctx.file.main] + ctx.files.srcs`).
+      own_files: The target's own `.dart` files (`[ctx.file.main] + ctx.files.srcs`), `main` first.
+        A `main` that a library in `deps` lists is that library's, not the target's
+        (`entry_point_library`): the entry module takes it from the library's module.
       packages: The synthesized `DartPackageInfo` list for the target.
       what: Optional name of the calling function, for a custom rule's message.
 
@@ -982,9 +987,14 @@ def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None
         reasons.append("one package of its closure has two roots, or two packages sit at the workspace root: a package config names one root per package")
     owned = depset(transitive = [k.owned for k in dep_kernels]).to_list()
     edges = depset(transitive = [k.edges for k in dep_kernels]).to_list()
-    duplicate = duplicated_source_owners([f.short_path for f in own_files], owned, edges)
+
+    # A `main` that a library in `deps` lists is that library's: the entry takes it from the library's module.
+    main = own_files[0] if own_files else None
+    entry_point = entry_point_library(main, ctx.attr.deps)
+    own_paths = [f.short_path for f in own_files if entry_point == None or f != entry_point.file]
+    duplicate = duplicated_source_owners(own_paths, owned, edges)
     if duplicate != None:
-        reasons.append(duplicated_source_message(duplicate, str(ctx.label)))
+        reasons.append(duplicated_source_message(duplicate, str(ctx.label), main))
     if reasons:
         fail("%s compiles Flutter kernel modules, and cannot:\n%s" % (who, "\n".join(["  - " + r for r in reasons])))
     return tools
@@ -1038,6 +1048,9 @@ def compile_flutter_modular_test_kernel(
             file = f,
         ))
 
+    # A `main` a library in `deps` lists comes from that library's module; the bootstrap imports it.
+    sources = entry_sources_from_library(sources, entry_point_library(ctx.file.main, ctx.attr.deps))
+
     dep_kernels = [
         dep[FlutterKernelModuleInfo].kernel_info
         for dep in ctx.attr.deps
@@ -1086,6 +1099,10 @@ def compile_flutter_modular_app_kernel(
     """
     own = [ctx.file.main] + [f for f in ctx.files.srcs if f != ctx.file.main]
     sources = [struct(uri = app_main_location(ctx.attr.package_name, lib_root, f).uri, file = f) for f in own]
+
+    # A `main` a library in `deps` lists is that library's: the entry names it by the library's
+    # `package:` URI and the module compiler links it from that library's module.
+    sources = entry_sources_from_library(sources, entry_point_library(ctx.file.main, ctx.attr.deps))
     sources += [struct(uri = app_scheme_location(f).uri, file = f) for f in (debug.files if debug else [])]
     twins = depset(debug.twins) if debug else None
 
@@ -1307,6 +1324,7 @@ def flutter_modular_app_kernel(ctx, *, main, package_name, srcs, deps, output, u
             file = f,
         ))
         own_files.append(f)
+    sources = entry_sources_from_library(sources, entry_point_library(main, deps))
     dep_kernels = _custom_dep_kernels(ctx, deps, "flutter_modular_app_kernel")
     flutter_sdk_info, tools = _flutter_modular_custom_tools(
         ctx,

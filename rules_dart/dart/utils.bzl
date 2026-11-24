@@ -10,6 +10,11 @@ load(
     _DartKernelInfo = "DartKernelInfo",
 )
 load(
+    "//dart/private:entry_point.bzl",
+    _entry_point_library = "entry_point_library",
+    _entry_sources_from_library = "entry_sources_from_library",
+)
+load(
     "//dart/private:build_settings.bzl",
     _DartDefinesInfo = "DartDefinesInfo",
     _EXECUTABLE_DEFINES_ATTRS = "EXECUTABLE_DEFINES_ATTRS",
@@ -250,6 +255,10 @@ first_per_package = _first_per_package
 duplicated_source = _duplicated_source
 duplicated_source_message = _duplicated_source_message
 duplicated_source_owners = _duplicated_source_owners
+
+# The `main` an executable takes from a library in its `deps` (see `entry_point.bzl`).
+entry_point_library = _entry_point_library
+entry_sources_from_library = _entry_sources_from_library
 has_cross_pkg_cycle = _has_cross_pkg_cycle
 package_of_source = _package_of_source
 global_dart_defines = _global_dart_defines

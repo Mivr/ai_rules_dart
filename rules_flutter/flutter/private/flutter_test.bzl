@@ -55,6 +55,7 @@ load(
     "dart_analyzable_info_with_package",
     "dart_package_identity",
     "derive_lib_root",
+    "entry_point_library",
 )
 load("//flutter:providers.bzl", "FlutterInfo")
 load(
@@ -142,13 +143,15 @@ def _flutter_test_native_assets(ctx):
 
 def _flutter_test_sources(ctx):
     # Per-target bootstrap. Imports the user's test via its `package:` URI when
-    # `main` sits under `<lib_root>/lib/` and via `org-dartlang-app:///<stable_path>`
+    # `main` sits under `<lib_root>/lib/` (the URI of the library in `deps` that
+    # lists it, when one does) and via `org-dartlang-app:///<stable_path>`
     # otherwise. Written by the shared helper, which also stages the golden
     # comparator next to it (a symlink) exactly when the suite carries
     # `package:flutter_test`.
     lib_root = derive_lib_root(ctx.label.workspace_root, ctx.label.package)
     bootstrap = ctx.actions.declare_file(ctx.label.name + "_bootstrap.dart")
-    test_import = app_main_location(ctx.attr.package_name, lib_root, ctx.file.main).uri
+    entry_point = entry_point_library(ctx.file.main, ctx.attr.deps)
+    test_import = entry_point.uri if entry_point != None else app_main_location(ctx.attr.package_name, lib_root, ctx.file.main).uri
     staged_comparator = _flutter_test_bootstrap_action(ctx, test_import, bootstrap)
 
     packages = collect_packages(ctx.attr.deps)

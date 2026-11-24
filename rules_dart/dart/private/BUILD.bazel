@@ -280,6 +280,7 @@ bzl_library(
     deps = [
         ":build_settings",
         ":dart_kernel",
+        ":entry_point",
         ":kernel_library_state",
         "//dart:providers",
     ],
@@ -306,6 +307,7 @@ bzl_library(
         ":closure_facts",
         ":common",
         ":dart_info",
+        ":entry_point",
         ":kernel_exec_link",
         ":kernel_library_state",
         ":kernel_params",
@@ -492,6 +494,17 @@ bzl_library(
     name = "download",
     srcs = ["download.bzl"],
     visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "entry_point",
+    srcs = ["entry_point.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_info",
+        "//dart:providers",
+    ],
 )
 
 bzl_library(

@@ -68,6 +68,7 @@ load(
 )
 load("//dart/private:closure_facts.bzl", "lib_roots_of", "root_key")
 load("//dart/private:dart_info.bzl", "package_lib_prefix")
+load("//dart/private:entry_point.bzl", "entry_point_library", "entry_sources_from_library")
 load("//dart/private:kernel_exec_link.bzl", "exec_base_dill", "exec_link_closure")
 load(
     "//dart/private:kernel_library_state.bzl",
@@ -265,6 +266,9 @@ def add_module_source_args(args, sources, own_files):
             args.add(s.dir)
             continue
         args.add("--source", s.uri)
+        if s.file == None:
+            # An entry point a dependency module defines: no file is compiled.
+            continue
         args.add("--input-source", s.file)
         if own_files:
             args.add("--own-source-file", s.file)
@@ -373,7 +377,10 @@ def duplicated_source(own_paths, owned, edges):
     problem. Such an executable falls back to whole-program compilation.
 
     The executable's own sources are compiled by its entry module, which does not
-    dedupe against the libraries, so a source it shares with a library falls back too.
+    dedupe against the libraries, so a source it shares with a library is refused
+    too. The one exception is a `main` that a library in the executable's `deps`
+    lists: that library owns it, and the caller leaves it out of `own_paths`
+    (see `entry_point.bzl`).
 
     Args:
       own_paths: The `short_path` of each of the executable's own sources.
@@ -439,12 +446,14 @@ def _package_relative(label, path):
         return path[len(package) + 1:]
     return path
 
-def duplicated_source_message(found, program):
+def duplicated_source_message(found, program, main = None):
     """What a user reads when one source belongs to two targets: which, and what to change.
 
     Args:
       found: The struct from `duplicated_source_owners`.
       program: The label of the executable, as a string.
+      main: The executable's `main` File, or None. When the source is `main`,
+        the message says that a library in `deps` may own it.
 
     Returns:
       The message.
@@ -452,11 +461,17 @@ def duplicated_source_message(found, program):
     libraries = " and ".join(found.owners)
     if found.own:
         rel = _package_relative(found.owners[0], found.path)
-        return (
+        message = (
             "source %s is listed by two targets, %s and %s: one source belongs to one target. " +
             "Remove it from the library's `srcs` (for example `glob([\"lib/**/*.dart\"], exclude = [\"%s\"])`), " +
             "or give %s only `main` and leave the rest of `lib/` to the library"
         ) % (found.path, program, libraries, rel, program)
+        if main != None and main.short_path == found.path:
+            message += (
+                ". A `main` that a library lists is taken from that library only when the library is in " +
+                "%s's own `deps`: add %s there"
+            ) % (program, found.owners[0])
+        return message
     return (
         "source %s is listed by two libraries, %s, and neither depends on the other: one source belongs " +
         "to one target. Remove it from the `srcs` of one of them, or make one depend on the other"
@@ -969,7 +984,7 @@ def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
         refused_libraries = getattr(options, "refused_libraries", ()),
     ))
 
-    direct_inputs = [platform] + [s.file for s in inputs.sources]
+    direct_inputs = [platform] + [s.file for s in inputs.sources if s.file != None]
     if options.define_file != None:
         direct_inputs.append(options.define_file)
     if options.native_assets != None:
@@ -1149,7 +1164,7 @@ def _inconsistent_package(records):
         return "packages %s all sit at the workspace root: a package config holds one root package" % ", ".join(["`%s`" % r for r in roots])
     return None
 
-def _not_modular_reasons(ctx, tools, target_sdk, closure, own_files, own_record, kernels):
+def _not_modular_reasons(ctx, tools, target_sdk, closure, own_files, own_record, kernels, entry_point = None):
     """Why an executable's closure cannot compile and link as modules: a list of messages, empty when it can.
 
     Args:
@@ -1160,6 +1175,9 @@ def _not_modular_reasons(ctx, tools, target_sdk, closure, own_files, own_record,
       own_files: The executable's own `.dart` files.
       own_record: The executable's own `DartPackageInfo`, or None.
       kernels: The `DartKernelInfo` of each dependency, or None when one has none.
+      entry_point: The struct from `entry_point_library` when a library in
+        `deps` lists `main`, or None. That library owns `main`, so `main` is
+        no source of the executable's own.
 
     Returns:
       `(reasons, scan)`: the messages, and the flattened closure scan (or None).
@@ -1185,13 +1203,13 @@ def _not_modular_reasons(ctx, tools, target_sdk, closure, own_files, own_record,
         inconsistent = _inconsistent_package(records)
         if inconsistent != None:
             reasons.append(inconsistent)
-    own_paths = [f.short_path for f in own_files]
+    own_paths = [f.short_path for f in own_files if entry_point == None or f != entry_point.file]
     scan = None
     if closure == None or _clean_own_in_lib(own_paths, closure.keys):
         scan = _closure_scan(kernels or [])
         duplicate = duplicated_source_owners(own_paths, scan.owned, scan.edges)
         if duplicate != None:
-            reasons.append(duplicated_source_message(duplicate, str(ctx.label)))
+            reasons.append(duplicated_source_message(duplicate, str(ctx.label), own_files[0] if own_files else None))
     return reasons, scan
 
 def modular_executable_tools(
@@ -1243,7 +1261,10 @@ def modular_executable_tools(
         above) takes the program's sources instead, and this returns None.
 
     Returns:
-      The struct from `find_kernel_module_tools`, or None.
+      The struct from `find_kernel_module_tools`, or None. Its `entry_point`
+      is the struct from `entry_point_library` when a library in `deps` lists
+      `own_files[0]` (`main`), or None; `modular_executable_kernel` then
+      takes `main` from that library's module.
     """
     if not kernel_mode:
         return None
@@ -1261,7 +1282,8 @@ def modular_executable_tools(
         target_sdk = ctx.toolchains[_TOOLCHAIN_TYPE].dart_sdk_info
 
     kernels = dep_kernels_or_none(ctx.attr.deps)
-    reasons, scan = _not_modular_reasons(ctx, tools, target_sdk, closure, own_files, own_record, kernels)
+    entry_point = entry_point_library(own_files[0] if own_files else None, ctx.attr.deps)
+    reasons, scan = _not_modular_reasons(ctx, tools, target_sdk, closure, own_files, own_record, kernels, entry_point)
     for flag in compile_flags:
         reasons.append("`dart_compile_flags` entry `%s` cannot be given to a kernel module compile; only `-D` defines can, as `defines`" % flag)
     if own_defines:
@@ -1278,14 +1300,14 @@ def modular_executable_tools(
     # The executable's entry compile reads the same closure: hand the one
     # flattened copy over with the tools, so `modular_executable_kernel` does
     # not flatten it again.
-    return struct(closure_scan = scan, clean_closure = closure, **_struct_fields(tools))
+    return struct(closure_scan = scan, clean_closure = closure, entry_point = entry_point, **_struct_fields(tools))
 
 def _struct_fields(value):
     """The fields of a struct as a dict, for rebuilding it with one more field."""
     return {
         name: getattr(value, name)
         for name in dir(value)
-        if name not in ("to_json", "to_proto", "closure_scan", "clean_closure")
+        if name not in ("to_json", "to_proto", "closure_scan", "clean_closure", "entry_point")
     }
 
 def _clean_own_in_lib(own_paths, keys):
@@ -1329,6 +1351,9 @@ def _clean_entry_needs_scan(sources, keys):
     Returns:
       True when the scan has to run.
     """
+    if not sources:
+        # The entry compiles no file of its own (its `main` is a library's).
+        return False
     if len(sources) != 1:
         return True
     return _clean_own_in_lib([sources[0].file.short_path], keys)
@@ -1452,6 +1477,7 @@ def modular_executable_kernel(
       provides one, or None.
     """
     validate_dart_defines(own_defines, "the `defines` attribute of %s" % ctx.label)
+    sources = entry_sources_from_library(sources, getattr(tools, "entry_point", None))
     clean = getattr(tools, "clean_closure", None) if packages == None else None
     if packages == None and clean == None:
         fail("modular_executable_kernel: `packages` is None, but the tools carry no clean closure.")
@@ -1459,7 +1485,7 @@ def modular_executable_kernel(
         ctx,
         dep_kernels,
         packages,
-        sources,
+        [s for s in sources if s.file != None],
         getattr(tools, "closure_scan", None),
         clean,
     )

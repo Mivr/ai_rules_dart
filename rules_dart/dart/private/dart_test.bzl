@@ -322,7 +322,7 @@ def _compile_modular_test_kernel(ctx, own, bootstrap, tools, native_assets, use_
     dill = _test_kernel_output(ctx, bootstrap)
     native_assets_yaml, runtime_libs = _test_native_assets(ctx, native_assets, dill)
     if bootstrap:
-        entry_files = [_write_modular_bootstrap(ctx), ctx.file.main]
+        entry_files = [_write_modular_bootstrap(ctx, getattr(tools, "entry_point", None)), ctx.file.main]
     else:
         entry_files = [ctx.file.main]
     base_dill = modular_executable_kernel(
@@ -339,16 +339,18 @@ def _compile_modular_test_kernel(ctx, own, bootstrap, tools, native_assets, use_
     )
     return struct(dill = dill, base_dill = base_dill, runtime_libs = runtime_libs)
 
-def _write_modular_bootstrap(ctx):
+def _write_modular_bootstrap(ctx, entry_point = None):
     """Writes the modular entrypoint: the runner's bootstrap, importing the test by URI.
 
     The monolithic bootstrap imports the test by a path relative to itself. A
     modular entry module names every source by its `org-dartlang-root` URI, so
     the import names the test the same way, and the test's own relative imports
-    resolve from that URI.
+    resolve from that URI. A `main` that a library in `deps` lists is that
+    library's, so the import names it by the library's `package:` URI.
 
     Args:
       ctx: The rule context.
+      entry_point: The struct from `entry_point_library`, or None.
 
     Returns:
       The bootstrap File.
@@ -358,7 +360,7 @@ def _write_modular_bootstrap(ctx):
         output = bootstrap,
         content = _BOOTSTRAP.format(
             test = ctx.file.main.short_path,
-            import_path = entry_source_uri(ctx.file.main.short_path),
+            import_path = entry_point.uri if entry_point != None else entry_source_uri(ctx.file.main.short_path),
         ),
     )
     return bootstrap

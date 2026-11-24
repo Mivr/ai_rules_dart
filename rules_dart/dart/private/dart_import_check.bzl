@@ -28,6 +28,7 @@ executable run every check.
 load("//dart:providers.bzl", "DartImportCheckInfo", "DartInfo", "DartKernelInfo")
 load("//dart/private:build_settings.bzl", "REFUSED_DART_LIBRARIES_ATTR", "refused_library_args")
 load("//dart/private:dart_kernel.bzl", "MODULAR_KERNEL_TOOLCHAINS", "kernel_tools_for")
+load("//dart/private:entry_point.bzl", "entry_point_library")
 load(
     "//dart/private:kernel_library_state.bzl",
     "LAYERING_FEATURE",
@@ -238,9 +239,15 @@ def executable_import_check(ctx, own_record):
     tool = ctx.executable._import_check
     runtime = _check_runtime(ctx, tool)
     stamps = []
-    if runtime != None:
+
+    # A `main` that a library in `deps` lists is that library's, and its
+    # check reads it against the library's own `deps`.
+    entry_point = entry_point_library(ctx.file.main, ctx.attr.deps)
+    own = ([] if entry_point != None else [ctx.file.main]) + ctx.files.srcs
+    srcs = _checked_sources(own)
+    if runtime != None and srcs:
         stamps.append(_declare_check(ctx, tool, runtime, struct(
-            srcs = _checked_sources([ctx.file.main] + ctx.files.srcs),
+            srcs = srcs,
             own_packages = _own_packages([own_record] if own_record else [], ""),
             direct_packages = _direct_packages(ctx.attr.deps),
         )))
