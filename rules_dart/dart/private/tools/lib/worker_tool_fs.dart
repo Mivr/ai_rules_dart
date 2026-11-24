@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:analyzer/file_system/file_system.dart' as fs;
 import 'package:path/path.dart' as p;
+import 'package:rules_dart_guard/directive_guard.dart';
 
 /// Removes any orphaned symlinks or unlisted files under `<project>/src/` left
 /// behind in the shared execroot by previous incremental builds when
@@ -48,10 +49,7 @@ Set<String>? pruneStagedSrcFiles(String project) {
 void pruneUnlistedUnder(String dirPath, Set<String> allowedPaths) {
   final dir = Directory(dirPath);
   if (!dir.existsSync()) return;
-  for (final FileSystemEntity entity in dir.listSync(
-    recursive: true,
-    followLinks: false,
-  )) {
+  for (final FileSystemEntity entity in listTreeSync(dirPath)) {
     if (entity is Directory) continue;
     final String normPath = p.normalize(entity.absolute.path);
     if (!allowedPaths.contains(normPath)) {
@@ -87,10 +85,7 @@ void _pruneExtpkgs(String project) {
       allowedFiles.add(p.normalize(p.absolute(p.join(extDir.path, trimmed))));
     }
   }
-  for (final FileSystemEntity entity in extDir.listSync(
-    recursive: true,
-    followLinks: false,
-  )) {
+  for (final FileSystemEntity entity in listTreeSync(extDir.path)) {
     if (entity is Directory) continue;
     final String normPath = p.normalize(entity.absolute.path);
     final bool inAllowedDir = allowedDirs.any(

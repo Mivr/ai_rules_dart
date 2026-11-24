@@ -1339,6 +1339,43 @@ String windowsExtendedPath(String path, {required String cwd}) {
       : r'\\?\' + joined + (out.length == 1 ? r'\' : '');
 }
 
+/// [path] without the extended-length prefix: `\\?\D:\x` is `D:\x`, and
+/// `\\?\UNC\server\share` is `\\server\share`. Any other path is returned
+/// as it is.
+String stripWindowsExtendedPrefix(String path) {
+  if (path.startsWith(r'\\?\UNC\')) return r'\\' + path.substring(8);
+  if (path.startsWith(r'\\?\')) return path.substring(4);
+  return path;
+}
+
+/// [path] spelled so that a stat, a read or a delete of it works past
+/// `MAX_PATH`: its [windowsExtendedPath] on Windows, [path] itself elsewhere.
+String longPath(String path) => Platform.isWindows
+    ? windowsExtendedPath(path, cwd: Directory.current.path)
+    : path;
+
+/// Every entity under [root], recursively, as
+/// `Directory(root).listSync(recursive: true, followLinks: followLinks)` lists
+/// them. On Windows the tree is listed under [windowsExtendedPath] of [root],
+/// so a directory past `MAX_PATH` lists too, and each entity is returned under
+/// its ordinary path: callers compare and delete by the paths they know.
+List<FileSystemEntity> listTreeSync(String root, {bool followLinks = false}) {
+  if (!Platform.isWindows) {
+    return Directory(root).listSync(recursive: true, followLinks: followLinks);
+  }
+  final String listed = windowsExtendedPath(root, cwd: Directory.current.path);
+  return <FileSystemEntity>[
+    for (final FileSystemEntity e in Directory(
+      listed,
+    ).listSync(recursive: true, followLinks: followLinks))
+      switch (e) {
+        Directory() => Directory(stripWindowsExtendedPrefix(e.path)),
+        Link() => Link(stripWindowsExtendedPrefix(e.path)),
+        _ => File(stripWindowsExtendedPrefix(e.path)),
+      },
+  ];
+}
+
 /// The contents of every `.dart` file under [roots], keyed by path, skipping
 /// only directories that do not exist and files that vanish before they are
 /// read (the compiler reports those itself). Files that do not decode as UTF-8

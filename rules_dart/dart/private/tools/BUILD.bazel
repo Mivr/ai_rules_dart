@@ -115,6 +115,7 @@ dart_library(
     srcs = ["lib/worker_tool_fs.dart"],
     visibility = ["//dart:__subpackages__"],
     deps = [
+        "//dart/guard:directive_guard",
         "@ext_pub_deps//:analyzer",
         "@ext_pub_deps//:path",
     ],

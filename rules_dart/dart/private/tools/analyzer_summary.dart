@@ -1161,11 +1161,13 @@ List<String> _analyzedPaths(
 }) {
   final String srcDir = p.normalize(p.join(project, 'src'));
   final paths = <String>[];
-  final dir = Directory(project);
-  for (final FileSystemEntity entity in dir.listSync(recursive: true)) {
+  for (final FileSystemEntity entity in listTreeSync(
+    project,
+    followLinks: true,
+  )) {
     // Follows links, so a staged file that is a symlink is still a file.
     final String path = p.normalize(entity.absolute.path);
-    if (!FileSystemEntity.isFileSync(path)) continue;
+    if (!FileSystemEntity.isFileSync(longPath(path))) continue;
     if (p.split(path).contains('.dart_tool')) continue;
     final String name = p.basename(path);
     if (!name.endsWith('.dart') && name != _optionsBasename) continue;

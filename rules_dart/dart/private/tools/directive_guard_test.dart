@@ -80,6 +80,32 @@ void main() {
     );
   });
 
+  group('listTreeSync', () {
+    test('strips the extended-length prefix', () {
+      expect(stripWindowsExtendedPrefix(r'\\?\D:\a\b'), r'D:\a\b');
+      expect(
+        stripWindowsExtendedPrefix(r'\\?\UNC\server\share\a'),
+        r'\\server\share\a',
+      );
+      expect(stripWindowsExtendedPrefix('/a/b'), '/a/b');
+    });
+
+    test('lists every entity of the tree under its ordinary path', () {
+      Directory('${tmp.path}/t/sub').createSync(recursive: true);
+      File('${tmp.path}/t/a.txt').writeAsStringSync('');
+      File('${tmp.path}/t/sub/b.txt').writeAsStringSync('');
+      final Set<String> found = {
+        for (final FileSystemEntity e in listTreeSync('${tmp.path}/t')) e.path,
+      };
+      expect(found, {
+        '${tmp.path}/t/a.txt',
+        '${tmp.path}/t/sub',
+        '${tmp.path}/t/sub/b.txt',
+      });
+      expect(longPath('${tmp.path}/t'), '${tmp.path}/t');
+    });
+  });
+
   test('readStagedDartSources keys files by the root as given', () {
     final root = Directory('${tmp.path}/stage/lib/src')
       ..createSync(recursive: true);
