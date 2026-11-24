@@ -188,6 +188,7 @@ def _project_index_impl(rctx):
         ['"""Each project of the main repository, by Bazel package (rules_dart\'s project.bzl)."""', ""] +
         loads + ["", "PROJECTS = {"] + entries + ["}", ""],
     ))
+    rctx.file("projects.json", json.encode(sorted(rctx.attr.projects)))
     rctx.file("BUILD.bazel", """\
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 
@@ -201,7 +202,7 @@ bzl_library(
 
 project_index = repository_rule(
     implementation = _project_index_impl,
-    doc = "`index.bzl`: `PROJECTS`, every project's `PROJECT` by Bazel package.",
+    doc = "`index.bzl`: `PROJECTS`, every project's `PROJECT` by Bazel package; `projects.json`: their packages, for an extension to read.",
     attrs = {"projects": attr.string_dict(doc = "Bazel package of the main repository to the repository holding its `project.bzl`.")},
 )
 
@@ -290,14 +291,15 @@ def project_repo_name(prefix, project):
     """
     return prefix + ("".join([c if c.isalnum() else "_" for c in project.elems()]) if project else "root")
 
-def register_dart_projects(module_ctx, lock_tags):
+def register_dart_projects(module_ctx, locks):
     """Declares a `dart_project_repo` per project of the root module's locks, and `@dart_projects`.
 
     Args:
       module_ctx: The `pub` extension's context.
-      lock_tags: Every module's `from_lock` tags, with `is_root`, `lock` and `packages`.
+      locks: `(Label, packages)` for each `from_lock` and `project` lock of
+        the root module; a project two of them name is one entry.
     """
-    projects = project_dirs(module_ctx, [(t.lock, t.packages) for t in lock_tags if t.is_root])
+    projects = project_dirs(module_ctx, locks)
     names = {}
     for project in projects:
         names[project] = project_repo_name("dart_project_", project)

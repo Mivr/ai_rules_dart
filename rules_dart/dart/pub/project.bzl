@@ -18,6 +18,10 @@ load(
 
 visibility("public")
 
+# The packages `@dart_projects` indexes, as a JSON list: what an extension
+# reads to tell whether rules_dart's macros know a project.
+DART_PROJECTS_JSON = Label("@dart_projects//:projects.json")
+
 PROJECT_BUILD = _PROJECT_BUILD
 project_bzl = _project_bzl
 project_dirs = _project_dirs

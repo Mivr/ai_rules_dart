@@ -164,3 +164,6 @@ pub_dev.from_lock(
     lock = "//dart/tests/project_fixture:pubspec.lock",
 )
 use_repo(pub_dev, "rules_dart_project_fixture_deps")
+
+# The same lock named by `project` as well: one index entry, not a conflict.
+pub_dev.project(lock = "//dart/tests/project_fixture:pubspec.lock")

@@ -108,6 +108,17 @@ _from_lock = tag_class(
     } | HOOK_TAG_ATTRS,
 )
 
+_project = tag_class(
+    doc = "Names a pubspec.lock whose projects the macros of `//dart:defs.bzl` give their project defaults (README, \"What a test of a project gets by default\"), as a root `from_lock` lock's: its own directory, its pub workspace's members and its `path:` packages. No hub, no package and no fetch: for a lock another rule set resolves, such as rules_flutter's `flutter.pub`. A lock that a `from_lock` tag also reads names its projects once. Read in the root module only.",
+    attrs = {
+        "lock": attr.label(
+            doc = "The pubspec.lock whose projects to index.",
+            mandatory = True,
+            allow_single_file = True,
+        ),
+    },
+)
+
 def touch_scanner_runtime_label(ctx):
     """Resolves the scanner runtime label so cold and warm lockfiles stay byte-identical.
 
@@ -589,7 +600,7 @@ def _path_source_conflict(state, explicit):
     return None
 
 def _pub_collect_tags(ctx):
-    """Collects package/lock tags across modules. Returns (package_tags, lock_tags, root_repos, plan_files)."""
+    """Collects package/lock tags across modules. Returns (package_tags, lock_tags, root_repos, plan_files, project_locks)."""
 
     # Repos the root module names, mapped to whether every naming is a
     # `dev_dependency = True` usage: Bazel checks the root's `use_repo` calls
@@ -633,14 +644,24 @@ def _pub_collect_tags(ctx):
                 module = module_name,
             ))
 
+    # The root module's `project` locks: only its index reads them.
+    project_files = [tag.lock for mod in ctx.modules if mod.is_root for tag in mod.tags.project]
+    for lock in project_files:
+        ctx.watch(lock)
+
     # Every lock of every module in one `yaml2json` process.
-    locks = yaml_to_json(ctx, [f["lock"] for f in lock_fields], [str(f["lock"]) for f in lock_fields])
+    files = [f["lock"] for f in lock_fields] + project_files
+    locks = yaml_to_json(ctx, files, [str(f) for f in files])
     lock_tags = [
         struct(packages = lock_packages(locks[i], str(fields["lock"])), **fields)
         for i, fields in enumerate(lock_fields)
     ]
+    project_locks = [
+        (lock, lock_packages(locks[len(lock_fields) + i], str(lock)))
+        for i, lock in enumerate(project_files)
+    ]
     check_workspaces(ctx, package_tags, lock_tags)
-    return package_tags, lock_tags, root_repos, plan_files
+    return package_tags, lock_tags, root_repos, plan_files, project_locks
 
 def _pub_extension_metadata(ctx, root_repos, recorded):
     """Returns this evaluation's metadata: the root's direct deps plus the planning facts for the lockfile."""
@@ -651,7 +672,7 @@ def _pub_extension_metadata(ctx, root_repos, recorded):
     )
 
 def _pub_impl(ctx):
-    package_tags, lock_tags, root_repos, plan_files = _pub_collect_tags(ctx)
+    package_tags, lock_tags, root_repos, plan_files, project_locks = _pub_collect_tags(ctx)
 
     resolution = resolve_pub_packages(package_tags, lock_tags)
     if resolution.error:
@@ -682,7 +703,7 @@ def _pub_impl(ctx):
     # What each project of the root module's locks says about itself, for
     # the macros of `//dart:defs.bzl`. rules_dart imports it, and only a root
     # rules_dart names it.
-    register_dart_projects(ctx, lock_tags)
+    register_dart_projects(ctx, [(t.lock, t.packages) for t in lock_tags if t.is_root] + project_locks)
     if Label("//:MODULE.bazel").repo_name == "":
         root_repos["dart_projects"] = False
     return _pub_extension_metadata(ctx, root_repos, recorded)
@@ -692,6 +713,7 @@ pub = module_extension(
     tag_classes = {
         "package": _package,
         "from_lock": _from_lock,
+        "project": _project,
     },
     doc = "Declares pub.dev package dependencies for download and use as dart_library targets. The root module wins over dependencies: its `pub.package()` pin, or the version its `from_lock` locks settle on, resolves when a dependency declares another version with `pub.package()`, with a NOTE naming the resolved version. A root lock's git entry pins like a hosted one.",
 )

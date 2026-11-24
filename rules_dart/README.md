@@ -124,8 +124,8 @@ given a filter, shards or tag selectors, because it has no cases to select.
 
 #### What a test of a project gets by default
 
-A project is a directory with a `pubspec.yaml` that a `pub.from_lock` lock of
-the root module names: the lock's own directory, the members of the pub
+A project is a directory with a `pubspec.yaml` that a `pub.from_lock` or
+`pub.project` lock of the root module names: the lock's own directory, the members of the pub
 workspace its pubspec declares, and its relative `path:` packages. The
 `dart_library`, `dart_binary` and `dart_test` macros give a target in that
 directory's BUILD file what `dart test` and `dart run` give it, with nothing
@@ -153,6 +153,20 @@ restated:
   `data`, and `package:test` reads it from the directory the test runs in, as
   under `dart test`: its tags, `skip`, `test_on` and presets apply. Its
   timeouts do not: Bazel's `size`/`timeout` is the limit.
+
+Tests are declared in the project's own package, the BUILD file beside its
+`pubspec.yaml`: a test in a BUILD file below it, such as `test/BUILD.bazel`,
+gets none of these defaults.
+
+A lock that another rule set resolves, such as rules_flutter's `flutter.pub`,
+is named to these macros with `pub.project`, which indexes the lock's projects
+and declares no hub, no package and no fetch. A lock that a `from_lock` tag
+reads too names its projects once.
+
+```starlark
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.project(lock = "//app:pubspec.lock")
+```
 
 A binary or test that takes the pubspec's `name` fails the build when a
 library of the same directory states another `package_name`, naming both and
