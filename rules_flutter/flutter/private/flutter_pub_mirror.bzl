@@ -804,6 +804,7 @@ def link_spoke_contents(ctx, src, asset_block, platform_dirs, scope):
         platform_dirs: The plugin platform directories to mirror.
         scope: The fetch's link scope.
     """
+
     # The licence an app's `NOTICES` collects, read at the package root.
     for entry in ["hook/build.dart", "hook/link.dart", "LICENSE", "NOTICES"]:
         link_scoped_file_entry(ctx, src, entry, scope)

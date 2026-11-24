@@ -39,9 +39,9 @@ load(
     "resolve_exec_dart_vm",
     "resolve_flutter_sdk_info",
 )
+load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", write_web_bundle = "flutter_web_bundle")
 load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
 load("//flutter/private:flutter_kernel_module.bzl", "MODULAR_KERNEL_ATTRS", "flutter_kernel_module_aspect")
-load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", write_web_bundle = "flutter_web_bundle")
 load(
     "//flutter/private:flutter_web_compile.bzl",
     "flutter_dart2js_action",
@@ -122,6 +122,7 @@ def _web_collect_sources(ctx):
     assumed `""`, and a nested app's `package:` URIs silently resolved
     against the workspace root instead of its own package.
     """
+
     # lint-allow: depset-flatten terminal: a whole-program compile places every source of its closure, once
     all_srcs = list(ctx.files.srcs) + collect_transitive_srcs(ctx.attr.deps).to_list()
     packages = collect_packages(ctx.attr.deps)

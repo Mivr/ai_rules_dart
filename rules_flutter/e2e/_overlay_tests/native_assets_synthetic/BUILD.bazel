@@ -54,11 +54,11 @@ flutter_plugin(
     name = "synthetic_glue",
     package_name = "native_assets_synthetic",
     srcs = [],
-    data_assets = [":synthetic_blob"],
     code_assets = select({
         "@platforms//os:macos": [":synthetic_code_asset_macos"],
         "//conditions:default": [],
     }),
+    data_assets = [":synthetic_blob"],
     platforms = [],
 )
 

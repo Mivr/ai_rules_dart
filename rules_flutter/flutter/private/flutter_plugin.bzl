@@ -19,7 +19,7 @@ Platform-specific native dependencies use select() in BUILD files:
 
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_dart//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "BUILD_HOOK_ATTRS", "BUILD_HOOK_FRAGMENTS", "MODULAR_KERNEL_TOOLCHAINS", "dart_info", "declare_hooks", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset", "register_hook_actions")
+load("@rules_dart//dart:utils.bzl", "BUILD_HOOK_ATTRS", "BUILD_HOOK_FRAGMENTS", "MODULAR_KERNEL_TOOLCHAINS", "dart_info", "dart_package_identity", "declare_hooks", "derive_lib_root", "derive_package_name", "native_defines_reset", "register_hook_actions")
 load("@rules_swift//swift:swift.bzl", "SwiftInfo")
 load("//flutter:providers.bzl", "FlutterApplePluginInfo", "FlutterDataAssetInfo", "FlutterInfo")
 load("//flutter/private:common.bzl", "collect_binding_contracts", "collect_native_libs")

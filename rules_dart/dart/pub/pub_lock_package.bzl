@@ -3,6 +3,15 @@
 Thin public facade: the implementation lives in `//dart/pub/private:pub_lock_package.bzl`."""
 
 load(
+    "//dart/pub/private:pub_hooks.bzl",
+    _HOOK_TAG_ATTRS = "HOOK_TAG_ATTRS",
+    _PUB_HOOK_REPO_ATTRS = "PUB_HOOK_REPO_ATTRS",
+    _hook_attrs_block = "hook_attrs_block",
+    _hook_repo_attrs = "hook_repo_attrs",
+    _hook_settings_of_repo = "hook_settings_of_repo",
+    _lock_hook_settings = "lock_hook_settings",
+)
+load(
     "//dart/pub/private:pub_lock_package.bzl",
     _PUB_LOCK_PACKAGE_ATTRS = "PUB_LOCK_PACKAGE_ATTRS",
     _archive_fetch_error = "archive_fetch_error",
@@ -14,16 +23,6 @@ load(
     _pub_lock_package_sha256_error = "pub_lock_package_sha256_error",
     _run_pub_archive_scan = "run_pub_archive_scan",
     _trim_gzip_trailing_nulls = "trim_gzip_trailing_nulls",
-)
-
-load(
-    "//dart/pub/private:pub_hooks.bzl",
-    _HOOK_TAG_ATTRS = "HOOK_TAG_ATTRS",
-    _PUB_HOOK_REPO_ATTRS = "PUB_HOOK_REPO_ATTRS",
-    _hook_attrs_block = "hook_attrs_block",
-    _hook_repo_attrs = "hook_repo_attrs",
-    _hook_settings_of_repo = "hook_settings_of_repo",
-    _lock_hook_settings = "lock_hook_settings",
 )
 
 visibility("public")

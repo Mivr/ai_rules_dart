@@ -31,8 +31,8 @@ load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
 load(
     "//flutter/private:flutter_kernel_module.bzl",
     "compile_flutter_modular_app_kernel",
-    "flutter_closure_twins",
     "flutter_closure_packages",
+    "flutter_closure_twins",
     "flutter_module_tools",
 )
 load("//flutter/private:native_sources.bzl", "native_sources_aspect")
@@ -164,6 +164,7 @@ def collect_binding_contracts(native_deps):
 
 def _kernel_source_inputs(ctx):
     """Collect the kernel compile's sources and synthesize the app package."""
+
     # lint-allow: depset-flatten terminal: an application's whole-program compile and package config place every source, once
     all_srcs = list(ctx.files.srcs) + collect_transitive_srcs(ctx.attr.deps).to_list()
     closure = flutter_closure_packages(ctx.attr.deps)

@@ -20,8 +20,8 @@ load(
     "stable_entry_path",
 )
 load("//flutter:providers.bzl", "resolve_exec_dart_vm")
-load("//flutter/private/android_model:rules.bzl", "RdfApkInfo")
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "layering_check_drive")
+load("//flutter/private/android_model:rules.bzl", "RdfApkInfo")
 
 visibility(["//flutter/..."])
 
@@ -42,6 +42,7 @@ def _drive_ipa(ctx):
     Returns:
         The `.ipa` `File` of `ctx.attr.app`, or `None` when it has none.
     """
+
     # lint-allow: depset-flatten the app target's own outputs
     ipas = [f for f in ctx.attr.app[DefaultInfo].files.to_list() if f.path.endswith(".ipa")]
     return ipas[0] if ipas else None
@@ -104,6 +105,7 @@ def _exec_kernel_tools(ctx):
     dartaotruntime = None
     gen_kernel = None
     platform_dill = None
+
     # lint-allow: depset-flatten the SDK's own compile files
     for f in sdk.compile_files.to_list():
         if f.basename in ("dartaotruntime", "dartaotruntime.exe"):

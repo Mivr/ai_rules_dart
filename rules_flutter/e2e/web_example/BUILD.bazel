@@ -243,9 +243,9 @@ flutter_web_app(
     # Kept unminified and unstripped so the bundle can be read.
     minify_js = "false",
     minify_wasm = "false",
-    strip_wasm = False,
     pub_packages = "@deps//packages",
     pubspec_srcs = _PUBSPEC_SRCS,
+    strip_wasm = False,
     # Serves the renderer from the app itself, which is what lets this bundle
     # run under a `script-src 'self'` policy — the CDN copy is a script the
     # page may not fetch, and the app never boots without it.

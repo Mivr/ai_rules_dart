@@ -75,11 +75,11 @@ PUBSPEC_SRCS = glob(["assets/**"])
 flutter_library(
     name = "wger",
     package_name = "wger",
+    # All of `lib/`: `:app`, `:web` and the tests take `lib/main.dart` from here.
+    srcs = glob(["lib/**/*.dart"]),
     # pubspec.yaml: `sdk: '>=3.10.0 <4.0.0'`. Stock reads the language version
     # from there; the rules take it here, and default to the SDK's own.
     language_version = "3.10",
-    # All of `lib/`: `:app`, `:web` and the tests take `lib/main.dart` from here.
-    srcs = glob(["lib/**/*.dart"]),
     deps = DEPS,
 )
 
@@ -96,7 +96,13 @@ flutter_web_app(
         name = test[len("test/"):-len(".dart")],
         package_name = "wger",
         size = "medium",
-        srcs = glob(["test/**/*.dart", "test_data/**/*.dart"], exclude = ["test/**/*_test.dart"]),
+        srcs = glob(
+            [
+                "test/**/*.dart",
+                "test_data/**/*.dart",
+            ],
+            exclude = ["test/**/*_test.dart"],
+        ),
         main = test,
         pubspec = "pubspec.yaml",
         pubspec_srcs = PUBSPEC_SRCS,

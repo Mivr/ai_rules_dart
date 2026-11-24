@@ -100,7 +100,6 @@ executable_defines_test_suite(name = "executable_defines_test")
 
 compile_flags_test_suite(name = "compile_flags_test")
 
-
 pinned_sources_test_suite(name = "pinned_sources_test")
 
 git_host_config_test_suite(name = "git_host_config_test")
@@ -118,7 +117,6 @@ pubspec_data_test_suite(name = "pubspec_data_test")
 pubspec_guard_test_suite(name = "pubspec_guard_test")
 
 pub_symlink_test_suite(name = "pub_symlink_test")
-
 
 project_staging_test_suite(name = "project_staging_test")
 

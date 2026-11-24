@@ -2,9 +2,9 @@
 
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC", "make_dart_library_build_content")
-load("//dart/pub/private:pub_hooks.bzl", "hook_attrs_block")
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
 load("//dart/pub/private:pinned_sources.bzl", "pinned_source_error")
+load("//dart/pub/private:pub_hooks.bzl", "hook_attrs_block")
 load("//dart/pub/private:pub_scan.bzl", "run_pub_archive_scan")
 load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
 load("//dart/pub/private:pubspec_data.bzl", "pubspec_environment_error", "pubspec_sdk_constraint")

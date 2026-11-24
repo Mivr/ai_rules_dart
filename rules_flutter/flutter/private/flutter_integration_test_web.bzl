@@ -32,6 +32,7 @@ load(
     "merge_dart_defines",
     "resolve_flutter_sdk_info",
 )
+load("//flutter/private:flutter_bundle.bzl", write_web_bundle = "flutter_web_bundle")
 load(
     "//flutter/private:flutter_integration_test_bootstrap.bzl",
     "make_web_integration_bootstrap_content",
@@ -57,7 +58,6 @@ load(
     "MANIFEST_JSON_TEMPLATE",
     "wasm_build",
 )
-load("//flutter/private:flutter_bundle.bzl", write_web_bundle = "flutter_web_bundle")
 load("//flutter/private:flutter_kernel_module.bzl", "flutter_kernel_module_aspect")
 load(
     "//flutter/private:flutter_web_compile.bzl",
@@ -86,6 +86,7 @@ visibility(["//flutter/..."])
 
 def _web_sdk_file_list(ctx):
     """All files the web SDK target carries (renderer/template lookup)."""
+
     # lint-allow: depset-flatten the web SDK's own files, picked out by path
     return ctx.attr._web_sdk.files.to_list() if ctx.attr._web_sdk else []
 
@@ -348,7 +349,7 @@ def _web_integration_test_run(ctx, setup, output_dir):
                 ctx.file._chrome_fontconfig,
                 ctx.file._roboto_font,
                 library_tags,
-            # lint-allow: depset-flatten a runtime repository's own files, not a Dart closure
+                # lint-allow: depset-flatten a runtime repository's own files, not a Dart closure
             ] + ctx.attr._chrome_all_files.files.to_list(),
         ),
     )
@@ -365,6 +366,7 @@ def _flutter_integration_test_impl(ctx):
     setup = _web_integration_test_setup(ctx)
     entrypoint = _web_integration_test_bootstrap(ctx, setup)
     compile = _web_integration_test_compile(ctx, setup, entrypoint)
+
     # The harness's own page, bootstrap and manifest are the project's `web/`
     # files; the Flutter tool's own web code writes the directory around the
     # compiled program from them and the pubspec, as `flutter build web` does.

@@ -52,7 +52,6 @@ load(
     "make_link_scope",
     "mirror_tree_bounded",
 )
-load(":flutter_pub_path.bzl", "path_package_root")
 load(
     ":flutter_pub_package_helpers.bzl",
     _check_pubspec_identity_mismatch = "check_pubspec_identity_mismatch",
@@ -65,6 +64,7 @@ load(
     _pubspec_version_refusal = "pubspec_version_refusal",
     _spoke_data_patterns = "spoke_data_patterns",
 )
+load(":flutter_pub_path.bzl", "path_package_root")
 load(":flutter_pub_walk.bzl", "PUB_WALK_BOUND", "heredoc_blocks_bound_error")
 load(":starlark_literal.bzl", "decode_starlark_escapes", "starlark_string_literal")
 load(":swiftpm_resolved.bzl", "pub_spoke_swiftpm_rule_attrs")
@@ -99,7 +99,6 @@ def _detect_desktop_source_dir(ctx, package_name, platform):
     if _has_files_under(ctx, platform, _DESKTOP_SRC_EXTENSIONS, package_name):
         return platform
     return ""
-
 
 # The non-Dart remainder of `lib/`, emitted verbatim by both spoke
 # generators below — the same partition rules_dart's
@@ -1229,7 +1228,7 @@ flutter_pub_package = repository_rule(
 
 flutter_pub_path_package = repository_rule(
     implementation = _flutter_pub_path_package_impl,
-    attrs = pub_spoke_swiftpm_rule_attrs(dict(_FLUTTER_SPOKE_ATTRS, **{
+    attrs = pub_spoke_swiftpm_rule_attrs(dict(_FLUTTER_SPOKE_ATTRS, **({
         "package_name": attr.string(
             doc = "The pub package name.",
             mandatory = True,
@@ -1245,7 +1244,7 @@ flutter_pub_path_package = repository_rule(
         ),
         "planned_deps": PUB_LOCK_PACKAGE_ATTRS["planned_deps"],
         "deps": PUB_LOCK_PACKAGE_ATTRS["deps"],
-    } | PUB_HOOK_REPO_ATTRS)),
+    } | PUB_HOOK_REPO_ATTRS))),
     doc = "Symlinks a workspace-local `path:` pub package into a spoke and emits the same `flutter_plugin` / `flutter_library` / `dart_library` the hosted rule would. The `flutter pub get` analog for path dependencies: hermetic (workspace-relative only, watched for changes) and fail-closed on anything resolving outside the workspace's real root; the package's pubspec `name` and `version` must match the lock entry, since overlays are selected by lock name and version.",
 )
 
@@ -1267,7 +1266,7 @@ GIT_PACKAGE_ATTRS = {
 
 flutter_pub_git_package = repository_rule(
     implementation = _flutter_pub_git_package_impl,
-    attrs = pub_spoke_swiftpm_rule_attrs(dict(_FLUTTER_SPOKE_ATTRS, **dict(GIT_PACKAGE_ATTRS, **{
+    attrs = pub_spoke_swiftpm_rule_attrs(dict(_FLUTTER_SPOKE_ATTRS, **dict(GIT_PACKAGE_ATTRS, **({
         "package_name": attr.string(
             doc = "The pub package name.",
             mandatory = True,
@@ -1278,6 +1277,6 @@ flutter_pub_git_package = repository_rule(
         ),
         "planned_deps": PUB_LOCK_PACKAGE_ATTRS["planned_deps"],
         "deps": PUB_LOCK_PACKAGE_ATTRS["deps"],
-    } | PUB_HOOK_REPO_ATTRS))),
+    } | PUB_HOOK_REPO_ATTRS)))),
     doc = "Fetches a git-sourced Flutter pub package at its locked commit, the way rules_dart's `pub_lock_git_package` does, and emits the same `flutter_plugin` / `flutter_library` / `dart_library` the hosted rule would.",
 )

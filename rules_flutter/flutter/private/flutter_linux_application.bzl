@@ -181,8 +181,10 @@ def _flutter_linux_runner_lib_impl(ctx):
         for entry in ctx.attr.application[FlutterApplicationInfo].linux_plugin_libraries.to_list():
             # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
             plugin_srcs.extend(entry.srcs.to_list())
+
             # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
             plugin_hdrs.extend(entry.hdrs.to_list())
+
             # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
             plugin_include_dirs.extend(entry.include_dirs.to_list())
 
@@ -521,6 +523,7 @@ def _flutter_linux_bundle_impl(ctx):
             "To build a Linux bundle from a non-Linux host, use: " +
             "--platforms=@rules_flutter//flutter/platforms:linux_x64",
         )
+
     # lint-allow: depset-flatten the engine's own files (SDK), not a Dart closure
     engine_files = flutter_sdk_info.engine_library[DefaultInfo].files.to_list()
 

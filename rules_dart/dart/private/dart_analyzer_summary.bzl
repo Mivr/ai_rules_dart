@@ -922,6 +922,7 @@ def _summary_run_action(ctx, info, own_records, action, closure):
         args.add("--dep-from", f)
     for link, f in action.uncovered_dirs:
         args.add("--dep-dir", link)
+
         # A directory: the tool links it whole, so pass its path, not its contents.
         args.add("--dep-dir-from", f.path)
     for own_name, own_root in closure.own_roots:

@@ -56,6 +56,7 @@ def exposes_package(deps, names):
     for dep in deps:
         if DartInfo not in dep:
             continue
+
         # lint-allow: depset-flatten terminal: an integration test asks once whether its closure holds a package
         for pkg in dep[DartInfo].transitive_packages.to_list():
             if pkg.package_name in names:

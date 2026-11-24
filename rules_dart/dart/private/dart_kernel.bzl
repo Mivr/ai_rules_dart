@@ -57,6 +57,7 @@ load(
     "validate_dart_defines",
     _global_dart_defines = "global_dart_defines",
 )
+load("//dart/private:closure_facts.bzl", "lib_roots_of", "root_key")
 load(
     "//dart/private:common.bzl",
     "STABLE_SCHEME",
@@ -66,7 +67,6 @@ load(
     "stable_path",
     "writable_home_env",
 )
-load("//dart/private:closure_facts.bzl", "lib_roots_of", "root_key")
 load("//dart/private:dart_info.bzl", "package_lib_prefix")
 load("//dart/private:entry_point.bzl", "entry_point_library", "entry_sources_from_library")
 load("//dart/private:kernel_exec_link.bzl", "exec_base_dill", "exec_link_closure")

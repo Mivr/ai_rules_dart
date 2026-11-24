@@ -1207,6 +1207,7 @@ def android_model_app(
                 rules.append(":%s_rules_%d" % (name, i))
             else:
                 rules.append(_path(f, True, info))
+
         # AGP can name one file twice (a build type's file that the variant lists again).
         rules = {r: True for r in rules}.keys()
         rules += [label_of(q, qv) + "_consumer_rules" for q, qv in rt_projects]

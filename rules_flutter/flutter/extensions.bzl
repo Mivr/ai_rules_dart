@@ -33,10 +33,12 @@ load(
 load("@rules_dart//dart/pub:yaml.bzl", "lock_packages", "yaml_to_json")
 load("//flutter/private:artifact_urls.bzl", "source_strip_prefix")
 load("//flutter/private:flutter_assets_tool_repo.bzl", "flutter_assets_tool_repo")
+load("//flutter/private:flutter_l10n_repo.bzl", "register_l10n_repos")
 load("//flutter/private:flutter_pub_apple_pods.bzl", "hub_cocoapods_attrs")
 load("//flutter/private:flutter_pub_apple_pods_hub.bzl", "hub_podfile_lock")
 load("//flutter/private:flutter_pub_cycle_breaks.bzl", "apply_cycle_breaks", "cycle_breaks_lock_error")
 load("//flutter/private:flutter_pub_git.bzl", "git_package_subdir")
+load("//flutter/private:flutter_pub_hubs.bzl", "register_pub_hubs_index")
 load("//flutter/private:flutter_pub_lock_hub.bzl", "flutter_pub_hub_files", "hub_package_graph", "hub_scc_targets", "ios_native_deps_json")
 load(
     "//flutter/private:flutter_pub_overlays.bzl",
@@ -44,8 +46,6 @@ load(
     "spoke_overlay_roots",
 )
 load("//flutter/private:flutter_pub_package.bzl", "flutter_pub_git_package", "flutter_pub_package", "flutter_pub_path_package")
-load("//flutter/private:flutter_l10n_repo.bzl", "register_l10n_repos")
-load("//flutter/private:flutter_pub_hubs.bzl", "register_pub_hubs_index")
 load("//flutter/private:flutter_pub_path.bzl", "collect_path_deps", "foreign_lock_path_error", "is_absolute_lock_path", "is_relative_path_dependency", "workspace_relative_lock_path")
 load("//flutter/private:flutter_pub_plugin_defines.bzl", "ios_plugin_defines_lock_error")
 load("//flutter/private:flutter_pub_plugin_deps.bzl", "ios_plugin_deps_lock_error")

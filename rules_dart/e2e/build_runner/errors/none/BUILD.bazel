@@ -4,8 +4,8 @@ exports_files(["pubspec.lock"])
 
 dart_build_runner(
     name = "gen",
+    srcs = [],
     outs = ["lib/a.g.dart"],
     runner = "@none_build_runner//build_runner",
-    srcs = [],
     tags = ["manual"],
 )

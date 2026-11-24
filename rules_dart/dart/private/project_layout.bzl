@@ -71,6 +71,7 @@ def project_layout(ctx, config, packages, files, own, name, sdk_version, all_pac
     args.add("name\t" + name)
     args.add("sdk\t" + sdk_version)
     args.add("named\t" + ("1" if all_packages_named else "0"))
+
     # The runner refuses two records of one package that disagree, as
     # `merge_package_records` did, and names where each came from.
     args.add("origin\tthe dependencies of %s" % ctx.label)

@@ -47,11 +47,11 @@ artifacts:
 - `@rules_flutter//flutter:web.bzl` — `flutter_web_app` + composable rules (takes source directly, not a flutter_application target)
 """
 
+load("@flutter_l10n//:index.bzl", "L10N_PROJECTS")
 load("//flutter/private:flutter_aot_target.bzl", _flutter_aot_target = "flutter_aot_target")
 load("//flutter/private:flutter_application.bzl", _flutter_application = "flutter_application")
 load("//flutter/private:flutter_bundle.bzl", "project_pub_packages", _flutter_pub_packages = "flutter_pub_packages")
 load("//flutter/private:flutter_defines_files.bzl", _dart_defines = "dart_defines")
-load("@flutter_l10n//:index.bzl", "L10N_PROJECTS")
 load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach")
 load("//flutter/private:flutter_integration_test.bzl", _flutter_integration_test = "flutter_integration_test")
 load("//flutter/private:flutter_kernel_target.bzl", _flutter_kernel_target = "flutter_kernel_target")

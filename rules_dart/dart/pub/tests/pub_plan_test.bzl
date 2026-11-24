@@ -10,8 +10,8 @@ locks that differ in one entry and compare every repository spec.
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/pub:extensions.bzl", "resolve_pub_packages")
-load("//dart/pub/private:pub_emit.bzl", "pub_repo_specs")
 load("//dart/pub/private:package_graph.bzl", "builder_packages")
+load("//dart/pub/private:pub_emit.bzl", "pub_repo_specs")
 load("//dart/pub/private:pub_lock_hub.bzl", "hub_files_error")
 load(
     "//dart/pub/private:pub_plan.bzl",

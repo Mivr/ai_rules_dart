@@ -17,8 +17,6 @@ load(":compile_api_test.bzl", "compile_api_test_suite")
 load(":cpp_client_wrapper_test.bzl", "cpp_client_wrapper_test_suite")
 load(":custom_kernel_defines_test.bzl", "custom_kernel_defines_test_suite")
 load(":debug_modular_app_test.bzl", "debug_modular_app_test_suite")
-load(":pub_packages_default_test.bzl", "pub_packages_default_test_suite")
-load(":stock_dev_files_test.bzl", "stock_dev_files_test_suite")
 load(":define_flagfiles_test.bzl", "define_flagfiles_test_suite")
 load(":defines_config_test.bzl", "defines_config_test_suite")
 load(":defines_files_test.bzl", "defines_files_test_suite")
@@ -70,11 +68,13 @@ load(":podspec_read_test.bzl", "podspec_read_test_suite")
 load(":podspec_xcconfig_defines_test.bzl", "podspec_xcconfig_defines_test_suite")
 load(":profile_mode_test.bzl", "profile_mode_test_suite")
 load(":pub_lock_sdks_test.bzl", "pub_lock_sdks_test_suite")
+load(":pub_packages_default_test.bzl", "pub_packages_default_test_suite")
 load(":registrant_twin_test.bzl", "registrant_twin_test_suite")
 load(":repo_metadata_test.bzl", "repo_metadata_test_suite")
 load(":sdk_source_and_ios_engine_repos_test.bzl", "sdk_source_and_ios_engine_repos_test_suite")
 load(":starlark_hygiene_test.bzl", "starlark_hygiene_test_suite")
 load(":starlark_literal_test.bzl", "starlark_literal_test_suite")
+load(":stock_dev_files_test.bzl", "stock_dev_files_test_suite")
 load(":swiftpm_local_defines_test.bzl", "swiftpm_local_defines_test_suite")
 load(":swiftpm_local_refusal_test.bzl", "swiftpm_local_refusal_test_suite")
 load(":swiftpm_local_settings_test.bzl", "swiftpm_local_settings_fixture")
@@ -139,8 +139,8 @@ dart_test(
     main = "android_aar_inspect_test.dart",
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
-        "@tool_deps//:test",
         "@rules_dart//dart/runfiles",
+        "@tool_deps//:test",
     ],
 )
 
@@ -171,7 +171,6 @@ defines_config_test_suite(name = "defines_config_test")
 define_flagfiles_test_suite(name = "define_flagfiles_test")
 
 defines_files_test_suite(name = "defines_files_test")
-
 
 ios_test_suite(name = "ios_test")
 
@@ -260,8 +259,8 @@ dart_test(
     },
     main = "registrant_twin_link_test.dart",
     deps = [
-        "@tool_deps//:test",
         "@rules_dart//dart/runfiles",
+        "@tool_deps//:test",
     ],
 )
 
@@ -351,7 +350,6 @@ build_test(
     name = "swiftpm_local_settings_build_test",
     targets = [":swiftpm_local_settings_public_consumer"],
 )
-
 
 # Regression: `flutter_aot_target` with obfuscation and split debug info must
 # run gen_snapshot successfully and produce the debugging-info output.

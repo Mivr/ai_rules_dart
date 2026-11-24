@@ -63,7 +63,6 @@ hook_cc_toolchain = rule(
     doc = "Forwards the target's `CcToolchainInfo` when one is resolved.",
 )
 
-
 BUILD_HOOK_FRAGMENTS = ["cpp"]
 
 _BUILD_HOOK_OWN_ATTRS = {

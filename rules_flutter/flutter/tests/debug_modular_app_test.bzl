@@ -33,6 +33,7 @@ visibility(["//flutter/tests/..."])
 _DBG = {"//command_line_option:compilation_mode": "dbg", str(Label("//flutter:profile")): False}
 _DBG_GLOBAL_DEFINE = _DBG | {str(Label("//flutter:extra_dart_defines")): ["GLOBAL=1"]}
 _OPT = {"//command_line_option:compilation_mode": "opt", str(Label("//flutter:profile")): False}
+
 # A Dart plugin is what makes a registrant.
 _DEPS = ["//flutter/tests/registrant_twin_fixture/app", "//flutter/tests/registrant_twin_fixture/plugin"]
 _APP = {

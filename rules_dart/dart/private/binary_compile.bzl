@@ -1,6 +1,7 @@
 """Compiles a `dart_binary` whole-program from its sources (front end, then `dart compile`)."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("//dart/private:build_hooks.bzl", "native_assets_manifest")
 load("//dart/private:build_settings.bzl", "merge_dart_defines")
 load(
     "//dart/private:common.bzl",
@@ -9,7 +10,6 @@ load(
     "generate_stable_package_config",
     "target_dart_abi",
 )
-load("//dart/private:build_hooks.bzl", "native_assets_manifest")
 load("//dart/private:dart_compile.bzl", "dart_compile_action", "get_compilation_mode_flags", "split_compile_flags")
 load(
     "//dart/private:dart_kernel.bzl",

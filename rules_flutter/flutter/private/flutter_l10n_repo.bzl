@@ -188,6 +188,7 @@ def _flutter_l10n_repo_impl(rctx):
     srcs = [prefix + a for a in arbs]
     if header_file:
         srcs.append(_norm(prefix + header_file))
+
     # `dart format` reads the project's `formatter:` options from it.
     options = project_dir.get_child("analysis_options.yaml")
     rctx.watch(options)

@@ -21,9 +21,9 @@ reads the app's kernel; a debug build never does, so a Dart edit does not
 rerun it.
 """
 
+load("@flutter_pub_hubs//:hubs.bzl", "PUB_HUBS", "PUB_HUBS_BY_PACKAGE")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "dart_info_no_package", "owned_package_records")
-load("@flutter_pub_hubs//:hubs.bzl", "PUB_HUBS", "PUB_HUBS_BY_PACKAGE")
 load("//flutter:providers.bzl", "FlutterInfo")
 load("//flutter/private:flutter_assets_tool.bzl", "flutter_assets_tool_of")
 
@@ -255,6 +255,7 @@ def _common_args(ctx, tool, flutter_sdk_info, mode, flavor, args, inputs, extra_
         before_each = "--package",
         uniquify = True,
     )
+
     # Each package's own files, and the non-Dart files of its `lib/`: an asset
     # spelled `packages/<name>/<path>` is read from `lib/<path>` of package
     # `<name>`, whichever pubspec names it.

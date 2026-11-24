@@ -5,9 +5,9 @@ load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageInfo")
 load(
     "//dart/private:common.bzl",
     "check_single_root_package",
-    "hook_errors",
     "generate_package_config",
     "generate_package_config_content",
+    "hook_errors",
     "jit_train_key",
     "kernel_sdk_mismatch_error",
     "relative_path",

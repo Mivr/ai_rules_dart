@@ -2,8 +2,8 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
-load("//dart/private:versions.bzl", "TOOL_VERSIONS")
 load("//dart/private:module_compiler_tools.bzl", "module_compiler_tools")
+load("//dart/private:versions.bzl", "TOOL_VERSIONS")
 
 dart_binary(
     name = "noop",
@@ -908,7 +908,10 @@ dart_test(
     data = [":comma_patch.dart"] + [
         "@dart_toolchains//sdk/%s:%s" % (version, target)
         for version in TOOL_VERSIONS
-        for target in ["compile_files", "dart"]
+        for target in [
+            "compile_files",
+            "dart",
+        ]
     ],
     main = "comma_patch_test.dart",
     deps = [
@@ -975,7 +978,10 @@ dart_test(
     ] + [
         "@dart_toolchains//sdk/%s:%s" % (version, target)
         for version in TOOL_VERSIONS
-        for target in ["compile_files", "dart"]
+        for target in [
+            "compile_files",
+            "dart",
+        ]
     ],
     main = "format_runner_test.dart",
     deps = [

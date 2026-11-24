@@ -12,8 +12,11 @@ dart_build_runner(
 
 dart_library(
     name = "injectable_micro",
-    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS if o.startswith("lib/")],
     package_name = "injectable_micro",
+    srcs = glob(
+        ["lib/**/*.dart"],
+        exclude = OUTS,
+    ) + [":" + o for o in OUTS if o.startswith("lib/")],
     language_version = "3.13",
     visibility = ["//visibility:public"],
     deps = ["@pub_deps//:injectable"],
@@ -24,4 +27,5 @@ stock_reference_test(
     outs = OUTS,
     package = "injectable_micro",
 )
+
 exports_files(["pubspec.yaml"])

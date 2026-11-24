@@ -62,6 +62,7 @@ load(
     "app_main_location",
     "synthesize_app_package",
 )
+load("//flutter/private:code_assets.bzl", "FLUTTER_CODE_ASSETS_ATTRS", "flutter_code_assets")
 load(
     "//flutter/private:common.bzl",
     "COPY_TO_DIRECTORY_TOOLCHAINS",
@@ -73,7 +74,10 @@ load(
     "declare_flutter_assets_dir",
     "extract_library_tags_action",
 )
-load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle"
+load(
+    "//flutter/private:flutter_bundle.bzl",
+    "BUNDLE_ATTRS",
+    "flutter_bundle",
 )
 load("//flutter/private:flutter_defines_files.bzl", "defines_transition")
 load(
@@ -83,7 +87,6 @@ load(
     "flutter_kernel_module_aspect",
     "flutter_module_tools",
 )
-load("//flutter/private:code_assets.bzl", "FLUTTER_CODE_ASSETS_ATTRS", "flutter_code_assets")
 load(
     "//flutter/private:flutter_test_common.bzl",
     _can_bootstrap = "can_bootstrap",

@@ -230,8 +230,10 @@ def owner_keys(facts):
     Returns:
       The list of keys, or None when some key has two owners.
     """
+
     # lint-allow: depset-flatten one owner per key does not compose from direct deps; expanded in Java, no Starlark loop
     keys = facts.owner_keys.to_list()
+
     # lint-allow: depset-flatten compared by length with the keys above, in Java, no Starlark loop
     if len(facts.owners.to_list()) != len(keys):
         return None
@@ -266,6 +268,7 @@ def owner_index(facts):
       string (see `owner_fields`), and `unique` says whether every name and
       every root has exactly one owner.
     """
+
     # lint-allow: depset-flatten terminal lookup by name or root; dict() is built in Java, no Starlark loop
     entries = facts.owners.to_list()
     index = dict(entries)

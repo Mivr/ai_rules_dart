@@ -32,6 +32,7 @@ def write_package_roots(ctx, packages):
     roots = ctx.actions.declare_file(ctx.label.name + ".package_roots")
     lines = ctx.actions.args()
     lines.set_param_file_format("multiline")
+
     # The records are no Files, so there is nothing to expand; saying so keeps
     # analysis from scanning a record depset for directories.
     lines.add_all(packages, map_each = _root_line, expand_directories = False)

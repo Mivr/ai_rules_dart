@@ -21,10 +21,10 @@ dart_analysis_config(
 flutter_application(
     name = "app_sp_wrapper",
     package_name = "federated_plugins",
-    # An application names only its own plugins in its pubspec.
-    pubspec = "apps/sp_wrapper/pubspec.yaml",
     srcs = ["lib/main.dart"],
     main = "lib/main.dart",
+    # An application names only its own plugins in its pubspec.
+    pubspec = "apps/sp_wrapper/pubspec.yaml",
     deps = [
         "@deps//:fed_sp",
         "@deps//:fed_wrapper",
@@ -42,10 +42,10 @@ flutter_linux_registrant_gen(
 flutter_application(
     name = "app_sp_chain",
     package_name = "federated_plugins",
-    # An application names only its own plugins in its pubspec.
-    pubspec = "apps/sp_chain/pubspec.yaml",
     srcs = ["lib/main.dart"],
     main = "lib/main.dart",
+    # An application names only its own plugins in its pubspec.
+    pubspec = "apps/sp_chain/pubspec.yaml",
     deps = [
         "@deps//:fed_chain",
         "@deps//:fed_sp",
@@ -63,10 +63,10 @@ flutter_linux_registrant_gen(
 flutter_application(
     name = "app_sp_alt_linux",
     package_name = "federated_plugins",
-    # An application names only its own plugins in its pubspec.
-    pubspec = "apps/sp_alt_linux/pubspec.yaml",
     srcs = ["lib/main.dart"],
     main = "lib/main.dart",
+    # An application names only its own plugins in its pubspec.
+    pubspec = "apps/sp_alt_linux/pubspec.yaml",
     deps = [
         "@deps//:fed_alt_linux",
         "@deps//:fed_sp",

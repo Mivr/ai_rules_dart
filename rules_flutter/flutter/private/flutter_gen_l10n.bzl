@@ -52,6 +52,7 @@ def _flutter_gen_l10n_impl(ctx):
     inputs = [ctx.file.pubspec, ctx.file.l10n_yaml]
     args.add("--project-file", "pubspec.yaml=" + ctx.file.pubspec.path)
     args.add("--project-file", "l10n.yaml=" + ctx.file.l10n_yaml.path)
+
     # `dart format` takes the page width and trailing commas from the
     # project's `analysis_options.yaml`, as for stock.
     if ctx.file.analysis_options:
@@ -85,6 +86,7 @@ def _flutter_gen_l10n_impl(ctx):
         progress_message = "Generating the localizations of %{label}",
         toolchain = None,
     )
+
     # The Dart files are sources of the library; the untranslated messages
     # file, a report, is built with them and requested by its group.
     return [

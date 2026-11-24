@@ -18,7 +18,9 @@ load(
     "EXECUTABLE_DEFINES_ATTRS",
     "KERNEL_MODULE_ATTRS",
     "MODULAR_KERNEL_TOOLCHAINS",
+    "add_module_source_args",
     "add_package_records",
+    "collect_native_assets",
     "collect_packages",
     "derive_lib_root",
     "duplicated_source_message",
@@ -28,11 +30,9 @@ load(
     "kernel_link_action",
     "kernel_package_config",
     "kernel_packages_consistent",
-    "owned_package_records",
-    "add_module_source_args",
-    "collect_native_assets",
     "library_module_source",
     "no_kernel_module",
+    "owned_package_records",
     _DART_MODULAR_KERNEL_ATTRS = "MODULAR_KERNEL_ATTRS",
 )
 load("//flutter:providers.bzl", "FlutterInfo")
@@ -477,6 +477,7 @@ def _opaque_reason(ctx, dart_info, package_name, lib_root, own_record, own_srcs,
         if not package_name or own_record == None:
             return "it names no Dart package (`package_name`), so its sources have no `package:` URI"
         return None
+
     # A depset is true when it is not empty; asking does not flatten it.
     if not hasattr(ctx.rule.attr, "srcs") and dart_info.transitive_srcs and len(rule_deps) == 0:
         return "its rule has no `srcs`, so its files are not known at analysis"
@@ -677,6 +678,7 @@ def _link_flutter_test_base(ctx, target_name, package_name, kmod, dep_closure, b
     if package_name == "flutter_test" and hasattr(ctx.executable, "_kernel_link"):
         base_dill = ctx.actions.declare_file(target_name + ".flutter_base.dill")
         base_keys = ctx.actions.declare_file(target_name + ".flutter_base.keys")
+
         # lint-allow: depset-flatten only the `flutter_test` package's own library seeds the base dill, once per configuration
         seed_modules = [kmod] + dep_closure.to_list()
         kernel_link_action(
@@ -806,6 +808,7 @@ def swap_flutter_registrant_twin(closure, twins):
     Returns:
         `closure` itself when there is no twin; otherwise a postorder depset in the same order.
     """
+
     # A depset is true when it is not empty; asking does not flatten it.
     if twins == None or not twins:
         return closure
@@ -1010,6 +1013,7 @@ def flutter_closure_packages(deps):
       duplicates, `packages` the merged records (`collect_packages`), and
       `names` a dict of every package name in the closure.
     """
+
     # lint-allow: depset-flatten terminal: a program reads its closure's package records once
     raw = depset(transitive = [dep[DartInfo].transitive_packages for dep in deps]).to_list()
     names = {pkg.package_name: True for pkg in raw}
@@ -1066,10 +1070,12 @@ def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None
     not_modular = [k for k in dep_kernels if not k.modular]
     if not_modular:
         reasons.append(getattr(not_modular[0], "not_modular", None) or "a dependency compiles no module")
+
     # The merged records name one root per package; the closure's own records may not, when two branches below
     # disagree, which each library's module checks only across its direct edge.
     if closure == None:
         closure = flutter_closure_packages([dep for dep in ctx.attr.deps if DartInfo in dep])
+
     # With every name once, the closure's records can only disagree on the root package, which the merged
     # records (and `synthesize_app_package`'s foreign-root check) already answer.
     split = len(closure.names) != len(closure.raw)
@@ -1080,6 +1086,7 @@ def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None
     # A message names who brings each root in: the program for its own sources, else a library owning one under it.
     own_owned = [(str(ctx.label), f.short_path) for f in own_files]
     find_owner = lambda root: _root_owner(own_owned, root) or _root_owner(owned, root)
+
     # A dependency that compiles no module has said why (a two-roots conflict under it among the reasons), and
     # carries no owned sources to name the roots by: its reason stands alone.
     for records in ([] if not_modular else [packages] + ([closure.raw] if split else [])):
@@ -1176,6 +1183,7 @@ def compile_flutter_modular_test_kernel(
 def flutter_closure_twins(ctx):
     """The registrant twins of `ctx.attr.deps`' closure, as a list (empty when it holds no twin)."""
     infos = [d[FlutterKernelModuleInfo] for d in ctx.attr.deps if FlutterKernelModuleInfo in d]
+
     # lint-allow: depset-flatten terminal, and bounded: one twin per SDK `flutter` module of the closure
     return depset(transitive = [getattr(i, "registrant_twins", None) or depset() for i in infos]).to_list()
 

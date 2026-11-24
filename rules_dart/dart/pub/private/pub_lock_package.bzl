@@ -11,9 +11,9 @@ the `flutter pub get` analog) reuse this helper to emit the same
 
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub/private:build_content.bzl", _PACKAGE_FILES_ATTR_DOC = "PACKAGE_FILES_ATTR_DOC", _make_dart_library_build_content = "make_dart_library_build_content")
-load("//dart/pub/private:pub_hooks.bzl", "PUB_HOOK_REPO_ATTRS", "hook_attrs_block", "hook_settings_of_repo")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 load("//dart/pub/private:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
+load("//dart/pub/private:pub_hooks.bzl", "PUB_HOOK_REPO_ATTRS", "hook_attrs_block", "hook_settings_of_repo")
 load("//dart/pub/private:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
 load("//dart/pub/private:pub_scc_verify.bzl", "spoke_planned_deps_error")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")

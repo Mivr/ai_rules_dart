@@ -114,8 +114,8 @@ dart_binary(
     target_compatible_with = HOST_COMPATIBLE,
     visibility = ["//flutter:__subpackages__"],
     deps = [
-        "@tool_deps//:boolean_selector",
         "@rules_dart//dart/runfiles",
+        "@tool_deps//:boolean_selector",
     ],
 )
 
@@ -140,8 +140,8 @@ dart_binary(
     target_compatible_with = HOST_COMPATIBLE,
     visibility = ["//flutter:__subpackages__"],
     deps = [
-        "@tool_deps//:boolean_selector",
         "@rules_dart//dart/runfiles",
+        "@tool_deps//:boolean_selector",
     ],
 )
 
@@ -166,8 +166,8 @@ dart_binary(
     target_compatible_with = HOST_COMPATIBLE,
     visibility = ["//flutter:__subpackages__"],
     deps = [
-        "@tool_deps//:boolean_selector",
         "@rules_dart//dart/runfiles",
+        "@tool_deps//:boolean_selector",
     ],
 )
 
@@ -601,8 +601,8 @@ dart_test(
     main = "test/kernel_read_set_test.dart",
     target_compatible_with = HOST_COMPATIBLE,
     deps = [
-        "@tool_deps//:test",
         "@rules_dart//dart/guard:directive_guard",
+        "@tool_deps//:test",
     ],
 )
 
@@ -613,8 +613,8 @@ dart_test(
     main = "test/kernel_define_flagfiles_test.dart",
     target_compatible_with = HOST_COMPATIBLE,
     deps = [
-        "@tool_deps//:test",
         "@rules_dart//dart/guard:directive_guard",
+        "@tool_deps//:test",
     ],
 )
 

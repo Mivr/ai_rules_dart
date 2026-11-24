@@ -23,8 +23,8 @@ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 # buildifier: disable=bzl-visibility
 load("@rules_apple//apple/internal:framework_import_support.bzl", "framework_import_support")
 load("//flutter:providers.bzl", "FlutterApplicationInfo", "FlutterDarwinFrameworkInfo")
-load("//flutter/private:constants.bzl", "IOS_MINIMUM_OS_VERSION")
 load("//flutter/private:code_assets.bzl", "native_asset_framework_name")
+load("//flutter/private:constants.bzl", "IOS_MINIMUM_OS_VERSION")
 
 visibility(["//flutter/..."])
 
@@ -651,6 +651,7 @@ def _flutter_ios_privacy_manifests_impl(ctx):
     collide and Apple's submission validator finds them all.
     """
     app_info = ctx.attr.application[FlutterApplicationInfo]
+
     # lint-allow: depset-flatten terminal: the application's privacy manifests, bounded by its plugins
     inputs = app_info.apple_privacy_manifests.to_list()
 

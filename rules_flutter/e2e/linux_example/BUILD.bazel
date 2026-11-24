@@ -15,9 +15,9 @@ exports_files(["pubspec.lock"])
 
 flutter_application(
     name = "app_flutter",
-    pub_packages = "@deps//packages",
     package_name = "linux_example",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [
         "@deps//:flutter",
     ],
@@ -28,9 +28,9 @@ flutter_application(
 # `:app_debug_kernel` reads it.
 flutter_application(
     name = "app_flutter_registrant",
-    pub_packages = "@deps//packages",
     package_name = "linux_example",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     tags = ["manual"],
     deps = [
         "//dart_registration_plugin",
@@ -187,13 +187,13 @@ flutter_library(
 
 flutter_application(
     name = "app_defines_dev",
-    pub_packages = "@deps//packages",
     package_name = "linux_example",
     dart_defines = "//defines_config:dev",
     # The value holds a comma: a module takes a define whole.
     defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
     flavor = "defcfgdev",
     main = "lib/main_defines.dart",
+    pub_packages = "@deps//packages",
     tags = ["manual"],
     deps = [
         "//defines_env",
@@ -205,13 +205,13 @@ flutter_application(
 # :app_defines_dev.
 flutter_application(
     name = "app_defines_dev_twin",
-    pub_packages = "@deps//packages",
     package_name = "linux_example",
     dart_defines = "//defines_config:dev",
     # The value holds a comma: a module takes a define whole.
     defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
     flavor = "defcfgdev",
     main = "lib/main_defines.dart",
+    pub_packages = "@deps//packages",
     tags = ["manual"],
     deps = [
         "//defines_env",
@@ -222,12 +222,12 @@ flutter_application(
 # Other settings: its own copy of every module.
 flutter_application(
     name = "app_defines_prod",
-    pub_packages = "@deps//packages",
     package_name = "linux_example",
     dart_defines = "//defines_config:prod",
     defines = ["DEFCFG_FOO=DEFCFG_FOO_PROD"],
     flavor = "defcfgprod",
     main = "lib/main_defines.dart",
+    pub_packages = "@deps//packages",
     tags = ["manual"],
     deps = [
         "//defines_env",
@@ -239,13 +239,13 @@ flutter_application(
 # own `dart_defines` target (`:app_defines_files_dart_defines`).
 flutter_application(
     name = "app_defines_files",
-    pub_packages = "@deps//packages",
     package_name = "linux_example",
     # The value holds a comma: a module takes a define whole.
     defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
     defines_files = ["//defines_config:dev.json"],
     flavor = "defcfgdev",
     main = "lib/main_defines.dart",
+    pub_packages = "@deps//packages",
     tags = ["manual"],
     deps = [
         "//defines_env",

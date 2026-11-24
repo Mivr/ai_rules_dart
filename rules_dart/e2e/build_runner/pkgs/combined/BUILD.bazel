@@ -1,22 +1,53 @@
 load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
 load("//:reference.bzl", "stock_reference_test")
 
-OUTS = ["lib/src/api.g.dart", "lib/src/di.config.dart", "lib/src/models.freezed.dart", "lib/src/models.g.dart", "test/store_test.mocks.dart"]
+OUTS = [
+    "lib/src/api.g.dart",
+    "lib/src/di.config.dart",
+    "lib/src/models.freezed.dart",
+    "lib/src/models.g.dart",
+    "test/store_test.mocks.dart",
+]
 
 dart_build_runner(
     name = "gen",
     outs = OUTS,
     runner = "@pub_deps//build_runner",
-    deps = ["@pub_deps//:dio", "@pub_deps//:freezed_annotation", "@pub_deps//:get_it", "@pub_deps//:injectable", "@pub_deps//:json_annotation", "@pub_deps//:mockito", "@pub_deps//:retrofit", "@pub_deps//:riverpod", "@pub_deps//:riverpod_annotation", "@pub_deps//:test"],
+    deps = [
+        "@pub_deps//:dio",
+        "@pub_deps//:freezed_annotation",
+        "@pub_deps//:get_it",
+        "@pub_deps//:injectable",
+        "@pub_deps//:json_annotation",
+        "@pub_deps//:mockito",
+        "@pub_deps//:retrofit",
+        "@pub_deps//:riverpod",
+        "@pub_deps//:riverpod_annotation",
+        "@pub_deps//:test",
+    ],
 )
 
 dart_library(
     name = "combined",
-    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS if o.startswith("lib/")],
     package_name = "combined",
+    srcs = glob(
+        ["lib/**/*.dart"],
+        exclude = OUTS,
+    ) + [":" + o for o in OUTS if o.startswith("lib/")],
     language_version = "3.13",
     visibility = ["//visibility:public"],
-    deps = ["@pub_deps//:dio", "@pub_deps//:freezed_annotation", "@pub_deps//:get_it", "@pub_deps//:injectable", "@pub_deps//:json_annotation", "@pub_deps//:mockito", "@pub_deps//:retrofit", "@pub_deps//:riverpod", "@pub_deps//:riverpod_annotation", "@pub_deps//:test"],
+    deps = [
+        "@pub_deps//:dio",
+        "@pub_deps//:freezed_annotation",
+        "@pub_deps//:get_it",
+        "@pub_deps//:injectable",
+        "@pub_deps//:json_annotation",
+        "@pub_deps//:mockito",
+        "@pub_deps//:retrofit",
+        "@pub_deps//:riverpod",
+        "@pub_deps//:riverpod_annotation",
+        "@pub_deps//:test",
+    ],
 )
 
 stock_reference_test(

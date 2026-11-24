@@ -137,7 +137,7 @@ dart_test(
     },
     main = "//tools/doc_check:doc_check_docs_test.dart",
     deps = [
-        "@tool_deps//:test",
         "@rules_dart//dart/runfiles",
+        "@tool_deps//:test",
     ],
 )

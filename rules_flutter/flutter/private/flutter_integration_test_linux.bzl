@@ -145,12 +145,15 @@ def _linux_integration_test_runner(ctx, setup, sources):
     plugin_srcs = []
     plugin_hdrs = []
     plugin_include_dirs = []
+
     # lint-allow: depset-flatten terminal: the application's plugin source bundles, bounded by its plugins
     for entry in sources.plugins.linux_plugin_libraries.to_list():
         # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
         plugin_srcs.extend(entry.srcs.to_list())
+
         # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
         plugin_hdrs.extend(entry.hdrs.to_list())
+
         # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
         plugin_include_dirs.extend(entry.include_dirs.to_list())
 
@@ -282,7 +285,7 @@ def _linux_integration_test_run(ctx, setup, bundle):
                 ctx.file._linux_xkbcomp,
                 ctx.file._linux_fontconfig,
                 library_tags,
-            # lint-allow: depset-flatten a runtime repository's own files, not a Dart closure
+                # lint-allow: depset-flatten a runtime repository's own files, not a Dart closure
             ] + ctx.attr._linux_runtime_all_files[DefaultInfo].files.to_list(),
         ),
     )

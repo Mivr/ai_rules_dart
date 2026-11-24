@@ -1,7 +1,10 @@
 load("@rules_dart//dart:defs.bzl", "dart_build_runner")
 load("//:reference.bzl", "stock_reference_test")
 
-OUTS = ["lib/src/address.g.dart", "lib/src/user.g.dart"]
+OUTS = [
+    "lib/src/address.g.dart",
+    "lib/src/user.g.dart",
+]
 
 # `--define`: builder options from the command line, over build.yaml's.
 dart_build_runner(

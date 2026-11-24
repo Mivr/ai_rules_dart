@@ -307,6 +307,7 @@ _t4_test = unittest.make(_no_artifacts_copies_test_impl)
 _t8_test = unittest.make(_android_abi_platform_test_impl)
 _t9_test = unittest.make(_android_abi_elf_machine_test_impl)
 _t10_test = unittest.make(_android_abi_table_complete_test_impl)
+
 def platform_bundle_test_suite(name):
     """Test suite for platform bundle rules.
 

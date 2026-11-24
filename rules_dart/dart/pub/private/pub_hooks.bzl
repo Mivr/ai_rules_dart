@@ -100,11 +100,11 @@ def _string(s):
 # Files of an extracted pub package a hook may read: everything but `lib/`
 # (the library's `srcs` and `resources` already) and the files Bazel adds.
 _HOOK_SRCS = (
-    '    hook_srcs = glob(\n' +
+    "    hook_srcs = glob(\n" +
     '        ["**"],\n' +
     '        exclude = ["lib/**", "BUILD", "BUILD.bazel", "WORKSPACE", "WORKSPACE.bazel", "REPO.bazel", "MODULE.bazel"],\n' +
-    '        allow_empty = True,\n' +
-    '    ),\n'
+    "        allow_empty = True,\n" +
+    "    ),\n"
 )
 
 def _apple_select(apple, default):

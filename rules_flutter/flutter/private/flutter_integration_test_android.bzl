@@ -258,7 +258,7 @@ def _flutter_android_integration_test_impl(ctx):
                 ctx.file._android_emulator,
                 ctx.file._android_adb,
                 library_tags,
-            # lint-allow: depset-flatten a runtime repository's own files, not a Dart closure
+                # lint-allow: depset-flatten a runtime repository's own files, not a Dart closure
             ] + ctx.attr._android_runtime_all_files.files.to_list(),
         ),
     )

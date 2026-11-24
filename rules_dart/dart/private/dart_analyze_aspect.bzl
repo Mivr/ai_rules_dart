@@ -85,10 +85,9 @@ load(
     "validate_config_baseline",
     _stage_config_project = "stage_config_project",
 )
-load("//dart/private:project_layout.bzl", "add_layout_args", "layout_directory", "project_layout")
+load("//dart/private:closure_facts.bzl", "facts_of", "lib_roots_of", "owner_fields", "owner_index", "root_key", "roots_containing")
 load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "owned_package_records", "writable_home_env")
 load("//dart/private:dart_analyze_summary_fallback.bzl", "analyze_summaries", "fallback_summary_ready")
-load("//dart/private:closure_facts.bzl", "facts_of", "lib_roots_of", "owner_fields", "owner_index", "root_key", "roots_containing")
 load(
     "//dart/private:dart_analyzer_summary.bzl",
     "CONFLICT_PREFIX",
@@ -105,6 +104,7 @@ load(
     "unbacked_embedder_in_closure",
 )
 load("//dart/private:format_mode.bzl", _resolve_format_mode = "resolve_format_mode")
+load("//dart/private:project_layout.bzl", "add_layout_args", "layout_directory", "project_layout")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 
 visibility(["//dart/..."])

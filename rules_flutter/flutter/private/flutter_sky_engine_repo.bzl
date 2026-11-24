@@ -255,6 +255,7 @@ def _flutter_sky_engine_repo_impl(repository_ctx):
             "sky_engine/pubspec.yaml",
             "the sky_engine analyzer package pubspec",
         )
+
         # The engine licences, which NOTICES collects; a trimmed SDK may lack them.
         if sdk_root.get_child("bin/cache/pkg/sky_engine/LICENSE").exists:
             link_local_file(

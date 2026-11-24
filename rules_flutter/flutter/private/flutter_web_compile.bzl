@@ -235,6 +235,7 @@ def web_sdk_files_for_dart2js(web_sdk):
     Returns:
         The list of `File`s `_web_libraries_spec` picks from.
     """
+
     # lint-allow: depset-flatten the web SDK's own files, picked out by path
     files = web_sdk[DefaultInfo].files.to_list() if web_sdk else []
     return [

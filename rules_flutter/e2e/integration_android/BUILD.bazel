@@ -50,11 +50,11 @@ flutter_integration_test(
     # `nullable-getter`) reach the app with no target here, and render under
     # `Locale('es')`: an Android-only regression in them fails the emulator run.
     srcs = ["integration_test/app_test.dart"],
+    android_app = flutter_android_app,
     app_srcs = ["lib/main.dart"],
     defines = ["COV13_GREETING=hello, world=ok"],
     defines_files = ["//defines:app_defines.json"],
     native_deps = [":add"],
-    android_app = flutter_android_app,
     platform = "android",
     pub_packages = "@deps//packages",
     pubspec = "pubspec.yaml",

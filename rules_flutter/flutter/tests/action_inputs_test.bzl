@@ -844,6 +844,7 @@ _flutter_plugin_rule_kind_test = analysistest.make(
 )
 _flutter_test_runfiles_test = analysistest.make(_flutter_test_runfiles_test_impl)
 _flutter_test_defines_modular_test = analysistest.make(_flutter_test_defines_modular_test_impl)
+
 # A comma in a global define changes nothing for a `flutter_test`: it stays modular.
 _flutter_test_comma_modular_test = analysistest.make(
     _flutter_test_comma_modular_test_impl,

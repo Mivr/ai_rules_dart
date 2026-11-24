@@ -2,12 +2,12 @@
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//flutter:android.bzl", "flutter_drive_test")
-load("//flutter/private/android_model:rules.bzl", "RdfApkInfo")
 load(
     "//flutter:ios.bzl",
     "ios_sim_debug_app",
     ios_flutter_drive_test = "flutter_drive_test",
 )
+load("//flutter/private/android_model:rules.bzl", "RdfApkInfo")
 
 visibility(["//flutter/tests/..."])
 

@@ -18,13 +18,13 @@ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "DartDefinesInfo", "MODULAR_KERNEL_ATTRS", "MODULAR_KERNEL_TOOLCHAINS", "dart_link_hook_actions", "link_hook_runner_attr")
 load("//flutter:providers.bzl", "FlutterApplicationInfo", "FlutterInfo")
+load("//flutter/private:code_assets.bzl", "FLUTTER_CODE_ASSETS_ATTRS", "flutter_code_assets")
 load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "FLUTTER_DEPS_DOC", "PLATFORM_CONSTRAINT_ATTRS", "check_hook_errors", "collect_native_libs", "declare_flutter_assets_dir", "detect_target_platform", "flutter_build_mode", "flutter_compile_kernel", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
-load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle", "implements_android", "lock_android_plugins")
 load("//flutter/private:flutter_aot_compile.bzl", "flutter_aot_elf_action", "flutter_aot_gen_snapshot_flags", "flutter_aot_macho_action", "is_android_arm", "macho_snapshot_options")
+load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle", "implements_android", "lock_android_plugins")
 load("//flutter/private:flutter_defines_files.bzl", "DART_DEFINES_DOC", "app_defines_transition", "effective_flavor")
 load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
 load("//flutter/private:flutter_kernel_module.bzl", "flutter_app_kernel_module_aspect")
-load("//flutter/private:code_assets.bzl", "FLUTTER_CODE_ASSETS_ATTRS", "flutter_code_assets")
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "layering_check_for", "layering_toolchains")
 
 visibility(["//flutter/..."])
@@ -424,6 +424,7 @@ def _flutter_application_impl(ctx):
         native_libs = native_libs,
         default_files = default_files,
     )
+
     # For an Android app built from its Gradle model: the plugins with an Android side, which the
     # pin was written for and its check compares. All those of the app's own lock, with their
     # versions (`complete`); or, when the app's packages come from another lock, those the app

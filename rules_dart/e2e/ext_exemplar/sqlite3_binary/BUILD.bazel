@@ -7,6 +7,7 @@ load(
     "dart_library",
     "dart_test",
 )
+
 # Exemplar of an AOT binary with a pub package's build hook: package:sqlite3's
 # own hook compiles libsqlite3 from the amalgamation the user define names,
 # and the binary ships it. No dart:ffi in the source.

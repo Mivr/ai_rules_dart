@@ -7,16 +7,27 @@ dart_build_runner(
     name = "gen",
     outs = OUTS,
     runner = "@pub_deps//build_runner",
-    deps = ["@pub_deps//:dio", "@pub_deps//:json_annotation", "@pub_deps//:retrofit"],
+    deps = [
+        "@pub_deps//:dio",
+        "@pub_deps//:json_annotation",
+        "@pub_deps//:retrofit",
+    ],
 )
 
 dart_library(
     name = "retrofit_pkg",
-    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS if o.startswith("lib/")],
     package_name = "retrofit_pkg",
+    srcs = glob(
+        ["lib/**/*.dart"],
+        exclude = OUTS,
+    ) + [":" + o for o in OUTS if o.startswith("lib/")],
     language_version = "3.13",
     visibility = ["//visibility:public"],
-    deps = ["@pub_deps//:dio", "@pub_deps//:json_annotation", "@pub_deps//:retrofit"],
+    deps = [
+        "@pub_deps//:dio",
+        "@pub_deps//:json_annotation",
+        "@pub_deps//:retrofit",
+    ],
 )
 
 stock_reference_test(

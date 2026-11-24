@@ -10,9 +10,16 @@ load(
     _DartKernelInfo = "DartKernelInfo",
 )
 load(
-    "//dart/private:entry_point.bzl",
-    _entry_point_library = "entry_point_library",
-    _entry_sources_from_library = "entry_sources_from_library",
+    "//dart/private:build_hooks.bzl",
+    _APPLE_HOOK_OSES = "APPLE_HOOK_OSES",
+    _BUILD_HOOK_ATTRS = "BUILD_HOOK_ATTRS",
+    _BUILD_HOOK_FRAGMENTS = "BUILD_HOOK_FRAGMENTS",
+    _HOOK_TARGET_ATTRS = "HOOK_TARGET_ATTRS",
+    _NATIVE_ASSETS_APP_ATTRS = "NATIVE_ASSETS_APP_ATTRS",
+    _declare_hooks = "declare_hooks",
+    _hook_target = "hook_target",
+    _native_assets_manifest = "native_assets_manifest",
+    _register_hook_actions = "register_hook_actions",
 )
 load(
     "//dart/private:build_settings.bzl",
@@ -61,6 +68,7 @@ load(
     _KERNEL_MODULE_ATTRS = "KERNEL_MODULE_ATTRS",
     _MODULAR_KERNEL_ATTRS = "MODULAR_KERNEL_ATTRS",
     _MODULAR_KERNEL_TOOLCHAINS = "MODULAR_KERNEL_TOOLCHAINS",
+    _add_module_source_args = "add_module_source_args",
     _dart_kernel_module_aspect = "dart_kernel_module_aspect",
     _dep_kernels_or_none = "dep_kernels_or_none",
     _duplicated_source = "duplicated_source",
@@ -78,7 +86,6 @@ load(
     _kernel_packages_consistent = "kernel_packages_consistent",
     _kernel_tools_for = "kernel_tools_for",
     _library_kernel_info = "library_kernel_info",
-    _add_module_source_args = "add_module_source_args",
     _library_module_source = "library_module_source",
     _library_source_uri = "library_source_uri",
     _modular_executable_kernel = "modular_executable_kernel",
@@ -86,18 +93,6 @@ load(
     _multi_root_uri = "multi_root_uri",
     _no_kernel_module = "no_kernel_module",
     _package_of_source = "package_of_source",
-)
-load(
-    "//dart/private:build_hooks.bzl",
-    _APPLE_HOOK_OSES = "APPLE_HOOK_OSES",
-    _BUILD_HOOK_ATTRS = "BUILD_HOOK_ATTRS",
-    _BUILD_HOOK_FRAGMENTS = "BUILD_HOOK_FRAGMENTS",
-    _HOOK_TARGET_ATTRS = "HOOK_TARGET_ATTRS",
-    _NATIVE_ASSETS_APP_ATTRS = "NATIVE_ASSETS_APP_ATTRS",
-    _declare_hooks = "declare_hooks",
-    _hook_target = "hook_target",
-    _native_assets_manifest = "native_assets_manifest",
-    _register_hook_actions = "register_hook_actions",
 )
 load(
     "//dart/private:dart_library.bzl",
@@ -124,6 +119,11 @@ load(
     "//dart/private:download.bzl",
     _pinned_download = "pinned_download",
     _pinned_download_and_extract = "pinned_download_and_extract",
+)
+load(
+    "//dart/private:entry_point.bzl",
+    _entry_point_library = "entry_point_library",
+    _entry_sources_from_library = "entry_sources_from_library",
 )
 load(
     "//dart/private:kernel_library_state.bzl",

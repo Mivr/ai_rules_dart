@@ -13,6 +13,7 @@ load("//flutter/private:flutter_kernel_target.bzl", "flutter_kernel_target")
 visibility(["//flutter/tests/..."])
 
 _DBG = {"//command_line_option:compilation_mode": "dbg", str(Label("//flutter:profile")): False}
+
 # A Dart plugin is what makes a registrant.
 _TWIN_DEPS = ["//flutter/tests/registrant_twin_fixture/app", "//flutter/tests/registrant_twin_fixture/plugin"]
 _ENTRY_FILES = [

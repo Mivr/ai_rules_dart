@@ -28,7 +28,10 @@ dart_binary(
         name = test[len("test/"):-len(".dart")],
         size = "small",
         srcs = glob(
-            ["test/utils/*.dart", "test/generated/*.dart"],
+            [
+                "test/utils/*.dart",
+                "test/generated/*.dart",
+            ],
             exclude = [test],
         ) + ["example/calc.dart"],
         main = test,

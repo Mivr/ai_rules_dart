@@ -14,11 +14,11 @@ list it.
 """
 
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
-load("//dart/pub/private:pub_lock_hub.bzl", "pub_lock_hub")
-load("//dart/pub/private:package_graph.bzl", "builder_packages", "package_graph_json")
 load("//dart/pub/private:build_content.bzl", "build_yaml_target")
-load("//dart/pub/private:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error")
+load("//dart/pub/private:package_graph.bzl", "builder_packages", "package_graph_json")
 load("//dart/pub/private:pub_hooks.bzl", "hook_repo_attrs")
+load("//dart/pub/private:pub_lock_hub.bzl", "pub_lock_hub")
+load("//dart/pub/private:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_scc_entries.bzl", "scc_member_entries")
 load("//dart/pub/private:scc.bzl", "plan_scope_sccs", "rewrite_vanished_spoke")
@@ -93,6 +93,7 @@ def _merged_label(repo, member):
 
 def _scope_labels(scope, sccs):
     """Maps every package name a scope's repositories may depend on to its label."""
+
     # A path package (a `dependency_overrides` fork that a hosted package
     # depends on, say) is the module's own target.
     labels = dict(scope.path)

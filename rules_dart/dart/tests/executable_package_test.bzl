@@ -16,6 +16,7 @@ visibility(["//dart/..."])
 def _package_config_probe_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
+
     # A web target stages a `package_config.json`, which the stated package's
     # language version reaches. A VM target compiles through per-module
     # compiles, which write none: what reaches them is the package record

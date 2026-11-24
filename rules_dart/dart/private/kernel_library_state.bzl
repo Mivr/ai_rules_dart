@@ -366,6 +366,7 @@ def lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records, pkgs):
       `edges_list`, `need_graph`, and `has_upstream_cross_pkg`.
     """
     closures = lib_kernel_closures(ctx, deps, dep_kernels, own_srcs)
+
     # Depset truthiness is O(1); it does not flatten.
     has_upstream_cross_pkg = any([bool(k.cross_pkg_srcs) for k in dep_kernels])
     need_graph = len(pkgs) < len(records)

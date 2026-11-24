@@ -3,6 +3,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartCompileInfo", "DartInfo", "DartRecordedUsesInfo")
 load("//dart/private:binary_compile.bzl", "binary_compile", "kernel_flag_defines")
+load("//dart/private:build_hooks.bzl", "NATIVE_ASSETS_CONSUMER_ATTRS")
 load(
     "//dart/private:build_settings.bzl",
     "EXECUTABLE_DEFINES_FILE_SETTING",
@@ -32,7 +33,6 @@ load(
 )
 load("//dart/private:dart_link_check.bzl", "LINK_MODULES_ATTRS", "link_modules_check")
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
-load("//dart/private:build_hooks.bzl", "NATIVE_ASSETS_CONSUMER_ATTRS")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_hook_error", "executable_native_assets", "executable_package")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load(

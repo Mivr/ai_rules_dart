@@ -12,8 +12,11 @@ dart_build_runner(
 
 dart_library(
     name = "drift_pkg",
-    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS if o.startswith("lib/")],
     package_name = "drift_pkg",
+    srcs = glob(
+        ["lib/**/*.dart"],
+        exclude = OUTS,
+    ) + [":" + o for o in OUTS if o.startswith("lib/")],
     language_version = "3.13",
     visibility = ["//visibility:public"],
     deps = ["@pub_deps//:drift"],

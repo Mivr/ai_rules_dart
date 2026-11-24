@@ -28,6 +28,7 @@ load(
     "compile_kernel_package_config",
     "synthesize_app_package",
 )
+load("//flutter/private:code_assets.bzl", "FLUTTER_CODE_ASSETS_ATTRS", "flutter_code_assets")
 load(
     "//flutter/private:common.bzl",
     "FLUTTER_APPLICATION_ATTRS",
@@ -72,7 +73,6 @@ load(
     "//flutter/private:flutter_kernel_module.bzl",
     "MODULAR_KERNEL_ATTRS",
 )
-load("//flutter/private:code_assets.bzl", "FLUTTER_CODE_ASSETS_ATTRS", "flutter_code_assets")
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ATTRS", "layering_check_integration")
 load(
     "//flutter/private:plugin_registrant.bzl",

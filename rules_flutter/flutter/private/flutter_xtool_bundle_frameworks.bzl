@@ -75,6 +75,7 @@ def _record_target(state, target, keep_all_files):
         for fw_info in infos:
             _record_framework_info(state, fw_info)
         return
+
     # lint-allow: depset-flatten a target's own outputs, not a Dart closure
     files = target[DefaultInfo].files.to_list()
     if not keep_all_files:

@@ -361,6 +361,7 @@ def _rdf_r8_impl(ctx):
     args.add("--out-profile", profile)
     args.add("--out-merged-profile", merged_profile)
     args.add("--out-metadata", metadata)
+
     # A worker: R8 is minutes of work for a cold JVM and far less for a warm one, and it runs again on
     # every code edit of a release build (inside Gradle it runs in the daemon for the same reason).
     _tool(ctx, args, depset(transitive = inputs), outputs, "RdfR8", "R8 %{label}", worker = True)

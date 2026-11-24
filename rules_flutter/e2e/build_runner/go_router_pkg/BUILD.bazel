@@ -31,7 +31,10 @@ dart_build_runner(
 flutter_library(
     name = "go_router_pkg",
     package_name = "go_router_pkg",
-    srcs = glob(["lib/**/*.dart"], exclude = OUTS) + [":" + o for o in OUTS],
+    srcs = glob(
+        ["lib/**/*.dart"],
+        exclude = OUTS,
+    ) + [":" + o for o in OUTS],
     deps = [
         "@deps//:flutter",
         "@deps//:go_router",

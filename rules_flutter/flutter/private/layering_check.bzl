@@ -80,6 +80,7 @@ def _direct_packages(deps):
         if DartInfo not in dep:
             continue
         owned = owned_package_records(dep[DartInfo])
+
         # A depset is true when it is not empty; asking does not flatten it. A dependency with no files of its own
         # (a façade) names the packages it re-exports, which are its closure's, as rules_dart's layering check does.
         # lint-allow: depset-flatten a façade dependency only: the packages it re-exports, bounded by its closure

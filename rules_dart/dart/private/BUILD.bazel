@@ -70,7 +70,6 @@ no_dart_defines(
     visibility = ["//visibility:public"],
 )
 
-
 bzl_library(
     name = "analyze_targets",
     srcs = ["analyze_targets.bzl"],

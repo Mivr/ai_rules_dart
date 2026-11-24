@@ -10,6 +10,7 @@ non-issue. The launcher does write a runtime package config for
 """
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
+load("//dart/private:build_hooks.bzl", "NATIVE_ASSETS_CONSUMER_ATTRS", "native_assets_manifest")
 load(
     "//dart/private:build_settings.bzl",
     "EXTRA_DART_DEFINES_ATTR",
@@ -26,7 +27,6 @@ load(
     "runfiles_path",
     "target_dart_abi",
 )
-load("//dart/private:build_hooks.bzl", "NATIVE_ASSETS_CONSUMER_ATTRS", "native_assets_manifest")
 load("//dart/private:coverage_map.bzl", "COVERAGE_MAP_TOOLCHAINS", "write_coverage_map", "write_generated_list")
 load("//dart/private:dart_import_check.bzl", "dart_import_check_aspect", "executable_import_check")
 load(
@@ -266,6 +266,7 @@ def _test_native_assets(ctx, native_assets, dill):
     """
     if not native_assets:
         return None, []
+
     # Under the `package:test` runner the libraries go inside the precompiled
     # directory, which the runner takes along when it runs a copy of the dill.
     precompiled = "%s.precompiled/" % ctx.label.name

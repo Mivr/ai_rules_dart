@@ -15,13 +15,13 @@ sources with zero `--summary` flags, reporting source mode
 
 load("//dart/private:aot_tool.bzl", "aot_tool_launch")
 load("//dart/private:common.bzl", "writable_home_env")
-load("//dart/private:project_layout.bzl", "add_layout_args", "layout_directory")
 load(
     "//dart/private:dart_analyzer_summary.bzl",
     "analyzer_summaries_supported",
     "sdk_root_path",
     "unbacked_embedder_in_closure",
 )
+load("//dart/private:project_layout.bzl", "add_layout_args", "layout_directory")
 
 visibility(["//dart/..."])
 
