@@ -14,8 +14,9 @@ import 'package:e2e_runner/workspace.dart';
 
 const String _usage =
     'Usage: e2e_runner --workspace=<path> [--bazel=<client>]\n'
-    '       [--command=<name>]...\n'
+    '       [--command=<name>]... [--any-os]\n'
     '  --command runs only the named spec commands, in spec order.\n'
+    '  --any-os runs commands whatever host their `os` names.\n'
     '  Also reads BIT_WORKSPACE_DIR and BIT_BAZEL_BINARY from the environment.';
 
 String _unquote(String s) {
@@ -112,6 +113,7 @@ void main(List<String> args) {
     client: _resolveClient(bazelArg, callerDir),
     specPath: specPath,
     spec: spec,
+    anyOs: args.contains('--any-os'),
   );
   exit(runSpec(config));
 }

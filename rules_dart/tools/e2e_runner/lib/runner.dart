@@ -242,6 +242,7 @@ final class RunnerConfig {
     required this.client,
     required this.specPath,
     required this.spec,
+    this.anyOs = false,
   });
 
   /// Absolute path to the workspace to stage.
@@ -258,6 +259,10 @@ final class RunnerConfig {
 
   /// The parsed spec.
   final Spec spec;
+
+  /// Run every command whatever its `os` says, to see what a host does with
+  /// a command written for another (an experiment, not a verdict).
+  final bool anyOs;
 }
 
 Directory _createScratchDir() {
@@ -321,7 +326,7 @@ void _runOne(
   required _ExecContext context,
   required RunnerConfig config,
 }) {
-  if (!command.runsOn(Platform.operatingSystem)) {
+  if (!config.anyOs && !command.runsOn(Platform.operatingSystem)) {
     stdout.writeln(
       'skipping "${command.name}": it runs on ${command.os.join(', ')}, '
       'this host is ${Platform.operatingSystem}',

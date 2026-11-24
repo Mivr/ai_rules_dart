@@ -112,6 +112,12 @@ on:
         default: none
         type: choice
         options: [none, macos, all]
+      # The experiment `apple-hooks` below: run the Apple build hooks for real.
+      apple_hooks:
+        description: Also run the experiment that switches the Apple hook refusal and replacements off (macOS; never gates)
+        required: false
+        default: false
+        type: boolean
 concurrency:
   # Runs on main never share a group: each gets its own run-id suffix, so a
   # push cannot cancel the nightly uncached run (or the reverse) and manual
@@ -129,6 +135,58 @@ env:
     - rules_flutter/e2e/*/MODULE.bazel
     - rules_flutter/flutter/private/versions.bzl
 jobs:
+  # An experiment, not a gate: do build hooks run on a Mac? The Apple refusal of
+  # a hook, the replacements of sqlite3 and webcrypto and the objective_c
+  # overlay are switched off (`.github/patches/apple-hooks-on.patch`), and the
+  # Flutter workspaces that use them run: `ffi_example` (sqlite3) and
+  # `build_hooks`. A dispatch with `apple_hooks` set runs it. It never fails
+  # the run (`continue-on-error`) and is not in `conclusion.needs`; the answer
+  # is in the step summary.
+  apple-hooks:
+    name: apple hooks on (experiment)
+    if: github.event_name == 'workflow_dispatch' && inputs.apple_hooks
+    runs-on: macos-latest
+    timeout-minutes: 120
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: rules_flutter
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./rules_flutter/.github/actions/android-ndk
+      - name: Switch the Apple hook refusal and replacements off
+        working-directory: .
+        run: git apply --verbose .github/patches/apple-hooks-on.patch
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          module-root: rules_flutter
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: false
+          bazelrc: |
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=2
+            build --local_resources=memory=HOST_RAM*.3
+      - name: Run ffi_example and build_hooks with hooks on
+        shell: bash
+        run: |
+          status=0
+          {
+            echo "### Apple hooks on (Flutter)"
+            echo
+            echo "| workspace | result |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for ws in ffi_example build_hooks; do
+            echo "::group::e2e/$ws"
+            if bazel run //tools/e2e_runner -- --workspace="e2e/$ws" --bazel=bazel; then
+              echo "| $ws | passes with hooks on |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| $ws | FAILS with hooks on |" >> "$GITHUB_STEP_SUMMARY"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$status"
   # The Flutter Full matrix as a reusable workflow: the macOS legs (Apple
   # toolchains, bundles, the iOS simulator, plugins with native code) and the
   # Android example. Only a dispatch with `full` set runs it; elsewhere it is

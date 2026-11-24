@@ -33,6 +33,12 @@ on:
         default: none
         type: choice
         options: [none, macos, all]
+      # The experiment `apple-hooks` below: run the Apple build hooks for real.
+      apple_hooks:
+        description: Also run the experiment that switches the Apple hook refusal and replacements off (macOS; never gates)
+        required: false
+        default: false
+        type: boolean
 concurrency:
   # Cancel previous actions from the same PR or branch except 'main' branch.
   # Tag runs (release dispatches) are never cancelled.
@@ -40,6 +46,63 @@ concurrency:
   group: concurrency-group::${{ github.workflow }}::${{ github.event.pull_request.number > 0 && format('pr-{0}', github.event.pull_request.number) || github.ref_name }}${{ github.ref_name == 'main' && format('::{0}', github.run_id) || ''}}
   cancel-in-progress: ${{ github.ref_type != 'tag' && github.ref_name != 'main' }}
 jobs:
+  # An experiment, not a gate: do build hooks run on a Mac? The Apple refusal of
+  # a hook and the Bazel replacements of sqlite3 and webcrypto are switched off
+  # (`.github/patches/apple-hooks-on.patch`: APPLE_HOOK_OSES empty, no
+  # apple_hook_replacement, no objective_c overlay), and the workspaces that
+  # use them run: `link_hook` (its Linux command, whatever its `os` says) and
+  # `ext_exemplar`. A dispatch with `apple_hooks` set runs it. It never fails
+  # the run (`continue-on-error`) and is not in `conclusion.needs`; the answer
+  # is in the step summary.
+  apple-hooks:
+    name: apple hooks on (experiment)
+    if: github.event_name == 'workflow_dispatch' && inputs.apple_hooks
+    runs-on: macos-latest
+    timeout-minutes: 120
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Switch the Apple hook refusal and replacements off
+        run: git apply --verbose .github/patches/apple-hooks-on.patch
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          module-root: rules_dart
+          bazelisk-cache: true
+          disk-cache: false
+          external-cache: false
+          repository-cache: false
+          cache-save: false
+          bazelrc: |
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=2
+            build --local_resources=memory=HOST_RAM*.3
+      - name: Run link_hook and ext_exemplar with hooks on
+        working-directory: rules_dart/tools
+        shell: bash
+        run: |
+          echo "9.3.0" > .bazelversion
+          for ws in link_hook ext_exemplar; do echo "9.3.0" > "../e2e/$ws/.bazelversion"; done
+          status=0
+          {
+            echo "### Apple hooks on (Dart)"
+            echo
+            echo "| workspace | result |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for ws in link_hook ext_exemplar; do
+            extra=""
+            if [ "$ws" = link_hook ]; then extra="--any-os --command=test"; fi
+            echo "::group::e2e/$ws"
+            # shellcheck disable=SC2086 # $extra is flags, split on purpose
+            if bazel run //e2e_runner:e2e_runner -- --workspace="../e2e/$ws" --bazel=bazel $extra; then
+              echo "| $ws | passes with hooks on |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| $ws | FAILS with hooks on |" >> "$GITHUB_STEP_SUMMARY"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$status"
   # The Dart Full matrix as a reusable workflow: what runs only on a Mac
   # (`test-macos`) and its Linux companions. Only a dispatch with `full` set
   # runs it, so a push, a pull request and the nightly see it skipped, which
