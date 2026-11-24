@@ -34,6 +34,7 @@ final class SweepResult {
     required this.outcome,
     required this.seconds,
     required this.note,
+    this.inCi = true,
   });
 
   /// `rules_dart` or `rules_flutter`.
@@ -50,6 +51,10 @@ final class SweepResult {
 
   /// A skip reason, or the first useful line of a failure's log.
   final String note;
+
+  /// Whether a workflow names the workspace. A workspace no workflow names
+  /// is a gap: CI never runs it.
+  final bool inCi;
 }
 
 /// One directory under `<module>/e2e/`.
@@ -76,10 +81,54 @@ final class Workspace {
   String get id => '$module/$name';
 }
 
+/// Whether one of the workflow texts in [workflows] (file name to content)
+/// of [module]'s family (`dart-*` or `flutter-*`) names `e2e/<name>`.
+bool namedInWorkflows(Map<String, String> workflows, Workspace ws) {
+  final family = ws.module == 'rules_dart' ? 'dart-' : 'flutter-';
+  final pattern = RegExp('e2e/${RegExp.escape(ws.name)}(?![A-Za-z0-9_])');
+  return workflows.entries.any(
+    (e) => e.key.startsWith(family) && pattern.hasMatch(e.value),
+  );
+}
+
+/// The workflow files under [dir], by file name; empty when there are none.
+Map<String, String> readWorkflows(String dir) {
+  final d = Directory(dir);
+  if (!d.existsSync()) return const {};
+  return {
+    for (final f in d.listSync().whereType<File>())
+      if (f.path.endsWith('.yaml') || f.path.endsWith('.yml'))
+        f.uri.pathSegments.last: f.readAsStringSync(),
+  };
+}
+
 /// Workspaces that cannot run on a Linux x86_64 host with no device, and why.
 ///
 /// The key is `<module>/<name>`. `--include-unrunnable` runs them anyway.
-const Map<String, String> hostSkips = {};
+const Map<String, String> hostSkips = {
+  'rules_flutter/drive_ios': 'iOS simulator: needs macOS and Xcode',
+  'rules_flutter/integration_ios': 'iOS simulator: needs macOS and Xcode',
+  'rules_flutter/ios_example': 'iOS: no Apple toolchain on Linux',
+  'rules_flutter/ios_framework': 'iOS xcframeworks: needs macOS and Xcode',
+  'rules_flutter/macos_example': 'macOS: its tests are skipped on Linux',
+  'rules_flutter/multi_window_example':
+      'macOS app: no Apple toolchain on Linux',
+  'rules_flutter/windows_example': 'Windows: its tests are skipped on Linux',
+  'rules_flutter/plugin_example':
+      'Linux runner: the desktop sysroot lacks X11/Xlib.h (GTK headers)',
+  'rules_flutter/stock_dev_loop':
+      'dev-loop workspace with no spec; it needs the dev tool and a device',
+};
+
+/// Workspaces whose check is a script that runs Bazel itself, not a spec.
+///
+/// The script runs in the workspace directory with `BAZEL` set to the client;
+/// it needs the git checkout (it archives `HEAD`), so the runner's staged
+/// copy would not do.
+const Map<String, List<String>> scriptWorkspaces = {
+  'rules_dart/run_home': ['./run_home_test.sh'],
+  'rules_flutter/run_home': ['./run_home_test.sh'],
+};
 
 /// The modules and where each one's runner is built.
 const List<({String module, String runnerTarget})> modules = [
@@ -130,12 +179,13 @@ String failureNote(String log) {
 /// The table as Markdown, rows in [results]' order, with the counts below it.
 String renderTable(List<SweepResult> results) {
   final out = StringBuffer()
-    ..writeln('| Workspace | Result | Seconds | Note |')
-    ..writeln('|---|---|---:|---|');
+    ..writeln('| Workspace | Result | Seconds | In CI | Note |')
+    ..writeln('|---|---|---:|:-:|---|');
   for (final r in results) {
     final note = r.note.replaceAll('|', r'\|');
     out.writeln(
-      '| ${r.module}/${r.name} | ${r.outcome.label} | ${r.seconds} | $note |',
+      '| ${r.module}/${r.name} | ${r.outcome.label} | ${r.seconds} | '
+      '${r.outcome == Outcome.helper ? '' : (r.inCi ? 'yes' : 'NO')} | $note |',
     );
   }
   out
@@ -151,7 +201,9 @@ String renderCounts(List<SweepResult> results) {
       '${count(Outcome.passed)} passed, '
       '${count(Outcome.failed)} failed, '
       '${count(Outcome.skipped)} cannot run on this host, '
-      '${count(Outcome.helper)} not workspaces.';
+      '${count(Outcome.helper)} not workspaces; '
+      '${results.where((r) => r.outcome != Outcome.helper && !r.inCi).length} '
+      'workspaces no workflow names.';
 }
 
 /// What a sweep needs from its caller.
@@ -233,12 +285,18 @@ Future<List<SweepResult>> runSweep(
     return config.only.any((p) => p.allMatches(w.id).isNotEmpty);
   }).toList();
   Directory(config.logDir).createSync(recursive: true);
+  final workflows = readWorkflows('${config.repoRoot}/.github/workflows');
   final results = List<SweepResult?>.filled(selected.length, null);
   var next = 0;
   Future<void> worker() async {
     while (next < selected.length) {
       final index = next++;
-      results[index] = await _runOne(config, runners, selected[index]);
+      results[index] = await _runOne(
+        config,
+        runners,
+        selected[index],
+        namedInWorkflows(workflows, selected[index]),
+      );
       stderr.writeln(
         '${results[index]!.outcome.label.padRight(6)} '
         '${selected[index].id} (${results[index]!.seconds}s)',
@@ -254,6 +312,7 @@ Future<SweepResult> _runOne(
   SweepConfig config,
   Map<String, String> runners,
   Workspace ws,
+  bool inCi,
 ) async {
   SweepResult row(Outcome o, String note, [int seconds = 0]) => SweepResult(
     module: ws.module,
@@ -261,6 +320,7 @@ Future<SweepResult> _runOne(
     outcome: o,
     seconds: seconds,
     note: note,
+    inCi: inCi,
   );
   if (!ws.isWorkspace) {
     return row(
@@ -272,15 +332,23 @@ Future<SweepResult> _runOne(
   if (skip != null && !config.includeUnrunnable) {
     return row(Outcome.skipped, skip);
   }
-  if (!ws.hasSpec) {
+  final script = scriptWorkspaces[ws.id];
+  if (script == null && !ws.hasSpec) {
     return row(Outcome.failed, 'no e2e.yaml');
   }
   final started = DateTime.now();
   final logFile = File('${config.logDir}/${ws.module}-${ws.name}.log');
-  final process = await Process.start(runners[ws.module]!, [
-    '--workspace=${ws.path}',
-    '--bazel=${config.client}',
-  ]);
+  final process = script == null
+      ? await Process.start(runners[ws.module]!, [
+          '--workspace=${ws.path}',
+          '--bazel=${config.client}',
+        ])
+      : await Process.start(
+          script.first,
+          script.sublist(1),
+          workingDirectory: ws.path,
+          environment: {'BAZEL': config.client},
+        );
   final buffer = StringBuffer();
   final done = Future.wait([
     process.stdout
@@ -298,6 +366,13 @@ Future<SweepResult> _runOne(
   final code = await process.exitCode;
   timer.cancel();
   await done;
+  if (script != null) {
+    // The script leaves its server and output base behind.
+    await Process.run(config.client, [
+      'clean',
+      '--expunge',
+    ], workingDirectory: ws.path);
+  }
   final seconds = DateTime.now().difference(started).inSeconds;
   final log = buffer.toString();
   logFile.writeAsStringSync(log);

@@ -48,20 +48,35 @@ more
         outcome: Outcome.failed,
         seconds: 9,
         note: 'boom',
+        inCi: false,
       ),
     ];
 
     test('has one row per result and the counts', () {
       final table = renderTable(rows);
-      expect(table, contains('| rules_dart/a | PASS | 3 |  |'));
+      expect(table, contains('| rules_dart/a | PASS | 3 | yes |  |'));
       expect(table, contains(r'needs a Mac \| or a device'));
       expect(
         table,
         contains(
           'Total 3: 1 passed, 1 failed, 1 cannot run on this host, '
-          '0 not workspaces.',
+          '0 not workspaces; 1 workspaces no workflow names.',
         ),
       );
+    });
+  });
+
+  group('namedInWorkflows', () {
+    const dart = Workspace('rules_dart', 'smoke', '/x');
+    const flutter = Workspace('rules_flutter', 'smoke', '/y');
+    final workflows = {
+      'dart-ci.yaml': 'run: bazel test //... in rules_dart/e2e/smoke',
+      'flutter-ci.yaml': 'run: bazel run -- --workspace=e2e/smoke_extra',
+    };
+
+    test('matches by module family and whole name', () {
+      expect(namedInWorkflows(workflows, dart), isTrue);
+      expect(namedInWorkflows(workflows, flutter), isFalse);
     });
   });
 
