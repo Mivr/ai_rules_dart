@@ -1130,15 +1130,35 @@ jobs:
         uses: ./rules_flutter/.github/actions/disk-report
         with:
           label: before the workspaces
+      # What the sampler printed in a passing run of `integration_android`
+      # (2026-11-24, 7919206c2): used memory climbed to 15.5 GB of the
+      # runner's 16 and available fell to 445 MB, with all of the swap (3 GB)
+      # in use, at the moments the emulator (qemu, 3.1 GB resident) and three
+      # JVMs (1.3 to 1.6 GB each: the outer Bazel server, the e2e runner's
+      # inner one and a worker) were all up. A runner that cannot allocate
+      # for a few seconds is the one that is lost. Two changes against it:
+      # more swap, and the outer Bazel server is shut down before the
+      # workspaces run (the e2e runner is built, then run directly, instead of
+      # by `bazel run`, which keeps that server and its heap alive).
+      - name: Add swap
+        run: |
+          sudo fallocate -l 8G /extra.swap
+          sudo chmod 600 /extra.swap
+          sudo mkswap /extra.swap
+          sudo swapon /extra.swap
+          free -m
       # The sampler prints host memory, load and the largest processes every
       # 15 s into this step's log: the only record of a runner that is lost.
       - name: Run the workspaces (${{ matrix.workspaces }})
         env:
           WORKSPACES: ${{ matrix.workspaces }}
         run: |
+          bazel build //tools/e2e_runner
+          runner="$PWD/bazel-bin/tools/e2e_runner/e2e_runner"
+          bazel shutdown
           for ws in $WORKSPACES; do
             echo "::group::e2e/$ws"
-            .github/scripts/with_resource_sampler.sh bazel run //tools/e2e_runner -- --workspace="e2e/$ws" --bazel=bazel
+            .github/scripts/with_resource_sampler.sh "$runner" --workspace="e2e/$ws" --bazel=bazel
             echo "::endgroup::"
           done
       - name: Disk report (after the workspaces)
