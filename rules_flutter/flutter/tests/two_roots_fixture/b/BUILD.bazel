@@ -1,0 +1,20 @@
+load("//flutter:defs.bzl", "flutter_library")
+
+# One package, `two_roots_split`, at a second root (see ../BUILD.bazel).
+package(default_visibility = ["//flutter/tests:__subpackages__"])
+
+flutter_library(
+    name = "split",
+    package_name = "two_roots_split",
+    srcs = ["lib/split.dart"],
+    tags = ["manual"],
+)
+
+# A branch that is consistent alone: its own package and the split one, once.
+flutter_library(
+    name = "branch",
+    package_name = "two_roots_branch_b",
+    srcs = [],
+    tags = ["manual"],
+    deps = [":split"],
+)

@@ -1,0 +1,17 @@
+load("//flutter:defs.bzl", "flutter_library")
+
+# `two_roots_split` sits at two roots, `a/` and `b/`: each library derives its
+# `lib_root` from its Bazel package. A program over both branches has two roots
+# for one package; so has `:join`, which takes both halves directly.
+package(default_visibility = ["//flutter/tests:__subpackages__"])
+
+flutter_library(
+    name = "join",
+    package_name = "two_roots_join",
+    srcs = [],
+    tags = ["manual"],
+    deps = [
+        "//flutter/tests/two_roots_fixture/a:split",
+        "//flutter/tests/two_roots_fixture/b:split",
+    ],
+)

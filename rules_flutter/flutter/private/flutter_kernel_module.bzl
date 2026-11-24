@@ -108,8 +108,68 @@ def _own_package_record(info):
             return pkg
     return None
 
-def _direct_records_compatible(own_record, rule_deps):
-    """Whether the target's own record joins its direct dependencies' records without conflict.
+def _root_name(lib_root):
+    """How a message names a package root: its directory, or the workspace root."""
+    return "`%s`" % lib_root if lib_root else "the workspace root"
+
+def _brought_by(lib_root, owner, find_owner):
+    """Names the target that brings a root in, asking `find_owner` when the record came without one."""
+    if owner == None and find_owner != None:
+        owner = find_owner(lib_root)
+    return ("from %s" % owner) if owner != None else "from no target that lists a source under it"
+
+def _two_roots_reason(pairs, find_owner = None):
+    """Why package records cannot share one package config, naming who brings each root in; None when they can.
+
+    A package config names one root per package and at most one package at the
+    workspace root, so the answer is the one `kernel_packages_consistent` gives.
+    This is the message for when it says no: the package, its roots, and for
+    each root the label of a target that brings it in, so the conflict can be
+    fixed without bisecting the closure. Only a failing check asks for it.
+
+    Args:
+      pairs: `(DartPackageInfo, owner)` pairs: a record and the label of a
+        target that brings it in, or None when the caller does not know it.
+      find_owner: Optional function from a `lib_root` to the label of a target
+        owning a source under it, or None; asked for a root with no owner.
+
+    Returns:
+      The reason string, or None when the records fit one package config.
+    """
+    roots = {}
+    at_root = {}
+    for pkg, owner in pairs:
+        by_root = roots.setdefault(pkg.package_name, {})
+        if by_root.get(pkg.lib_root) == None:
+            by_root[pkg.lib_root] = owner
+        if not pkg.lib_root and at_root.get(pkg.package_name) == None:
+            at_root[pkg.package_name] = owner
+
+    for name, by_root in roots.items():
+        if len(by_root) > 1:
+            return "package `%s` has %d roots: %s. A package config names one root per package: put every library of `%s` under one root" % (
+                name,
+                len(by_root),
+                "; ".join(["%s, %s" % (_root_name(root), _brought_by(root, owner, find_owner)) for root, owner in by_root.items()]),
+                name,
+            )
+    if len(at_root) > 1:
+        return "%d packages sit at the workspace root: %s. A package config names one package there: give all but one a directory of its own" % (
+            len(at_root),
+            "; ".join(["`%s`, %s" % (name, _brought_by("", owner, find_owner)) for name, owner in at_root.items()]),
+        )
+    return None
+
+def _root_owner(owned, lib_root):
+    """The label of the first `owned` entry with a library source under `lib_root`, or None."""
+    prefix = lib_root + "/lib/" if lib_root else "lib/"
+    for label, path in owned:
+        if path.startswith(prefix):
+            return label
+    return None
+
+def _direct_records_reason(label, own_record, rule_deps):
+    """Why the target's own record does not join its direct dependencies' records, or None.
 
     A package config names one root per package and at most one root package.
     This checks the target's own record and each direct dependency's own
@@ -119,11 +179,13 @@ def _direct_records_compatible(own_record, rule_deps):
     closure once (`flutter_module_tools`). rules_dart's library modules do the
     same (`lib_owns_compatible`).
     """
-    pool = [own_record] if own_record != None else []
+    pairs = [(own_record, str(label))] if own_record != None else []
     for dep in rule_deps:
         if type(dep) == "Target" and DartInfo in dep:
-            pool.extend(owned_package_records(dep[DartInfo]))
-    return kernel_packages_consistent(pool)
+            pairs.extend([(pkg, str(dep.label)) for pkg in owned_package_records(dep[DartInfo])])
+    if kernel_packages_consistent([pkg for pkg, _ in pairs]):
+        return None
+    return _two_roots_reason(pairs) or "one package has two roots, or two packages sit at the workspace root"
 
 def _is_manual(ctx):
     if ctx.label.package.startswith("flutter/tests"):
@@ -439,10 +501,10 @@ def _collect_dep_mod_infos(rule_deps):
         return [str(dep.label) for dep in rule_deps if type(dep) != "Target" or FlutterKernelModuleInfo not in dep]
     return dep_mod_infos
 
-def _modular_consistency(own_record, rule_deps, dep_kernels):
-    """The package records and whether the direct edge agrees on one modular closure.
+def _modular_consistency(label, own_record, rule_deps):
+    """The package records, and why the direct edge cannot share one package config (None when it can).
 
-    Returns `(records, modular)`: `records` is the
+    Returns `(records, reason)`: `records` is the
     `(own_records, transitive)` pair the module's package config is written
     from when the compile runs, with this target's record first (the config
     keeps the first record of a name, as `first_per_package` did over the
@@ -456,8 +518,7 @@ def _modular_consistency(own_record, rule_deps, dep_kernels):
         ],
     )
     records = ([own_record] if own_record != None else [], transitive)
-    modular = _direct_records_compatible(own_record, rule_deps) and all([k.modular for k in dep_kernels])
-    return records, modular
+    return records, _direct_records_reason(label, own_record, rule_deps)
 
 def _modular_dep_closures(target, dep_kernels, rule_deps, own_srcs):
     """The postorder dep closures and ownership graphs propagated by the aspect."""
@@ -654,9 +715,9 @@ def _modular_dep_state(label, rule_deps, own_record, flutter_sdk_info):
     for k in dep_kernels:
         if not k.modular:
             return getattr(k, "not_modular", None) or "%s compiles no module: a dependency compiles none" % label
-    records, modular = _modular_consistency(own_record, rule_deps, dep_kernels)
-    if not modular:
-        return "%s compiles no module: one package of its closure has two roots, or two packages sit at the workspace root; a package config names one root per package" % label
+    records, reason = _modular_consistency(label, own_record, rule_deps)
+    if reason != None:
+        return "%s compiles no module: %s" % (label, reason)
     return struct(
         dep_kernels = dep_kernels,
         records = records,
@@ -1002,10 +1063,9 @@ def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None
     if missing:
         reasons.append("%s carry no Flutter kernel module: put them under `deps` with `flutter_kernel_module_aspect` applied" % ", ".join(missing))
     dep_kernels = [info.kernel_info for info in infos if info != None]
-    for k in dep_kernels:
-        if not k.modular:
-            reasons.append(getattr(k, "not_modular", None) or "a dependency compiles no module")
-            break
+    not_modular = [k for k in dep_kernels if not k.modular]
+    if not_modular:
+        reasons.append(getattr(not_modular[0], "not_modular", None) or "a dependency compiles no module")
     # The merged records name one root per package; the closure's own records may not, when two branches below
     # disagree, which each library's module checks only across its direct edge.
     if closure == None:
@@ -1013,11 +1073,22 @@ def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None
     # With every name once, the closure's records can only disagree on the root package, which the merged
     # records (and `synthesize_app_package`'s foreign-root check) already answer.
     split = len(closure.names) != len(closure.raw)
-    if not kernel_packages_consistent(packages) or (split and not kernel_packages_consistent(closure.raw)):
-        reasons.append("one package of its closure has two roots, or two packages sit at the workspace root: a package config names one root per package")
 
     # lint-allow: depset-flatten terminal: the program checks once that no source has two owners
     owned = depset(transitive = [k.owned for k in dep_kernels]).to_list()
+
+    # A message names who brings each root in: the program for its own sources, else a library owning one under it.
+    own_owned = [(str(ctx.label), f.short_path) for f in own_files]
+    find_owner = lambda root: _root_owner(own_owned, root) or _root_owner(owned, root)
+    # A dependency that compiles no module has said why (a two-roots conflict under it among the reasons), and
+    # carries no owned sources to name the roots by: its reason stands alone.
+    for records in ([] if not_modular else [packages] + ([closure.raw] if split else [])):
+        if not kernel_packages_consistent(records):
+            reasons.append(
+                _two_roots_reason([(pkg, None) for pkg in records], find_owner) or
+                "one package of its closure has two roots, or two packages sit at the workspace root: a package config names one root per package",
+            )
+            break
 
     # Read only when a source has two owners (`duplicated_source_owners` takes a depset).
     edges = depset(transitive = [k.edges for k in dep_kernels])

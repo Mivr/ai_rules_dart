@@ -17,7 +17,9 @@
   globbed into `lib/`, takes `main` from that library: its entry module names `main` by the library's `package:`
   URI and reads no file of it, and its release build accepts the same targets;
 - `main` in a library the app reaches only through another, and a source other than `main` that the app and its
-  library both list, still fail at analysis, naming both targets.
+  library both list, still fail at analysis, naming both targets;
+- a package at two roots fails at analysis, naming the package, both roots and a target that brings in each: across
+  two branches, each consistent alone, the program finds it; under one library that takes both halves, the library.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -305,6 +307,42 @@ def _main_in_lib_cases(name):
     )
     return [name + "_main_in_lib" + suffix for suffix in ["", "_flutter_test", "_release", "_indirect", "_shared_src"]]
 
+_TWO_ROOTS = "//flutter/tests/two_roots_fixture"
+
+def _two_roots_cases(name):
+    """A package, `two_roots_split`, at two roots, reached by a debug app across two branches and under one library.
+
+    Args:
+        name: The test_suite name.
+
+    Returns:
+        The test names.
+    """
+    for case, deps in [
+        ("branches", [_TWO_ROOTS + "/a:branch", _TWO_ROOTS + "/b:branch"]),
+        ("join", [_TWO_ROOTS + ":join"]),
+    ]:
+        flutter_application(name = "_two_roots_%s_app" % case, **(_APP | {"deps": _DEPS + deps}))
+    roots = [
+        "package `two_roots_split` has 2 roots: ",
+        "`flutter/tests/two_roots_fixture/a`, from ",
+        "//flutter/tests/two_roots_fixture/a:split",
+        "`flutter/tests/two_roots_fixture/b`, from ",
+        "//flutter/tests/two_roots_fixture/b:split",
+        "put every library of `two_roots_split` under one root",
+    ]
+    _main_in_lib_refused_test(
+        name = name + "_two_roots_branches",
+        target_under_test = ":_two_roots_branches_app",
+        messages = [":_two_roots_branches_app compiles Flutter kernel modules, and cannot"] + roots,
+    )
+    _main_in_lib_refused_test(
+        name = name + "_two_roots_join",
+        target_under_test = ":_two_roots_join_app",
+        messages = ["//flutter/tests/two_roots_fixture:join compiles no module: "] + roots,
+    )
+    return [name + "_two_roots_branches", name + "_two_roots_join"]
+
 def _same_basename_cases(name):
     """Two `flutter_test` targets whose names differ only in their directory, analysed together.
 
@@ -377,7 +415,7 @@ def debug_modular_app_test_suite(name):
         target_under_test = ":_modular_app_widget_tracking",
         expected = ["-DGLOBAL=1", "--track-widget-creation"],
     )
-    tests = _shared_lib_cases(name) + _tracking_shared_cases(name) + _same_basename_cases(name) + _main_in_lib_cases(name) + [
+    tests = _shared_lib_cases(name) + _tracking_shared_cases(name) + _same_basename_cases(name) + _main_in_lib_cases(name) + _two_roots_cases(name) + [
         name + "_widget_tracking",
         name + "_plain_untracked",
         name + "_release_tracking",
