@@ -11,7 +11,7 @@ build.
 
 visibility(["//dart/..."])
 
-# The generic runner's sources, linked into the hub's `build_runner` package
+# The generic runner's sources, copied into the hub's `build_runner` package
 # so they compile there against the hub's own lock.
 _RUNNER_SOURCES = {
     "build_runner/bin/gen_entry.dart": Label("//dart/build_runner:runner/bin/gen_entry.dart"),
@@ -147,7 +147,9 @@ exports_files(
             ctx.attr.builder_packages,
         ))
         for path, label in _RUNNER_SOURCES.items():
-            ctx.symlink(label, path)
+            # A copy, not a symlink: a repository that links to files outside
+            # itself is not shared through the repository contents cache.
+            ctx.file(path, ctx.read(label), executable = False)
     ctx.file("BUILD.bazel", content)
     return ctx.repo_metadata(reproducible = True)
 
