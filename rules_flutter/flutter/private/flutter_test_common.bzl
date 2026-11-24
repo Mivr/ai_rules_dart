@@ -119,14 +119,20 @@ Future<void> main() async {{
         golden_install = golden_install,
     )
 
-def _exposes_package(deps, names):
-    """True if any dep transitively exposes one of `names`."""
-    for dep in deps:
-        if DartInfo not in dep:
-            continue
-        for pkg in dep[DartInfo].transitive_packages.to_list():
-            if pkg.package_name in names:
-                return True
+def _exposes_package(deps, names, closure_names = None):
+    """True if any dep transitively exposes one of `names`.
+
+    `closure_names` is the closure's package names (`flutter_closure_packages`)
+    when the calling rule has read them already; otherwise the closure is
+    read here, once for all `deps`.
+    """
+    if closure_names == None:
+        # lint-allow: depset-flatten terminal: a test rule asks once whether its closure holds a package
+        records = depset(transitive = [dep[DartInfo].transitive_packages for dep in deps if DartInfo in dep]).to_list()
+        closure_names = {pkg.package_name: True for pkg in records}
+    for name in names:
+        if name in closure_names:
+            return True
     return False
 
 # Two predicates, deliberately not one.
@@ -140,29 +146,31 @@ def _exposes_package(deps, names):
 # Collapsing the two would make a `test_api`-only target (a documented,
 # supported configuration) fail its kernel compile on an import it never asked
 # for. Upstream draws the same line with its `if (flutterTestDep)` guard.
-def can_bootstrap(deps):
+def can_bootstrap(deps, names = None):
     """Tell whether the test bootstrap can be generated for these deps.
 
     Args:
       deps: The dependency targets of the test, searched for exposed Dart packages.
+      names: The closure's package names, when the caller has read them (`flutter_closure_packages`).
 
     Returns:
       True when `flutter_test` or `test_api` is among the exposed packages.
     """
-    return _exposes_package(deps, ["flutter_test", "test_api"])
+    return _exposes_package(deps, ["flutter_test", "test_api"], names)
 
-def has_flutter_test(deps):
+def has_flutter_test(deps, names = None):
     """Tell whether the deps expose `flutter_test`, which the golden block needs.
 
     Args:
       deps: The dependency targets of the test, searched for exposed Dart packages.
+      names: The closure's package names, when the caller has read them (`flutter_closure_packages`).
 
     Returns:
       True when the `flutter_test` package is among the exposed packages.
     """
-    return _exposes_package(deps, ["flutter_test"])
+    return _exposes_package(deps, ["flutter_test"], names)
 
-def flutter_test_bootstrap_action(ctx, test_main_uri, output):
+def flutter_test_bootstrap_action(ctx, test_main_uri, output, names = None):
     """Write the bootstrap library a test kernel is compiled from.
 
     Stages the golden comparator next to `output` (so the bootstrap imports
@@ -183,6 +191,7 @@ def flutter_test_bootstrap_action(ctx, test_main_uri, output):
         test_main_uri: Import URI from the bootstrap to the test entrypoint
             (e.g. `package:my_app/widget_test.dart`).
         output: The already-declared bootstrap `.dart` File to write.
+        names: The closure's package names, when the caller has read them (`flutter_closure_packages`).
 
     Returns:
         The staged golden comparator File, or None when the closure carries
@@ -192,7 +201,7 @@ def flutter_test_bootstrap_action(ctx, test_main_uri, output):
     deps = getattr(ctx.attr, "deps", [])
     comparator_src = getattr(ctx.file, "_golden_comparator_src", None)
     staged_comparator = None
-    if comparator_src != None and has_flutter_test(deps):
+    if comparator_src != None and has_flutter_test(deps, names):
         staged_comparator = ctx.actions.declare_file(
             ctx.label.name + ".golden_comparator.dart",
         )

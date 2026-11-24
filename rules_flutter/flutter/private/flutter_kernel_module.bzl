@@ -504,11 +504,21 @@ def _find_dep_base_dill(dep_kernels):
     return base_dill, base_keys, base_kmods
 
 def _without_base_kmods(dep_closure, base_dill, base_keys, base_kmods):
-    """`dep_closure` minus the modules a seeded base dill already holds (unchanged without one)."""
-    base_paths = {f.path: True for f in base_kmods.to_list()} if base_dill != None and base_keys != None else {}
-    if not base_paths:
+    """`dep_closure` minus the modules a seeded base dill already holds (unchanged without one).
+
+    A set difference, which a depset cannot express: the test (a terminal
+    rule) expands both once.
+    """
+    if base_dill == None or base_keys == None:
         return dep_closure
-    return depset([f for f in dep_closure.to_list() if f.path not in base_paths], order = "postorder")
+
+    # lint-allow: depset-flatten terminal: the base dill's modules, subtracted once per test
+    base = {f: True for f in base_kmods.to_list()}
+    if not base:
+        return dep_closure
+
+    # lint-allow: depset-flatten terminal: the test links its closure minus the base, once
+    return depset([f for f in dep_closure.to_list() if f not in base], order = "postorder")
 
 def _header_only_module_info(product_modular, dep_product_kernels, closures, base):
     """The provider list for a target with no own sources: dep closures only.
@@ -1050,7 +1060,46 @@ def _link_flutter_test_entry_module(ctx, dep_kernels, entry, output):
     )
     return base_dill
 
-def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None):
+def flutter_closure_packages(deps):
+    """The package records of a program's closure, read once.
+
+    A program (a terminal rule) needs its closure's records for its package
+    config, its agreement check and its modular-consistency check. This
+    expands them once. When every name appears once, which is the common
+    case, the records already are one per name and agree, so
+    `collect_packages`' merge is the identity and is skipped; otherwise it
+    runs as before.
+
+    Args:
+      deps: The program's dependency Targets, each providing `DartInfo`.
+
+    Returns:
+      `struct(raw, packages, names)`: `raw` the records in closure order with
+      duplicates, `packages` the merged records (`collect_packages`), and
+      `names` a dict of every package name in the closure.
+    """
+    # lint-allow: depset-flatten terminal: a program reads its closure's package records once
+    raw = depset(transitive = [dep[DartInfo].transitive_packages for dep in deps]).to_list()
+    names = {pkg.package_name: True for pkg in raw}
+    packages = raw if len(names) == len(raw) else collect_packages(deps)
+    return struct(raw = raw, packages = packages, names = names)
+
+def _no_shared_source(own_paths, owned):
+    """Whether no own source is listed by a library and no source by two: `duplicated_source_owners` is None then.
+
+    `owned` holds distinct `(label, short_path)` pairs, so each path having
+    one owner is each path appearing once. One pass, instead of the per-path
+    owner sets the precise check builds.
+    """
+    paths = {path: True for _, path in owned}
+    if len(paths) != len(owned):
+        return False
+    for path in own_paths:
+        if path in paths:
+            return False
+    return True
+
+def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None, closure = None):
     """The kernel tools a debug Flutter program compiles its entry module with, failing when it cannot.
 
     A debug `flutter_test`, `flutter_application` and `flutter_kernel_target`
@@ -1066,6 +1115,7 @@ def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None
         (`entry_point_library`): the entry module takes it from the library's module.
       packages: The synthesized `DartPackageInfo` list for the target.
       what: Optional name of the calling function, for a custom rule's message.
+      closure: The `flutter_closure_packages` of `ctx.attr.deps`, when the caller has it; read here otherwise.
 
     Returns:
       The kernel tools struct from `flutter_kernel_tools_for`.
@@ -1085,16 +1135,27 @@ def flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = None
         if not k.modular:
             reasons.append(getattr(k, "not_modular", None) or "a dependency compiles no module")
             break
-    if not kernel_packages_consistent(packages):
+    # The merged records name one root per package; the closure's own records may not, when two branches below
+    # disagree, which each library's module checks only across its direct edge.
+    if closure == None:
+        closure = flutter_closure_packages([dep for dep in ctx.attr.deps if DartInfo in dep])
+    # With every name once, the closure's records can only disagree on the root package, which the merged
+    # records (and `synthesize_app_package`'s foreign-root check) already answer.
+    split = len(closure.names) != len(closure.raw)
+    if not kernel_packages_consistent(packages) or (split and not kernel_packages_consistent(closure.raw)):
         reasons.append("one package of its closure has two roots, or two packages sit at the workspace root: a package config names one root per package")
+
+    # lint-allow: depset-flatten terminal: the program checks once that no source has two owners
     owned = depset(transitive = [k.owned for k in dep_kernels]).to_list()
-    edges = depset(transitive = [k.edges for k in dep_kernels]).to_list()
+
+    # Read only when a source has two owners (`duplicated_source_owners` takes a depset).
+    edges = depset(transitive = [k.edges for k in dep_kernels])
 
     # A `main` that a library in `deps` lists is that library's: the entry takes it from the library's module.
     main = own_files[0] if own_files else None
     entry_point = entry_point_library(main, ctx.attr.deps)
     own_paths = [f.short_path for f in own_files if entry_point == None or f != entry_point.file]
-    duplicate = duplicated_source_owners(own_paths, owned, edges)
+    duplicate = None if _no_shared_source(own_paths, owned) else duplicated_source_owners(own_paths, owned, edges)
     if duplicate != None:
         reasons.append(duplicated_source_message(duplicate, str(ctx.label), main))
     if reasons:

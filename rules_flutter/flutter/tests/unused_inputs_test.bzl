@@ -198,8 +198,8 @@ def _declared_sources_test_impl(ctx):
     (`--input-source`), so a source the action takes as an input but does not
     declare would be missing for the compile, and the library that needs it
     would silently be left out of the module. That holds for the module's own
-    source, for an extra input, and for the staged copies, which are the paths
-    the compile reads through the staging root.
+    source and for an extra input. The sources are read where they are: no
+    staged copy is an input.
     """
     env = unittest.begin(ctx)
     added = []
@@ -214,7 +214,7 @@ def _declared_sources_test_impl(ctx):
     inputs = [f.path for f in runs[0]["inputs"].to_list()]
     sources = [p for p in inputs if p.endswith(".dart")]
     staged = [p for p in sources if ".stage/" in p]
-    asserts.true(env, len(staged) > 0, "the sources are staged, got inputs %s" % inputs)
+    asserts.equals(env, [], staged, "no source is staged, got inputs %s" % inputs)
     asserts.equals(
         env,
         sorted(sources),
@@ -249,38 +249,39 @@ def _default_no_list_test_impl(ctx):
     )
     return unittest.end(env)
 
-def _stage_all_test_impl(ctx):
-    """Every modular kernel compile stages all sources and never mounts `.`.
+def _roots_in_place_test_impl(ctx):
+    """A modular kernel compile mounts the roots its declared files sit under, and stages nothing.
 
-    The exec root carries files the action did not declare; mounting it lets
-    the compile read (and Bazel cache) undeclared bytes. The staging root
-    holds only declared inputs.
+    The module compiler serves only the files the request declares
+    (`--input-source`), so mounting the exec root exposes no undeclared file;
+    a source file's root is the exec root (`.`) and a generated file's its
+    output directory, which comes first so a generated file shadows a source
+    at the same path.
     """
     env = unittest.begin(ctx)
     added = []
     runs = []
     _compile(added, runs, unused_inputs = True)
-    pairs = [a for a in added if type(a) == "tuple"]
-    asserts.true(
-        env,
-        ("--multi-root", ".") not in pairs,
-        "no modular compile mounts the exec root '.', got %r" % (pairs,),
-    )
-    roots = [v for (k, v) in pairs if k == "--multi-root"]
-    asserts.equals(env, 1, len(roots), "expected only the staging root mounted, got %r" % (roots,))
-    if len(roots) == 1:
-        asserts.true(
-            env,
-            roots[0].endswith(".stage"),
-            "the --multi-root must be the per-action staging dir, got %r" % roots[0],
-        )
+    roots = []
+    for batch in [a for a in added if type(a) == "struct" and a.before_each == "--multi-root"]:
+        roots.extend(batch.values)
+    asserts.equals(env, ["."], roots, "a module of source files mounts the exec root alone")
+    generated = _fake_file("bazel-out/k8-fastbuild/bin/flutter/tests/unused_inputs_fixture/b/lib/gen.dart")
+    generated = struct(is_directory = False, is_source = False, path = generated.path, short_path = "flutter/tests/unused_inputs_fixture/b/lib/gen.dart")
+    added = []
+    runs = []
+    _compile(added, runs, extra_inputs = depset([generated]))
+    roots = []
+    for batch in [a for a in added if type(a) == "struct" and a.before_each == "--multi-root"]:
+        roots.extend(batch.values)
+    asserts.equals(env, ["bazel-out/k8-fastbuild/bin", "."], roots, "a generated file's root comes before the exec root")
     return unittest.end(env)
 
 _library_unused_inputs_test = unittest.make(_library_unused_inputs_test_impl)
 _entry_extra_inputs_test = unittest.make(_entry_extra_inputs_test_impl)
 _declared_sources_test = unittest.make(_declared_sources_test_impl)
 _default_no_list_test = unittest.make(_default_no_list_test_impl)
-_stage_all_test = unittest.make(_stage_all_test_impl)
+_roots_in_place_test = unittest.make(_roots_in_place_test_impl)
 
 def unused_inputs_test_suite(name):
     """Defines tests for the kernel `unused_inputs_list` wiring.
@@ -294,7 +295,7 @@ def unused_inputs_test_suite(name):
         _entry_extra_inputs_test,
         _declared_sources_test,
         _default_no_list_test,
-        _stage_all_test,
+        _roots_in_place_test,
     )
     _entry_unused_inputs_test(
         name = name + "_entry",

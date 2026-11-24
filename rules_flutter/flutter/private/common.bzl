@@ -7,7 +7,7 @@ flutter_application, flutter_android_bundle, and flutter_ios_application.
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "collect_packages", "collect_transitive_srcs", "derive_lib_root", "hook_errors", _COPY_TO_DIRECTORY_TOOLCHAINS = "COPY_TO_DIRECTORY_TOOLCHAINS")
+load("@rules_dart//dart:utils.bzl", "collect_transitive_srcs", "derive_lib_root", "hook_errors", _COPY_TO_DIRECTORY_TOOLCHAINS = "COPY_TO_DIRECTORY_TOOLCHAINS")
 load("//flutter:providers.bzl", "FlutterNativeLibraryInfo", _resolve_exec_dart = "resolve_exec_dart", _resolve_exec_dart_vm = "resolve_exec_dart_vm", _resolve_flutter_sdk_info = "resolve_flutter_sdk_info")
 load("//flutter/private:app_entrypoint.bzl", "AGENT_DIR", "APP_SCHEME", "agent_layout_path", "app_scheme_location", "compile_kernel_package_config", "resolve_kernel_entrypoint", "synthesize_app_package")
 load(
@@ -32,6 +32,7 @@ load(
     "//flutter/private:flutter_kernel_module.bzl",
     "compile_flutter_modular_app_kernel",
     "flutter_closure_twins",
+    "flutter_closure_packages",
     "flutter_module_tools",
 )
 load("//flutter/private:native_sources.bzl", "native_sources_aspect")
@@ -50,7 +51,7 @@ EXTRA_DART_DEFINES_ATTR = _EXTRA_DART_DEFINES_ATTR
 collect_define_flagfiles = _collect_define_flagfiles
 merge_dart_defines = _merge_dart_defines
 
-def check_hook_errors(label, deps):
+def check_hook_errors(label, deps, records = None):
     """Returns the error for a closure reaching a package whose build hook cannot run.
 
     Every other package's build hook runs (rules_dart's hook runner); a member
@@ -60,10 +61,14 @@ def check_hook_errors(label, deps):
     Args:
       label: The consuming target's label, for the message.
       deps: The application's `deps`, each providing `DartInfo`.
+      records: The closure's package records, when the caller has read them
+        (`flutter_closure_packages(...).raw`); read from `deps` otherwise.
 
     Returns:
       An error message string, or `None`.
     """
+    if records != None:
+        return hook_errors(label, records)
     packages = depset(transitive = [dep[DartInfo].transitive_packages for dep in deps])
 
     # lint-allow: depset-flatten terminal: an application checks its closure's package records once
@@ -156,7 +161,8 @@ def collect_binding_contracts(native_deps):
 def _kernel_source_inputs(ctx):
     """Collect the kernel compile's sources and synthesize the app package."""
     all_srcs = list(ctx.files.srcs) + collect_transitive_srcs(ctx.attr.deps).to_list()
-    packages = collect_packages(ctx.attr.deps)
+    closure = flutter_closure_packages(ctx.attr.deps)
+    packages = closure.packages
 
     # Register the app itself as a package so the frontend_server keys the
     # entrypoint as `package:<name>/main.dart` — the URI the stock tool's
@@ -185,6 +191,7 @@ def _kernel_source_inputs(ctx):
     return struct(
         all_srcs = all_srcs,
         packages = packages,
+        closure = closure,
         app_pkg_name = app_pkg_name,
         app_lib_root = app_lib_root,
         colocate_inputs = colocate_inputs,
@@ -437,7 +444,7 @@ def _run_kernel_compile(ctx, flutter_sdk_info, st, constant, reg, flags, plan):
     twins = flutter_closure_twins(ctx)
     _debug_module_shape(ctx, constant, reg, flags, twins)
     own_files = [ctx.file.main] + [f for f in ctx.files.srcs if f != ctx.file.main]
-    modular_tools = flutter_module_tools(ctx, flutter_sdk_info, own_files, st.packages)
+    modular_tools = flutter_module_tools(ctx, flutter_sdk_info, own_files, st.packages, closure = st.closure)
     files = [reg.registrant, _registrant_lookup_anchor(ctx)] if reg.registrant else []
     compile_flutter_modular_app_kernel(
         ctx,

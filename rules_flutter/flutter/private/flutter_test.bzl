@@ -51,7 +51,6 @@ load(
     "@rules_dart//dart:utils.bzl",
     "MODULAR_KERNEL_ATTRS",
     "MODULAR_KERNEL_TOOLCHAINS",
-    "collect_packages",
     "dart_analyzable_info_with_package",
     "dart_package_identity",
     "derive_lib_root",
@@ -80,6 +79,7 @@ load("//flutter/private:flutter_defines_files.bzl", "defines_transition")
 load(
     "//flutter/private:flutter_kernel_module.bzl",
     "compile_flutter_modular_test_kernel",
+    "flutter_closure_packages",
     "flutter_kernel_module_aspect",
     "flutter_module_tools",
 )
@@ -121,8 +121,8 @@ def _flutter_test_sdk_info(ctx):
         )
     return flutter_sdk_info
 
-def _check_flutter_test_deps(ctx):
-    if not _can_bootstrap(ctx.attr.deps):
+def _check_flutter_test_deps(ctx, closure):
+    if not _can_bootstrap(ctx.attr.deps, closure.names):
         fail((
             "flutter_test target {name} must depend on package:flutter_test " +
             "(or at minimum package:test_api). Add `@<hub>//:flutter_test` " +
@@ -132,7 +132,7 @@ def _check_flutter_test_deps(ctx):
     # Same contract as `flutter_application`: a package whose build hook
     # cannot run (a member of a merged pub dependency cycle) would leave the
     # manifest below quietly one entry short.
-    hook_err = check_hook_errors(ctx.label, ctx.attr.deps)
+    hook_err = check_hook_errors(ctx.label, ctx.attr.deps, closure.raw)
     if hook_err != None:
         fail(hook_err)
 
@@ -141,7 +141,7 @@ def _flutter_test_native_assets(ctx):
     # out of runfiles, so the manifest names each library by its path there.
     return flutter_code_assets(ctx, runfiles = True)
 
-def _flutter_test_sources(ctx):
+def _flutter_test_sources(ctx, closure):
     # Per-target bootstrap. Imports the user's test via its `package:` URI when
     # `main` sits under `<lib_root>/lib/` (the URI of the library in `deps` that
     # lists it, when one does) and via `org-dartlang-app:///<stable_path>`
@@ -152,9 +152,9 @@ def _flutter_test_sources(ctx):
     bootstrap = ctx.actions.declare_file(ctx.label.name + "_bootstrap.dart")
     entry_point = entry_point_library(ctx.file.main, ctx.attr.deps)
     test_import = entry_point.uri if entry_point != None else app_main_location(ctx.attr.package_name, lib_root, ctx.file.main).uri
-    staged_comparator = _flutter_test_bootstrap_action(ctx, test_import, bootstrap)
+    staged_comparator = _flutter_test_bootstrap_action(ctx, test_import, bootstrap, names = closure.names)
 
-    packages = collect_packages(ctx.attr.deps)
+    packages = closure.packages
 
     # Register the test's own package (when declared) so `package:<self>/foo`
     # imports inside test sources resolve across the multi-root `org-dartlang-app:///`
@@ -171,6 +171,7 @@ def _flutter_test_sources(ctx):
         bootstrap = bootstrap,
         staged_comparator = staged_comparator,
         packages = packages,
+        closure = closure,
     )
 
 def _flutter_test_kernel(ctx, flutter_sdk_info, sources, native_assets):
@@ -180,7 +181,7 @@ def _flutter_test_kernel(ctx, flutter_sdk_info, sources, native_assets):
     # A shape the modules cannot take fails at analysis; the code assets ride the entry module.
     kernel_dill = ctx.actions.declare_file(ctx.label.name + ".dill")
     own_files = [ctx.file.main] + [f for f in ctx.files.srcs if f != ctx.file.main]
-    modular_tools = flutter_module_tools(ctx, flutter_sdk_info, own_files, sources.packages)
+    modular_tools = flutter_module_tools(ctx, flutter_sdk_info, own_files, sources.packages, closure = sources.closure)
     base_dill = compile_flutter_modular_test_kernel(
         ctx,
         flutter_sdk_info,
@@ -366,10 +367,11 @@ def _flutter_test_providers(ctx, sources, artifacts, runner):
 
 def _flutter_test_impl(ctx):
     flutter_sdk_info = _flutter_test_sdk_info(ctx)
-    _check_flutter_test_deps(ctx)
+    closure = flutter_closure_packages(ctx.attr.deps)
+    _check_flutter_test_deps(ctx, closure)
 
     native_assets = _flutter_test_native_assets(ctx)
-    sources = _flutter_test_sources(ctx)
+    sources = _flutter_test_sources(ctx, closure)
     kernel = _flutter_test_kernel(ctx, flutter_sdk_info, sources, native_assets)
     artifacts = struct(
         kernel_dill = kernel.kernel_dill,

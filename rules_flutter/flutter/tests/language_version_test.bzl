@@ -91,9 +91,37 @@ def _application_test_impl(ctx):
     _assert_config_states_version(env)
     return analysistest.end(env)
 
+def _assert_entry_records_state_version(env):
+    """The test's entry module names the app's record with the stated version.
+
+    A `flutter_test`'s entry module compiler writes its `package_config.json`
+    from `--record name|lib_root|language_version` arguments when it runs (the
+    bytes are the module compiler's, tested against `kernel_package_config` in
+    rules_dart), so the version is asserted where analysis states it.
+    """
+    entries = [
+        a
+        for a in analysistest.target_actions(env)
+        if a.mnemonic == "DartKernel" and "--no-drop" in a.argv
+    ]
+    asserts.equals(env, 1, len(entries), "expected exactly one entry module compile")
+    if not entries:
+        return
+    argv = entries[0].argv
+    records = [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--record"]
+    own = [r for r in records if r.startswith(_PACKAGE + "|")]
+    asserts.true(env, len(own) > 0, "no `%s` record among the entry's %s" % (_PACKAGE, records))
+    if own:
+        asserts.equals(
+            env,
+            _LANGUAGE_VERSION,
+            own[0].split("|")[2],
+            "the app's package_config record must state the attr's version",
+        )
+
 def _flutter_test_test_impl(ctx):
     env = analysistest.begin(ctx)
-    _assert_config_states_version(env)
+    _assert_entry_records_state_version(env)
     _assert_provider_states_version(env)
     return analysistest.end(env)
 
