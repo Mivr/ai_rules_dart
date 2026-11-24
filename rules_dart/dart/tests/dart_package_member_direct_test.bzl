@@ -2,8 +2,8 @@
 
 The rule registers no action: it states one member package of a merged
 `dart_library` and publishes that package's record. The test pins the record's
-fields (name, root, version, language version and the code assets the member
-owns), the sources and resources the member exposes as default outputs, and that
+fields (name, root, version, language version and the code asset the member
+owns, as the index file executables read), the sources and resources the member exposes as default outputs, and that
 the member provides no `DartInfo`, so it can never be a dependency itself.
 """
 
@@ -11,7 +11,7 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("@rules_testing//lib:truth.bzl", "subjects")
 load("//dart:defs.bzl", "dart_code_asset", "dart_package_member")
 load("//dart:providers.bzl", "DartInfo", "DartPackageInfo")
-load(":truth_helpers.bzl", "asset_ids", "expect_default_outputs", "provider_of")
+load(":truth_helpers.bzl", "expect_default_outputs", "file_basenames", "provider_of")
 
 visibility(["//dart/..."])
 
@@ -20,7 +20,7 @@ _ATTRS = {
     "lib_root": subjects.str,
     "version": subjects.str,
     "language_version": subjects.str,
-    "code_assets": asset_ids,
+    "native_assets": file_basenames,
 }
 
 def _dart_package_member_test(env, target):
@@ -30,7 +30,7 @@ def _dart_package_member_test(env, target):
     package.lib_root().equals("dart/tests")
     package.version().equals("1.2.3")
     package.language_version().equals("3.11")
-    package.code_assets().contains_exactly(["package:direct_member/native.g.dart"])
+    package.native_assets().contains_exactly(["dart_package_member_direct_asset.assets.json"])
     expect_default_outputs(
         env,
         target,

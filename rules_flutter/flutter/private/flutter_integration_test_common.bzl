@@ -34,12 +34,11 @@ load(
     "KERNEL_COMPILE_ATTRS",
     "LIBRARY_TAGS_TOOL_ATTR",
     "PLATFORM_CONSTRAINT_ATTRS",
-    "check_unreplaced_hooks",
+    "check_hook_errors",
     "collect_native_libs",
     "declare_flutter_assets_dir",
     "extract_library_tags_action",
     "flutter_build_mode",
-    "host_target_arch",
     "merge_dart_defines",
     "resolve_flutter_sdk_info",
 )
@@ -72,12 +71,7 @@ load(
     "//flutter/private:flutter_kernel_module.bzl",
     "MODULAR_KERNEL_ATTRS",
 )
-load(
-    "//flutter/private:flutter_native_assets.bzl",
-    "collect_application_native_assets",
-    "collect_bundled_code_asset_files",
-    "write_native_assets_manifest",
-)
+load("//flutter/private:code_assets.bzl", "FLUTTER_CODE_ASSETS_ATTRS", "flutter_code_assets")
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ATTRS", "layering_check_integration")
 load(
     "//flutter/private:plugin_registrant.bzl",
@@ -102,7 +96,7 @@ def integration_test_common_setup(ctx):
             "package:flutter_test. Add `@<hub>//:flutter_test` to deps."
         ).format(name = ctx.label.name))
 
-    hook_err = check_unreplaced_hooks(ctx.label, ctx.attr.deps)
+    hook_err = check_hook_errors(ctx.label, ctx.attr.deps)
     if hook_err != None:
         fail(hook_err)
 
@@ -192,33 +186,17 @@ def integration_test_plugins(ctx):
     """
     return collect_flutter_plugin_deps(ctx.attr.deps)
 
-def integration_test_native_assets(ctx, flutter_sdk_info, target_os):
-    """Collects the native assets and writes the compiler's manifest.
+def integration_test_native_assets(ctx):
+    """The test app's native-assets manifest and bundled code-asset libraries.
 
     Args:
         ctx: The rule context of the rule implementation that calls this helper.
-        flutter_sdk_info: The resolved Flutter SDK info.
-        target_os: The target OS the manifest is keyed by.
 
     Returns:
-        A struct with `list`, `data_assets`, `manifest` and `bundled`.
+        A struct with `any`, `data_assets`, `manifest` and `bundled` (see
+        `flutter_code_assets`).
     """
-    assets = collect_application_native_assets(ctx)
-    target_arch = host_target_arch(ctx, flutter_sdk_info)
-    native_assets_manifest = ctx.actions.declare_file(ctx.label.name + ".native_assets.json")
-    write_native_assets_manifest(
-        ctx = ctx,
-        output_file = native_assets_manifest,
-        native_assets = assets.list,
-        target_os = target_os,
-        target_arch = target_arch,
-    )
-    return struct(
-        bundled = collect_bundled_code_asset_files(assets.list),
-        data_assets = assets.data_assets,
-        list = assets.list,
-        manifest = native_assets_manifest,
-    )
+    return flutter_code_assets(ctx)
 
 def integration_test_runner_executable(ctx):
     """Declares the runner symlink the test rule exposes as its executable.
@@ -473,12 +451,14 @@ def integration_test_assets(ctx, flutter_sdk_info, target_platform, kernel_dill,
     )
     return flutter_assets
 
-def integration_test_native_libs(ctx, bundled_code_assets = None):
-    """The loose native libraries a desktop or Android bundle carries.
+def integration_test_native_libs(ctx):
+    """The loose `native_deps` libraries a desktop or Android bundle carries.
+
+    The code assets' libraries are a directory of their own
+    (`integration_test_native_assets`).
 
     Args:
         ctx: Rule context carrying `native_deps` and `deps`.
-        bundled_code_assets: The code-asset File list to add, or None.
 
     Returns:
         The native library File list.
@@ -491,8 +471,6 @@ def integration_test_native_libs(ctx, bundled_code_assets = None):
     ]
     if transitive_native_depsets:
         native_libs.extend(depset(transitive = transitive_native_depsets).to_list())
-    if bundled_code_assets != None:
-        native_libs.extend(bundled_code_assets.to_list())
     return native_libs
 
 _WEB_RELEVANT_KEYS = (
@@ -501,7 +479,7 @@ _WEB_RELEVANT_KEYS = (
 )
 
 # The kernel-compile and asset attributes every platform test or app rule takes.
-INTEGRATION_TEST_BUILD_ATTRS = KERNEL_COMPILE_ATTRS | BUNDLE_ATTRS | {
+INTEGRATION_TEST_BUILD_ATTRS = KERNEL_COMPILE_ATTRS | BUNDLE_ATTRS | FLUTTER_CODE_ASSETS_ATTRS | {
     k: v
     for k, v in FLUTTER_APPLICATION_ATTRS.items()
     if k in _WEB_RELEVANT_KEYS

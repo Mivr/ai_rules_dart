@@ -317,8 +317,6 @@ def _mock_scc_member_inputs():
                 '{"android":{"package":"dev.example.cycle_a","pluginClass":"CycleAPlugin"},' +
                 '"ios":{"pluginClass":"CycleAPlugin"}}'
             ),
-            code_assets = ["@sqlite3//:code_asset"],
-            has_unreplaced_hook = "",
             link_hook = "hook/link.dart",
             package_files = ["pubspec.yaml", "LICENSE*"],
         ),

@@ -338,8 +338,9 @@ def _flutter_macos_native_libs_impl(ctx):
     """Stages native .dylib files flat, for bundling via additional_contents.
 
     Includes both the legacy `native_libs` set (from `native_deps`-style
-    FFI cc_library targets) and the modern `bundled_code_assets` set
-    contributed by `flutter_native_asset(link_mode = "dynamic_loading_bundle")`.
+    FFI cc_library targets) and the `bundled_code_assets`, the
+    `dart_code_asset` libraries (on macOS no build hook runs yet, so none
+    comes from a hook).
     rules_apple's `additional_contents = {target: "Frameworks"}` machinery
     code-signs the dylibs as part of the outer `macos_application` build —
     no bespoke codesign action needed here.
@@ -366,7 +367,7 @@ def _flutter_macos_native_libs_impl(ctx):
 
     # One library can arrive by both routes; the same path is the same library.
     libs_by_path = {}
-    for lib in app_info.native_libs + app_info.bundled_code_assets.to_list():
+    for lib in app_info.native_libs + app_info.bundled_code_assets:
         libs_by_path[lib.path] = lib
 
     libs_by_basename = {}

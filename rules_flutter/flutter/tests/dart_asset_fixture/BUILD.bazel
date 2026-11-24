@@ -1,15 +1,12 @@
-load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_dart//dart:defs.bzl", "dart_code_asset", "dart_library")
-load("//flutter:defs.bzl", "flutter_application", "flutter_library", "flutter_test")
+load("//flutter:defs.bzl", "flutter_library")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
-load("//flutter/tests:native_assets_test.bzl", "hook_check_probe", "legacy_dart_library")
 
-# A pub-package-shaped `dart_library` that owns a native code asset, exactly as
-# `pub.from_lock()` generates for a package with a curated `//dart/ext` entry.
-# Nothing here mentions Flutter — the point is that rules_flutter picks the
-# asset up off the Dart package graph without a `flutter_native_asset`.
+# A `dart_library` that owns a native code asset Bazel builds. Nothing here
+# mentions Flutter — the point is that rules_flutter picks the asset up off the
+# Dart package graph.
 
 cc_library(
     name = "empty",
@@ -46,7 +43,7 @@ dart_library(
     srcs = ["lib/fixture.dart"],
     code_assets = [":code_asset"],
     target_compatible_with = HOST_COMPATIBLE,
-    visibility = ["//flutter/tests:__pkg__"],
+    visibility = ["//flutter/tests:__subpackages__"],
 )
 
 # A code asset is owned by the package whose id namespaces it, and a
@@ -63,88 +60,4 @@ flutter_library(
     tags = ["manual"],
     target_compatible_with = HOST_COMPATIBLE,
     visibility = ["//flutter/tests:__pkg__"],
-)
-
-# The other half of the contract: a package that ships a build hook nothing
-# replaces, as `flutter.pub()` records when it finds `hook/build.dart` and the
-# curated registry has no entry for that package at that version. Using
-# `flutter_library` rather than `dart_library` is deliberate — what is under
-# test is that rules_flutter's own package rule carries the flag onto
-# `DartPackageInfo` and up through `transitive_packages`.
-flutter_library(
-    name = "hook_fixture",
-    package_name = "hook_fixture",
-    srcs = ["lib/hook_fixture.dart"],
-    has_unreplaced_hook = "hook/build.dart",
-)
-
-# Reaching that package from an application must fail at analysis. Left
-# `manual` so only the analysistest that wraps it builds it.
-flutter_application(
-    name = "hook_app",
-    package_name = "hook_app",
-    main = "hook_app_main.dart",
-    tags = ["manual"],
-    visibility = ["//flutter/tests:__pkg__"],
-    deps = [":hook_fixture"],
-)
-
-# The tolerance side of the same check. A `DartPackageInfo` built against a
-# rules_dart predating `has_unreplaced_hook` has no such field, and reaching it
-# from an application must be a non-event: it cannot be an offender, because a
-# producer with no field could not have recorded a hook. Probed directly rather
-# than through `flutter_application` so the assertion is about the check and
-# needs no Flutter toolchain.
-legacy_dart_library(
-    name = "legacy_package",
-    package_name = "legacy_package",
-    srcs = ["lib/fixture.dart"],
-)
-
-hook_check_probe(
-    name = "legacy_package_has_no_hook",
-    deps = [":legacy_package"],
-)
-
-# `flutter_test` refuses deps that do not expose `package:test_api`, and that
-# check runs before the hook check. This stands in for the real package so a
-# test target can be built here, where there is no pub hub to get one from —
-# `_has_flutter_test` matches on the package name and nothing else. Being a
-# legacy-shaped record, it also puts a field-less package alongside the
-# offender in the same closure.
-legacy_dart_library(
-    name = "fake_test_api",
-    package_name = "test_api",
-    srcs = ["lib/fixture.dart"],
-)
-
-# The hook check has to fire from `flutter_test`, not just from
-# `flutter_application` — a test is where an unresolved `@Native` symbol
-# actually gets debugged. Left `manual`; only the analysistest builds it.
-flutter_test(
-    name = "hook_flutter_test",
-    package_name = "hook_test",
-    main = "hook_app_main.dart",
-    tags = ["manual"],
-    visibility = ["//flutter/tests:__pkg__"],
-    deps = [
-        ":fake_test_api",
-        ":hook_fixture",
-    ],
-)
-
-# The paired positive: the same probe over the package that does ship one, so
-# a guard that swallowed every record would not pass both.
-hook_check_probe(
-    name = "hook_fixture_is_an_offender",
-    expect_offender = True,
-    deps = [":hook_fixture"],
-)
-
-build_test(
-    name = "hook_check_tolerance_test",
-    targets = [
-        ":hook_fixture_is_an_offender",
-        ":legacy_package_has_no_hook",
-    ],
 )

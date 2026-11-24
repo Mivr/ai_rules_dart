@@ -436,13 +436,15 @@ bazel run @rules_flutter//flutter:pub -- get --directory tools/my_tool
 
 ### Packages with build hooks
 
-Some pub packages compile native code through a Dart `hook/build.dart` (Dart Native Assets). Bazel does not run those hooks. Instead:
+Some pub packages build native code through a Dart `hook/build.dart` (Dart Native Assets), and some ship a `hook/link.dart`. rules_flutter runs them as `flutter build` does, through the Dart SDK's own `package:hooks_runner`: one sandboxed, offline action per package and target platform, with the C toolchain Bazel resolves for that platform (the NDK's `clang` for Android). The libraries they report are bundled and named in the app's `NativeAssetsManifest.json`; nothing names them in a BUILD file. A link hook runs in a release or profile build of an app that lists its data assets in `link_hook_assets`.
 
-- **Curated replacements.** rules_dart keeps a registry of Bazel-native equivalents (`@rules_dart//dart/ext:registry.bzl`). Where one exists, such as `sqlite3`, `flutter.pub` attaches it automatically. An app that depends on `drift` gets `libsqlite3` without naming it.
-- **Overlays.** For a package with a hook and no curated entry, you can write a `BUILD.bazel.tpl` that reproduces what the hook builds. rules_flutter bundles overlays under `ext/`, and you can add your own with `flutter.plugin_overlays(roots = [...])`. A hub consults the root module's roots first, then its own module's roots, so a dependency's overlays never replace the BUILD files of the root's packages (or another module's). Authoring one is described in [docs/TESTING.md](docs/TESTING.md) under "Native Assets overlay authoring".
-- **Ignoring a hook.** If a package's native code is never reached in your app, say so: `flutter.pub(ignore_hooks = ["<package>"])`.
+Three attributes of `flutter.pub` widen what a hook may use, as `pub.from_lock` does in rules_dart (see rules_dart's `docs/pub.md`, "Build hooks"):
 
-A hook that nothing replaces is an error when `flutter_application` reaches it. The alternative would be a build that succeeds and then fails at runtime on an unresolved `@Native` symbol.
+- `hooks: user_defines: <package>:` in the `pubspec.yaml` next to the lock reaches that one hook, so an unrelated pubspec edit reruns none;
+- `hook_data` maps files outside a package that its hook reads (`{"@sqlite3//:sqlite3.c": "sqlite3"}`);
+- `hook_network` lets one package's hook download, which Bazel then neither pins nor caches by content. Without it, a hook that downloads fails with a message naming the package and both ways out.
+
+`e2e/build_hooks` runs `sqlite3` from source, a path package whose hook compiles C, and one with a link hook, on Linux and Android. Overlays (`ext/` and `flutter.plugin_overlays(roots = [...])`) still replace a package's generated BUILD file where its Android code needs one; a hub consults the root module's roots first, then its own module's roots. On macOS and iOS build hooks do not run yet (not yet proven on macOS CI): a package's hook fails the build, naming the package, except for `sqlite3`, `webcrypto` and `objective_c`, which keep their Bazel replacements there (rules_dart's `docs/pub.md`, "Apple targets").
 
 ### Native code from Bazel
 
@@ -463,7 +465,7 @@ flutter_application(
 )
 ```
 
-If you would rather bind with `@Native(assetId: ...)` and let the Dart VM find the library, declare it as a Native Asset with `flutter_native_asset` from `@rules_flutter//flutter:native_assets.bzl`, and carry it on a `flutter_plugin`. `e2e/ffi_example` shows both styles side by side.
+If you would rather bind with `@Native(assetId: ...)` and let the Dart VM find the library, declare it as a code asset with rules_dart's `dart_code_asset`, and list it in a `flutter_plugin`'s or `flutter_library`'s `code_assets`. `e2e/ffi_example` shows both styles side by side.
 
 #### Native edits in the dev loop
 
@@ -1998,7 +2000,7 @@ flutter_plugin(
 | `android_libs` | `flutter_android_plugin_library` targets auto-wired into `flutter_android_app` and `flutter_integration_test(platform = "android")`. |
 | `linux_libs` | `flutter_linux_plugin_library` targets auto-wired into `flutter_linux_app` and `flutter_integration_test(platform = "linux")`. |
 | `native_deps` | Shared libraries bundled for `dart:ffi`. |
-| `native_assets` | `flutter_native_asset` targets, usually inside a `select()` on platform. |
+| `code_assets` | `dart_code_asset` targets the package's Dart binds with `@Native`, usually inside a `select()` on platform. A package's own `hook/build.dart` needs none. |
 | `data` | The package's `pubspec.yaml`, its licence, and the files its pubspec names (assets, fonts, shaders), as on `flutter_library`. |
 | `resources` | Non-Dart files the package ships inside `lib/`. |
 | `package_name`, `language_version`, `version` | The package's name, language version, and version. |
@@ -2049,7 +2051,7 @@ These are what `flutter_application` is made of. Most apps never need them.
 | `flutter_aot_target` | Compiles Dart to an AOT shared library (`.so` on Linux and Android, `.dylib` on macOS) with `gen_snapshot`. |
 | `flutter_pub_packages` | Every package of a pub lock, for an app's `pub_packages`. A Flutter hub declares one as `@<hub>//packages`. |
 | `flutter_native_library` | Pairs a native library with the files its bindings are generated from (`binding_contract`). |
-| `flutter_native_asset`, `flutter_data_asset` | Declare Dart Native Assets, from `@rules_flutter//flutter:native_assets.bzl`. A data asset is bundled at `flutter_assets/packages/<package>/<name>`. |
+| `flutter_data_asset` | Declares a Dart data asset, from `@rules_flutter//flutter:native_assets.bzl`; it is bundled at `flutter_assets/packages/<package>/<name>`. Code assets are rules_dart's `dart_code_asset`, or a package's build hook. |
 
 #### flutter_apple_xcframework_import
 

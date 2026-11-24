@@ -13,12 +13,12 @@ labels name it when it joins or leaves a merged cycle, and the hubs that
 list it.
 """
 
-load("//dart/private:curated_registry.bzl", "curated_code_assets")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub/private:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub/private:package_graph.bzl", "builder_packages", "package_graph_json")
 load("//dart/pub/private:build_content.bzl", "build_yaml_target")
 load("//dart/pub/private:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error")
+load("//dart/pub/private:pub_hooks.bzl", "hook_repo_attrs")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_scc_entries.bzl", "scc_member_entries")
 load("//dart/pub/private:scc.bzl", "plan_scope_sccs", "rewrite_vanished_spoke")
@@ -123,7 +123,7 @@ def _add(specs, name, rule, attrs):
         fail("pub: the repository \"%s\" would be generated twice (as %s and as %s); rename the hub or the `pub.package()` that collides." % (name, specs[name].rule, rule))
     specs[name] = struct(rule = rule, attrs = attrs)
 
-def _scope_package_specs(specs, scope, plans, sccs, labels, ignore_hooks):
+def _scope_package_specs(specs, scope, plans, sccs, labels, hook_settings):
     """Adds one scope's spokes and merged repositories."""
     for name in sorted(scope.hosted.keys()):
         if name in sccs.members:
@@ -139,9 +139,8 @@ def _scope_package_specs(specs, scope, plans, sccs, labels, ignore_hooks):
             url = plans[name]["archive_url"],
             planned_deps = plans[name]["deps"],
             deps = own_dep_labels(name, plans[name]["deps"], labels),
-            code_assets = curated_code_assets(name, pkg.version),
-            ignore_hook = name in ignore_hooks,
             package_files = pkg.package_files,
+            **hook_repo_attrs(hook_settings.get(name))
         ))
     for name in sorted(scope.git.keys()):
         if name in sccs.members:
@@ -155,15 +154,14 @@ def _scope_package_specs(specs, scope, plans, sccs, labels, ignore_hooks):
             path = pkg.path,
             planned_deps = plans[name]["deps"],
             deps = own_dep_labels(name, plans[name]["deps"], labels),
-            code_assets = curated_code_assets(name, pkg.version),
-            ignore_hook = name in ignore_hooks,
             package_files = pkg.package_files,
+            **hook_repo_attrs(hook_settings.get(name))
         ))
     for repo in sorted(sccs.merged.keys()):
         members = sccs.merged[repo]
         _add(specs, repo, "pub_lock_scc_package", dict(
             repo_name = repo,
-            members_json = json.encode(scc_member_entries(members, scope.hosted, scope.git, plans, labels, ignore_hooks)),
+            members_json = json.encode(scc_member_entries(members, scope.hosted, scope.git, plans, labels)),
         ))
 
 def _hub_graph_attrs(names, scope, plans, sccs, explicit):
@@ -230,7 +228,7 @@ def _hub_specs(specs, resolution, scopes, scope_sccs, scope_plans):
             **_hub_graph_attrs(names, scope, plans, sccs, explicit)
         ))
 
-def pub_repo_specs(resolution, scope_plans, ignore_hooks):
+def pub_repo_specs(resolution, scope_plans, hook_settings):
     """Builds every repository the extension generates, as specs.
 
     Args:
@@ -238,7 +236,8 @@ def pub_repo_specs(resolution, scope_plans, ignore_hooks):
       scope_plans: Per scope of `pub_scopes(resolution)`, in order, a dict of
         package name to its plan (`deps`, `sdk`, and `archive_url` for a
         hosted package).
-      ignore_hooks: Dict of package names whose hooks are ignored.
+      hook_settings: The `lock_hook_settings` result: per scope prefix and
+        package name, what its build hook gets from the workspace.
 
     Returns:
       Dict of repository name to `struct(rule, attrs)`.
@@ -290,7 +289,7 @@ def pub_repo_specs(resolution, scope_plans, ignore_hooks):
         ))
 
     for scope, plans, sccs in zip(scopes, scope_plans, scope_sccs):
-        _scope_package_specs(specs, scope, plans, sccs, _scope_labels(scope, sccs), ignore_hooks)
+        _scope_package_specs(specs, scope, plans, sccs, _scope_labels(scope, sccs), hook_settings.get(scope.prefix, {}))
     _hub_specs(specs, resolution, scopes, scope_sccs, scope_plans)
     return specs
 

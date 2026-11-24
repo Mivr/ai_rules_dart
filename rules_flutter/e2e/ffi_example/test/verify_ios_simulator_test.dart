@@ -8,10 +8,11 @@
 ///  * native_deps: `mul()` raw-opens the conventional framework partial path
 ///    `mul.framework/mul`, proving the loose-library pipeline bundles where
 ///    the loader expects.
-///  * curated code asset: sqlite3's `@Native` bindings resolve against the
+///  * build-hook code asset: sqlite3's `@Native` bindings resolve against the
 ///    embedded, signed `sqlite3.framework`, which nothing in this workspace
-///    names — the app depends on drift, and the registry attaches the
-///    library to package:sqlite3.
+///    names — the app depends on drift, and package:sqlite3's own build
+///    hook builds the library. (Wrapping a hook's libraries in iOS
+///    frameworks is not built yet, so this fails at the build today.)
 ///
 /// Tagged "manual" (like the Android runtime test) because it needs a usable
 /// iOS simulator. Run explicitly:
@@ -189,7 +190,7 @@ Future<void> main() async {
     }
     print(
       'PASS: @Native asset bind (add), raw framework open (mul) and '
-      'the curated sqlite3 code asset all worked at runtime '
+      'sqlite3's build-hook code asset all worked at runtime '
       '(in ${wallClock.elapsed.inSeconds}s).',
     );
   } finally {

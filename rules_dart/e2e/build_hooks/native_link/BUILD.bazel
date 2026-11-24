@@ -1,0 +1,24 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+# A package with both hooks. Its build hook compiles C; its link hook runs
+# where an app links (`dart_link_hook`), over the program's recorded uses.
+dart_library(
+    name = "native_link",
+    srcs = ["lib/native_link.dart"],
+    build_hook = "hook/build.dart",
+    hook_srcs = glob([
+        "hook/**",
+        "src/**",
+    ]) + ["pubspec.yaml"],
+    link_hook = "hook/link.dart",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pub_deps//:code_assets",
+        "@pub_deps//:data_assets",
+        "@pub_deps//:hooks",
+        "@pub_deps//:logging",
+        "@pub_deps//:meta",
+        "@pub_deps//:native_toolchain_c",
+        "@pub_deps//:record_use",
+    ],
+)

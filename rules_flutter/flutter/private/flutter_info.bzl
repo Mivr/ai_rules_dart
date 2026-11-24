@@ -1,7 +1,7 @@
 """The `FlutterInfo` constructor.
 
 `FlutterInfo` is built by several rules — `flutter_library`, `flutter_plugin`,
-and `flutter_native_asset`.
+and `flutter_data_asset`.
 Construction goes through here so no caller decides how a field merges: a rule
 that does not contribute on a channel must still forward its dependencies'
 values, and writing `depset()` instead silently drops them.
@@ -80,7 +80,6 @@ def flutter_native_channels(
         native_libs = [],
         native_lib_sources = [],
         binding_contracts = [],
-        native_assets = [],
         data_assets = []):
     """Groups what a target contributes to the native-code channels.
 
@@ -92,17 +91,15 @@ def flutter_native_channels(
         built from.
       binding_contracts: `struct(library, contract)` pairs this target
         contributes, one per `flutter_native_library` in its `native_deps`.
-      native_assets: `FlutterNativeAssetInfo` providers this target declares.
       data_assets: `FlutterDataAssetInfo` providers this target declares.
 
     Returns:
-      A struct carrying the five channels above.
+      A struct carrying the four channels above.
     """
     return struct(
         native_libs = native_libs,
         native_lib_sources = native_lib_sources,
         binding_contracts = binding_contracts,
-        native_assets = native_assets,
         data_assets = data_assets,
     )
 
@@ -142,10 +139,6 @@ def _merge_native_channels(dep_infos, channels):
         transitive_native_libs = _merge_depsets(dep_infos, channels.native_libs, "transitive_native_libs"),
         native_lib_sources = _merge_depsets(dep_infos, channels.native_lib_sources, "native_lib_sources"),
         binding_contracts = _merge_depsets(dep_infos, channels.binding_contracts, "binding_contracts"),
-        native_assets = depset(
-            direct = channels.native_assets,
-            transitive = [info.native_assets for info in dep_infos],
-        ),
         data_assets = depset(
             direct = channels.data_assets,
             transitive = [info.data_assets for info in dep_infos],
@@ -327,8 +320,8 @@ def flutter_info(
       plugin_libraries: A `flutter_plugin_libraries()` struct with this
         target's per-platform plugin libraries.
       native_channels: A `flutter_native_channels()` struct with this target's
-        `native_libs`, `native_lib_sources`, `binding_contracts`,
-        `native_assets` and `data_assets`.
+        `native_libs`, `native_lib_sources`, `binding_contracts` and
+        `data_assets`.
 
     Returns:
       A `FlutterInfo` carrying this target's channels merged with every dependency's.
@@ -368,7 +361,6 @@ def flutter_info(
         linux_plugin_libraries = libraries.linux_plugin_libraries,
         windows_plugin_libraries = libraries.windows_plugin_libraries,
         apple_privacy_manifests = assets.apple_privacy_manifests,
-        native_assets = native.native_assets,
         data_assets = native.data_assets,
     )
 

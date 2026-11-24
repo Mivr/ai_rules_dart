@@ -1,86 +1,29 @@
-"""Tests for code-asset propagation through the Dart package graph.
+"""Tests for native-asset propagation through the Dart package graph.
 
 The central claim: a code asset declared on the `dart_library` of the package
-that owns it reaches every `dart_binary`/`dart_test` depending on that package,
-directly or transitively — matching upstream, where depending on a package
-gets you its assets with no opt-in.
+that owns it, or produced by its build hook, reaches every
+`dart_binary`/`dart_test` depending on that package, directly or
+transitively — matching upstream, where depending on a package gets you its
+assets with no opt-in. Which asset ids those are is known only when the hooks
+have run, so the manifest step checks them (`hook_runner_test.dart`); these
+tests check the files that carry them.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
-load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
-load("//dart/private:common.bzl", "merge_package_records", "package_agreement_error", "package_code_assets", "resolve_code_assets")
-load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
+load("//dart:providers.bzl", "DartInfo", "DartPackageInfo")
+load("//dart/private:common.bzl", "merge_package_records", "package_agreement_error", "package_native_assets")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
 visibility(["//dart/..."])
 
-_L = "//pkg:consumer"
-
-def _asset(asset_id, owner_path = "libfoo.so", link_mode = "dynamic_loading_bundle", system_uri = ""):
-    """A DartCodeAssetInfo stand-in.
-
-    `dynamic_library` needs only an `owner`, since `resolve_code_assets`
-    compares producing targets rather than `File`s.
-    """
-    library = None
-    if link_mode == "dynamic_loading_bundle":
-        library = struct(owner = owner_path)
-    return DartCodeAssetInfo(
-        asset_id = asset_id,
-        link_mode = link_mode,
-        dynamic_library = library,
-        system_uri = system_uri,
-    )
-
-def _pkg(package_name, lib_root, code_assets = (), version = "", language_version = ""):
+def _pkg(package_name, lib_root, native_assets = (), version = "", language_version = ""):
     return DartPackageInfo(
         package_name = package_name,
         lib_root = lib_root,
         version = version,
         language_version = language_version,
-        code_assets = code_assets,
+        native_assets = native_assets,
     )
-
-# --- resolve_code_assets ---
-
-def _resolve_dedups_diamond_test_impl(ctx):
-    # The same asset arriving twice — the diamond — collapses to one entry.
-    env = unittest.begin(ctx)
-    a = _asset("package:sqlite3/ffi.g.dart")
-    result = resolve_code_assets(_L, [a, a], [])
-    asserts.equals(env, 1, len(result))
-    asserts.equals(env, "package:sqlite3/ffi.g.dart", result[0].asset_id)
-    return unittest.end(env)
-
-def _resolve_explicit_matching_transitive_test_impl(ctx):
-    # Naming explicitly what a dependency already supplies is not a conflict.
-    env = unittest.begin(ctx)
-    a = _asset("package:sqlite3/ffi.g.dart")
-    result = resolve_code_assets(_L, [a], [_asset("package:sqlite3/ffi.g.dart")])
-    asserts.equals(env, 1, len(result))
-    return unittest.end(env)
-
-def _resolve_unions_distinct_test_impl(ctx):
-    env = unittest.begin(ctx)
-    result = resolve_code_assets(
-        _L,
-        [_asset("package:a/a.g.dart", "liba.so")],
-        [_asset("package:b/b.g.dart", "libb.so")],
-    )
-    asserts.equals(env, 2, len(result))
-    asserts.equals(env, ["package:a/a.g.dart", "package:b/b.g.dart"], [r.asset_id for r in result])
-    return unittest.end(env)
-
-def _resolve_keeps_non_bundle_modes_test_impl(ctx):
-    env = unittest.begin(ctx)
-    result = resolve_code_assets(_L, [
-        _asset("package:a/a.g.dart", link_mode = "dynamic_loading_system", system_uri = "liba.so.0"),
-        _asset("package:b/b.g.dart", link_mode = "dynamic_loading_process"),
-    ], [])
-    asserts.equals(env, 2, len(result))
-    asserts.equals(env, None, result[0].dynamic_library)
-    asserts.equals(env, "liba.so.0", result[0].system_uri)
-    return unittest.end(env)
 
 # --- merge_package_records: dedup and asset union ---
 
@@ -109,12 +52,11 @@ def _unions_assets_across_differing_roots_test_impl(ctx):
     # unresolved @Native symbol rather than at build time.
     env = unittest.begin(ctx)
     packages = merge_package_records([
-        _pkg("split", "first/split", (_asset("package:split/a.g.dart", "liba.so"),)),
-        _pkg("split", "second/split", (_asset("package:split/b.g.dart", "libb.so"),)),
+        _pkg("split", "first/split", ("first/a.assets.json",)),
+        _pkg("split", "second/split", ("second/b.hook",)),
     ])
     asserts.equals(env, 1, len(packages))
-    ids = [a.asset_id for a in package_code_assets(packages[0])]
-    asserts.equals(env, ["package:split/a.g.dart", "package:split/b.g.dart"], ids)
+    asserts.equals(env, ("first/a.assets.json", "second/b.hook"), package_native_assets(packages[0]))
     return unittest.end(env)
 
 def _collect_unions_same_root_assets_test_impl(ctx):
@@ -122,54 +64,49 @@ def _collect_unions_same_root_assets_test_impl(ctx):
     # one's assets to first-wins dedup.
     env = unittest.begin(ctx)
     packages = merge_package_records([
-        _pkg("shared", "pkgs/shared", (_asset("package:shared/a.g.dart", "liba.so"),)),
-        _pkg("shared", "pkgs/shared", (_asset("package:shared/b.g.dart", "libb.so"),)),
+        _pkg("shared", "pkgs/shared", ("a.assets.json", "liba.so")),
+        _pkg("shared", "pkgs/shared", ("a.assets.json", "liba.so", "b.hook")),
     ])
     asserts.equals(env, 1, len(packages))
-    ids = [a.asset_id for a in package_code_assets(packages[0])]
-    asserts.equals(env, ["package:shared/a.g.dart", "package:shared/b.g.dart"], ids)
+    asserts.equals(env, ("a.assets.json", "liba.so", "b.hook"), package_native_assets(packages[0]))
     return unittest.end(env)
 
 def _union_keeps_other_fields_test_impl(ctx):
     # The union branch rebuilds the kept record. Everything it was carrying
     # besides the assets has to survive that rebuild — `language_version`
     # wrong means a package compiles under the wrong Dart semantics, and a
-    # lost `has_unreplaced_hook` means the build stops warning about a native
-    # library that will not be there at runtime.
+    # lost `hook_error` means the build stops refusing a package whose build
+    # hook cannot run.
     env = unittest.begin(ctx)
     kept = DartPackageInfo(
         package_name = "dual",
         lib_root = "first/dual",
         version = "1.2.3",
         language_version = "3.4",
-        code_assets = (_asset("package:dual/a.g.dart"),),
-        has_unreplaced_hook = "hook/build.dart",
+        native_assets = ("a.assets.json",),
+        hook_error = "merged into a cycle",
     )
     packages = merge_package_records([
         kept,
-        _pkg("dual", "second/dual", (_asset("package:dual/b.g.dart", "libb.so"),)),
+        _pkg("dual", "second/dual", ("b.hook",)),
     ])
     asserts.equals(env, 1, len(packages))
     asserts.equals(env, "first/dual", packages[0].lib_root)
     asserts.equals(env, "1.2.3", packages[0].version)
     asserts.equals(env, "3.4", packages[0].language_version)
-    asserts.equals(env, "hook/build.dart", packages[0].has_unreplaced_hook)
-    asserts.equals(
-        env,
-        ["package:dual/a.g.dart", "package:dual/b.g.dart"],
-        [a.asset_id for a in package_code_assets(packages[0])],
-    )
+    asserts.equals(env, "merged into a cycle", packages[0].hook_error)
+    asserts.equals(env, ("a.assets.json", "b.hook"), package_native_assets(packages[0]))
     return unittest.end(env)
 
 def _collect_tolerates_missing_field_test_impl(ctx):
     # DartPackageInfo produced outside rules_dart (rules_flutter builds its
-    # own) omits `code_assets`; that must not crash the collector.
+    # own) may omit `native_assets`; that must not crash the collector.
     env = unittest.begin(ctx)
     packages = merge_package_records([
         DartPackageInfo(package_name = "legacy", lib_root = "legacy"),
     ])
     asserts.equals(env, 1, len(packages))
-    asserts.equals(env, (), package_code_assets(packages[0]))
+    asserts.equals(env, (), package_native_assets(packages[0]))
     return unittest.end(env)
 
 # --- package_agreement_error: disagreeing duplicates ---
@@ -263,7 +200,7 @@ def _agreement_ignores_distinct_packages_test_impl(ctx):
 def _agreement_tolerates_records_without_the_field_test_impl(ctx):
     # A `DartPackageInfo` from a producer predating `version` omits the field
     # entirely rather than carrying "". Reads must be tolerant, as they are for
-    # `code_assets` and `language_version`.
+    # `native_assets` and `language_version`.
     env = unittest.begin(ctx)
     err = package_agreement_error([
         DartPackageInfo(package_name = "legacy", lib_root = "first/legacy"),
@@ -338,51 +275,68 @@ def _agreement_reports_both_fields_together_test_impl(ctx):
 
 def _diamond_probe_impl(ctx):
     infos = [dep[DartInfo] for dep in ctx.attr.deps]
-    ids = []
-    for info in infos:
-        for pkg in info.transitive_packages.to_list():
-            ids.extend([a.asset_id for a in package_code_assets(pkg)])
-    files = depset(transitive = [i.transitive_code_asset_files for i in infos]).to_list()
-    if sorted(ids) != sorted(ctx.attr.expected_asset_ids):
-        fail("%s: expected asset ids %s, propagated %s" %
-             (ctx.label, sorted(ctx.attr.expected_asset_ids), sorted(ids)))
-    if len(files) != ctx.attr.expected_file_count:
-        fail("%s: expected %d code-asset file(s) in DartInfo, got %s" %
-             (ctx.label, ctx.attr.expected_file_count, [f.short_path for f in files]))
+    files = depset(transitive = [i.transitive_native_assets for i in infos]).to_list()
+    indexes = sorted([f.basename for f in files if f.basename.endswith(".assets.json")])
+    if indexes != sorted(ctx.attr.expected_indexes) or len(files) != ctx.attr.expected_file_count:
+        fail("%s: expected %d native-asset file(s) in DartInfo, indexes %s; got %s" %
+             (ctx.label, ctx.attr.expected_file_count, sorted(ctx.attr.expected_indexes), [f.short_path for f in files]))
     return [DefaultInfo(files = depset(files))]
 
 diamond_probe = rule(
     implementation = _diamond_probe_impl,
     attrs = {
         "deps": attr.label_list(providers = [DartInfo]),
-        "expected_asset_ids": attr.string_list(),
         "expected_file_count": attr.int(),
+        "expected_indexes": attr.string_list(),
     },
-    doc = "Asserts which code assets a `dart_library` graph propagates.",
+    doc = "Asserts which native-asset files a `dart_library` graph propagates, once each.",
 )
 
-def _manifest_contains_test_impl(ctx):
-    """Asserts the binary's generated native_assets.yaml names the asset.
+def _manifest_reads_test_impl(ctx):
+    """Asserts the binary's manifest step reads the asset.
 
     The probe above proves the provider graph carries the asset; this proves
-    the terminal rule actually writes it into the manifest `gen_kernel`
-    embeds — which is what makes it resolvable at runtime.
+    the terminal rule hands it to the one action that writes the manifest the
+    compiler embeds, which is what makes it resolvable at run time.
     """
     env = analysistest.begin(ctx)
-    manifests = [
-        a
-        for a in analysistest.target_actions(env)
-        if a.mnemonic == "FileWrite" and a.outputs.to_list()[0].basename.endswith(".native_assets.yaml")
-    ]
-    asserts.equals(env, 1, len(manifests), "expected exactly one native_assets.yaml write action")
-    content = manifests[0].content
-    for asset_id in ctx.attr.expected_asset_ids:
-        asserts.true(env, ('"%s"' % asset_id) in content, "%s missing from manifest: %s" % (asset_id, content))
+    steps = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartNativeAssets"]
+    asserts.equals(env, 1, len(steps), "expected exactly one DartNativeAssets action")
+    inputs = [f.basename for f in steps[0].inputs.to_list()]
+    for name in ctx.attr.expected_files:
+        asserts.true(env, name in inputs, "%s not read by the manifest step: %s" % (name, inputs))
+    yaml = [f for f in steps[0].outputs.to_list() if f.basename.endswith(".native_assets.yaml")]
+    asserts.equals(env, 1, len(yaml), "the step writes the manifest")
     return analysistest.end(env)
 
 manifest_contains_test = analysistest.make(
-    _manifest_contains_test_impl,
-    attrs = {"expected_asset_ids": attr.string_list()},
+    _manifest_reads_test_impl,
+    attrs = {"expected_files": attr.string_list()},
+)
+
+def _spoke_runs_build_hook_test_impl(ctx):
+    # A pub package that ships `hook/build.dart` gets a library that runs it:
+    # one hook compile, one hook run, and the run's output directory is the
+    # package's native asset.
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    actions = analysistest.target_actions(env)
+    runs = [a for a in actions if a.mnemonic == "DartBuildHook"]
+    compiles = [a for a in actions if a.mnemonic == "DartHookCompile"]
+    asserts.equals(env, 1, len(runs))
+    asserts.equals(env, 1, len(compiles))
+    own = [
+        p
+        for p in target[DartInfo].transitive_packages.to_list()
+        if p.package_name == ctx.attr.package_name
+    ]
+    asserts.equals(env, 1, len(own))
+    asserts.equals(env, runs[0].outputs.to_list(), list(package_native_assets(own[0])))
+    return analysistest.end(env)
+
+spoke_runs_build_hook_test = analysistest.make(
+    _spoke_runs_build_hook_test_impl,
+    attrs = {"package_name": attr.string()},
 )
 
 def _ownership_violation_test_impl(ctx):
@@ -395,11 +349,6 @@ ownership_violation_test = analysistest.make(
     expect_failure = True,
 )
 
-def _asset_conflict_test_impl(ctx):
-    env = analysistest.begin(ctx)
-    asserts.expect_failure(env, "is claimed twice with different definitions")
-    return analysistest.end(env)
-
 def _version_conflict_test_impl(ctx):
     env = analysistest.begin(ctx)
     asserts.expect_failure(env, "is supplied more than once with different versions")
@@ -410,54 +359,6 @@ version_conflict_test = analysistest.make(
     expect_failure = True,
 )
 
-asset_conflict_test = analysistest.make(
-    _asset_conflict_test_impl,
-    expect_failure = True,
-)
-
-def _pub_build_content_gates_code_assets_test_impl(ctx):
-    env = unittest.begin(ctx)
-    content = make_dart_library_build_content(
-        name = "sqlite3",
-        deps = [],
-        language_version = "3.5",
-        code_assets = ["@rules_dart//dart/ext/sqlite3:code_asset"],
-    )
-    asserts.true(
-        env,
-        '"@rules_dart//dart/private:code_assets_on": [\n            "@rules_dart//dart/ext/sqlite3:code_asset",\n        ]' in content and
-        '"//conditions:default": []' in content,
-        "generated pub BUILD content must gate curated code_assets on code_assets_on: %s" % content,
-    )
-    return unittest.end(env)
-
-_CODE_ASSETS_FLAG = str(Label("//dart/private:code_assets_enabled"))
-
-def _pub_spoke_code_assets_test_impl(ctx):
-    env = analysistest.begin(ctx)
-    target = analysistest.target_under_test(env)
-    info = target[DartInfo]
-    ids = []
-    for pkg in info.transitive_packages.to_list():
-        ids.extend([a.asset_id for a in package_code_assets(pkg)])
-    asserts.equals(env, sorted(ctx.attr.expected_asset_ids), sorted(ids))
-    return analysistest.end(env)
-
-_pub_spoke_default_code_assets_test = analysistest.make(
-    _pub_spoke_code_assets_test_impl,
-    attrs = {"expected_asset_ids": attr.string_list()},
-)
-
-_pub_spoke_enabled_code_assets_test = analysistest.make(
-    _pub_spoke_code_assets_test_impl,
-    attrs = {"expected_asset_ids": attr.string_list()},
-    config_settings = {_CODE_ASSETS_FLAG: True},
-)
-
-_t0_test = unittest.make(_resolve_dedups_diamond_test_impl)
-_t1_test = unittest.make(_resolve_explicit_matching_transitive_test_impl)
-_t2_test = unittest.make(_resolve_unions_distinct_test_impl)
-_t3_test = unittest.make(_resolve_keeps_non_bundle_modes_test_impl)
 _t4_test = unittest.make(_collect_unions_same_root_assets_test_impl)
 _t5_test = unittest.make(_collect_tolerates_missing_field_test_impl)
 _t6_test = unittest.make(_two_hubs_supply_one_package_test_impl)
@@ -472,7 +373,6 @@ _t14_test = unittest.make(_agreement_ignores_distinct_packages_test_impl)
 _t15_test = unittest.make(_agreement_tolerates_records_without_the_field_test_impl)
 _t16_test = unittest.make(_agreement_reports_every_disagreeing_package_test_impl)
 _t17_test = unittest.make(_agreement_reports_both_fields_together_test_impl)
-_t18_test = unittest.make(_pub_build_content_gates_code_assets_test_impl)
 
 def propagation_test_suite(name):
     """Declares the code-asset propagation unit tests.
@@ -482,10 +382,6 @@ def propagation_test_suite(name):
     """
     small_unittest_suite(
         name + "_unit",
-        _t0_test,
-        _t1_test,
-        _t2_test,
-        _t3_test,
         _t4_test,
         _t5_test,
         _t6_test,
@@ -500,18 +396,11 @@ def propagation_test_suite(name):
         _t15_test,
         _t16_test,
         _t17_test,
-        _t18_test,
     )
-    _pub_spoke_default_code_assets_test(
-        name = name + "_pub_spoke_default_omits_code_assets_test",
+    spoke_runs_build_hook_test(
+        name = name + "_pub_spoke_runs_build_hook_test",
         size = "small",
-        expected_asset_ids = [],
-        target_under_test = "@ext_pub_deps//:sqlite3",
-    )
-    _pub_spoke_enabled_code_assets_test(
-        name = name + "_pub_spoke_enabled_attaches_code_assets_test",
-        size = "small",
-        expected_asset_ids = ["package:sqlite3/src/ffi/libsqlite3.g.dart"],
+        package_name = "sqlite3",
         target_under_test = "@ext_pub_deps//:sqlite3",
     )
 
@@ -521,15 +410,14 @@ def propagation_test_suite(name):
     manifest_contains_test(
         name = name + "_prebuilt_asset_in_manifest_test",
         size = "small",
-        expected_asset_ids = ["package:prebuilt_prop/ffi.g.dart"],
+        expected_files = ["code_asset.assets.json"],
         target_under_test = "//dart/tests/cc_fixture/prebuilt_prop:app",
     )
     native.test_suite(
         name = name,
         tests = [
             ":" + name + "_unit",
-            ":" + name + "_pub_spoke_default_omits_code_assets_test",
-            ":" + name + "_pub_spoke_enabled_attaches_code_assets_test",
+            ":" + name + "_pub_spoke_runs_build_hook_test",
             ":" + name + "_prebuilt_asset_in_manifest_test",
         ],
     )

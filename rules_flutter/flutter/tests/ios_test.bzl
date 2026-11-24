@@ -432,8 +432,7 @@ def _bundling_tests(name):
         name = name + "_fake_release_app",
         debug = False,
         macho_aot = True,
-        native_libs = ["libfoo.dylib"],
-        code_assets = ["libbar.dylib"],
+        native_libs = ["libfoo.dylib", "libbar.dylib"],
         tags = ["manual"],
     )
     flutter_ios_framework(
@@ -517,8 +516,7 @@ def _bundling_tests(name):
         name = name + "_fake_e2e_ios_app",
         debug = False,
         macho_aot = True,
-        native_libs = ["libfoo.dylib"],
-        code_assets = ["libbar.dylib"],
+        native_libs = ["libfoo.dylib", "libbar.dylib"],
         apple_plugin_libraries = [":" + name + "_sample_ios_plugin_lib"],
         tags = ["manual"],
     )

@@ -33,8 +33,6 @@ def _plugin(platforms_json):
         name = "some_plugin",
         deps = [],
         language_version = "3.4",
-        code_assets = [],
-        has_unreplaced_hook = "",
         plugin_platforms_json = platforms_json,
         apple_macos_srcs_dirs = [],
         apple_ios_srcs_dirs = [],
@@ -83,8 +81,6 @@ def _library_has_no_edge_test_impl(ctx):
         name = "lib_only",
         deps = [],
         language_version = "3.4",
-        code_assets = [],
-        has_unreplaced_hook = "",
         data_patterns = [],
     )
     asserts.false(env, "android_libs" in content, content)

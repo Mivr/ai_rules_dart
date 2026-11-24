@@ -7,10 +7,10 @@
 ///    bundled `lib/libadd.so`.
 ///  * native_deps: `mul()` raw-opens `libmul.so` by filename, proving the
 ///    loose-library pipeline bundles where the loader expects.
-///  * curated code asset: sqlite3's `@Native` bindings resolve against
+///  * build-hook code asset: sqlite3's `@Native` bindings resolve against
 ///    the bundled libsqlite3.so, which nothing in this workspace names —
-///    the app depends on drift, and the registry attaches the library to
-///    package:sqlite3.
+///    the app depends on drift, and package:sqlite3's own build hook
+///    builds the library.
 ///
 /// The runner is launched with TMPDIR pointed at a directory this test
 /// controls, so the marker the app writes in main() lands somewhere we can
@@ -92,7 +92,7 @@ Future<void> main() async {
     }
     print(
       'PASS: @Native asset bind (add), raw filename open (mul) and '
-      'the curated sqlite3 code asset all worked at runtime.',
+      'sqlite3's build-hook code asset all worked at runtime.',
     );
   } finally {
     app?.kill();

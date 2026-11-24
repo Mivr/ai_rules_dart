@@ -1,0 +1,53 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_link_hook", "dart_test")
+
+exports_files(["pubspec.yaml"])
+
+# sqlite3 (a pub package whose hook compiles the amalgamation the user define
+# names), native_add (a hand-written package whose hook compiles C) and
+# native_link (build and link hooks), loaded by a test's kernel.
+dart_test(
+    name = "hooks_test",
+    size = "small",
+    main = "test/hooks_test.dart",
+    deps = [
+        "//native_add",
+        "//native_link",
+        "@pub_deps//:sqlite3",
+        "@pub_deps//:test",
+    ],
+)
+
+# The same packages in an executable, as `dart build cli` makes one.
+dart_binary(
+    name = "app",
+    main = "bin/app.dart",
+    record_use = True,
+    deps = [
+        "//native_add",
+        "//native_link",
+        "@pub_deps//:sqlite3",
+    ],
+)
+
+# native_link's link hook over the app's recorded uses.
+dart_link_hook(
+    name = "app_link",
+    data_assets = ["package:native_link/factors.json"],
+    recorded_uses = ":app",
+    deps = ["//native_link"],
+)
+
+dart_test(
+    name = "app_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :app)",
+        "$(rlocationpath :app_link)",
+    ],
+    data = [
+        ":app",
+        ":app_link",
+    ],
+    main = "test/app_test.dart",
+    deps = ["@pub_deps//:test"],
+)

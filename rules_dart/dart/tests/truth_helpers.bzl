@@ -87,17 +87,17 @@ def package_names(value, *, meta):
     records = value.to_list() if type(value) == "depset" else value
     return subjects.collection([p.package_name for p in records], meta = meta, container_name = "packages")
 
-def asset_ids(value, *, meta):
-    """Subject factory for a list or tuple of `DartCodeAssetInfo`, compared by `asset_id`.
+def file_basenames(value, *, meta):
+    """Subject factory for a list or tuple of Files, compared by basename.
 
     Args:
-      value: `DartCodeAssetInfo` records.
+      value: Files.
       meta: The `ExpectMeta` of the call chain.
 
     Returns:
-      A `CollectionSubject` of the records' `asset_id`s.
+      A `CollectionSubject` of the files' basenames.
     """
-    return subjects.collection([a.asset_id for a in value], meta = meta, container_name = "code assets")
+    return subjects.collection([f.basename for f in value], meta = meta, container_name = "files")
 
 def provider_of(env, target, provider, name, attrs):
     """Returns the subject of one provider a target publishes.

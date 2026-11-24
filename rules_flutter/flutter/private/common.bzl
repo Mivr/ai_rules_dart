@@ -7,7 +7,7 @@ flutter_application, flutter_android_bundle, and flutter_ios_application.
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "collect_packages", "collect_transitive_srcs", "derive_lib_root", _COPY_TO_DIRECTORY_TOOLCHAINS = "COPY_TO_DIRECTORY_TOOLCHAINS")
+load("@rules_dart//dart:utils.bzl", "collect_packages", "collect_transitive_srcs", "derive_lib_root", "hook_errors", _COPY_TO_DIRECTORY_TOOLCHAINS = "COPY_TO_DIRECTORY_TOOLCHAINS")
 load("//flutter:providers.bzl", "FlutterNativeLibraryInfo", _resolve_exec_dart = "resolve_exec_dart", _resolve_exec_dart_vm = "resolve_exec_dart_vm", _resolve_flutter_sdk_info = "resolve_flutter_sdk_info")
 load("//flutter/private:app_entrypoint.bzl", "AGENT_DIR", "APP_SCHEME", "agent_layout_path", "app_scheme_location", "compile_kernel_package_config", "resolve_kernel_entrypoint", "synthesize_app_package")
 load(
@@ -50,26 +50,12 @@ EXTRA_DART_DEFINES_ATTR = _EXTRA_DART_DEFINES_ATTR
 collect_define_flagfiles = _collect_define_flagfiles
 merge_dart_defines = _merge_dart_defines
 
-def check_unreplaced_hooks(label, deps):
-    """Returns an error naming pub packages whose build hook nothing replaces.
+def check_hook_errors(label, deps):
+    """Returns the error for a closure reaching a package whose build hook cannot run.
 
-    A pub package shipping `hook/build.dart` builds its native library at
-    `pub get` time. Bazel cannot run that hook, so without a replacement the
-    package's `@Native` bindings resolve to nothing: the manifest is simply
-    missing an entry, and the failure surfaces at runtime as "couldn't resolve
-    native function" with nothing pointing at the cause.
-
-    Checked at the application rather than when the spoke repo is generated.
-    `flutter.pub()` materialises the whole lock file, so failing at generation
-    would fail over packages nothing depends on, and on platforms where the
-    hook is irrelevant. Only a package an application actually reaches is a
-    problem, and only here is the depending target known.
-
-    rules_dart applies the same rule at `dart_binary` with its own copy. The
-    two differ only in the remediation they suggest — a Flutter user fixes this
-    through `flutter.pub()`, not `pub.from_lock()` — so this collapses into one
-    shared helper once rules_dart exports one that takes the hint as an
-    argument.
+    Every other package's build hook runs (rules_dart's hook runner); a member
+    of a merged pub dependency cycle has no library of its own to run it in.
+    Checked at the application, so a package nothing reaches never fails.
 
     Args:
       label: The consuming target's label, for the message.
@@ -78,39 +64,10 @@ def check_unreplaced_hooks(label, deps):
     Returns:
       An error message string, or `None`.
     """
-    packages = depset(
-        transitive = [dep[DartInfo].transitive_packages for dep in deps],
-    ).to_list()
+    packages = depset(transitive = [dep[DartInfo].transitive_packages for dep in deps])
 
-    # Guarded for the same reason `bridge_dart_code_assets` guards
-    # `code_assets`: `DartPackageInfo` is rules_dart's, and it deliberately
-    # tolerates a record built against a rules_dart predating a field. Absent
-    # is not "unknown" here — a producer with no such field could not have
-    # recorded a hook — so it reads as "no hook". Unguarded, the read fails
-    # analysis on records that are not even offenders.
-    offenders = [
-        pkg
-        for pkg in packages
-        if hasattr(pkg, "has_unreplaced_hook") and pkg.has_unreplaced_hook
-    ]
-    if not offenders:
-        return None
-    return (
-        "%s depends on pub package(s) that build native code with a hook " +
-        "Bazel cannot run:\n%s\n\n" +
-        "Their `@Native` bindings will not resolve at runtime. Either:\n" +
-        "  - add a `dart_code_asset` to the owning package's `code_assets` " +
-        "(for a pub package, that means a `flutter.plugin_overlays` entry, " +
-        "or a curated entry upstream in rules_dart), or\n" +
-        "  - list the package in `flutter.pub(ignore_hooks = [...])` if its " +
-        "native code is genuinely unused here."
-    ) % (
-        label,
-        "\n".join([
-            "  - %s (%s)" % (pkg.package_name, pkg.has_unreplaced_hook)
-            for pkg in offenders
-        ]),
-    )
+    # lint-allow: depset-flatten terminal: an application checks its closure's package records once
+    return hook_errors(label, packages.to_list())
 
 # Implicit attr for the build-time `@Tags` extractor (see
 # `//flutter/private/tools:extract_library_tags`). The test isolate never

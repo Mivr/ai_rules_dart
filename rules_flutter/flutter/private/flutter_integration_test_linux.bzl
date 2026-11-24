@@ -181,7 +181,8 @@ def _linux_integration_test_bundle(ctx, setup, kernel_dill, aot_output, assets, 
     Returns:
         A struct with `bundle`, `binary_name` and `native_libs`.
     """
-    native_libs = integration_test_native_libs(ctx, native_assets.bundled)
+    native_libs = integration_test_native_libs(ctx)
+    code_asset_dirs = native_assets.bundled
     bundle_dir = ctx.actions.declare_directory(ctx.label.name + "_linux")
     binary_name = ctx.label.name
     copies = compute_desktop_bundle_copies(
@@ -204,14 +205,14 @@ def _linux_integration_test_bundle(ctx, setup, kernel_dill, aot_output, assets, 
         "copies": copies,
         "copy_dirs": [
             {"src": assets.path, "dst": "data/flutter_assets"},
-        ],
+        ] + [{"src": d.path, "dst": "lib"} for d in code_asset_dirs],
     }
     bundle_config_file = ctx.actions.declare_file(ctx.label.name + "_linux_bundle_config.json")
     ctx.actions.write(bundle_config_file, json.encode(bundle_config))
 
     all_bundle_inputs = [bundle_config_file, assets, setup.sdk.icu_data, runner.binary]
     all_bundle_inputs += [kernel_dill] if setup.is_debug else [aot_output]
-    all_bundle_inputs += native_libs + runner.engine_files
+    all_bundle_inputs += native_libs + code_asset_dirs + runner.engine_files
     exec_dart, dart_vm_files = resolve_exec_dart_vm(ctx, setup.sdk)
     ctx.actions.run(
         executable = exec_dart,
@@ -290,7 +291,7 @@ def _flutter_linux_integration_test_impl(ctx):
         The provider list.
     """
     setup = _linux_integration_test_setup(ctx)
-    native_assets = integration_test_native_assets(ctx, setup.sdk, "linux")
+    native_assets = integration_test_native_assets(ctx)
     sources = _linux_integration_test_sources(ctx, setup)
     kernel_dill = integration_test_kernel(ctx, setup.sdk, sources, native_assets, setup.aot, setup.mode)
     aot_output = integration_test_aot(ctx, setup.sdk, kernel_dill, setup.is_debug, setup.strip)

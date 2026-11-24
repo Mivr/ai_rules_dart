@@ -2,6 +2,7 @@
 
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC", "make_dart_library_build_content")
+load("//dart/pub/private:pub_hooks.bzl", "hook_attrs_block")
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
 load("//dart/pub/private:pinned_sources.bzl", "pinned_source_error")
 load("//dart/pub/private:pub_scan.bzl", "run_pub_archive_scan")
@@ -78,9 +79,14 @@ def _pub_package_impl(ctx):
         deps = ["@{dep}".format(dep = dep) for dep in ctx.attr.deps],
         language_version = language_version,
         version = ctx.attr.version,
-        # A link hook is runnable by `dart_link_hook`, so it is recorded.
-        link_hook = "hook/link.dart" if ctx.path("hook/link.dart").exists else "",
         package_files = ctx.attr.package_files,
+        # Its hooks run as a locked package's do, with no user defines: a
+        # `pub.package()` has no workspace pubspec.
+        hooks = hook_attrs_block(
+            build_hook = ctx.path("hook/build.dart").exists,
+            link_hook = ctx.path("hook/link.dart").exists,
+            settings = None,
+        ),
     )
 
     ctx.file("BUILD.bazel", build_content)

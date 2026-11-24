@@ -11,8 +11,6 @@ _DOC_EXTRACTS = [
     ":dart_repositories.doc_extract",
     ":dart_toolchain.doc_extract",
     ":dart_utils.doc_extract",
-    ":registry.doc_extract",
-    ":sqlite3_defs.doc_extract",
     ":pub_defs.doc_extract",
     ":pub_extensions.doc_extract",
     ":pub_pinned_sources.doc_extract",
@@ -78,18 +76,6 @@ starlark_doc_extract(
     name = "dart_utils.doc_extract",
     src = "//dart:utils.bzl",
     deps = ["//dart:utils"],
-)
-
-starlark_doc_extract(
-    name = "registry.doc_extract",
-    src = "//dart/ext:registry.bzl",
-    deps = ["//dart/ext:registry"],
-)
-
-starlark_doc_extract(
-    name = "sqlite3_defs.doc_extract",
-    src = "//dart/ext/sqlite3:defs.bzl",
-    deps = ["//dart/ext/sqlite3:defs"],
 )
 
 starlark_doc_extract(
@@ -165,8 +151,8 @@ _DECLARED_EXTRACTS = [
 ]
 
 _ = (
-    None if len(_DECLARED_EXTRACTS) == 21 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
-        "expected 21 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
+    None if len(_DECLARED_EXTRACTS) == 19 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
+        "expected 19 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
             len(_DECLARED_EXTRACTS),
         ),
     )

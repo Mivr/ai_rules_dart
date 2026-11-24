@@ -536,7 +536,6 @@ def _scc_member_entries_test_impl(ctx):
             "hosted_a": "@dart_pub__scc__git_b__hosted_a//:hosted_a",
             "meta": "@dart_pub__meta//:meta",
         },
-        {"git_b": True},
     )
     asserts.equals(env, 2, len(entries))
     asserts.equals(env, "git", entries[0].source)
@@ -544,12 +543,10 @@ def _scc_member_entries_test_impl(ctx):
     asserts.equals(env, "deadbeef", entries[0].resolved_ref)
     asserts.equals(env, "pkgs/git_b", entries[0].path)
     asserts.equals(env, [], entries[0].deps, "an edge inside the cycle is no label")
-    asserts.true(env, entries[0].ignore_hook)
     asserts.equals(env, "hosted", entries[1].source)
     asserts.equals(env, "hosted_a", entries[1].name)
     asserts.equals(env, "https://pub.dev/api/archives/hosted_a-1.0.0.tar.gz", entries[1].url, "a hosted member fetches the planned archive URL")
     asserts.equals(env, ["@dart_pub__meta//:meta"], entries[1].deps, "an edge leaving the cycle is its label")
-    asserts.false(env, entries[1].ignore_hook)
     asserts.false(
         env,
         hasattr(entries[1], "scanned_sha256"),
@@ -683,7 +680,6 @@ def _git_shadows_hosted_cycle_test_impl(ctx):
         result.resolved,
         result.resolved_git,
         {name: {"deps": deps, "sdk": ""} for name, deps in plan.package_deps.items()},
-        {},
         {},
     )
     by_name = {entry.name: entry for entry in entries}

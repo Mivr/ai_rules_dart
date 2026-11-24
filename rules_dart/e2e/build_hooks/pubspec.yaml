@@ -1,0 +1,23 @@
+name: build_hooks_e2e
+publish_to: none
+environment:
+  sdk: ^3.10.0
+dependencies:
+  code_assets: any
+  data_assets: any
+  hooks: any
+  logging: any
+  native_toolchain_c: any
+  record_use: any
+  sqlite3: 3.9.2
+dev_dependencies:
+  test: any
+hooks:
+  user_defines:
+    # sqlite3's hook downloads a prebuilt library unless told to compile one
+    # from source. The amalgamation comes from the BCR `sqlite3` module and is
+    # an input of that one hook action (`hook_data` in MODULE.bazel); the path
+    # is relative to this file, as in a stock build.
+    sqlite3:
+      source: source
+      path: external/sqlite3+/sqlite3.c

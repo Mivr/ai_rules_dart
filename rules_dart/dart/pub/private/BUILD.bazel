@@ -75,6 +75,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":build_content",
+        ":pub_hooks",
         ":language_version",
         ":pinned_sources",
         ":pub_scan",
@@ -107,9 +108,9 @@ bzl_library(
         ":pub_lock_hub",
         ":pub_lock_package",
         ":pub_repository",
+        ":pub_hooks",
         ":pub_scc_entries",
         ":scc",
-        "//dart/private:curated_registry",
         "//dart/pub:pub_lock_scc",
     ],
 )
@@ -141,6 +142,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":build_content",
+        ":pub_hooks",
         ":language_version",
         ":pinned_sources",
         ":pub_scan",
@@ -206,8 +208,16 @@ bzl_library(
     name = "pub_scc_entries",
     srcs = ["pub_scc_entries.bzl"],
     visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_hooks",
+    srcs = ["pub_hooks.bzl"],
+    visibility = ["//visibility:public"],
     deps = [
-        "//dart/private:curated_registry",
+        ":pub_workspace",
+        "//dart/private:apple_hook_replacements",
+        ":yaml2json",
     ],
 )
 

@@ -127,9 +127,6 @@ Change them only when the version they name leaves the table.
 **Files**:
 
 - `MODULE.bazel` — `bazel_dep()` version strings
-- `MODULE.bazel` — the `webcrypto_pub_archive` `http_archive` (not on BCR): a
-  new `package:webcrypto` release means a new url and sha256, and moving the
-  `webcrypto` bound in `dart/ext/registry.bzl` to that exact version
 - E2e workspaces that duplicate deps:
   - `e2e/smoke/MODULE.bazel` — `bazel_skylib`, `rules_shell`
   - `e2e/codegen/MODULE.bazel` — `bazel_skylib`
@@ -138,6 +135,8 @@ Change them only when the version they name leaves the table.
   - `e2e/cross_compile/MODULE.bazel` — `platforms`, `rules_platform`
   - `e2e/ext_exemplar/MODULE.bazel` — `gazelle`, `rules_go`, `sqlite3`,
     `rules_cc`, `platforms`, `apple_support`, `hermetic_cc_toolchain`
+  - `e2e/build_hooks/MODULE.bazel` — `rules_cc`, `sqlite3`,
+    `hermetic_cc_toolchain`
   - `e2e/fix/MODULE.bazel` — `bazel_skylib`
   - `e2e/sdk_coupling/MODULE.bazel` — `bazel_skylib`
 - `e2e/ext_exemplar/sqlite3_binary/test/direct_test.dart` — asserts the exact

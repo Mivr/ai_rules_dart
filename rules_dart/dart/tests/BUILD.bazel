@@ -55,12 +55,10 @@ load(
 load(":library_test.bzl", "library_test_suite")
 load(":modular_chain_test.bzl", "modular_chain_test_suite")
 load(":module_compiler_pin_test.bzl", "module_compiler_pin_test_suite")
-load(":native_assets_test.bzl", "native_assets_test_suite")
 load(":one_debug_path_test.bzl", "refused_unpinned_sdk_test", "source_dir_module_test")
 load(":pinned_sources_test.bzl", "pinned_sources_test_suite")
 load(":project_staging_test.bzl", "project_staging_test_suite")
 load(":provider_shape_test.bzl", "provider_shape_probe")
-load(":registry_test.bzl", "registry_test_suite")
 load(":ruleset_api_reexports_test.bzl", "ruleset_api_reexports_test_suite")
 load(":snapshot_patch_test.bzl", "snapshot_patch_test_suite")
 load(":source_set_test.bzl", "source_set_test_suite")
@@ -102,7 +100,6 @@ executable_defines_test_suite(name = "executable_defines_test")
 
 compile_flags_test_suite(name = "compile_flags_test")
 
-native_assets_test_suite(name = "native_assets_test")
 
 pinned_sources_test_suite(name = "pinned_sources_test")
 
@@ -122,7 +119,6 @@ pubspec_guard_test_suite(name = "pubspec_guard_test")
 
 pub_symlink_test_suite(name = "pub_symlink_test")
 
-registry_test_suite(name = "registry_test")
 
 project_staging_test_suite(name = "project_staging_test")
 

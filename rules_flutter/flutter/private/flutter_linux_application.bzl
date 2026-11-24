@@ -499,7 +499,7 @@ def _flutter_linux_bundle_impl(ctx):
     flutter_assets = app_info.flutter_assets
     icu_data = app_info.icu_data
     native_libs = list(app_info.native_libs)
-    native_libs.extend(app_info.bundled_code_assets.to_list())
+    code_asset_dirs = app_info.bundled_code_assets
     is_debug = app_info.is_debug
 
     flutter_sdk_info = resolve_flutter_sdk_info(ctx)
@@ -518,9 +518,9 @@ def _flutter_linux_bundle_impl(ctx):
     engine_files = flutter_sdk_info.engine_library[DefaultInfo].files.to_list()
 
     # Build the bundle config JSON for the Dart bundler tool. Both
-    # `native_libs` (the legacy FFI cc_library outputs) and
-    # `bundled_code_assets` (Native Assets dynamic_loading_bundle dylibs)
-    # land at `lib/<basename>` next to `libapp.so`.
+    # `native_libs` (the legacy FFI cc_library outputs) and the libraries of
+    # the code-asset bundle directory land at `lib/<basename>` next to
+    # `libapp.so`, where the manifest names them.
     copies = compute_desktop_bundle_copies(
         artifacts = make_desktop_bundle_artifacts(
             is_debug = is_debug,
@@ -559,13 +559,13 @@ def _flutter_linux_bundle_impl(ctx):
         "copies": copies,
         "copy_dirs": [
             {"src": flutter_assets.path, "dst": "data/flutter_assets"},
-        ],
+        ] + [{"src": d.path, "dst": "lib"} for d in code_asset_dirs],
     }
 
     config_file = ctx.actions.declare_file(ctx.label.name + "_bundle_config.json")
     ctx.actions.write(config_file, json.encode(config))
 
-    inputs = [config_file, flutter_assets, icu_data, runner_binary] + extra_inputs + native_libs + engine_files
+    inputs = [config_file, flutter_assets, icu_data, runner_binary] + extra_inputs + native_libs + code_asset_dirs + engine_files
 
     dart_exe, dart_vm_files = resolve_exec_dart_vm(ctx, flutter_sdk_info)
     ctx.actions.run(

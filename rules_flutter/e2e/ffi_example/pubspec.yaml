@@ -6,12 +6,19 @@ dependencies:
   flutter:
     sdk: flutter
   # Third mechanism: a native library nothing here names. drift reaches
-  # package:sqlite3, whose own native code comes from a `hook/build.dart`
-  # Bazel cannot run; rules_dart's curated registry binds its Bazel-built
-  # replacement to the sqlite3 package, and flutter.pub() attaches it. The
-  # app depends only on drift.
+  # package:sqlite3, whose own `hook/build.dart` builds its native code; the
+  # user define below has it compile SQLite from source. The app depends
+  # only on drift.
   drift: ^2.32.0
 dev_dependencies:
   very_good_analysis: ^10.3.0
 flutter:
   uses-material-design: true
+hooks:
+  user_defines:
+    sqlite3:
+      # Compile SQLite from the amalgamation Bazel provides
+      # (`flutter.pub(hook_data = ...)` in MODULE.bazel) instead of
+      # downloading a prebuilt library, which a sandboxed hook may not do.
+      source: source
+      path: external/sqlite3+/sqlite3.c

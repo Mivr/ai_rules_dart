@@ -1,6 +1,7 @@
-# Exemplars for what `dart/ext/` still curates — code assets (`sqlite3_binary`,
-# `webcrypto`) — plus a pub dependency cycle merged by `dart_package_member`
-# (`pub_cycle`). Code generation is covered by `e2e/build_runner`.
+# Exemplars for native code — package:sqlite3's own build hook and a
+# Bazel-built `dart_code_asset` (`sqlite3_binary`) — plus a pub dependency
+# cycle merged by `dart_package_member` (`pub_cycle`). Code generation is
+# covered by `e2e/build_runner`.
 #
 # Run:      bazel test //...
 # Regen:    bazel run //:gazelle

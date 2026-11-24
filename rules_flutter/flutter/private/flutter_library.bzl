@@ -1,7 +1,7 @@
 """Implementation of the flutter_library rule."""
 
 load("@rules_dart//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "MODULAR_KERNEL_TOOLCHAINS", "dart_analyzable_info_with_package", "dart_info", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset")
+load("@rules_dart//dart:utils.bzl", "BUILD_HOOK_ATTRS", "BUILD_HOOK_FRAGMENTS", "MODULAR_KERNEL_TOOLCHAINS", "declare_hooks", "register_hook_actions", "dart_analyzable_info_with_package", "dart_info", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset")
 load("//flutter:providers.bzl", "FlutterInfo")
 load("//flutter/private:flutter_info.bzl", "LINK_HOOK_ATTR", "flutter_info")
 load("//flutter/private:flutter_kernel_tools.bzl", "check_library_module_compiler")
@@ -80,31 +80,38 @@ def _flutter_library_impl(ctx):
     #
     # Code assets go on the package record, which is what makes them propagate
     # the way pub does: depending on a package that owns one is enough.
+    #
+    # A package's build hook runs through rules_dart's hook runner, as for a
+    # `dart_library`: its output directory goes on the package record.
+    hooks = declare_hooks(ctx, ctx.files.srcs, ctx.files.resources)
+    info = dart_info(
+        label = ctx.label,
+        package = dart_package_identity(
+            package_name = package_name,
+            lib_root = lib_root,
+            language_version = ctx.attr.language_version,
+            version = ctx.attr.version,
+            package_files = ctx.files.data,
+        ),
+        deps = ctx.attr.deps,
+        srcs = ctx.files.srcs,
+        resources = ctx.files.resources,
+        code_assets = ctx.attr.code_assets,
+        link_hook = ctx.file.link_hook,
+        hooks = hooks,
+    )
+    register_hook_actions(ctx, hooks, info.owned_packages[0], [dep[DartInfo] for dep in ctx.attr.deps])
     return [
         DefaultInfo(
             files = depset(ctx.files.srcs + ctx.files.resources),
             runfiles = ctx.runfiles(files = ctx.files.srcs + ctx.files.resources + ctx.files.data),
         ),
-        dart_info(
-            label = ctx.label,
-            package = dart_package_identity(
-                package_name = package_name,
-                lib_root = lib_root,
-                language_version = ctx.attr.language_version,
-                version = ctx.attr.version,
-                package_files = ctx.files.data,
-            ),
-            deps = ctx.attr.deps,
-            srcs = ctx.files.srcs,
-            resources = ctx.files.resources,
-            code_assets = ctx.attr.code_assets,
-            has_unreplaced_hook = ctx.attr.has_unreplaced_hook,
-            link_hook = ctx.file.link_hook,
-        ),
+        info,
         flutter_analyzable_info(ctx, package_name, lib_root),
         flutter_info(deps = ctx.attr.deps),
     ]
 
+# Without a build hook; a hook's actions are rules_dart's, tested there.
 # rule_test_coverage: no-actions
 flutter_library = rule(
     implementation = _flutter_library_impl,
@@ -133,17 +140,13 @@ flutter_library = rule(
             doc = "The Dart package name. If omitted, defaults to the last component of the Bazel package path.",
         ),
         "code_assets": attr.label_list(
-            doc = "`dart_code_asset` targets standing in for this package's " +
-                  "`hook/build.dart` output. Declared on the owning package " +
-                  "rather than on the consuming application so they propagate " +
-                  "the way pub's own do — depending on the package is enough.",
+            doc = "`dart_code_asset` targets: native libraries this package " +
+                  "owns that Bazel builds (a `cc_shared_library`) rather than " +
+                  "a build hook. Declared on the owning package rather than on " +
+                  "the consuming application so they propagate the way a " +
+                  "hook's do — depending on the package is enough.",
             providers = [DartCodeAssetInfo],
             cfg = native_defines_reset,
-        ),
-        "has_unreplaced_hook": attr.string(
-            doc = "Path of a build hook this package ships that nothing " +
-                  "replaces, or empty. Recorded at repo generation; the " +
-                  "application that depends on the package fails on it.",
         ),
         "version": attr.string(
             doc = "The package's own version, as resolved by pub (e.g. `2.2.0`). " +
@@ -160,11 +163,12 @@ flutter_library = rule(
             doc = "Dart language version (`<major>.<minor>`) for this package's `package_config.json` entry. Mirrors `dart_library`'s attribute. Empty string means defer to the toolchain default.",
         ),
         "_sky_engine": SKY_ENGINE_ATTR,
-    },
+    } | BUILD_HOOK_ATTRS,
     # Optional: only to refuse a Flutter toolchain whose Dart SDK has no module compiler.
     toolchains = [
         config_common.toolchain_type("@rules_flutter//flutter:toolchain_type", mandatory = False),
     ] + MODULAR_KERNEL_TOOLCHAINS,
+    fragments = BUILD_HOOK_FRAGMENTS,
     doc = "Collects Flutter sources and the package's own files, propagates DartInfo and FlutterInfo. Does not compile.",
 )
 

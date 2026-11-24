@@ -97,7 +97,7 @@ def format_spoke_data_attr(patterns):
 def parse_pubspec_identity(pubspec):
     """The `(name, version)` identity a path spoke verifies against its lock entry.
 
-    A path package's overlays and curated code assets are selected by the
+    A path package's overlays and hook settings are selected by the
     lock key and the lock's version, so the spoke must check that the
     package's own pubspec.yaml agrees — otherwise a directory whose
     pubspec names another package, or whose version moved since the lock
@@ -222,7 +222,7 @@ def malformed_pub_version_refusal(hub_name, package_name, bad_value):
 def check_pubspec_identity_mismatch(hub_name, package_name, lock_version, pubspec):
     """Fail when the package's pubspec name or version disagrees with the lock.
 
-    Overlays and curated code assets are selected by the lock key and the
+    Overlays and hook settings are selected by the lock key and the
     lock's version, so a directory whose pubspec names another package, or
     whose version moved since the lock was resolved, must not silently get
     another package's overlay and native code assets. Each mismatch fails

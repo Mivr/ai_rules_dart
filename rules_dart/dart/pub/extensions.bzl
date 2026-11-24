@@ -3,7 +3,8 @@
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error")
 load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC")
 load("//dart/pub/private:pin_checks.bzl", "lock_package_error")
-load("//dart/pub/private:pub_emit.bzl", "instantiate_pub_repos", "pub_repo_specs", "pub_scopes")
+load("//dart/pub/private:pub_emit.bzl", "SPOKE_PREFIX", "instantiate_pub_repos", "pub_repo_specs", "pub_scopes")
+load("//dart/pub/private:pub_hooks.bzl", "HOOK_TAG_ATTRS", "lock_hook_settings")
 load("//dart/pub/private:pub_plan.bzl", "plan_pub_graph", "read_pub_plans")
 load("//dart/pub/private:pub_sources.bzl", "check_path_build_files", "local_entry_conflict", "path_package_dir", "path_package_label", "sdk_package_message", "unknown_source_error")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
@@ -68,13 +69,6 @@ _from_lock = tag_class(
             mandatory = True,
             allow_single_file = True,
         ),
-        "ignore_hooks": attr.string_list(
-            doc = "Pub package names whose `hook/build.dart` is knowingly irrelevant to this " +
-                  "build (its native code is never reached). Suppresses the unreplaced-hook " +
-                  "error for them. This is a declaration you make deliberately; it is never a " +
-                  "default.",
-            default = [],
-        ),
         "on_version_conflict": attr.string(
             doc = "What to do when another lock file provides a higher version of a package. " +
                   "'error' (default) fails the build. 'upgrade' accepts the higher version. " +
@@ -110,7 +104,7 @@ _from_lock = tag_class(
             allow_single_file = True,
             default = None,
         ),
-    },
+    } | HOOK_TAG_ATTRS,
 )
 
 def touch_scanner_runtime_label(ctx):
@@ -594,12 +588,7 @@ def _path_source_conflict(state, explicit):
     return None
 
 def _pub_collect_tags(ctx):
-    """Collects package/lock tags across modules. Returns (package_tags, lock_tags, ignore_hooks, root_repos, plan_files)."""
-
-    # Packages the user has declared hook-irrelevant, unioned across every
-    # from_lock call — a package is one repo regardless of how many locks
-    # mention it, so the flag cannot be per-lock.
-    ignore_hooks = {}
+    """Collects package/lock tags across modules. Returns (package_tags, lock_tags, root_repos, plan_files)."""
 
     # Repos the root module names, mapped to whether every naming is a
     # `dev_dependency = True` usage: Bazel checks the root's `use_repo` calls
@@ -625,8 +614,6 @@ def _pub_collect_tags(ctx):
                 root_repos[pkg.name] = root_repos.get(pkg.name, True) and ctx.is_dev_dependency(pkg)
 
         for lock_tag in mod.tags.from_lock:
-            for pkg_name in lock_tag.ignore_hooks:
-                ignore_hooks[pkg_name] = True
             if mod.is_root:
                 root_repos[lock_tag.name] = root_repos.get(lock_tag.name, True) and ctx.is_dev_dependency(lock_tag)
             ctx.watch(lock_tag.lock)
@@ -639,6 +626,8 @@ def _pub_collect_tags(ctx):
                 isolated = lock_tag.isolated,
                 package_files = lock_tag.package_files,
                 workspace_members = lock_tag.workspace_members,
+                hook_data = lock_tag.hook_data,
+                hook_network = lock_tag.hook_network,
                 is_root = mod.is_root,
                 module = module_name,
             ))
@@ -650,7 +639,7 @@ def _pub_collect_tags(ctx):
         for i, fields in enumerate(lock_fields)
     ]
     check_workspaces(ctx, package_tags, lock_tags)
-    return package_tags, lock_tags, ignore_hooks, root_repos, plan_files
+    return package_tags, lock_tags, root_repos, plan_files
 
 def _pub_extension_metadata(ctx, root_repos, recorded):
     """Returns this evaluation's metadata: the root's direct deps plus the planning facts for the lockfile."""
@@ -661,7 +650,7 @@ def _pub_extension_metadata(ctx, root_repos, recorded):
     )
 
 def _pub_impl(ctx):
-    package_tags, lock_tags, ignore_hooks, root_repos, plan_files = _pub_collect_tags(ctx)
+    package_tags, lock_tags, root_repos, plan_files = _pub_collect_tags(ctx)
 
     resolution = resolve_pub_packages(package_tags, lock_tags)
     if resolution.error:
@@ -687,7 +676,7 @@ def _pub_impl(ctx):
         touch_scanner_runtime_label(ctx)
     recorded = {}
     scope_plans = plan_pub_graph(ctx, scopes, recorded, read_pub_plans(ctx, plan_files))
-    instantiate_pub_repos(pub_repo_specs(resolution, scope_plans, ignore_hooks))
+    instantiate_pub_repos(pub_repo_specs(resolution, scope_plans, lock_hook_settings(ctx, lock_tags, SPOKE_PREFIX)))
     return _pub_extension_metadata(ctx, root_repos, recorded)
 
 pub = module_extension(

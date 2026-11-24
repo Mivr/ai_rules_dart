@@ -11,6 +11,7 @@ load(
     "derive_language_version",
     "trim_gzip_trailing_nulls",
 )
+load("@rules_dart//dart/pub:pub_lock_scc.bzl", "scc_member_hook_error")
 load(
     "@rules_dart//dart/pub:pub_scan.bzl",
     "check_package_symlinks",
@@ -93,8 +94,6 @@ load(
 )
 
 visibility(["//flutter/..."])
-
-_DART_BUILD_HOOKS = ("hook/build.dart", "hook/link.dart")
 
 def _fetch_hosted_scc_member(ctx, member, name):
     """Downloads, scans, and extracts a hosted SCC member under `<name>/`."""
@@ -206,20 +205,17 @@ def _member_spoke_ctx(ctx, name):
         ),
     )
 
-def _detect_member_hooks(ctx, name, code_assets):
-    """Detects `has_unreplaced_hook` and `link_hook` under `<name>/`."""
-    unreplaced_hook = ""
-    if not code_assets and name not in ctx.attr.ignore_hooks:
-        for candidate in _DART_BUILD_HOOKS:
-            if ctx.path(name + "/" + candidate).exists:
-                unreplaced_hook = candidate
-                break
+def _detect_member_hooks(ctx, name):
+    """Detects a member's hooks under `<name>/`.
+
+    A member of a merged cycle has no library of its own to run a build hook
+    in, so one is recorded as the error an app reaching it fails with.
+    """
+    hook_error = ""
+    if ctx.path(name + "/hook/build.dart").exists:
+        hook_error = scc_member_hook_error(name, ctx.attr.repo_name)
     link_hook = "hook/link.dart" if ctx.path(name + "/hook/link.dart").exists else ""
-    return struct(
-        code_assets = code_assets,
-        has_unreplaced_hook = unreplaced_hook,
-        link_hook = link_hook,
-    )
+    return struct(hook_error = hook_error, link_hook = link_hook)
 
 def _stage_scc_members(ctx, members):
     """Stages all hosted, git and path members into their `<name>/` subdirectories.
@@ -281,7 +277,6 @@ def _parse_and_verify_scc_members(ctx, members, pubspecs):
             pubspec = pubspec,
             language_version = derive_language_version(pubspec_sdk_constraint(pubspec)),
             version = m.get("version", ""),
-            code_assets = m.get("code_assets", []),
             package_files = m.get("package_files", None),
         )
 
@@ -316,7 +311,7 @@ def _member_target_aliases(name, member_build):
 def _emit_single_member_build(ctx, name, p, plugin_block, asset_block):
     """Writes `<name>/BUILD.bazel` and `<name>/android/BUILD.bazel` for one member."""
     mctx = _member_spoke_ctx(ctx, name)
-    hooks = _detect_member_hooks(ctx, name, p.code_assets)
+    hooks = _detect_member_hooks(ctx, name)
     assets = spoke_asset_inputs(mctx, name, asset_block)
     overlay_content, overlay_android_content = resolve_overlay_roots(
         mctx,
@@ -336,8 +331,7 @@ def _emit_single_member_build(ctx, name, p, plugin_block, asset_block):
 
     if overlay_content:
         overlay_meta = struct(
-            code_assets = hooks.code_assets,
-            has_unreplaced_hook = "",
+            hook_error = "",
             link_hook = hooks.link_hook,
             package_files = p.package_files,
         )
@@ -369,8 +363,7 @@ def _emit_single_member_build(ctx, name, p, plugin_block, asset_block):
     plugin = struct(
         platforms_json = platforms_json,
         defines = ctx.attr.ios_plugin_defines.get(name, []),
-        code_assets = hooks.code_assets,
-        has_unreplaced_hook = hooks.has_unreplaced_hook,
+        hook_error = hooks.hook_error,
         link_hook = hooks.link_hook,
         package_files = p.package_files,
     )
@@ -449,8 +442,8 @@ flutter_pub_scc_package = repository_rule(
         "members_json": attr.string(
             mandatory = True,
             doc = "JSON-encoded member specs: a hosted member's `name`, `version`, `sha256`, " +
-                  "`url` (the archive URL planning found) and `code_assets`, a path member's " +
-                  "`name`, `path`, `version` and `code_assets`, and for each its `planned_deps`.",
+                  "`url` (the archive URL planning found), a path member's " +
+                  "`name`, `path` and `version`, and for each its `planned_deps`.",
         ),
         "deps": attr.string_list(
             default = [],
@@ -474,10 +467,6 @@ flutter_pub_scc_package = repository_rule(
             allow_files = True,
             default = [],
             doc = "Plugin overlay roots.",
-        ),
-        "ignore_hooks": attr.string_list(
-            default = [],
-            doc = "Packages whose build hooks are ignored.",
         ),
         "package_resolved": attr.label(
             allow_single_file = True,

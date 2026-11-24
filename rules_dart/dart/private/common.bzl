@@ -1,6 +1,6 @@
 """Shared utilities for Dart rules."""
 
-load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
+load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
 load("//dart/private:dart_info.bzl", "derived_package_info", "package_lib_prefix")
 load("//dart/private:source_set.bzl", "needs_source_assembly", "package_for_index", "package_index")
 
@@ -102,22 +102,20 @@ def create_test_executable(ctx, tool, env, env_inherit = []):
 
     return executable, env_info, tool_runfiles
 
-def package_code_assets(pkg):
-    """Code assets declared on a `DartPackageInfo`, tolerating older producers.
+def package_native_assets(pkg):
+    """A `DartPackageInfo`'s native assets, tolerating older producers.
 
-    `code_assets` is optional in the same sense `language_version` is: a
-    `DartPackageInfo` built against a rules_dart that predates the field omits
-    it, and such a record keeps working — it simply contributes no assets.
-    `//dart/tests/no_lv_fixture` pins that tolerance, emitting a record with
-    only `package_name` and `lib_root`.
+    `native_assets` is optional in the same sense `language_version` is: a
+    record built by a producer that predates the field, or by
+    `//dart/tests/no_lv_fixture`, omits it and simply contributes none.
 
     Args:
-      pkg: The `DartPackageInfo` whose declared code assets to read.
+      pkg: The `DartPackageInfo` whose native assets to read.
 
     Returns:
-      Tuple of `DartCodeAssetInfo`; empty when the field is absent.
+      Tuple of Files; empty when the field is absent.
     """
-    return pkg.code_assets if hasattr(pkg, "code_assets") else ()
+    return getattr(pkg, "native_assets", ())
 
 def package_link_hook(pkg):
     """A `DartPackageInfo`'s `hook/link.dart`, tolerating older producers.
@@ -131,35 +129,21 @@ def package_link_hook(pkg):
     """
     return getattr(pkg, "link_hook", None)
 
-def collect_code_asset_files(deps):
-    """Merges `DartInfo.transitive_code_asset_files` across deps.
+def collect_native_assets(deps):
+    """Merges `DartInfo.transitive_native_assets` across deps.
 
     Args:
       deps: List of targets providing `DartInfo`.
 
     Returns:
-      `depset[File]` of every transitive code asset's dynamic library.
+      `depset[File]`: every transitive build hook output directory, and each
+      `dart_code_asset`'s `.assets.json` and library.
     """
     return depset(transitive = [
-        dep[DartInfo].transitive_code_asset_files
+        dep[DartInfo].transitive_native_assets
         for dep in deps
-        if hasattr(dep[DartInfo], "transitive_code_asset_files")
+        if hasattr(dep[DartInfo], "transitive_native_assets")
     ])
-
-def collect_transitive_code_assets(deps):
-    """Collects `DartCodeAssetInfo` from every package reachable through deps.
-
-    Args:
-      deps: List of targets providing `DartInfo`.
-
-    Returns:
-      List of `DartCodeAssetInfo`, in dependency order, with duplicates from
-      diamonds left in place — callers dedup by asset id.
-    """
-    assets = []
-    for pkg in collect_packages(deps):
-        assets.extend(list(package_code_assets(pkg)))
-    return assets
 
 def own_package_record(info):
     """Returns the `DartPackageInfo` for the package a `DartInfo` itself owns.
@@ -388,7 +372,7 @@ def package_agreement_error(merged):
     return "\n".join(blocks)
 
 def merge_package_records(merged):
-    """Dedups package records by name, unioning their code assets.
+    """Dedups package records by name, unioning their native assets.
 
     One `package_name` can legitimately appear in several records:
 
@@ -400,20 +384,15 @@ def merge_package_records(merged):
         spoke for `ffi`. These can carry different `lib_root`s.
 
     So the first record wins for source resolution, as it always has, and the
-    result names each package at one `lib_root`. Code
-    assets are the exception: dropping a later record's assets would silently
-    lose a native library, and the failure would surface at runtime as an
-    unresolved `@Native` symbol. Union them instead, and let
-    `resolve_code_assets` fail later if — and only if — two assets genuinely
-    claim one id, which is the case the Dart VM cannot resolve either.
+    result names each package at one `lib_root`. Native assets are the
+    exception: dropping a later record's would silently lose a native library,
+    and the failure would surface at runtime as an unresolved `@Native`
+    symbol. Union them instead; the manifest step fails if two assets claim
+    one id, which is the case the Dart VM cannot resolve either.
 
     First-record-wins is only safe once the records are known to agree, so this
     calls `package_agreement_error` first and fails when two of them state
-    different `version`s or `language_version`s. `has_unreplaced_hook` stays
-    order-decided and deliberately unchecked: unlike the other two it is derived
-    at repo generation rather than stated by a developer, and two hubs can
-    legitimately disagree — one curating `code_assets` so the hook counts as
-    replaced while the other still flags it.
+    different `version`s or `language_version`s.
 
     Split out from `collect_packages` because the dedup and union rules are a
     pure function of the record list, which makes them directly testable
@@ -440,22 +419,18 @@ def merge_package_records(merged):
         else:
             kept = packages[index]
             adopt_hook = package_link_hook(pkg) != None and package_link_hook(kept) == None
-            if not package_code_assets(pkg) and not adopt_hook:
+            extra = [f for f in package_native_assets(pkg) if f not in package_native_assets(kept)]
+            if not extra and not adopt_hook:
                 continue
 
             # Only the assets and a missing link hook merge; every other field
             # stays the kept record's. The link hook is adopted for the same
             # reason the assets are: a package split across targets may carry
             # its `hook/link.dart` on any one of them, and dropping it would
-            # silently skip the hook. `has_unreplaced_hook` is not merged, so
-            # two hubs supplying one package can disagree about whether the
-            # hook was replaced and dependency order decides which answer
-            # survives. Recorded rather than quietly changed: picking the other
-            # one is a semantic call about what a replaced hook means for a
-            # package reached twice.
+            # silently skip the hook.
             packages[index] = derived_package_info(
                 kept,
-                code_assets = package_code_assets(kept) + package_code_assets(pkg),
+                native_assets = package_native_assets(kept) + tuple(extra),
                 link_hook = package_link_hook(pkg) if adopt_hook else None,
             )
     return packages
@@ -1130,77 +1105,14 @@ def find_sdk_kernel_tools(dart_sdk_info):
         patched_gen_kernel = getattr(dart_sdk_info, "patched_gen_kernel", None),
     )
 
-# Code-asset link mode -> the Dart VM path type it maps to
-# (`runtime/vm/ffi/native_assets.cc`), and which value supplies the payload:
-# "" means the path type stands alone.
-#
-# `dynamic_loading_bundle` maps to `relative` because `dart_binary`/`dart_test`
-# stage the library in runfiles next to the dill. An application *bundler*
-# such as rules_flutter maps the same link mode to `absolute` against its own
-# bundle layout — the two are not interchangeable, which is why this table
-# lives here and not next to `CODE_ASSET_LINK_MODES`.
-_VM_PATH_TYPE = {
-    "dynamic_loading_bundle": ("relative", "library"),
-    "dynamic_loading_system": ("system", "system_uri"),
-    "dynamic_loading_executable": ("executable", ""),
-    "dynamic_loading_process": ("process", ""),
-}
+def hook_errors(label, packages):
+    """The error for a closure holding a package whose build hook cannot run.
 
-# Load-time completeness check: the table must cover the vocabulary exactly, so
-# a link mode cannot be accepted by `dart_code_asset` and then go unhandled
-# here. Without it the gap would surface at analysis time, in whichever
-# consumer first used the new mode. The call below runs at load time, which is
-# the entire point: an incomplete table fails every load, not one consumer.
-def _check_vm_path_type_total():
-    """Fails loading `common.bzl` when `_VM_PATH_TYPE` misses a link mode."""
-    unmapped = [m for m in CODE_ASSET_LINK_MODES if m not in _VM_PATH_TYPE]
-    if unmapped:
-        fail(
-            "common.bzl: _VM_PATH_TYPE has no entry for link mode(s) %s. Every mode in " %
-            ", ".join(unmapped) +
-            "CODE_ASSET_LINK_MODES must map to a Dart VM path type.",
-        )
-
-_check_vm_path_type_total()
-
-def native_assets_path_list(label, link_mode, relative_lib_path, system_uri):
-    """Returns the VM path-list for one code asset, per its link mode.
-
-    Args:
-      label: The consuming target's label, for error messages.
-      link_mode: One of `CODE_ASSET_LINK_MODES`.
-      relative_lib_path: Path to the library relative to the dill, for
-        `dynamic_loading_bundle`.
-      system_uri: The system library URI, for `dynamic_loading_system`.
-
-    Returns:
-      List of strings forming the asset's JSON path-list.
-    """
-    mapping = _VM_PATH_TYPE.get(link_mode)
-    if mapping == None:
-        fail("%s: unsupported code-asset link_mode %r. Expected one of: %s." %
-             (label, link_mode, ", ".join(CODE_ASSET_LINK_MODES)))
-    path_type, payload = mapping
-    if payload == "library":
-        return [path_type, relative_lib_path]
-    if payload == "system_uri":
-        return [path_type, system_uri]
-    return [path_type]
-
-def check_unreplaced_hooks(label, packages):
-    """Checks that no package in the closure has an unreplaced build hook.
-
-    A pub package shipping `hook/build.dart` builds native libraries at
-    `pub get` time. rules_dart cannot run that hook, so without a Bazel
-    replacement the package's `@Native` bindings resolve to nothing — the
-    manifest is simply missing an entry, and the failure surfaces at runtime
-    as "couldn't resolve native function", with nothing pointing at the cause.
-
-    Deliberately checked here rather than when the spoke repo is generated:
-    `pub.from_lock()` materialises the whole lock file, so failing at
-    generation would fail on packages nothing depends on and on platforms
-    where the hook is irrelevant. Only a package actually reached by a binary
-    or test is a problem, and only here is the depending target known.
+    A member of a merged pub dependency cycle is compiled inside the merged
+    library, so no library of its own runs its hook. Checked where an
+    executable is built rather than when the repository is generated: the
+    whole lock is materialised, and failing there would fail on packages
+    nothing depends on.
 
     Args:
       label: The consuming target's label.
@@ -1209,119 +1121,10 @@ def check_unreplaced_hooks(label, packages):
     Returns:
       An error message string, or `None`.
     """
-    offenders = [
-        pkg
-        for pkg in packages
-        if hasattr(pkg, "has_unreplaced_hook") and pkg.has_unreplaced_hook
-    ]
-    if not offenders:
+    errors = [pkg.hook_error for pkg in packages if getattr(pkg, "hook_error", "")]
+    if not errors:
         return None
-    lines = [
-        "  - %s (%s)" % (pkg.package_name, pkg.has_unreplaced_hook)
-        for pkg in offenders
-    ]
-    return (
-        ("%s depends on pub package(s) that build native code with a hook " +
-         "rules_dart cannot run:\n%s\n\n" +
-         "Their `@Native` bindings will not resolve at runtime. Either:\n" +
-         "  - name a `dart_code_asset` in this target's `code_assets`, or\n" +
-         "  - list the package in `pub.from_lock(ignore_hooks = [...])` if " +
-         "its native code is genuinely unused here.") %
-        (label, "\n".join(lines))
-    )
-
-def _asset_identity(asset):
-    """A configuration-independent identity for a code asset.
-
-    Compares the *producing target*, not the `File`: the same
-    `cc_shared_library` analysed in two configurations yields two different
-    `File`s, which is a diamond rather than a conflict.
-    """
-    owner = str(asset.dynamic_library.owner) if asset.dynamic_library != None else ""
-    return (asset.link_mode, asset.system_uri, owner)
-
-def resolve_code_assets(label, transitive_assets, explicit_assets):
-    """Unions transitively-propagated code assets with explicitly named ones.
-
-    An asset id may legitimately arrive many times — through a diamond, or
-    because the user named explicitly what a dependency already supplies. Those
-    collapse. Two *different* assets claiming one id do not: the Dart VM
-    resolves an id to exactly one library, so silently keeping either one would
-    pick a native library by graph-traversal order.
-
-    Args:
-      label: The consuming target's label, for error messages.
-      transitive_assets: `DartCodeAssetInfo` reached through `deps`.
-      explicit_assets: `DartCodeAssetInfo` named in the `code_assets` attr.
-
-    Returns:
-      List of `DartCodeAssetInfo`, one per asset id, in a stable order.
-    """
-    by_id = {}
-    order = []
-    for asset in list(transitive_assets) + list(explicit_assets):
-        previous = by_id.get(asset.asset_id)
-        if previous == None:
-            by_id[asset.asset_id] = asset
-            order.append(asset.asset_id)
-        elif _asset_identity(previous) != _asset_identity(asset):
-            fail(("%s: code asset id `%s` is claimed twice with different " +
-                  "definitions: %s and %s. The Dart VM resolves an asset id to " +
-                  "exactly one library, so drop one of the declarations.") %
-                 (label, asset.asset_id, _asset_identity(previous), _asset_identity(asset)))
-    return [by_id[asset_id] for asset_id in order]
-
-def code_asset_entries(label, assets, output_dir):
-    """Builds manifest entries and the runfiles library list for code assets.
-
-    Args:
-      label: The consuming target's label, for error messages.
-      assets: List of `DartCodeAssetInfo`.
-      output_dir: Directory the manifest's `relative` paths resolve against
-        (the dill's `dirname`).
-
-    Returns:
-      `(entries, libraries)` — entries for `generate_native_assets_yaml`, and
-      the `File`s that must be staged in runfiles.
-    """
-    entries = []
-    libraries = []
-    for info in assets:
-        relative_lib_path = ""
-        if info.dynamic_library != None:
-            relative_lib_path = relative_path(output_dir, info.dynamic_library.path)
-            libraries.append(info.dynamic_library)
-        entries.append((
-            info.asset_id,
-            native_assets_path_list(label, info.link_mode, relative_lib_path, info.system_uri),
-        ))
-    return entries, libraries
-
-def generate_native_assets_yaml(abi, asset_entries):
-    """Generates the `native_assets.yaml` content for `gen_kernel --native-assets`.
-
-    Emits the documented format (JSON, which is valid YAML); the VM reads it
-    as `vm:ffi:native-assets` kernel metadata.
-
-    Args:
-      abi: The `<os>_<arch>` ABI key (see `target_dart_abi`).
-      asset_entries: List of `(asset_id, path_list)` tuples, where `path_list`
-        comes from `native_assets_path_list`.
-
-    Returns:
-      String content of the native_assets.yaml file.
-    """
-    assets = ", ".join([
-        '"{id}": [{path}]'.format(
-            id = asset_id,
-            path = ", ".join(['"%s"' % part for part in path_list]),
-        )
-        for (asset_id, path_list) in asset_entries
-    ])
-    return '{{"format-version": [1, 0, 0], "native-assets": {{"{abi}": {{{assets}}}}}}}\n'.format(
-        abi = abi,
-        assets = assets,
-    )
+    return "%s:\n%s" % (label, "\n".join(["  - " + e for e in errors]))
 
 def kernel_sdk_mismatch_error(label, attr_name, tool_target, expected_sdk_version):
     """Checks that a kernel-compiled tool target matches the executing Dart SDK version.

@@ -129,7 +129,7 @@ sub-toolchain types it needs; `FLUTTER_OPTIONAL_TOOLCHAINS`
 
 `FlutterInfo` is declared at `flutter/providers.bzl:270`. It carries the Flutter
 channels a target contributes to its consumers: `plugins`, the native library
-channels, `apple_plugin_libraries`, `native_assets`, `data_assets` and the
+channels, `apple_plugin_libraries`, `data_assets` and the
 others listed in that declaration. It carries no assets, fonts or shaders: a
 package's own files travel in its `data` (section 3).
 

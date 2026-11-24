@@ -1,24 +1,9 @@
-# dart/ext: curated native code assets for pub packages (sqlite3, webcrypto)
-# and the registry that binds them to package names.
-
-load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+# dart/ext: the lock of the pub packages rules_dart's own builders use.
 
 exports_files(
     [
         "pub_plan.json",
         "pubspec.lock",
-        "registry.bzl",
     ],
     visibility = ["//visibility:public"],
-)
-
-# The curated-registry resolver is supported API for other rule sets:
-# rules_flutter generates its own pub spokes and so cannot reach the registry
-# through `pub_lock_package`. Only the two functions are supported; `_ENTRIES`
-# stays private (see registry.bzl).
-bzl_library(
-    name = "registry",
-    srcs = ["registry.bzl"],
-    visibility = ["//visibility:public"],
-    deps = ["//dart/private:curated_registry"],
 )

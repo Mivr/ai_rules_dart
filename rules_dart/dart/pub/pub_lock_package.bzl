@@ -16,7 +16,30 @@ load(
     _trim_gzip_trailing_nulls = "trim_gzip_trailing_nulls",
 )
 
+load(
+    "//dart/pub/private:pub_hooks.bzl",
+    _HOOK_TAG_ATTRS = "HOOK_TAG_ATTRS",
+    _PUB_HOOK_REPO_ATTRS = "PUB_HOOK_REPO_ATTRS",
+    _hook_attrs_block = "hook_attrs_block",
+    _hook_repo_attrs = "hook_repo_attrs",
+    _hook_settings_of_repo = "hook_settings_of_repo",
+    _lock_hook_settings = "lock_hook_settings",
+)
+
 visibility("public")
+
+# What a pub spoke's build hook gets from the workspace, for a rule set that
+# generates spokes itself: `HOOK_TAG_ATTRS` on its lock tag,
+# `lock_hook_settings` in its extension (one dict per scope prefix),
+# `hook_repo_attrs` into each spoke's attributes (`PUB_HOOK_REPO_ATTRS`, part
+# of `PUB_LOCK_PACKAGE_ATTRS`), and `hook_attrs_block(build_hook, link_hook,
+# hook_settings_of_repo(ctx.attr))` into the spoke's library.
+HOOK_TAG_ATTRS = _HOOK_TAG_ATTRS
+PUB_HOOK_REPO_ATTRS = _PUB_HOOK_REPO_ATTRS
+hook_attrs_block = _hook_attrs_block
+hook_repo_attrs = _hook_repo_attrs
+hook_settings_of_repo = _hook_settings_of_repo
+lock_hook_settings = _lock_hook_settings
 
 derive_language_version = _derive_language_version
 make_dart_library_build_content = _make_dart_library_build_content

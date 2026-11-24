@@ -78,7 +78,7 @@ void main() {
       '$bundlePath/Contents/Frameworks/libmul.dylib',
     );
     check(
-      'curated code-asset dylib libsqlite3.dylib exists',
+      'build-hook code-asset dylib libsqlite3.dylib exists',
       '$bundlePath/Contents/Frameworks/libsqlite3.dylib',
     );
     final appFw = '$bundlePath/Contents/Frameworks/App.framework';

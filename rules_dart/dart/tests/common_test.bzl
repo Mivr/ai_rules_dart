@@ -5,7 +5,7 @@ load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageInfo")
 load(
     "//dart/private:common.bzl",
     "check_single_root_package",
-    "check_unreplaced_hooks",
+    "hook_errors",
     "generate_package_config",
     "generate_package_config_content",
     "jit_train_key",
@@ -289,28 +289,25 @@ def _hooks_ok_test_impl(ctx):
     # No hook, an empty hook string, and a producer that omits the field
     # entirely must all pass.
     env = unittest.begin(ctx)
-    asserts.equals(env, None, check_unreplaced_hooks("//a:b", [
-        struct(package_name = "fine", has_unreplaced_hook = ""),
+    asserts.equals(env, None, hook_errors("//a:b", [
+        struct(package_name = "fine", hook_error = ""),
         struct(package_name = "legacy"),
     ]))
-    asserts.equals(env, None, check_unreplaced_hooks("//a:b", []))
+    asserts.equals(env, None, hook_errors("//a:b", []))
     return unittest.end(env)
 
 def _hooks_offender_test_impl(ctx):
-    # Must name the target, each offending package, its hook path, and both
-    # remedies — this message is the only thing standing between the user and
-    # a runtime "couldn't resolve native function".
+    # Must name the target and each package's own message — this message is
+    # the only thing standing between the user and a runtime "couldn't
+    # resolve native function".
     env = unittest.begin(ctx)
-    err = check_unreplaced_hooks("//app:bin", [
-        struct(package_name = "fine", has_unreplaced_hook = ""),
-        struct(package_name = "webcrypto", has_unreplaced_hook = "hook/build.dart"),
+    err = hook_errors("//app:bin", [
+        struct(package_name = "fine", hook_error = ""),
+        struct(package_name = "cyc", hook_error = "package:cyc has a build hook and is merged into @x"),
     ])
     asserts.true(env, err != None)
     asserts.true(env, "//app:bin" in err)
-    asserts.true(env, "webcrypto" in err)
-    asserts.true(env, "hook/build.dart" in err)
-    asserts.true(env, "code_assets" in err)
-    asserts.true(env, "ignore_hooks" in err)
+    asserts.true(env, "package:cyc has a build hook and is merged into @x" in err)
     asserts.true(env, "fine" not in err)
     return unittest.end(env)
 

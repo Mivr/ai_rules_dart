@@ -164,7 +164,7 @@ def _android_integration_app_providers(ctx, setup, sources, native_assets, kerne
         assets,
         sources.package_config.config_file,
         native_assets.manifest,
-    ] + native_libs + native_assets.bundled.to_list()
+    ] + native_libs + native_assets.bundled
     if aot_output:
         default_files.append(aot_output)
     if setup.is_debug:
@@ -202,7 +202,7 @@ def _flutter_android_integration_app_impl(ctx):
         The provider list.
     """
     setup = _android_integration_app_setup(ctx)
-    native_assets = integration_test_native_assets(ctx, setup.sdk, "android")
+    native_assets = integration_test_native_assets(ctx)
     sources = _android_integration_app_sources(ctx, setup)
     kernel_dill = android_integration_app_kernel(ctx, setup, sources, native_assets)
     aot_output = integration_test_aot(ctx, setup.sdk, kernel_dill, setup.is_debug, setup.strip)

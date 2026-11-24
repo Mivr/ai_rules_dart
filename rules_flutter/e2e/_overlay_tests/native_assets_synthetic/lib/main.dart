@@ -3,7 +3,7 @@
 // At runtime this:
 //   1. Calls a `@Native(assetId: ...)`-bound function from
 //      "package:native_assets_synthetic/synthetic.dylib", a
-//      `flutter_native_asset(link_mode = "dynamic_loading_bundle")`
+//      `dart_code_asset(link_mode = "dynamic_loading_bundle")`
 //      contributed by the workspace's `:synthetic_native_asset_macos`
 //      target. The VM resolves the asset id at first call through the
 //      kernel's `--native-assets` manifest and dlopens the dylib from

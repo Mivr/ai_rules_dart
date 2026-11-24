@@ -55,6 +55,7 @@ bzl_library(
     srcs = ["pub_lock_package.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        "//dart/pub/private:pub_hooks",
         "//dart/pub/private:pub_lock_package",
     ],
 )

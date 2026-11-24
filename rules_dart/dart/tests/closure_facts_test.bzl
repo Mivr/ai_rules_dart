@@ -25,15 +25,15 @@ load("//dart/private:dart_analyzer_summary.bzl", "own_lib_sources", "unbacked_em
 
 visibility(["//dart/..."])
 
-def _rec(name, root, language_version = "3.11", code_assets = (), hook = ""):
+def _rec(name, root, language_version = "3.11", native_assets = (), hook = ""):
     """A fake `DartPackageInfo` record."""
     return struct(
         package_name = name,
         lib_root = root,
         version = "",
         language_version = language_version,
-        code_assets = code_assets,
-        has_unreplaced_hook = hook,
+        native_assets = native_assets,
+        hook_error = hook,
         link_hook = None,
     )
 
@@ -91,13 +91,13 @@ def _merge_test_impl(ctx):
     sky = _lib("//sky", [_rec("sky_engine", "third_party/sky")], resources = [_file("third_party/sky/lib/_embedder.yaml")])
     root_a = _lib("//:a", [_rec("a", "")])
     root_b = _lib("//:b", [_rec("b", "")])
-    hooked = _lib("//h", [_rec("h", "h", hook = "h/hook/build.dart")])
+    hooked = _lib("//h", [_rec("h", "h", hook = "package:h has a build hook and is merged into a cycle")])
     facts = _exe([sky, root_a, root_b, hooked]).closure_facts
     asserts.equals(env, ("a", "b"), facts.root_names)
     asserts.equals(env, ("third_party/sky/lib/_embedder.yaml",), facts.embedders)
     asserts.equals(env, ("third_party/sky/lib/_embedder.yaml",), facts.sky_engines)
-    asserts.true(env, facts.unreplaced_hooks)
-    asserts.false(env, facts.code_assets)
+    asserts.true(env, facts.hook_errors)
+    asserts.false(env, facts.native_assets)
     asserts.equals(env, ("//sky", "//:a", "//:b", "//h"), facts.merged)
 
     bare = struct(transitive_packages = depset(), transitive_resources = depset(), label = "//bare")
@@ -134,8 +134,8 @@ def _clean_test_impl(ctx):
     two_roots = _exe([_lib("//:a", [_rec("a", "")]), _lib("@x//:b", [_rec("b", "")])])
     asserts.equals(env, None, clean_closure(two_roots.closure_facts), "two root packages")
 
-    assets = _exe([_lib("//n", [_rec("n", "n", code_assets = (struct(asset_id = "package:n/x"),))])])
-    asserts.equals(env, None, clean_closure(assets.closure_facts), "code assets are merged by the walk")
+    assets = _exe([_lib("//n", [_rec("n", "n", native_assets = ("n.hook",))])])
+    asserts.true(env, clean_closure(assets.closure_facts) != None, "native assets travel in their own depset, not in the walk")
 
     versions = _exe([
         _lib("//v", [_rec("v", "v", language_version = "3.10")]),

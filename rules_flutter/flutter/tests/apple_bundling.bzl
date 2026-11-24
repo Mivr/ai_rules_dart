@@ -87,13 +87,10 @@ def _fake_application_impl(ctx):
 
     So fakes in one package never share an output — which is the very defect
     the tests over them are checking the real rules for.
-
-    A path named in both `native_libs` and `code_assets` is one File: the shape
-    of one library arriving by both routes.
     """
 
     libs = {}
-    for path in ctx.attr.native_libs + ctx.attr.code_assets:
+    for path in ctx.attr.native_libs:
         if path not in libs:
             lib = ctx.actions.declare_file("%s/%s" % (ctx.label.name, path))
             if ctx.attr.macho_aot:
@@ -190,7 +187,7 @@ def _fake_application_impl(ctx):
         is_debug = ctx.attr.debug,
         flutter_assets = flutter_assets,
         native_libs = [libs[path] for path in ctx.attr.native_libs],
-        bundled_code_assets = depset([libs[path] for path in ctx.attr.code_assets]),
+        bundled_code_assets = [],
         apple_privacy_manifests = depset(ctx.files.apple_privacy_manifests),
         plugins = plugins,
         apple_plugin_libraries = depset(apple_plugin_libs),
@@ -208,7 +205,6 @@ fake_application = rule(
             allow_files = True,
             doc = "Privacy manifest files exposed on `FlutterApplicationInfo.apple_privacy_manifests`.",
         ),
-        "code_assets": attr.string_list(),
         "debug": attr.bool(default = False),
         "fat_macho": attr.bool(default = False),
         "macho_aot": attr.bool(default = True),

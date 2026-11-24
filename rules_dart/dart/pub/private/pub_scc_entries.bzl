@@ -6,11 +6,9 @@ those entries is pure given the resolved packages and their plans, so it lives
 here rather than beside the extension's state machine.
 """
 
-load("//dart/private:curated_registry.bzl", "curated_code_assets")
-
 visibility(["//dart/..."])
 
-def scc_member_entries(members, hosted, git_pkgs, plans, labels, ignore_hooks):
+def scc_member_entries(members, hosted, git_pkgs, plans, labels):
     """Builds the merged repository's member entries for `members_json`.
 
     Pure given the resolved packages: hosted members carry their archive
@@ -31,12 +29,11 @@ def scc_member_entries(members, hosted, git_pkgs, plans, labels, ignore_hooks):
       plans: Dict of package name to its plan (`deps`, and `archive_url`
         for a hosted package).
       labels: The scope's package-name-to-label map.
-      ignore_hooks: Dict of package names whose hooks are ignored.
 
     Returns:
       List of structs, each with `source` (`"hosted"` or `"git"`), the
       coordinates the merged repository rule reads, `planned_deps`, `deps`
-      (labels outside the cycle), `ignore_hook`, and the member's runtime
+      (labels outside the cycle), and the member's runtime
       `package_files` globs.
     """
     in_cycle = {m: True for m in members}
@@ -52,10 +49,8 @@ def scc_member_entries(members, hosted, git_pkgs, plans, labels, ignore_hooks):
                 version = pkg.version,
                 sha256 = pkg.sha256,
                 url = plans[member]["archive_url"],
-                code_assets = curated_code_assets(member, pkg.version),
                 planned_deps = planned,
                 deps = outside,
-                ignore_hook = member in ignore_hooks,
                 package_files = getattr(pkg, "package_files", ["pubspec.yaml", "LICENSE*"]),
             ))
         else:
@@ -67,10 +62,8 @@ def scc_member_entries(members, hosted, git_pkgs, plans, labels, ignore_hooks):
                 url = pkg.url,
                 resolved_ref = pkg.resolved_ref,
                 path = pkg.path,
-                code_assets = curated_code_assets(member, pkg.version),
                 planned_deps = planned,
                 deps = outside,
-                ignore_hook = member in ignore_hooks,
                 package_files = getattr(pkg, "package_files", ["pubspec.yaml", "LICENSE*"]),
             ))
     return entries

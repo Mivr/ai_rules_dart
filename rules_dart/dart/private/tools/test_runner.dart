@@ -431,6 +431,13 @@ _Precompiled _preparePrecompiled({
       ..add(File(dill).readAsBytesSync());
     if (baseDill != null) builder.add(File(baseDill).readAsBytesSync());
     combined.writeAsBytesSync(builder.takeBytes(), flush: true);
+    // The suite's code-asset libraries sit in the precompiled directory, and
+    // its kernel names them relative to itself: they come along.
+    final String original = dill.substring(0, dill.length - suffix.length);
+    final assets = Directory('$original/native_assets');
+    if (assets.existsSync()) {
+      Link('$precompiled/native_assets').createSync(assets.absolute.path);
+    }
   }
   return (precompiled: precompiled, combined: combined);
 }
@@ -441,8 +448,7 @@ _Precompiled _preparePrecompiled({
 /// `<precompiled>/.dart_tool/package_config.json`, so that is where [json] goes.
 /// A directory in runfiles is written in place, which leaves the dill where its
 /// code-asset paths expect it; where that cannot be written, the suite runs
-/// from a copy of the dill in [tmp] instead (its code assets are then not
-/// found, which the message says).
+/// from a copy of the dill in [tmp] instead, beside a link to its code assets.
 _Precompiled _precompiledWithPackageConfig({
   required _SuiteSource source,
   required Directory tmp,

@@ -422,8 +422,9 @@ emission are deleted. `dart_build_runner` replaces them.
 | `@rules_dart//dart/ext/tools:check_dual_build_collisions`                                                                                                      | None. Do not check in generated files, or exclude them from `srcs`                                    |
 | `@rules_dart//dart/ext/<builder>:shim`                                                                                                                         | None. The runner is `@<hub>//build_runner`, built from your lock                                      |
 
-`//dart/ext/sqlite3`, `//dart/ext/webcrypto` and `//dart/ext:registry.bzl`
-(curated native code assets) are not affected.
+The curated native code assets (`//dart/ext/sqlite3`, `//dart/ext/webcrypto`,
+`//dart/ext:registry.bzl`) are gone too: packages' own build hooks run instead
+(see `docs/pub.md`, "Build hooks").
 
 ### Before and after
 

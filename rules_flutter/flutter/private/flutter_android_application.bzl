@@ -181,7 +181,7 @@ def _symlink_assets_dir(ctx, flutter_assets):
     ctx.actions.symlink(output = out, target_file = flutter_assets)
     return out
 
-def _create_native_libs_jar(ctx, aot_output, native_libs, abi):
+def _create_native_libs_jar(ctx, aot_output, native_libs, abi, lib_dirs = []):
     """Package native libs into a jar at lib/<abi>/*.so.
 
     This matches flutter.jar's convention (which puts libflutter.so at
@@ -201,6 +201,8 @@ def _create_native_libs_jar(ctx, aot_output, native_libs, abi):
             System.loadLibrary("app")). None in debug/JIT mode.
         native_libs: Plugin/FFI .so files to package under their own names.
         abi: Android ABI string (e.g. "arm64-v8a").
+        lib_dirs: Directories whose every file is packaged under its own
+            name (the app's bundled code assets).
 
     Returns:
         The output .jar File.
@@ -242,13 +244,14 @@ def _create_native_libs_jar(ctx, aot_output, native_libs, abi):
     args.add("--output", jar.path)
     args.add("--abi", abi)
     args.add("--machine", str(expected_machine))
+    args.add_all(lib_dirs, before_each = "--lib-dir", expand_directories = False)
     args.add_all(zip_entries)
 
     ctx.actions.run(
         executable = ctx.executable._android_bundle_tool,
         arguments = [args],
         inputs = depset(
-            direct = [ctx.executable._android_bundle_tool] + [lib for _, lib in entries],
+            direct = [ctx.executable._android_bundle_tool] + [lib for _, lib in entries] + lib_dirs,
         ),
         outputs = [jar],
         mnemonic = "FlutterNativeLibsJar",
@@ -324,10 +327,10 @@ def _flutter_android_bundle_impl(ctx):
     flutter_assets = app_info.flutter_assets
     native_libs = list(app_info.native_libs)
 
-    # Native Assets `dynamic_loading_bundle` shared libraries land in
-    # `jniLibs/<abi>/` of the same `native_libs.jar` rules_android
-    # already extracts into the APK.
-    native_libs.extend(app_info.bundled_code_assets.to_list())
+    # The code assets' bundle directory: its libraries land in `lib/<abi>/`
+    # of the same `native_libs.jar` rules_android already extracts into the
+    # APK.
+    code_asset_dirs = app_info.bundled_code_assets
 
     kernel_dill = app_info.kernel_dill
 
@@ -344,8 +347,8 @@ def _flutter_android_bundle_impl(ctx):
     # In debug mode (JIT) with no plugin/FFI libs there is nothing to
     # package — create an empty jar so the java_import pipeline in the
     # macro doesn't break.
-    if all_native_libs:
-        native_libs_jar = _create_native_libs_jar(ctx, aot_output, native_libs, abi)
+    if all_native_libs or code_asset_dirs:
+        native_libs_jar = _create_native_libs_jar(ctx, aot_output, native_libs, abi, code_asset_dirs)
     else:
         native_libs_jar = ctx.actions.declare_file(ctx.label.name + "_native_libs.jar")
 

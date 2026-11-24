@@ -188,8 +188,7 @@ def _apple_ios_privacy(apple):
 
 def _render_dart_member_content(package_name, language_version, version, plugin):
     """Renders the `dart_package_member` block (and `test` runner when needed)."""
-    code_assets = plugin.code_assets if plugin and hasattr(plugin, "code_assets") else []
-    unreplaced_hook = plugin.has_unreplaced_hook if plugin and hasattr(plugin, "has_unreplaced_hook") else ""
+    hook_error = plugin.hook_error if plugin and hasattr(plugin, "hook_error") else ""
     link_hook = plugin.link_hook if plugin and hasattr(plugin, "link_hook") else ""
     package_files = plugin.package_files if plugin and hasattr(plugin, "package_files") else None
     if package_files != None:
@@ -198,8 +197,7 @@ def _render_dart_member_content(package_name, language_version, version, plugin)
             language_version,
             merged_label = "//:merged",
             version = version,
-            code_assets = code_assets,
-            has_unreplaced_hook = unreplaced_hook,
+            hook_error = hook_error,
             link_hook = link_hook,
             package_files = package_files,
         )
@@ -209,8 +207,7 @@ def _render_dart_member_content(package_name, language_version, version, plugin)
             language_version,
             merged_label = "//:merged",
             version = version,
-            code_assets = code_assets,
-            has_unreplaced_hook = unreplaced_hook,
+            hook_error = hook_error,
             link_hook = link_hook,
         )
     if package_name != "test":

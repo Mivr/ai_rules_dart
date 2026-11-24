@@ -69,7 +69,7 @@ void main() {
     nonEmpty: true,
   );
   check(
-    'curated code-asset lib libsqlite3.so',
+    'build-hook code-asset lib libsqlite3.so',
     '$bundlePath/lib/libsqlite3.so',
     nonEmpty: true,
   );

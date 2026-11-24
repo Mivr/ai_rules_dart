@@ -1,11 +1,6 @@
 load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_test")
-load(":registry_contract.bzl", "check_registry_contract")
 
 exports_files(["pubspec.lock"])
-
-# Asserts rules_dart's curated-registry resolver is loadable and usable from
-# another module, the way rules_flutter consumes it.
-check_registry_contract()
 
 # A package's non-`lib/` files are part of its runfiles. The test reads the
 # generated spoke's own `pubspec.yaml`, which no compile action has seen, so it

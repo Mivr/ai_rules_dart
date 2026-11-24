@@ -1,8 +1,7 @@
 """Dart SDK release versions and their SHA-256 checksums per platform, and semver comparison.
 
 The semver helpers sit here, above the generated tables, because this leaf is
-loadable from every layer (`dart/ext/registry.bzl` version-bounds its curated
-entries with `parse_semver`). `update_cross_sdk_versions` keeps everything
+loadable from every layer. `update_cross_sdk_versions` keeps everything
 before the end of `TOOL_VERSIONS` verbatim.
 """
 

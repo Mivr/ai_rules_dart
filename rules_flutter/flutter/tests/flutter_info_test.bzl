@@ -3,7 +3,7 @@
 `contributing_library` stands in for `flutter_library` / `flutter_plugin`: a
 rule that contributes on several channels at once and reaches `FlutterInfo`
 only through the constructor. `single_channel_library` stands in for
-`flutter_native_asset` / `flutter_data_asset`, which contribute on exactly one channel and forward nothing.
+`flutter_data_asset`, which contributes on exactly one channel and forwards nothing.
 
 The claim under test: a caller gets every dependency's contribution on every
 channel without naming any field, so adding a field to `FlutterInfo` cannot
@@ -70,7 +70,7 @@ def _single_channel_library_impl(ctx):
 single_channel_library = rule(
     implementation = _single_channel_library_impl,
     attrs = {"library": attr.string(mandatory = True)},
-    doc = "A one-channel producer that forwards nothing, like `flutter_native_asset`.",
+    doc = "A one-channel producer that forwards nothing, like `flutter_data_asset`.",
 )
 
 def _field(structs, name):
@@ -148,7 +148,7 @@ def _single_channel_test_impl(ctx):
     # empty one is the honest "contributes nothing here".
     asserts.equals(env, [], info.binding_contracts.to_list())
     asserts.equals(env, [], info.plugins)
-    asserts.equals(env, [], info.native_assets.to_list())
+    asserts.equals(env, [], info.data_assets.to_list())
     asserts.equals(env, [], info.apple_privacy_manifests.to_list())
 
     return analysistest.end(env)

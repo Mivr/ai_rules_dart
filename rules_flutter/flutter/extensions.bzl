@@ -20,9 +20,9 @@ toolchain out of a pre-extracted local SDK with
 docs/flutter-sdk-versions.md.
 """
 
-load("@rules_dart//dart/ext:registry.bzl", "curated_code_assets")
 load("@rules_dart//dart/pub:extensions.bzl", "touch_scanner_runtime_label")
 load("@rules_dart//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
+load("@rules_dart//dart/pub:pub_lock_package.bzl", "hook_repo_attrs", "lock_hook_settings")
 load(
     "@rules_dart//dart/pub:pub_plan.bzl",
     "own_dep_labels",
@@ -762,8 +762,8 @@ def _plan_hub_graph(module_ctx, hub, plans):
     sccs = plan_scope_sccs(sorted(raw.keys()), {}, [hub.hub_name], hub.hub_name, kept)
     return struct(raw = raw, kept = kept, sccs = sccs)
 
-def _flutter_spoke_attrs(hub, name):
-    """The attributes every Flutter package repository of the hub shares, plus its own native ones."""
+def _flutter_spoke_attrs(hub, name, hook_settings):
+    """The attributes every Flutter package repository of the hub shares, plus its own native and hook ones."""
     pub_tag = hub.pub_tag
     swiftpm_attrs = pub_spoke_swiftpm_attrs(pub_tag, include_ios_native_deps = True, plugin_name = name)
     return dict(
@@ -777,6 +777,7 @@ def _flutter_spoke_attrs(hub, name):
         plugin_native_deps = swiftpm_attrs.plugin_deps,
         podfile_lock = swiftpm_attrs.podfile_lock,
         pubspec_lock = pub_tag.lock,
+        **hook_repo_attrs(hook_settings.get(name))
     )
 
 def _scc_member_spec(hub, member, plans, graph):
@@ -790,7 +791,6 @@ def _scc_member_spec(hub, member, plans, graph):
             "sha256": pkg.sha256,
             "url": plans[member]["archive_url"],
             "planned_deps": graph.raw[member],
-            "code_assets": curated_code_assets(member, pkg.version),
         }
     if member in hub.git:
         pkg = hub.git[member]
@@ -802,7 +802,6 @@ def _scc_member_spec(hub, member, plans, graph):
             "resolved_ref": pkg.resolved_ref,
             "path": pkg.path,
             "planned_deps": graph.raw[member],
-            "code_assets": curated_code_assets(member, pkg.version),
         }
     path_info = hub.path_pkgs[member]
     return {
@@ -811,10 +810,9 @@ def _scc_member_spec(hub, member, plans, graph):
         "path": path_info.path,
         "version": path_info.version,
         "planned_deps": graph.raw[member],
-        "code_assets": curated_code_assets(member, path_info.version),
     }
 
-def _emit_scc_spokes(hub, plans, graph, labels, ignore_hooks):
+def _emit_scc_spokes(hub, plans, graph, labels):
     """Creates one `flutter_pub_scc_package` per dependency cycle of the hub."""
     pub_tag = hub.pub_tag
     swiftpm_attrs = pub_spoke_swiftpm_attrs(pub_tag, include_ios_native_deps = True)
@@ -841,7 +839,6 @@ def _emit_scc_spokes(hub, plans, graph, labels, ignore_hooks):
                 if m in in_cycle
             },
             overlay_roots = hub.overlay_roots,
-            ignore_hooks = sorted([m for m in ignore_hooks if m in in_cycle]),
             package_resolved = swiftpm_attrs.package_resolved,
             package_sha256 = swiftpm_attrs.package_sha256,
             ios_native_deps = swiftpm_attrs.ios_native_deps,
@@ -849,7 +846,7 @@ def _emit_scc_spokes(hub, plans, graph, labels, ignore_hooks):
             pubspec_lock = pub_tag.lock,
         )
 
-def _emit_pub_hub(module_ctx, hub, plans):
+def _emit_pub_hub(module_ctx, hub, plans, hook_settings):
     """Generates one hub's repositories from its plan.
 
     Every package repository's attributes are its own: its coordinates, the
@@ -865,7 +862,6 @@ def _emit_pub_hub(module_ctx, hub, plans):
     pub_tag = hub.pub_tag
     graph = _plan_hub_graph(module_ctx, hub, plans)
     labels = {name: "@%s//:%s" % (hub_name, name) for name in hub.all_package_names}
-    ignore_hooks = {pkg_name: True for pkg_name in pub_tag.ignore_hooks}
 
     for name in sorted(hub.hosted.keys()):
         pkg = hub.hosted[name]
@@ -878,11 +874,9 @@ def _emit_pub_hub(module_ctx, hub, plans):
                 url = plans[name]["archive_url"],
                 planned_deps = graph.raw[name],
                 deps = own_dep_labels(name, graph.kept[name], labels),
-                code_assets = curated_code_assets(name, pkg.version),
-                ignore_hook = name in ignore_hooks,
                 android_maven_deps = pub_tag.android_maven_deps,
                 android_maven_ignore = pub_tag.android_maven_ignore,
-                **_flutter_spoke_attrs(hub, name)
+                **_flutter_spoke_attrs(hub, name, hook_settings)
             )
         if not overlay_replaces_spoke(module_ctx, hub.overlay_roots, name, pkg.version):
             flutter_pub_android_package(
@@ -906,11 +900,9 @@ def _emit_pub_hub(module_ctx, hub, plans):
                 version = pkg.version,
                 planned_deps = graph.raw[name],
                 deps = own_dep_labels(name, graph.kept[name], labels),
-                code_assets = curated_code_assets(name, pkg.version),
-                ignore_hook = name in ignore_hooks,
                 android_maven_deps = pub_tag.android_maven_deps,
                 android_maven_ignore = pub_tag.android_maven_ignore,
-                **dict(git_attrs, **_flutter_spoke_attrs(hub, name))
+                **dict(git_attrs, **_flutter_spoke_attrs(hub, name, hook_settings))
             )
         if not overlay_replaces_spoke(module_ctx, hub.overlay_roots, name, pkg.version):
             flutter_pub_android_package(
@@ -935,11 +927,9 @@ def _emit_pub_hub(module_ctx, hub, plans):
                 version = path_info.version,
                 planned_deps = graph.raw[name],
                 deps = own_dep_labels(name, graph.kept[name], labels),
-                code_assets = curated_code_assets(name, path_info.version),
-                ignore_hook = name in ignore_hooks,
                 android_maven_deps = maven.deps,
                 android_maven_ignore = maven.ignore,
-                **_flutter_spoke_attrs(hub, name)
+                **_flutter_spoke_attrs(hub, name, hook_settings)
             )
         if name in declares_android and not overlay_replaces_spoke(module_ctx, hub.overlay_roots, name, path_info.version):
             flutter_pub_android_package(
@@ -952,7 +942,7 @@ def _emit_pub_hub(module_ctx, hub, plans):
                 android_maven_ignore = maven.ignore,
             )
 
-    _emit_scc_spokes(hub, plans, graph, labels, ignore_hooks)
+    _emit_scc_spokes(hub, plans, graph, labels)
 
     # A downloaded version's SDK spokes all link into the toolchain's one
     # shared source extraction; a local SDK's symlink the package out of the
@@ -999,9 +989,19 @@ def _register_pub_hubs(module_ctx, selected_info, root_overlay_roots, pub_yaml):
                 hub_overlay_roots(root_overlay_roots, _overlay_roots_of_module(mod), mod.is_root),
                 pub_yaml,
             ))
+    hook_settings = lock_hook_settings(module_ctx, [
+        struct(
+            name = hub.hub_name,
+            isolated = True,
+            lock = hub.pub_tag.lock,
+            hook_data = hub.pub_tag.hook_data,
+            hook_network = hub.pub_tag.hook_network,
+        )
+        for hub in hubs
+    ], "") if hubs else {}
     if not any([hub.hosted or hub.git for hub in hubs]):
         for hub in hubs:
-            _emit_pub_hub(module_ctx, hub, {})
+            _emit_pub_hub(module_ctx, hub, {}, hook_settings.get(hub.hub_name, {}))
         return None
 
     # The archive fallback scans through rules_dart's scanner; resolving its
@@ -1017,7 +1017,7 @@ def _register_pub_hubs(module_ctx, selected_info, root_overlay_roots, pub_yaml):
         rule = "flutter.pub",
     )
     for hub, plans in zip(hubs, scope_plans):
-        _emit_pub_hub(module_ctx, hub, plans)
+        _emit_pub_hub(module_ctx, hub, plans, hook_settings.get(hub.hub_name, {}))
     return recorded
 
 def _overlay_roots_of_module(mod):

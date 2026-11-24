@@ -1,0 +1,35 @@
+load("//dart:defs.bzl", "dart_binary", "dart_test")
+
+exports_files(
+    [
+        "pub_plan.json",
+        "pubspec.lock",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Runs build and link hooks through `package:hooks_runner` and writes an app's
+# native-assets manifest (see the file's header). Built from the runner
+# version the SDK's own tools use, pinned in the isolated
+# `@rules_dart_hook_runner_deps` hub. Run by `dartaotruntime` on the raw
+# snapshot as a build-time tool; no library it is built from has a hook, so
+# naming it from libraries with one makes no cycle.
+dart_binary(
+    name = "hook_runner",
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "hook_runner.dart",
+    modular_kernel = False,
+    snapshot_launcher = False,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_dart_hook_runner_deps//:args",
+        "@rules_dart_hook_runner_deps//:code_assets",
+        "@rules_dart_hook_runner_deps//:data_assets",
+        "@rules_dart_hook_runner_deps//:file",
+        "@rules_dart_hook_runner_deps//:hooks",
+        "@rules_dart_hook_runner_deps//:hooks_runner",
+        "@rules_dart_hook_runner_deps//:logging",
+        "@rules_dart_hook_runner_deps//:package_config",
+    ],
+)

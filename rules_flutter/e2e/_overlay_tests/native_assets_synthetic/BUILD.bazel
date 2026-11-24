@@ -1,8 +1,9 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_dart//dart:defs.bzl", "dart_code_asset")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_plugin")
-load("@rules_flutter//flutter:native_assets.bzl", "flutter_data_asset", "flutter_native_asset")
+load("@rules_flutter//flutter:native_assets.bzl", "flutter_data_asset")
 
 exports_files(["pubspec.lock"])
 
@@ -14,11 +15,8 @@ cc_library(
 
 cc_shared_library(
     name = "_synthetic_dylib",
-    # Use a distinct internal filename — flutter_native_asset symlinks
-    # this to `synthetic.dylib` in its own package, and that's what
-    # lands in `Contents/Frameworks/`. Matching names collide because
-    # both rules live in the same Bazel package.
-    shared_lib_name = "_synthetic_internal.dylib",
+    # The file name it lands under in `Contents/Frameworks/`.
+    shared_lib_name = "synthetic.dylib",
     target_compatible_with = ["@platforms//os:macos"],
     user_link_flags = [
         "-Wl,-install_name,@rpath/synthetic.dylib",
@@ -26,15 +24,13 @@ cc_shared_library(
     deps = [":_synthetic_cc"],
 )
 
-# 2. Flutter Native Assets markers — one per target OS, routed by the
-#    `select()` on the plugin below. Apple builds are single-arch here;
-#    multi-arch is handled separately via `apple_universal_binary`.
-flutter_native_asset(
-    name = "synthetic_native_asset_macos",
+# 2. The code asset binding the library to its id, routed by the `select()`
+#    on the plugin below. Apple builds are single-arch here; multi-arch is
+#    handled separately via `apple_universal_binary`.
+dart_code_asset(
+    name = "synthetic_code_asset_macos",
     asset_id = "package:native_assets_synthetic/synthetic.dylib",
-    bundle_filename = "synthetic.dylib",
-    library = ":_synthetic_dylib",
-    link_mode = "dynamic_loading_bundle",
+    shared_library = ":_synthetic_dylib",
     target_compatible_with = ["@platforms//os:macos"],
 )
 
@@ -44,8 +40,8 @@ flutter_data_asset(
     file = "data/blob.txt",
 )
 
-# 3. A flutter_plugin glue target that pulls the native_asset and
-#    data_asset into the FlutterInfo dep graph. Empty `platforms = []`
+# 3. A flutter_plugin glue target that pulls the code asset and
+#    data_asset into the dependency graph. Empty `platforms = []`
 #    keeps it acting as a plain pure-Dart container; the only purpose
 #    is to surface FlutterInfo with the asset entries for transitive
 #    pickup by `flutter_application`.
@@ -59,8 +55,8 @@ flutter_plugin(
     package_name = "native_assets_synthetic",
     srcs = [],
     data_assets = [":synthetic_blob"],
-    native_assets = select({
-        "@platforms//os:macos": [":synthetic_native_asset_macos"],
+    code_assets = select({
+        "@platforms//os:macos": [":synthetic_code_asset_macos"],
         "//conditions:default": [],
     }),
     platforms = [],

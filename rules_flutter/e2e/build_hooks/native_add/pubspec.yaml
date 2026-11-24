@@ -1,0 +1,9 @@
+name: native_add
+publish_to: none
+environment:
+  sdk: ^3.10.0
+dependencies:
+  code_assets: any
+  hooks: any
+  logging: any
+  native_toolchain_c: any

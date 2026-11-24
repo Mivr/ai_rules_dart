@@ -52,8 +52,8 @@ forwarded silently discards every dependency's values.""",
         "package_files": "list[struct]: This target's own per-package runtime files, one record per package it contributes (its `data` files, for a `dart_library`). Each record has `package_name` (str), `lib_root` (str) and `files` (list[File]), so a consumer can find a transitive package's root and its `pubspec.yaml` without walking runfiles. A merged multi-package library's own `data` has no single package to name, so its record carries an empty `package_name` and `lib_root`; its files are still in `transitive_package_files`. Empty when the target contributes none. Optional: a producer built against a rules_dart predating the field omits it; read it with `getattr(..., [])`.",
         "transitive_package_files": "depset[File]: The runtime `data` files of this library and all transitive deps. Runfiles-only: never in `DefaultInfo.files`, `transitive_resources`, or an action's inputs. Optional: a producer built against a rules_dart predating the field omits it; read it with `getattr(..., depset())`.",
         "transitive_packages": "depset[DartPackageInfo]: Package records for this library and all transitive deps.",
-        "transitive_code_asset_files": "depset[File]: The dynamic libraries of every transitive code asset. Carried separately from `transitive_packages` because a depset of providers cannot be turned back into files for runfiles.",
-        "closure_facts": "struct or None: Small facts about the closure, merged from the dependencies' facts where the provider is built, so a consumer need not walk `transitive_packages` to learn them: the closure's root packages, Flutter embedder files, whether any record has code assets or an unreplaced build hook or a root inside another package's `lib/`, the labels merged, and a depset naming the owner of each package name and root. None when a dependency carries none. Optional: read it with `getattr(..., None)`; a reader without it takes the path that walks the closure. Internal to rules_dart: its shape may change.",
+        "transitive_native_assets": "depset[File]: The native assets of this library and all transitive deps: each build hook's output directory (the hook runner's `assets.json` and the files the hook produced), and each `dart_code_asset`'s `.assets.json` with its library. An executable turns them into its native-assets manifest. Carried beside `transitive_packages` because a depset of providers cannot be turned back into files for action inputs.",
+        "closure_facts": "struct or None: Small facts about the closure, merged from the dependencies' facts where the provider is built, so a consumer need not walk `transitive_packages` to learn them: the closure's root packages, Flutter embedder files, whether any record has native assets or a root inside another package's `lib/`, the labels merged, and a depset naming the owner of each package name and root. None when a dependency carries none. Optional: read it with `getattr(..., None)`; a reader without it takes the path that walks the closure. Internal to rules_dart: its shape may change.",
     },
 )
 
@@ -91,9 +91,10 @@ DartPackageInfo = provider(
         "lib_root": "str: The short_path-based path to the package root directory (parent of `lib/`). Configuration-independent. Required; empty string for the root package.",
         "version": "str: The package's own version, as resolved by pub (e.g. `2.2.0`). Optional; empty string when unknown, which is what a `dart_library` written by hand and a producer predating this field both carry. Recorded so that two records for one package name can be checked for agreement — see `package_agreement_error`.",
         "language_version": "str: Dart language version implied by the package's `environment.sdk` constraint, in `<major>.<minor>` form. Optional; empty string when unknown.",
-        "code_assets": "tuple[DartCodeAssetInfo]: Native code assets this package owns. A tuple rather than a list because `DartPackageInfo` is carried in a depset, whose elements must be hashable.",
-        "has_unreplaced_hook": "str: Path of a `hook/build.dart` this package ships that has no Bazel replacement (empty when none). Recorded at repo generation; acted on by `dart_binary`/`dart_test`.",
+        "native_assets": "tuple[File]: This package's native assets: its build hook's output directory, and the `.assets.json` and library of each `dart_code_asset` it owns. A tuple rather than a list because `DartPackageInfo` is carried in a depset, whose elements must be hashable. Optional; empty when the package has none.",
         "link_hook": "File or None: The package's `hook/link.dart`, which `dart_link_hook` runs. Optional; `None` when the package has none, and absent from a record built by a producer predating the field.",
+        "hooks": "struct or None: What running this package's link hook needs, set when it has a hook: `inputs` (tuple[File]: the package's files a hook reads), `user_defines` (File or None: its `hooks.user_defines` slice), `pubspec` (str: the pubspec those come from) and `network` (bool). Optional; internal to rules_dart.",
+        "hook_error": "str: Why this package's build hook cannot run here (a member of a merged pub dependency cycle), or empty. An executable reaching the package fails with it. Optional.",
     },
 )
 
@@ -171,15 +172,16 @@ DartCodeAssetInfo = provider(
     doc = """A native code asset (a Bazel-built dynamic library) bound to the \
 Dart `@Native`/`@DefaultAsset` asset id the owning package uses.
 
-Produced by the `dart_code_asset` rule and consumed via the `code_assets` \
-attribute of `dart_test` / `dart_binary`, which embed the mapping into the \
-compiled kernel (`gen_kernel --native-assets`) so the Dart VM resolves the \
-package's `@Native` symbols against the Bazel-built library at runtime.""",
+Produced by the `dart_code_asset` rule and owned by a library through its \
+`code_assets` attribute: an executable depending on the library embeds the \
+mapping into its kernel and ships the library, exactly as it does with the \
+code assets of a package's build hook.""",
     fields = {
         "asset_id": "str: The code-asset id the owning package declares (its `@ffi.DefaultAsset` / `@Native(assetId:)`), e.g. `package:sqlite3/src/ffi/libsqlite3.g.dart`.",
         "link_mode": "str: How the runtime loads the asset. One of `dynamic_loading_bundle`, `dynamic_loading_system`, `dynamic_loading_executable`, `dynamic_loading_process` — the upstream `code_assets` strings, verbatim.",
         "dynamic_library": "File or None: The dynamic library (`.so`/`.dylib`/`.dll`) the asset resolves to. Set only for `dynamic_loading_bundle`; `None` otherwise.",
         "system_uri": "str: System library URI (e.g. `libsqlite3.so.0`) for `dynamic_loading_system`. Empty string otherwise.",
+        "files": "tuple[File]: The asset in the form a build hook's output takes: an `.assets.json` (the hook runner's result JSON, naming the library relative to itself) and the library. What a library owning the asset carries in `DartPackageInfo.native_assets`.",
     },
 )
 

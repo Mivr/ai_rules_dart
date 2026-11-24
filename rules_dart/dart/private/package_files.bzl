@@ -9,7 +9,7 @@ the source or resource closure by accident.
 
 The field is read through `getattr` because it is newer than `DartInfo`
 itself: a producer built against an earlier rules_dart omits it, and
-`collect_code_asset_files` established that shape for exactly this reason.
+`collect_native_assets` reads its field the same way.
 """
 
 load("//dart:providers.bzl", "DartInfo")

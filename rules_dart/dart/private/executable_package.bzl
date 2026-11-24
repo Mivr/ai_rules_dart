@@ -19,13 +19,13 @@ making the two agree or fail. `executable_package_error` holds the rules and is
 pure, so each can be tested by calling it.
 """
 
-load("//dart:providers.bzl", "DartInfo")
+load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
 load("//dart/private:closure_facts.bzl", "clean_closure", "facts_of", "name_key")
 load(
     "//dart/private:common.bzl",
     "PACKAGE_IDENTITY_ATTRS",
-    "check_unreplaced_hooks",
-    "collect_transitive_code_assets",
+    "collect_native_assets",
+    "hook_errors",
     "merge_package_records",
     "resolve_package_identity",
 )
@@ -362,7 +362,7 @@ def executable_has_package(own, package_name):
     return any([pkg.package_name == package_name for pkg in own.packages])
 
 def executable_hook_error(label, own):
-    """`check_unreplaced_hooks` over the executable's records.
+    """`hook_errors` over the executable's records.
 
     Args:
       label: The executable's label.
@@ -371,21 +371,26 @@ def executable_hook_error(label, own):
     Returns:
       The error message, or None.
     """
-    if own.closure != None and not own.closure.facts.unreplaced_hooks:
+    if own.closure != None and not own.closure.facts.hook_errors:
         return None
-    return check_unreplaced_hooks(label, executable_packages(own))
+    return hook_errors(label, executable_packages(own))
 
-def executable_code_assets(deps, own):
-    """The code assets the executable's dependencies carry, as `collect_transitive_code_assets` finds them.
+def executable_native_assets(ctx):
+    """The native assets an executable or test ships: its closure's, and any it names.
 
     Args:
-      deps: The executable's `deps`.
-      own: The `executable_package` result.
+      ctx: The rule context, with `deps`, `code_assets` and
+        `code_assets_from_deps`.
 
     Returns:
-      A list of `DartCodeAssetInfo`; empty for a clean closure, which has
-      none.
+      depset of the build hook output directories and `dart_code_asset`
+      files to turn into the native-assets manifest; empty when
+      `code_assets_from_deps` is off and `code_assets` names none.
     """
-    if own.closure != None:
-        return []
-    return collect_transitive_code_assets(deps)
+    named = depset(transitive = [
+        depset(getattr(dep[DartCodeAssetInfo], "files", ()))
+        for dep in getattr(ctx.attr, "code_assets", [])
+    ])
+    if not ctx.attr.code_assets_from_deps:
+        return named
+    return depset(transitive = [named, collect_native_assets(ctx.attr.deps)])

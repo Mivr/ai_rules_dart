@@ -27,7 +27,7 @@ Its dependencies are the `deps` the extension planned, each the hub's alias
 no other package's attributes.
 """
 
-load("@rules_dart//dart/pub:pub_lock_package.bzl", "PUB_LOCK_PACKAGE_ATTRS", "derive_language_version", "fetch_pub_lock_archive", "make_dart_library_build_content")
+load("@rules_dart//dart/pub:pub_lock_package.bzl", "PUB_HOOK_REPO_ATTRS", "PUB_LOCK_PACKAGE_ATTRS", "derive_language_version", "fetch_pub_lock_archive", "hook_attrs_block", "hook_settings_of_repo", "make_dart_library_build_content")
 load("@rules_dart//dart/pub:pub_scc.bzl", "spoke_planned_deps_error")
 load("@rules_dart//dart/pub:yaml.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint", "yaml_to_json")
 load("//flutter/private:flutter_pub_plugin_defines.bzl", "check_plugin_defines", "plugin_defines_attr")
@@ -224,22 +224,6 @@ def _detect_desktop_source_dir(ctx, package_name, platform):
         return platform
     return ""
 
-def _format_code_asset_attrs(code_assets, has_unreplaced_hook):
-    """Render the `code_assets` / `has_unreplaced_hook` attrs for a spoke.
-
-    Shared by the `flutter_library` and `flutter_plugin` generators so the two
-    emit an identical shape; the `dart_library` branch gets the equivalent from
-    rules_dart's own `make_dart_library_build_content`.
-    """
-    block = ""
-    if code_assets:
-        # Labels arrive from the curated registry; the hook path is one of
-        # two fixed entrypoints. Both still render through the helper.
-        lines = ["        " + starlark_string_literal(a) + "," for a in code_assets]
-        block += "    code_assets = [\n{}\n    ],\n".format("\n".join(lines))
-    if has_unreplaced_hook:
-        block += "    has_unreplaced_hook = " + starlark_string_literal(has_unreplaced_hook) + ",\n"
-    return block
 
 # The non-Dart remainder of `lib/`, emitted verbatim by both spoke
 # generators below — the same partition rules_dart's
@@ -278,10 +262,9 @@ def make_flutter_library_build_content(
         name,
         deps,
         language_version,
-        code_assets,
-        has_unreplaced_hook,
         data_patterns,
-        version = ""):
+        version = "",
+        hooks = ""):
     """Generate BUILD content for a non-plugin Flutter spoke shipping fonts/assets/shaders.
 
     Counterpart to `make_dart_library_build_content` — used when the spoke
@@ -294,9 +277,6 @@ def make_flutter_library_build_content(
         name: Target name (also the `package_name`).
         deps: Fully-qualified Bazel label strings for sibling spokes.
         language_version: Dart language version string (e.g. `"3.4"`).
-        code_assets: `dart_code_asset` label strings replacing this
-            package's build hook output.
-        has_unreplaced_hook: Path of a build hook nothing replaces, or "".
         data_patterns: Glob patterns of the package's own files an app's
             asset bundle reads (`spoke_data_patterns`).
         version: The resolved package version this spoke was fetched at, or
@@ -304,6 +284,8 @@ def make_flutter_library_build_content(
             `make_dart_library_build_content`: its sole use is agreement
             checking when one package name arrives from two hubs, and an
             unstated version never conflicts with a stated one.
+        hooks: The package's hook attributes (rules_dart's
+            `hook_attrs_block`), or "".
 
     Returns:
         BUILD.bazel content as a string.
@@ -332,7 +314,7 @@ flutter_library(
         deps = deps_block,
         language_version = language_version,
         version = _format_version_attr(version),
-        asset_attrs = _format_code_asset_attrs(code_assets, has_unreplaced_hook),
+        asset_attrs = hooks,
         pub_attrs = pub_attrs,
     )
 
@@ -351,8 +333,6 @@ def make_flutter_plugin_build_content(
         name,
         deps,
         language_version,
-        code_assets,
-        has_unreplaced_hook,
         plugin_platforms_json,
         apple_macos_srcs_dirs,
         apple_ios_srcs_dirs,
@@ -364,7 +344,8 @@ def make_flutter_plugin_build_content(
         windows_src_dir,
         data_patterns = [],
         version = "",
-        plugin_defines = []):
+        plugin_defines = [],
+        hooks = ""):
     """Generate BUILD content for a Flutter plugin spoke.
 
     Emits a `flutter_plugin` plus optional per-platform
@@ -382,9 +363,6 @@ def make_flutter_plugin_build_content(
         name: Target name (also the `package_name`).
         deps: Fully-qualified Bazel label strings for sibling spokes.
         language_version: Dart language version string (e.g. `"3.4"`).
-        code_assets: `dart_code_asset` label strings replacing this
-            package's build hook output.
-        has_unreplaced_hook: Path of a build hook nothing replaces, or "".
         plugin_platforms_json: JSON-encoded `flutter.plugin.platforms` dict.
         apple_macos_srcs_dirs: Detected macOS Apple source dirs.
         apple_ios_srcs_dirs: Detected iOS Apple source dirs.
@@ -403,6 +381,8 @@ def make_flutter_plugin_build_content(
             unstated version never conflicts with a stated one.
         plugin_defines: Preprocessor defines for this plugin's Apple
             libraries, in the order given. Empty emits no attribute.
+        hooks: The package's build and link hook attributes
+            (`hook_attrs_block`), or "".
 
     Returns:
         BUILD.bazel content as a string.
@@ -467,7 +447,7 @@ flutter_plugin(
 """.format(
         name = name,
         version = _format_version_attr(version),
-        asset_attrs = _format_code_asset_attrs(code_assets, has_unreplaced_hook),
+        asset_attrs = hooks,
         resources = _RESOURCES_GLOB_BLOCK,
         deps = deps_block,
         language_version = language_version,
@@ -482,25 +462,20 @@ flutter_plugin(
         pub_attrs = pub_attrs,
     )
 
-# The hook entrypoints upstream Dart defines (`package:hooks` — `build` and
-# `link`). A package shipping one produces native libraries by running Dart at
-# build time, which Bazel cannot do hermetically; something must stand in for it.
-_DART_BUILD_HOOKS = ["hook/build.dart", "hook/link.dart"]
+def _hooks_block(ctx):
+    """The spoke library's hook attributes: rules_dart runs the package's hooks.
 
-def _detect_unreplaced_hook(ctx):
-    """Return the path of a build hook nothing replaces, or "".
-
-    Recording rather than failing here is deliberate, and matches rules_dart:
-    the whole lock is materialised, including packages nothing depends on, so
-    failing at repo generation would break builds over packages never reached.
-    The application that actually depends on one fails instead.
+    The package's own `hook/build.dart` runs through the Dart SDK's hook
+    runner, with the user defines, extra files and network opt-in the
+    extension gave this spoke; `hook/link.dart` runs where an app links.
     """
-    if ctx.attr.code_assets or ctx.attr.ignore_hook:
-        return ""
-    for candidate in _DART_BUILD_HOOKS:
-        if ctx.path(candidate).exists:
-            return candidate
-    return ""
+    return hook_attrs_block(
+        build_hook = ctx.path("hook/build.dart").exists,
+        link_hook = ctx.path("hook/link.dart").exists,
+        settings = hook_settings_of_repo(ctx.attr),
+        package_name = ctx.attr.package_name,
+        version = ctx.attr.version,
+    )
 
 _LANGUAGE_VERSION_PLACEHOLDER = "{LANGUAGE_VERSION}"
 _DEPS_PLACEHOLDER = "{DEPS}"
@@ -517,7 +492,7 @@ def find_hardcoded_language_version(content):
     `{LANGUAGE_VERSION}`. A template that writes the version out instead is a
     second declaration of the same fact, and the one that wins — the overlay
     replaces generated content wholesale. The two then drift silently,
-    because the overlay ladder is version-ranged: `ext/objective_c/9/` serves
+    because the overlay ladder is version-ranged: `ext/<pkg>/9/` serves
     every 9.x, so a release that raises the SDK floor keeps the old literal.
 
     Args:
@@ -556,8 +531,8 @@ def find_hardcoded_hub_dep(content):
     The two then drift on the package's next release, and the drift is not
     a stale-but-working list: `objective_c` 9.5.0 dropped `native_toolchain_c`
     from `dependencies` (its build hook stopped using it), so the lock stopped
-    carrying that package, while `ext/objective_c/9/` — one directory for the
-    whole major — kept asking for `@<hub>__native_toolchain_c`. The build died
+    carrying that package, while the overlay `ext/objective_c/9/` — one
+    directory for the whole major — kept asking for `@<hub>__native_toolchain_c`. The build died
     on an unknown repo naming neither `objective_c` nor the overlay.
 
     Args:
@@ -1058,7 +1033,7 @@ def _write_overlay_spoke(ctx, overlay_content, overlay_android_content):
     its plugin gains the Android edge. Otherwise an empty stub is emitted so
     `@<spoke>//android:lib` exists uniformly across overlay-and-no-Android
     plugins (audio_session declares Android sources and ships the full
-    sub-package; objective_c is pure Apple and gets the stub).
+    sub-package; an overlay without one gets the stub).
     """
     if overlay_android_content:
         overlay_content = overlay_with_android_edge(overlay_content, ctx.attr.package_name)
@@ -1080,7 +1055,7 @@ def _detect_desktop_plugin_sources(ctx, package_name, plugin_block):
         windows_src_dir = _detect_desktop_source_dir(ctx, package_name, "windows")
     return struct(linux = linux_src_dir, windows = windows_src_dir)
 
-def _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hook):
+def _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets):
     """Builds a `flutter_plugin` spoke and its Android sub-package inputs."""
     package_name = ctx.attr.package_name
     apple = _detect_apple_plugin_sources(ctx, package_name, pubspec.plugin_block)
@@ -1094,8 +1069,7 @@ def _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hoo
         deps = dep_labels,
         language_version = pubspec.language_version,
         version = ctx.attr.version,
-        code_assets = ctx.attr.code_assets,
-        has_unreplaced_hook = unreplaced_hook,
+        hooks = _hooks_block(ctx),
         plugin_platforms_json = plugin_platforms_json,
         apple_macos_srcs_dirs = apple.macos_srcs,
         apple_ios_srcs_dirs = apple.ios_srcs,
@@ -1114,7 +1088,7 @@ def _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hoo
         android_plugin = bool(pubspec.plugin_block.platforms.get("android", {})),
     )
 
-def _build_library_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hook):
+def _build_library_spoke_content(ctx, pubspec, dep_labels, assets):
     """Builds a `flutter_library` spoke for asset/font/shader contributions.
 
     No plugin block, but the pubspec has flutter.fonts/assets/shaders:
@@ -1127,20 +1101,18 @@ def _build_library_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_ho
         deps = dep_labels,
         language_version = pubspec.language_version,
         version = ctx.attr.version,
-        code_assets = ctx.attr.code_assets,
-        has_unreplaced_hook = unreplaced_hook,
+        hooks = _hooks_block(ctx),
         data_patterns = assets.data_patterns,
     )
     return struct(build_content = build_content, android_plugin = False)
 
-def _build_dart_spoke_content(ctx, pubspec, dep_labels, unreplaced_hook):
+def _build_dart_spoke_content(ctx, pubspec, dep_labels):
     """Builds a plain `dart_library` spoke via rules_dart's generator."""
     build_content = make_dart_library_build_content(
         name = ctx.attr.package_name,
         deps = dep_labels,
         language_version = pubspec.language_version,
-        code_assets = ctx.attr.code_assets,
-        has_unreplaced_hook = unreplaced_hook,
+        hooks = _hooks_block(ctx),
         version = ctx.attr.version,
     )
     if ctx.attr.package_name == "test":
@@ -1154,7 +1126,7 @@ def _build_dart_spoke_content(ctx, pubspec, dep_labels, unreplaced_hook):
         )
     return struct(build_content = build_content, android_plugin = False)
 
-def _build_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hook):
+def _build_spoke_content(ctx, pubspec, dep_labels, assets):
     """Builds the spoke BUILD content for whichever branch the pubspec selects.
 
     Returns `struct(build_content, android_plugin)`: `android_plugin` says
@@ -1163,10 +1135,10 @@ def _build_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hook):
     empty stub.
     """
     if pubspec.plugin_block.present:
-        return _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hook)
+        return _build_plugin_spoke_content(ctx, pubspec, dep_labels, assets)
     if assets.has_contributions:
-        return _build_library_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hook)
-    return _build_dart_spoke_content(ctx, pubspec, dep_labels, unreplaced_hook)
+        return _build_library_spoke_content(ctx, pubspec, dep_labels, assets)
+    return _build_dart_spoke_content(ctx, pubspec, dep_labels)
 
 def _flutter_pub_package_impl(ctx):
     # rules_dart's fetch of a hosted package: a sha256-verified download,
@@ -1378,10 +1350,6 @@ def _generate_spoke(ctx, pubspec_data = None):
     # below (plugin vs library).
     assets = _spoke_asset_inputs(ctx, ctx.attr.package_name, pubspec.asset_block)
 
-    # Computed once, before the branch: which generator runs depends on the
-    # pubspec, but a build hook is a property of the package either way.
-    unreplaced_hook = _detect_unreplaced_hook(ctx)
-
     # Try overlays first (user-supplied roots win over the bundled
     # `@rules_flutter//ext/` tree). On match, the overlay replaces
     # auto-generation entirely; the user takes responsibility for the
@@ -1404,7 +1372,7 @@ def _generate_spoke(ctx, pubspec_data = None):
         _write_overlay_spoke(ctx, overlay_content, overlay_android_content)
         return
 
-    spoke = _build_spoke_content(ctx, pubspec, dep_labels, assets, unreplaced_hook)
+    spoke = _build_spoke_content(ctx, pubspec, dep_labels, assets)
     ctx.file("BUILD.bazel", spoke.build_content)
 
     # Always emit `android/BUILD.bazel`. An Android plugin gets only an alias
@@ -1474,10 +1442,8 @@ flutter_pub_path_package = repository_rule(
         ),
         "planned_deps": PUB_LOCK_PACKAGE_ATTRS["planned_deps"],
         "deps": PUB_LOCK_PACKAGE_ATTRS["deps"],
-        "code_assets": PUB_LOCK_PACKAGE_ATTRS["code_assets"],
-        "ignore_hook": PUB_LOCK_PACKAGE_ATTRS["ignore_hook"],
-    })),
-    doc = "Symlinks a workspace-local `path:` pub package into a spoke and emits the same `flutter_plugin` / `flutter_library` / `dart_library` the hosted rule would. The `flutter pub get` analog for path dependencies: hermetic (workspace-relative only, watched for changes) and fail-closed on anything resolving outside the workspace's real root; the package's pubspec `name` and `version` must match the lock entry, since overlays and code assets are selected by lock name and version.",
+    } | PUB_HOOK_REPO_ATTRS)),
+    doc = "Symlinks a workspace-local `path:` pub package into a spoke and emits the same `flutter_plugin` / `flutter_library` / `dart_library` the hosted rule would. The `flutter pub get` analog for path dependencies: hermetic (workspace-relative only, watched for changes) and fail-closed on anything resolving outside the workspace's real root; the package's pubspec `name` and `version` must match the lock entry, since overlays are selected by lock name and version.",
 )
 
 # A git package's coordinates in the lock, as `flutter_pub_git_package` and
@@ -1510,8 +1476,6 @@ flutter_pub_git_package = repository_rule(
         ),
         "planned_deps": PUB_LOCK_PACKAGE_ATTRS["planned_deps"],
         "deps": PUB_LOCK_PACKAGE_ATTRS["deps"],
-        "code_assets": PUB_LOCK_PACKAGE_ATTRS["code_assets"],
-        "ignore_hook": PUB_LOCK_PACKAGE_ATTRS["ignore_hook"],
-    }))),
+    } | PUB_HOOK_REPO_ATTRS))),
     doc = "Fetches a git-sourced Flutter pub package at its locked commit, the way rules_dart's `pub_lock_git_package` does, and emits the same `flutter_plugin` / `flutter_library` / `dart_library` the hosted rule would.",
 )

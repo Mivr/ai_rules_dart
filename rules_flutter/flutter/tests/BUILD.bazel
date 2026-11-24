@@ -68,7 +68,7 @@ load(":local_sdk_test.bzl", "local_sdk_test_suite")
 load(":macos_test.bzl", "macos_apple_plugin_test_suite", "macos_test_suite")
 load(":manifest_merge_test.bzl", "manifest_merge_test_suite")
 load(":modular_api_test.bzl", "modular_api_test_suite")
-load(":native_assets_test.bzl", "bridge_probe", "native_assets_test_suite")
+load(":native_assets_test.bzl", "native_assets_test_suite")
 load(":native_sources_test.bzl", "native_sources_test_suite")
 load(":objc_drift_test.bzl", "objc_drift_test_suite")
 load(":path_android_maven_test.bzl", "path_android_maven_test_suite")
@@ -380,19 +380,6 @@ native_assets_test_suite(name = "native_assets_test")
 native_sources_test_suite(name = "native_sources_test")
 
 modular_api_test_suite(name = "modular_api_test")
-
-bridge_probe(
-    name = "dart_code_asset_bridge_probe",
-    expected_asset_ids = ["package:asset_fixture/src/ffi/asset_fixture.g.dart"],
-    target_compatible_with = HOST_COMPATIBLE,
-    deps = ["//flutter/tests/dart_asset_fixture:asset_fixture"],
-)
-
-build_test(
-    name = "dart_code_asset_bridge_test",
-    target_compatible_with = HOST_COMPATIBLE,
-    targets = [":dart_code_asset_bridge_probe"],
-)
 
 validation_test_suite(name = "validation_test")
 

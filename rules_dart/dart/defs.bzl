@@ -16,7 +16,7 @@ Load this file from your BUILD files to access the following rules:
 - `dart_wasm_binary`: Compiles a Dart web application to WebAssembly.
 - `dart_build_runner`: Builds a Dart package's generated files with the `build_runner` builders of the lock, byte for byte what `dart run build_runner build` writes.
 - `build_runner_sdk_summary`: The SDK summary `dart_build_runner` needs for a package that imports Flutter.
-- `dart_code_asset`: Binds a native dynamic library — a Bazel-built `cc_shared_library` or a pinned prebuilt file — to a Dart code-asset id, for use in `dart_test`/`dart_binary` `code_assets`.
+- `dart_code_asset`: Binds a native dynamic library — a Bazel-built `cc_shared_library` or a pinned prebuilt file — to a Dart code-asset id, for a `dart_library`'s `code_assets` (or a `dart_test`/`dart_binary`'s).
 - `dart_link_hook`: Runs packages' `hook/link.dart` over a `dart_binary`'s recorded uses and collects the data assets they emit.
 """
 

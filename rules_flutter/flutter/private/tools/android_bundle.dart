@@ -4,6 +4,9 @@
 ///   - `native-libs-jar`: Validates that every native library is an ELF binary
 ///     matching the target Android ABI's `e_machine`, then packages all
 ///     `lib/<abi>/<basename>=<src>` entries into the output `.jar` via `zipper`.
+///     Each `--lib-dir <dir>` adds every file of a directory as
+///     `lib/<abi>/<name>` (an app's bundled code assets, a directory whose
+///     files are known only when it is built).
 ///   - `empty-jar`: Writes a minimal valid 22-byte empty ZIP (End of Central
 ///     Directory record) for debug/JIT builds with no native libraries.
 ///   - `debug-assets`: Copies the `flutter_assets` tree (dereferencing
@@ -232,6 +235,7 @@ Future<void> _runNativeLibsJar(List<String> args) async {
   int? machine;
   String? zipper;
   final entries = <String>[];
+  final libDirs = <String>[];
 
   for (var i = 0; i < args.length; i++) {
     final String arg = args[i];
@@ -241,6 +245,11 @@ Future<void> _runNativeLibsJar(List<String> args) async {
           throw ArgumentError('Missing value for --output');
         }
         output = args[++i];
+      case '--lib-dir':
+        if (i + 1 >= args.length) {
+          throw ArgumentError('Missing value for --lib-dir');
+        }
+        libDirs.add(args[++i]);
       case '--abi':
         if (i + 1 >= args.length) {
           throw ArgumentError('Missing value for --abi');
@@ -267,9 +276,10 @@ Future<void> _runNativeLibsJar(List<String> args) async {
   if (output == null || abi == null || machine == null) {
     throw ArgumentError(
       'Usage: android_bundle.dart native-libs-jar --output <jar> --abi <abi> '
-      '--machine <machine> [<entry=src>...]',
+      '--machine <machine> [--lib-dir <dir>]... [<entry=src>...]',
     );
   }
+  entries.addAll(libDirEntries(abi, libDirs, entries));
 
   await packageNativeLibsJar(
     outputPath: output,
@@ -278,6 +288,42 @@ Future<void> _runNativeLibsJar(List<String> args) async {
     zipperPath: zipper,
     entries: entries,
   );
+}
+
+/// The `lib/<abi>/<name>=<path>` entries of every file in [dirs], in name
+/// order.
+///
+/// Fails when a name is already packaged by [entries] or by another
+/// directory: Android loads a library by its name, so only one could load.
+List<String> libDirEntries(
+  String abi,
+  List<String> dirs,
+  List<String> entries,
+) {
+  final seen = <String, String>{
+    for (final e in entries) e.substring(0, e.indexOf('=')): e.substring(e.indexOf('=') + 1),
+  };
+  final added = <String>[];
+  for (final dir in dirs) {
+    final files = Directory(dir)
+        .listSync(followLinks: true)
+        .whereType<File>()
+        .toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+    for (final file in files) {
+      final name = 'lib/$abi/${file.uri.pathSegments.last}';
+      final previous = seen[name];
+      if (previous != null) {
+        throw ArgumentError(
+          'two native libraries would both be packaged as $name: '
+          '$previous and ${file.path}. Android can only load one.',
+        );
+      }
+      seen[name] = file.path;
+      added.add('$name=${file.path}');
+    }
+  }
+  return added;
 }
 
 void _runEmptyJar(List<String> args) {

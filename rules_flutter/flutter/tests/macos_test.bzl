@@ -253,7 +253,7 @@ def _aotless_application_impl(ctx):
         is_debug = False,
         package_config = dummy,
         native_assets_manifest = None,
-        bundled_code_assets = depset(),
+        bundled_code_assets = [],
         bundled_data_assets = depset(),
         apple_privacy_manifests = depset(),
         plugins = [],
@@ -329,10 +329,9 @@ def _bundling_tests(name):
     staged_app = name + "_fake_app"
     fake_application(
         name = staged_app,
-        # `libadd` arrives by both routes. `libsub` is the case the staging
-        # exists for: a library that is not at the root of its package.
-        native_libs = ["libadd.dylib", "vendor/lib/libsub.dylib"],
-        code_assets = ["libadd.dylib", "assets/libasset.dylib"],
+        # `libsub` is the case the staging exists for: a library that is not
+        # at the root of its package.
+        native_libs = ["libadd.dylib", "vendor/lib/libsub.dylib", "assets/libasset.dylib"],
         tags = ["manual"],
     )
     flutter_macos_native_libs(
@@ -365,8 +364,7 @@ def _bundling_tests(name):
     # Two different libraries that would both be Contents/Frameworks/libdup.dylib.
     fake_application(
         name = name + "_fake_app_duplicate",
-        native_libs = ["one/libdup.dylib"],
-        code_assets = ["two/libdup.dylib"],
+        native_libs = ["one/libdup.dylib", "two/libdup.dylib"],
         tags = ["manual"],
     )
     flutter_macos_native_libs(

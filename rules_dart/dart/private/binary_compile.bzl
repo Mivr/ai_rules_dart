@@ -4,13 +4,12 @@ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart/private:build_settings.bzl", "merge_dart_defines")
 load(
     "//dart/private:common.bzl",
-    "code_asset_entries",
     "collect_transitive_srcs",
     "find_sdk_kernel_tools",
-    "generate_native_assets_yaml",
     "generate_stable_package_config",
     "target_dart_abi",
 )
+load("//dart/private:build_hooks.bzl", "native_assets_manifest")
 load("//dart/private:dart_compile.bzl", "dart_compile_action", "get_compilation_mode_flags", "split_compile_flags")
 load(
     "//dart/private:dart_kernel.bzl",
@@ -48,29 +47,31 @@ def kernel_flag_defines(flags):
     rest = [f for f in split.front_end if not f.startswith("-D")] + split.backend
     return defines, rest
 
-def _kernel_native_assets(ctx, run):
-    """Writes a kernel binary's code-asset mapping.
+def _binary_native_assets(ctx, run):
+    """Writes a binary's code-asset mapping and bundles its libraries.
 
-    The entry module embeds the mapping, and the VM resolves each `relative`
-    path in it against the linked kernel, which is `run.output`.
+    The VM resolves each `relative` path in the mapping against the
+    program, which is `run.output`; the libraries ship in runfiles, in one
+    directory beside it.
 
     Args:
       ctx: The rule context.
       run: The `struct` `binary_compile` takes.
 
     Returns:
-      `(native_assets_yaml, libs)`: the mapping File (None without code assets)
-      and the libraries it names.
+      `(native_assets_yaml, libs)`: the mapping File (None without native
+      assets) and the files to ship.
     """
-    if not run.resolved_assets:
+    if not run.native_assets:
         return None, []
-    entries, libs = code_asset_entries(ctx.label, run.resolved_assets, run.output.dirname)
-    native_assets_yaml = ctx.actions.declare_file(ctx.label.name + ".native_assets.yaml")
-    ctx.actions.write(
-        output = native_assets_yaml,
-        content = generate_native_assets_yaml(target_dart_abi(ctx), entries),
+    result = native_assets_manifest(
+        ctx,
+        run.native_assets,
+        target_dart_abi(ctx),
+        ctx.label.name,
+        relative_to = run.output.dirname,
     )
-    return native_assets_yaml, libs
+    return result.manifest, [result.bundle]
 
 def _modular_kernel_mode(ctx, compile_mode):
     """Whether `compile_mode` may take the modular path, before the eligibility facts.
@@ -163,19 +164,7 @@ def _source_compile(ctx, run):
         content = generate_stable_package_config(inputs.packages, inputs.srcs, inputs.roots),
     )
 
-    code_asset_libs = []
-    native_assets_yaml = None
-    if run.resolved_assets:
-        entries, code_asset_libs = code_asset_entries(
-            ctx.label,
-            run.resolved_assets,
-            run.output.dirname,
-        )
-        native_assets_yaml = ctx.actions.declare_file(ctx.label.name + ".native_assets.yaml")
-        ctx.actions.write(
-            output = native_assets_yaml,
-            content = generate_native_assets_yaml(target_dart_abi(ctx), entries),
-        )
+    native_assets_yaml, code_asset_libs = _binary_native_assets(ctx, run)
 
     dart_compile_action(
         ctx = ctx,
@@ -253,7 +242,7 @@ def binary_compile(ctx, run):
         rule's own inputs), `own_files` (the main and source Files), `output`
         (the declared raw compile output), `compile_mode`, `optional_outputs`
         (the declared recorded-uses and debug-info outputs) and
-        `resolved_assets` (the resolved code assets).
+        `native_assets` (depset of the native assets the binary ships).
 
     Returns:
       The list of code-asset library Files.
@@ -265,7 +254,7 @@ def binary_compile(ctx, run):
         run.own_files,
         run.own.record,
         kernel_mode = _modular_kernel_mode(ctx, run.compile_mode),
-        resolved_assets = run.resolved_assets,
+        resolved_assets = run.native_assets,
         compile_flags = other_flags,
         target_sdk = run.dart_sdk_info,
         closure = run.own.closure,
@@ -276,7 +265,7 @@ def binary_compile(ctx, run):
     if not kernel:
         _linked_compile(ctx, run, kernel_tools)
         return []
-    native_assets_yaml, code_asset_libs = _kernel_native_assets(ctx, run)
+    native_assets_yaml, code_asset_libs = _binary_native_assets(ctx, run)
     modular_executable_kernel(
         ctx,
         kernel_tools,

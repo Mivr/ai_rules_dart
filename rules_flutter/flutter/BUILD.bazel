@@ -270,9 +270,9 @@ bzl_library(
         "//flutter/private:toolchain_selection",
         "//flutter/private:versions",
         "//flutter/private:xtool_darwin_sdk_repo",
-        "@rules_dart//dart/ext:registry",
         "@rules_dart//dart/pub:extensions",
         "@rules_dart//dart/pub:pub_lock_hub",
+        "@rules_dart//dart/pub:pub_lock_package",
         "@rules_dart//dart/pub:pub_plan",
         "@rules_dart//dart/pub:yaml",
     ],
@@ -339,8 +339,6 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         "//flutter/private:flutter_data_asset",
-        "//flutter/private:flutter_native_asset",
-        "//flutter/private:flutter_native_assets",
     ],
 )
 

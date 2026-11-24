@@ -1,5 +1,5 @@
 /// Plugin that wraps the native `add` function via the Dart Native Assets
-/// pipeline (`flutter_native_asset`, no dart_plugin_class). One `@Native`
+/// pipeline (`dart_code_asset`, no dart_plugin_class). One `@Native`
 /// binding works on every platform: the VM resolves this library's default
 /// asset id (`package:add_plugin/add_plugin.dart`) at first call through the
 /// native-assets mapping the frontend_server embedded in the kernel, then

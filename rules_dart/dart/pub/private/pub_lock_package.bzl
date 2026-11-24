@@ -10,7 +10,8 @@ the `flutter pub get` analog) reuse this helper to emit the same
 """
 
 load("//dart/private:download.bzl", "pinned_download")
-load("//dart/pub/private:build_content.bzl", _PACKAGE_FILES_ATTR_DOC = "PACKAGE_FILES_ATTR_DOC", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
+load("//dart/pub/private:build_content.bzl", _PACKAGE_FILES_ATTR_DOC = "PACKAGE_FILES_ATTR_DOC", _make_dart_library_build_content = "make_dart_library_build_content")
+load("//dart/pub/private:pub_hooks.bzl", "PUB_HOOK_REPO_ATTRS", "hook_attrs_block", "hook_settings_of_repo")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 load("//dart/pub/private:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub/private:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
@@ -99,8 +100,7 @@ def _pub_lock_write_build(ctx, rule_name):
 
     Shared by the hosted and git spokes: both lay out the package's files and
     then derive the same `dart_library` from its pubspec — its SDK
-    constraint (as the Dart language version) and its hooks (recorded for
-    the consuming binary to complain about, or for `dart_link_hook` to run).
+    constraint (as the Dart language version) and its build and link hooks.
     Its dependencies are the `deps` labels the extension computed from the
     planned names.
 
@@ -133,27 +133,23 @@ def _pub_lock_write_build(ctx, rule_name):
     if err:
         fail(err)
 
-    # A package that builds native code declares a build hook. rules_dart
-    # cannot run it, so unless a curated `dart_code_asset` replaces it — or the
-    # user has declared it irrelevant — record it for the consuming binary to
-    # complain about. Recording rather than failing here is deliberate: the
-    # whole lock is materialised, including packages nothing depends on. A link
-    # hook is recorded too, for `dart_link_hook` to run.
-    hooks = _classify_pub_hooks(
-        has_build_hook = ctx.path("hook/build.dart").exists,
-        has_link_hook = ctx.path("hook/link.dart").exists,
-        build_hook_handled = bool(ctx.attr.code_assets) or ctx.attr.ignore_hook,
-    )
-
+    # A package that builds native code declares a build hook, and one that
+    # trims or bundles assets a link hook: the generated `dart_library` runs
+    # them through the SDK's own hook runner, with the user defines, extra
+    # files and network opt-in the extension gave this spoke.
     build_content = make_dart_library_build_content(
         name = ctx.attr.package_name,
         deps = ctx.attr.deps,
         language_version = language_version,
-        code_assets = ctx.attr.code_assets,
-        has_unreplaced_hook = hooks.unreplaced_hook,
         version = ctx.attr.version,
-        link_hook = hooks.link_hook,
         package_files = ctx.attr.package_files,
+        hooks = hook_attrs_block(
+            build_hook = ctx.path("hook/build.dart").exists,
+            link_hook = ctx.path("hook/link.dart").exists,
+            settings = hook_settings_of_repo(ctx.attr),
+            package_name = ctx.attr.package_name,
+            version = ctx.attr.version,
+        ),
     )
 
     ctx.file("BUILD.bazel", build_content)
@@ -285,23 +281,11 @@ PUB_LOCK_PACKAGE_ATTRS = {
               "repository holding a dependency cycle, or a `pub.package()` repository.",
         default = [],
     ),
-    "ignore_hook": attr.bool(
-        doc = "Suppress the unreplaced-hook diagnostic for this package. Set by " +
-              "`pub.from_lock(ignore_hooks = [...])`; never a default.",
-        default = False,
-    ),
-    "code_assets": attr.string_list(
-        doc = "Labels of `dart_code_asset` targets replacing this package's " +
-              "`hook/build.dart` output. Resolved by the `pub` extension from " +
-              "rules_dart's curated registry; attached to the generated " +
-              "`dart_library` so they propagate to every consumer.",
-        default = [],
-    ),
     "package_files": attr.string_list(
         doc = "Applies to this hosted package. " + _PACKAGE_FILES_ATTR_DOC,
         default = ["pubspec.yaml", "LICENSE*"],
     ),
-}
+} | PUB_HOOK_REPO_ATTRS
 
 pub_lock_package = repository_rule(
     implementation = _pub_lock_package_impl,
@@ -389,18 +373,10 @@ pub_lock_git_package = repository_rule(
                   "repository holding a dependency cycle, or a `pub.package()` repository.",
             default = [],
         ),
-        "ignore_hook": attr.bool(
-            doc = "Suppress the unreplaced-hook diagnostic for this package.",
-            default = False,
-        ),
-        "code_assets": attr.string_list(
-            doc = "Labels of `dart_code_asset` targets replacing this package's `hook/build.dart`.",
-            default = [],
-        ),
         "package_files": attr.string_list(
             doc = "Applies to this git-sourced package. " + _PACKAGE_FILES_ATTR_DOC,
             default = ["pubspec.yaml", "LICENSE*"],
         ),
-    },
+    } | PUB_HOOK_REPO_ATTRS,
     doc = "Fetches a single git-sourced package from a pubspec.lock and generates a BUILD file.",
 )

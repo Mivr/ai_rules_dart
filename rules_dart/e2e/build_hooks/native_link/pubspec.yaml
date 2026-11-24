@@ -1,0 +1,11 @@
+name: native_link
+publish_to: none
+environment:
+  sdk: ^3.10.0
+dependencies:
+  code_assets: any
+  data_assets: any
+  hooks: any
+  logging: any
+  native_toolchain_c: any
+  record_use: any

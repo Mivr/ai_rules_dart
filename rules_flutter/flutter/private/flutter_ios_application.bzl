@@ -24,7 +24,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_apple//apple/internal:framework_import_support.bzl", "framework_import_support")
 load("//flutter:providers.bzl", "FlutterApplicationInfo", "FlutterDarwinFrameworkInfo")
 load("//flutter/private:constants.bzl", "IOS_MINIMUM_OS_VERSION")
-load("//flutter/private:flutter_native_assets.bzl", "native_asset_framework_name")
+load("//flutter/private:code_assets.bzl", "native_asset_framework_name")
 
 visibility(["//flutter/..."])
 
@@ -513,17 +513,18 @@ def _flutter_ios_native_frameworks_impl(ctx):
     """Wraps each native dylib in an unsigned `.framework` for iOS bundling.
 
     iOS forbids loose embedded dylibs, so every native dependency — the legacy
-    `native_libs` set (FFI `native_deps`) and the `bundled_code_assets` set
-    contributed by Native Assets `dynamic_loading_bundle` declarations — is
+    `native_libs` set (FFI `native_deps`) and the `bundled_code_assets`, the
+    `dart_code_asset` libraries (on iOS no build hook runs yet, so none comes
+    from a hook) — is
     repackaged as `<name>.framework/<name>` (binary + Info.plist) with its
     install name rewritten to `@rpath/<name>.framework/<name>`, matching
     flutter_tools' `copyNativeCodeAssetsIOS`. The resulting
     `AppleFrameworkImportInfo` lets `ios_application` embed and code-sign each
     framework; the engine `dlopen`s the framework-relative path the
-    native-assets manifest records (see flutter_native_assets.bzl).
+    native-assets manifest records (see code_assets.bzl).
     """
     app_info = ctx.attr.application[FlutterApplicationInfo]
-    dylibs = list(app_info.native_libs) + app_info.bundled_code_assets.to_list()
+    dylibs = list(app_info.native_libs) + app_info.bundled_code_assets
     minimum_os_version = ctx.attr.minimum_os_version
     is_device = apple_support.target_environment_from_rule_ctx(ctx) == "device"
     vtool_platform = "ios" if is_device else "iossim"

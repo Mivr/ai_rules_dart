@@ -24,7 +24,8 @@ compile` action that tree-shakes, in the `exe` and `aot-snapshot` modes, so
 "empty"`).
 - `dart_link_hook` is a separate rule: it takes the uses from a
   `DartRecordedUsesInfo` or a JSON file and runs every `link_hook` its `deps`
-  closure records, one action per package, on the exec toolchain's `dart`.
+  closure records, one action per package, through the SDK's hook runner
+  (ADR 0015).
 - The data assets a hook will emit are declared by id in `data_assets`; a hook
   emitting an undeclared asset, or missing a declared one, fails. Assets are
   provided as `DartDataAssetInfo`, without bundling paths.
@@ -42,7 +43,7 @@ compile` action that tree-shakes, in the `exe` and `aot-snapshot` modes, so
 ## Consequences
 
 - Where an asset lands in an application is left to the bundler.
-- Only a build hook (`hook/build.dart`), which rules_dart cannot run, still
-  counts as an unreplaced hook that fails a consuming binary.
+- Build hooks run on their own (ADR 0015), with linking disabled, so a link
+  hook gets no code assets to route.
 - Nothing but `dart_link_hook` runs a link hook, matching `dart run`, where
   only a release build links.

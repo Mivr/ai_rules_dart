@@ -27,6 +27,7 @@ load(
     "kernel_package_config",
     "kernel_packages_consistent",
     "add_module_source_args",
+    "collect_native_assets",
     "library_module_source",
     "no_kernel_module",
     _DART_MODULAR_KERNEL_ATTRS = "MODULAR_KERNEL_ATTRS",
@@ -1015,7 +1016,7 @@ def compile_flutter_modular_test_kernel(
       lib_root: The test package's `lib_root` from `derive_lib_root`.
       packages: The synthesized `DartPackageInfo` list for the test.
       output: The linked `.dill` File to produce.
-      native_assets: The test's native-assets mapping (`native_assets.yaml`), embedded in the entry, or None.
+      native_assets: The test's native-assets mapping (`native_assets.json`), embedded in the entry, or None.
 
     Returns:
       The `base_dill` File from the transitive SDK packages if present, or `None`.
@@ -1081,7 +1082,7 @@ def compile_flutter_modular_app_kernel(
         Files compiled into the entry module under their constant URIs, the closure's
         registrant twins, which the link uses in place of the plain SDK `flutter` module, and the
         entry's extra frontend flags (`--track-widget-creation`, as the closure's modules carry).
-      native_assets: The program's native-assets mapping (`native_assets.yaml`), embedded in the entry, or None.
+      native_assets: The program's native-assets mapping (`native_assets.json`), embedded in the entry, or None.
     """
     own = [ctx.file.main] + [f for f in ctx.files.srcs if f != ctx.file.main]
     sources = [struct(uri = app_main_location(ctx.attr.package_name, lib_root, f).uri, file = f) for f in own]
@@ -1148,7 +1149,8 @@ def _flutter_modular_custom_tools(ctx, deps, own_files, packages, what):
 
     Every shape the built-in rules refuse fails here with the same reasons
     (see `flutter_module_tools`). A custom kernel takes no native-assets
-    mapping, so native assets in its closure fail too.
+    mapping, so a closure with code assets (a build hook's output or a
+    `dart_code_asset`) fails too.
 
     Args:
       ctx: The custom rule context. Must merge `FLUTTER_MODULAR_KERNEL_ATTRS`.
@@ -1162,13 +1164,8 @@ def _flutter_modular_custom_tools(ctx, deps, own_files, packages, what):
     """
     flutter_toolchain = ctx.toolchains["@rules_flutter//flutter:toolchain_type"]
     flutter_sdk_info = flutter_toolchain.flutter_sdk_info if flutter_toolchain else None
-    native_assets = depset(transitive = [
-        dep[FlutterInfo].native_assets
-        for dep in deps
-        if FlutterInfo in dep
-    ]).to_list()
-    if native_assets:
-        fail("%s: %s takes no native-assets mapping, and its closure has native assets (%s); build the program with `flutter_test` or `flutter_application`, whose entry module embeds the mapping" % (ctx.label, what, native_assets))
+    if collect_native_assets(deps):
+        fail("%s: %s takes no native-assets mapping, and its closure has code assets (a build hook's output or a `dart_code_asset`); build the program with `flutter_test` or `flutter_application`, whose entry module embeds the mapping" % (ctx.label, what))
     return flutter_sdk_info, flutter_module_tools(ctx, flutter_sdk_info, own_files, packages, what = what)
 
 def _custom_dep_kernels(ctx, deps, what):

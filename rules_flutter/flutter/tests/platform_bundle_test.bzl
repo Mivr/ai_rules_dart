@@ -249,7 +249,7 @@ def _fake_android_app_impl(ctx):
             flutter_assets = None,
             native_libs = [],
             plugins = [plugin],
-            bundled_code_assets = depset(),
+            bundled_code_assets = [],
         ),
     ]
 
@@ -358,7 +358,7 @@ def _fake_android_bundle_app_impl(ctx):
             is_debug = ctx.attr.with_kernel,
             native_libs = [],
             plugins = [],
-            bundled_code_assets = depset(),
+            bundled_code_assets = [],
         ),
     ]
 

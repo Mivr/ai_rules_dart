@@ -143,8 +143,6 @@ def _odd_names_render_escaped_test_impl(ctx):
         name = "odd_assets",
         deps = [],
         language_version = "3.4",
-        code_assets = [],
-        has_unreplaced_hook = "",
         data_patterns = list(odd),
         version = "0.1.0",
     )
@@ -152,8 +150,6 @@ def _odd_names_render_escaped_test_impl(ctx):
         name = "odd_plugin",
         deps = [],
         language_version = "3.4",
-        code_assets = [],
-        has_unreplaced_hook = "",
         plugin_platforms_json = '{"web":{"pluginClass":"WebPlugin"}}',
         apple_macos_srcs_dirs = [],
         apple_ios_srcs_dirs = [],

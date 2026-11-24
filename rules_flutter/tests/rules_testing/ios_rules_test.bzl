@@ -237,7 +237,7 @@ def _ios_native_frameworks_gen_test(name):
         name = name + "_app",
         debug = False,
         macho_aot = True,
-        code_assets = ["libbar.dylib"],
+        native_libs = ["libbar.dylib"],
         tags = ["manual"],
     )
     flutter_ios_native_frameworks_gen(

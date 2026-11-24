@@ -561,38 +561,6 @@ dart_binary(
     deps = ["//dart/runfiles"],
 )
 
-dart_binary(
-    name = "link_hook_runner",
-    code_assets_from_deps = False,
-    compile_mode = "kernel",
-    main = "link_hook_runner.dart",
-    modular_kernel = False,
-    # Public: rules calling `dart_link_hook_actions` declare it as an attribute.
-    visibility = ["//visibility:public"],
-    deps = [
-        "//dart/guard:directive_guard",
-        "@ext_pub_deps//:args",
-        "@ext_pub_deps//:data_assets",
-        "@ext_pub_deps//:hooks",
-    ],
-)
-
-dart_test(
-    name = "link_hook_runner_test",
-    size = "small",
-    srcs = [
-        "link_hook_runner.dart",
-    ],
-    main = "link_hook_runner_test.dart",
-    deps = [
-        "//dart/guard:directive_guard",
-        "@ext_pub_deps//:args",
-        "@ext_pub_deps//:data_assets",
-        "@ext_pub_deps//:hooks",
-        "@ext_pub_deps//:test",
-    ],
-)
-
 # Concatenates module kernels into a modular `dart_test`'s or
 # `dart_binary(compile_mode = "kernel")`'s kernel. See the file's header.
 # It takes no `dart_library` dependency on purpose (like the module

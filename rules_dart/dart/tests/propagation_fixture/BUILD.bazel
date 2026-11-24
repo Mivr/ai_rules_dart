@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//dart:defs.bzl", "dart_binary", "dart_code_asset")
-load("//dart/pub/tests:propagation_test.bzl", "asset_conflict_test", "diamond_probe", "manifest_contains_test", "ownership_violation_test", "version_conflict_test")
+load("//dart/pub/tests:propagation_test.bzl", "diamond_probe", "manifest_contains_test", "ownership_violation_test", "version_conflict_test")
 
 # The near side of the diamond. `:app` names no `code_assets` at all — it
 # depends on `prop_a`, which depends on `prop_b`, which owns the asset.
@@ -13,8 +13,9 @@ dart_binary(
 
 diamond_probe(
     name = "diamond_probe_target",
-    expected_asset_ids = ["package:prop_b/src/ffi/prop_b.g.dart"],
-    expected_file_count = 1,
+    # The index and the library.
+    expected_file_count = 2,
+    expected_indexes = ["code_asset.assets.json"],
     deps = ["//dart/tests/propagation_fixture/a"],
 )
 
@@ -26,7 +27,7 @@ build_test(
 manifest_contains_test(
     name = "propagated_asset_in_manifest_test",
     size = "small",
-    expected_asset_ids = ["package:prop_b/src/ffi/prop_b.g.dart"],
+    expected_files = ["code_asset.assets.json"],
     target_under_test = ":app",
 )
 
@@ -36,28 +37,9 @@ ownership_violation_test(
     target_under_test = "//dart/tests/propagation_fixture/b:misowned",
 )
 
-# Same asset id as the one `prop_b` propagates, but backed by a different
-# library. The Dart VM resolves an id to exactly one library, so taking either
-# silently would pick by graph-traversal order.
-dart_code_asset(
-    name = "conflicting_asset",
-    asset_id = "package:prop_b/src/ffi/prop_b.g.dart",
-    shared_library = "//dart/tests/cc_fixture:empty_shared_alt",
-)
-
-dart_binary(
-    name = "conflicting_app",
-    code_assets = [":conflicting_asset"],
-    main = "main.dart",
-    tags = ["manual"],
-    deps = ["//dart/tests/propagation_fixture/a"],
-)
-
-asset_conflict_test(
-    name = "asset_conflict_test",
-    size = "small",
-    target_under_test = ":conflicting_app",
-)
+# Two assets claiming one id fail the manifest step when it runs (the
+# Dart VM resolves an id to exactly one library): ids are known only then.
+# `hook_runner_test.dart` covers that message.
 
 # Two hubs supplying one package at different versions — the shape a pair of
 # drifted lock files produces, with `pub.from_lock()` and rules_flutter's

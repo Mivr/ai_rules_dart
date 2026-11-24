@@ -128,10 +128,7 @@ def _template_probe_impl(ctx):
         name = ctx.attr.package_name,
         deps = [],
         language_version = "3.0",
-        code_assets = [],
-        has_unreplaced_hook = False,
         version = ctx.attr.version,
-        link_hook = "",
     ))
 
 git_template_probe = repository_rule(

@@ -24,10 +24,9 @@ class _Bootstrap extends QueryExecutorUser {
 ///
 /// Nothing here names a native library, and nothing in this workspace's BUILD
 /// files names a code asset: drift reaches `package:sqlite3`, whose native
-/// code normally comes from a `hook/build.dart`, and the curated registry
-/// binds rules_dart's Bazel-built libsqlite3 to that package. If the asset did
-/// not reach the manifest, this throws where a bare build would have succeeded
-/// and died on an unresolved symbol.
+/// code comes from its own `hook/build.dart`, run by rules_dart's hook
+/// runner. If the asset did not reach the manifest, this throws where a bare
+/// build would have succeeded and died on an unresolved symbol.
 ///
 /// Returns `<echo>|<libVersion>`, where `echo` is `HELLO` — produced by
 /// sqlite3's own `upper()` over a bound parameter, so it cannot be faked by
@@ -54,7 +53,7 @@ Future<void> main() async {
   // file in the app's temp dir: `add` binds via `@Native` asset-id resolution
   // (Native Assets pipeline), `mul` via classic `DynamicLibrary.open` at its
   // conventional path (`native_deps` pipeline), and sqlite3 via a code asset
-  // the pub package carries on its own (curated-registry pipeline). The
+  // the pub package's own build hook builds (build-hook pipeline). The
   // runtime e2e tests (iOS simulator, macOS, Linux, Windows) read the file
   // back — a deterministic signal that all three libraries actually loaded and
   // the calls returned (more reliable than scraping log output). Success is

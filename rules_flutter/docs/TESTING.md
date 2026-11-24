@@ -194,9 +194,9 @@ cd e2e/windows_example && bazel test //...  # Windows-only (target_compatible_wi
   ```
   The hook is compiled once to
   `<workspace>/.dart_tool/hooks_runner/<pkg>/<hash>/hook.dill` and that cache is
-  not keyed by SDK version, so the newer VM is handed the older kernel. Only
-  `e2e/plugin_example` has such a package today (`objective_c`, via the darwin
-  plugins). Delete the cache — it is gitignored and regenerated:
+  not keyed by SDK version, so the newer VM is handed the older kernel.
+  `e2e/plugin_example` (`objective_c`, via the darwin plugins) and
+  `e2e/build_hooks` have such packages. Delete the cache — it is gitignored and regenerated:
   ```sh
   rm -rf e2e/plugin_example/.dart_tool/hooks_runner
   ```
@@ -287,15 +287,13 @@ for arbitrary Gradle native builds; instead:
    Non-Android platforms are unaffected (the check lives in the spoke's
    `android/` sub-package, loaded only via the hub's Android aggregator).
 
-### Curated code assets (no authoring needed)
+### Build hooks (no authoring needed)
 
-A pub package shipping a build hook is first checked against rules_dart's curated registry (`@rules_dart//dart/ext:registry.bzl`). Where rules_dart provides a Bazel replacement — `sqlite3` today — `flutter.pub()` attaches it to that package automatically, so an app depending on `drift` gets `libsqlite3` without naming it and without an overlay. `e2e/ffi_example` covers this end to end; its `verify_*_runtime_test` targets assert the library actually loaded.
+A pub package's `hook/build.dart` runs through the Dart SDK's own hook runner, in one offline action per package and target platform (rules_dart's `docs/pub.md`, "Build hooks"). A hook that downloads fails with a message naming the package; `flutter.pub(hook_network = [...])` or a user define is the way out. `e2e/build_hooks` covers sqlite3 from source, a C hook and a link hook on Linux and Android; `e2e/ffi_example` keeps its `verify_*_runtime_test` targets on the sqlite3 hook.
 
-A package with a hook that *nothing* replaces is recorded, and `flutter_application` fails when it reaches one — the alternative is a clean build whose `*.native_assets.json` is one entry short and which dies at runtime on an unresolved `@Native` symbol. Two ways out: write an overlay (below), or declare the hook irrelevant with `flutter.pub(ignore_hooks = ["<pkg>"])` when the package's native code is genuinely unused in this build.
+### Overlay authoring
 
-### Native Assets overlay authoring
-
-Pub packages that ship a `hooks/build.dart` Dart-Native-Assets build hook (e.g. `package:objective_c`) and have no curated entry get translated to Bazel-native equivalents under `ext/<pkg>/<major>/BUILD.bazel.tpl`. The template is loaded by `flutter_pub_package` for any spoke whose package name + major version matches.
+A package whose generated BUILD file needs replacing — a plugin's Android native code (`ext/jni`, `ext/audio_session`), or `objective_c`'s hook on Apple OSes, where hooks do not run yet (`ext/objective_c`, until hooks are proven on macOS CI) — gets a template under `ext/<pkg>/<major>/BUILD.bazel.tpl`. The template is loaded by `flutter_pub_package` for any spoke whose package name + major version matches. Elsewhere a build hook needs none: it runs.
 
 Template substitutions: `{HUB_NAME}` (the user's `flutter.pub(name = ...)`), `{PKG}` (the package name), `{VERSION}` (the resolved version), `{LANGUAGE_VERSION}` (derived from the package's own `environment.sdk`), and `{DEPS}` (the package's dependencies, as spoke labels, intersected with the lock).
 
@@ -311,16 +309,6 @@ Two of those are mandatory, and the repo rule fails the fetch if a template writ
 Both exist because a template directory serves a whole version range, so a hand-written copy drifts on the package's next release with no build error to catch it. `objective_c` 9.5.0 is the worked example: its hook stopped using `native_toolchain_c`, so the package dropped it from `dependencies`, the lock stopped carrying it, the hub stopped creating the spoke — and `ext/objective_c/9/`, which serves all of 9.x, was still asking for `@<hub>__native_toolchain_c`. Consumers got an unknown-repo error naming neither `objective_c` nor the overlay.
 
 For the same reason, prefer a `glob()` over a named source file when the file's existence varies across the range the directory serves — `test/util.c` in the `objective_c` overlay, which 9.5.0 deleted.
-
-Procedure:
-
-1. Locate the package's hook source under `~/Library/Caches/bazel/_bazel_<user>/.../external/<hub>__<pkg>/hook/build.dart`. Read what it builds (file glob, link mode, target platforms, copts).
-2. Reproduce the build with `cc_shared_library` + `objc_library` (Apple) / `cc_library` (other platforms). Set `shared_lib_name` to something *different* from the bundle filename — `flutter_native_asset` symlinks the cc output to `<bundle_filename>` in its own package, and matching names collide.
-3. Wrap the output in `flutter_native_asset(name = "<pkg>_native_asset", asset_id = "package:<pkg>/<basename>", link_mode = "dynamic_loading_bundle", library = ":_<pkg>_dylib", bundle_filename = "<basename>")`, constrained to the supported platforms with `target_compatible_with`. Platforms that need a different `bundle_filename` (`lib<x>.so`, `<x>.dll`) get their own target; platforms that agree on every attribute share one.
-4. Hang a `flutter_plugin(name = "<pkg>", platforms = [], native_assets = select({...}))` over them. Even though the package is "pure Dart" from pub's perspective, the empty-`platforms` plugin shape is what carries the native-assets entry into `FlutterInfo` for the application's manifest. The `select()` is what decides which asset targets an application sees: list exactly the ones that belong to the platform being built, and `//conditions:default: []` for the rest. Two targets claiming the same `asset_id` in one build fail analysis.
-5. Drop the template at `ext/<pkg>/<major>/BUILD.bazel.tpl`. The next `bazel run @rules_flutter//flutter:pub -- get` + Bazel build picks it up automatically.
-
-If the build fails at runtime with `Couldn't resolve native function "<symbol>"`, the most common cause is the `cc_shared_library`'s `install_name` not matching the asset id's basename — set `user_link_flags = ["-Wl,-install_name,@rpath/<basename>"]` on Apple targets. See `ext/objective_c/9/BUILD.bazel.tpl` for the canonical example.
 
 ## 4. Manual tests
 
@@ -344,7 +332,7 @@ bazel test :verify_macos_app_test --test_tag_filters= --strategy=TestRunner=stan
 ### FFI runtime tests (iOS simulator, macOS, Linux, Windows)
 
 Behavioral verification that both native-library mechanisms work at runtime:
-`add()` binds via `@Native` asset-id resolution (`flutter_native_asset` →
+`add()` binds via `@Native` asset-id resolution (`dart_code_asset` →
 `--native-assets` kernel manifest), `mul()` raw-opens its conventional path
 (`native_deps`). The app writes
 `ffi_example_result add(3,4)=7 mul(3,4)=12` to its temp dir; the tests read
@@ -364,7 +352,7 @@ bazel test :verify_windows_runtime_test --test_tag_filters= --strategy=TestRunne
 ```
 
 **When to run:** After any change to native-assets manifest emission
-(`flutter_native_assets.bzl`, `flutter_native_asset.bzl`), native-library
+(`code_assets.bzl`, rules_dart's `build_hooks.bzl`), native-library
 bundling (`flutter_ios_native_frameworks`, `flutter_macos_native_libs`), or
 kernel compilation flags.
 

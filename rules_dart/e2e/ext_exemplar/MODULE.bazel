@@ -11,11 +11,9 @@ local_path_override(
 bazel_dep(name = "gazelle", version = "0.54.0")
 bazel_dep(name = "rules_go", version = "0.64.2")
 
-# SQLite native lib for the sqlite3_binary exemplar: package:sqlite3
-# dlopen's libsqlite3 at runtime, and the Bazel sandbox has no system
-# libsqlite3 on Linux/Windows, so `//dart/ext/sqlite3` builds it from its C
-# amalgamation (via the BCR sqlite3 module) as a cc_shared_library and binds
-# it as a code asset. rules_cc is needed for the cc_shared_library load.
+# The SQLite amalgamation package:sqlite3's build hook compiles in source mode
+# (`hooks: user_defines: sqlite3:` in pubspec.yaml), from the BCR module.
+# rules_cc is needed for the cc_shared_library load of `sqlite3_binary`.
 bazel_dep(name = "sqlite3", version = "3.53.4")
 bazel_dep(name = "rules_cc", version = "0.2.26")
 
@@ -48,6 +46,8 @@ register_toolchains("@dart_toolchains//:all")
 pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
 pub.from_lock(
     name = "pub_deps",
+    # The file the sqlite3 user define names, an input of that hook's action.
+    hook_data = {"@sqlite3//:sqlite3.c": "sqlite3"},
     lock = "//:pubspec.lock",
     # This lock shares packages with rules_dart's own tool lock, which can be
     # newer for some of them; there is one version per package, so take its.

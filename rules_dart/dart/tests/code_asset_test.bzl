@@ -20,8 +20,8 @@ def _cc_toolchain_check_unit_test_impl(ctx):
     env = unittest.begin(ctx)
 
     probed_err = check_registered_cc_toolchain(
-        "//dart/ext/sqlite3:code_asset",
-        "//dart/ext/sqlite3:libsqlite3",
+        "//third_party/foo:code_asset",
+        "//third_party/foo:libfoo",
         "@@rules_cc++cc_configure_extension+local_config_cc//:cc-compiler-k8",
     )
     asserts.true(
@@ -31,8 +31,8 @@ def _cc_toolchain_check_unit_test_impl(ctx):
     )
 
     missing_err = check_registered_cc_toolchain(
-        "//dart/ext/sqlite3:code_asset",
-        "//dart/ext/sqlite3:libsqlite3",
+        "//third_party/foo:code_asset",
+        "//third_party/foo:libfoo",
         None,
     )
     asserts.true(
@@ -45,8 +45,8 @@ def _cc_toolchain_check_unit_test_impl(ctx):
         env,
         None,
         check_registered_cc_toolchain(
-            "//dart/ext/sqlite3:code_asset",
-            "//dart/ext/sqlite3:libsqlite3",
+            "//third_party/foo:code_asset",
+            "//third_party/foo:libfoo",
             "@@hermetic_cc_toolchain++toolchains+zig_sdk//toolchain:linux_amd64_gnu.2.28_cc",
         ),
     )
@@ -54,8 +54,8 @@ def _cc_toolchain_check_unit_test_impl(ctx):
         env,
         None,
         check_registered_cc_toolchain(
-            "//dart/ext/sqlite3:code_asset",
-            "//dart/ext/sqlite3:libsqlite3",
+            "//third_party/foo:code_asset",
+            "//third_party/foo:libfoo",
             "@@apple_support++apple_cc_configure_extension+local_config_apple_cc//:cc-compiler-darwin_arm64",
         ),
     )
@@ -63,8 +63,8 @@ def _cc_toolchain_check_unit_test_impl(ctx):
         env,
         None,
         check_registered_cc_toolchain(
-            "//dart/ext/sqlite3:code_asset",
-            "//dart/ext/sqlite3:libsqlite3",
+            "//third_party/foo:code_asset",
+            "//third_party/foo:libfoo",
             "@@rules_cc++cc_configure_extension+local_config_cc//:cc-compiler-x64_windows",
             is_windows = True,
         ),

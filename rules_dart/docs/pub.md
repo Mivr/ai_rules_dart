@@ -288,6 +288,106 @@ one) fails the evaluation: Bazel builds only what is inside the module, so
 move the package into it (as a pub workspace member, say) or depend on it from
 a server or a git repository. See `e2e/pub_sources`.
 
+## Build hooks
+
+A package that ships `hook/build.dart` gets it run as `dart build` runs it:
+through the Dart SDK's own `package:hooks_runner`, once per package and
+target platform, in a sandboxed action with the C toolchain Bazel resolved for
+that platform. The code assets it reports reach every `dart_binary` and
+`dart_test` that depends on the package, as they would in a stock build, and
+nothing names them in a BUILD file. A package's `hook/link.dart` runs where an
+app links (`dart_link_hook`).
+
+The hook sees only its package's own files, the Dart sources of its
+dependencies and the C toolchain. Three things on the lock tag
+(`pub.from_lock`, and `flutter.pub` in rules_flutter) widen that:
+
+- **User defines.** `hooks: user_defines: <package>:` in the `pubspec.yaml`
+  next to the lock, as in a stock build. Each hook gets only its own
+  package's slice, so editing anything else in the pubspec reruns no hook.
+  Relative paths in a define resolve against that pubspec's directory, as in
+  a stock build; a file Bazel provides is under `external/<repo>/` there.
+- **`hook_data`**: files outside the package that a hook reads, each mapped
+  to the package, such as the source file a user define names:
+  `hook_data = {"@sqlite3//:sqlite3.c": "sqlite3"}`.
+- **`hook_network`**: packages whose hook may use the network. A hook runs
+  offline (`block-network`) by default, and one that downloads fails with a
+  message naming the package. Listing it gives that one action the network
+  (`requires-network`) and nothing else. What it downloads is then neither
+  pinned nor cached by content: the action's key is its inputs, so a changed
+  download upstream does not rerun it, and a fresh machine or a cache miss
+  fetches whatever is there now. The build is only as reproducible as the
+  hook's own checks make it; prefer a user define that builds from source.
+
+For example, `package:sqlite3` 3.x downloads a prebuilt library unless told
+otherwise:
+
+```yaml
+# pubspec.yaml
+hooks:
+  user_defines:
+    sqlite3:
+      source: source
+      path: external/sqlite3+/sqlite3.c
+```
+
+```starlark
+# MODULE.bazel
+bazel_dep(name = "sqlite3", version = "3.53.4")
+pub.from_lock(
+    name = "pub_deps",
+    hook_data = {"@sqlite3//:sqlite3.c": "sqlite3"},
+    lock = "//:pubspec.lock",
+)
+```
+
+A hand-written `dart_library` sets `build_hook`, `hook_srcs` (the files its
+hook reads, at least the hook) and, as needed, `hook_data`,
+`hook_user_defines` and `hook_network`. A native library Bazel builds itself
+is bound with `dart_code_asset` instead.
+
+What does not work: a hook that needs a tool the C toolchain does not have
+(CMake, `cargo`) fails in its own action, naming it; hooks get no assets from
+other hooks' outputs (`assetsForBuild`); and a package inside a merged pub
+dependency cycle cannot run its hook, which fails any binary that reaches it.
+
+With `hermetic_cc_toolchain` (zig), every hook action rebuilds zig's libc
+cache in its own sandbox, about 6 to 10 seconds per hook. Give zig a cache that
+outlives the sandbox:
+
+```
+# .bazelrc
+build --repo_env=HERMETIC_CC_TOOLCHAIN_CACHE_PREFIX=/path/to/zig-cache
+build --sandbox_writable_path=/path/to/zig-cache
+```
+
+A small C hook then takes about 0.2 seconds, as it does with an LLVM toolchain.
+The cache is zig's own, keyed by content, and it does not reach the outputs.
+
+### Apple targets (macOS, iOS)
+
+Build hooks do not run for macOS or iOS yet: nothing has run them on macOS CI.
+There a package's hook action fails, naming the package and saying that build
+hooks are not yet supported on Apple targets. Three packages keep the Bazel
+replacement that served them before, on Apple OSes only, so an app that uses
+them builds as it did: `sqlite3` (≥ 2.0.0, `//dart/ext/sqlite3`, the BCR
+`sqlite3` module), `webcrypto` (0.6.1, `//dart/ext/webcrypto`) and, in
+rules_flutter, `objective_c` 9.x (`ext/objective_c`). Their spokes select the
+package's hook off and the replacement's `dart_code_asset` in on Apple OSes
+(`//dart/private:apple_hook_replacements.bzl`). This goes when build hooks are
+proven on macOS CI.
+
+### Migrating from `ignore_hooks` and the curated code assets
+
+`pub.from_lock(ignore_hooks = ...)`, `flutter.pub(ignore_hooks = ...)` and
+`//dart/ext:registry.bzl` are removed, and the curated `//dart/ext/sqlite3` and
+`//dart/ext/webcrypto` assets serve Apple targets only (above). Drop
+`ignore_hooks`: the hooks now run.
+A package whose hook downloads needs a user define or `hook_network`; for
+`sqlite3`, the example above replaces the curated asset. `webcrypto` builds
+with CMake, which no C toolchain provides, so it needs `hook_network` and a
+CMake on the hook's `PATH`, or a stock build.
+
 ## Private servers and tokens
 
 A hosted package's server is its lock entry's `description.url`: pub.dev, or

@@ -17,13 +17,13 @@ load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "DartDefinesInfo", "MODULAR_KERNEL_ATTRS", "MODULAR_KERNEL_TOOLCHAINS", "dart_link_hook_actions", "link_hook_runner_attr")
 load("//flutter:providers.bzl", "FlutterApplicationInfo", "FlutterInfo")
-load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "FLUTTER_DEPS_DOC", "PLATFORM_CONSTRAINT_ATTRS", "check_unreplaced_hooks", "collect_native_libs", "declare_flutter_assets_dir", "detect_target_platform", "flutter_build_mode", "flutter_compile_kernel", "host_target_arch", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
+load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "FLUTTER_DEPS_DOC", "PLATFORM_CONSTRAINT_ATTRS", "check_hook_errors", "collect_native_libs", "declare_flutter_assets_dir", "detect_target_platform", "flutter_build_mode", "flutter_compile_kernel", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
 load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle")
 load("//flutter/private:flutter_aot_compile.bzl", "flutter_aot_elf_action", "flutter_aot_gen_snapshot_flags", "flutter_aot_macho_action", "macho_snapshot_options")
 load("//flutter/private:flutter_defines_files.bzl", "DART_DEFINES_DOC", "app_defines_transition", "effective_flavor")
 load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
 load("//flutter/private:flutter_kernel_module.bzl", "flutter_app_kernel_module_aspect")
-load("//flutter/private:flutter_native_assets.bzl", "collect_application_native_assets", "collect_bundled_code_asset_files", "write_native_assets_manifest")
+load("//flutter/private:code_assets.bzl", "FLUTTER_CODE_ASSETS_ATTRS", "flutter_code_assets")
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "layering_check_for", "layering_toolchains")
 
 visibility(["//flutter/..."])
@@ -67,32 +67,15 @@ def _detect_application_platform(ctx):
         is_macos = is_macos,
     )
 
-def _fail_on_unreplaced_hooks(ctx):
-    """Fails naming the unreplaced `hook/build.dart` packages, if any.
+def _fail_on_hook_errors(ctx):
+    """Fails naming the packages in the closure whose build hook cannot run.
 
-    A pub package that builds its native code with `hook/build.dart` has no
-    library to contribute unless something stands in for the hook. The
-    application is where that is knowable and where it matters: the whole
-    package closure is visible, and it is this target whose manifest would
-    otherwise be quietly short an entry and die at runtime on an unresolved
-    `@Native` symbol. Checked before any compilation so the build fails on
-    the cause rather than minutes later on a symptom.
+    Checked before any compilation so the build fails on the cause rather
+    than at runtime on an unresolved `@Native` symbol.
     """
-    hook_err = check_unreplaced_hooks(ctx.label, ctx.attr.deps)
+    hook_err = check_hook_errors(ctx.label, ctx.attr.deps)
     if hook_err != None:
         fail(hook_err)
-
-def _write_application_manifest(ctx, native_assets_list, target_platform, target_arch):
-    """Declares and writes the `native_assets.json` manifest."""
-    native_assets_manifest_file = ctx.actions.declare_file(ctx.label.name + ".native_assets.json")
-    write_native_assets_manifest(
-        ctx = ctx,
-        output_file = native_assets_manifest_file,
-        native_assets = native_assets_list,
-        target_os = target_platform,
-        target_arch = target_arch,
-    )
-    return native_assets_manifest_file
 
 def _compile_application_kernel(
         ctx,
@@ -218,15 +201,15 @@ def _aggregate_application_plugins(ctx):
     """
     return collect_flutter_plugin_deps(ctx.attr.deps)
 
-def _index_bundled_libraries(native_libs, bundled_code_assets):
-    """Indexes every loose native library this app carries by path.
+def _index_bundled_libraries(native_libs):
+    """Indexes every loose `native_deps` library this app carries by path.
 
-    Both routes in: the `native_deps` set, and the Native Assets `CodeAsset`
-    libraries `native_assets.json` already points at. Deduplicated by path
-    because nothing stops one library arriving twice.
+    Deduplicated by path because nothing stops one library arriving twice.
+    The code assets' libraries are one directory, whose files the build
+    hooks name only when they run; it joins the default outputs on its own.
     """
     bundled_native_libs = {}
-    for lib in native_libs + bundled_code_assets.to_list():
+    for lib in native_libs:
         bundled_native_libs[lib.path] = lib
     return bundled_native_libs
 
@@ -263,7 +246,7 @@ def _application_providers(flutter_sdk_info, is_debug, outputs, plugins):
     """Assembles the result providers for the compiled application."""
     output_groups = {
         "native_assets_manifest": depset([outputs.native_assets_manifest_file]),
-        "bundled_code_assets": outputs.bundled_code_assets,
+        "bundled_code_assets": depset(outputs.bundled_code_assets),
     }
     if outputs.debug_info_output:
         output_groups["debug_info"] = depset([outputs.debug_info_output])
@@ -303,19 +286,14 @@ def _application_providers(flutter_sdk_info, is_debug, outputs, plugins):
     providers.append(OutputGroupInfo(**output_groups))
     return providers
 
-def _prepare_native_assets(ctx, flutter_sdk_info, target_platform):
-    """Aggregates transitive Native Assets and writes the application manifest."""
-
-    # Plus any code assets rules_dart propagated through the Dart package graph; declarations made
-    # with `flutter_native_asset` win, since they are the deliberate ones.
-    assets = collect_application_native_assets(ctx)
-    native_assets_list = assets.list
-    target_arch = host_target_arch(ctx, flutter_sdk_info)
+def _prepare_native_assets(ctx):
+    """The application's native-assets manifest and bundled code-asset libraries."""
+    assets = flutter_code_assets(ctx)
     return struct(
-        manifest_file = _write_application_manifest(ctx, native_assets_list, target_platform, target_arch),
-        native_assets = native_assets_list,
+        manifest_file = assets.manifest,
+        native_assets = assets.any,
         transitive_data_assets = assets.data_assets,
-        bundled_code_assets = collect_bundled_code_asset_files(native_assets_list),
+        bundled_code_assets = assets.bundled,
     )
 
 def _flutter_application_impl(ctx):
@@ -331,11 +309,11 @@ def _flutter_application_impl(ctx):
 
     platform = _detect_application_platform(ctx)
 
-    _fail_on_unreplaced_hooks(ctx)
+    _fail_on_hook_errors(ctx)
 
-    # Aggregate transitive Native Assets so the manifest exists before
-    # kernel compile (the frontend_server reads it via --native-assets).
-    assets = _prepare_native_assets(ctx, flutter_sdk_info, platform.target_platform)
+    # The closure's code assets, so the manifest exists before the kernel
+    # compile (the frontend_server reads it via --native-assets).
+    assets = _prepare_native_assets(ctx)
 
     # Declared before the kernel compile, which is told whether the app has one.
     # Declaring an output is independent of registering the action that fills
@@ -415,12 +393,12 @@ def _flutter_application_impl(ctx):
         built.flutter_assets,
         compilation.package_config,
         built.native_assets_manifest_file,
-        _index_bundled_libraries(built.native_libs, built.bundled_code_assets),
+        _index_bundled_libraries(built.native_libs),
         built.aot_output,
         is_debug,
         compilation.kernel_dill,
         built.size_output,
-    )
+    ) + built.bundled_code_assets
 
     outputs = struct(
         kernel_dill = compilation.kernel_dill,
@@ -443,7 +421,7 @@ def _flutter_application_impl(ctx):
 flutter_application = rule(
     implementation = _flutter_application_impl,
     attrs = dicts.add(
-        FLUTTER_APPLICATION_ATTRS | MODULAR_KERNEL_ATTRS | BUNDLE_ATTRS,
+        FLUTTER_APPLICATION_ATTRS | MODULAR_KERNEL_ATTRS | BUNDLE_ATTRS | FLUTTER_CODE_ASSETS_ATTRS,
         {
             "analyze_size": attr.bool(
                 default = False,

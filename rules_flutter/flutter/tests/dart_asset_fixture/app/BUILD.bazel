@@ -1,0 +1,33 @@
+load("//flutter:defs.bzl", "flutter_application", "flutter_test")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+
+# An application and a test reaching both kinds of code asset: a build hook's
+# output and a `dart_code_asset`. Only analysed.
+flutter_application(
+    name = "assets_app",
+    package_name = "assets_app",
+    main = "main.dart",
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    visibility = ["//flutter/tests:__pkg__"],
+    deps = [
+        "//flutter/tests/dart_asset_fixture:asset_fixture",
+        "//flutter/tests/dart_asset_fixture/hook_library",
+        "//flutter/tests/registrant_twin_fixture/app",
+    ],
+)
+
+flutter_test(
+    name = "assets_test",
+    package_name = "assets_test",
+    main = "main.dart",
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    visibility = ["//flutter/tests:__pkg__"],
+    deps = [
+        "//flutter/tests/dart_asset_fixture:asset_fixture",
+        "//flutter/tests/dart_asset_fixture/hook_library",
+        "//flutter/tests/flutter_test_analyze_fixture/fake_test_api",
+        "//flutter/tests/registrant_twin_fixture/app",
+    ],
+)

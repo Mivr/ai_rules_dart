@@ -37,7 +37,7 @@ dart_library(
 colocate_probe(
     name = "colocate_keeps_code_assets",
     package_name = "colo_pkg",
-    expected_asset_ids = ["package:colo_pkg/src/ffi/colo.g.dart"],
+    expected_indexes = ["code_asset.assets.json"],
     deps = [":colo_pkg"],
 )
 

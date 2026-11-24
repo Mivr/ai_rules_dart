@@ -1,6 +1,6 @@
 # One fixture per public rule and macro, in one package: the package builds and
 # analyses every rule and macro of `//dart:defs.bzl`, `//dart/pub:defs.bzl` and
-# `//dart/ext/sqlite3:defs.bzl`, and `corpus_test` runs.
+# and `corpus_test` runs.
 
 load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
@@ -22,12 +22,11 @@ load(
     "dart_test",
     "dart_wasm_binary",
 )
-load("//dart/ext/sqlite3:defs.bzl", "sqlite3_code_asset")
 load("//dart/pub:defs.bzl", "parse_semver", "semver_gt")
 
-# `parse_semver`, `semver_gt` and `sqlite3_code_asset` are functions, not rules:
-# the corpus instantiates them by using what they return, so `language_version`
-# below and `corpus_test`'s `size` and `code_assets` consume them.
+# `parse_semver` and `semver_gt` are functions, not rules: the corpus
+# instantiates them by using what they return, so `language_version` below and
+# `corpus_test`'s `size` consume them.
 
 # --- the package facts, declared once ---------------------------------------
 
@@ -81,7 +80,7 @@ dart_binary(
 dart_test(
     name = "corpus_test",
     size = "small" if semver_gt("1.0.0", "0.9.0") else "medium",
-    code_assets = [sqlite3_code_asset()],
+    code_assets = [":code_asset"],
     main = "test/smoke_test.dart",
     deps = [
         ":corpus_lib",

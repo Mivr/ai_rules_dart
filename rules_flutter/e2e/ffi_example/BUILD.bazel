@@ -31,7 +31,6 @@ load(
     "flutter_macos_registrant_gen",
     "flutter_macos_runner_lib_gen",
 )
-load("@rules_flutter//flutter:native_assets.bzl", "flutter_native_assets_manifest")
 load("@rules_flutter//flutter:windows.bzl", "flutter_windows_app")
 
 exports_files(["pubspec.lock"])
@@ -75,9 +74,9 @@ flutter_application(
         "//add_plugin",
         "//mul_plugin",
         # No code asset is named anywhere in this workspace. drift pulls
-        # package:sqlite3, and the curated registry attaches sqlite3's
-        # Bazel-built library to that package, so it arrives here the way pub's
-        # own hook output would.
+        # package:sqlite3, whose own build hook compiles SQLite from the
+        # source file its user define names (`pubspec.yaml`,
+        # `flutter.pub(hook_data = ...)`).
         "@deps//:drift",
         "@deps//:flutter",
     ],
@@ -346,9 +345,10 @@ flutter_ios_simulator_build_test(
     targets = [":ffi_ios"],
 )
 
-flutter_native_assets_manifest(
+filegroup(
     name = "ffi_native_assets_manifest",
-    application = ":ffi_app",
+    srcs = [":ffi_app"],
+    output_group = "native_assets_manifest",
 )
 
 build_test(

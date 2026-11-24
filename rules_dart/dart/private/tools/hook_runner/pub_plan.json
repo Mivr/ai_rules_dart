@@ -1,0 +1,166 @@
+{
+  "schema": "pub.plan.v1",
+  "plans": {
+    "pub.plan.v1/hosted/args/2.7.0/d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.3.0",
+      "archive_url": "https://pub.dev/api/archives/args-2.7.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/async/2.13.1/e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37/https://pub.dev": {
+      "deps": [
+        "collection",
+        "meta"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/async-2.13.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/code_assets/1.2.1/bf394f466ba9205f1812a0433b392d6af280f155f56651eda7c18cc32ed493b8/https://pub.dev": {
+      "deps": [
+        "collection",
+        "hooks"
+      ],
+      "sdk": ">=3.10.0 <4.0.0",
+      "archive_url": "https://pub.dev/api/archives/code_assets-1.2.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/collection/1.19.1/2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/crypto/3.0.7/c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf/https://pub.dev": {
+      "deps": [
+        "typed_data"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/crypto-3.0.7.tar.gz"
+    },
+    "pub.plan.v1/hosted/data_assets/0.20.0/8bfdbf25ec8a0f4b5a3c993042c4ab9996ba354f0b03d40f4e360f3730d71cae/https://pub.dev": {
+      "deps": [
+        "hooks"
+      ],
+      "sdk": ">=3.10.0 <4.0.0",
+      "archive_url": "https://pub.dev/api/archives/data_assets-0.20.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/file/7.0.1/a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4/https://pub.dev": {
+      "deps": [
+        "meta",
+        "path"
+      ],
+      "sdk": "^3.0.0",
+      "archive_url": "https://pub.dev/api/archives/file-7.0.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/graphs/2.3.2/741bbf84165310a68ff28fe9e727332eef1407342fca52759cb21ad8177bb8d0/https://pub.dev": {
+      "deps": [
+        "collection"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/graphs-2.3.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/hooks/2.0.2/9a62a50b50b769a737bc0a8ff381f333529df3ab746b2f6b02e83760231455ba/https://pub.dev": {
+      "deps": [
+        "collection",
+        "crypto",
+        "logging",
+        "meta",
+        "pub_semver",
+        "record_use",
+        "yaml"
+      ],
+      "sdk": ">=3.10.0 <4.0.0",
+      "archive_url": "https://pub.dev/api/archives/hooks-2.0.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/hooks_runner/1.5.0/a67ab8106545fcffcf5c43edf84b4be222fc95a9fbec8baef1bcaf4534540cfc/https://pub.dev": {
+      "deps": [
+        "code_assets",
+        "collection",
+        "crypto",
+        "file",
+        "graphs",
+        "hooks",
+        "logging",
+        "meta",
+        "package_config",
+        "pub_semver",
+        "record_use",
+        "yaml"
+      ],
+      "sdk": ">=3.10.0 <4.0.0",
+      "archive_url": "https://pub.dev/api/archives/hooks_runner-1.5.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/logging/1.3.0/c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/logging-1.3.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/meta/1.18.3/c82594181e3312f3d0695fc95aaaf7758d75b8d4ae2bbecf223b9fd5109a059d/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/meta-1.18.3.tar.gz"
+    },
+    "pub.plan.v1/hosted/package_config/2.2.0/f096c55ebb7deb7e384101542bfba8c52696c1b56fca2eb62827989ef2353bbc/https://pub.dev": {
+      "deps": [
+        "path"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/package_config-2.2.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/path/1.9.1/75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/path-1.9.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/pub_semver/2.2.0/5bfcf68ca79ef689f8990d1160781b4bad40a3bd5e5218ad4076ddb7f4081585/https://pub.dev": {
+      "deps": [
+        "collection"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/pub_semver-2.2.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/record_use/0.6.0/2551bd8eecfe95d14ae75f6021ad0248be5c27f138c2ec12fcb52b500b3ba1ed/https://pub.dev": {
+      "deps": [
+        "collection",
+        "meta",
+        "pub_semver"
+      ],
+      "sdk": ">=3.10.0 <4.0.0",
+      "archive_url": "https://pub.dev/api/archives/record_use-0.6.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/source_span/1.10.2/56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab/https://pub.dev": {
+      "deps": [
+        "collection",
+        "path",
+        "term_glyph"
+      ],
+      "sdk": "^3.1.0",
+      "archive_url": "https://pub.dev/api/archives/source_span-1.10.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/string_scanner/1.4.1/921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43/https://pub.dev": {
+      "deps": [
+        "source_span"
+      ],
+      "sdk": "^3.1.0",
+      "archive_url": "https://pub.dev/api/archives/string_scanner-1.4.1.tar.gz"
+    },
+    "pub.plan.v1/hosted/term_glyph/1.2.2/7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e/https://pub.dev": {
+      "deps": [],
+      "sdk": "^3.1.0",
+      "archive_url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz"
+    },
+    "pub.plan.v1/hosted/typed_data/1.4.0/f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006/https://pub.dev": {
+      "deps": [
+        "collection"
+      ],
+      "sdk": "^3.5.0",
+      "archive_url": "https://pub.dev/api/archives/typed_data-1.4.0.tar.gz"
+    },
+    "pub.plan.v1/hosted/yaml/3.1.3/b9da305ac7c39faa3f030eccd175340f968459dae4af175130b3fc47e40d76ce/https://pub.dev": {
+      "deps": [
+        "collection",
+        "source_span",
+        "string_scanner"
+      ],
+      "sdk": "^3.4.0",
+      "archive_url": "https://pub.dev/api/archives/yaml-3.1.3.tar.gz"
+    }
+  }
+}

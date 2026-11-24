@@ -4,6 +4,8 @@ Kept out of `flutter/extensions.bzl` so that file stays the extension's
 wiring. Later `flutter.pub` attributes are added here.
 """
 
+load("@rules_dart//dart/pub:pub_lock_package.bzl", "HOOK_TAG_ATTRS")
+
 visibility(["//flutter/..."])
 
 def _is_product_deps_identity(text):
@@ -91,13 +93,6 @@ flutter_pub_tag = tag_class(
             doc = "The pubspec.lock file to parse.",
             mandatory = True,
             allow_single_file = True,
-        ),
-        "ignore_hooks": attr.string_list(
-            doc = "Pub package names whose `hook/build.dart` is knowingly " +
-                  "irrelevant to this build (its native code is never reached). " +
-                  "Suppresses the unreplaced-hook error for them. This is a " +
-                  "declaration you make deliberately; it is never a default.",
-            default = [],
         ),
         "plan": attr.label(
             doc = "A checked-in plan of this lock (`bazel run @rules_dart//dart/pub/plan -- " +
@@ -247,7 +242,7 @@ flutter_pub_tag = tag_class(
                   "writes this file. Unset (the default) means SwiftPM mode.",
             allow_single_file = True,
         ),
-    },
+    } | HOOK_TAG_ATTRS,
     doc = "Resolves a `pubspec.lock` into one spoke repository per package " +
           "plus a hub alias. Requires a `flutter.toolchain` for the Flutter " +
           "SDK packages in the lock.",

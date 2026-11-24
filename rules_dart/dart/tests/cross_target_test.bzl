@@ -235,27 +235,23 @@ native_has_no_target_flags_test = analysistest.make(
 )
 
 def _abi_manifest_test_impl(ctx):
-    """The code-asset ABI string written for a cross target.
+    """The code-asset ABI string the manifest step writes for a cross target.
 
-    Pins the whole chain — constraint probe in `target_dart_abi` through to the
-    emitted `native_assets.yaml` key. The fixture deliberately uses a
-    `dynamic_loading_system` asset: a `cc_shared_library`-backed one would make
-    Bazel resolve a cc toolchain for riscv64/armv7 during analysis and fail
-    before `target_dart_abi` ever ran, testing the wrong thing.
+    Pins the chain from the constraint probe in `target_dart_abi` to the
+    target the `DartNativeAssets` step keys the manifest by. The fixture
+    deliberately uses a `dynamic_loading_system` asset: a
+    `cc_shared_library`-backed one would make Bazel resolve a cc toolchain
+    for riscv64/armv7 during analysis and fail before `target_dart_abi` ever
+    ran, testing the wrong thing.
     """
     env = analysistest.begin(ctx)
-    manifests = [
-        a
-        for a in analysistest.target_actions(env)
-        if a.mnemonic == "FileWrite" and
-           a.outputs.to_list()[0].basename.endswith(".native_assets.yaml")
-    ]
-    asserts.equals(env, 1, len(manifests), "expected one native_assets.yaml write")
-    content = manifests[0].content
+    steps = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartNativeAssets"]
+    asserts.equals(env, 1, len(steps), "expected one DartNativeAssets action")
+    argv = steps[0].argv
     asserts.true(
         env,
-        ('"native-assets": {"%s"' % ctx.attr.expected_abi) in content,
-        "ABI %s missing from manifest: %s" % (ctx.attr.expected_abi, content),
+        "--target" in argv and argv[argv.index("--target") + 1] == ctx.attr.expected_abi,
+        "ABI %s not the manifest's target: %s" % (ctx.attr.expected_abi, argv),
     )
     return analysistest.end(env)
 

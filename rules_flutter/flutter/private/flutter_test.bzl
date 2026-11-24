@@ -69,10 +69,9 @@ load(
     "FLUTTER_DEPS_DOC",
     "LIBRARY_TAGS_TOOL_ATTR",
     "PLATFORM_CONSTRAINT_ATTRS",
-    "check_unreplaced_hooks",
+    "check_hook_errors",
     "declare_flutter_assets_dir",
     "extract_library_tags_action",
-    "host_target_arch",
 )
 load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle"
 )
@@ -83,7 +82,7 @@ load(
     "flutter_kernel_module_aspect",
     "flutter_module_tools",
 )
-load("//flutter/private:flutter_native_assets.bzl", "bridge_dart_code_assets", "collect_bundled_code_asset_files", "write_native_assets_manifest")
+load("//flutter/private:code_assets.bzl", "FLUTTER_CODE_ASSETS_ATTRS", "flutter_code_assets")
 load(
     "//flutter/private:flutter_test_common.bzl",
     _can_bootstrap = "can_bootstrap",
@@ -100,7 +99,6 @@ load(
     "LAYERING_CHECK_TOOLCHAINS",
     "layering_check",
 )
-load("//flutter/private:platform_constraints.bzl", "target_platform_from_constraints")
 
 visibility(["//flutter/..."])
 
@@ -130,46 +128,17 @@ def _check_flutter_test_deps(ctx):
             "to deps so the generated bootstrap can import RemoteListener."
         ).format(name = ctx.label.name))
 
-    # Same contract as `flutter_application`: a pub package that builds its
-    # native code with a hook Bazel cannot run contributes no library, and the
-    # manifest below would be quietly one entry short. A test is where that
-    # matters most — it is where an unresolved `@Native` symbol gets debugged.
-    hook_err = check_unreplaced_hooks(ctx.label, ctx.attr.deps)
+    # Same contract as `flutter_application`: a package whose build hook
+    # cannot run (a member of a merged pub dependency cycle) would leave the
+    # manifest below quietly one entry short.
+    hook_err = check_hook_errors(ctx.label, ctx.attr.deps)
     if hook_err != None:
         fail(hook_err)
 
-def _flutter_test_native_assets(ctx, flutter_sdk_info, target_platform):
-    # Native Assets reach a test the same two ways they reach an application:
-    # declared with `flutter_native_asset` and propagated on `FlutterInfo`, or
-    # owned by a pub package and lifted off the Dart package graph. Deliberate
-    # declarations win on a shared id, as in `flutter_application`.
-    native_assets_list = depset(transitive = [
-        dep[FlutterInfo].native_assets
-        for dep in ctx.attr.deps
-        if FlutterInfo in dep
-    ]).to_list()
-    declared_ids = {asset.asset_id: True for asset in native_assets_list}
-    native_assets_list = native_assets_list + [
-        asset
-        for asset in bridge_dart_code_assets(ctx, ctx.attr.deps)
-        if asset.asset_id not in declared_ids
-    ]
-
-    native_assets_manifest = ctx.actions.declare_file(ctx.label.name + ".native_assets.json")
-    write_native_assets_manifest(
-        ctx = ctx,
-        output_file = native_assets_manifest,
-        native_assets = native_assets_list,
-        target_os = target_platform,
-        target_arch = host_target_arch(ctx, flutter_sdk_info),
-        # No bundle to resolve against — the libraries ship in runfiles.
-        layout = "runfiles",
-    )
-    return struct(
-        list = native_assets_list,
-        manifest = native_assets_manifest,
-        bundled = collect_bundled_code_asset_files(native_assets_list),
-    )
+def _flutter_test_native_assets(ctx):
+    # The closure's code assets, as for `flutter_application`; the test runs
+    # out of runfiles, so the manifest names each library by its path there.
+    return flutter_code_assets(ctx, runfiles = True)
 
 def _flutter_test_sources(ctx):
     # Per-target bootstrap. Imports the user's test via its `package:` URI when
@@ -218,7 +187,7 @@ def _flutter_test_kernel(ctx, flutter_sdk_info, sources, native_assets):
         sources.lib_root,
         sources.packages,
         kernel_dill,
-        native_assets = native_assets.manifest if native_assets.list else None,
+        native_assets = native_assets.manifest if native_assets.any else None,
     )
     return struct(
         kernel_dill = kernel_dill,
@@ -294,13 +263,9 @@ def _flutter_test_run(ctx, artifacts, native_assets):
         ),
         user_env = ctx.attr.env,
         data = ctx.attr.data,
-        # The bundled native-asset libraries ship here, at the runfiles-relative
-        # paths the manifest names. Both arms re-declare the library into an
-        # output namespace of their own first — `flutter_native_asset` under
-        # its `bundle_filename`, `bridge_dart_code_assets` under this rule's —
-        # so what lands in runfiles is the File the manifest points at rather
-        # than the `_solib_<arch>/` original.
-        extra_files = native_assets.bundled.to_list(),
+        # The code assets' bundle directory ships here, at the
+        # runfiles-relative path the manifest names.
+        extra_files = native_assets.bundled,
     )
     return struct(
         executable = runner.executable,
@@ -400,12 +365,7 @@ def _flutter_test_impl(ctx):
     flutter_sdk_info = _flutter_test_sdk_info(ctx)
     _check_flutter_test_deps(ctx)
 
-    # Tests always run on the host, but the platform still has to be resolved
-    # before the kernel compile: the frontend_server reads the native-assets
-    # manifest at compile time, and the manifest is keyed by `<os>_<arch>`.
-    target_platform = target_platform_from_constraints(ctx).target_platform
-
-    native_assets = _flutter_test_native_assets(ctx, flutter_sdk_info, target_platform)
+    native_assets = _flutter_test_native_assets(ctx)
     sources = _flutter_test_sources(ctx)
     kernel = _flutter_test_kernel(ctx, flutter_sdk_info, sources, native_assets)
     artifacts = struct(
@@ -516,6 +476,7 @@ _TEST_ATTRS["exclude_tags"] = attr.string_list(
           "--exclude-tags` unions them. Wins over `include_tags`.",
 )
 _TEST_ATTRS.update(PLATFORM_CONSTRAINT_ATTRS)
+_TEST_ATTRS.update(FLUTTER_CODE_ASSETS_ATTRS)
 _TEST_ATTRS.update(MODULAR_KERNEL_ATTRS)
 _TEST_ATTRS.update(LAYERING_CHECK_ATTRS)
 _TEST_ATTRS["_library_tags_tool"] = LIBRARY_TAGS_TOOL_ATTR

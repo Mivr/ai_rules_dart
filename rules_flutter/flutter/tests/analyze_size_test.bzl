@@ -215,7 +215,7 @@ def _fake_bundle_app_impl(ctx):
             is_debug = False,
             native_libs = [],
             plugins = [],
-            bundled_code_assets = depset(),
+            bundled_code_assets = [],
         ),
     ]
 

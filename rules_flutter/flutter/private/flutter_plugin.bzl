@@ -20,10 +20,10 @@ Platform-specific native dependencies use select() in BUILD files:
 load("@rules_android//providers:providers.bzl", "AndroidLibraryResourceClassJarProvider", "StarlarkAndroidResourcesInfo")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_dart//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "dart_info", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset")
+load("@rules_dart//dart:utils.bzl", "BUILD_HOOK_ATTRS", "BUILD_HOOK_FRAGMENTS", "MODULAR_KERNEL_TOOLCHAINS", "dart_info", "declare_hooks", "dart_package_identity", "derive_lib_root", "derive_package_name", "native_defines_reset", "register_hook_actions")
 load("@rules_java//java/common:java_info.bzl", "JavaInfo")
 load("@rules_swift//swift:swift.bzl", "SwiftInfo")
-load("//flutter:providers.bzl", "FlutterApplePluginInfo", "FlutterDataAssetInfo", "FlutterInfo", "FlutterNativeAssetInfo")
+load("//flutter:providers.bzl", "FlutterApplePluginInfo", "FlutterDataAssetInfo", "FlutterInfo")
 load("//flutter/private:common.bzl", "collect_binding_contracts", "collect_native_libs")
 load("//flutter/private:flutter_desktop_plugin_info.bzl", "FlutterLinuxPluginInfo", "FlutterWindowsPluginInfo")
 load("//flutter/private:flutter_info.bzl", "LINK_HOOK_ATTR", "flutter_asset_channels", "flutter_info", "flutter_native_channels", "flutter_plugin_libraries")
@@ -149,12 +149,7 @@ def _plugin_platforms_and_implements(ctx):
 
 def _collect_native_lib_sources(ctx):
     """Pair native libraries with the sources their bindings were generated from."""
-    return collect_native_source_pairs(ctx.attr.native_deps) + [
-        pair
-        for dep in ctx.attr.native_assets
-        if FlutterInfo in dep
-        for pair in dep[FlutterInfo].native_lib_sources.to_list()
-    ]
+    return collect_native_source_pairs(ctx.attr.native_deps)
 
 def _collect_extra_apple_libraries(libs, platform, package_name, attr_name):
     """Collect one `apple_libs`/`macos_libs`/`ios_libs` attr into extra-library structs."""
@@ -262,7 +257,7 @@ def _extra_android_plugin_libraries(ctx, package_name):
     return entries
 
 def _collect_plugin_asset_infos(assets, provider, provider_name, rule_name, attr_name):
-    """Collect one `native_assets`/`data_assets` attr into provider structs."""
+    """Collect one `data_assets` attr into provider structs."""
     infos = []
     for dep in assets:
         if provider not in dep:
@@ -272,15 +267,6 @@ def _collect_plugin_asset_infos(assets, provider, provider_name, rule_name, attr
             )
         infos.append(dep[provider])
     return infos
-
-def _extra_native_assets(ctx):
-    return _collect_plugin_asset_infos(
-        ctx.attr.native_assets,
-        FlutterNativeAssetInfo,
-        "FlutterNativeAssetInfo",
-        "flutter_native_asset",
-        "native_assets",
-    )
 
 def _extra_data_assets(ctx):
     return _collect_plugin_asset_infos(
@@ -302,25 +288,31 @@ def _check_plugin_resources(ctx):
             )
 
 def _plugin_dart_infos(ctx, package_name, lib_root):
-    """The Dart-channel providers of a plugin: files, `dart_info`, analyzable info."""
+    """The Dart-channel providers of a plugin: files, `dart_info`, analyzable info.
+
+    A plugin's build hook runs as a `flutter_library`'s does.
+    """
+    hooks = declare_hooks(ctx, ctx.files.srcs, ctx.files.resources)
+    info = dart_info(
+        label = ctx.label,
+        package = dart_package_identity(
+            package_name = package_name,
+            lib_root = lib_root,
+            language_version = ctx.attr.language_version,
+            version = ctx.attr.version,
+            package_files = ctx.files.data,
+        ),
+        deps = ctx.attr.deps,
+        srcs = ctx.files.srcs,
+        resources = ctx.files.resources,
+        code_assets = ctx.attr.code_assets,
+        link_hook = ctx.file.link_hook,
+        hooks = hooks,
+    )
+    register_hook_actions(ctx, hooks, info.owned_packages[0], [dep[DartInfo] for dep in ctx.attr.deps])
     return [
         DefaultInfo(files = depset(ctx.files.srcs + ctx.files.resources)),
-        dart_info(
-            label = ctx.label,
-            package = dart_package_identity(
-                package_name = package_name,
-                lib_root = lib_root,
-                language_version = ctx.attr.language_version,
-                version = ctx.attr.version,
-                package_files = ctx.files.data,
-            ),
-            deps = ctx.attr.deps,
-            srcs = ctx.files.srcs,
-            resources = ctx.files.resources,
-            code_assets = ctx.attr.code_assets,
-            has_unreplaced_hook = ctx.attr.has_unreplaced_hook,
-            link_hook = ctx.file.link_hook,
-        ),
+        info,
         flutter_analyzable_info(ctx, package_name, lib_root),
     ]
 
@@ -342,7 +334,6 @@ def _plugin_flutter_info(ctx, package_name, plugin, extra):
             native_libs = extra.native_libs,
             native_lib_sources = extra.native_lib_sources,
             binding_contracts = extra.binding_contracts,
-            native_assets = extra.native_assets,
             data_assets = extra.data_assets,
         ),
     )
@@ -389,8 +380,6 @@ def _flutter_plugin_impl(ctx):
     extra_windows_plugin_libraries = _extra_windows_plugin_libraries(ctx, package_name)
     extra_android_plugin_libraries = _extra_android_plugin_libraries(ctx, package_name)
 
-    # Native Assets contributed by this plugin (or its parent ext/ overlay).
-    extra_native_assets = _extra_native_assets(ctx)
     extra_data_assets = _extra_data_assets(ctx)
 
     extra_apple_privacy_manifests = list(ctx.files.apple_privacy_files)
@@ -412,11 +401,11 @@ def _flutter_plugin_impl(ctx):
         linux = extra_linux_plugin_libraries,
         windows = extra_windows_plugin_libraries,
         privacy = extra_apple_privacy_manifests,
-        native_assets = extra_native_assets,
         data_assets = extra_data_assets,
     )
     return _plugin_dart_infos(ctx, package_name, lib_root) + [_plugin_flutter_info(ctx, package_name, plugin, extra)]
 
+# Without a build hook; a hook's actions are rules_dart's, tested there.
 # rule_test_coverage: no-actions
 flutter_plugin = rule(
     implementation = _flutter_plugin_impl,
@@ -472,17 +461,13 @@ flutter_plugin = rule(
             cfg = native_defines_reset,
         ),
         "code_assets": attr.label_list(
-            doc = "`dart_code_asset` targets standing in for this package's " +
-                  "`hook/build.dart` output. Declared on the owning package " +
-                  "rather than on the consuming application so they propagate " +
-                  "the way pub's own do — depending on the package is enough.",
+            doc = "`dart_code_asset` targets: native libraries this package " +
+                  "owns that Bazel builds (a `cc_shared_library`) rather than " +
+                  "a build hook. Declared on the owning package rather than on " +
+                  "the consuming application so they propagate the way a " +
+                  "hook's do — depending on the package is enough.",
             providers = [DartCodeAssetInfo],
             cfg = native_defines_reset,
-        ),
-        "has_unreplaced_hook": attr.string(
-            doc = "Path of a build hook this package ships that nothing " +
-                  "replaces, or empty. Recorded at repo generation; the " +
-                  "application that depends on the package fails on it.",
         ),
         "version": attr.string(
             doc = "The package's own version, as resolved by pub (e.g. `2.2.0`). " +
@@ -529,11 +514,6 @@ flutter_plugin = rule(
             providers = [FlutterWindowsPluginInfo],
             cfg = native_defines_reset,
         ),
-        "native_assets": attr.label_list(
-            doc = "Native Assets `CodeAsset` declarations (each a `flutter_native_asset` target). Propagated through `FlutterInfo.native_assets` and aggregated by `flutter_application` into the `--native-assets` manifest. Declare per-platform asset sets with `select()`: this is what routes each asset to the applications built for its platform, and listing two targets with the same `asset_id` in one configuration fails analysis.",
-            providers = [FlutterNativeAssetInfo],
-            cfg = native_defines_reset,
-        ),
         "data_assets": attr.label_list(
             doc = "Native Assets `DataAsset` declarations (each a `flutter_data_asset` target). Propagated through `FlutterInfo.data_assets` and bundled at `flutter_assets/packages/<pkg>/<name>` by `flutter_application`.",
             providers = [FlutterDataAssetInfo],
@@ -543,6 +523,9 @@ flutter_plugin = rule(
             doc = "`PrivacyInfo.xcprivacy` files this plugin contributes to the iOS / macOS app bundle. Apple requires every framework to ship a privacy manifest since iOS 17.4 / macOS 14.4; the App Store submission validator walks the bundle and aggregates them. Propagated through `FlutterInfo.apple_privacy_manifests` and threaded into the platform application bundle's `Resources/<pkg>/PrivacyInfo.xcprivacy` slot. Auto-detected by `flutter_pub_package` from both layouts pub plugins use (`Sources/<pkg>/PrivacyInfo.xcprivacy` and `Sources/<pkg>/Resources/PrivacyInfo.xcprivacy`).",
             allow_files = [".xcprivacy"],
         ),
-    },
+    } | BUILD_HOOK_ATTRS,
+    # The Dart exec tools are the build hook's.
+    toolchains = MODULAR_KERNEL_TOOLCHAINS,
+    fragments = BUILD_HOOK_FRAGMENTS,
     doc = "Declares a Flutter plugin with platform metadata and optional native dependencies.",
 )

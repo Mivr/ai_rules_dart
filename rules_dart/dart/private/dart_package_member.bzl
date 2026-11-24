@@ -41,7 +41,7 @@ module, against a package config naming every member.
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartPackageInfo")
 load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "resolve_package_identity")
-load("//dart/private:dart_info.bzl", "dart_info")
+load("//dart/private:dart_info.bzl", "dart_info", "derived_package_info")
 load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load("//dart/private:dart_library.bzl", "DartPackageMemberInfo", "check_files_under_lib_root", "check_no_dart_in_data", "check_no_duplicate_srcs", "derive_lib_root", "derive_package_name", "link_hook_error")
 
@@ -107,10 +107,11 @@ def _dart_package_member_impl(ctx):
         srcs = own_srcs,
         resources = own_resources,
         code_assets = ctx.attr.code_assets,
-        has_unreplaced_hook = ctx.attr.has_unreplaced_hook,
         link_hook = ctx.file.link_hook,
     )
     record = info.owned_packages[0]
+    if ctx.attr.hook_error:
+        record = derived_package_info(record, hook_error = ctx.attr.hook_error)
 
     # `data` rides runfiles only, exactly as on a single-package library. The
     # merged library reads the member's direct files off `DartPackageMemberInfo`
@@ -153,8 +154,8 @@ dart_package_member = rule(
             doc = "The member package's `hook/link.dart`, if it has one. Must be the file at `hook/link.dart` under the member's root.",
             allow_single_file = [".dart"],
         ),
-        "has_unreplaced_hook": attr.string(
-            doc = "Path of a pub build hook (`hook/build.dart`) this member ships that has no Bazel replacement, or empty.",
+        "hook_error": attr.string(
+            doc = "Why this member's build hook (`hook/build.dart`) cannot run, or empty. A member of a merged pub dependency cycle has no library of its own to run it; an executable reaching the member fails with this message.",
         ),
         "package_name": attr.string(
             doc = "The Dart package name used in `package:` imports. If omitted, defaults to the last component of the Bazel package path. Set this or `package`, not both.",

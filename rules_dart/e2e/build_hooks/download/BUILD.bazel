@@ -1,0 +1,22 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+exports_files(["pubspec.lock"])
+
+# sqlite3 in its default mode: its hook downloads a prebuilt library. The hook
+# action has no network, so the build fails and names the package and both
+# ways out. Built only by `e2e.yaml`'s `download_refused`.
+dart_binary(
+    name = "refused",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = ["@download_deps//:sqlite3"],
+)
+
+# The same with `hook_network = ["sqlite3"]` on the hub: that one action may
+# download. Manual: it needs the network.
+dart_binary(
+    name = "allowed",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = ["@download_net_deps//:sqlite3"],
+)

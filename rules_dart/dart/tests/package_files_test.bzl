@@ -292,7 +292,7 @@ def _dart_info_defaults_test_impl(ctx):
     rules_flutter constructs `DartInfo` directly, with the fields it knew
     when it was written, so the two package-file fields are absent on that
     record. A reader that wants them must read through `getattr` with an empty
-    default — the same shape `collect_code_asset_files` uses — rather than
+    default — the same shape `collect_native_assets` uses — rather than
     assume the field is always present.
 
     Args:
@@ -306,7 +306,7 @@ def _dart_info_defaults_test_impl(ctx):
         transitive_srcs = depset(),
         transitive_resources = depset(),
         transitive_packages = depset(),
-        transitive_code_asset_files = depset(),
+        transitive_native_assets = depset(),
     )
     asserts.equals(
         env,

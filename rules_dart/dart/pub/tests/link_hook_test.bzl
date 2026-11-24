@@ -19,11 +19,11 @@ load("//dart/private:dart_compile.bzl", "recorded_uses_kind")
 load("//dart/private:dart_library.bzl", "link_hook_error")
 load(
     "//dart/private:dart_link_hook.bzl",
-    "link_hook_package_root",
     "parse_data_asset_ids",
     "recorded_uses_file_error",
 )
-load("//dart/pub/private:build_content.bzl", "classify_pub_hooks", "make_dart_library_build_content")
+load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
+load("//dart/pub/private:pub_hooks.bzl", "hook_attrs_block")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
 visibility(["//dart/..."])
@@ -106,20 +106,7 @@ def _recorded_uses_file_test_impl(ctx):
 
 _recorded_uses_file_test = unittest.make(_recorded_uses_file_test_impl)
 
-# --- link_hook_package_root / link_hook_error ---
-
-def _package_root_test_impl(ctx):
-    env = unittest.begin(ctx)
-    asserts.equals(env, "glyphs", link_hook_package_root(struct(path = "glyphs/hook/link.dart")))
-    asserts.equals(
-        env,
-        "external/hub__glyphs",
-        link_hook_package_root(struct(path = "external/hub__glyphs/hook/link.dart")),
-    )
-    asserts.equals(env, ".", link_hook_package_root(struct(path = "hook/link.dart")))
-    return unittest.end(env)
-
-_package_root_test = unittest.make(_package_root_test_impl)
+# --- link_hook_error ---
 
 def _link_hook_location_test_impl(ctx):
     env = unittest.begin(ctx)
@@ -134,38 +121,30 @@ _link_hook_location_test = unittest.make(_link_hook_location_test_impl)
 
 # --- pub spokes ---
 
-def _classify_pub_hooks_test_impl(ctx):
-    # A link hook is runnable, so it never makes a package fail; only an
-    # unhandled build hook does.
-    env = unittest.begin(ctx)
-    link_only = classify_pub_hooks(has_build_hook = False, has_link_hook = True, build_hook_handled = False)
-    asserts.equals(env, "", link_only.unreplaced_hook)
-    asserts.equals(env, "hook/link.dart", link_only.link_hook)
-
-    both = classify_pub_hooks(has_build_hook = True, has_link_hook = True, build_hook_handled = False)
-    asserts.equals(env, "hook/build.dart", both.unreplaced_hook)
-    asserts.equals(env, "hook/link.dart", both.link_hook)
-
-    handled = classify_pub_hooks(has_build_hook = True, has_link_hook = True, build_hook_handled = True)
-    asserts.equals(env, "", handled.unreplaced_hook)
-    asserts.equals(env, "hook/link.dart", handled.link_hook)
-
-    none = classify_pub_hooks(has_build_hook = False, has_link_hook = False, build_hook_handled = False)
-    asserts.equals(env, "", none.unreplaced_hook)
-    asserts.equals(env, "", none.link_hook)
-    return unittest.end(env)
-
-_classify_pub_hooks_test = unittest.make(_classify_pub_hooks_test_impl)
-
 def _spoke_states_link_hook_test_impl(ctx):
     env = unittest.begin(ctx)
-    with_hook = make_dart_library_build_content("glyphs", [], "3.13", link_hook = "hook/link.dart")
+    with_hook = make_dart_library_build_content("glyphs", [], "3.13", hooks = hook_attrs_block(False, True, None))
     asserts.true(env, '    link_hook = "hook/link.dart",\n' in with_hook, with_hook)
     without = make_dart_library_build_content("glyphs", [], "3.13")
     asserts.true(env, "link_hook" not in without, without)
     return unittest.end(env)
 
 _spoke_states_link_hook_test = unittest.make(_spoke_states_link_hook_test_impl)
+
+def _spoke_keeps_apple_replacement_test_impl(ctx):
+    """sqlite3 and webcrypto keep their Bazel replacement on Apple OSes; other hooks do not."""
+    env = unittest.begin(ctx)
+    sqlite = hook_attrs_block(True, False, None, "sqlite3", "3.9.2")
+    asserts.true(env, '"@platforms//os:macos": None' in sqlite, sqlite)
+    asserts.true(env, '"//conditions:default": "hook/build.dart"' in sqlite, sqlite)
+    asserts.true(env, '"@platforms//os:ios": ["@rules_dart//dart/ext/sqlite3:code_asset"]' in sqlite, sqlite)
+    old = hook_attrs_block(True, False, None, "sqlite3", "1.11.0")
+    asserts.true(env, '    build_hook = "hook/build.dart",\n' in old and "code_assets" not in old, old)
+    other = hook_attrs_block(True, False, None, "native_add", "1.0.0")
+    asserts.true(env, '    build_hook = "hook/build.dart",\n' in other and "code_assets" not in other, other)
+    return unittest.end(env)
+
+_spoke_keeps_apple_replacement_test = unittest.make(_spoke_keeps_apple_replacement_test_impl)
 
 # --- merge_package_records ---
 
@@ -274,25 +253,8 @@ def _link_hook_actions_test_impl(ctx):
     runs = _actions(env, "DartLinkHook")
     asserts.equals(env, 1, len(runs))
     argv = runs[0].argv
-    stage_prefix = target.label.name + ".pkg_roots/link__hook__fixture"
-    asserts.true(env, "--package-name" in argv and argv[argv.index("--package-name") + 1] == "link_hook_fixture", str(argv))
-    asserts.true(env, argv[argv.index("--package-root") + 1].endswith(stage_prefix), str(argv))
-    asserts.true(env, argv[argv.index("--hook") + 1].endswith(stage_prefix + "/hook/link.dart"), str(argv))
-
-    pc_writes = [
-        a
-        for a in _actions(env, "FileWrite")
-        if a.outputs.to_list()[0].basename == target.label.name + ".package_config.json"
-    ]
-    asserts.equals(env, 1, len(pc_writes))
-    for line in pc_writes[0].content.split("\n"):
-        if '"rootUri"' not in line:
-            continue
-        asserts.true(
-            env,
-            '"' + target.label.name + ".pkg_roots/" in line,
-            "link hook package_config rootUri must resolve inside .pkg_roots: %s" % line,
-        )
+    asserts.true(env, "link" in argv, str(argv))
+    asserts.equals(env, "link_hook_fixture", argv[argv.index("--package") + 1])
 
     assets = target[DartDataAssetInfo].assets.to_list()
     asserts.equals(env, ["package:link_hook_fixture/data/index.json"], [a.id for a in assets])
@@ -309,16 +271,11 @@ def _link_hook_actions_test_impl(ctx):
     asserts.true(env, recorded in inputs, "%s not among inputs" % recorded)
     asserts.true(env, "link.dart" in inputs)
     input_short_paths = [f.short_path for f in input_files]
-    for staged_rel in [
-        stage_prefix + "/lib/fixture.dart",
-        stage_prefix + "/lib/generated.g.dart",
-        stage_prefix + "/hook/link.dart",
-        target.label.name + ".pkg_roots/link__hook__fixture__dep/lib/dep.dart",
-    ]:
+    for rel in ["lib/fixture.dart", "lib/generated.g.dart", "hook/link.dart"]:
         asserts.true(
             env,
-            any([p.endswith(staged_rel) for p in input_short_paths]),
-            "%s not staged among inputs: %s" % (staged_rel, input_short_paths),
+            any([p.endswith("link_hook_fixture/" + rel) for p in input_short_paths]),
+            "%s not among inputs: %s" % (rel, input_short_paths),
         )
     return analysistest.end(env)
 
@@ -370,9 +327,8 @@ def link_hook_test_suite(name):
         _rejects_malformed_ids_test,
         _rejects_duplicate_ids_test,
         _recorded_uses_file_test,
-        _package_root_test,
         _link_hook_location_test,
-        _classify_pub_hooks_test,
         _spoke_states_link_hook_test,
+        _spoke_keeps_apple_replacement_test,
         _merge_adopts_link_hook_test,
     )

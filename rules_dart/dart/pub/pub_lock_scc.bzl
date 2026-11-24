@@ -21,7 +21,7 @@ load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub:pub_lock_package.bzl", "archive_fetch_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
-load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
+load("//dart/pub/private:build_content.bzl", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content", _scc_member_hook_error = "scc_member_hook_error")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error", "scc_planned_deps_error")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
@@ -35,6 +35,7 @@ visibility("public")
 # check, so this public file exposes it the same way `pub_lock_package.bzl`
 # exposes `make_dart_library_build_content`.
 make_dart_package_member_build_content = _make_dart_package_member_build_content
+scc_member_hook_error = _scc_member_hook_error
 make_scc_merged_build_content = _make_scc_merged_build_content
 
 def _fetch_hosted_member(ctx, member, name):
@@ -112,10 +113,10 @@ def _parsed_scc_members(ctx, members):
         its subdirectory.
 
     Returns:
-      One struct(name, version, code_assets, ignore_hook, dep_labels,
-      planned, real_deps, sdk_constraint, package_files) per member, in
-      member order: the member name, its version, code assets and hook
-      suppression, the labels of its dependencies outside the cycle, its
+      One struct(name, version, dep_labels, planned, real_deps,
+      sdk_constraint, package_files) per member, in member order: the
+      member name, its version, the labels of its dependencies outside the
+      cycle, its
       entry's `planned_deps` value
       (None when the entry carries none), its real sorted dependency names,
       its `environment.sdk` ("" when it has none or ships no pubspec), and
@@ -140,8 +141,6 @@ def _parsed_scc_members(ctx, members):
         parsed.append(struct(
             name = name,
             version = member["version"],
-            code_assets = member.get("code_assets", []),
-            ignore_hook = member.get("ignore_hook", False),
             dep_labels = member.get("deps", []),
             planned = member.get("planned_deps", None),
             real_deps = sorted(pubspec_deps(pubspec)),
@@ -183,18 +182,15 @@ def _write_scc_member_build(ctx, parsed):
       parsed: The member's `_parsed_scc_members` struct.
     """
     name = parsed.name
-    hooks = _classify_pub_hooks(
-        has_build_hook = ctx.path(name + "/hook/build.dart").exists,
-        has_link_hook = ctx.path(name + "/hook/link.dart").exists,
-        build_hook_handled = bool(parsed.code_assets) or parsed.ignore_hook,
-    )
+    hook_error = ""
+    if ctx.path(name + "/hook/build.dart").exists:
+        hook_error = _scc_member_hook_error(name, ctx.name)
     ctx.file(name + "/BUILD.bazel", _make_dart_package_member_build_content(
         name = name,
         language_version = _derive_language_version(parsed.sdk_constraint),
-        code_assets = parsed.code_assets,
-        has_unreplaced_hook = hooks.unreplaced_hook,
+        hook_error = hook_error,
         version = parsed.version,
-        link_hook = "hook/link.dart" if hooks.link_hook else "",
+        link_hook = "hook/link.dart" if ctx.path(name + "/hook/link.dart").exists else "",
         merged_label = "//:merged",
         package_files = parsed.package_files,
     ))
@@ -244,10 +240,9 @@ pub_lock_scc_package = repository_rule(
         ),
         "members_json": attr.string(
             doc = "JSON list of member packages. Hosted members carry `{source: \"hosted\", name, version, " +
-                  "sha256, url (the archive URL), code_assets}`; git members carry `{source: \"git\", name, " +
-                  "version, url, resolved_ref, path, code_assets}`. Every member also carries `deps`, the labels " +
-                  "of its dependencies outside the cycle, and `ignore_hook`, which suppresses the unreplaced-hook " +
-                  "error for it. A git member's `resolved_ref` must be a full 40-hex " +
+                  "sha256, url (the archive URL)}`; git members carry `{source: \"git\", name, " +
+                  "version, url, resolved_ref, path}`. Every member also carries `deps`, the labels " +
+                  "of its dependencies outside the cycle. A git member's `resolved_ref` must be a full 40-hex " +
                   "commit SHA; anything else fails the build. Every member also carries `planned_deps`, the " +
                   "sorted dependency names cycle planning used for it: the fetch fails when a member's real " +
                   "pubspec lists other names, when a member entry carries no `planned_deps` list of strings, " +

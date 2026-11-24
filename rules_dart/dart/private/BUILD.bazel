@@ -1,5 +1,6 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_setting", "string_list_setting")
+load(":build_hooks.bzl", "hook_cc_toolchain")
 load(":build_settings.bzl", "no_dart_defines")
 load(":dart_analyze_aspect.bzl", "dart_analysis_config")
 load(":dart_analyzer_summary.bzl", "analyzer_sdk_summary")
@@ -31,19 +32,6 @@ alias(
 alias(
     name = "analyzer_sdk_summary_input",
     actual = ":analyzer_sdk_summary",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-# Curated pub-spoke `code_assets` (such as `@dart_pub__sqlite3//:sqlite3` ->
-# `//dart/ext/sqlite3:code_asset`) are gated on `:code_assets_on` so pure-Dart
-# library, codegen, and tool builds never configure `cc_*` targets or probe a C
-# toolchain. `dart_binary(code_assets_from_deps = True)` and `dart_test`
-# transition `:code_assets_enabled` to `True`, while `dart_binary` tools with
-# `code_assets_from_deps = False` transition it to `False`.
-bool_setting(
-    name = "code_assets_enabled",
-    build_setting_default = False,
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
@@ -82,11 +70,6 @@ no_dart_defines(
     visibility = ["//visibility:public"],
 )
 
-config_setting(
-    name = "code_assets_on",
-    flag_values = {":code_assets_enabled": "true"},
-    visibility = ["//visibility:public"],
-)
 
 bzl_library(
     name = "analyze_targets",
@@ -376,6 +359,7 @@ bzl_library(
     srcs = ["dart_library.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":build_hooks",
         ":build_settings",
         ":common",
         ":coverage_map",
@@ -430,11 +414,21 @@ bzl_library(
     ],
 )
 
-bzl_library(
-    name = "curated_registry",
-    srcs = ["curated_registry.bzl"],
+# The target's C toolchain for build hooks, or nothing (`build_hooks.bzl`).
+hook_cc_toolchain(
+    name = "hook_cc_toolchain",
     visibility = ["//visibility:public"],
-    deps = [":versions"],
+)
+
+bzl_library(
+    name = "build_hooks",
+    srcs = ["build_hooks.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@bazel_skylib//rules:common_settings",
+        "@rules_cc//cc:find_cc_toolchain_bzl",
+        "@rules_cc//cc/common",
+    ],
 )
 
 bzl_library(
@@ -633,6 +627,13 @@ bzl_library(
     name = "module_compiler_versions",
     srcs = ["module_compiler_versions.bzl"],
     visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "apple_hook_replacements",
+    srcs = ["apple_hook_replacements.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [":versions"],
 )
 
 bzl_library(

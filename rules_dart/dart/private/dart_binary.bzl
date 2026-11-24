@@ -15,7 +15,6 @@ load(
     "//dart/private:common.bzl",
     "DART_ABI_CONSTRAINT_ATTRS",
     "collect_transitive_resources",
-    "resolve_code_assets",
     "runfiles_path",
 )
 load("//dart/private:dart_compile.bzl", "recorded_uses_kind")
@@ -33,7 +32,8 @@ load(
 )
 load("//dart/private:dart_link_check.bzl", "LINK_MODULES_ATTRS", "link_modules_check")
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
-load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_code_assets", "executable_hook_error", "executable_package")
+load("//dart/private:build_hooks.bzl", "NATIVE_ASSETS_CONSUMER_ATTRS")
+load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_hook_error", "executable_native_assets", "executable_package")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load(
     "//dart/private/tools:compile_wrapper.bzl",
@@ -451,15 +451,10 @@ def _dart_binary_impl(ctx):
         binary_output_basename(ctx.label.name, compile_mode, is_windows),
     )
 
-    # Assets reach a binary two ways: propagated from any package in `deps`
-    # that owns one (the upstream semantics — depending on a package gets you
-    # its assets), or named outright. The explicit attr stays valid for
-    # hand-written cases; it is simply no longer the only mechanism.
-    resolved_assets = resolve_code_assets(
-        ctx.label,
-        executable_code_assets(ctx.attr.deps, own) if ctx.attr.code_assets_from_deps else [],
-        [dep[DartCodeAssetInfo] for dep in ctx.attr.code_assets],
-    )
+    # Assets reach a binary two ways: from the packages in `deps` (their
+    # build hooks' outputs and their `code_assets`, as depending on a package
+    # gets you its assets in a stock build), or named outright.
+    native_assets = executable_native_assets(ctx)
 
     # The compiler records the uses of `@RecordUse` definitions only when it
     # tree-shakes, so the other modes get the file it writes when there is
@@ -480,7 +475,7 @@ def _dart_binary_impl(ctx):
             output = output,
             compile_mode = compile_mode,
             optional_outputs = optional_outputs,
-            resolved_assets = resolved_assets,
+            native_assets = native_assets,
         )),
         recorded_uses_info = optional_outputs.recorded_uses_info,
         debug_info = optional_outputs.debug_info,
@@ -493,17 +488,6 @@ def _dart_binary_impl(ctx):
     if compile_mode in ("aot-snapshot", "jit-snapshot") and ctx.attr.snapshot_launcher:
         return _binary_snapshot_outputs(ctx, result)
     return _binary_default_outputs(ctx, result)
-
-def _binary_code_assets_transition_impl(_settings, attr):
-    return {
-        "//dart/private:code_assets_enabled": getattr(attr, "code_assets_from_deps", True),
-    }
-
-_binary_code_assets_transition = transition(
-    implementation = _binary_code_assets_transition_impl,
-    inputs = [],
-    outputs = ["//dart/private:code_assets_enabled"],
-)
 
 def _binary_defines_transition_impl(_settings, attr):
     # Only a binary that may link modules carries its `defines` to its
@@ -530,7 +514,7 @@ _binary_defines_transition = transition(
 
 # The attributes `dart_binary` shares with the other executable rules, merged into one dict.
 _SHARED_BINARY_ATTRS = dict(
-    DART_ABI_CONSTRAINT_ATTRS,
+    DART_ABI_CONSTRAINT_ATTRS | NATIVE_ASSETS_CONSUMER_ATTRS,
     **dict(
         COMPILE_WRAPPER_ATTRS,
         **dict(
@@ -545,7 +529,6 @@ _SHARED_BINARY_ATTRS = dict(
 
 dart_binary = rule(
     implementation = _dart_binary_impl,
-    cfg = _binary_code_assets_transition,
     attrs = dict({
         "main": attr.label(
             doc = "The Dart entrypoint file containing a top-level `main()` function.",
@@ -573,26 +556,22 @@ dart_binary = rule(
             allow_files = True,
         ),
         "code_assets": attr.label_list(
-            doc = """Native code assets (e.g. `//dart/ext/sqlite3:code_asset`) the binary's \
-`@Native` FFI bindings resolve against. When set, the main is compiled to a kernel with the \
-code-asset mapping embedded (`gen_kernel --native-assets`) before the snapshot/exe is produced, \
-and the libraries are staged in runfiles so the Dart VM resolves them relative to the executable \
-at runtime. Each entry must provide `DartCodeAssetInfo` (see the `dart_code_asset` rule).""",
+            doc = """`dart_code_asset` targets the binary's `@Native` FFI bindings resolve against, \
+besides the code assets its `deps` bring (their packages' build hooks, and their own \
+`code_assets`). The program embeds the mapping, and the libraries ship in runfiles, in one \
+directory resolved relative to the executable.""",
             providers = [DartCodeAssetInfo],
         ),
         "code_assets_from_deps": attr.bool(
             default = True,
-            doc = """Whether to pick up native code assets propagated through `deps`. Defaults to `True`.
+            doc = """Whether to take the native code assets of `deps`: the outputs of their packages' \
+build hooks, and their `code_assets`. Defaults to `True`.
 
 Leave this on for a program that runs the packages it depends on. Turn it off for a `dart_binary` \
 used purely as a *build tool* — a code generator, a linter — which imports pub packages for their \
-Dart API but never loads their native libraries. Without the opt-out such a tool would build (and \
-in an exec configuration, cross-build) every native library anywhere in its dependency closure. \
-rules_dart's own `dart/ext` builder shims set this to `False`: `drift_dev` depends on \
-`package:sqlite3`, but generating code never calls into libsqlite3.
-
-Also suppresses the unreplaced-`hook/build.dart` diagnostic, on the same grounds — a tool that \
-never loads native code is unaffected by a package whose native code was not built.""",
+Dart API but never loads their native libraries: no build hook then runs for it (`drift_dev` \
+depends on `package:sqlite3`, but generating code never calls into libsqlite3). The rule set's \
+own tools set it to `False`.""",
         ),
         "compile_mode": attr.string(
             doc = """\

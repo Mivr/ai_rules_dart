@@ -25,12 +25,14 @@ load(
     "//dart/private:common.bzl",
     _KERNEL_FILESYSTEM_SCHEME = "KERNEL_FILESYSTEM_SCHEME",
     _STABLE_SCHEME = "STABLE_SCHEME",
+    _collect_native_assets = "collect_native_assets",
     _collect_packages = "collect_packages",
     _collect_transitive_resources = "collect_transitive_resources",
     _collect_transitive_srcs = "collect_transitive_srcs",
     _generate_package_config = "generate_package_config",
     _generate_package_config_content = "generate_package_config_content",
     _generate_stable_package_config = "generate_stable_package_config",
+    _hook_errors = "hook_errors",
     _kernel_uri = "kernel_uri",
     _owned_package_records = "owned_package_records",
     _runfiles_path = "runfiles_path",
@@ -79,6 +81,18 @@ load(
     _multi_root_uri = "multi_root_uri",
     _no_kernel_module = "no_kernel_module",
     _package_of_source = "package_of_source",
+)
+load(
+    "//dart/private:build_hooks.bzl",
+    _APPLE_HOOK_OSES = "APPLE_HOOK_OSES",
+    _BUILD_HOOK_ATTRS = "BUILD_HOOK_ATTRS",
+    _BUILD_HOOK_FRAGMENTS = "BUILD_HOOK_FRAGMENTS",
+    _HOOK_TARGET_ATTRS = "HOOK_TARGET_ATTRS",
+    _NATIVE_ASSETS_APP_ATTRS = "NATIVE_ASSETS_APP_ATTRS",
+    _declare_hooks = "declare_hooks",
+    _hook_target = "hook_target",
+    _native_assets_manifest = "native_assets_manifest",
+    _register_hook_actions = "register_hook_actions",
 )
 load(
     "//dart/private:dart_library.bzl",
@@ -280,3 +294,32 @@ dart_test_runner_main = _dart_test_runner_main
 dart_test_runner_snapshot = _dart_test_runner_snapshot
 pinned_download = _pinned_download
 pinned_download_and_extract = _pinned_download_and_extract
+
+# Build hooks of a library a rule set builds itself, as `dart_library` runs
+# them: merge `BUILD_HOOK_ATTRS` into the rule's `attrs`,
+# `//dart:exec_tools_toolchain_type` into its `toolchains` and
+# `BUILD_HOOK_FRAGMENTS` into its `fragments`; call `declare_hooks` before
+# `dart_info(hooks = ...)` and `register_hook_actions` after it.
+BUILD_HOOK_ATTRS = _BUILD_HOOK_ATTRS
+BUILD_HOOK_FRAGMENTS = _BUILD_HOOK_FRAGMENTS
+declare_hooks = _declare_hooks
+register_hook_actions = _register_hook_actions
+
+# The native-assets manifest of an app: `native_assets_manifest` over
+# `DartInfo.transitive_native_assets`, in a rule with `NATIVE_ASSETS_APP_ATTRS`
+# and the exec tools toolchain. `hook_target` names the target a rule with
+# `HOOK_TARGET_ATTRS` builds for.
+HOOK_TARGET_ATTRS = _HOOK_TARGET_ATTRS
+
+# The `hook_target` OSes build hooks do not run for yet (their actions fail,
+# naming the package); goes when build hooks are proven on macOS CI.
+APPLE_HOOK_OSES = _APPLE_HOOK_OSES
+NATIVE_ASSETS_APP_ATTRS = _NATIVE_ASSETS_APP_ATTRS
+hook_target = _hook_target
+native_assets_manifest = _native_assets_manifest
+
+# The closure's native-asset files (`DartInfo.transitive_native_assets` of
+# `deps`), and the error for a closure reaching a package whose build hook
+# cannot run (a member of a merged pub dependency cycle), or None.
+collect_native_assets = _collect_native_assets
+hook_errors = _hook_errors

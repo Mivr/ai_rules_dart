@@ -1,0 +1,10 @@
+# Use a remote JDK so the build works without a local Java installation.
+common --java_runtime_version=remotejdk_25
+common --tool_java_language_version=25
+common --tool_java_runtime_version=remotejdk_25
+
+# No action reaches the network unless it asks to: a build hook that tries
+# to download fails, naming its package (`flutter.pub(hook_network = ...)`).
+build --sandbox_default_allow_network=false
+
+try-import %workspace%/.bazelrc.user

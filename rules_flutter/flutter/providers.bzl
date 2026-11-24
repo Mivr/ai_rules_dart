@@ -288,19 +288,7 @@ silently discards every dependency's contribution.""",
         "linux_plugin_libraries": "depset[struct]: Linux plugin source bundles. Each struct has: label (Label), srcs (depset[File]), hdrs (depset[File]), include_dirs (depset[str]), package (str). The Linux runner folds these into its compile.",
         "windows_plugin_libraries": "depset[struct]: Windows plugin source bundles. Each struct has: label (Label), srcs (depset[File]), hdrs (depset[File]), include_dirs (depset[str]), package (str). The Windows runner folds these into its compile.",
         "apple_privacy_manifests": "depset[File]: Apple `PrivacyInfo.xcprivacy` files contributed by transitive plugins. Apple requires every framework to ship one since iOS 17.4 / macOS 14.4; the macOS / iOS application rules bundle them into `Contents/Resources/<pkg>/PrivacyInfo.xcprivacy` (or the iOS analog) so App Store submission's privacy aggregator picks them up.",
-        "native_assets": "depset[FlutterNativeAssetInfo]: Per-target Native Assets `CodeAsset` declarations contributed by transitive `flutter_native_asset` rules.",
         "data_assets": "depset[FlutterDataAssetInfo]: Per-package Native Assets `DataAsset` declarations of the closure.",
-    },
-)
-
-FlutterNativeAssetInfo = provider(
-    doc = "A single Native Assets `CodeAsset` declaration captured by `flutter_native_asset`.",
-    fields = {
-        "asset_id": "str: The Dart asset id (e.g. `package:objective_c/objective_c.dylib`).",
-        "link_mode": "str: One of `dynamic_loading_bundle`, `dynamic_loading_system`, `dynamic_loading_executable`, `dynamic_loading_process`.",
-        "file": "File or None: The shared library to bundle into the application. None for non-bundled link modes.",
-        "bundle_filename": "str: Filename inside the platform bundle slot (e.g. `objective_c.dylib`). Empty for non-bundled link modes.",
-        "system_uri": "str: System library URI for `dynamic_loading_system`. Empty otherwise.",
     },
 )
 
@@ -367,8 +355,8 @@ ran with `--strip`, else False (False when there is no AOT output).""",
         "native_libs": "list[File]: Shared libraries from native_deps (for dart:ffi).",
         "is_debug": "bool: True if built in debug/JIT mode.",
         "package_config": "File: The package_config.json for the frontend server.",
-        "native_assets_manifest": "File or None: The `native_assets.json` manifest passed to the frontend_server via `--native-assets`. Always emitted (empty manifest when there are no Native Assets).",
-        "bundled_code_assets": "depset[File]: Native-Assets `CodeAsset` library files (.dylib/.so/.dll) to embed in the platform bundle. Each platform application rule reads this and threads the files into the platform's existing embedding mechanism.",
+        "native_assets_manifest": "File or None: The native-assets manifest (`native_assets.json`, as the Flutter tool writes it, and bundled as `NativeAssetsManifest.json`) passed to the frontend_server via `--native-assets`, written from the closure's build hook outputs and `dart_code_asset`s. Always emitted (an empty mapping when there are none).",
+        "bundled_code_assets": "list[File]: The directory of code-asset libraries (.so/.dll) to embed in the platform bundle, as a list of one, or empty when the closure has none. On macOS and iOS, where build hooks do not run yet, the `dart_code_asset` libraries themselves, which the Apple rules embed as they embed `native_libs`. The build hooks name its files only when they run, so each platform rule copies the directory's contents into the slot the manifest names them in (`lib/` on Linux, `lib/<abi>/` in an APK, beside the runner on Windows, `Contents/Frameworks` on macOS).",
         "bundled_data_assets": "depset[FlutterDataAssetInfo]: Native-Assets `DataAsset` declarations to bundle under `flutter_assets/packages/<pkg>/<name>`.",
         "apple_privacy_manifests": "depset[File]: Aggregated Apple `PrivacyInfo.xcprivacy` files from transitive plugins. The macOS / iOS application rules thread these into `additional_contents` of the bundle so Apple's App Store submission validator sees the merged privacy declaration.",
         "plugins": "list[struct]: Deduplicated plugin metadata aggregated from the application's whole dependency graph. Each struct has: name (str), platforms (dict of platform -> {pluginClass, dartPluginClass, package}). The per-platform registrant generators read this to emit `GeneratedPluginRegistrant`.",

@@ -1,25 +1,18 @@
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("//dart:defs.bzl", "dart_code_asset")
 
-# rules_dart-provided code asset for `package:webcrypto` 0.6.1. Its
-# hook/build.dart runs CMake over the package's C glue and its vendored
-# BoringSSL; this builds the same sources from the same pub archive
-# (`@webcrypto_pub_archive`, see webcrypto.BUILD) and binds the library to
-# webcrypto's own asset id.
+# package:webcrypto's library on Apple OSes, where build hooks do not run yet
+# (`//dart/private:apple_hook_replacements.bzl`), built from the pub archive's
+# C glue and the BoringSSL it vendors. Elsewhere the package's hook builds it
+# (with CMake). Goes when build hooks are proven on macOS CI.
 
 cc_shared_library(
     name = "libwebcrypto",
-    # The two entry points Dart calls are marked __declspec(dllexport) in
-    # src/webcrypto.h, so a Windows DLL exports them without
-    # `windows_export_all_symbols`, and BoringSSL stays unexported.
-    shared_lib_name = select({
-        "@platforms//os:ios": "libwebcrypto.dylib",
-        "@platforms//os:macos": "libwebcrypto.dylib",
-        "@platforms//os:tvos": "libwebcrypto.dylib",
-        "@platforms//os:visionos": "libwebcrypto.dylib",
-        "@platforms//os:watchos": "libwebcrypto.dylib",
-        "@platforms//os:windows": "webcrypto.dll",
-        "//conditions:default": "libwebcrypto.so",
+    shared_lib_name = "libwebcrypto.dylib",
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = ["//visibility:private"],
     deps = ["@webcrypto_pub_archive//:webcrypto"],

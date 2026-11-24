@@ -780,7 +780,9 @@ def _link_asset_variant_files(ctx, src, entry_path, scope, variant_cache):
 def link_spoke_contents(ctx, src, asset_block, platform_dirs, scope):
     """Link everything the spoke generator reads or exposes — nothing else.
 
-    The pubspec leads: `lib/`, hook scripts, declared assets, fonts, and
+    The pubspec leads: `lib/`, hook scripts (and, for a package with a
+    hook, the rest of its top level, which the hook may read), declared
+    assets, fonts, and
     shaders (plus each shader's own directory, or the root's include
     siblings for a top-level shader), and the plugin's platform
     directories. (`link_path_package` links the pubspec itself first, so it
@@ -806,6 +808,17 @@ def link_spoke_contents(ctx, src, asset_block, platform_dirs, scope):
     for entry in ["hook/build.dart", "hook/link.dart", "LICENSE", "NOTICES"]:
         link_scoped_file_entry(ctx, src, entry, scope)
     link_scoped_file_entry(ctx, src, "lib", scope, False)
+    if src.get_child("hook", "build.dart").exists or src.get_child("hook", "link.dart").exists:
+        # A build hook reads the package's other files (C sources, headers,
+        # prebuilt files), so a package with one links its whole top level,
+        # less the usual skipped names.
+        for child in src.readdir():
+            if child.basename in ("lib", "pubspec.yaml"):
+                continue
+            if child.is_dir:
+                _link_scoped_dir_entry(ctx, src, child.basename, scope)
+            else:
+                link_scoped_file_entry(ctx, src, child.basename, scope)
     variant_cache = {}
     for asset in asset_block.assets:
         if asset.path.endswith("/"):

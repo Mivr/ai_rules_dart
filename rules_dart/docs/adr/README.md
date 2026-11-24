@@ -20,6 +20,7 @@ provider contract in [ARCHITECTURE.md](../ARCHITECTURE.md) and from
 | [0012](0012-recorded-uses-and-link-hooks.md)                         | Design Decision 10                                                                                                            |
 | [0013](0013-fail-closed-app-jit-training.md)                         | Design Decision 11                                                                                                            |
 | [0014](0014-sdk-subset-in-test-runfiles.md)                          | Performance decision: SDK subset in test runfiles                                                                             |
+| [0015](0015-build-hooks-through-the-sdk-hook-runner.md)              | Design Decision 13                                                                                                            |
 
 Each ADR is `NNNN-<lowercase-slug>.md` and opens with YAML front matter
 carrying `status` (`accepted`, `superseded` or `deprecated`). An accepted ADR

@@ -94,30 +94,6 @@ filegroup(
 )
 """.format(target = build_yaml_target(name))
 
-def classify_pub_hooks(has_build_hook, has_link_hook, build_hook_handled):
-    """Decides what a pub package's hooks mean for its generated `dart_library`.
-
-    A build hook builds native code at `pub get` time, which rules_dart cannot
-    run; unless it is replaced by curated `code_assets` or declared irrelevant,
-    it is recorded so a consuming binary fails with an explanation. A link hook
-    is runnable — `dart_link_hook` runs it — so it is recorded as the
-    package's `link_hook` whatever the build hook's fate.
-
-    Args:
-        has_build_hook: Whether the package ships `hook/build.dart`.
-        has_link_hook: Whether the package ships `hook/link.dart`.
-        build_hook_handled: Whether curated `code_assets` replace the build
-            hook, or the user listed the package in `ignore_hooks`.
-
-    Returns:
-        `struct(unreplaced_hook, link_hook)`: the paths to pass to
-        `make_dart_library_build_content`, each empty when not applicable.
-    """
-    return struct(
-        unreplaced_hook = "hook/build.dart" if has_build_hook and not build_hook_handled else "",
-        link_hook = "hook/link.dart" if has_link_hook else "",
-    )
-
 def _package_files_block(package_files):
     """Renders the `data` glob for a package's non-`lib/` runtime files.
 
@@ -148,11 +124,9 @@ def make_dart_library_build_content(
         name,
         deps,
         language_version,
-        code_assets = [],
-        has_unreplaced_hook = "",
         version = "",
-        link_hook = "",
-        package_files = ["pubspec.yaml", "LICENSE*"]):
+        package_files = ["pubspec.yaml", "LICENSE*"],
+        hooks = ""):
     """Generate the BUILD.bazel content for a single `dart_library` spoke.
 
     The shape — `srcs = glob(["lib/**/*.dart"], allow_empty = True)`, the
@@ -177,22 +151,12 @@ def make_dart_library_build_content(
         language_version: Dart language version string (e.g. `"3.0"`),
             usually derived from the package's pubspec SDK constraint via
             `derive_language_version`.
-        code_assets: List of `dart_code_asset` label strings replacing this
-            package's `hook/build.dart` output. Attaching them here rather
-            than at the consuming binary is what makes them propagate: they
-            become part of the package's own metadata.
-        has_unreplaced_hook: Path of a build hook this package ships that has
-            no replacement, or empty. Recorded so a consuming binary can fail
-            with an explanation instead of at runtime.
         version: The resolved package version this spoke was fetched at, or
             empty. A trailing keyword with a default because this helper is
             re-exported for rule sets outside //dart/pub — notably
             rules_flutter's `flutter_pub_package` — whose existing calls must
             keep working; a spoke that omits it simply states no version, and
             an unstated version never conflicts with a stated one.
-        link_hook: Package-relative path of the package's link hook
-            (`hook/link.dart`), or empty. Trailing with a default for the same
-            reason as `version`.
         package_files: Glob patterns for the package's non-`lib/` runtime
             files, emitted as the generated `dart_library`'s `data`. The
             default is deliberately small — `pubspec.yaml` and `LICENSE*` at
@@ -203,6 +167,8 @@ def make_dart_library_build_content(
             `BUILD*` and `WORKSPACE*`. Trailing with a default so
             rules_flutter's existing `make_dart_library_build_content` call is
             unchanged.
+        hooks: The package's hook attributes as BUILD text
+            (`hook_attrs_block`), or empty for a package without hooks.
 
     Returns:
         BUILD.bazel content as a string.
@@ -212,26 +178,6 @@ def make_dart_library_build_content(
         dep_lines = ['        "{}",'.format(dep) for dep in deps]
         deps_block = "    deps = [\n{}\n    ],\n".format("\n".join(dep_lines))
 
-    assets_block = ""
-    if code_assets:
-        asset_lines = ['            "{}",'.format(a) for a in code_assets]
-        assets_block = (
-            "    code_assets = select({{\n" +
-            '        "@rules_dart//dart/private:code_assets_on": [\n' +
-            "{}\n" +
-            "        ],\n" +
-            '        "//conditions:default": [],\n' +
-            "    }}),\n"
-        ).format("\n".join(asset_lines))
-
-    hook_block = ""
-    if has_unreplaced_hook:
-        hook_block = '    has_unreplaced_hook = "{}",\n'.format(has_unreplaced_hook)
-
-    link_hook_block = ""
-    if link_hook:
-        link_hook_block = '    link_hook = "{}",\n'.format(link_hook)
-
     version_block = ""
     if version:
         version_block = '    version = "{}",\n'.format(version)
@@ -240,7 +186,7 @@ def make_dart_library_build_content(
 dart_library(
     name = "{target}",
     srcs = glob(["lib/**/*.dart"], allow_empty = True),
-{assets}{deps}{hook}{link_hook}{version}{package_files}    package_name = "{name}",
+{deps}{hooks}{version}{package_files}    package_name = "{name}",
     resources = glob(
         ["lib/**"],
         exclude = ["lib/**/*.dart"],
@@ -254,10 +200,8 @@ dart_library(
         # runner beside it; see `_TEST_RUNNER_BLOCK`.
         target = _TEST_LIBRARY if name == "test" else name,
         name = name,
-        assets = assets_block,
         deps = deps_block,
-        hook = hook_block,
-        link_hook = link_hook_block,
+        hooks = hooks,
         version = version_block,
         package_files = _package_files_block(package_files),
         language_version = language_version,
@@ -314,11 +258,25 @@ dart_test_package(
 )
 """
 
+def scc_member_hook_error(name, repo):
+    """Why a member of a merged dependency cycle cannot run its build hook.
+
+    Args:
+      name: The member's package name.
+      repo: The merged repository's name.
+
+    Returns:
+      The message an executable reaching the member fails with.
+    """
+    return ("package:%s ships a build hook and is a member of a pub dependency cycle, " +
+            "which is compiled as one library (%s). A package inside a dependency cycle " +
+            "has no library of its own to run its build hook in, so its native code is " +
+            "not built.") % (name, repo)
+
 def make_dart_package_member_build_content(
         name,
         language_version,
-        code_assets = [],
-        has_unreplaced_hook = "",
+        hook_error = "",
         version = "",
         link_hook = "",
         merged_label = "//:merged",
@@ -334,10 +292,8 @@ def make_dart_package_member_build_content(
     Args:
       name: The member's package name (also its target and subdirectory name).
       language_version: Dart language version string (e.g. `"3.0"`).
-      code_assets: List of `dart_code_asset` label strings replacing this
-        member's `hook/build.dart` output.
-      has_unreplaced_hook: Path of a build hook this member ships that has no
-        replacement, or empty.
+      hook_error: Why this member's build hook cannot run, or empty: a member
+        of a merged cycle has no library of its own to run it.
       version: The resolved package version this member was fetched at, or
         empty.
       link_hook: Package-relative path of the member's link hook
@@ -352,21 +308,9 @@ def make_dart_package_member_build_content(
     Returns:
       BUILD.bazel content as a string.
     """
-    assets_block = ""
-    if code_assets:
-        asset_lines = ['            "{}",'.format(a) for a in code_assets]
-        assets_block = (
-            "    code_assets = select({{\n" +
-            '        "@rules_dart//dart/private:code_assets_on": [\n' +
-            "{}\n" +
-            "        ],\n" +
-            '        "//conditions:default": [],\n' +
-            "    }}),\n"
-        ).format("\n".join(asset_lines))
-
     hook_block = ""
-    if has_unreplaced_hook:
-        hook_block = '    has_unreplaced_hook = "{}",\n'.format(has_unreplaced_hook)
+    if hook_error:
+        hook_block = "    hook_error = %s,\n" % json.encode(hook_error)
 
     link_hook_block = ""
     if link_hook:
@@ -380,7 +324,7 @@ def make_dart_package_member_build_content(
 dart_package_member(
     name = "{target}",
     srcs = glob(["lib/**/*.dart"], allow_empty = True),
-{assets}{hook}{link_hook}{version}{package_files}    package_name = "{name}",
+{hook}{link_hook}{version}{package_files}    package_name = "{name}",
     resources = glob(
         ["lib/**"],
         exclude = ["lib/**/*.dart"],
@@ -394,7 +338,6 @@ dart_package_member(
         # the runner beside it; see `_MEMBER_TEST_RUNNER_BLOCK`.
         target = _TEST_LIBRARY if name == "test" else name,
         name = name,
-        assets = assets_block,
         hook = hook_block,
         link_hook = link_hook_block,
         version = version_block,

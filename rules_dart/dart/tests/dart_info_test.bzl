@@ -26,7 +26,7 @@ invalid `deps` entry.
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:providers.bzl", "DartAnalyzableInfo", "DartCodeAssetInfo", "DartInfo")
 load("//dart:utils.bzl", "dart_package_identity")
-load("//dart/private:common.bzl", "package_code_assets")
+load("//dart/private:common.bzl", "package_native_assets")
 load(
     "//dart/private:dart_info.bzl",
     "check_code_asset_ownership",
@@ -152,13 +152,13 @@ def _forwards_closures_test_impl(ctx):
     names = sorted([p.package_name for p in info.transitive_packages.to_list()])
     asserts.equals(env, ["info_dep", "wrapper_pkg"], names)
 
-    # Code assets, both halves: the id on the dependency's package record, and
-    # the library file in the flat depset runfiles are built from.
-    ids = []
+    # Code assets, both halves: the asset's index on the dependency's package
+    # record, and the index and library in the flat depset executables read.
+    indexes = []
     for pkg in info.transitive_packages.to_list():
-        ids.extend([a.asset_id for a in package_code_assets(pkg)])
-    asserts.equals(env, ["package:info_dep/src/ffi/dep.g.dart"], sorted(ids))
-    asserts.equals(env, 1, len(info.transitive_code_asset_files.to_list()))
+        indexes.extend([f.basename for f in package_native_assets(pkg) if f.basename.endswith(".assets.json")])
+    asserts.equals(env, ["dep_asset.assets.json"], sorted(indexes))
+    asserts.equals(env, 2, len(info.transitive_native_assets.to_list()))
 
     return analysistest.end(env)
 
@@ -194,7 +194,7 @@ def _no_package_test_impl(ctx):
         [p for p in resources if p.endswith("/lib/dep.yaml")] != [],
         "dependency's resource missing from transitive_resources: %s" % resources,
     )
-    asserts.equals(env, 1, len(info.transitive_code_asset_files.to_list()))
+    asserts.equals(env, 2, len(info.transitive_native_assets.to_list()))
 
     return analysistest.end(env)
 
@@ -209,7 +209,7 @@ def _no_package_empty_test_impl(ctx):
     asserts.equals(env, [], info.transitive_srcs.to_list())
     asserts.equals(env, [], info.transitive_resources.to_list())
     asserts.equals(env, [], info.transitive_packages.to_list())
-    asserts.equals(env, [], info.transitive_code_asset_files.to_list())
+    asserts.equals(env, [], info.transitive_native_assets.to_list())
 
     return analysistest.end(env)
 
@@ -265,10 +265,10 @@ def _analyzable_with_package_test_impl(ctx):
     # library the package ships.
     asserts.equals(
         env,
-        ["package:exec_pkg/src/ffi/owned.g.dart"],
-        sorted([a.asset_id for a in package_code_assets(own[0])]),
+        ["exec_asset.assets.json"],
+        sorted([f.basename for f in package_native_assets(own[0]) if f.basename.endswith(".assets.json")]),
     )
-    asserts.equals(env, 2, len(info.transitive_code_asset_files.to_list()))
+    asserts.equals(env, 4, len(info.transitive_native_assets.to_list()))
 
     # And the dependency's record beside it: a package of its own must not cost
     # the merge that `dart_analyzable_info()` already did.
@@ -348,46 +348,12 @@ misowned_asset_test = analysistest.make(
     expect_failure = True,
 )
 
-def _declared_code_asset_ownership_test_impl(ctx):
-    env = analysistest.begin(ctx)
-    info = analysistest.target_under_test(env)[DartInfo]
-
-    # The asset is declared for `other`, but it still belongs to the host
-    # target's own record: `code_assets_for` is a permission, not a move.
-    own = [
-        p
-        for p in info.transitive_packages.to_list()
-        if p.package_name == "host"
-    ]
-    asserts.equals(env, 1, len(own), "expected exactly one `host` package record")
-    if len(own) != 1:
-        return analysistest.end(env)
-    asserts.equals(
-        env,
-        ["package:other/thing"],
-        sorted([a.asset_id for a in package_code_assets(own[0])]),
-    )
-    asserts.equals(env, 1, len(info.transitive_code_asset_files.to_list()))
-
-    # Naming a package neither creates its record nor requires it as a dep.
-    names = sorted([p.package_name for p in info.transitive_packages.to_list()])
-    asserts.equals(env, ["host"], names)
-
-    return analysistest.end(env)
-
-# A `dart_library` may carry an asset namespaced to a package it names in
-# `code_assets_for`, and the asset stays on the declaring target's record.
-declared_code_asset_ownership_test = analysistest.make(
-    _declared_code_asset_ownership_test_impl,
-)
-
 def _ownership_failure_test_impl(ctx):
     env = analysistest.begin(ctx)
     asserts.expect_failure(env, ctx.attr.expected_message)
     return analysistest.end(env)
 
-# The unchanged failure for an asset that names no declared package: without
-# `code_assets_for` at all, and with a list that does not name its package.
+# The failure for an asset namespaced to another package.
 ownership_failure_test = analysistest.make(
     _ownership_failure_test_impl,
     attrs = {
@@ -399,10 +365,10 @@ ownership_failure_test = analysistest.make(
     expect_failure = True,
 )
 
-def _code_assets_for_check_test_impl(ctx):
+def _ownership_check_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # The target's own prefix passes, exactly as before.
+    # The target's own prefix passes.
     asserts.equals(
         env,
         None,
@@ -413,30 +379,16 @@ def _code_assets_for_check_test_impl(ctx):
         ),
     )
 
-    # A listed prefix passes, and duplicates are harmless.
+    # Any other prefix fails, naming the asset, the prefix and the remedies.
     asserts.equals(
         env,
-        None,
-        check_code_asset_ownership(
-            "//test:host",
-            "host",
-            [struct(asset_id = "package:other/thing")],
-            ["other", "other"],
+        (
+            "//test:host: code asset id `package:third/thing` is not namespaced " +
+            "to this package. Expected it to start with `package:host/`, " +
+            "because a code asset is owned by the package declaring it. Either " +
+            "set `package_name = \"…\"` to the owning package, or move the " +
+            "asset to that package's `dart_library`."
         ),
-    )
-
-    # An unlisted prefix still fails with the original message byte for byte
-    # when `code_assets_for` is empty.
-    expected = (
-        "//test:host: code asset id `package:third/thing` is not namespaced " +
-        "to this package. Expected it to start with `package:host/`, " +
-        "because a code asset is owned by the package declaring it. Either " +
-        "set `package_name = \"…\"` to the owning package, or move the " +
-        "asset to that package's `dart_library`."
-    )
-    asserts.equals(
-        env,
-        expected,
         check_code_asset_ownership(
             "//test:host",
             "host",
@@ -444,22 +396,10 @@ def _code_assets_for_check_test_impl(ctx):
         ),
     )
 
-    # A non-empty list keeps that message and names the attribute as the
-    # remedy for the deliberate case.
-    err = check_code_asset_ownership(
-        "//test:host",
-        "host",
-        [struct(asset_id = "package:third/thing")],
-        ["other"],
-    )
-    asserts.true(env, err != None and err.startswith(expected), err)
-    asserts.true(env, err != None and "`code_assets_for`" in err, err)
-
     return unittest.end(env)
 
-# The check itself, independent of any rule: own prefix, listed prefix,
-# unlisted prefix, and the unchanged unlisted message.
-code_assets_for_check_test = unittest.make(_code_assets_for_check_test_impl)
+# The check itself, independent of any rule.
+ownership_check_test = unittest.make(_ownership_check_test_impl)
 
 def _language_version_passthrough_test_impl(ctx):
     env = analysistest.begin(ctx)

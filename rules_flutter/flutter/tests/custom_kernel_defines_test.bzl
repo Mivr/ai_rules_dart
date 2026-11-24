@@ -156,6 +156,14 @@ _comma_stays_modular_test = analysistest.make(
 )
 _empty_unchanged_test = analysistest.make(_empty_unchanged_test_impl, config_settings = _DBG)
 
+def _code_assets_refused_test_impl(ctx):
+    """A custom kernel over a package with a build hook fails, naming the mapping it cannot take."""
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, "takes no native-assets mapping, and its closure has code assets")
+    return analysistest.end(env)
+
+_code_assets_refused_test = analysistest.make(_code_assets_refused_test_impl, expect_failure = True, config_settings = _DBG)
+
 def custom_kernel_defines_test_suite(name):
     """Fixtures and tests for defines on a custom modular kernel.
 
@@ -179,6 +187,16 @@ def custom_kernel_defines_test_suite(name):
         defines = ["CUSTOM_KERNEL_OWN=1", "CUSTOM_KERNEL_GLOBAL=own"],
         tags = ["manual"],
         deps = ["//flutter/tests/modular_api_fixture:dep_b"],
+    )
+
+    _refusal_test_kernel(
+        name = "_custom_kernel_code_assets_test",
+        tags = ["manual"],
+        deps = ["//flutter/tests/dart_asset_fixture/hook_library"],
+    )
+    _code_assets_refused_test(
+        name = name + "_code_assets_refused",
+        target_under_test = ":_custom_kernel_code_assets_test",
     )
 
     _global_stays_modular_test(
@@ -215,5 +233,6 @@ def custom_kernel_defines_test_suite(name):
             ":" + name + "_test_comma_stays_modular",
             ":" + name + "_app_comma_stays_modular",
             ":" + name + "_empty_unchanged",
+            ":" + name + "_code_assets_refused",
         ],
     )

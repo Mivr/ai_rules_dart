@@ -1,0 +1,58 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_test")
+load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
+
+exports_files(["pubspec.lock"])
+
+# sqlite3, native_add and native_link have build hooks; nothing here names
+# their libraries. Each hook runs once per target platform, and the app's
+# native-assets manifest and bundle come from their outputs.
+_DEPS = [
+    "@deps//:flutter",
+    "@deps//:native_add",
+    "@deps//:native_link",
+    "@deps//:sqlite3",
+]
+
+flutter_application(
+    name = "app_flutter",
+    package_name = "build_hooks",
+    # native_link's link hook runs over the uses a release or profile compile
+    # records, and its data asset is bundled.
+    link_hook_assets = ["package:native_link/factors.json"],
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = _DEPS,
+)
+
+flutter_test(
+    name = "hooks_test",
+    package_name = "build_hooks",
+    size = "small",
+    main = "test/hooks_test.dart",
+    deps = _DEPS + ["@deps//:flutter_test"],
+)
+
+flutter_linux_app(
+    name = "app_linux",
+    application = ":app_flutter",
+    gtk_app_id = "com.example.buildhooks",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# A debug APK for an x86_64 emulator; the hooks run with the NDK's clang for
+# that ABI.
+flutter_android_app(
+    name = "app_x64",
+    package_name = "com.example.flutterapp",
+    android_abi = "x64",
+    application = ":app_flutter",
+    tags = ["manual"],
+)
+
+build_test(
+    name = "app_linux_build_test",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":app_linux"],
+)

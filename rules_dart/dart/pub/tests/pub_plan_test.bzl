@@ -345,18 +345,26 @@ def _own_attributes_test_impl(ctx):
         for name, v in _GRAPH.items()
     }
     plans["leaf"] = {"deps": ["cyc_b"], "sdk": "", "archive_url": "https://pub.dev/api/archives/leaf.tar.gz"}
-    specs = pub_repo_specs(resolution, [plans], {"mid": True})
+    specs = pub_repo_specs(resolution, [plans], {"dart_pub": {"mid": struct(
+        user_defines = '{"source":"system"}',
+        pubspec = "pubspec.yaml",
+        data = ["@@//:mid.c"],
+        network = False,
+        source = "//:pubspec.lock",
+    )}})
     mid = specs["dart_pub__mid"]
     asserts.equals(env, "pub_lock_package", mid.rule)
     asserts.equals(
         env,
-        sorted(["package_name", "version", "sha256", "url", "planned_deps", "deps", "code_assets", "ignore_hook", "package_files"]),
+        sorted(["package_name", "version", "sha256", "url", "planned_deps", "deps", "package_files", "hook_user_defines", "hook_pubspec", "hook_data", "hook_network"]),
         sorted(mid.attrs.keys()),
     )
     asserts.equals(env, ["@dart_pub__leaf//:leaf", "@dart_pub__meta//:meta"], mid.attrs["deps"], "own dependencies only; a name outside the lock (an SDK package) has no label")
     asserts.equals(env, ["flutter", "leaf", "meta"], mid.attrs["planned_deps"], "the whole planned list, for the fetch-time check")
     asserts.equals(env, "https://pub.dev/api/archives/mid.tar.gz", mid.attrs["url"])
-    asserts.true(env, mid.attrs["ignore_hook"])
+    asserts.equals(env, '{"source":"system"}', mid.attrs["hook_user_defines"], "the package's own slice of `hooks.user_defines`")
+    asserts.equals(env, ["@@//:mid.c"], mid.attrs["hook_data"])
+    asserts.false(env, "hook_user_defines" in specs["dart_pub__leaf"].attrs, "a package with no settings gets none")
     merged = specs["dart_pub__scc__cyc_a__cyc_b"]
     asserts.equals(env, ["members_json", "repo_name"], sorted(merged.attrs.keys()))
     members = {m["name"]: m for m in json.decode(merged.attrs["members_json"])}

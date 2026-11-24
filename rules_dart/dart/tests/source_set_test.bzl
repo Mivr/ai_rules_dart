@@ -8,7 +8,7 @@ just the field the caller overrode.
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart:providers.bzl", "DartInfo", "DartPackageInfo")
-load("//dart/private:common.bzl", "collect_packages", "collect_transitive_srcs", "package_code_assets")
+load("//dart/private:common.bzl", "collect_packages", "collect_transitive_srcs", "package_native_assets")
 load("//dart/private:dart_info.bzl", "derived_package_info")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "colocate_packages", "executable_inputs", "needs_source_assembly", "package_for")
 
@@ -168,9 +168,9 @@ def _colocate_loose_passthrough_test_impl(ctx):
     asserts.equals(env, "myapp", packages2[0].package_name)
     return unittest.end(env)
 
-def _fake_asset(asset_id):
-    # derived_package_info only moves these around; it never reads inside one.
-    return struct(asset_id = asset_id)
+def _fake_asset(path):
+    # derived_package_info only moves these around; it never reads one.
+    return struct(path = path)
 
 def _derive_carries_every_field_test_impl(ctx):
     # The point of the helper: overriding `lib_root` must not cost the record
@@ -182,15 +182,15 @@ def _derive_carries_every_field_test_impl(ctx):
         package_name = "pkg",
         lib_root = "old/root",
         language_version = "2.12",
-        code_assets = (_fake_asset("package:pkg/a.g.dart"),),
-        has_unreplaced_hook = "hook/build.dart",
+        native_assets = (_fake_asset("a.assets.json"),),
+        hook_error = "merged into a cycle",
     )
     out = derived_package_info(p, lib_root = "bazel-out/k8/bin/app.pkg.pkgsrcs")
     asserts.equals(env, "pkg", out.package_name)
     asserts.equals(env, "bazel-out/k8/bin/app.pkg.pkgsrcs", out.lib_root)
     asserts.equals(env, "2.12", out.language_version)
-    asserts.equals(env, ["package:pkg/a.g.dart"], [a.asset_id for a in out.code_assets])
-    asserts.equals(env, "hook/build.dart", out.has_unreplaced_hook)
+    asserts.equals(env, ["a.assets.json"], [a.path for a in out.native_assets])
+    asserts.equals(env, "merged into a cycle", out.hook_error)
     return unittest.end(env)
 
 def _derive_defaults_absent_fields_test_impl(ctx):
@@ -202,29 +202,29 @@ def _derive_defaults_absent_fields_test_impl(ctx):
     asserts.equals(env, "pkg", out.package_name)
     asserts.equals(env, "bazel-out/k8/bin/app.pkg.pkgsrcs", out.lib_root)
     asserts.equals(env, "", out.language_version)
-    asserts.equals(env, (), out.code_assets)
-    asserts.equals(env, "", out.has_unreplaced_hook)
+    asserts.equals(env, (), out.native_assets)
+    asserts.equals(env, "", out.hook_error)
     return unittest.end(env)
 
 def _derive_overrides_only_named_test_impl(ctx):
-    # Overriding `code_assets` leaves `lib_root` alone, and vice versa — the
+    # Overriding `native_assets` leaves `lib_root` alone, and vice versa — the
     # two call sites each name exactly one field.
     env = unittest.begin(ctx)
     p = DartPackageInfo(
         package_name = "pkg",
         lib_root = "keep/me",
         language_version = "3.0",
-        code_assets = (_fake_asset("package:pkg/a.g.dart"),),
-        has_unreplaced_hook = "",
+        native_assets = (_fake_asset("a.assets.json"),),
+        hook_error = "",
     )
-    out = derived_package_info(p, code_assets = (_fake_asset("package:pkg/b.g.dart"),))
+    out = derived_package_info(p, native_assets = (_fake_asset("b.assets.json"),))
     asserts.equals(env, "keep/me", out.lib_root)
     asserts.equals(env, "3.0", out.language_version)
-    asserts.equals(env, ["package:pkg/b.g.dart"], [a.asset_id for a in out.code_assets])
+    asserts.equals(env, ["b.assets.json"], [a.path for a in out.native_assets])
 
     # An empty override is an override, not "keep what was there".
-    emptied = derived_package_info(p, code_assets = ())
-    asserts.equals(env, (), emptied.code_assets)
+    emptied = derived_package_info(p, native_assets = ())
+    asserts.equals(env, (), emptied.native_assets)
     return unittest.end(env)
 
 _derive_carries_test = unittest.make(_derive_carries_every_field_test_impl)
@@ -259,17 +259,17 @@ def _colocate_probe_impl(ctx):
               "contain a generated source, or it proves nothing.") %
              (ctx.label, ctx.attr.package_name, pkg.lib_root))
 
-    ids = sorted([a.asset_id for a in package_code_assets(pkg)])
-    if ids != sorted(ctx.attr.expected_asset_ids):
+    indexes = sorted([f.basename for f in package_native_assets(pkg) if f.basename.endswith(".assets.json")])
+    if indexes != sorted(ctx.attr.expected_indexes):
         fail("%s: assembled %r carries assets %s, expected %s" %
-             (ctx.label, ctx.attr.package_name, ids, sorted(ctx.attr.expected_asset_ids)))
+             (ctx.label, ctx.attr.package_name, indexes, sorted(ctx.attr.expected_indexes)))
     return [DefaultInfo(files = depset())]
 
 colocate_probe = rule(
     implementation = _colocate_probe_impl,
     attrs = {
         "deps": attr.label_list(providers = [DartInfo]),
-        "expected_asset_ids": attr.string_list(),
+        "expected_indexes": attr.string_list(),
         "package_name": attr.string(mandatory = True),
     },
     toolchains = COPY_TO_DIRECTORY_TOOLCHAINS,

@@ -505,7 +505,7 @@ def _extra_root_record(pkg, lib_root):
     value to keep, and the config generators only read what is there.
     """
     fields = {"package_name": pkg.package_name, "lib_root": lib_root}
-    for name in ["version", "language_version", "code_assets", "has_unreplaced_hook", "link_hook"]:
+    for name in ["version", "language_version", "native_assets", "link_hook", "hooks", "hook_error"]:
         value = getattr(pkg, name, None)
         if value != None:
             fields[name] = value

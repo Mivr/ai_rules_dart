@@ -6,9 +6,9 @@ Bazel's runfiles — so this exists to prove the other half of the contract: the
 manifest the frontend_server embeds names a path that resolves in the runfiles
 layout, and the library is actually staged there.
 
-Nothing here mentions Flutter. The asset rides `DartPackageInfo.code_assets`
-and is lifted off the Dart package graph by `bridge_dart_code_assets`, which is
-how a pub package's hook-built library arrives.
+Nothing here mentions Flutter. The asset rides the package record
+(`DartPackageInfo.native_assets`), as a pub package's hook output does, and
+the test's native-assets manifest is written from it.
 """
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")

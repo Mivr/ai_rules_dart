@@ -71,7 +71,7 @@ syntax and semantics than its own pubspec allows. Defaulting made "I forgot" and
 "this package states none" the same call, and the two have different
 consequences. The other optional parameters do not share that shape: the
 collections mean "none of these", `version`'s empty is a supported state
-`package_agreement_error` reads as "knows less", and `has_unreplaced_hook` is
+`package_agreement_error` reads as "knows less", and a hook's attributes are
 derived at repository generation rather than stated by a developer. Requiring the
 argument narrows how the constructors may be *called*, not what a package may
 say: `language_version = ""` remains legal and keeps its meaning, which
@@ -108,53 +108,34 @@ def package_lib_prefix(lib_root):
     """
     return (lib_root + "/lib/") if lib_root else "lib/"
 
-def check_code_asset_ownership(label, package_name, assets, code_assets_for = []):
-    """Checks that every declared asset id is namespaced to an owning package.
+def check_code_asset_ownership(label, package_name, assets):
+    """Checks that every declared asset id is namespaced to the owning package.
 
     Upstream requires `CodeAsset.id` to be `package:<package>/<name>` where
     `<package>` is the package that owns the asset — "Code assets are
-    name-spaced in their own package to avoid naming conflicts". Since assets
-    ride `DartPackageInfo`, an id belonging to some other package would
-    propagate under the wrong owner and be impossible to trace back.
-
-    An asset may deliberately belong to another package: a prebuilt library
-    stands in for a dependency's build-hook output while this target declares
-    and packs it. `code_assets_for` states those package names, and their
-    prefixes are accepted exactly like the target's own. An unlisted package
-    is still rejected, so a typo cannot silently attach an asset to the wrong
-    owner.
+    name-spaced in their own package to avoid naming conflicts" — and the hook
+    runner refuses a hook output that breaks it. A `dart_code_asset` a library
+    owns is held to the same rule.
 
     Args:
       label: The owning rule's label (included in the error message).
       package_name: The package name this library declares.
       assets: List of `DartCodeAssetInfo`.
-      code_assets_for: Package names this target may carry assets for besides
-        its own. Duplicates are harmless; an empty list reproduces the
-        pre-`code_assets_for` result exactly.
 
     Returns:
       An error message string on the first mismatch, else `None`.
     """
-    prefixes = ["package:%s/" % package_name]
-    for name in code_assets_for:
-        prefixes.append("package:%s/" % name)
+    prefix = "package:%s/" % package_name
     for asset in assets:
-        if not any([asset.asset_id.startswith(prefix) for prefix in prefixes]):
-            message = (
+        if not asset.asset_id.startswith(prefix):
+            return (
                 ("%s: code asset id `%s` is not namespaced to this package. " +
                  "Expected it to start with `%s`, because a code asset is " +
                  "owned by the package declaring it. Either set " +
                  "`package_name = \"…\"` to the owning package, or move the " +
                  "asset to that package's `dart_library`.") %
-                (label, asset.asset_id, prefixes[0])
+                (label, asset.asset_id, prefix)
             )
-            if code_assets_for:
-                message += (
-                    " If the asset deliberately stands in for another " +
-                    "package's build-hook output, name that package in " +
-                    "`code_assets_for`."
-                )
-            return message
     return None
 
 def dart_info(
@@ -164,8 +145,8 @@ def dart_info(
         srcs = [],
         resources = [],
         code_assets = [],
-        code_assets_for = [],
-        **legacy_hooks):
+        link_hook = None,
+        hooks = None):
     """Builds a `DartInfo` for a library, merging its dependencies' closures.
 
     The caller supplies only what this target contributes itself; everything
@@ -188,53 +169,34 @@ def dart_info(
       srcs: This target's own Dart sources (or its source directory).
       resources: This target's own non-Dart files under `lib/`.
       code_assets: Targets providing `DartCodeAssetInfo` that this package owns.
-      code_assets_for: Pub package names this target may carry assets for
-        besides its own `package_name`. An asset id namespaced to any listed
-        package passes the ownership check exactly as the target's own prefix
-        does. Declaration only: the asset still rides this target's own
-        `DartPackageInfo`, and naming a package neither creates that package
-        nor requires it to be a dependency.
-      **legacy_hooks: `has_unreplaced_hook` (path of a pub build hook with no
-        Bazel replacement, or "") and `link_hook` (the package's
-        `hook/link.dart` File, or None). They stay keyword arguments so every
-        caller written before `code_assets_for` keeps working unchanged, while
-        the parameter list stays within the eight-parameter limit. Any other
-        name fails rather than being silently ignored.
+      link_hook: The package's `hook/link.dart` File, or None.
+      hooks: The struct `build_hook_outputs()` returns, or None for a library
+        without hooks: the build hook's output directory and what a link hook
+        run needs.
 
     Returns:
       A `DartInfo`.
     """
-    has_unreplaced_hook = legacy_hooks.pop("has_unreplaced_hook", "")
-    link_hook = legacy_hooks.pop("link_hook", None)
-    if legacy_hooks:
-        fail(
-            ("%s: `dart_info()` got unsupported keyword argument(s): %s. " +
-             "Pass `code_assets_for` positionally or by name, and " +
-             "`has_unreplaced_hook` / `link_hook` by name.") %
-            (label, ", ".join(sorted(legacy_hooks.keys()))),
-        )
-
     own_assets = [dep[DartCodeAssetInfo] for dep in code_assets]
-    err = check_code_asset_ownership(
-        label,
-        package.package_name,
-        own_assets,
-        code_assets_for,
-    )
+    err = check_code_asset_ownership(label, package.package_name, own_assets)
     if err != None:
         fail(err)
 
     dep_infos = [dep[DartInfo] for dep in deps]
     own_package_files = list(getattr(package, "package_files", []))
+    native_assets = [f for a in own_assets for f in getattr(a, "files", ())]
+    if hooks != None and hooks.build_output != None:
+        native_assets.append(hooks.build_output)
 
     this_pkg = DartPackageInfo(
         package_name = package.package_name,
         lib_root = package.lib_root,
         version = package.version,
         language_version = package.language_version,
-        code_assets = tuple(own_assets),
-        has_unreplaced_hook = has_unreplaced_hook,
+        native_assets = tuple(native_assets),
         link_hook = link_hook,
+        hooks = hooks.record if hooks != None else None,
+        hook_error = "",
     )
 
     return _merged_dart_info(
@@ -246,11 +208,7 @@ def dart_info(
         srcs = srcs,
         resources = resources,
         packages = [this_pkg],
-        code_asset_files = [
-            a.dynamic_library
-            for a in own_assets
-            if a.dynamic_library != None
-        ],
+        native_assets = native_assets,
         package_file_records = [
             struct(
                 package_name = package.package_name,
@@ -296,7 +254,7 @@ def dart_info_no_package(deps = []):
         srcs = [],
         resources = [],
         packages = [],
-        code_asset_files = [],
+        native_assets = [],
         package_file_records = [],
     )
 
@@ -358,11 +316,10 @@ def dart_info_multi(label, records, deps = [], srcs = [], resources = [], packag
         srcs = srcs,
         resources = resources,
         packages = list(records),
-        code_asset_files = [
-            a.dynamic_library
+        native_assets = [
+            f
             for record in records
-            for a in getattr(record, "code_assets", ())
-            if a.dynamic_library != None
+            for f in getattr(record, "native_assets", ())
         ],
         package_file_records = package_files,
     )
@@ -469,7 +426,7 @@ def dart_analyzable_info_with_package(
         package_srcs = depset(package_srcs),
     )
 
-def derived_package_info(pkg, lib_root = None, code_assets = None, link_hook = None):
+def derived_package_info(pkg, lib_root = None, native_assets = None, link_hook = None, hook_error = None):
     """Copies `pkg`, overriding the named fields and carrying the rest through.
 
     Deriving one package record from another — `colocate_packages` rewriting
@@ -480,17 +437,17 @@ def derived_package_info(pkg, lib_root = None, code_assets = None, link_hook = N
     record without those sites being touched, and means neither of them can be
     the one that quietly drops it.
 
-    Reads are tolerant (`getattr` with a default) for the same reason
-    `package_code_assets` is: a `DartPackageInfo` built by an older producer,
-    or by `//dart/tests/no_lv_fixture`, legitimately omits the later fields,
-    and a derived copy of such a record should be as complete as the original
-    rather than failing on it.
+    Reads are tolerant (`getattr` with a default): a `DartPackageInfo` built by
+    an older producer, or by `//dart/tests/no_lv_fixture`, legitimately omits
+    the later fields, and a derived copy of such a record should be as complete
+    as the original rather than failing on it.
 
     Args:
       pkg: The `DartPackageInfo` (or `DartPackageInfo`-shaped struct) to copy.
       lib_root: Replacement `lib_root`, or `None` to keep `pkg`'s.
-      code_assets: Replacement `code_assets` tuple, or `None` to keep `pkg`'s.
+      native_assets: Replacement `native_assets` tuple, or `None` to keep `pkg`'s.
       link_hook: Replacement `link_hook` File, or `None` to keep `pkg`'s.
+      hook_error: Replacement `hook_error`, or `None` to keep `pkg`'s.
 
     Returns:
       A `DartPackageInfo`.
@@ -504,11 +461,12 @@ def derived_package_info(pkg, lib_root = None, code_assets = None, link_hook = N
         lib_root = pkg.lib_root if lib_root == None else lib_root,
         version = getattr(pkg, "version", ""),
         language_version = getattr(pkg, "language_version", ""),
-        code_assets = (
-            getattr(pkg, "code_assets", ()) if code_assets == None else code_assets
+        native_assets = (
+            getattr(pkg, "native_assets", ()) if native_assets == None else native_assets
         ),
-        has_unreplaced_hook = getattr(pkg, "has_unreplaced_hook", ""),
         link_hook = getattr(pkg, "link_hook", None) if link_hook == None else link_hook,
+        hooks = getattr(pkg, "hooks", None),
+        hook_error = getattr(pkg, "hook_error", "") if hook_error == None else hook_error,
     )
 
 def _merged_dart_info(
@@ -520,7 +478,7 @@ def _merged_dart_info(
         srcs,
         resources,
         packages,
-        code_asset_files,
+        native_assets,
         package_file_records):
     """Merges a target's own contributions with its dependencies' closures.
 
@@ -538,7 +496,7 @@ def _merged_dart_info(
       srcs: This target's own Dart sources.
       resources: This target's own non-Dart files under `lib/`.
       packages: This target's own `DartPackageInfo` records (zero or one).
-      code_asset_files: This target's own code-asset dynamic libraries.
+      native_assets: This target's own native assets (`DartPackageInfo.native_assets`).
       package_file_records: This target's own `(package_name, lib_root,
         files)` records, one per package that ships runtime `data`.
 
@@ -564,7 +522,7 @@ def _merged_dart_info(
         # The target's own records, not the closure: a consumer that wants the
         # closure reads `transitive_package_files`, exactly as it reads
         # `transitive_srcs` beside `owned_packages`. Both are optional on a
-        # dependency for the same reason `transitive_code_asset_files` is: a
+        # dependency for the same reason `transitive_native_assets` is: a
         # producer built before the field existed legitimately omits it.
         package_files = list(package_file_records),
         transitive_package_files = depset(
@@ -588,16 +546,16 @@ def _merged_dart_info(
         #
         # Alone among the four, this one tolerates a dependency that omits it.
         # That is the documented contract for the field (see
-        # `collect_code_asset_files`), and dropping the guard would break
+        # `collect_native_assets`), and dropping the guard would break
         # providers built before it existed. The other three are read
         # unguarded: a missing one is a dependency that forgot to forward, and
         # failing loudly is the whole point.
-        transitive_code_asset_files = depset(
-            direct = code_asset_files,
+        transitive_native_assets = depset(
+            direct = native_assets,
             transitive = [
-                info.transitive_code_asset_files
+                info.transitive_native_assets
                 for info in dep_infos
-                if hasattr(info, "transitive_code_asset_files")
+                if hasattr(info, "transitive_native_assets")
             ],
         ),
         # Optional for readers, like the two fields above: a dependency built

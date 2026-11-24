@@ -5,13 +5,14 @@ package's `@Native`/`@ffi.DefaultAsset` bindings use. The library comes either
 from a Bazel-built `cc_shared_library` (`shared_library`) or from a pinned
 prebuilt file the consumer supplies (`prebuilt`); the latter compiles nothing
 and resolves no C/C++ toolchain. This is the seam between Bazel's native build
-and Dart's code-asset resolution: `dart_test` / `dart_binary` consume
-`DartCodeAssetInfo` via their `code_assets` attribute and synthesise the
-`native_assets.yaml` that `gen_kernel --native-assets` embeds into the kernel.
+and Dart's code-asset resolution, for a library whose native code Bazel builds
+rather than a build hook: a `dart_library` owns it through its `code_assets`
+attribute, and every executable depending on the library ships it as it ships
+a build hook's code assets.
 
-Two-tier usage: a native-asset-owning package can ship a target exposing
-`DartCodeAssetInfo` itself; otherwise rules_dart provides one under
-`//dart/ext/<package>` (see `//dart/ext/sqlite3`).
+The rule writes the asset as a build hook's output states it (`<name>.assets.json`,
+the hook runner's result JSON naming the library relative to itself), so the
+one manifest step reads both kinds.
 
 `DartCodeAssetInfo` deliberately carries only what upstream's `CodeAsset`
 carries — id, link mode, and the library. Bundling concerns (where the file
@@ -177,6 +178,8 @@ def _dart_code_asset_impl(ctx):
             fail(("dart_code_asset %s: `system_uri` is only valid with " +
                   "link_mode = \"dynamic_loading_system\".") % ctx.label)
 
+    index = ctx.actions.declare_file(ctx.label.name + ".assets.json")
+    ctx.actions.write(index, _assets_json(ctx.attr.asset_id, link_mode, index, dynamic_library, system_uri))
     files = depset([dynamic_library] if dynamic_library != None else [])
     return [
         DefaultInfo(files = files),
@@ -185,10 +188,25 @@ def _dart_code_asset_impl(ctx):
             link_mode = link_mode,
             dynamic_library = dynamic_library,
             system_uri = system_uri,
+            files = (index,) + ((dynamic_library,) if dynamic_library != None else ()),
         ),
     ]
 
-# rule_test_coverage: no-actions
+def _assets_json(asset_id, link_mode, index, dynamic_library, system_uri):
+    """The asset as `package:hooks_runner`'s result JSON states it.
+
+    The library's path is relative to the index's directory: both lie under
+    the exec root wherever the index is read.
+    """
+    mode = {"type": link_mode}
+    if system_uri:
+        mode["uri"] = system_uri
+    encoding = {"id": asset_id, "link_mode": mode}
+    if dynamic_library != None:
+        up = "/".join([".."] * len(index.dirname.split("/")))
+        encoding["file"] = up + "/" + dynamic_library.path
+    return json.encode({"encodedAssets": [{"type": "code_assets/code", "encoding": encoding}]})
+
 dart_code_asset = rule(
     implementation = _dart_code_asset_impl,
     attrs = {
@@ -233,5 +251,5 @@ extension — must pin the file's version and sha256.""",
         ),
     },
     provides = [DartCodeAssetInfo],
-    doc = "Binds a native dynamic library — a Bazel-built `cc_shared_library` or a pinned prebuilt file — to a Dart code-asset id, for use in `dart_test`/`dart_binary` `code_assets`.",
+    doc = "Binds a native dynamic library — a Bazel-built `cc_shared_library` or a pinned prebuilt file — to a Dart code-asset id, for a `dart_library`'s `code_assets` (or a `dart_test`/`dart_binary`'s).",
 )

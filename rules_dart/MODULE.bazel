@@ -30,18 +30,17 @@ bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "gazelle", version = "0.54.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_go", version = "0.64.2", repo_name = "io_bazel_rules_go")
 
-# Native code-asset support under //dart/ext/<package> (e.g. //dart/ext/sqlite3)
-# builds a cc_shared_library, so its BUILD loads @rules_cc and wraps a BCR
-# native module. Like rules_go above, these are regular (not dev) deps so the
-# `//dart/ext/sqlite3:code_asset` target is usable from downstream modules.
-# The native libraries are only built if a target referencing them is built;
-# they are not fetched for normal Dart-only usage.
+# A package's build hook gets the C toolchain Bazel resolves for the target,
+# and `dart_code_asset` binds a `cc_shared_library`: both load @rules_cc.
 bazel_dep(name = "rules_cc", version = "0.2.26")
+
+# On Apple OSes, where build hooks do not run yet, //dart/ext/sqlite3 and
+# //dart/ext/webcrypto replace those packages' hooks
+# (`//dart/private:apple_hook_replacements.bzl`). Regular deps so the
+# replacements resolve from downstream modules; fetched only when built.
+# Go when build hooks are proven on macOS CI.
 bazel_dep(name = "sqlite3", version = "3.53.4")
 
-# Sources for //dart/ext/webcrypto: the pub archive itself, for its C glue and
-# the BoringSSL revision it vendors and generated its Dart bindings against.
-# Fetched only when that code asset is built.
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 http_archive(
@@ -141,4 +140,17 @@ pub.from_lock(
     # `bazel run //dart/pub/plan -- write --lock dart/ext/pubspec.lock --out dart/ext/pub_plan.json`.
     plan = "//dart/ext:pub_plan.json",
 )
-use_repo(pub, "ext_pub_deps")
+
+# The hook runner's own packages (`//dart/private/tools/hook_runner`): the
+# `package:hooks_runner` version the SDK's `dart build` and `flutter build`
+# run, with the versions it was released against. Isolated, so a consumer's
+# lock never meets it: the runner belongs to the SDK, a hook's own `hooks` and
+# `code_assets` to the consumer's lock. Regenerate the plan with
+# `bazel run //dart/pub/plan -- write --lock dart/private/tools/hook_runner/pubspec.lock --out dart/private/tools/hook_runner/pub_plan.json`.
+pub.from_lock(
+    name = "rules_dart_hook_runner_deps",
+    isolated = True,
+    lock = "//dart/private/tools/hook_runner:pubspec.lock",
+    plan = "//dart/private/tools/hook_runner:pub_plan.json",
+)
+use_repo(pub, "ext_pub_deps", "rules_dart_hook_runner_deps")

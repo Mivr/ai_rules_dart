@@ -20,15 +20,13 @@ load(
     "//dart/private:common.bzl",
     "DART_ABI_CONSTRAINT_ATTRS",
     "WINDOWS_CONSTRAINT_ATTR",
-    "code_asset_entries",
     "collect_transitive_resources",
     "collect_transitive_srcs",
     "create_test_executable",
-    "generate_native_assets_yaml",
-    "resolve_code_assets",
     "runfiles_path",
     "target_dart_abi",
 )
+load("//dart/private:build_hooks.bzl", "NATIVE_ASSETS_CONSUMER_ATTRS", "native_assets_manifest")
 load("//dart/private:coverage_map.bzl", "COVERAGE_MAP_TOOLCHAINS", "write_coverage_map", "write_generated_list")
 load("//dart/private:dart_import_check.bzl", "dart_import_check_aspect", "executable_import_check")
 load(
@@ -46,9 +44,9 @@ load("//dart/private:dart_test_runner.bzl", "DartTestKernelInfo")
 load(
     "//dart/private:executable_package.bzl",
     "EXECUTABLE_PACKAGE_ATTRS",
-    "executable_code_assets",
     "executable_has_package",
     "executable_hook_error",
+    "executable_native_assets",
     "executable_package",
     "executable_package_set",
     "executable_packages",
@@ -237,56 +235,50 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
         if hook_err != None:
             fail(hook_err)
 
-    # Transitively propagated assets (unless opted out) plus any named outright
-    # — see the same comment in `dart_binary`.
-    transitive_assets = (
-        executable_code_assets(ctx.attr.deps, own) if ctx.attr.code_assets_from_deps else depset()
-    )
-    resolved_assets = resolve_code_assets(
-        ctx.label,
-        transitive_assets,
-        [dep[DartCodeAssetInfo] for dep in ctx.attr.code_assets],
-    )
+    # The closure's build hook outputs (unless opted out) plus any code asset
+    # named outright — see the same comment in `dart_binary`.
+    native_assets = executable_native_assets(ctx)
     kernel_tools = modular_executable_tools(
         ctx,
         [ctx.file.main] + ctx.files.srcs,
         own.record,
         kernel_mode = True,
-        resolved_assets = resolved_assets,
+        resolved_assets = native_assets,
         closure = own.closure,
     )
-    return _compile_modular_test_kernel(ctx, own, bootstrap, kernel_tools, resolved_assets, use_base_dill = use_base_dill)
+    return _compile_modular_test_kernel(ctx, own, bootstrap, kernel_tools, native_assets, use_base_dill = use_base_dill)
 
-def _test_native_assets(ctx, resolved_assets, dill):
-    """Writes the code-asset mapping a test's kernel embeds.
+def _test_native_assets(ctx, native_assets, dill):
+    """Writes the code-asset mapping a test's kernel embeds, and bundles its libraries.
 
-    The entry module embeds the mapping, which resolves each
-    `relative` path against the dill at run time — the same build-time path
-    `dart_binary` uses. The `.so` libraries ship in runfiles.
+    The entry module embeds the mapping, which resolves each `relative` path
+    against the dill at run time. The libraries ship in runfiles, in one
+    directory beside the dill.
 
     Args:
       ctx: The rule context.
-      resolved_assets: The code assets resolved for the test.
+      native_assets: depset of the native assets the test ships.
       dill: The kernel `.dill` the mapping's relative paths resolve against.
 
     Returns:
       `(native_assets_yaml, runtime_libs)`: the mapping File (or `None` when
-      there are no code assets) and the code-asset libraries to ship.
+      there are no native assets) and the files to ship in runfiles.
     """
-    if not resolved_assets:
+    if not native_assets:
         return None, []
-    abi = target_dart_abi(ctx)
-    entries, runtime_libs = code_asset_entries(
-        ctx.label,
-        resolved_assets,
-        dill.dirname,
+    # Under the `package:test` runner the libraries go inside the precompiled
+    # directory, which the runner takes along when it runs a copy of the dill.
+    precompiled = "%s.precompiled/" % ctx.label.name
+    in_precompiled = dill.short_path.startswith(ctx.label.package + "/" + precompiled) if ctx.label.package else dill.short_path.startswith(precompiled)
+    result = native_assets_manifest(
+        ctx,
+        native_assets,
+        target_dart_abi(ctx),
+        ctx.label.name,
+        relative_to = dill.dirname,
+        bundle_path = precompiled + "native_assets" if in_precompiled else None,
     )
-    native_assets_yaml = ctx.actions.declare_file(ctx.label.name + ".native_assets.yaml")
-    ctx.actions.write(
-        output = native_assets_yaml,
-        content = generate_native_assets_yaml(abi, entries),
-    )
-    return native_assets_yaml, runtime_libs
+    return result.manifest, [result.bundle]
 
 def _test_kernel_output(ctx, bootstrap):
     """Declares the kernel a test runs from, in the place its runner expects.
@@ -307,7 +299,7 @@ def _test_kernel_output(ctx, bootstrap):
         )
     return ctx.actions.declare_file(ctx.label.name + ".dill")
 
-def _compile_modular_test_kernel(ctx, own, bootstrap, tools, resolved_assets, use_base_dill = False):
+def _compile_modular_test_kernel(ctx, own, bootstrap, tools, native_assets, use_base_dill = False):
     """Compiles a test's entry module and links it: the one way a test's kernel is built.
 
     The entry module holds only the test (or its bootstrap) and the test's own
@@ -320,15 +312,15 @@ def _compile_modular_test_kernel(ctx, own, bootstrap, tools, resolved_assets, us
       own: The `executable_package` result for the test's own sources.
       bootstrap: Whether the test runs under the `package:test` runner.
       tools: The exec kernel tools, from `modular_executable_tools`.
-      resolved_assets: The code assets resolved for the test. Their mapping
-        is embedded in the entry module, against the linked `dill`.
+      native_assets: depset of the native assets the test ships. Their
+        mapping is embedded in the entry module, against the linked `dill`.
       use_base_dill: Whether to link `dill` as a delta against a shared `base_dill`.
 
     Returns:
       `struct(dill, base_dill, runtime_libs)`, as `_compile_test_kernel` returns.
     """
     dill = _test_kernel_output(ctx, bootstrap)
-    native_assets_yaml, runtime_libs = _test_native_assets(ctx, resolved_assets, dill)
+    native_assets_yaml, runtime_libs = _test_native_assets(ctx, native_assets, dill)
     if bootstrap:
         entry_files = [_write_modular_bootstrap(ctx), ctx.file.main]
     else:
@@ -464,21 +456,19 @@ void main(List<String> _, SendPort sendPort) {{
 }}
 """
 
-def _test_code_assets_transition_impl(_settings, attr):
-    return {
-        "//dart/private:code_assets_enabled": getattr(attr, "code_assets_from_deps", True),
-        "//dart/private:vm_product": False,
-    }
+def _test_vm_transition_impl(_settings, _attr):
+    return {"//dart/private:vm_product": False}
 
-_test_code_assets_transition = transition(
-    implementation = _test_code_assets_transition_impl,
+_test_vm_transition = transition(
+    implementation = _test_vm_transition_impl,
     inputs = [],
-    outputs = ["//dart/private:code_assets_enabled", "//dart/private:vm_product"],
+    outputs = ["//dart/private:vm_product"],
 )
 
 _TEST_COMMON_ATTRS = (
     WINDOWS_CONSTRAINT_ATTR |
     DART_ABI_CONSTRAINT_ATTRS |
+    NATIVE_ASSETS_CONSUMER_ATTRS |
     EXTRA_DART_DEFINES_ATTR |
     REFUSED_DART_LIBRARIES_ATTR |
     MODULAR_KERNEL_ATTRS |
@@ -504,20 +494,19 @@ than at run time: the test's `main` is compiled to a kernel during the build, an
 declarations are resolved by the front end at that point — the VM cannot supply them later.""",
     ),
     "code_assets": attr.label_list(
-        doc = """Native code assets (e.g. `//dart/ext/sqlite3:code_asset`) the test's \
-`@Native` FFI bindings resolve against. When set, the test's `main` is compiled to a kernel \
-with the code-asset mapping embedded (`gen_kernel --native-assets`), and the libraries ship in \
-runfiles so the Dart VM resolves them — no `dart:ffi` ceremony in the test source. Each entry \
-must provide `DartCodeAssetInfo` (see the `dart_code_asset` rule).""",
+        doc = """`dart_code_asset` targets the test's `@Native` FFI bindings resolve against, \
+besides the code assets its `deps` bring (their packages' build hooks, and their own \
+`code_assets`). The test's kernel embeds the mapping, and the libraries ship in runfiles.""",
         providers = [DartCodeAssetInfo],
     ),
     "code_assets_from_deps": attr.bool(
         default = True,
-        doc = """Whether to pick up native code assets propagated through `deps`. Defaults to `True`.
+        doc = """Whether to take the native code assets of `deps`: the outputs of their packages' \
+build hooks, and their `code_assets`. Defaults to `True`.
 
 Leave this on for a test that runs the native packages it depends on. Turn it off for a pure-Dart \
 `dart_test` that imports packages for their Dart API (such as `package:drift` with a mock or \
-custom executor) without loading their native libraries at runtime.""",
+custom executor) without loading their native libraries at runtime: no build hook then runs.""",
     ),
     "_allowlist_function_transition": attr.label(
         doc = "Allowlist target permitting the Starlark function transition this rule applies. Defaults to `@bazel_tools//tools/allowlists/function_transition_allowlist`.",
@@ -527,7 +516,7 @@ custom executor) without loading their native libraries at runtime.""",
 
 dart_test = rule(
     implementation = _dart_test_impl,
-    cfg = _test_code_assets_transition,
+    cfg = _test_vm_transition,
     attrs = _SHARED_TEST_ATTRS | {
         "data": attr.label_list(
             doc = "Additional files needed at runtime. These are added to runfiles so they can be resolved via `Runfiles.rlocation()`.",
@@ -589,7 +578,7 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
 
 dart_test_kernel = rule(
     implementation = _dart_test_kernel_impl,
-    cfg = _test_code_assets_transition,
+    cfg = _test_vm_transition,
     attrs = _SHARED_TEST_ATTRS | {
         "deps": attr.label_list(
             doc = "`dart_library` targets this test depends on, compiled with the test's `defines` as for `dart_test`.",

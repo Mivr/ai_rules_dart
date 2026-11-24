@@ -10,8 +10,8 @@ dependencies' facts, so building them costs time in the direct edge only.
 
 Two kinds of fact live here:
 
-  * **Unions and flags.** Whether any record has code assets or an unreplaced
-    build hook, which root packages there are, which `lib/_embedder.yaml`
+  * **Unions and flags.** Whether any record has native assets or a build
+    hook that cannot run, which root packages there are, which `lib/_embedder.yaml`
     files the closure ships. A union of the dependencies' values is exactly
     the closure's value, so these are exact.
   * **Owners.** A depset with one entry per package name and one per package
@@ -101,8 +101,9 @@ def _owner(label, record):
 
     Two records of one name from one label (one target in two
     configurations) differ in it exactly when they state different facts,
-    which is what lets the owners stand in for the records. Code assets are
-    left out: a closure with any is never treated as clean.
+    which is what lets the owners stand in for the records. Native assets are
+    left out: they are outputs of the record's own target, and a consumer
+    reads them from `DartInfo.transitive_native_assets`, not from records.
     """
     link_hook = getattr(record, "link_hook", None)
     return "\t".join([
@@ -111,7 +112,7 @@ def _owner(label, record):
         record.lib_root,
         getattr(record, "version", "") or "",
         getattr(record, "language_version", "") or "",
-        getattr(record, "has_unreplaced_hook", "") or "",
+        getattr(record, "hook_error", "") or "",
         link_hook.path if link_hook != None else "",
     ])
 
@@ -160,8 +161,8 @@ def closure_facts(label, packages, resources, dep_infos, dep_labels):
     embedders = {}
     sky_engines = {}
     nested = False
-    code_assets = False
-    unreplaced_hooks = False
+    native_assets = False
+    hook_errors = False
     for record in packages:
         owner = _owner(label_str, record)
         entries.append((name_key(record.package_name), owner))
@@ -173,8 +174,8 @@ def closure_facts(label, packages, resources, dep_infos, dep_labels):
         if record.package_name == EMBEDDER_PACKAGE:
             sky_engines[sky_engine_yaml(record.lib_root)] = True
         nested = nested or _nests(record.lib_root)
-        code_assets = code_assets or bool(getattr(record, "code_assets", ()))
-        unreplaced_hooks = unreplaced_hooks or bool(getattr(record, "has_unreplaced_hook", ""))
+        native_assets = native_assets or bool(getattr(record, "native_assets", ()))
+        hook_errors = hook_errors or bool(getattr(record, "hook_error", ""))
     for f in resources:
         if is_embedder_yaml(f.short_path):
             embedders[f.short_path] = True
@@ -187,8 +188,8 @@ def closure_facts(label, packages, resources, dep_infos, dep_labels):
         for path in facts.sky_engines:
             sky_engines[path] = True
         nested = nested or facts.nested_roots
-        code_assets = code_assets or facts.code_assets
-        unreplaced_hooks = unreplaced_hooks or facts.unreplaced_hooks
+        native_assets = native_assets or facts.native_assets
+        hook_errors = hook_errors or facts.hook_errors
 
     return struct(
         owners = depset(entries, transitive = [f.owners for f in dep_facts]),
@@ -198,8 +199,8 @@ def closure_facts(label, packages, resources, dep_infos, dep_labels):
         embedders = tuple(sorted(embedders.keys())),
         sky_engines = tuple(sorted(sky_engines.keys())),
         nested_roots = nested,
-        code_assets = code_assets,
-        unreplaced_hooks = unreplaced_hooks,
+        native_assets = native_assets,
+        hook_errors = hook_errors,
         merged = tuple(dep_labels),
     )
 
@@ -288,7 +289,7 @@ def clean_closure(facts):
       `name_key` or `root_key`; or None when the closure is not clean or the
       facts are missing.
     """
-    if facts == None or facts.nested_roots or facts.code_assets or len(facts.root_names) > 1:
+    if facts == None or facts.nested_roots or len(facts.root_names) > 1:
         return None
     keys = owner_keys(facts)
     if keys == None:

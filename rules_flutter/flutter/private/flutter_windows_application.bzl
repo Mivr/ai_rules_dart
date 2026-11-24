@@ -392,7 +392,7 @@ def _flutter_windows_bundle_impl(ctx):
     flutter_assets = app_info.flutter_assets
     icu_data = app_info.icu_data
     native_libs = list(app_info.native_libs)
-    native_libs.extend(app_info.bundled_code_assets.to_list())
+    code_asset_dirs = app_info.bundled_code_assets
     is_debug = app_info.is_debug
 
     flutter_sdk_info = resolve_flutter_sdk_info(ctx)
@@ -453,15 +453,16 @@ def _flutter_windows_bundle_impl(ctx):
     config = {
         "output_dir": bundle_dir.path,
         "copies": copies,
+        # The code assets' DLLs too (untested on Windows here).
         "copy_dirs": [
             {"src": flutter_assets.path, "dst": "data/flutter_assets"},
-        ],
+        ] + [{"src": d.path, "dst": "."} for d in code_asset_dirs],
     }
 
     config_file = ctx.actions.declare_file(ctx.label.name + "_bundle_config.json")
     ctx.actions.write(config_file, json.encode(config))
 
-    inputs = [config_file, flutter_assets, icu_data, runner_binary] + extra_inputs + native_libs + engine_runtime_files
+    inputs = [config_file, flutter_assets, icu_data, runner_binary] + extra_inputs + native_libs + code_asset_dirs + engine_runtime_files
 
     dart_exe, dart_vm_files = resolve_exec_dart_vm(ctx, flutter_sdk_info)
     ctx.actions.run(

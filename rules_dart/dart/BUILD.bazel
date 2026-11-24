@@ -89,6 +89,16 @@ bool_flag(
 #   bazel build //... --@rules_dart//dart:jit_snapshot_lock_timeout=20
 # The flag reaches both snapshot actions' command lines only when it differs
 # from the default, so the action key follows a non-default deadline.
+# The Android API level a build hook targets (`targetNdkApi` in its input):
+# the app's minSdk, as `flutter build` passes it. 24 is Flutter 3.47's
+# default minSdk.
+#   build --@rules_dart//dart:hook_android_api=26
+int_flag(
+    name = "hook_android_api",
+    build_setting_default = 24,
+    visibility = ["//visibility:public"],
+)
+
 int_flag(
     name = "jit_snapshot_lock_timeout",
     build_setting_default = 300,
@@ -270,6 +280,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":providers",
+        "//dart/private:build_hooks",
         "//dart/private:build_settings",
         "//dart/private:common",
         "//dart/private:dart_info",

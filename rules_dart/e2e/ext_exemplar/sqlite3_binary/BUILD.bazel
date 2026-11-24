@@ -7,19 +7,16 @@ load(
     "dart_library",
     "dart_test",
 )
-load("@rules_dart//dart/ext/sqlite3:defs.bzl", "sqlite3_code_asset")
-
-# Exemplar of the dart_binary code_assets path (AOT): a plain package:sqlite3
-# program with the Bazel-built libsqlite3 bound as a code asset. No dart:ffi
-# in the source.
+# Exemplar of an AOT binary with a pub package's build hook: package:sqlite3's
+# own hook compiles libsqlite3 from the amalgamation the user define names,
+# and the binary ships it. No dart:ffi in the source.
 dart_binary(
     name = "app",
-    code_assets = [sqlite3_code_asset()],
-    # Code assets split compilation into gen_kernel + `dart compile`, and only
-    # the first stage runs the front end that resolves `-D`. The run test
-    # asserts this value reaches the binary, which it does not if the define
-    # is handed to the second stage — `dart compile` accepts it on a kernel
-    # input and silently drops it.
+    # The native-assets mapping is compiled into the program with its source,
+    # by the front end that resolves `-D`. The run test asserts this value
+    # reaches the binary, which it does not if the define is handed to a later
+    # stage — `dart compile` accepts it on a kernel input and silently drops
+    # it.
     defines = ["BUILD_CHANNEL=bazel-e2e"],
     main = "bin/main.dart",
     deps = ["@pub_deps//:sqlite3"],
@@ -38,13 +35,12 @@ dart_test(
     ],
 )
 
-# Exemplar of the dart_test code_assets path (test-time gen_kernel): a plain
-# package:sqlite3 program with no codegen, so it isolates code-asset .so
-# resolution (via absolute rlocation) from any source co-location concern.
+# The same hook's library in a test's kernel: a plain package:sqlite3 program
+# with no codegen, so it isolates code-asset resolution from any source
+# co-location concern.
 dart_test(
     name = "direct_test",
     size = "small",
-    code_assets = [sqlite3_code_asset()],
     main = "test/direct_test.dart",
     deps = [
         "@pub_deps//:sqlite3",
@@ -53,7 +49,7 @@ dart_test(
 )
 
 # Exemplar of the public `dart_code_asset` rule over a library this package
-# builds itself, rather than the curated sqlite3 one above. `package:native_answer`
+# builds itself with Bazel, rather than with a build hook. `package:native_answer`
 # declares `@DefaultAsset('package:native_answer/native_answer.dart')` and binds
 # one C symbol; the asset ties that id to a Bazel-built `cc_shared_library`, the
 # library carries the asset, and the test calls through it.
@@ -64,7 +60,7 @@ cc_library(
 
 cc_shared_library(
     name = "libnative_answer",
-    # A DLL exports nothing unless told to; see `//dart/ext/sqlite3:libsqlite3`.
+    # A DLL exports nothing unless told to.
     features = select({
         "@platforms//os:windows": ["windows_export_all_symbols"],
         "//conditions:default": [],
