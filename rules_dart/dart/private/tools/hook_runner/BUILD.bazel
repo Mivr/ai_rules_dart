@@ -16,6 +16,7 @@ exports_files(
 # naming it from libraries with one makes no cycle.
 dart_binary(
     name = "hook_runner",
+    srcs = ["hook_file_system.dart"],
     code_assets_from_deps = False,
     compile_mode = "aot-snapshot",
     main = "hook_runner.dart",
@@ -31,5 +32,21 @@ dart_binary(
         "@rules_dart_hook_runner_deps//:hooks_runner",
         "@rules_dart_hook_runner_deps//:logging",
         "@rules_dart_hook_runner_deps//:package_config",
+        "@rules_dart_hook_runner_deps//:path",
+    ],
+)
+
+# The file system the runner hands `package:hooks_runner`, under POSIX and
+# Windows path rules (so on any host) and with the lock files it opens. It
+# needs only `package:file` and `package:path`, which @ext_pub_deps has.
+dart_test(
+    name = "hook_file_system_test",
+    size = "small",
+    srcs = ["hook_file_system.dart"],
+    main = "hook_file_system_test.dart",
+    deps = [
+        "@ext_pub_deps//:file",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:test",
     ],
 )

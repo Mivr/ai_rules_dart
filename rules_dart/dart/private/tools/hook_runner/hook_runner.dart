@@ -28,12 +28,13 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:code_assets/code_assets.dart';
 import 'package:data_assets/data_assets.dart';
-import 'package:file/file.dart' as fs;
 import 'package:file/local.dart';
 import 'package:hooks/hooks.dart';
 import 'package:hooks_runner/hooks_runner.dart';
 import 'package:logging/logging.dart';
 import 'package:package_config/package_config.dart';
+
+import 'hook_file_system.dart';
 
 Future<void> main(List<String> arguments) async {
   if (arguments.isEmpty) {
@@ -147,13 +148,6 @@ ArgParser _manifestParser() => ArgParser()
   ..addOption('relative-to')
   ..addOption('runfiles-prefix', defaultsTo: '');
 
-/// The file names in the runner's cache that the precompiled hook kernel
-/// stands in for. Pinned with the runner version (see `pubspec.yaml`); a
-/// runner that looks elsewhere makes [_PrecompiledHookFileSystem.kernelServed]
-/// false and the action fails rather than compiling the hook a second time.
-const _hookKernelName = 'hook.dill';
-const _hookKernelHashesName = 'hook.dependencies_hash_file.json';
-
 /// A fresh scratch directory beside the action's declared output [out], as
 /// the other tools of the repository derive theirs: its path is the same on
 /// every run, and the caller deletes it.
@@ -165,10 +159,11 @@ Directory _scratch(String out) {
 
 Future<int> _runHook(String hook, ArgResults args) async {
   final String cwd = Directory.current.absolute.path;
-  String abs(String p) => p.startsWith('/') ? p : '$cwd/$p';
+  String abs(String p) => absolute(p, cwd);
   final packageName = args['package'] as String;
   final Directory work = _scratch(args['out'] as String);
   final logs = <LogRecord>[];
+  PrecompiledHookFileSystem? opened;
   try {
     // The runner keeps its state next to the package config and reads pub's
     // `package_graph.json` from there. The graph holds only this package, so
@@ -211,17 +206,18 @@ Future<int> _runHook(String hook, ArgResults args) async {
           }),
         );
     }
-    final hashes = File('${work.path}/$_hookKernelHashesName')
+    final hashes = File('${work.path}/$hookKernelHashesName')
       ..writeAsStringSync(
         jsonEncode({'file_system': <Object?>[], 'environment': <Object?>[]}),
       );
-    final fileSystem = _PrecompiledHookFileSystem(
-      const LocalFileSystem(),
-      kernel: abs(args['hook-kernel'] as String),
-      kernelHashes: hashes.path,
-      pubspec: pubspecUri?.toFilePath(),
-      pubspecSlice: slice?.path,
-    );
+    final PrecompiledHookFileSystem fileSystem = opened =
+        PrecompiledHookFileSystem(
+          const LocalFileSystem(),
+          kernel: abs(args['hook-kernel'] as String),
+          kernelHashes: hashes.path,
+          pubspec: pubspecUri?.toFilePath(),
+          pubspecSlice: slice?.path,
+        );
 
     final PackageConfig packageConfig = await loadPackageConfigUri(config.uri);
     final layout = PackageLayout.fromPackageConfig(
@@ -235,6 +231,15 @@ Future<int> _runHook(String hook, ArgResults args) async {
     final environment = <String, String>{
       'PATH': args['path'] as String,
       'TMPDIR': tmp.path,
+      // What a Dart process takes its temp directory from on Windows, and
+      // what process invocations there need (as the runner's own default
+      // environment has them).
+      if (Platform.isWindows) ...{
+        'TEMP': tmp.path,
+        'TMP': tmp.path,
+        if (Platform.environment['SYSTEMROOT'] case final String root)
+          'SYSTEMROOT': root,
+      },
       // For the generated compiler wrappers, which run Bazel's toolchain by
       // exec-root-relative path while the hook runs in its package root.
       'BAZEL_EXECROOT': cwd,
@@ -303,7 +308,7 @@ Future<int> _runHook(String hook, ArgResults args) async {
     if (!fileSystem.kernelServed) {
       stderr.writeln(
         'hook_runner: package:hooks_runner did not ask for the precompiled '
-        'kernel of $packageName\'s hook (it looks for "$_hookKernelName" in '
+        'kernel of $packageName\'s hook (it looks for "$hookKernelName" in '
         "its cache directory). The runner version in rules_dart's "
         'hook_runner/pubspec.yaml no longer matches this program.',
       );
@@ -316,6 +321,9 @@ Future<int> _runHook(String hook, ArgResults args) async {
       args['declare'] as List<String>,
     );
   } finally {
+    // The runner leaves each lock file it opened open; on Windows an open file
+    // cannot be deleted, nor the directories that hold it.
+    await opened?.closeLockFiles();
     work.deleteSync(recursive: true);
   }
 }
@@ -561,42 +569,6 @@ String hookFailureMessage(
     );
   }
   return out.toString();
-}
-
-/// Serves the precompiled hook kernel, and the workspace pubspec's
-/// user-defines slice, where `package:hooks_runner` looks for them.
-class _PrecompiledHookFileSystem extends fs.ForwardingFileSystem {
-  new(
-    super.delegate, {
-    required this.kernel,
-    required this.kernelHashes,
-    required this.pubspec,
-    required this.pubspecSlice,
-  });
-
-  final String kernel;
-  final String kernelHashes;
-  final String? pubspec;
-  final String? pubspecSlice;
-  bool kernelServed = false;
-
-  @override
-  fs.File file(dynamic path) {
-    final String p = path is Uri ? path.toFilePath() : path.toString();
-    if (p.contains('/hooks_runner/') && !p.contains('/hooks_runner/shared/')) {
-      if (p.endsWith('/$_hookKernelName')) {
-        kernelServed = true;
-        return delegate.file(kernel);
-      }
-      if (p.endsWith('/$_hookKernelHashesName')) {
-        return delegate.file(kernelHashes);
-      }
-    }
-    if (pubspec != null && p == pubspec) {
-      return delegate.file(pubspecSlice ?? '/nonexistent/pubspec.yaml');
-    }
-    return delegate.file(path);
-  }
 }
 
 /// Writes the native-assets manifest the compiler embeds, and copies each
