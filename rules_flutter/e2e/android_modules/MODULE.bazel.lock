@@ -322,15 +322,15 @@
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
         "bzlTransitiveDigest": "3+azEXI5LnCUzwlhEp2pLw7zFmg41YrGdsH+9dCYEiA=",
-        "usagesDigest": "/WPtPURDqDUZ4HzdwZzqefOcfNCPewdds9AkUs0gaHE=",
+        "usagesDigest": "FxEq99OIiT9InPPtJQ7XQ9ATERWYVA8LDtwY4pwO+os=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
-          "FILE:@@ai_rules_flutter+//tools/dev_tool/pubspec.lock 45215f501fd1efa31e9ba2ba59c2319e4ab1ad9f4594f7d8dc1e427fa722da67",
+          "FILE:@@ai_rules_flutter+//tools/tool_deps/pubspec.lock 1af5c724131a36c5ebcedf7762ae4b94aa46c5add81cfd16f1d729bc8c5d5bb6",
           "FILE:@@ai_rules_flutter+//flutter/private/gen_l10n/pubspec.lock e0b93104e8690fc41b26a845be6757a0f8f6d24da9aece4175ba61dc38248c2c",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock 1452d104de06eacf15905878d31e7b7c84bf72114637fee0c87da2c75dcf58da",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
-          "FILE:@@ai_rules_flutter+//tools/dev_tool/pub_plan.json 75662d5823c2e85f5eec2707354b16b90be1c0ab42d74f8253375e4dbffa0e7f",
+          "FILE:@@ai_rules_flutter+//tools/tool_deps/pub_plan.json 5d0f63da220be205815fe41bb5fa48d054019eb52f07d09ecdd0f38fe4c63f84",
           "FILE:@@ai_rules_flutter+//flutter/private/gen_l10n/pub_plan.json 7e78273e4ba44a4884e97ccdb86836e66b941ebbf44c3d87018c70f853384932",
           "FILE:@@ai_rules_dart+//dart/ext/pub_plan.json 9a8318baca7377e3c4307c68140729577b22c816a17f7810980cdb35ca906598"
         ],
@@ -1893,1848 +1893,6 @@
               ]
             }
           },
-          "rules_flutter_dev_tool_deps": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_hub.bzl%pub_lock_hub",
-            "attributes": {
-              "hub_name": "rules_flutter_dev_tool_deps",
-              "spoke_prefix": "rules_flutter_dev_tool_deps",
-              "packages": [
-                "_fe_analyzer_shared",
-                "analyzer",
-                "args",
-                "async",
-                "boolean_selector",
-                "browser_launcher",
-                "cli_config",
-                "clock",
-                "collection",
-                "convert",
-                "coverage",
-                "crypto",
-                "dap",
-                "dart_service_protocol_shared",
-                "dds",
-                "dds_service_extensions",
-                "devtools_shared",
-                "dtd",
-                "dwds",
-                "extension_discovery",
-                "file",
-                "frontend_server_client",
-                "glob",
-                "http",
-                "http_multi_server",
-                "http_parser",
-                "io",
-                "json_rpc_2",
-                "logging",
-                "matcher",
-                "meta",
-                "mime",
-                "multicast_dns",
-                "node_preamble",
-                "package_config",
-                "path",
-                "platform",
-                "pool",
-                "pub_semver",
-                "runfiles",
-                "shelf",
-                "shelf_packages_handler",
-                "shelf_proxy",
-                "shelf_static",
-                "shelf_web_socket",
-                "source_map_stack_trace",
-                "source_maps",
-                "source_span",
-                "sse",
-                "stack_trace",
-                "stream_channel",
-                "string_scanner",
-                "term_glyph",
-                "test",
-                "test_api",
-                "test_core",
-                "typed_data",
-                "unified_analytics",
-                "vm_service",
-                "vm_service_interface",
-                "watcher",
-                "web",
-                "web_socket",
-                "web_socket_channel",
-                "webkit_inspection_protocol",
-                "yaml",
-                "yaml_edit"
-              ],
-              "explicit_packages": [],
-              "local_targets": {},
-              "unavailable": {},
-              "scc_targets": {},
-              "package_graph": "{\n  \"configVersion\": 1,\n  \"packages\": [\n    {\n      \"dependencies\": [\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"_fe_analyzer_shared\",\n      \"version\": \"105.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"_fe_analyzer_shared\",\n        \"collection\",\n        \"convert\",\n        \"crypto\",\n        \"glob\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"pub_semver\",\n        \"source_span\",\n        \"watcher\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"analyzer\",\n      \"version\": \"14.1.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"args\",\n      \"version\": \"2.7.0\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"async\",\n      \"version\": \"2.13.1\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"boolean_selector\",\n      \"version\": \"2.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"logging\",\n        \"path\",\n        \"webkit_inspection_protocol\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"browser_launcher\",\n      \"version\": \"1.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"cli_config\",\n      \"version\": \"0.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"clock\",\n      \"version\": \"1.1.2\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"collection\",\n      \"version\": \"1.19.1\"\n    },\n    {\n      \"dependencies\": [\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"convert\",\n      \"version\": \"3.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"cli_config\",\n        \"glob\",\n        \"logging\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"source_maps\",\n        \"stack_trace\",\n        \"vm_service\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"coverage\",\n      \"version\": \"1.15.1\"\n    },\n    {\n      \"dependencies\": [\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"crypto\",\n      \"version\": \"3.0.7\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"dap\",\n      \"version\": \"1.4.0\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"dart_service_protocol_shared\",\n      \"version\": \"0.0.3\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"async\",\n        \"browser_launcher\",\n        \"collection\",\n        \"dap\",\n        \"dds_service_extensions\",\n        \"devtools_shared\",\n        \"dtd\",\n        \"extension_discovery\",\n        \"http_multi_server\",\n        \"json_rpc_2\",\n        \"meta\",\n        \"mime\",\n        \"path\",\n        \"shelf\",\n        \"shelf_proxy\",\n        \"shelf_static\",\n        \"shelf_web_socket\",\n        \"sse\",\n        \"stream_channel\",\n        \"vm_service\",\n        \"web_socket_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"dds\",\n      \"version\": \"5.4.0\"\n    },\n    {\n      \"dependencies\": [\n        \"dap\",\n        \"vm_service\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"dds_service_extensions\",\n      \"version\": \"2.1.0\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"collection\",\n        \"dtd\",\n        \"extension_discovery\",\n        \"file\",\n        \"meta\",\n        \"path\",\n        \"shelf\",\n        \"sse\",\n        \"vm_service\",\n        \"web_socket_channel\",\n        \"webkit_inspection_protocol\",\n        \"yaml\",\n        \"yaml_edit\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"devtools_shared\",\n      \"version\": \"13.1.0\"\n    },\n    {\n      \"dependencies\": [\n        \"dart_service_protocol_shared\",\n        \"json_rpc_2\",\n        \"stream_channel\",\n        \"unified_analytics\",\n        \"web_socket_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"dtd\",\n      \"version\": \"4.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"crypto\",\n        \"dds\",\n        \"file\",\n        \"http\",\n        \"http_multi_server\",\n        \"logging\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"pool\",\n        \"pub_semver\",\n        \"shelf\",\n        \"shelf_packages_handler\",\n        \"shelf_proxy\",\n        \"shelf_static\",\n        \"shelf_web_socket\",\n        \"source_maps\",\n        \"sse\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"vm_service\",\n        \"vm_service_interface\",\n        \"web\",\n        \"web_socket\",\n        \"web_socket_channel\",\n        \"webkit_inspection_protocol\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"dwds\",\n      \"version\": \"27.1.1\"\n    },\n    {\n      \"dependencies\": [\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"extension_discovery\",\n      \"version\": \"2.1.0\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"file\",\n      \"version\": \"7.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"frontend_server_client\",\n      \"version\": \"4.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"file\",\n        \"path\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"glob\",\n      \"version\": \"2.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"http_parser\",\n        \"meta\",\n        \"web\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"http\",\n      \"version\": \"1.6.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"http_multi_server\",\n      \"version\": \"3.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\",\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"http_parser\",\n      \"version\": \"4.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"io\",\n      \"version\": \"1.0.5\"\n    },\n    {\n      \"dependencies\": [\n        \"stack_trace\",\n        \"stream_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"json_rpc_2\",\n      \"version\": \"4.1.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"logging\",\n      \"version\": \"1.3.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"meta\",\n        \"stack_trace\",\n        \"term_glyph\",\n        \"test_api\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"matcher\",\n      \"version\": \"0.12.20\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"meta\",\n      \"version\": \"1.19.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"mime\",\n      \"version\": \"2.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"multicast_dns\",\n      \"version\": \"0.3.3+1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"node_preamble\",\n      \"version\": \"2.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"package_config\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"path\",\n      \"version\": \"1.9.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"platform\",\n      \"version\": \"3.1.6\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"stack_trace\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"pool\",\n      \"version\": \"1.5.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"pub_semver\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"runfiles\",\n      \"version\": \"0.4.6\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"http_parser\",\n        \"path\",\n        \"stack_trace\",\n        \"stream_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf\",\n      \"version\": \"1.4.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\",\n        \"shelf\",\n        \"shelf_static\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_packages_handler\",\n      \"version\": \"3.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"http\",\n        \"path\",\n        \"shelf\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_proxy\",\n      \"version\": \"1.0.5\"\n    },\n    {\n      \"dependencies\": [\n        \"convert\",\n        \"http_parser\",\n        \"mime\",\n        \"path\",\n        \"shelf\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_static\",\n      \"version\": \"1.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"shelf\",\n        \"stream_channel\",\n        \"web_socket_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_web_socket\",\n      \"version\": \"3.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"path\",\n        \"source_maps\",\n        \"stack_trace\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_map_stack_trace\",\n      \"version\": \"2.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_maps\",\n      \"version\": \"0.10.13\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"path\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_span\",\n      \"version\": \"1.10.2\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"logging\",\n        \"pool\",\n        \"shelf\",\n        \"stream_channel\",\n        \"web\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"sse\",\n      \"version\": \"4.2.0\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stack_trace\",\n      \"version\": \"1.12.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stream_channel\",\n      \"version\": \"2.1.4\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"string_scanner\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"term_glyph\",\n      \"version\": \"1.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"analyzer\",\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"coverage\",\n        \"http_multi_server\",\n        \"io\",\n        \"matcher\",\n        \"node_preamble\",\n        \"package_config\",\n        \"path\",\n        \"pool\",\n        \"shelf\",\n        \"shelf_packages_handler\",\n        \"shelf_static\",\n        \"shelf_web_socket\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"test_api\",\n        \"test_core\",\n        \"typed_data\",\n        \"web_socket_channel\",\n        \"webkit_inspection_protocol\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test\",\n      \"version\": \"1.31.2\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"meta\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"string_scanner\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test_api\",\n      \"version\": \"0.7.13\"\n    },\n    {\n      \"dependencies\": [\n        \"analyzer\",\n        \"args\",\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"coverage\",\n        \"frontend_server_client\",\n        \"glob\",\n        \"io\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"pool\",\n        \"source_map_stack_trace\",\n        \"source_maps\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"test_api\",\n        \"vm_service\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test_core\",\n      \"version\": \"0.6.19\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"typed_data\",\n      \"version\": \"1.4.0\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"convert\",\n        \"file\",\n        \"http\",\n        \"meta\",\n        \"platform\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"unified_analytics\",\n      \"version\": \"8.0.16\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"vm_service\",\n      \"version\": \"15.2.0\"\n    },\n    {\n      \"dependencies\": [\n        \"vm_service\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"vm_service_interface\",\n      \"version\": \"2.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"watcher\",\n      \"version\": \"1.2.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"web\",\n      \"version\": \"1.1.1\"\n    },\n    {\n      \"dependencies\": [\n        \"web\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"web_socket\",\n      \"version\": \"1.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"crypto\",\n        \"stream_channel\",\n        \"web\",\n        \"web_socket\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"web_socket_channel\",\n      \"version\": \"3.0.3\"\n    },\n    {\n      \"dependencies\": [\n        \"logging\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"webkit_inspection_protocol\",\n      \"version\": \"1.2.1\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"yaml\",\n      \"version\": \"3.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"meta\",\n        \"source_span\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"yaml_edit\",\n      \"version\": \"2.2.4\"\n    }\n  ],\n  \"roots\": []\n}\n",
-              "build_runner_version": "",
-              "builder_packages": {}
-            }
-          },
-          "rules_flutter_dev_tool_deps___fe_analyzer_shared": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "_fe_analyzer_shared",
-              "version": "105.0.0",
-              "sha256": "9a3386eea899815698dd55995277cf7cb8572ee52b399a6edfb7ae2b50e5fc19",
-              "url": "https://pub.dev/api/archives/_fe_analyzer_shared-105.0.0.tar.gz",
-              "planned_deps": [
-                "meta"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__meta//:meta"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__analyzer": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "analyzer",
-              "version": "14.1.0",
-              "sha256": "62993bed6eadbe9596c5c20d5c167e7bc563c5fe266657a04ddeb93bdb84f4c9",
-              "url": "https://pub.dev/api/archives/analyzer-14.1.0.tar.gz",
-              "planned_deps": [
-                "_fe_analyzer_shared",
-                "collection",
-                "convert",
-                "crypto",
-                "glob",
-                "meta",
-                "package_config",
-                "path",
-                "pub_semver",
-                "source_span",
-                "watcher",
-                "yaml"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps___fe_analyzer_shared//:_fe_analyzer_shared",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__convert//:convert",
-                "@rules_flutter_dev_tool_deps__crypto//:crypto",
-                "@rules_flutter_dev_tool_deps__glob//:glob",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__package_config//:package_config",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__pub_semver//:pub_semver",
-                "@rules_flutter_dev_tool_deps__source_span//:source_span",
-                "@rules_flutter_dev_tool_deps__watcher//:watcher",
-                "@rules_flutter_dev_tool_deps__yaml//:yaml"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__args": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "args",
-              "version": "2.7.0",
-              "sha256": "d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04",
-              "url": "https://pub.dev/api/archives/args-2.7.0.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__async": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "async",
-              "version": "2.13.1",
-              "sha256": "e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37",
-              "url": "https://pub.dev/api/archives/async-2.13.1.tar.gz",
-              "planned_deps": [
-                "collection",
-                "meta"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__meta//:meta"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__boolean_selector": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "boolean_selector",
-              "version": "2.1.2",
-              "sha256": "8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea",
-              "url": "https://pub.dev/api/archives/boolean_selector-2.1.2.tar.gz",
-              "planned_deps": [
-                "source_span",
-                "string_scanner"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__source_span//:source_span",
-                "@rules_flutter_dev_tool_deps__string_scanner//:string_scanner"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__browser_launcher": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "browser_launcher",
-              "version": "1.1.3",
-              "sha256": "ca2557663d3033845f2ef2b60f94fc249528324fd1affddccb7c63ac0ccd6c67",
-              "url": "https://pub.dev/api/archives/browser_launcher-1.1.3.tar.gz",
-              "planned_deps": [
-                "logging",
-                "path",
-                "webkit_inspection_protocol"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__logging//:logging",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__webkit_inspection_protocol//:webkit_inspection_protocol"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__cli_config": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "cli_config",
-              "version": "0.2.0",
-              "sha256": "ac20a183a07002b700f0c25e61b7ee46b23c309d76ab7b7640a028f18e4d99ec",
-              "url": "https://pub.dev/api/archives/cli_config-0.2.0.tar.gz",
-              "planned_deps": [
-                "args",
-                "yaml"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__args//:args",
-                "@rules_flutter_dev_tool_deps__yaml//:yaml"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__clock": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "clock",
-              "version": "1.1.2",
-              "sha256": "fddb70d9b5277016c77a80201021d40a2247104d9f4aa7bab7157b7e3f05b84b",
-              "url": "https://pub.dev/api/archives/clock-1.1.2.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__collection": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "collection",
-              "version": "1.19.1",
-              "sha256": "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76",
-              "url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__convert": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "convert",
-              "version": "3.1.2",
-              "sha256": "b30acd5944035672bc15c6b7a8b47d773e41e2f17de064350988c5d02adb1c68",
-              "url": "https://pub.dev/api/archives/convert-3.1.2.tar.gz",
-              "planned_deps": [
-                "typed_data"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__typed_data//:typed_data"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__coverage": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "coverage",
-              "version": "1.15.1",
-              "sha256": "956a3de0725ca232ad353565a8290d3357592bf4250f6f298a185e2d949c5d3d",
-              "url": "https://pub.dev/api/archives/coverage-1.15.1.tar.gz",
-              "planned_deps": [
-                "args",
-                "cli_config",
-                "glob",
-                "logging",
-                "meta",
-                "package_config",
-                "path",
-                "source_maps",
-                "stack_trace",
-                "vm_service",
-                "yaml"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__args//:args",
-                "@rules_flutter_dev_tool_deps__cli_config//:cli_config",
-                "@rules_flutter_dev_tool_deps__glob//:glob",
-                "@rules_flutter_dev_tool_deps__logging//:logging",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__package_config//:package_config",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__source_maps//:source_maps",
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace",
-                "@rules_flutter_dev_tool_deps__vm_service//:vm_service",
-                "@rules_flutter_dev_tool_deps__yaml//:yaml"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__crypto": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "crypto",
-              "version": "3.0.7",
-              "sha256": "c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf",
-              "url": "https://pub.dev/api/archives/crypto-3.0.7.tar.gz",
-              "planned_deps": [
-                "typed_data"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__typed_data//:typed_data"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__dap": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "dap",
-              "version": "1.4.0",
-              "sha256": "42b0b083a09c59a118741769e218fc3738980ab591114f09d1026241d2b9c290",
-              "url": "https://pub.dev/api/archives/dap-1.4.0.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__dart_service_protocol_shared": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "dart_service_protocol_shared",
-              "version": "0.0.3",
-              "sha256": "1737875c176d7e3d87bb3a359182828b542fe20a0b34198b8d31a81af5c7a76d",
-              "url": "https://pub.dev/api/archives/dart_service_protocol_shared-0.0.3.tar.gz",
-              "planned_deps": [
-                "meta"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__meta//:meta"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__dds": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "dds",
-              "version": "5.4.0",
-              "sha256": "f8e875dcd7b5e5073a7bfe54095144c70487f18e2f8e47fa51c09dd67eccfb0c",
-              "url": "https://pub.dev/api/archives/dds-5.4.0.tar.gz",
-              "planned_deps": [
-                "args",
-                "async",
-                "browser_launcher",
-                "collection",
-                "dap",
-                "dds_service_extensions",
-                "devtools_shared",
-                "dtd",
-                "extension_discovery",
-                "http_multi_server",
-                "json_rpc_2",
-                "meta",
-                "mime",
-                "path",
-                "shelf",
-                "shelf_proxy",
-                "shelf_static",
-                "shelf_web_socket",
-                "sse",
-                "stream_channel",
-                "vm_service",
-                "web_socket_channel"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__args//:args",
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__browser_launcher//:browser_launcher",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__dap//:dap",
-                "@rules_flutter_dev_tool_deps__dds_service_extensions//:dds_service_extensions",
-                "@rules_flutter_dev_tool_deps__devtools_shared//:devtools_shared",
-                "@rules_flutter_dev_tool_deps__dtd//:dtd",
-                "@rules_flutter_dev_tool_deps__extension_discovery//:extension_discovery",
-                "@rules_flutter_dev_tool_deps__http_multi_server//:http_multi_server",
-                "@rules_flutter_dev_tool_deps__json_rpc_2//:json_rpc_2",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__mime//:mime",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__shelf//:shelf",
-                "@rules_flutter_dev_tool_deps__shelf_proxy//:shelf_proxy",
-                "@rules_flutter_dev_tool_deps__shelf_static//:shelf_static",
-                "@rules_flutter_dev_tool_deps__shelf_web_socket//:shelf_web_socket",
-                "@rules_flutter_dev_tool_deps__sse//:sse",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel",
-                "@rules_flutter_dev_tool_deps__vm_service//:vm_service",
-                "@rules_flutter_dev_tool_deps__web_socket_channel//:web_socket_channel"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__dds_service_extensions": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "dds_service_extensions",
-              "version": "2.1.0",
-              "sha256": "afe0fce921953ac0c5bb276bccd7e36fa5035d7769567d122523fdd09beb4d03",
-              "url": "https://pub.dev/api/archives/dds_service_extensions-2.1.0.tar.gz",
-              "planned_deps": [
-                "dap",
-                "vm_service"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__dap//:dap",
-                "@rules_flutter_dev_tool_deps__vm_service//:vm_service"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__devtools_shared": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "devtools_shared",
-              "version": "13.1.0",
-              "sha256": "13df2c17d5f21dd7c92d08145386d45e1153364c04e531e994afb0ee7b67554b",
-              "url": "https://pub.dev/api/archives/devtools_shared-13.1.0.tar.gz",
-              "planned_deps": [
-                "args",
-                "collection",
-                "dtd",
-                "extension_discovery",
-                "file",
-                "meta",
-                "path",
-                "shelf",
-                "sse",
-                "vm_service",
-                "web_socket_channel",
-                "webkit_inspection_protocol",
-                "yaml",
-                "yaml_edit"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__args//:args",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__dtd//:dtd",
-                "@rules_flutter_dev_tool_deps__extension_discovery//:extension_discovery",
-                "@rules_flutter_dev_tool_deps__file//:file",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__shelf//:shelf",
-                "@rules_flutter_dev_tool_deps__sse//:sse",
-                "@rules_flutter_dev_tool_deps__vm_service//:vm_service",
-                "@rules_flutter_dev_tool_deps__web_socket_channel//:web_socket_channel",
-                "@rules_flutter_dev_tool_deps__webkit_inspection_protocol//:webkit_inspection_protocol",
-                "@rules_flutter_dev_tool_deps__yaml//:yaml",
-                "@rules_flutter_dev_tool_deps__yaml_edit//:yaml_edit"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__dtd": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "dtd",
-              "version": "4.0.0",
-              "sha256": "09ddb228b3d1478a093556357692a4c203ff4f9d5f8cda05dfdca0ff3fb7c5d3",
-              "url": "https://pub.dev/api/archives/dtd-4.0.0.tar.gz",
-              "planned_deps": [
-                "dart_service_protocol_shared",
-                "json_rpc_2",
-                "stream_channel",
-                "unified_analytics",
-                "web_socket_channel"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__dart_service_protocol_shared//:dart_service_protocol_shared",
-                "@rules_flutter_dev_tool_deps__json_rpc_2//:json_rpc_2",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel",
-                "@rules_flutter_dev_tool_deps__unified_analytics//:unified_analytics",
-                "@rules_flutter_dev_tool_deps__web_socket_channel//:web_socket_channel"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__dwds": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "dwds",
-              "version": "27.1.1",
-              "sha256": "d2fe0b3608330627871d7b0e070ffb4f356087a3e19fea64fa58f95a2c2871d6",
-              "url": "https://pub.dev/api/archives/dwds-27.1.1.tar.gz",
-              "planned_deps": [
-                "async",
-                "collection",
-                "crypto",
-                "dds",
-                "file",
-                "http",
-                "http_multi_server",
-                "logging",
-                "meta",
-                "package_config",
-                "path",
-                "pool",
-                "pub_semver",
-                "shelf",
-                "shelf_packages_handler",
-                "shelf_proxy",
-                "shelf_static",
-                "shelf_web_socket",
-                "source_maps",
-                "sse",
-                "stack_trace",
-                "stream_channel",
-                "vm_service",
-                "vm_service_interface",
-                "web",
-                "web_socket",
-                "web_socket_channel",
-                "webkit_inspection_protocol"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__crypto//:crypto",
-                "@rules_flutter_dev_tool_deps__dds//:dds",
-                "@rules_flutter_dev_tool_deps__file//:file",
-                "@rules_flutter_dev_tool_deps__http//:http",
-                "@rules_flutter_dev_tool_deps__http_multi_server//:http_multi_server",
-                "@rules_flutter_dev_tool_deps__logging//:logging",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__package_config//:package_config",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__pool//:pool",
-                "@rules_flutter_dev_tool_deps__pub_semver//:pub_semver",
-                "@rules_flutter_dev_tool_deps__shelf//:shelf",
-                "@rules_flutter_dev_tool_deps__shelf_packages_handler//:shelf_packages_handler",
-                "@rules_flutter_dev_tool_deps__shelf_proxy//:shelf_proxy",
-                "@rules_flutter_dev_tool_deps__shelf_static//:shelf_static",
-                "@rules_flutter_dev_tool_deps__shelf_web_socket//:shelf_web_socket",
-                "@rules_flutter_dev_tool_deps__source_maps//:source_maps",
-                "@rules_flutter_dev_tool_deps__sse//:sse",
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel",
-                "@rules_flutter_dev_tool_deps__vm_service//:vm_service",
-                "@rules_flutter_dev_tool_deps__vm_service_interface//:vm_service_interface",
-                "@rules_flutter_dev_tool_deps__web//:web",
-                "@rules_flutter_dev_tool_deps__web_socket//:web_socket",
-                "@rules_flutter_dev_tool_deps__web_socket_channel//:web_socket_channel",
-                "@rules_flutter_dev_tool_deps__webkit_inspection_protocol//:webkit_inspection_protocol"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__extension_discovery": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "extension_discovery",
-              "version": "2.1.0",
-              "sha256": "de1fce715ab013cdfb00befc3bdf0914bea5e409c3a567b7f8f144bc061611a7",
-              "url": "https://pub.dev/api/archives/extension_discovery-2.1.0.tar.gz",
-              "planned_deps": [
-                "yaml"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__yaml//:yaml"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__file": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "file",
-              "version": "7.0.1",
-              "sha256": "a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4",
-              "url": "https://pub.dev/api/archives/file-7.0.1.tar.gz",
-              "planned_deps": [
-                "meta",
-                "path"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__path//:path"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__frontend_server_client": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "frontend_server_client",
-              "version": "4.0.0",
-              "sha256": "f64a0333a82f30b0cca061bc3d143813a486dc086b574bfb233b7c1372427694",
-              "url": "https://pub.dev/api/archives/frontend_server_client-4.0.0.tar.gz",
-              "planned_deps": [
-                "async",
-                "path"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__path//:path"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__glob": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "glob",
-              "version": "2.1.3",
-              "sha256": "c3f1ee72c96f8f78935e18aa8cecced9ab132419e8625dc187e1c2408efc20de",
-              "url": "https://pub.dev/api/archives/glob-2.1.3.tar.gz",
-              "planned_deps": [
-                "async",
-                "collection",
-                "file",
-                "path",
-                "string_scanner"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__file//:file",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__string_scanner//:string_scanner"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__http": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "http",
-              "version": "1.6.0",
-              "sha256": "87721a4a50b19c7f1d49001e51409bddc46303966ce89a65af4f4e6004896412",
-              "url": "https://pub.dev/api/archives/http-1.6.0.tar.gz",
-              "planned_deps": [
-                "async",
-                "http_parser",
-                "meta",
-                "web"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__http_parser//:http_parser",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__web//:web"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__http_multi_server": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "http_multi_server",
-              "version": "3.2.2",
-              "sha256": "aa6199f908078bb1c5efb8d8638d4ae191aac11b311132c3ef48ce352fb52ef8",
-              "url": "https://pub.dev/api/archives/http_multi_server-3.2.2.tar.gz",
-              "planned_deps": [
-                "async"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__http_parser": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "http_parser",
-              "version": "4.1.2",
-              "sha256": "178d74305e7866013777bab2c3d8726205dc5a4dd935297175b19a23a2e66571",
-              "url": "https://pub.dev/api/archives/http_parser-4.1.2.tar.gz",
-              "planned_deps": [
-                "collection",
-                "source_span",
-                "string_scanner",
-                "typed_data"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__source_span//:source_span",
-                "@rules_flutter_dev_tool_deps__string_scanner//:string_scanner",
-                "@rules_flutter_dev_tool_deps__typed_data//:typed_data"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__io": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "io",
-              "version": "1.0.5",
-              "sha256": "dfd5a80599cf0165756e3181807ed3e77daf6dd4137caaad72d0b7931597650b",
-              "url": "https://pub.dev/api/archives/io-1.0.5.tar.gz",
-              "planned_deps": [
-                "meta",
-                "path",
-                "string_scanner"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__string_scanner//:string_scanner"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__json_rpc_2": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "json_rpc_2",
-              "version": "4.1.0",
-              "sha256": "82dfd37d3b2e5030ae4729e1d7f5538cbc45eb1c73d618b9272931facac3bec1",
-              "url": "https://pub.dev/api/archives/json_rpc_2-4.1.0.tar.gz",
-              "planned_deps": [
-                "stack_trace",
-                "stream_channel"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__logging": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "logging",
-              "version": "1.3.0",
-              "sha256": "c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61",
-              "url": "https://pub.dev/api/archives/logging-1.3.0.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__matcher": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "matcher",
-              "version": "0.12.20",
-              "sha256": "31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd",
-              "url": "https://pub.dev/api/archives/matcher-0.12.20.tar.gz",
-              "planned_deps": [
-                "async",
-                "meta",
-                "stack_trace",
-                "term_glyph",
-                "test_api"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace",
-                "@rules_flutter_dev_tool_deps__term_glyph//:term_glyph",
-                "@rules_flutter_dev_tool_deps__test_api//:test_api"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__meta": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "meta",
-              "version": "1.19.0",
-              "sha256": "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9",
-              "url": "https://pub.dev/api/archives/meta-1.19.0.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__mime": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "mime",
-              "version": "2.0.0",
-              "sha256": "41a20518f0cb1256669420fdba0cd90d21561e560ac240f26ef8322e45bb7ed6",
-              "url": "https://pub.dev/api/archives/mime-2.0.0.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__multicast_dns": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "multicast_dns",
-              "version": "0.3.3+1",
-              "sha256": "134668a9605c747322d8c3eb0e89a4c0cbdedb29f8d2d5ae29d14daef724987b",
-              "url": "https://pub.dev/api/archives/multicast_dns-0.3.3%2B1.tar.gz",
-              "planned_deps": [
-                "meta"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__meta//:meta"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__node_preamble": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "node_preamble",
-              "version": "2.0.2",
-              "sha256": "6e7eac89047ab8a8d26cf16127b5ed26de65209847630400f9aefd7cd5c730db",
-              "url": "https://pub.dev/api/archives/node_preamble-2.0.2.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__package_config": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "package_config",
-              "version": "2.2.0",
-              "sha256": "f096c55ebb7deb7e384101542bfba8c52696c1b56fca2eb62827989ef2353bbc",
-              "url": "https://pub.dev/api/archives/package_config-2.2.0.tar.gz",
-              "planned_deps": [
-                "path"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__path//:path"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__path": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "path",
-              "version": "1.9.1",
-              "sha256": "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5",
-              "url": "https://pub.dev/api/archives/path-1.9.1.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__platform": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "platform",
-              "version": "3.1.6",
-              "sha256": "5d6b1b0036a5f331ebc77c850ebc8506cbc1e9416c27e59b439f917a902a4984",
-              "url": "https://pub.dev/api/archives/platform-3.1.6.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__pool": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "pool",
-              "version": "1.5.2",
-              "sha256": "978783255c543aa3586a1b3c21f6e9d720eb315376a915872c61ef8b5c20177d",
-              "url": "https://pub.dev/api/archives/pool-1.5.2.tar.gz",
-              "planned_deps": [
-                "async",
-                "stack_trace"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__pub_semver": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "pub_semver",
-              "version": "2.2.0",
-              "sha256": "5bfcf68ca79ef689f8990d1160781b4bad40a3bd5e5218ad4076ddb7f4081585",
-              "url": "https://pub.dev/api/archives/pub_semver-2.2.0.tar.gz",
-              "planned_deps": [
-                "collection"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__collection//:collection"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__runfiles": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "runfiles",
-              "version": "0.4.6",
-              "sha256": "d3f05faf1ba0dbb5aba9fa74698cbdfebb1d0eb26cd45030585c8d17e785e618",
-              "url": "https://pub.dev/api/archives/runfiles-0.4.6.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__shelf": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "shelf",
-              "version": "1.4.2",
-              "sha256": "e7dd780a7ffb623c57850b33f43309312fc863fb6aa3d276a754bb299839ef12",
-              "url": "https://pub.dev/api/archives/shelf-1.4.2.tar.gz",
-              "planned_deps": [
-                "async",
-                "collection",
-                "http_parser",
-                "path",
-                "stack_trace",
-                "stream_channel"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__http_parser//:http_parser",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__shelf_packages_handler": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "shelf_packages_handler",
-              "version": "3.0.2",
-              "sha256": "89f967eca29607c933ba9571d838be31d67f53f6e4ee15147d5dc2934fee1b1e",
-              "url": "https://pub.dev/api/archives/shelf_packages_handler-3.0.2.tar.gz",
-              "planned_deps": [
-                "path",
-                "shelf",
-                "shelf_static"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__shelf//:shelf",
-                "@rules_flutter_dev_tool_deps__shelf_static//:shelf_static"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__shelf_proxy": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "shelf_proxy",
-              "version": "1.0.5",
-              "sha256": "0c3a7b2b4c111cae8a6d9077701e0622c6013d38a780373ac359d6d45b3aa10b",
-              "url": "https://pub.dev/api/archives/shelf_proxy-1.0.5.tar.gz",
-              "planned_deps": [
-                "http",
-                "path",
-                "shelf"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__http//:http",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__shelf//:shelf"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__shelf_static": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "shelf_static",
-              "version": "1.1.3",
-              "sha256": "c87c3875f91262785dade62d135760c2c69cb217ac759485334c5857ad89f6e3",
-              "url": "https://pub.dev/api/archives/shelf_static-1.1.3.tar.gz",
-              "planned_deps": [
-                "convert",
-                "http_parser",
-                "mime",
-                "path",
-                "shelf"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__convert//:convert",
-                "@rules_flutter_dev_tool_deps__http_parser//:http_parser",
-                "@rules_flutter_dev_tool_deps__mime//:mime",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__shelf//:shelf"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__shelf_web_socket": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "shelf_web_socket",
-              "version": "3.0.0",
-              "sha256": "3632775c8e90d6c9712f883e633716432a27758216dfb61bd86a8321c0580925",
-              "url": "https://pub.dev/api/archives/shelf_web_socket-3.0.0.tar.gz",
-              "planned_deps": [
-                "shelf",
-                "stream_channel",
-                "web_socket_channel"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__shelf//:shelf",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel",
-                "@rules_flutter_dev_tool_deps__web_socket_channel//:web_socket_channel"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__source_map_stack_trace": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "source_map_stack_trace",
-              "version": "2.1.2",
-              "sha256": "c0713a43e323c3302c2abe2a1cc89aa057a387101ebd280371d6a6c9fa68516b",
-              "url": "https://pub.dev/api/archives/source_map_stack_trace-2.1.2.tar.gz",
-              "planned_deps": [
-                "path",
-                "source_maps",
-                "stack_trace"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__source_maps//:source_maps",
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__source_maps": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "source_maps",
-              "version": "0.10.13",
-              "sha256": "190222579a448b03896e0ca6eca5998fa810fda630c1d65e2f78b3f638f54812",
-              "url": "https://pub.dev/api/archives/source_maps-0.10.13.tar.gz",
-              "planned_deps": [
-                "source_span"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__source_span//:source_span"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__source_span": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "source_span",
-              "version": "1.10.2",
-              "sha256": "56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab",
-              "url": "https://pub.dev/api/archives/source_span-1.10.2.tar.gz",
-              "planned_deps": [
-                "collection",
-                "path",
-                "term_glyph"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__term_glyph//:term_glyph"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__sse": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "sse",
-              "version": "4.2.0",
-              "sha256": "a9a804dbde8bfd369da3b4aa241d44d63a6486a97388c54ec166073d88c52302",
-              "url": "https://pub.dev/api/archives/sse-4.2.0.tar.gz",
-              "planned_deps": [
-                "async",
-                "collection",
-                "logging",
-                "pool",
-                "shelf",
-                "stream_channel",
-                "web"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__logging//:logging",
-                "@rules_flutter_dev_tool_deps__pool//:pool",
-                "@rules_flutter_dev_tool_deps__shelf//:shelf",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel",
-                "@rules_flutter_dev_tool_deps__web//:web"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__stack_trace": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "stack_trace",
-              "version": "1.12.1",
-              "sha256": "8b27215b45d22309b5cddda1aa2b19bdfec9df0e765f2de506401c071d38d1b1",
-              "url": "https://pub.dev/api/archives/stack_trace-1.12.1.tar.gz",
-              "planned_deps": [
-                "path"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__path//:path"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__stream_channel": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "stream_channel",
-              "version": "2.1.4",
-              "sha256": "969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d",
-              "url": "https://pub.dev/api/archives/stream_channel-2.1.4.tar.gz",
-              "planned_deps": [
-                "async"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__string_scanner": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "string_scanner",
-              "version": "1.4.1",
-              "sha256": "921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43",
-              "url": "https://pub.dev/api/archives/string_scanner-1.4.1.tar.gz",
-              "planned_deps": [
-                "source_span"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__source_span//:source_span"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__term_glyph": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "term_glyph",
-              "version": "1.2.2",
-              "sha256": "7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e",
-              "url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__test": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "test",
-              "version": "1.31.2",
-              "sha256": "0d5ba5602ec3baa28c8ce365e1efc5575969c765f45c554a3e167dc7945b9c30",
-              "url": "https://pub.dev/api/archives/test-1.31.2.tar.gz",
-              "planned_deps": [
-                "analyzer",
-                "async",
-                "boolean_selector",
-                "collection",
-                "coverage",
-                "http_multi_server",
-                "io",
-                "matcher",
-                "node_preamble",
-                "package_config",
-                "path",
-                "pool",
-                "shelf",
-                "shelf_packages_handler",
-                "shelf_static",
-                "shelf_web_socket",
-                "source_span",
-                "stack_trace",
-                "stream_channel",
-                "test_api",
-                "test_core",
-                "typed_data",
-                "web_socket_channel",
-                "webkit_inspection_protocol",
-                "yaml"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__analyzer//:analyzer",
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__boolean_selector//:boolean_selector",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__coverage//:coverage",
-                "@rules_flutter_dev_tool_deps__http_multi_server//:http_multi_server",
-                "@rules_flutter_dev_tool_deps__io//:io",
-                "@rules_flutter_dev_tool_deps__matcher//:matcher",
-                "@rules_flutter_dev_tool_deps__node_preamble//:node_preamble",
-                "@rules_flutter_dev_tool_deps__package_config//:package_config",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__pool//:pool",
-                "@rules_flutter_dev_tool_deps__shelf//:shelf",
-                "@rules_flutter_dev_tool_deps__shelf_packages_handler//:shelf_packages_handler",
-                "@rules_flutter_dev_tool_deps__shelf_static//:shelf_static",
-                "@rules_flutter_dev_tool_deps__shelf_web_socket//:shelf_web_socket",
-                "@rules_flutter_dev_tool_deps__source_span//:source_span",
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel",
-                "@rules_flutter_dev_tool_deps__test_api//:test_api",
-                "@rules_flutter_dev_tool_deps__test_core//:test_core",
-                "@rules_flutter_dev_tool_deps__typed_data//:typed_data",
-                "@rules_flutter_dev_tool_deps__web_socket_channel//:web_socket_channel",
-                "@rules_flutter_dev_tool_deps__webkit_inspection_protocol//:webkit_inspection_protocol",
-                "@rules_flutter_dev_tool_deps__yaml//:yaml"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__test_api": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "test_api",
-              "version": "0.7.13",
-              "sha256": "475610b2aa23c19687cce2961e44b0cc57cafe220f67c2b80201231b2a07fbe7",
-              "url": "https://pub.dev/api/archives/test_api-0.7.13.tar.gz",
-              "planned_deps": [
-                "async",
-                "boolean_selector",
-                "collection",
-                "meta",
-                "source_span",
-                "stack_trace",
-                "stream_channel",
-                "string_scanner",
-                "term_glyph"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__boolean_selector//:boolean_selector",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__source_span//:source_span",
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel",
-                "@rules_flutter_dev_tool_deps__string_scanner//:string_scanner",
-                "@rules_flutter_dev_tool_deps__term_glyph//:term_glyph"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__test_core": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "test_core",
-              "version": "0.6.19",
-              "sha256": "a39c204a4fc7a7ccb04a2b985e359fda3cc37e45e0b8ac61c3fb1a05aa832132",
-              "url": "https://pub.dev/api/archives/test_core-0.6.19.tar.gz",
-              "planned_deps": [
-                "analyzer",
-                "args",
-                "async",
-                "boolean_selector",
-                "collection",
-                "coverage",
-                "frontend_server_client",
-                "glob",
-                "io",
-                "meta",
-                "package_config",
-                "path",
-                "pool",
-                "source_map_stack_trace",
-                "source_maps",
-                "source_span",
-                "stack_trace",
-                "stream_channel",
-                "test_api",
-                "vm_service",
-                "yaml"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__analyzer//:analyzer",
-                "@rules_flutter_dev_tool_deps__args//:args",
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__boolean_selector//:boolean_selector",
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__coverage//:coverage",
-                "@rules_flutter_dev_tool_deps__frontend_server_client//:frontend_server_client",
-                "@rules_flutter_dev_tool_deps__glob//:glob",
-                "@rules_flutter_dev_tool_deps__io//:io",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__package_config//:package_config",
-                "@rules_flutter_dev_tool_deps__path//:path",
-                "@rules_flutter_dev_tool_deps__pool//:pool",
-                "@rules_flutter_dev_tool_deps__source_map_stack_trace//:source_map_stack_trace",
-                "@rules_flutter_dev_tool_deps__source_maps//:source_maps",
-                "@rules_flutter_dev_tool_deps__source_span//:source_span",
-                "@rules_flutter_dev_tool_deps__stack_trace//:stack_trace",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel",
-                "@rules_flutter_dev_tool_deps__test_api//:test_api",
-                "@rules_flutter_dev_tool_deps__vm_service//:vm_service",
-                "@rules_flutter_dev_tool_deps__yaml//:yaml"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__typed_data": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "typed_data",
-              "version": "1.4.0",
-              "sha256": "f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006",
-              "url": "https://pub.dev/api/archives/typed_data-1.4.0.tar.gz",
-              "planned_deps": [
-                "collection"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__collection//:collection"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__unified_analytics": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "unified_analytics",
-              "version": "8.0.16",
-              "sha256": "0917e37f5cd9d70dfd23889b6738b160affc6021861403524ceca94ab5fb0e21",
-              "url": "https://pub.dev/api/archives/unified_analytics-8.0.16.tar.gz",
-              "planned_deps": [
-                "clock",
-                "convert",
-                "file",
-                "http",
-                "meta",
-                "platform"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__clock//:clock",
-                "@rules_flutter_dev_tool_deps__convert//:convert",
-                "@rules_flutter_dev_tool_deps__file//:file",
-                "@rules_flutter_dev_tool_deps__http//:http",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__platform//:platform"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__vm_service": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "vm_service",
-              "version": "15.2.0",
-              "sha256": "0016aef94fc66495ac78af5859181e3f3bf2026bd8eecc72b9565601e19ab360",
-              "url": "https://pub.dev/api/archives/vm_service-15.2.0.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__vm_service_interface": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "vm_service_interface",
-              "version": "2.0.1",
-              "sha256": "503c92c26cf9f77d688bf8fca27fa9ec40450adbf02ec1ec5f12828ded508ac0",
-              "url": "https://pub.dev/api/archives/vm_service_interface-2.0.1.tar.gz",
-              "planned_deps": [
-                "vm_service"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__vm_service//:vm_service"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__watcher": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "watcher",
-              "version": "1.2.1",
-              "sha256": "1398c9f081a753f9226febe8900fce8f7d0a67163334e1c94a2438339d79d635",
-              "url": "https://pub.dev/api/archives/watcher-1.2.1.tar.gz",
-              "planned_deps": [
-                "async",
-                "path"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__path//:path"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__web": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "web",
-              "version": "1.1.1",
-              "sha256": "868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a",
-              "url": "https://pub.dev/api/archives/web-1.1.1.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__web_socket": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "web_socket",
-              "version": "1.0.1",
-              "sha256": "34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c",
-              "url": "https://pub.dev/api/archives/web_socket-1.0.1.tar.gz",
-              "planned_deps": [
-                "web"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__web//:web"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__web_socket_channel": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "web_socket_channel",
-              "version": "3.0.3",
-              "sha256": "d645757fb0f4773d602444000a8131ff5d48c9e47adfe9772652dd1a4f2d45c8",
-              "url": "https://pub.dev/api/archives/web_socket_channel-3.0.3.tar.gz",
-              "planned_deps": [
-                "async",
-                "crypto",
-                "stream_channel",
-                "web",
-                "web_socket"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__async//:async",
-                "@rules_flutter_dev_tool_deps__crypto//:crypto",
-                "@rules_flutter_dev_tool_deps__stream_channel//:stream_channel",
-                "@rules_flutter_dev_tool_deps__web//:web",
-                "@rules_flutter_dev_tool_deps__web_socket//:web_socket"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__webkit_inspection_protocol": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "webkit_inspection_protocol",
-              "version": "1.2.1",
-              "sha256": "87d3f2333bb240704cd3f1c6b5b7acd8a10e7f0bc28c28dcf14e782014f4a572",
-              "url": "https://pub.dev/api/archives/webkit_inspection_protocol-1.2.1.tar.gz",
-              "planned_deps": [
-                "logging"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__logging//:logging"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__yaml": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "yaml",
-              "version": "3.1.3",
-              "sha256": "b9da305ac7c39faa3f030eccd175340f968459dae4af175130b3fc47e40d76ce",
-              "url": "https://pub.dev/api/archives/yaml-3.1.3.tar.gz",
-              "planned_deps": [
-                "collection",
-                "source_span",
-                "string_scanner"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__source_span//:source_span",
-                "@rules_flutter_dev_tool_deps__string_scanner//:string_scanner"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_dev_tool_deps__yaml_edit": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "yaml_edit",
-              "version": "2.2.4",
-              "sha256": "07c9e63ba42519745182b88ca12264a7ba2484d8239958778dfe4d44fe760488",
-              "url": "https://pub.dev/api/archives/yaml_edit-2.2.4.tar.gz",
-              "planned_deps": [
-                "collection",
-                "meta",
-                "source_span",
-                "yaml"
-              ],
-              "deps": [
-                "@rules_flutter_dev_tool_deps__collection//:collection",
-                "@rules_flutter_dev_tool_deps__meta//:meta",
-                "@rules_flutter_dev_tool_deps__source_span//:source_span",
-                "@rules_flutter_dev_tool_deps__yaml//:yaml"
-              ],
-              "code_assets": [],
-              "ignore_hook": false,
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
           "rules_flutter_gen_l10n_deps": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_hub.bzl%pub_lock_hub",
             "attributes": {
@@ -4022,6 +2180,1248 @@
                 "@rules_flutter_gen_l10n_deps__collection//:collection",
                 "@rules_flutter_gen_l10n_deps__source_span//:source_span",
                 "@rules_flutter_gen_l10n_deps__string_scanner//:string_scanner"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_hub.bzl%pub_lock_hub",
+            "attributes": {
+              "hub_name": "rules_flutter_tool_deps",
+              "spoke_prefix": "rules_flutter_tool_deps",
+              "packages": [
+                "_fe_analyzer_shared",
+                "analyzer",
+                "args",
+                "async",
+                "boolean_selector",
+                "cli_config",
+                "collection",
+                "convert",
+                "coverage",
+                "crypto",
+                "file",
+                "frontend_server_client",
+                "glob",
+                "http_multi_server",
+                "http_parser",
+                "io",
+                "logging",
+                "matcher",
+                "meta",
+                "mime",
+                "node_preamble",
+                "package_config",
+                "path",
+                "pool",
+                "pub_semver",
+                "shelf",
+                "shelf_packages_handler",
+                "shelf_static",
+                "shelf_web_socket",
+                "source_map_stack_trace",
+                "source_maps",
+                "source_span",
+                "stack_trace",
+                "stream_channel",
+                "string_scanner",
+                "term_glyph",
+                "test",
+                "test_api",
+                "test_core",
+                "typed_data",
+                "vm_service",
+                "watcher",
+                "web",
+                "web_socket",
+                "web_socket_channel",
+                "webkit_inspection_protocol",
+                "yaml"
+              ],
+              "explicit_packages": [],
+              "local_targets": {},
+              "unavailable": {},
+              "scc_targets": {},
+              "package_graph": "{\n  \"configVersion\": 1,\n  \"packages\": [\n    {\n      \"dependencies\": [\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"_fe_analyzer_shared\",\n      \"version\": \"105.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"_fe_analyzer_shared\",\n        \"collection\",\n        \"convert\",\n        \"crypto\",\n        \"glob\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"pub_semver\",\n        \"source_span\",\n        \"watcher\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"analyzer\",\n      \"version\": \"14.1.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"args\",\n      \"version\": \"2.7.0\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"async\",\n      \"version\": \"2.13.1\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"boolean_selector\",\n      \"version\": \"2.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"cli_config\",\n      \"version\": \"0.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"collection\",\n      \"version\": \"1.19.1\"\n    },\n    {\n      \"dependencies\": [\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"convert\",\n      \"version\": \"3.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"cli_config\",\n        \"glob\",\n        \"logging\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"source_maps\",\n        \"stack_trace\",\n        \"vm_service\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"coverage\",\n      \"version\": \"1.15.1\"\n    },\n    {\n      \"dependencies\": [\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"crypto\",\n      \"version\": \"3.0.7\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"file\",\n      \"version\": \"7.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"frontend_server_client\",\n      \"version\": \"4.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"file\",\n        \"path\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"glob\",\n      \"version\": \"2.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"async\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"http_multi_server\",\n      \"version\": \"3.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\",\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"http_parser\",\n      \"version\": \"4.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"io\",\n      \"version\": \"1.0.5\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"logging\",\n      \"version\": \"1.3.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"meta\",\n        \"stack_trace\",\n        \"term_glyph\",\n        \"test_api\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"matcher\",\n      \"version\": \"0.12.20\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"meta\",\n      \"version\": \"1.19.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"mime\",\n      \"version\": \"2.0.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"node_preamble\",\n      \"version\": \"2.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"package_config\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"path\",\n      \"version\": \"1.9.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"stack_trace\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"pool\",\n      \"version\": \"1.5.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"pub_semver\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"http_parser\",\n        \"path\",\n        \"stack_trace\",\n        \"stream_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf\",\n      \"version\": \"1.4.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\",\n        \"shelf\",\n        \"shelf_static\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_packages_handler\",\n      \"version\": \"3.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"convert\",\n        \"http_parser\",\n        \"mime\",\n        \"path\",\n        \"shelf\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_static\",\n      \"version\": \"1.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"shelf\",\n        \"stream_channel\",\n        \"web_socket_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_web_socket\",\n      \"version\": \"3.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"path\",\n        \"source_maps\",\n        \"stack_trace\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_map_stack_trace\",\n      \"version\": \"2.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_maps\",\n      \"version\": \"0.10.13\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"path\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_span\",\n      \"version\": \"1.10.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stack_trace\",\n      \"version\": \"1.12.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stream_channel\",\n      \"version\": \"2.1.4\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"string_scanner\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"term_glyph\",\n      \"version\": \"1.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"analyzer\",\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"coverage\",\n        \"http_multi_server\",\n        \"io\",\n        \"matcher\",\n        \"node_preamble\",\n        \"package_config\",\n        \"path\",\n        \"pool\",\n        \"shelf\",\n        \"shelf_packages_handler\",\n        \"shelf_static\",\n        \"shelf_web_socket\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"test_api\",\n        \"test_core\",\n        \"typed_data\",\n        \"web_socket_channel\",\n        \"webkit_inspection_protocol\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test\",\n      \"version\": \"1.33.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"meta\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"string_scanner\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test_api\",\n      \"version\": \"0.7.15\"\n    },\n    {\n      \"dependencies\": [\n        \"analyzer\",\n        \"args\",\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"coverage\",\n        \"frontend_server_client\",\n        \"glob\",\n        \"io\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"pool\",\n        \"source_map_stack_trace\",\n        \"source_maps\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"test_api\",\n        \"vm_service\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test_core\",\n      \"version\": \"0.6.21\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"typed_data\",\n      \"version\": \"1.4.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"vm_service\",\n      \"version\": \"15.2.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"watcher\",\n      \"version\": \"1.2.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"web\",\n      \"version\": \"1.1.1\"\n    },\n    {\n      \"dependencies\": [\n        \"web\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"web_socket\",\n      \"version\": \"1.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"crypto\",\n        \"stream_channel\",\n        \"web\",\n        \"web_socket\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"web_socket_channel\",\n      \"version\": \"3.0.3\"\n    },\n    {\n      \"dependencies\": [\n        \"logging\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"webkit_inspection_protocol\",\n      \"version\": \"1.2.1\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"yaml\",\n      \"version\": \"3.1.3\"\n    }\n  ],\n  \"roots\": []\n}\n",
+              "build_runner_version": "",
+              "builder_packages": {}
+            }
+          },
+          "rules_flutter_tool_deps___fe_analyzer_shared": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "_fe_analyzer_shared",
+              "version": "105.0.0",
+              "sha256": "9a3386eea899815698dd55995277cf7cb8572ee52b399a6edfb7ae2b50e5fc19",
+              "url": "https://pub.dev/api/archives/_fe_analyzer_shared-105.0.0.tar.gz",
+              "planned_deps": [
+                "meta"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__meta//:meta"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__analyzer": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "analyzer",
+              "version": "14.1.0",
+              "sha256": "62993bed6eadbe9596c5c20d5c167e7bc563c5fe266657a04ddeb93bdb84f4c9",
+              "url": "https://pub.dev/api/archives/analyzer-14.1.0.tar.gz",
+              "planned_deps": [
+                "_fe_analyzer_shared",
+                "collection",
+                "convert",
+                "crypto",
+                "glob",
+                "meta",
+                "package_config",
+                "path",
+                "pub_semver",
+                "source_span",
+                "watcher",
+                "yaml"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps___fe_analyzer_shared//:_fe_analyzer_shared",
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__convert//:convert",
+                "@rules_flutter_tool_deps__crypto//:crypto",
+                "@rules_flutter_tool_deps__glob//:glob",
+                "@rules_flutter_tool_deps__meta//:meta",
+                "@rules_flutter_tool_deps__package_config//:package_config",
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__pub_semver//:pub_semver",
+                "@rules_flutter_tool_deps__source_span//:source_span",
+                "@rules_flutter_tool_deps__watcher//:watcher",
+                "@rules_flutter_tool_deps__yaml//:yaml"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__args": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "args",
+              "version": "2.7.0",
+              "sha256": "d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04",
+              "url": "https://pub.dev/api/archives/args-2.7.0.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__async": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "async",
+              "version": "2.13.1",
+              "sha256": "e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37",
+              "url": "https://pub.dev/api/archives/async-2.13.1.tar.gz",
+              "planned_deps": [
+                "collection",
+                "meta"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__meta//:meta"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__boolean_selector": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "boolean_selector",
+              "version": "2.1.2",
+              "sha256": "8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea",
+              "url": "https://pub.dev/api/archives/boolean_selector-2.1.2.tar.gz",
+              "planned_deps": [
+                "source_span",
+                "string_scanner"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__source_span//:source_span",
+                "@rules_flutter_tool_deps__string_scanner//:string_scanner"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__cli_config": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "cli_config",
+              "version": "0.2.0",
+              "sha256": "ac20a183a07002b700f0c25e61b7ee46b23c309d76ab7b7640a028f18e4d99ec",
+              "url": "https://pub.dev/api/archives/cli_config-0.2.0.tar.gz",
+              "planned_deps": [
+                "args",
+                "yaml"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__args//:args",
+                "@rules_flutter_tool_deps__yaml//:yaml"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__collection": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "collection",
+              "version": "1.19.1",
+              "sha256": "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76",
+              "url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__convert": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "convert",
+              "version": "3.1.2",
+              "sha256": "b30acd5944035672bc15c6b7a8b47d773e41e2f17de064350988c5d02adb1c68",
+              "url": "https://pub.dev/api/archives/convert-3.1.2.tar.gz",
+              "planned_deps": [
+                "typed_data"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__typed_data//:typed_data"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__coverage": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "coverage",
+              "version": "1.15.1",
+              "sha256": "956a3de0725ca232ad353565a8290d3357592bf4250f6f298a185e2d949c5d3d",
+              "url": "https://pub.dev/api/archives/coverage-1.15.1.tar.gz",
+              "planned_deps": [
+                "args",
+                "cli_config",
+                "glob",
+                "logging",
+                "meta",
+                "package_config",
+                "path",
+                "source_maps",
+                "stack_trace",
+                "vm_service",
+                "yaml"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__args//:args",
+                "@rules_flutter_tool_deps__cli_config//:cli_config",
+                "@rules_flutter_tool_deps__glob//:glob",
+                "@rules_flutter_tool_deps__logging//:logging",
+                "@rules_flutter_tool_deps__meta//:meta",
+                "@rules_flutter_tool_deps__package_config//:package_config",
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__source_maps//:source_maps",
+                "@rules_flutter_tool_deps__stack_trace//:stack_trace",
+                "@rules_flutter_tool_deps__vm_service//:vm_service",
+                "@rules_flutter_tool_deps__yaml//:yaml"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__crypto": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "crypto",
+              "version": "3.0.7",
+              "sha256": "c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf",
+              "url": "https://pub.dev/api/archives/crypto-3.0.7.tar.gz",
+              "planned_deps": [
+                "typed_data"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__typed_data//:typed_data"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__file": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "file",
+              "version": "7.0.1",
+              "sha256": "a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4",
+              "url": "https://pub.dev/api/archives/file-7.0.1.tar.gz",
+              "planned_deps": [
+                "meta",
+                "path"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__meta//:meta",
+                "@rules_flutter_tool_deps__path//:path"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__frontend_server_client": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "frontend_server_client",
+              "version": "4.0.0",
+              "sha256": "f64a0333a82f30b0cca061bc3d143813a486dc086b574bfb233b7c1372427694",
+              "url": "https://pub.dev/api/archives/frontend_server_client-4.0.0.tar.gz",
+              "planned_deps": [
+                "async",
+                "path"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__path//:path"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__glob": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "glob",
+              "version": "2.1.3",
+              "sha256": "c3f1ee72c96f8f78935e18aa8cecced9ab132419e8625dc187e1c2408efc20de",
+              "url": "https://pub.dev/api/archives/glob-2.1.3.tar.gz",
+              "planned_deps": [
+                "async",
+                "collection",
+                "file",
+                "path",
+                "string_scanner"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__file//:file",
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__string_scanner//:string_scanner"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__http_multi_server": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "http_multi_server",
+              "version": "3.2.2",
+              "sha256": "aa6199f908078bb1c5efb8d8638d4ae191aac11b311132c3ef48ce352fb52ef8",
+              "url": "https://pub.dev/api/archives/http_multi_server-3.2.2.tar.gz",
+              "planned_deps": [
+                "async"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__http_parser": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "http_parser",
+              "version": "4.1.2",
+              "sha256": "178d74305e7866013777bab2c3d8726205dc5a4dd935297175b19a23a2e66571",
+              "url": "https://pub.dev/api/archives/http_parser-4.1.2.tar.gz",
+              "planned_deps": [
+                "collection",
+                "source_span",
+                "string_scanner",
+                "typed_data"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__source_span//:source_span",
+                "@rules_flutter_tool_deps__string_scanner//:string_scanner",
+                "@rules_flutter_tool_deps__typed_data//:typed_data"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__io": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "io",
+              "version": "1.0.5",
+              "sha256": "dfd5a80599cf0165756e3181807ed3e77daf6dd4137caaad72d0b7931597650b",
+              "url": "https://pub.dev/api/archives/io-1.0.5.tar.gz",
+              "planned_deps": [
+                "meta",
+                "path",
+                "string_scanner"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__meta//:meta",
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__string_scanner//:string_scanner"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__logging": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "logging",
+              "version": "1.3.0",
+              "sha256": "c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61",
+              "url": "https://pub.dev/api/archives/logging-1.3.0.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__matcher": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "matcher",
+              "version": "0.12.20",
+              "sha256": "31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd",
+              "url": "https://pub.dev/api/archives/matcher-0.12.20.tar.gz",
+              "planned_deps": [
+                "async",
+                "meta",
+                "stack_trace",
+                "term_glyph",
+                "test_api"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__meta//:meta",
+                "@rules_flutter_tool_deps__stack_trace//:stack_trace",
+                "@rules_flutter_tool_deps__term_glyph//:term_glyph",
+                "@rules_flutter_tool_deps__test_api//:test_api"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__meta": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "meta",
+              "version": "1.19.0",
+              "sha256": "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9",
+              "url": "https://pub.dev/api/archives/meta-1.19.0.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__mime": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "mime",
+              "version": "2.0.0",
+              "sha256": "41a20518f0cb1256669420fdba0cd90d21561e560ac240f26ef8322e45bb7ed6",
+              "url": "https://pub.dev/api/archives/mime-2.0.0.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__node_preamble": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "node_preamble",
+              "version": "2.0.2",
+              "sha256": "6e7eac89047ab8a8d26cf16127b5ed26de65209847630400f9aefd7cd5c730db",
+              "url": "https://pub.dev/api/archives/node_preamble-2.0.2.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__package_config": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "package_config",
+              "version": "2.2.0",
+              "sha256": "f096c55ebb7deb7e384101542bfba8c52696c1b56fca2eb62827989ef2353bbc",
+              "url": "https://pub.dev/api/archives/package_config-2.2.0.tar.gz",
+              "planned_deps": [
+                "path"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__path//:path"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__path": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "path",
+              "version": "1.9.1",
+              "sha256": "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5",
+              "url": "https://pub.dev/api/archives/path-1.9.1.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__pool": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "pool",
+              "version": "1.5.2",
+              "sha256": "978783255c543aa3586a1b3c21f6e9d720eb315376a915872c61ef8b5c20177d",
+              "url": "https://pub.dev/api/archives/pool-1.5.2.tar.gz",
+              "planned_deps": [
+                "async",
+                "stack_trace"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__stack_trace//:stack_trace"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__pub_semver": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "pub_semver",
+              "version": "2.2.0",
+              "sha256": "5bfcf68ca79ef689f8990d1160781b4bad40a3bd5e5218ad4076ddb7f4081585",
+              "url": "https://pub.dev/api/archives/pub_semver-2.2.0.tar.gz",
+              "planned_deps": [
+                "collection"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__collection//:collection"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__shelf": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "shelf",
+              "version": "1.4.2",
+              "sha256": "e7dd780a7ffb623c57850b33f43309312fc863fb6aa3d276a754bb299839ef12",
+              "url": "https://pub.dev/api/archives/shelf-1.4.2.tar.gz",
+              "planned_deps": [
+                "async",
+                "collection",
+                "http_parser",
+                "path",
+                "stack_trace",
+                "stream_channel"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__http_parser//:http_parser",
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__stack_trace//:stack_trace",
+                "@rules_flutter_tool_deps__stream_channel//:stream_channel"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__shelf_packages_handler": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "shelf_packages_handler",
+              "version": "3.0.2",
+              "sha256": "89f967eca29607c933ba9571d838be31d67f53f6e4ee15147d5dc2934fee1b1e",
+              "url": "https://pub.dev/api/archives/shelf_packages_handler-3.0.2.tar.gz",
+              "planned_deps": [
+                "path",
+                "shelf",
+                "shelf_static"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__shelf//:shelf",
+                "@rules_flutter_tool_deps__shelf_static//:shelf_static"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__shelf_static": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "shelf_static",
+              "version": "1.1.3",
+              "sha256": "c87c3875f91262785dade62d135760c2c69cb217ac759485334c5857ad89f6e3",
+              "url": "https://pub.dev/api/archives/shelf_static-1.1.3.tar.gz",
+              "planned_deps": [
+                "convert",
+                "http_parser",
+                "mime",
+                "path",
+                "shelf"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__convert//:convert",
+                "@rules_flutter_tool_deps__http_parser//:http_parser",
+                "@rules_flutter_tool_deps__mime//:mime",
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__shelf//:shelf"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__shelf_web_socket": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "shelf_web_socket",
+              "version": "3.0.0",
+              "sha256": "3632775c8e90d6c9712f883e633716432a27758216dfb61bd86a8321c0580925",
+              "url": "https://pub.dev/api/archives/shelf_web_socket-3.0.0.tar.gz",
+              "planned_deps": [
+                "shelf",
+                "stream_channel",
+                "web_socket_channel"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__shelf//:shelf",
+                "@rules_flutter_tool_deps__stream_channel//:stream_channel",
+                "@rules_flutter_tool_deps__web_socket_channel//:web_socket_channel"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__source_map_stack_trace": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "source_map_stack_trace",
+              "version": "2.1.2",
+              "sha256": "c0713a43e323c3302c2abe2a1cc89aa057a387101ebd280371d6a6c9fa68516b",
+              "url": "https://pub.dev/api/archives/source_map_stack_trace-2.1.2.tar.gz",
+              "planned_deps": [
+                "path",
+                "source_maps",
+                "stack_trace"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__source_maps//:source_maps",
+                "@rules_flutter_tool_deps__stack_trace//:stack_trace"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__source_maps": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "source_maps",
+              "version": "0.10.13",
+              "sha256": "190222579a448b03896e0ca6eca5998fa810fda630c1d65e2f78b3f638f54812",
+              "url": "https://pub.dev/api/archives/source_maps-0.10.13.tar.gz",
+              "planned_deps": [
+                "source_span"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__source_span//:source_span"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__source_span": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "source_span",
+              "version": "1.10.2",
+              "sha256": "56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab",
+              "url": "https://pub.dev/api/archives/source_span-1.10.2.tar.gz",
+              "planned_deps": [
+                "collection",
+                "path",
+                "term_glyph"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__term_glyph//:term_glyph"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__stack_trace": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "stack_trace",
+              "version": "1.12.1",
+              "sha256": "8b27215b45d22309b5cddda1aa2b19bdfec9df0e765f2de506401c071d38d1b1",
+              "url": "https://pub.dev/api/archives/stack_trace-1.12.1.tar.gz",
+              "planned_deps": [
+                "path"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__path//:path"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__stream_channel": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "stream_channel",
+              "version": "2.1.4",
+              "sha256": "969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d",
+              "url": "https://pub.dev/api/archives/stream_channel-2.1.4.tar.gz",
+              "planned_deps": [
+                "async"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__string_scanner": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "string_scanner",
+              "version": "1.4.1",
+              "sha256": "921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43",
+              "url": "https://pub.dev/api/archives/string_scanner-1.4.1.tar.gz",
+              "planned_deps": [
+                "source_span"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__source_span//:source_span"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__term_glyph": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "term_glyph",
+              "version": "1.2.2",
+              "sha256": "7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e",
+              "url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__test": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "test",
+              "version": "1.33.0",
+              "sha256": "44b2fccf4407bcdb5e105c064c5d6b5e2a640c87761f8b03cdce8cf532d98cfa",
+              "url": "https://pub.dev/api/archives/test-1.33.0.tar.gz",
+              "planned_deps": [
+                "analyzer",
+                "async",
+                "boolean_selector",
+                "collection",
+                "coverage",
+                "http_multi_server",
+                "io",
+                "matcher",
+                "node_preamble",
+                "package_config",
+                "path",
+                "pool",
+                "shelf",
+                "shelf_packages_handler",
+                "shelf_static",
+                "shelf_web_socket",
+                "source_span",
+                "stack_trace",
+                "stream_channel",
+                "test_api",
+                "test_core",
+                "typed_data",
+                "web_socket_channel",
+                "webkit_inspection_protocol",
+                "yaml"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__analyzer//:analyzer",
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__boolean_selector//:boolean_selector",
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__coverage//:coverage",
+                "@rules_flutter_tool_deps__http_multi_server//:http_multi_server",
+                "@rules_flutter_tool_deps__io//:io",
+                "@rules_flutter_tool_deps__matcher//:matcher",
+                "@rules_flutter_tool_deps__node_preamble//:node_preamble",
+                "@rules_flutter_tool_deps__package_config//:package_config",
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__pool//:pool",
+                "@rules_flutter_tool_deps__shelf//:shelf",
+                "@rules_flutter_tool_deps__shelf_packages_handler//:shelf_packages_handler",
+                "@rules_flutter_tool_deps__shelf_static//:shelf_static",
+                "@rules_flutter_tool_deps__shelf_web_socket//:shelf_web_socket",
+                "@rules_flutter_tool_deps__source_span//:source_span",
+                "@rules_flutter_tool_deps__stack_trace//:stack_trace",
+                "@rules_flutter_tool_deps__stream_channel//:stream_channel",
+                "@rules_flutter_tool_deps__test_api//:test_api",
+                "@rules_flutter_tool_deps__test_core//:test_core",
+                "@rules_flutter_tool_deps__typed_data//:typed_data",
+                "@rules_flutter_tool_deps__web_socket_channel//:web_socket_channel",
+                "@rules_flutter_tool_deps__webkit_inspection_protocol//:webkit_inspection_protocol",
+                "@rules_flutter_tool_deps__yaml//:yaml"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__test_api": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "test_api",
+              "version": "0.7.15",
+              "sha256": "47481c58bb92d0b1d218f0510ff5647e768f8e1256d07077a151fb520923b51d",
+              "url": "https://pub.dev/api/archives/test_api-0.7.15.tar.gz",
+              "planned_deps": [
+                "async",
+                "boolean_selector",
+                "collection",
+                "meta",
+                "source_span",
+                "stack_trace",
+                "stream_channel",
+                "string_scanner",
+                "term_glyph"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__boolean_selector//:boolean_selector",
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__meta//:meta",
+                "@rules_flutter_tool_deps__source_span//:source_span",
+                "@rules_flutter_tool_deps__stack_trace//:stack_trace",
+                "@rules_flutter_tool_deps__stream_channel//:stream_channel",
+                "@rules_flutter_tool_deps__string_scanner//:string_scanner",
+                "@rules_flutter_tool_deps__term_glyph//:term_glyph"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__test_core": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "test_core",
+              "version": "0.6.21",
+              "sha256": "9dec4c178bd61493e1cd2060ffe701fcb61c43da2493e99590fb1b0cc82eb4af",
+              "url": "https://pub.dev/api/archives/test_core-0.6.21.tar.gz",
+              "planned_deps": [
+                "analyzer",
+                "args",
+                "async",
+                "boolean_selector",
+                "collection",
+                "coverage",
+                "frontend_server_client",
+                "glob",
+                "io",
+                "meta",
+                "package_config",
+                "path",
+                "pool",
+                "source_map_stack_trace",
+                "source_maps",
+                "source_span",
+                "stack_trace",
+                "stream_channel",
+                "test_api",
+                "vm_service",
+                "yaml"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__analyzer//:analyzer",
+                "@rules_flutter_tool_deps__args//:args",
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__boolean_selector//:boolean_selector",
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__coverage//:coverage",
+                "@rules_flutter_tool_deps__frontend_server_client//:frontend_server_client",
+                "@rules_flutter_tool_deps__glob//:glob",
+                "@rules_flutter_tool_deps__io//:io",
+                "@rules_flutter_tool_deps__meta//:meta",
+                "@rules_flutter_tool_deps__package_config//:package_config",
+                "@rules_flutter_tool_deps__path//:path",
+                "@rules_flutter_tool_deps__pool//:pool",
+                "@rules_flutter_tool_deps__source_map_stack_trace//:source_map_stack_trace",
+                "@rules_flutter_tool_deps__source_maps//:source_maps",
+                "@rules_flutter_tool_deps__source_span//:source_span",
+                "@rules_flutter_tool_deps__stack_trace//:stack_trace",
+                "@rules_flutter_tool_deps__stream_channel//:stream_channel",
+                "@rules_flutter_tool_deps__test_api//:test_api",
+                "@rules_flutter_tool_deps__vm_service//:vm_service",
+                "@rules_flutter_tool_deps__yaml//:yaml"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__typed_data": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "typed_data",
+              "version": "1.4.0",
+              "sha256": "f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006",
+              "url": "https://pub.dev/api/archives/typed_data-1.4.0.tar.gz",
+              "planned_deps": [
+                "collection"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__collection//:collection"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__vm_service": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "vm_service",
+              "version": "15.2.0",
+              "sha256": "0016aef94fc66495ac78af5859181e3f3bf2026bd8eecc72b9565601e19ab360",
+              "url": "https://pub.dev/api/archives/vm_service-15.2.0.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__watcher": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "watcher",
+              "version": "1.2.1",
+              "sha256": "1398c9f081a753f9226febe8900fce8f7d0a67163334e1c94a2438339d79d635",
+              "url": "https://pub.dev/api/archives/watcher-1.2.1.tar.gz",
+              "planned_deps": [
+                "async",
+                "path"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__path//:path"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__web": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "web",
+              "version": "1.1.1",
+              "sha256": "868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a",
+              "url": "https://pub.dev/api/archives/web-1.1.1.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__web_socket": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "web_socket",
+              "version": "1.0.1",
+              "sha256": "34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c",
+              "url": "https://pub.dev/api/archives/web_socket-1.0.1.tar.gz",
+              "planned_deps": [
+                "web"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__web//:web"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__web_socket_channel": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "web_socket_channel",
+              "version": "3.0.3",
+              "sha256": "d645757fb0f4773d602444000a8131ff5d48c9e47adfe9772652dd1a4f2d45c8",
+              "url": "https://pub.dev/api/archives/web_socket_channel-3.0.3.tar.gz",
+              "planned_deps": [
+                "async",
+                "crypto",
+                "stream_channel",
+                "web",
+                "web_socket"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__async//:async",
+                "@rules_flutter_tool_deps__crypto//:crypto",
+                "@rules_flutter_tool_deps__stream_channel//:stream_channel",
+                "@rules_flutter_tool_deps__web//:web",
+                "@rules_flutter_tool_deps__web_socket//:web_socket"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__webkit_inspection_protocol": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "webkit_inspection_protocol",
+              "version": "1.2.1",
+              "sha256": "87d3f2333bb240704cd3f1c6b5b7acd8a10e7f0bc28c28dcf14e782014f4a572",
+              "url": "https://pub.dev/api/archives/webkit_inspection_protocol-1.2.1.tar.gz",
+              "planned_deps": [
+                "logging"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__logging//:logging"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_flutter_tool_deps__yaml": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "yaml",
+              "version": "3.1.3",
+              "sha256": "b9da305ac7c39faa3f030eccd175340f968459dae4af175130b3fc47e40d76ce",
+              "url": "https://pub.dev/api/archives/yaml-3.1.3.tar.gz",
+              "planned_deps": [
+                "collection",
+                "source_span",
+                "string_scanner"
+              ],
+              "deps": [
+                "@rules_flutter_tool_deps__collection//:collection",
+                "@rules_flutter_tool_deps__source_span//:source_span",
+                "@rules_flutter_tool_deps__string_scanner//:string_scanner"
               ],
               "code_assets": [],
               "ignore_hook": false,
