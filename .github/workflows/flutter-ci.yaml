@@ -1428,13 +1428,19 @@ jobs:
       - name: Lockfile holds on Windows
         working-directory: rules_flutter/e2e/hello_world
         run: bazel build --nobuild --build_tests_only --lockfile_mode=error //...
+      # `--keep_going` and `!cancelled()`: a failure no longer hides the ones
+      # behind it. Every target that can build builds and tests, and the next
+      # workspace runs after a red one, so one run lists every Windows
+      # failure of the job, not the first. (Each round of this job used to
+      # cost one failure.) The job is red if any step is.
       - name: bazel test //... (e2e/hello_world)
-        if: runner.os == 'Windows'
+        if: ${{ !cancelled() && runner.os == 'Windows' }}
         working-directory: rules_flutter/e2e/hello_world
-        run: bazel --output_user_root=C:/b test //... --test_output=errors --build_tag_filters=-no-windows-ci --test_tag_filters=-no-windows-ci
+        run: bazel --output_user_root=C:/b test //... --keep_going --test_output=errors --build_tag_filters=-no-windows-ci --test_tag_filters=-no-windows-ci
       - name: bazel test //... (e2e/windows_example)
+        if: ${{ !cancelled() }}
         working-directory: rules_flutter/e2e/windows_example
-        run: bazel --output_user_root=C:/b test //... --test_output=errors
+        run: bazel --output_user_root=C:/b test //... --keep_going --test_output=errors
       - name: Report cache sizes
         if: always()
         shell: bash
