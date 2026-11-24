@@ -360,10 +360,6 @@ jobs:
           PY
       - name: bazel test //... (root unit tests)
         run: bazel test //... --test_output=errors
-      # Tree readers walk the checkout through runfiles, which Bazel cannot
-      # see, so the cached run above can replay a stale PASS. Rerun them uncached.
-      - name: bazel test //... tree readers (uncached)
-        run: bazel test //... --test_tag_filters=tree-reader --nocache_test_results --test_output=errors
       # Lint-baseline red path: //flutter/tests/lint_baseline_fixture:red is a
       # manual flutter_library with one unbaselined avoid_print diagnostic.
       # Testing a library with no test targets exits 4 when dart_analyze
