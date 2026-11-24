@@ -981,6 +981,23 @@ jobs:
           module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+          # The runner was lost ("received a shutdown signal") a few seconds
+          # after the first emulator test started in two runs of
+          # 2026-11-24 (09:31 and 10:14), and a third never left that step
+          # (the cause is inferred, not read from a log). The emulator needs about two cores and 3-4 GB; by
+          # default each Bazel server (this one, and the one the e2e runner
+          # starts in the workspace) sizes its heap at a quarter of the host
+          # and schedules actions as if it owned the machine. Bound both, as
+          # mac-smoke in dart-ci.yaml does, so the emulator and the runner
+          # agent keep their share. Scheduling limits only: action keys are
+          # unchanged.
+          bazelrc: |
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=2
+            build --local_resources=memory=HOST_RAM*.3
+            # One emulator at a time (the workspace's .bazelrc allows two);
+            # the user rc is read after it.
+            test --local_test_jobs=1
       - name: Restore disk cache
         if: github.event_name != 'schedule' && !inputs.uncached
         continue-on-error: true
