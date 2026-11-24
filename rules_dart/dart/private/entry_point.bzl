@@ -50,6 +50,7 @@ def entry_point_library(main, deps):
                 break
         if record == None:
             continue
+        # lint-allow: depset-flatten a direct dependency's own files (no closure), only for the one whose `lib/` holds `main`
         if main not in dep[DefaultInfo].files.to_list():
             continue
         return struct(
