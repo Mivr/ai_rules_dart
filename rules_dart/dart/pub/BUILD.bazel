@@ -83,6 +83,7 @@ bzl_library(
     srcs = ["pub_plan.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        "//dart/pub/private:package_graph",
         "//dart/pub/private:pub_emit",
         "//dart/pub/private:pub_plan",
         "//dart/pub/private:scc",

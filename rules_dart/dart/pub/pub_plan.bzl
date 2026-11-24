@@ -18,6 +18,9 @@ another rule set (rules_flutter's `flutter.pub`) runs the same three:
 3. `own_dep_labels(name, deps, labels)` gives one package repository the
    labels of its own dependencies, from a name-to-label map.
 
+`package_graph_json(versions, deps)` renders the planned graph in the shape of
+pub's `.dart_tool/package_graph.json`, for a hub to carry.
+
 Each package repository then gets only its own coordinates, its planned names
 and its own labels (`PUB_LOCK_PACKAGE_ATTRS` and `fetch_pub_lock_archive` in
 `//dart/pub:pub_lock_package.bzl`), and verifies the planned names against
@@ -26,6 +29,7 @@ The hub is `pub_lock_hub` from `//dart/pub:pub_lock_hub.bzl`, whose `files`
 attribute carries what the rule set adds to it.
 """
 
+load("//dart/pub/private:package_graph.bzl", _package_graph_json = "package_graph_json")
 load("//dart/pub/private:pub_emit.bzl", _own_dep_labels = "own_dep_labels")
 load(
     "//dart/pub/private:pub_plan.bzl",
@@ -44,3 +48,4 @@ plan_pub_graph = _plan_pub_graph
 read_pub_plans = _read_pub_plans
 plan_scope_sccs = _plan_scope_sccs
 own_dep_labels = _own_dep_labels
+package_graph_json = _package_graph_json
