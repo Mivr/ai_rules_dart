@@ -102,7 +102,7 @@ ArgParser _compileParser() => ArgParser()
 /// and a cold hook run does not compile it again.
 Future<int> _compileHook(ArgResults args) async {
   final String cwd = Directory.current.absolute.path;
-  final Directory work = Directory.systemTemp.createTempSync('hook_compile_');
+  final Directory work = _scratch(args['out'] as String);
   try {
     final config = File('${work.path}/package_config.json')
       ..writeAsStringSync(
@@ -154,11 +154,20 @@ ArgParser _manifestParser() => ArgParser()
 const _hookKernelName = 'hook.dill';
 const _hookKernelHashesName = 'hook.dependencies_hash_file.json';
 
+/// A fresh scratch directory beside the action's declared output [out], as
+/// the other tools of the repository derive theirs: its path is the same on
+/// every run, and the caller deletes it.
+Directory _scratch(String out) {
+  final Directory dir = Directory('$out.work').absolute;
+  if (dir.existsSync()) dir.deleteSync(recursive: true);
+  return dir..createSync(recursive: true);
+}
+
 Future<int> _runHook(String hook, ArgResults args) async {
   final String cwd = Directory.current.absolute.path;
   String abs(String p) => p.startsWith('/') ? p : '$cwd/$p';
   final packageName = args['package'] as String;
-  final Directory work = Directory.systemTemp.createTempSync('hook_runner_');
+  final Directory work = _scratch(args['out'] as String);
   final logs = <LogRecord>[];
   try {
     // The runner keeps its state next to the package config and reads pub's
@@ -204,7 +213,7 @@ Future<int> _runHook(String hook, ArgResults args) async {
     }
     final hashes = File('${work.path}/$_hookKernelHashesName')
       ..writeAsStringSync(
-        jsonEncode({'file_system': <String>[], 'environment': <String>[]}),
+        jsonEncode({'file_system': <Object?>[], 'environment': <Object?>[]}),
       );
     final fileSystem = _PrecompiledHookFileSystem(
       const LocalFileSystem(),
@@ -242,7 +251,7 @@ Future<int> _runHook(String hook, ArgResults args) async {
           ? null
           : UserDefines(workspacePubspec: pubspecUri),
     );
-    final extensions = [
+    final List<ProtocolExtension> extensions = [
       if (args['target-os'] != null) _codeAssetExtension(args, abs),
       DataAssetsExtension(),
     ];
@@ -251,7 +260,7 @@ Future<int> _runHook(String hook, ArgResults args) async {
     final Object? failure;
     final Map<String, Object?> json;
     if (hook == 'build') {
-      final result = await runner.build(
+      final Result<BuildResult, HooksRunnerFailure> result = await runner.build(
         extensions: extensions,
         linkingEnabled: args['linking'] as bool,
       );
@@ -259,7 +268,7 @@ Future<int> _runHook(String hook, ArgResults args) async {
       json = result.isFailure ? const {} : result.success.toJson();
     } else {
       final recordedUses = args['recorded-uses'] as String?;
-      final result = await runner.link(
+      final Result<LinkResult, HooksRunnerFailure> result = await runner.link(
         extensions: extensions,
         recordUse: recordedUses == null
             ? null
@@ -295,7 +304,7 @@ Future<int> _runHook(String hook, ArgResults args) async {
       stderr.writeln(
         'hook_runner: package:hooks_runner did not ask for the precompiled '
         'kernel of $packageName\'s hook (it looks for "$_hookKernelName" in '
-        'its cache directory). The runner version in rules_dart\'s '
+        "its cache directory). The runner version in rules_dart's "
         'hook_runner/pubspec.yaml no longer matches this program.',
       );
       return 1;
@@ -354,11 +363,11 @@ String packageConfigJson(List<String> records, String execRoot) {
   final seen = <String>{};
   final packages = <Map<String, Object?>>[];
   for (final record in records) {
-    final parts = record.split('|');
+    final List<String> parts = record.split('|');
     if (!seen.add(parts[0])) continue;
     // A package from another repository has the short path `../repo/x` and
     // lives at `external/repo/x` under the exec root.
-    final path = parts[1].startsWith('../')
+    final String path = parts[1].startsWith('../')
         ? 'external/${parts[1].substring(3)}'
         : parts[1];
     packages.add({
@@ -378,10 +387,10 @@ String packageConfigJson(List<String> records, String execRoot) {
 BuildResult _buildResultFor(String package, Iterable<String> directories) {
   final forLinking = <EncodedAsset>[];
   for (final dir in directories) {
-    final json = readAssetDirectory(dir);
-    final routed = (json['encodedAssetsForLinking'] as Map?)?[package];
-    for (final asset in (routed as List?) ?? const []) {
-      forLinking.add(EncodedAsset.fromJson(asset as Map<String, Object?>));
+    final Map<String, Object?> json = readAssetDirectory(dir);
+    final Object? routed = (json['encodedAssetsForLinking'] as Map?)?[package];
+    for (final Object? asset in (routed as List?) ?? const <Object?>[]) {
+      forLinking.add(EncodedAsset.fromJson(asset! as Map<String, Object?>));
     }
   }
   return BuildResult.fromJson({
@@ -396,7 +405,7 @@ BuildResult _buildResultFor(String package, Iterable<String> directories) {
 /// absolute against the JSON file's directory.
 Map<String, Object?> readAssetDirectory(String path) {
   final index = File(path.endsWith('.json') ? path : '$path/assets.json');
-  final base = index.absolute.parent.uri;
+  final Uri base = index.absolute.parent.uri;
   final json = jsonDecode(index.readAsStringSync()) as Map<String, Object?>;
   return _mapFiles(json, (file) => base.resolve(file).toFilePath());
 }
@@ -411,8 +420,8 @@ void _writeAssetDirectory(
 ) {
   var n = 0;
   final copied = <String, String>{};
-  final relative = _mapFiles(json, (file) {
-    final existing = copied[file];
+  final Map<String, Object?> relative = _mapFiles(json, (file) {
+    final String? existing = copied[file];
     if (existing != null) return existing;
     final source = File(file);
     final rel = '${n++}/${source.uri.pathSegments.last}';
@@ -437,7 +446,7 @@ int _copyDeclaredDataAssets(
   List<String> declarations,
 ) {
   if (declarations.isEmpty) return 0;
-  final declared = {
+  final Map<String, String> declared = {
     for (final d in declarations)
       d.substring(0, d.indexOf('=')): d.substring(d.indexOf('=') + 1),
   };
@@ -449,10 +458,10 @@ int _copyDeclaredDataAssets(
           EncodedAsset.fromJson(raw),
         ),
   };
-  final missing = declared.keys.where((n) => !emitted.containsKey(n)).toList()
-    ..sort();
-  final extra = emitted.keys.where((n) => !declared.containsKey(n)).toList()
-    ..sort();
+  final List<String> missing =
+      declared.keys.where((n) => !emitted.containsKey(n)).toList()..sort();
+  final List<String> extra =
+      emitted.keys.where((n) => !declared.containsKey(n)).toList()..sort();
   if (missing.isNotEmpty || extra.isNotEmpty) {
     stderr.writeln(
       'The link hook of package:$packageName emitted the data assets '
@@ -464,7 +473,7 @@ int _copyDeclaredDataAssets(
     );
     return 1;
   }
-  for (final entry in declared.entries) {
+  for (final MapEntry<String, String> entry in declared.entries) {
     File.fromUri(emitted[entry.key]!.file).copySync(entry.value);
   }
   return 0;
@@ -478,7 +487,7 @@ Map<String, Object?> _mapFiles(
 ) {
   Object? asset(Object? a) {
     final m = Map<String, Object?>.from(a! as Map);
-    final encoding = m['encoding'];
+    final Object? encoding = m['encoding'];
     if (encoding is Map && encoding['file'] is String) {
       m['encoding'] = <String, Object?>{
         ...encoding.cast<String, Object?>(),
@@ -523,7 +532,7 @@ String hookFailureMessage(
   final out = StringBuffer()
     ..writeln(log.trimRight())
     ..writeln();
-  final triedNetwork = _networkSignals.any(log.contains);
+  final bool triedNetwork = _networkSignals.any(log.contains);
   if (triedNetwork && !networkAllowed) {
     out
       ..writeln(
@@ -535,7 +544,7 @@ String hookFailureMessage(
         'download a prebuilt library offer a user define that compiles it '
         'from source or uses a system library instead (set it under '
         '`hooks: user_defines: $package:` in the pubspec.yaml next to your '
-        'pubspec.lock; the hook\'s own message above says which).',
+        "pubspec.lock; the hook's own message above says which).",
       )
       ..writeln(
         'Or let this one hook use the network: list "$package" in '
@@ -547,7 +556,7 @@ String hookFailureMessage(
     out.writeln(
       'The $hook hook of package:$package failed (log above). Hooks run in a '
       'sandbox: no network${networkAllowed ? ' (allowed for this package)' : ''}, '
-      'no HOME, a PATH with no tools, only the package\'s own files, the C '
+      "no HOME, a PATH with no tools, only the package's own files, the C "
       'toolchain Bazel resolved and the files listed in `hook_data`.',
     );
   }
@@ -557,7 +566,7 @@ String hookFailureMessage(
 /// Serves the precompiled hook kernel, and the workspace pubspec's
 /// user-defines slice, where `package:hooks_runner` looks for them.
 class _PrecompiledHookFileSystem extends fs.ForwardingFileSystem {
-  _PrecompiledHookFileSystem(
+  new(
     super.delegate, {
     required this.kernel,
     required this.kernelHashes,
@@ -573,7 +582,7 @@ class _PrecompiledHookFileSystem extends fs.ForwardingFileSystem {
 
   @override
   fs.File file(dynamic path) {
-    final p = path is Uri ? path.toFilePath() : path.toString();
+    final String p = path is Uri ? path.toFilePath() : path.toString();
     if (p.contains('/hooks_runner/') && !p.contains('/hooks_runner/shared/')) {
       if (p.endsWith('/$_hookKernelName')) {
         kernelServed = true;
@@ -602,12 +611,13 @@ int writeManifest(ArgResults args) {
   final assets = <KernelAsset>[];
   final owners = <String, String>{};
   for (final dir in args['assets'] as List<String>) {
-    final json = readAssetDirectory(dir);
-    for (final raw in (json['encodedAssets'] as List?) ?? const []) {
-      final encoded = EncodedAsset.fromJson(raw as Map<String, Object?>);
+    final Map<String, Object?> json = readAssetDirectory(dir);
+    for (final Object? raw
+        in (json['encodedAssets'] as List?) ?? const <Object?>[]) {
+      final encoded = EncodedAsset.fromJson(raw! as Map<String, Object?>);
       if (!encoded.isCodeAsset) continue;
-      final asset = encoded.asCodeAsset;
-      final previous = owners[asset.id];
+      final CodeAsset asset = encoded.asCodeAsset;
+      final String? previous = owners[asset.id];
       if (previous != null) {
         stderr.writeln(
           'Duplicate code asset id "${asset.id}", from $previous and $dir. '
@@ -663,7 +673,7 @@ KernelAssetPath _kernelPath(
   required String runfilesPrefix,
 }) {
   switch (asset.linkMode) {
-    case DynamicLoadingSystem(:final uri):
+    case DynamicLoadingSystem(:final Uri uri):
       return KernelAssetSystemPath(uri);
     case LookupInExecutable():
       return KernelAssetInExecutable();
@@ -678,7 +688,7 @@ KernelAssetPath _kernelPath(
       );
   }
   final source = File.fromUri(asset.file!);
-  final name = source.uri.pathSegments.last;
+  final String name = source.uri.pathSegments.last;
   final inBundle = libDir.isEmpty ? name : '$libDir/$name';
   if (bundle != null) {
     final target = File('$bundle/$inBundle')
@@ -689,17 +699,20 @@ KernelAssetPath _kernelPath(
     case 'basename':
       return KernelAssetAbsolutePath(Uri.file(name));
     case 'framework':
-      final framework = frameworkName(name);
+      final String framework = frameworkName(name);
       return KernelAssetAbsolutePath(
         Uri.file('$framework.framework/$framework'),
       );
     case 'runfiles':
       return KernelAssetAbsolutePath(Uri.file('$runfilesPrefix$inBundle'));
     default:
-      final from = Directory(relativeTo!).absolute.uri.pathSegments
+      final List<String> from = Directory(relativeTo!).absolute.uri.pathSegments
           .where((s) => s.isNotEmpty)
           .toList();
-      final to = File('${bundle!}/$inBundle').absolute.uri.pathSegments
+      final List<String> to = File('${bundle!}/$inBundle')
+          .absolute
+          .uri
+          .pathSegments
           .where((s) => s.isNotEmpty)
           .toList();
       var common = 0;
@@ -708,7 +721,7 @@ KernelAssetPath _kernelPath(
           from[common] == to[common]) {
         common++;
       }
-      final rel = [
+      final String rel = [
         for (var i = common; i < from.length; i++) '..',
         ...to.sublist(common),
       ].join('/');
