@@ -3403,7 +3403,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "ePnY/OjVDik7poRZhHs7BbVa7BvkdIE2C0e1MJLCPH0=",
+        "bzlTransitiveDigest": "PWmUxW54RCp5pDmBZ6ECaWHBG89d2s6Szt9H48ytGW4=",
         "usagesDigest": "WeYsY0pIUyeB+s0kVXrQqoN/QF+WVK4vqY3KpUF7Kgk=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4392,22 +4392,7 @@
               "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
               "engine_base_url": "",
               "android_arch": "arm64",
-              "release_sha256": "8426a3b6f60ba5b5ba1b9684cbfc131df513ffd79f297e3bb29d33cba62c2b7f",
-              "debug_sha256": "9a071a4db1660c56a513bd93951ceba9375541a9f19e2b26f4bedd060bad2220"
-            }
-          },
-          "flutter_android_engine_arm64_profile": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
-            "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "engine_base_url": "",
-              "downloads": {
-                "android-arm64-profile/artifacts.zip": ""
-              },
-              "sha256s": {
-                "android-arm64-profile/artifacts.zip": "91201fc9ad5a4bfbecd9873b22bd29ad65d34e6e09627b3802e6f658346145e2"
-              },
-              "build_file_content": "load(\"@rules_flutter//flutter:android.bzl\", \"flutter_android_engine_jar\")\n\nexports_files([\"flutter.jar\"], visibility = [\"//visibility:public\"])\n\nflutter_android_engine_jar(\n    name = \"stripped\",\n    jar = \"flutter.jar\",\n    android_abi = \"arm64-v8a\",\n    visibility = [\"//visibility:public\"],\n)\n"
+              "release_sha256": "8426a3b6f60ba5b5ba1b9684cbfc131df513ffd79f297e3bb29d33cba62c2b7f"
             }
           },
           "flutter_android_engine_x64": {
@@ -4416,22 +4401,7 @@
               "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
               "engine_base_url": "",
               "android_arch": "x64",
-              "release_sha256": "ccb68395a57aff336eceadd4e3b7ba1b0480cd15c252757d1b5ef0203d43e319",
-              "debug_sha256": "d169b3e4c04bd50a9650824050c90e23c4347d4d346485a19dd074a6a5926d25"
-            }
-          },
-          "flutter_android_engine_x64_profile": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
-            "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "engine_base_url": "",
-              "downloads": {
-                "android-x64-profile/artifacts.zip": ""
-              },
-              "sha256s": {
-                "android-x64-profile/artifacts.zip": "0ab59ef4fd2222015865cc2f122ce1d67d024894a9799dace461b7534bb623a9"
-              },
-              "build_file_content": "load(\"@rules_flutter//flutter:android.bzl\", \"flutter_android_engine_jar\")\n\nexports_files([\"flutter.jar\"], visibility = [\"//visibility:public\"])\n\nflutter_android_engine_jar(\n    name = \"stripped\",\n    jar = \"flutter.jar\",\n    android_abi = \"x86_64\",\n    visibility = [\"//visibility:public\"],\n)\n"
+              "release_sha256": "ccb68395a57aff336eceadd4e3b7ba1b0480cd15c252757d1b5ef0203d43e319"
             }
           },
           "flutter_ios_engine_release": {
