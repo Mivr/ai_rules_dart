@@ -1,0 +1,10 @@
+# Every text file is checked out with LF on every system, Windows included.
+#
+# A lockfile records the digest of each file an extension reads (pubspec.lock,
+# pub_plan.json, pubspec.yaml, BUILD and Package.resolved files of the e2e
+# workspaces) and of every .bzl file in an extension's closure. A CRLF checkout
+# changes all of them, and `--lockfile_mode=error` then reports the lock stale.
+# The Windows runners' Git has `core.autocrlf=true`; the `eol` attribute wins
+# over it. A file whose exact bytes matter opts out below it (`-text`), as
+# rules_dart/.gitattributes does for e2e/digest_mismatch/fixture.bin.
+* text=auto eol=lf

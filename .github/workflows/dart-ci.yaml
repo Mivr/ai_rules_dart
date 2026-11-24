@@ -822,11 +822,14 @@ jobs:
             build --local_resources=cpu=1
             build --local_resources=memory=HOST_RAM*.15
       # The lockfiles are made on Linux x64 (docs/CHORES.md, "Lock File
-      # Refresh"). This proves the root one holds here, as the Windows `test`
-      # shard 1 does for Windows: no extension of the graph may need an entry
-      # for this system that a Linux lockfile lacks.
+      # Refresh"). This proves the one of the workspace built below holds here,
+      # as the Windows `test` shard 1 does for the root on Windows: no
+      # extension of the graph may need an entry for this system that a Linux
+      # lockfile lacks. Not `bazel mod deps`: that evaluates every extension,
+      # including those of modules this build never loads.
       - name: Lockfile holds on macOS
-        run: bazel mod deps --lockfile_mode=error
+        working-directory: rules_dart/e2e/hello_world
+        run: bazel build --nobuild --lockfile_mode=error //...
       - name: Configure Bazel version
         working-directory: rules_dart/e2e/hello_world
         run: |

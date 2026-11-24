@@ -1312,10 +1312,15 @@ jobs:
       # target, including the non-test app, so a test-only filter wouldn't
       # stop the OOMing build action.
       # The lockfiles are made on Linux x64 (rules_dart/docs/CHORES.md, "Lock
-      # File Refresh"): prove the root one holds on Windows, where no extension
-      # of the graph may need an entry that a Linux lockfile lacks.
+      # File Refresh"): prove the one of the workspace built below holds on
+      # Windows, where no extension of the graph may need an entry that a Linux
+      # lockfile lacks. Not `bazel mod deps`: that evaluates every extension,
+      # among them gazelle's, which needs a Go SDK for the host, and the Go
+      # SDKs this repository pins have no Windows entry (nothing here builds Go
+      # on Windows, and the toolchain registration is lazy).
       - name: Lockfile holds on Windows
-        run: bazel mod deps --lockfile_mode=error
+        working-directory: rules_flutter/e2e/hello_world
+        run: bazel build --nobuild --lockfile_mode=error //...
       - name: bazel test //... (e2e/hello_world)
         if: runner.os == 'Windows'
         working-directory: rules_flutter/e2e/hello_world
