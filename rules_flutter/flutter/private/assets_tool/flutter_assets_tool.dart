@@ -289,6 +289,10 @@ Future<int> _run(String command, ArgResults args) async {
     );
   } finally {
     if (!verbose) {
+      // The tool made the project directory its current directory, and
+      // Windows does not delete a directory a process stands in: leave it
+      // first, or the failure to delete hides why the action failed.
+      fs.currentDirectory = _execRoot;
       scratch.deleteSync(recursive: true);
     }
   }
@@ -953,6 +957,28 @@ Future<void> _genL10n(Environment environment, ArgResults args) async {
   }
 }
 
+/// A project file staged as a link whose target is not there: the action was
+/// given the path of a file the host cannot open. Names each, so a copy that
+/// "cannot find the file specified" says which file and where it pointed.
+void _explainDanglingLinks(FileSystem fs, Directory project, Logger logger) {
+  try {
+    for (final FileSystemEntity entity in project.listSync(recursive: true)) {
+      if (entity is! Link) {
+        continue;
+      }
+      final String target = entity.targetSync();
+      if (!fs.isFileSync(target) && !fs.isDirectorySync(target)) {
+        logger.printError(
+          'The staged file ${fs.path.relative(entity.path, from: project.path)} '
+          'is a link to $target, which does not exist.',
+        );
+      }
+    }
+  } on FileSystemException catch (e) {
+    logger.printError('Listing the staged project failed: $e');
+  }
+}
+
 /// Names the files `pubspec.yaml` lists that the action did not declare,
 /// after the tool has reported the first of them its own way.
 void _explainMissingFiles(
@@ -961,6 +987,7 @@ void _explainMissingFiles(
   ArgResults args,
   Logger logger,
 ) {
+  _explainDanglingLinks(fs, project, logger);
   final File pubspec = project.childFile('pubspec.yaml');
   if (!pubspec.existsSync()) {
     return;
