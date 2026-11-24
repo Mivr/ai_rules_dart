@@ -1,0 +1,32 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# The decisions of a release of one module of this repository: its tags, the
+# next version, where its release notes start, and the floor of rules_flutter
+# on rules_dart: `cd rules_dart/tools && bazel run //release:release -- --help`.
+# The modules and their tag prefixes are in /.github/release.json.
+dart_library(
+    name = "release_lib",
+    package_name = "release",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = ["@pub_deps//:path"],
+)
+
+dart_binary(
+    name = "release",
+    main = "bin/release.dart",
+    deps = [
+        ":release_lib",
+        "@pub_deps//:path",
+    ],
+)
+
+dart_test(
+    name = "release_test",
+    size = "small",
+    main = "test/release_test.dart",
+    deps = [
+        ":release_lib",
+        "@pub_deps//:path",
+        "@pub_deps//:test",
+    ],
+)
