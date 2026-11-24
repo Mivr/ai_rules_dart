@@ -31,6 +31,7 @@ def _find_flutter_sdk_gen_kernel_tools(flutter_sdk_info):
     }
     found = {}
     compile_inputs = []
+    # lint-allow: depset-flatten the SDK's own tool files
     for f in flutter_sdk_info.tool_files.to_list():
         if f.path.startswith(sdk_root + "/"):
             compile_inputs.append(f)

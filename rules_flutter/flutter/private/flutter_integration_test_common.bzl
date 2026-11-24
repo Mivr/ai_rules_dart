@@ -156,6 +156,7 @@ def integration_test_dart_sources(ctx, setup, platform, content):
 
     all_srcs = (
         list(setup.extra_srcs) +
+        # lint-allow: depset-flatten terminal: a whole-program compile places every source of its closure, once
         collect_transitive_srcs(ctx.attr.deps).to_list() +
         [setup.main_file, bootstrap] +
         ([registrant] if registrant else [])
@@ -470,6 +471,7 @@ def integration_test_native_libs(ctx):
         if FlutterInfo in dep
     ]
     if transitive_native_depsets:
+        # lint-allow: depset-flatten terminal: the application bundles its closure's native libraries, once
         native_libs.extend(depset(transitive = transitive_native_depsets).to_list())
     return native_libs
 

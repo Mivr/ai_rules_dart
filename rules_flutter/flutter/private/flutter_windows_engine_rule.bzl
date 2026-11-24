@@ -28,6 +28,7 @@ def _flutter_windows_engine_impl(ctx):
             "@rules_flutter//flutter/platforms:windows_x64 as a convenience).",
         )
 
+    # lint-allow: depset-flatten the engine's own files (SDK), not a Dart closure
     engine_files = engine_library.files.to_list()
 
     # Separate engine files into DLL, import lib, headers, and wrapper sources.

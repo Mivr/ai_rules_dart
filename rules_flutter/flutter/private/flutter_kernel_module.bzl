@@ -656,6 +656,7 @@ def _link_flutter_test_base(ctx, target_name, package_name, kmod, dep_closure, b
     if package_name == "flutter_test" and hasattr(ctx.executable, "_kernel_link"):
         base_dill = ctx.actions.declare_file(target_name + ".flutter_base.dill")
         base_keys = ctx.actions.declare_file(target_name + ".flutter_base.keys")
+        # lint-allow: depset-flatten only the `flutter_test` package's own library seeds the base dill, once per configuration
         seed_modules = [kmod] + dep_closure.to_list()
         kernel_link_action(
             ctx,
@@ -875,9 +876,14 @@ def swap_flutter_registrant_twin(closure, twins):
     Returns:
         `closure` itself when there is no twin; otherwise a postorder depset in the same order.
     """
-    if twins == None or not twins.to_list():
+    # A depset is true when it is not empty; asking does not flatten it.
+    if twins == None or not twins:
         return closure
+
+    # lint-allow: depset-flatten the twins: one per SDK `flutter` module of the closure
     swap = {t.plain: t.kmod for t in twins.to_list()}
+
+    # lint-allow: depset-flatten terminal: a debug application links its closure with the twin swapped in, once
     return depset([swap.get(f, f) for f in closure.to_list()], order = "postorder")
 
 def _flutter_kernel_module_aspect_impl(target, ctx):
@@ -1234,6 +1240,7 @@ def compile_flutter_modular_test_kernel(
 def flutter_closure_twins(ctx):
     """The registrant twins of `ctx.attr.deps`' closure, as a list (empty when it holds no twin)."""
     infos = [d[FlutterKernelModuleInfo] for d in ctx.attr.deps if FlutterKernelModuleInfo in d]
+    # lint-allow: depset-flatten terminal, and bounded: one twin per SDK `flutter` module of the closure
     return depset(transitive = [getattr(i, "registrant_twins", None) or depset() for i in infos]).to_list()
 
 def compile_flutter_modular_app_kernel(

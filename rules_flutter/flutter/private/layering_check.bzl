@@ -69,6 +69,7 @@ def _own_srcs(ctx):
     """The library's own Dart files and directories, `members` included."""
     files = list(ctx.rule.files.srcs) if hasattr(ctx.rule.files, "srcs") else []
     for member in getattr(ctx.rule.attr, "members", []):
+        # lint-allow: depset-flatten a merged library's own members' files, not its closure
         files.extend(member[DefaultInfo].files.to_list())
     return [f for f in files if f.extension == "dart" or f.is_directory]
 
@@ -79,7 +80,10 @@ def _direct_packages(deps):
         if DartInfo not in dep:
             continue
         owned = owned_package_records(dep[DartInfo])
-        records = owned if owned and dep[DefaultInfo].files.to_list() else dep[DartInfo].transitive_packages.to_list()
+        # A depset is true when it is not empty; asking does not flatten it. A dependency with no files of its own
+        # (a façade) names the packages it re-exports, which are its closure's, as rules_dart's layering check does.
+        # lint-allow: depset-flatten a façade dependency only: the packages it re-exports, bounded by its closure
+        records = owned if owned and dep[DefaultInfo].files else dep[DartInfo].transitive_packages.to_list()
         for record in records:
             names[record.package_name] = True
     return sorted(names)

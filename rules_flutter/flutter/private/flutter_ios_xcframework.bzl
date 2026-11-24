@@ -70,6 +70,7 @@ def _framework_members(target, framework_name):
     """Returns the files under one `.framework` directory keyed by relative path."""
     marker = "/%s.framework/" % framework_name
     members = {}
+    # lint-allow: depset-flatten a target's own outputs, not a Dart closure
     for f in target[DefaultInfo].files.to_list():
         if marker in f.path:
             members[f.path.rsplit(marker, 1)[1]] = f
@@ -174,6 +175,7 @@ def _patch_binary(ctx, source, output, platform, minimum_os_version, install_nam
 
 def _single_binary(target):
     """Returns the one linkable binary a target produced."""
+    # lint-allow: depset-flatten a target's own outputs, not a Dart closure
     files = [f for f in target[DefaultInfo].files.to_list() if not f.is_directory]
     for f in files:
         if f.extension in ("dylib", "so"):
@@ -219,6 +221,7 @@ def _app_xcframework(ctx):
 
 def _flutter_xcframework(ctx):
     """Declares Flutter.xcframework by symlinking the pinned engine's files."""
+    # lint-allow: depset-flatten the engine's own files (SDK), not a Dart closure
     files = ctx.attr.engine[DefaultInfo].files.to_list()
     marker = "/Flutter.xcframework/"
     root = ctx.label.name + "/Flutter.xcframework"
@@ -301,6 +304,7 @@ def _plugin_name(entry):
 
 def _plugin_binary(entry):
     """Returns the compiled plugin file that becomes the framework binary."""
+    # lint-allow: depset-flatten terminal: one framework's own files
     files = [f for f in entry.files.to_list() if not f.is_directory]
     for f in files:
         if f.extension in ("a", "dylib"):
@@ -315,6 +319,7 @@ def _plugin_binary(entry):
 def _plugin_binaries(application):
     """Maps each native iOS plugin framework name to its compiled archive."""
     binaries = {}
+    # lint-allow: depset-flatten terminal: the application's Apple plugin libraries, bounded by its plugins
     for entry in application[FlutterApplicationInfo].apple_plugin_libraries.to_list():
         if entry.platform != "ios":
             continue
@@ -381,6 +386,7 @@ def _flutter_ios_xcframework_impl(ctx):
         ]
     ]
     for application in [_attr_target(ctx, "application"), _attr_target(ctx, "sim_arm64_application"), _attr_target(ctx, "sim_x64_application")]:
+        # lint-allow: depset-flatten terminal: the application's Apple plugin libraries, bounded by its plugins
         for entry in application[FlutterApplicationInfo].apple_plugin_libraries.to_list():
             transitive.append(entry.files)
     return [DefaultInfo(

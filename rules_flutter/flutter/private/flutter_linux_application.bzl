@@ -154,6 +154,7 @@ def _flutter_linux_runner_lib_impl(ctx):
     flutter_sdk_info = resolve_flutter_sdk_info(ctx)
 
     # Get engine files from the engine target.
+    # lint-allow: depset-flatten the engine's own files (SDK), not a Dart closure
     engine_files = ctx.attr.engine[DefaultInfo].files.to_list()
 
     # Separate registrant .cc and .h files.
@@ -176,9 +177,13 @@ def _flutter_linux_runner_lib_impl(ctx):
     plugin_hdrs = []
     plugin_include_dirs = []
     if ctx.attr.application:
+        # lint-allow: depset-flatten terminal: the application's plugin source bundles, bounded by its plugins
         for entry in ctx.attr.application[FlutterApplicationInfo].linux_plugin_libraries.to_list():
+            # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
             plugin_srcs.extend(entry.srcs.to_list())
+            # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
             plugin_hdrs.extend(entry.hdrs.to_list())
+            # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
             plugin_include_dirs.extend(entry.include_dirs.to_list())
 
     runner_binary = compile_linux_runner(
@@ -222,6 +227,7 @@ def _linux_sysroot_flags(linux_sysroot, target_arch):
              "The Flutter toolchain must provide a Chromium sysroot for " +
              "hermetic GTK3 builds. Check that the toolchain is configured correctly.")
 
+    # lint-allow: depset-flatten the sysroot's own files, not a Dart closure
     sysroot_files = linux_sysroot[DefaultInfo].files.to_list()
 
     # Determine sysroot root path from the first file.
@@ -515,6 +521,7 @@ def _flutter_linux_bundle_impl(ctx):
             "To build a Linux bundle from a non-Linux host, use: " +
             "--platforms=@rules_flutter//flutter/platforms:linux_x64",
         )
+    # lint-allow: depset-flatten the engine's own files (SDK), not a Dart closure
     engine_files = flutter_sdk_info.engine_library[DefaultInfo].files.to_list()
 
     # Build the bundle config JSON for the Dart bundler tool. Both
@@ -541,6 +548,7 @@ def _flutter_linux_bundle_impl(ctx):
         extra_inputs.append(app_info.aot_output)
 
     # Get the runner executable from the runner target.
+    # lint-allow: depset-flatten the runner target's own outputs
     runner_files = ctx.attr.runner[DefaultInfo].files.to_list()
     runner_binary = None
     for f in runner_files:

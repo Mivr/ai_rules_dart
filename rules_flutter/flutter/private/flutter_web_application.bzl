@@ -122,6 +122,7 @@ def _web_collect_sources(ctx):
     assumed `""`, and a nested app's `package:` URIs silently resolved
     against the workspace root instead of its own package.
     """
+    # lint-allow: depset-flatten terminal: a whole-program compile places every source of its closure, once
     all_srcs = list(ctx.files.srcs) + collect_transitive_srcs(ctx.attr.deps).to_list()
     packages = collect_packages(ctx.attr.deps)
     lib_root = derive_lib_root(ctx.label.workspace_root, ctx.label.package)
@@ -386,6 +387,7 @@ def _web_native_module_files(ctx):
     return [
         f
         for dep in ctx.attr.native_modules
+        # lint-allow: depset-flatten a target's own outputs, not a Dart closure
         for f in dep[FlutterNativeLibraryInfo].libraries.to_list()
     ]
 

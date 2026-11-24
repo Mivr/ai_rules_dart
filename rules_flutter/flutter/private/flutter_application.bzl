@@ -169,6 +169,7 @@ def _collect_application_native_libs(ctx):
         if FlutterInfo in dep
     ]
     if transitive_native_depsets:
+        # lint-allow: depset-flatten terminal: the application bundles its closure's native libraries, once
         native_libs.extend(depset(transitive = transitive_native_depsets).to_list())
     return native_libs
 

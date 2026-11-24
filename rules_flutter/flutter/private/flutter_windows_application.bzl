@@ -32,6 +32,7 @@ visibility(["//flutter/..."])
 
 def _flutter_windows_runner_lib_impl(ctx):
     # Get engine files from the engine target.
+    # lint-allow: depset-flatten the engine's own files (SDK), not a Dart closure
     engine_files = ctx.attr.engine[DefaultInfo].files.to_list()
 
     # Separate registrant .cc and .h files.
@@ -65,9 +66,13 @@ def _flutter_windows_runner_lib_impl(ctx):
     plugin_hdrs = []
     plugin_include_dirs = []
     if ctx.attr.application:
+        # lint-allow: depset-flatten terminal: the application's plugin source bundles, bounded by its plugins
         for entry in ctx.attr.application[FlutterApplicationInfo].windows_plugin_libraries.to_list():
+            # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
             plugin_srcs.extend(entry.srcs.to_list())
+            # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
             plugin_hdrs.extend(entry.hdrs.to_list())
+            # lint-allow: depset-flatten terminal: one plugin's own sources, headers or include dirs
             plugin_include_dirs.extend(entry.include_dirs.to_list())
 
     runner_binary = _compile_windows_runner(
@@ -375,6 +380,7 @@ def _find_runner_binary(ctx):
     Returns:
       The runner `File`: the first `.exe` or non-header, non-source file, else the first file.
     """
+    # lint-allow: depset-flatten the runner target's own outputs
     runner_files = ctx.attr.runner[DefaultInfo].files.to_list()
     runner_binary = None
     for f in runner_files:
@@ -408,6 +414,7 @@ def _flutter_windows_bundle_impl(ctx):
             "To build a Windows bundle from a non-Windows host, use: " +
             "--platforms=@rules_flutter//flutter/platforms:windows_x64",
         )
+    # lint-allow: depset-flatten the engine's own files (SDK), not a Dart closure
     engine_files = flutter_sdk_info.engine_library[DefaultInfo].files.to_list()
 
     # Filter engine files to only include runtime artifacts (.dll) — not

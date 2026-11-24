@@ -42,6 +42,7 @@ def _drive_ipa(ctx):
     Returns:
         The `.ipa` `File` of `ctx.attr.app`, or `None` when it has none.
     """
+    # lint-allow: depset-flatten the app target's own outputs
     ipas = [f for f in ctx.attr.app[DefaultInfo].files.to_list() if f.path.endswith(".ipa")]
     return ipas[0] if ipas else None
 
@@ -103,6 +104,7 @@ def _exec_kernel_tools(ctx):
     dartaotruntime = None
     gen_kernel = None
     platform_dill = None
+    # lint-allow: depset-flatten the SDK's own compile files
     for f in sdk.compile_files.to_list():
         if f.basename in ("dartaotruntime", "dartaotruntime.exe"):
             dartaotruntime = f
@@ -138,6 +140,7 @@ def _compile_driver_dill(ctx, driver_src):
     pkg_cfg = ctx.actions.declare_file(ctx.label.name + "_driver.package_config.json")
     ctx.actions.write(
         output = pkg_cfg,
+        # lint-allow: depset-flatten terminal: the driver's whole-program package config, once
         content = generate_stable_package_config(packages, own_srcs + dep_srcs.to_list()),
     )
     dill = ctx.actions.declare_file(ctx.label.name + "_driver.dill")

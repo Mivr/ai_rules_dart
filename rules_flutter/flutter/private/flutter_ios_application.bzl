@@ -651,6 +651,7 @@ def _flutter_ios_privacy_manifests_impl(ctx):
     collide and Apple's submission validator finds them all.
     """
     app_info = ctx.attr.application[FlutterApplicationInfo]
+    # lint-allow: depset-flatten terminal: the application's privacy manifests, bounded by its plugins
     inputs = app_info.apple_privacy_manifests.to_list()
 
     # Each input gets renamed to `<sanitized-path>.xcprivacy` so they're

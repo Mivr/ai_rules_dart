@@ -48,6 +48,7 @@ def _collect_runner_own_files(ctx, seen, buckets):
 
 def _collect_runner_linker_sdk_names(target, sdk_frameworks, seen_sdk_fw, sdk_dylibs, seen_sdk_dylib):
     """Record the SDK frameworks/dylibs named by a dep's linker flags."""
+    # lint-allow: depset-flatten terminal: the runner's native link inputs, for its SDK link flags; not a Dart closure
     for li in target[CcInfo].linking_context.linker_inputs.to_list():
         flags = li.user_link_flags
         for idx in range(len(flags)):
@@ -67,6 +68,7 @@ def _collect_runner_dep_files(
         transitive_sets):
     """Classify plugin/dep files and record their SDK frameworks, dylibs and header sets."""
     for target in ctx.attr.plugins + ctx.attr.deps:
+        # lint-allow: depset-flatten a target's own outputs, not a Dart closure
         for f in target[DefaultInfo].files.to_list():
             _classify_runner_file(seen, buckets, f)
         if FlutterApplePluginInfo in target:
@@ -77,6 +79,7 @@ def _collect_runner_dep_files(
         if CcInfo in target:
             cc_hdrs = target[CcInfo].compilation_context.headers
             transitive_sets.append(cc_hdrs)
+            # lint-allow: depset-flatten terminal: the runner's native headers; not a Dart closure
             for f in cc_hdrs.to_list():
                 _classify_runner_file(seen, buckets, f)
             _collect_runner_linker_sdk_names(target, sdk_frameworks, seen_sdk_fw, sdk_dylibs, seen_sdk_dylib)
@@ -190,6 +193,7 @@ def _collect_xtool_additional_contents(ctx, ib_errors):
                     target.label,
                 ),
             )
+        # lint-allow: depset-flatten a target's own outputs, not a Dart closure
         for f in target[DefaultInfo].files.to_list():
             err = _check_resource_file_for_xtool(ctx, f, "additional_contents")
             if err:

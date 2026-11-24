@@ -129,6 +129,7 @@ def collect_native_libs(native_deps):
     """
     libs = []
     for dep in native_deps:
+        # lint-allow: depset-flatten a `native_deps` target's own output files, not a Dart closure
         libs.extend([f for f in dep[DefaultInfo].files.to_list() if f.extension in ("so", "dylib", "dll")])
     return libs
 
@@ -151,7 +152,10 @@ def collect_binding_contracts(native_deps):
     pairs = []
     for dep in native_deps:
         if FlutterNativeLibraryInfo in dep:
+            # lint-allow: depset-flatten one `flutter_native_library`'s own contract files, not a Dart closure
             contract = tuple(dep[FlutterNativeLibraryInfo].binding_contract.to_list())
+
+            # lint-allow: depset-flatten one `flutter_native_library`'s own libraries, not a Dart closure
             for lib in dep[FlutterNativeLibraryInfo].libraries.to_list():
                 pairs.append(struct(library = lib, contract = contract))
         else:
@@ -160,6 +164,7 @@ def collect_binding_contracts(native_deps):
 
 def _kernel_source_inputs(ctx):
     """Collect the kernel compile's sources and synthesize the app package."""
+    # lint-allow: depset-flatten terminal: an application's whole-program compile and package config place every source, once
     all_srcs = list(ctx.files.srcs) + collect_transitive_srcs(ctx.attr.deps).to_list()
     closure = flutter_closure_packages(ctx.attr.deps)
     packages = closure.packages

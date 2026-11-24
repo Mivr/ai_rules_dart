@@ -86,6 +86,7 @@ visibility(["//flutter/..."])
 
 def _web_sdk_file_list(ctx):
     """All files the web SDK target carries (renderer/template lookup)."""
+    # lint-allow: depset-flatten the web SDK's own files, picked out by path
     return ctx.attr._web_sdk.files.to_list() if ctx.attr._web_sdk else []
 
 def _web_integration_test_setup(ctx):
@@ -126,6 +127,7 @@ def _web_integration_test_setup(ctx):
     lib_root = derive_lib_root(ctx.label.workspace_root, ctx.label.package)
 
     # Collect sources and synthesize the package config.
+    # lint-allow: depset-flatten terminal: a whole-program compile places every source of its closure, once
     all_srcs = list(extra_srcs) + collect_transitive_srcs(ctx.attr.deps).to_list()
     packages = collect_packages(ctx.attr.deps)
     packages = synthesize_app_package(
@@ -353,6 +355,7 @@ def _web_integration_test_run(ctx, setup, output_dir):
                 ctx.file._chrome_fontconfig,
                 ctx.file._roboto_font,
                 library_tags,
+            # lint-allow: depset-flatten a runtime repository's own files, not a Dart closure
             ] + ctx.attr._chrome_all_files.files.to_list(),
         ),
     )

@@ -100,7 +100,10 @@ def collect_native_source_pairs(native_deps):
     """
     pairs = []
     for dep in native_deps:
+        # lint-allow: depset-flatten one native library's own first-party sources, not a Dart closure
         sources = tuple(collect_native_sources([dep]).to_list())
+
+        # lint-allow: depset-flatten a `native_deps` target's own output files
         for f in dep[DefaultInfo].files.to_list():
             if f.extension in _LIBRARY_EXTENSIONS:
                 pairs.append(struct(library = f, sources = sources))

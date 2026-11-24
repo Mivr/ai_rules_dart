@@ -65,6 +65,7 @@ def _apple_link_sdk_lists(target):
     sdk_frameworks = []
     sdk_dylibs = []
     if CcInfo in target:
+        # lint-allow: depset-flatten one Apple plugin library's native link inputs, for its SDK link flags; not a Dart closure
         for li in target[CcInfo].linking_context.linker_inputs.to_list():
             flags = li.user_link_flags
             for idx in range(len(flags)):

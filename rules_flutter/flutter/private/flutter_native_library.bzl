@@ -45,6 +45,7 @@ def _flutter_native_library_impl(ctx):
     default = ctx.attr.library[DefaultInfo]
     libraries = [
         f
+        # lint-allow: depset-flatten the wrapped library target's own output files
         for f in default.files.to_list()
         if f.extension in _NATIVE_LIBRARY_EXTENSIONS
     ]

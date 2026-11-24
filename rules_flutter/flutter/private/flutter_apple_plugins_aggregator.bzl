@@ -53,6 +53,7 @@ def _flutter_apple_plugins_aggregator_impl(ctx):
     flutter_info = ctx.attr.application[FlutterApplicationInfo]
     target_platform = ctx.attr.platform
 
+    # lint-allow: depset-flatten terminal: the application's Apple plugin libraries, bounded by its plugins
     collected = _collect_apple_plugin_inputs(flutter_info.apple_plugin_libraries.to_list(), target_platform)
 
     return [

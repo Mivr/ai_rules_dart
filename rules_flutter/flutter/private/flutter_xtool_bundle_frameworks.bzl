@@ -49,6 +49,7 @@ def _record_framework_info(state, fw_info):
     if fw_info.framework_dir:
         dirs = [fw_info.framework_dir]
     else:
+        # lint-allow: depset-flatten terminal: one framework's own files
         dirs = _extract_framework_dirs_from_files(fw_info.framework_files.to_list())
     _record(state, dirs, fw_info.framework_files, fw_info.is_dynamic)
 
@@ -63,6 +64,7 @@ def _structured_infos(target):
     if FlutterApplePluginInfo in target:
         plugin_infos = getattr(target[FlutterApplePluginInfo], "framework_infos", None)
     if plugin_infos != None:
+        # lint-allow: depset-flatten terminal: the application's Apple plugin libraries, bounded by its plugins
         infos.extend(plugin_infos.to_list())
     return infos
 
@@ -73,6 +75,7 @@ def _record_target(state, target, keep_all_files):
         for fw_info in infos:
             _record_framework_info(state, fw_info)
         return
+    # lint-allow: depset-flatten a target's own outputs, not a Dart closure
     files = target[DefaultInfo].files.to_list()
     if not keep_all_files:
         files = _framework_files_in(files)
