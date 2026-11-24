@@ -3417,7 +3417,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "pm7xP/sEYVoTxD2xFIczBJXGyMTubFDJlygHvJAwIQc=",
+        "bzlTransitiveDigest": "00u2L60pyA/XKUyt3Wmmkqnl/SoK24OWHYAAMJ3vP10=",
         "usagesDigest": "4DzfQ8gn+wZDU6bm+wpMucVRupwbQjnTY0Ixa+uJDdI=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4658,6 +4658,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4683,6 +4684,7 @@
                 "@deps//:meta"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4712,6 +4714,7 @@
                 "@deps//:rxdart"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4731,6 +4734,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4750,6 +4754,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4777,6 +4782,7 @@
                 "@deps//:logging"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4796,6 +4802,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4819,6 +4826,7 @@
                 "@deps//:typed_data"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4838,6 +4846,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4871,6 +4880,7 @@
                 "@deps//:yaml"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4900,6 +4910,7 @@
                 "@deps//:web"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4929,6 +4940,7 @@
                 "@deps//:typed_data"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4964,6 +4976,7 @@
                 "@deps//:plugin_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4989,6 +5002,7 @@
                 "@deps//:jni"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5008,6 +5022,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5031,6 +5046,7 @@
                 "@deps//:collection"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5050,6 +5066,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5085,6 +5102,7 @@
                 "@deps//:pub_semver"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5108,6 +5126,7 @@
                 "@deps//:path"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5149,6 +5168,7 @@
                 "@deps//:win32"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5176,6 +5196,7 @@
                 "@deps//:plugin_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5195,6 +5216,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5228,6 +5250,7 @@
                 "@deps//:path_provider_windows"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5257,6 +5280,7 @@
                 "@deps//:path_provider_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5286,6 +5310,7 @@
                 "@deps//:path_provider_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5317,6 +5342,7 @@
                 "@deps//:xdg_directories"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5344,6 +5370,7 @@
                 "@deps//:plugin_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5373,6 +5400,7 @@
                 "@deps//:path_provider_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5392,6 +5420,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5415,6 +5444,7 @@
                 "@deps//:meta"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5438,6 +5468,7 @@
                 "@deps//:collection"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5463,6 +5494,7 @@
                 "@deps//:record_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5488,6 +5520,7 @@
                 "@deps//:plugin_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5515,6 +5548,7 @@
                 "@deps//:pub_semver"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5534,6 +5568,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5561,6 +5596,7 @@
                 "@deps//:term_glyph"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5584,6 +5620,7 @@
                 "@deps//:source_span"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5603,6 +5640,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5626,6 +5664,7 @@
                 "@deps//:collection"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5663,6 +5702,7 @@
                 "@deps//:url_launcher_windows"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5688,6 +5728,7 @@
                 "@deps//:url_launcher_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5713,6 +5754,7 @@
                 "@deps//:url_launcher_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5738,6 +5780,7 @@
                 "@deps//:url_launcher_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5763,6 +5806,7 @@
                 "@deps//:url_launcher_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5788,6 +5832,7 @@
                 "@deps//:plugin_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5817,6 +5862,7 @@
                 "@deps//:web"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5842,6 +5888,7 @@
                 "@deps//:url_launcher_platform_interface"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5861,6 +5908,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5880,6 +5928,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5899,6 +5948,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5922,6 +5972,7 @@
                 "@deps//:ffi"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5947,6 +5998,7 @@
                 "@deps//:path"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -5974,6 +6026,7 @@
                 "@deps//:string_scanner"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [

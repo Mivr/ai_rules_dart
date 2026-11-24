@@ -3403,7 +3403,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "pm7xP/sEYVoTxD2xFIczBJXGyMTubFDJlygHvJAwIQc=",
+        "bzlTransitiveDigest": "00u2L60pyA/XKUyt3Wmmkqnl/SoK24OWHYAAMJ3vP10=",
         "usagesDigest": "WeYsY0pIUyeB+s0kVXrQqoN/QF+WVK4vqY3KpUF7Kgk=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4644,6 +4644,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4663,6 +4664,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4686,6 +4688,7 @@
                 "@deps//:collection"
               ],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4705,6 +4708,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4724,6 +4728,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
@@ -4743,6 +4748,7 @@
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
+              "cycle_deps": {},
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
               "overlay_roots": [
