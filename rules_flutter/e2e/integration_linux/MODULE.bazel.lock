@@ -10,6 +10,7 @@
     "https://bcr.bazel.build/modules/abseil-cpp/20230802.1/MODULE.bazel": "fa92e2eb41a04df73cdabeec37107316f7e5272650f81d6cc096418fe647b915",
     "https://bcr.bazel.build/modules/abseil-cpp/20240116.1/MODULE.bazel": "37bcdb4440fbb61df6a1c296ae01b327f19e9bb521f9b8e26ec854b6f97309ed",
     "https://bcr.bazel.build/modules/abseil-cpp/20240116.2/MODULE.bazel": "73939767a4686cd9a520d16af5ab440071ed75cec1a876bf2fcfaf1f71987a16",
+    "https://bcr.bazel.build/modules/abseil-cpp/20250127.0/MODULE.bazel": "d1086e248cda6576862b4b3fe9ad76a214e08c189af5b42557a6e1888812c5d5",
     "https://bcr.bazel.build/modules/abseil-cpp/20250127.1/MODULE.bazel": "c4a89e7ceb9bf1e25cf84a9f830ff6b817b72874088bf5141b314726e46a57c1",
     "https://bcr.bazel.build/modules/abseil-cpp/20250512.1/MODULE.bazel": "d209fdb6f36ffaf61c509fcc81b19e81b411a999a934a032e10cd009a0226215",
     "https://bcr.bazel.build/modules/abseil-cpp/20250814.1/MODULE.bazel": "51f2312901470cdab0dbdf3b88c40cd21c62a7ed58a3de45b365ddc5b11bcab2",
@@ -38,7 +39,6 @@
     "https://bcr.bazel.build/modules/bazel_features/1.21.0/MODULE.bazel": "675642261665d8eea09989aa3b8afb5c37627f1be178382c320d1b46afba5e3b",
     "https://bcr.bazel.build/modules/bazel_features/1.23.0/MODULE.bazel": "fd1ac84bc4e97a5a0816b7fd7d4d4f6d837b0047cf4cbd81652d616af3a6591a",
     "https://bcr.bazel.build/modules/bazel_features/1.24.0/MODULE.bazel": "4796b4c25b47053e9bbffa792b3792d07e228ff66cd0405faef56a978708acd4",
-    "https://bcr.bazel.build/modules/bazel_features/1.25.0/MODULE.bazel": "e2e60a10a6da64bbf533f15ca652bf61a033e41c2ed734d79a9a08ba87f68c1a",
     "https://bcr.bazel.build/modules/bazel_features/1.27.0/MODULE.bazel": "621eeee06c4458a9121d1f104efb80f39d34deff4984e778359c60eaf1a8cb65",
     "https://bcr.bazel.build/modules/bazel_features/1.28.0/MODULE.bazel": "4b4200e6cbf8fa335b2c3f43e1d6ef3e240319c33d43d60cc0fbd4b87ece299d",
     "https://bcr.bazel.build/modules/bazel_features/1.3.0/MODULE.bazel": "cdcafe83ec318cda34e02948e81d790aab8df7a929cec6f6969f13a489ccecd9",
@@ -46,15 +46,16 @@
     "https://bcr.bazel.build/modules/bazel_features/1.33.0/MODULE.bazel": "8b8dc9d2a4c88609409c3191165bccec0e4cb044cd7a72ccbe826583303459f6",
     "https://bcr.bazel.build/modules/bazel_features/1.34.0/MODULE.bazel": "e8475ad7c8965542e0c7aac8af68eb48c4af904be3d614b6aa6274c092c2ea1e",
     "https://bcr.bazel.build/modules/bazel_features/1.36.0/MODULE.bazel": "596cb62090b039caf1cad1d52a8bc35cf188ca9a4e279a828005e7ee49a1bec3",
+    "https://bcr.bazel.build/modules/bazel_features/1.39.0/MODULE.bazel": "28739425c1fc283c91931619749c832b555e60bcd1010b40d8441ce0a5cf726d",
     "https://bcr.bazel.build/modules/bazel_features/1.4.1/MODULE.bazel": "e45b6bb2350aff3e442ae1111c555e27eac1d915e77775f6fdc4b351b758b5d7",
     "https://bcr.bazel.build/modules/bazel_features/1.42.0/MODULE.bazel": "e8ca15cb2639c5f12183db6dcb678735555d0cdd739b32a0418b6532b5e565f8",
     "https://bcr.bazel.build/modules/bazel_features/1.42.1/MODULE.bazel": "275a59b5406ff18c01739860aa70ad7ccb3cfb474579411decca11c93b951080",
-    "https://bcr.bazel.build/modules/bazel_features/1.48.1/MODULE.bazel": "8f43b2b90bd70402825ab07a85bf26079935271e2662a1df37fe0de969aa3ecf",
     "https://bcr.bazel.build/modules/bazel_features/1.50.0/MODULE.bazel": "2083ef9c7a469f520890483ccf8e0189d6e71e2117e7752e15e6554433d5ae3e",
     "https://bcr.bazel.build/modules/bazel_features/1.50.0/source.json": "e0ee3debde2789ff56e4452e612d126925ba9ab64d4bde79c67f099d2902df9b",
     "https://bcr.bazel.build/modules/bazel_features/1.9.0/MODULE.bazel": "885151d58d90d8d9c811eb75e3288c11f850e1d6b481a8c9f766adee4712358b",
     "https://bcr.bazel.build/modules/bazel_features/1.9.1/MODULE.bazel": "8f679097876a9b609ad1f60249c49d68bfab783dd9be012faf9d82547b14815a",
     "https://bcr.bazel.build/modules/bazel_lib/3.0.0/MODULE.bazel": "22b70b80ac89ad3f3772526cd9feee2fa412c2b01933fea7ed13238a448d370d",
+    "https://bcr.bazel.build/modules/bazel_lib/3.1.0/MODULE.bazel": "6809765c14e3c766a9b9286c7b0ec56ed87a73326e48fe01749f0c0fdcfe3287",
     "https://bcr.bazel.build/modules/bazel_lib/3.2.2/MODULE.bazel": "e2c890c8a515d6bca9c66d47718aa9e44b458fde64ec7204b8030bf2d349058c",
     "https://bcr.bazel.build/modules/bazel_lib/3.2.2/source.json": "9e84e115c20e14652c5c21401ae85ff4daa8702e265b5c0b3bf89353f17aa212",
     "https://bcr.bazel.build/modules/bazel_skylib/1.0.3/MODULE.bazel": "bcb0fd896384802d1ad283b4e4eb4d718eebd8cb820b0a2c3a347fb971afd9d8",
@@ -76,12 +77,14 @@
     "https://bcr.bazel.build/modules/bazel_skylib/1.9.2/MODULE.bazel": "8c51259b0f4481475586dbfede7591e57b75702e637f840f6138eec80c34b270",
     "https://bcr.bazel.build/modules/bazel_skylib/1.9.2/source.json": "41cbde7546542dee2f26e3f10bf1c4ac57909943194b7ac48cc5238a01893aa8",
     "https://bcr.bazel.build/modules/bazel_worker_api/0.0.1/MODULE.bazel": "02a13b77321773b2042e70ee5e4c5e099c8ddee4cf2da9cd420442c36938d4bd",
-    "https://bcr.bazel.build/modules/bazel_worker_api/0.0.11/MODULE.bazel": "fe09a8d3fb25c95414249f72cb0936201bf7e3c3f0e302175b2fc81e68bc6069",
-    "https://bcr.bazel.build/modules/bazel_worker_api/0.0.11/source.json": "7867c70965fccd202c57796de69fcbdf0555da34e3b09a14b06d74afb0f2f26d",
+    "https://bcr.bazel.build/modules/bazel_worker_api/0.0.10/MODULE.bazel": "a426df551b40c3997c351d05f00f0d1f86b618ddb646012f1e9c72efce8ed939",
+    "https://bcr.bazel.build/modules/bazel_worker_api/0.0.10/source.json": "7f220d3edfeba5d1f61535fd8400338df74f8bdeb241ebe660534c6926a5a645",
     "https://bcr.bazel.build/modules/bazel_worker_api/0.0.4/MODULE.bazel": "460aa12d01231a80cce03c548287b433b321d205b0028ae596728c35e5ee442e",
-    "https://bcr.bazel.build/modules/bazel_worker_java/0.0.11/MODULE.bazel": "1ee9e4c28ce455dbacdff8e007e133ea209e6f673a9e97cf20e99b161bc17548",
-    "https://bcr.bazel.build/modules/bazel_worker_java/0.0.11/source.json": "48b9b9c55f69cc360a54a712f47b889dd3d367ce2d45c3ccec242e9af86fe9cd",
+    "https://bcr.bazel.build/modules/bazel_worker_api/0.0.8/MODULE.bazel": "396c1ef53835aafe3d42ce6619080531ee770648303731f16cfaa33fa056bf0c",
+    "https://bcr.bazel.build/modules/bazel_worker_java/0.0.10/MODULE.bazel": "538f21f715cab81c4a43f73e1a91a0c1f8accd9b263dd2a831952805fcfc1a62",
+    "https://bcr.bazel.build/modules/bazel_worker_java/0.0.10/source.json": "1646d3aaf5a4bc0d587ecb33d81e93ea9284ff96f5ef579006a9c054945bbe7a",
     "https://bcr.bazel.build/modules/bazel_worker_java/0.0.4/MODULE.bazel": "82494a01018bb7ef06d4a17ec4cd7a758721f10eb8b6c820a818e70d669500db",
+    "https://bcr.bazel.build/modules/bazel_worker_java/0.0.8/MODULE.bazel": "e76479eae70bd4e8f5f4c2dfc5d03ab971cfb18750246c7b3f3454c5c2ee6629",
     "https://bcr.bazel.build/modules/buildozer/8.5.1/MODULE.bazel": "a35d9561b3fc5b18797c330793e99e3b834a473d5fbd3d7d7634aafc9bdb6f8f",
     "https://bcr.bazel.build/modules/buildozer/8.5.1/source.json": "e3386e6ff4529f2442800dee47ad28d3e6487f36a1f75ae39ae56c70f0cd2fbd",
     "https://bcr.bazel.build/modules/gawk/5.3.2.bcr.3/MODULE.bazel": "f1b7bb2dd53e8f2ef984b39485ec8a44e9076dda5c4b8efd2fb4c6a6e856a31d",
@@ -106,8 +109,6 @@
     "https://bcr.bazel.build/modules/jsoncpp/1.9.6/MODULE.bazel": "2f8d20d3b7d54143213c4dfc3d98225c42de7d666011528dc8fe91591e2e17b0",
     "https://bcr.bazel.build/modules/jsoncpp/1.9.6/source.json": "a04756d367a2126c3541682864ecec52f92cdee80a35735a3cb249ce015ca000",
     "https://bcr.bazel.build/modules/libpfm/4.11.0/MODULE.bazel": "45061ff025b301940f1e30d2c16bea596c25b176c8b6b3087e92615adbd52902",
-    "https://bcr.bazel.build/modules/libxml2/2.15.3/MODULE.bazel": "a6bffafd8aa8b0c13eaa4bf25d55be188ec8548549395f03e98c39bab264adaa",
-    "https://bcr.bazel.build/modules/libxml2/2.15.3/source.json": "fd7c420cb14981416c9fadd0db555bd1e249355e0e5b63b2ce15b92996b5fbfb",
     "https://bcr.bazel.build/modules/llvm/0.8.17/MODULE.bazel": "1d90735de43b21720434f025fb7a609085490ad695692eec1315def8e1145869",
     "https://bcr.bazel.build/modules/llvm/0.8.19/MODULE.bazel": "8bebb1a93b755bfdd0d95bfa2863bcb818a2602cedcb37539b2dee5367091519",
     "https://bcr.bazel.build/modules/llvm/0.8.19/source.json": "026abe19336fcae6d5f50e13da862f154a3538faca003670e9baa8694ef2ccd2",
@@ -118,6 +119,7 @@
     "https://bcr.bazel.build/modules/package_metadata/0.0.13/source.json": "f488e4534468eac223f6417dfdf8d3b7299166d36536408d37c2493ca1e8539d",
     "https://bcr.bazel.build/modules/package_metadata/0.0.3/MODULE.bazel": "77890552ecea9e284b5424c9de827a58099348763a4359e975c359a83d4faa83",
     "https://bcr.bazel.build/modules/package_metadata/0.0.5/MODULE.bazel": "ef4f9439e3270fdd6b9fd4dbc3d2f29d13888e44c529a1b243f7a31dfbc2e8e4",
+    "https://bcr.bazel.build/modules/package_metadata/0.0.7/MODULE.bazel": "7adb03933fc8401f495800cf4eafcff0edc6da0ff55c7db223ef69d19f689486",
     "https://bcr.bazel.build/modules/platforms/0.0.10/MODULE.bazel": "8cb8efaf200bdeb2150d93e162c40f388529a25852b332cec879373771e48ed5",
     "https://bcr.bazel.build/modules/platforms/0.0.11/MODULE.bazel": "0daefc49732e227caa8bfa834d65dc52e8cc18a2faf80df25e8caea151a9413f",
     "https://bcr.bazel.build/modules/platforms/0.0.4/MODULE.bazel": "9b328e31ee156f53f3c416a64f8491f7eb731742655a47c9eec4703a71644aee",
@@ -140,10 +142,10 @@
     "https://bcr.bazel.build/modules/protobuf/29.0-rc3/MODULE.bazel": "33c2dfa286578573afc55a7acaea3cada4122b9631007c594bf0729f41c8de92",
     "https://bcr.bazel.build/modules/protobuf/29.0/MODULE.bazel": "319dc8bf4c679ff87e71b1ccfb5a6e90a6dbc4693501d471f48662ac46d04e4e",
     "https://bcr.bazel.build/modules/protobuf/29.1/MODULE.bazel": "557c3457560ff49e122ed76c0bc3397a64af9574691cb8201b4e46d4ab2ecb95",
-    "https://bcr.bazel.build/modules/protobuf/29.3/MODULE.bazel": "77480eea5fb5541903e49683f24dc3e09f4a79e0eea247414887bb9fc0066e94",
     "https://bcr.bazel.build/modules/protobuf/3.19.0/MODULE.bazel": "6b5fbb433f760a99a22b18b6850ed5784ef0e9928a72668b66e4d7ccd47db9b0",
     "https://bcr.bazel.build/modules/protobuf/3.19.2/MODULE.bazel": "532ffe5f2186b69fdde039efe6df13ba726ff338c6bc82275ad433013fa10573",
     "https://bcr.bazel.build/modules/protobuf/3.19.6/MODULE.bazel": "9233edc5e1f2ee276a60de3eaa47ac4132302ef9643238f23128fea53ea12858",
+    "https://bcr.bazel.build/modules/protobuf/31.1/MODULE.bazel": "379a389bb330b7b8c1cdf331cc90bf3e13de5614799b3b52cdb7c6f389f6b38e",
     "https://bcr.bazel.build/modules/protobuf/32.1/MODULE.bazel": "89cd2866a9cb07fee9ff74c41ceace11554f32e0d849de4e23ac55515cfada4d",
     "https://bcr.bazel.build/modules/protobuf/33.1/MODULE.bazel": "982c8a0cceab4d790076f72b7677faf836b0dfadc2b66a34aab7232116c4ae39",
     "https://bcr.bazel.build/modules/protobuf/33.4/MODULE.bazel": "114775b816b38b6d0ca620450d6b02550c60ceedfdc8d9a229833b34a223dc42",
@@ -157,9 +159,9 @@
     "https://bcr.bazel.build/modules/re2/2024-07-02.bcr.1/source.json": "2ff292be6ef3340325ce8a045ecc326e92cbfab47c7cbab4bd85d28971b97ac4",
     "https://bcr.bazel.build/modules/re2/2024-07-02/MODULE.bazel": "0eadc4395959969297cbcf31a249ff457f2f1d456228c67719480205aa306daa",
     "https://bcr.bazel.build/modules/rules_android/0.1.1/MODULE.bazel": "48809ab0091b07ad0182defb787c4c5328bd3a278938415c00a7b69b50c4d3a8",
-    "https://bcr.bazel.build/modules/rules_android/0.6.4/MODULE.bazel": "b4cde12d506dd65d82b2be39761f49f5797303343a3d5b4ee191c0cdf9ef387c",
-    "https://bcr.bazel.build/modules/rules_android/0.8.0/MODULE.bazel": "92961a7a1218694a31fa748eba164db2721f5c42f2d7ed3325c52b19d00ae2f5",
-    "https://bcr.bazel.build/modules/rules_android/0.8.0/source.json": "efec84c34a78d0b6a23b7a07d51e810942428a5b980857284806d0a59762591f",
+    "https://bcr.bazel.build/modules/rules_android/0.6.6/MODULE.bazel": "b0fb569752aab65ab1a9db0a8f6cfaf5aa1754965e17e95dcf0e4d88e192a68d",
+    "https://bcr.bazel.build/modules/rules_android/0.7.1/MODULE.bazel": "a806fc382a774252f228a40e3b11b9fcc6276f8778c7fb33e9f72937c6258363",
+    "https://bcr.bazel.build/modules/rules_android/0.7.1/source.json": "151440aed3f0f73a00d4ed5cec5d31f63a6fef9b95d8fab1eb1810150fa525f2",
     "https://bcr.bazel.build/modules/rules_apple/3.16.0/MODULE.bazel": "0d1caf0b8375942ce98ea944be754a18874041e4e0459401d925577624d3a54a",
     "https://bcr.bazel.build/modules/rules_apple/4.1.0/MODULE.bazel": "76e10fd4a48038d3fc7c5dc6e63b7063bbf5304a2e3bd42edda6ec660eebea68",
     "https://bcr.bazel.build/modules/rules_apple/4.5.3/MODULE.bazel": "1df77451a8dd806c0ac738fbcbde41d2ef45bc72706396dbf29cdd3091846e14",
@@ -190,7 +192,6 @@
     "https://bcr.bazel.build/modules/rules_cc/0.2.26/source.json": "bf9ff315da6055c1e374d627012cc51947a05b3560674af7d69fbedbb4fde6ef",
     "https://bcr.bazel.build/modules/rules_cc/0.2.4/MODULE.bazel": "1ff1223dfd24f3ecf8f028446d4a27608aa43c3f41e346d22838a4223980b8cc",
     "https://bcr.bazel.build/modules/rules_cc/0.2.8/MODULE.bazel": "f1df20f0bf22c28192a794f29b501ee2018fa37a3862a1a2132ae2940a23a642",
-    "https://bcr.bazel.build/modules/rules_cc/0.2.9/MODULE.bazel": "34263f1dca62ea664265438cef714d7db124c03e1ed55ebb4f1dc860164308d1",
     "https://bcr.bazel.build/modules/rules_foreign_cc/0.9.0/MODULE.bazel": "c9e8c682bf75b0e7c704166d79b599f93b72cfca5ad7477df596947891feeef6",
     "https://bcr.bazel.build/modules/rules_fuzzing/0.5.2/MODULE.bazel": "40c97d1144356f52905566c55811f13b299453a14ac7769dfba2ac38192337a8",
     "https://bcr.bazel.build/modules/rules_go/0.41.0/MODULE.bazel": "55861d8e8bb0e62cbd2896f60ff303f62ffcb0eddb74ecb0e5c0cbe36fc292c8",
@@ -213,11 +214,11 @@
     "https://bcr.bazel.build/modules/rules_java/7.2.0/MODULE.bazel": "06c0334c9be61e6cef2c8c84a7800cef502063269a5af25ceb100b192453d4ab",
     "https://bcr.bazel.build/modules/rules_java/7.4.0/MODULE.bazel": "a592852f8a3dd539e82ee6542013bf2cadfc4c6946be8941e189d224500a8934",
     "https://bcr.bazel.build/modules/rules_java/7.6.1/MODULE.bazel": "2f14b7e8a1aa2f67ae92bc69d1ec0fa8d9f827c4e17ff5e5f02e91caa3b2d0fe",
+    "https://bcr.bazel.build/modules/rules_java/8.13.0/MODULE.bazel": "0444ebf737d144cf2bb2ccb368e7f1cce735264285f2a3711785827c1686625e",
     "https://bcr.bazel.build/modules/rules_java/8.3.2/MODULE.bazel": "7336d5511ad5af0b8615fdc7477535a2e4e723a357b6713af439fe8cf0195017",
     "https://bcr.bazel.build/modules/rules_java/8.5.1/MODULE.bazel": "d8a9e38cc5228881f7055a6079f6f7821a073df3744d441978e7a43e20226939",
     "https://bcr.bazel.build/modules/rules_java/8.6.0/MODULE.bazel": "9c064c434606d75a086f15ade5edb514308cccd1544c2b2a89bbac4310e41c71",
     "https://bcr.bazel.build/modules/rules_java/8.6.1/MODULE.bazel": "f4808e2ab5b0197f094cabce9f4b006a27766beb6a9975931da07099560ca9c2",
-    "https://bcr.bazel.build/modules/rules_java/8.6.3/MODULE.bazel": "e90505b7a931d194245ffcfb6ff4ca8ef9d46b4e830d12e64817752e0198e2ed",
     "https://bcr.bazel.build/modules/rules_java/8.9.0/MODULE.bazel": "e17c876cb53dcd817b7b7f0d2985b710610169729e8c371b2221cacdcd3dce4a",
     "https://bcr.bazel.build/modules/rules_java/9.0.0/MODULE.bazel": "3a712cd07c0e8a29f3f1b24fdf753a98d16f004c5e868f6d981c0122a4166cf8",
     "https://bcr.bazel.build/modules/rules_java/9.1.0/MODULE.bazel": "ee63f27e36a3fada80342869361182f120a9819c74320e8e65b1e04ba0cd7a9d",
@@ -226,17 +227,18 @@
     "https://bcr.bazel.build/modules/rules_jvm_external/4.4.2/MODULE.bazel": "a56b85e418c83eb1839819f0b515c431010160383306d13ec21959ac412d2fe7",
     "https://bcr.bazel.build/modules/rules_jvm_external/5.1/MODULE.bazel": "33f6f999e03183f7d088c9be518a63467dfd0be94a11d0055fe2d210f89aa909",
     "https://bcr.bazel.build/modules/rules_jvm_external/5.2/MODULE.bazel": "d9351ba35217ad0de03816ef3ed63f89d411349353077348a45348b096615036",
+    "https://bcr.bazel.build/modules/rules_jvm_external/6.10/MODULE.bazel": "33e636ca6bc9ee0fa090a38aa33c631ded2d8cf6fead4124181d1b35dc474f7c",
+    "https://bcr.bazel.build/modules/rules_jvm_external/6.10/source.json": "c191249787625db72616a3fb3cc2786ab57355a2e3b615402b8b3b66b0f995b7",
     "https://bcr.bazel.build/modules/rules_jvm_external/6.2/MODULE.bazel": "36a6e52487a855f33cb960724eb56547fa87e2c98a0474c3acad94339d7f8e99",
     "https://bcr.bazel.build/modules/rules_jvm_external/6.3/MODULE.bazel": "c998e060b85f71e00de5ec552019347c8bca255062c990ac02d051bb80a38df0",
     "https://bcr.bazel.build/modules/rules_jvm_external/6.6/MODULE.bazel": "153042249c7060536dc95b6bb9f9bb8063b8a0b0cb7acdb381bddbc2374aed55",
     "https://bcr.bazel.build/modules/rules_jvm_external/6.7/MODULE.bazel": "e717beabc4d091ecb2c803c2d341b88590e9116b8bf7947915eeb33aab4f96dd",
-    "https://bcr.bazel.build/modules/rules_jvm_external/6.8/MODULE.bazel": "b5afe861e867e4c8e5b88e401cb7955bd35924258f97b1862cc966cbcf4f1a62",
     "https://bcr.bazel.build/modules/rules_jvm_external/6.9/MODULE.bazel": "07c5db05527db7744a54fcffd653e1550d40e0540207a7f7e6d0a4de5bef8274",
-    "https://bcr.bazel.build/modules/rules_jvm_external/6.9/source.json": "b12970214f3cc144b26610caeb101fa622d910f1ab3d98f0bae1058edbd00bd4",
     "https://bcr.bazel.build/modules/rules_kotlin/1.9.5/MODULE.bazel": "043a16a572f610558ec2030db3ff0c9938574e7dd9f58bded1bb07c0192ef025",
     "https://bcr.bazel.build/modules/rules_kotlin/1.9.6/MODULE.bazel": "d269a01a18ee74d0335450b10f62c9ed81f2321d7958a2934e44272fe82dcef3",
-    "https://bcr.bazel.build/modules/rules_kotlin/2.1.10/MODULE.bazel": "cf3e4e04cebd799ffdd76f07a5fcc05f7b8c47bae73b780a694fe76746a69440",
-    "https://bcr.bazel.build/modules/rules_kotlin/2.1.10/source.json": "04a273e397fbb31ff3d328f44482c783feac979f33f3c2737fba880c84f8f340",
+    "https://bcr.bazel.build/modules/rules_kotlin/2.1.3/MODULE.bazel": "ce7def6d576aa8d3a9c6d10e13b4d157296229674371f67dbf788dae0afae3d5",
+    "https://bcr.bazel.build/modules/rules_kotlin/2.3.0/MODULE.bazel": "75701a661b9d07dfb0def55775ea2f61e905b099acc96b9d09b75a0c06b1e9fe",
+    "https://bcr.bazel.build/modules/rules_kotlin/2.3.0/source.json": "33265e8a5978eb986b968d60ce9c68e20291c456f0c2971d384ad5cd10163e5f",
     "https://bcr.bazel.build/modules/rules_license/0.0.3/MODULE.bazel": "627e9ab0247f7d1e05736b59dbb1b6871373de5ad31c3011880b4133cafd4bd0",
     "https://bcr.bazel.build/modules/rules_license/0.0.7/MODULE.bazel": "088fbeb0b6a419005b89cf93fe62d9517c0a2b8bb56af3244af65ecfe37e7d5d",
     "https://bcr.bazel.build/modules/rules_license/1.0.0/MODULE.bazel": "a7fda60eefdf3d8c827262ba499957e4df06f659330bbe6cdbdb975b768bb65c",
@@ -261,6 +263,7 @@
     "https://bcr.bazel.build/modules/rules_python/0.37.1/MODULE.bazel": "3faeb2d9fa0a81f8980643ee33f212308f4d93eea4b9ce6f36d0b742e71e9500",
     "https://bcr.bazel.build/modules/rules_python/0.37.2/MODULE.bazel": "b5ffde91410745750b6c13be1c5dc4555ef5bc50562af4a89fd77807fdde626a",
     "https://bcr.bazel.build/modules/rules_python/0.4.0/MODULE.bazel": "9208ee05fd48bf09ac60ed269791cf17fb343db56c8226a720fbb1cdf467166c",
+    "https://bcr.bazel.build/modules/rules_python/1.0.0/MODULE.bazel": "898a3d999c22caa585eb062b600f88654bf92efb204fa346fb55f6f8edffca43",
     "https://bcr.bazel.build/modules/rules_python/1.3.0/MODULE.bazel": "8361d57eafb67c09b75bf4bbe6be360e1b8f4f18118ab48037f2bd50aa2ccb13",
     "https://bcr.bazel.build/modules/rules_python/1.4.1/MODULE.bazel": "8991ad45bdc25018301d6b7e1d3626afc3c8af8aaf4bc04f23d0b99c938b73a6",
     "https://bcr.bazel.build/modules/rules_python/1.6.0/MODULE.bazel": "7e04ad8f8d5bea40451cf80b1bd8262552aa73f841415d20db96b7241bd027d8",
@@ -3393,7 +3396,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "3543Tuv+6AUVd3vEfrDOwiT1lQlihBEB8/SVDT5jkRA=",
+        "bzlTransitiveDigest": "SxSjwyX0meeTBACpPwwYSguMUd7DxsqEqufkcKexE9o=",
         "usagesDigest": "iwEHwSOgd0vuOEbdSsFyamhNqqwH+RUig4QQu5OspMY=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4530,8 +4533,6 @@
                 "@deps//:collection",
                 "@deps//:meta"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4540,18 +4541,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-async": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "async",
-              "version": "2.13.1",
-              "hub_name": "deps",
-              "sha256": "e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37",
-              "url": "https://pub.dev/api/archives/async-2.13.1.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__boolean_selector": {
@@ -4569,8 +4558,6 @@
                 "@deps//:source_span",
                 "@deps//:string_scanner"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4579,18 +4566,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-boolean_selector": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "boolean_selector",
-              "version": "2.1.2",
-              "hub_name": "deps",
-              "sha256": "8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea",
-              "url": "https://pub.dev/api/archives/boolean_selector-2.1.2.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__characters": {
@@ -4602,8 +4577,6 @@
               "url": "https://pub.dev/api/archives/characters-1.4.1.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4612,18 +4585,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-characters": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "characters",
-              "version": "1.4.1",
-              "hub_name": "deps",
-              "sha256": "faf38497bda5ead2a8c7615f4f7939df04333478bf32e4173fcb06d428b5716b",
-              "url": "https://pub.dev/api/archives/characters-1.4.1.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__clock": {
@@ -4635,8 +4596,6 @@
               "url": "https://pub.dev/api/archives/clock-1.1.2.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4645,18 +4604,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-clock": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "clock",
-              "version": "1.1.2",
-              "hub_name": "deps",
-              "sha256": "fddb70d9b5277016c77a80201021d40a2247104d9f4aa7bab7157b7e3f05b84b",
-              "url": "https://pub.dev/api/archives/clock-1.1.2.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__collection": {
@@ -4668,8 +4615,6 @@
               "url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4678,18 +4623,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-collection": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "collection",
-              "version": "1.19.1",
-              "hub_name": "deps",
-              "sha256": "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76",
-              "url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__fake_async": {
@@ -4707,8 +4640,6 @@
                 "@deps//:clock",
                 "@deps//:collection"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4717,18 +4648,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-fake_async": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "fake_async",
-              "version": "1.3.3",
-              "hub_name": "deps",
-              "sha256": "5368f224a74523e8d2e7399ea1638b37aecfca824a3cc4dfdf77bf1fa905ac44",
-              "url": "https://pub.dev/api/archives/fake_async-1.3.3.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__leak_tracker": {
@@ -4752,8 +4671,6 @@
                 "@deps//:path",
                 "@deps//:vm_service"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4762,18 +4679,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-leak_tracker": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "leak_tracker",
-              "version": "11.0.2",
-              "hub_name": "deps",
-              "sha256": "33e2e26bdd85a0112ec15400c8cbffea70d0f9c3407491f672a2fad47915e2de",
-              "url": "https://pub.dev/api/archives/leak_tracker-11.0.2.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__leak_tracker_flutter_testing": {
@@ -4797,8 +4702,6 @@
                 "@deps//:matcher",
                 "@deps//:meta"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4807,18 +4710,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-leak_tracker_flutter_testing": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "leak_tracker_flutter_testing",
-              "version": "3.0.10",
-              "hub_name": "deps",
-              "sha256": "1dbc140bb5a23c75ea9c4811222756104fbcd1a27173f0c34ca01e16bea473c1",
-              "url": "https://pub.dev/api/archives/leak_tracker_flutter_testing-3.0.10.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__leak_tracker_testing": {
@@ -4838,8 +4729,6 @@
                 "@deps//:matcher",
                 "@deps//:meta"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4848,18 +4737,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-leak_tracker_testing": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "leak_tracker_testing",
-              "version": "3.0.2",
-              "hub_name": "deps",
-              "sha256": "8d5a2d49f4a66b49744b23b018848400d23e54caf9463f4eb20df3eb8acb2eb1",
-              "url": "https://pub.dev/api/archives/leak_tracker_testing-3.0.2.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__matcher": {
@@ -4883,8 +4760,6 @@
                 "@deps//:term_glyph",
                 "@deps//:test_api"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4893,18 +4768,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-matcher": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "matcher",
-              "version": "0.12.19",
-              "hub_name": "deps",
-              "sha256": "dc0b7dc7651697ea4ff3e69ef44b0407ea32c487a39fff6a4004fa585e901861",
-              "url": "https://pub.dev/api/archives/matcher-0.12.19.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__material_color_utilities": {
@@ -4920,8 +4783,6 @@
               "deps": [
                 "@deps//:collection"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4930,18 +4791,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-material_color_utilities": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "material_color_utilities",
-              "version": "0.13.0",
-              "hub_name": "deps",
-              "sha256": "9c337007e82b1889149c82ed242ed1cb24a66044e30979c44912381e9be4c48b",
-              "url": "https://pub.dev/api/archives/material_color_utilities-0.13.0.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__meta": {
@@ -4953,8 +4802,6 @@
               "url": "https://pub.dev/api/archives/meta-1.18.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4963,18 +4810,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-meta": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "meta",
-              "version": "1.18.0",
-              "hub_name": "deps",
-              "sha256": "1741988757a65eb6b36abe716829688cf01910bbf91c34354ff7ec1c3de2b349",
-              "url": "https://pub.dev/api/archives/meta-1.18.0.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__path": {
@@ -4986,8 +4821,6 @@
               "url": "https://pub.dev/api/archives/path-1.9.1.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -4996,18 +4829,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-path": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "path",
-              "version": "1.9.1",
-              "hub_name": "deps",
-              "sha256": "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5",
-              "url": "https://pub.dev/api/archives/path-1.9.1.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__source_span": {
@@ -5027,8 +4848,6 @@
                 "@deps//:path",
                 "@deps//:term_glyph"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5037,18 +4856,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-source_span": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "source_span",
-              "version": "1.10.2",
-              "hub_name": "deps",
-              "sha256": "56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab",
-              "url": "https://pub.dev/api/archives/source_span-1.10.2.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__stack_trace": {
@@ -5064,8 +4871,6 @@
               "deps": [
                 "@deps//:path"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5074,18 +4879,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-stack_trace": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "stack_trace",
-              "version": "1.12.1",
-              "hub_name": "deps",
-              "sha256": "8b27215b45d22309b5cddda1aa2b19bdfec9df0e765f2de506401c071d38d1b1",
-              "url": "https://pub.dev/api/archives/stack_trace-1.12.1.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__stream_channel": {
@@ -5101,8 +4894,6 @@
               "deps": [
                 "@deps//:async"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5111,18 +4902,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-stream_channel": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "stream_channel",
-              "version": "2.1.4",
-              "hub_name": "deps",
-              "sha256": "969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d",
-              "url": "https://pub.dev/api/archives/stream_channel-2.1.4.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__string_scanner": {
@@ -5138,8 +4917,6 @@
               "deps": [
                 "@deps//:source_span"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5148,18 +4925,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-string_scanner": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "string_scanner",
-              "version": "1.4.1",
-              "hub_name": "deps",
-              "sha256": "921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43",
-              "url": "https://pub.dev/api/archives/string_scanner-1.4.1.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__term_glyph": {
@@ -5171,8 +4936,6 @@
               "url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5181,18 +4944,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-term_glyph": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "term_glyph",
-              "version": "1.2.2",
-              "hub_name": "deps",
-              "sha256": "7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e",
-              "url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__test_api": {
@@ -5224,8 +4975,6 @@
                 "@deps//:string_scanner",
                 "@deps//:term_glyph"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5234,18 +4983,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-test_api": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "test_api",
-              "version": "0.7.11",
-              "hub_name": "deps",
-              "sha256": "949a932224383300f01be9221c39180316445ecb8e7547f70a41a35bf421fb9e",
-              "url": "https://pub.dev/api/archives/test_api-0.7.11.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__typed_data": {
@@ -5261,8 +4998,6 @@
               "deps": [
                 "@deps//:collection"
               ],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5271,18 +5006,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-typed_data": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "typed_data",
-              "version": "1.4.0",
-              "hub_name": "deps",
-              "sha256": "f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006",
-              "url": "https://pub.dev/api/archives/typed_data-1.4.0.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__vector_math": {
@@ -5294,8 +5017,6 @@
               "url": "https://pub.dev/api/archives/vector_math-2.2.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5304,18 +5025,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-vector_math": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "vector_math",
-              "version": "2.2.0",
-              "hub_name": "deps",
-              "sha256": "d530bd74fea330e6e364cda7a85019c434070188383e1cd8d9777ee586914c5b",
-              "url": "https://pub.dev/api/archives/vector_math-2.2.0.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__very_good_analysis": {
@@ -5327,8 +5036,6 @@
               "url": "https://pub.dev/api/archives/very_good_analysis-10.3.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5337,18 +5044,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-very_good_analysis": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "very_good_analysis",
-              "version": "10.3.0",
-              "hub_name": "deps",
-              "sha256": "481af67ab5877af20325251dc215a4ebac7666a1c8cf09198ffd457bc612b33d",
-              "url": "https://pub.dev/api/archives/very_good_analysis-10.3.0.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__vm_service": {
@@ -5360,8 +5055,6 @@
               "url": "https://pub.dev/api/archives/vm_service-15.2.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "android_maven_deps": {},
-              "android_maven_ignore": [],
               "hub_name": "deps",
               "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
               "plugin_defines": [],
@@ -5370,18 +5063,6 @@
               ],
               "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
               "pubspec_lock": "@@//:pubspec.lock"
-            }
-          },
-          "deps-android-vm_service": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_android_package.bzl%flutter_pub_android_package",
-            "attributes": {
-              "package_name": "vm_service",
-              "version": "15.2.0",
-              "hub_name": "deps",
-              "sha256": "0016aef94fc66495ac78af5859181e3f3bf2026bd8eecc72b9565601e19ab360",
-              "url": "https://pub.dev/api/archives/vm_service-15.2.0.tar.gz",
-              "android_maven_deps": {},
-              "android_maven_ignore": []
             }
           },
           "deps__flutter": {
@@ -5449,7 +5130,6 @@
               ],
               "scc_targets": {},
               "files": {
-                "android/BUILD.bazel": "load(\"@rules_kotlin//kotlin:android.bzl\", \"kt_android_library\")\n\n# Aggregator — re-exports every spoke's `android:lib`. Spokes without\n# Android sources contribute empty libraries (a no-op at link time).\n# `flutter_android_app` does not add it: an app takes only the Android\n# libraries of the plugins its Dart graph reaches. A caller may name it\n# in `deps` to package every plugin in the lock.\n#\n# `exports = [...]` (rather than `deps = [...]`) is required by\n# rules_android: a `kt_android_library` without `srcs` or\n# `resource_files` may not declare `deps` directly — the supported way\n# to forward dependencies is `exports`.\nkt_android_library(\n    name = \"all_android_plugin_libs\",\n    srcs = [],\n    visibility = [\"//visibility:public\"],\n    exports = [\n        \"@deps__async//android:lib\",\n        \"@deps__boolean_selector//android:lib\",\n        \"@deps__characters//android:lib\",\n        \"@deps__clock//android:lib\",\n        \"@deps__collection//android:lib\",\n        \"@deps__fake_async//android:lib\",\n        \"@deps__flutter//android:lib\",\n        \"@deps__flutter_test//android:lib\",\n        \"@deps__integration_test//android:lib\",\n        \"@deps__leak_tracker//android:lib\",\n        \"@deps__leak_tracker_flutter_testing//android:lib\",\n        \"@deps__leak_tracker_testing//android:lib\",\n        \"@deps__matcher//android:lib\",\n        \"@deps__material_color_utilities//android:lib\",\n        \"@deps__meta//android:lib\",\n        \"@deps__path//android:lib\",\n        \"@deps__source_span//android:lib\",\n        \"@deps__stack_trace//android:lib\",\n        \"@deps__stream_channel//android:lib\",\n        \"@deps__string_scanner//android:lib\",\n        \"@deps__term_glyph//android:lib\",\n        \"@deps__test_api//android:lib\",\n        \"@deps__typed_data//android:lib\",\n        \"@deps__vector_math//android:lib\",\n        \"@deps__very_good_analysis//android:lib\",\n        \"@deps__vm_service//android:lib\",\n    ],\n)\n",
                 "packages/BUILD.bazel": "load(\"@rules_flutter//flutter:defs.bzl\", \"flutter_pub_packages\")\n\nflutter_pub_packages(\n    name = \"packages\",\n    package_graph = \"package_graph.json\",\n    deps = [\n        \"//:async\",\n        \"//:boolean_selector\",\n        \"//:characters\",\n        \"//:clock\",\n        \"//:collection\",\n        \"//:fake_async\",\n        \"//:flutter\",\n        \"//:flutter_test\",\n        \"//:integration_test\",\n        \"//:leak_tracker\",\n        \"//:leak_tracker_flutter_testing\",\n        \"//:leak_tracker_testing\",\n        \"//:matcher\",\n        \"//:material_color_utilities\",\n        \"//:meta\",\n        \"//:path\",\n        \"//:source_span\",\n        \"//:stack_trace\",\n        \"//:stream_channel\",\n        \"//:string_scanner\",\n        \"//:term_glyph\",\n        \"//:test_api\",\n        \"//:typed_data\",\n        \"//:vector_math\",\n        \"//:very_good_analysis\",\n        \"//:vm_service\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\n",
                 "packages/package_graph.json": "{\n  \"configVersion\": 1,\n  \"packages\": [\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"async\",\n      \"version\": \"2.13.1\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"boolean_selector\",\n      \"version\": \"2.1.2\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"characters\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"clock\",\n      \"version\": \"1.1.2\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"collection\",\n      \"version\": \"1.19.1\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"fake_async\",\n      \"version\": \"1.3.3\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"collection\",\n        \"meta\",\n        \"path\",\n        \"vm_service\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"leak_tracker\",\n      \"version\": \"11.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"flutter\",\n        \"leak_tracker\",\n        \"leak_tracker_testing\",\n        \"matcher\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"leak_tracker_flutter_testing\",\n      \"version\": \"3.0.10\"\n    },\n    {\n      \"dependencies\": [\n        \"leak_tracker\",\n        \"matcher\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"leak_tracker_testing\",\n      \"version\": \"3.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"meta\",\n        \"stack_trace\",\n        \"term_glyph\",\n        \"test_api\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"matcher\",\n      \"version\": \"0.12.19\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"material_color_utilities\",\n      \"version\": \"0.13.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"meta\",\n      \"version\": \"1.18.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"path\",\n      \"version\": \"1.9.1\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"path\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_span\",\n      \"version\": \"1.10.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stack_trace\",\n      \"version\": \"1.12.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stream_channel\",\n      \"version\": \"2.1.4\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"string_scanner\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"term_glyph\",\n      \"version\": \"1.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"meta\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"string_scanner\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test_api\",\n      \"version\": \"0.7.11\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"typed_data\",\n      \"version\": \"1.4.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"vector_math\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"very_good_analysis\",\n      \"version\": \"10.3.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"vm_service\",\n      \"version\": \"15.2.0\"\n    }\n  ],\n  \"roots\": []\n}\n",
                 "ios_native_deps.json": "{\"ios_pod_deps\":{},\"ios_pod_ignore\":[],\"ios_pods\":{},\"swift_package_product_deps\":{},\"version\":1}",
@@ -5513,6 +5193,55 @@
                 "https://github.com/pybind/pybind11/archive/v2.12.0.zip"
               ]
             }
+          }
+        }
+      }
+    },
+    "@@rules_android+//bzlmod_extensions:apksig.bzl%apksig_extension": {
+      "general": {
+        "bzlTransitiveDigest": "0A8O20aQTIZnt20CyMK1wzktVUyJO1Y3jI6cS1WftKQ=",
+        "usagesDigest": "zr/niBQ/s2fHozWAsg4vI70wAxcuFjG+QtM15qGkq9o=",
+        "recordedInputs": [
+          "REPO_MAPPING:rules_android+,bazel_tools bazel_tools"
+        ],
+        "generatedRepoSpecs": {
+          "apksig": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "url": "https://android.googlesource.com/platform/tools/apksig/+archive/24e3075e68ebe17c0b529bb24bfda819db5e2f3b.tar.gz",
+              "build_file": "@@rules_android+//bzlmod_extensions:apksig.BUILD"
+            }
+          }
+        }
+      }
+    },
+    "@@rules_android+//bzlmod_extensions:com_android_dex.bzl%com_android_dex_extension": {
+      "general": {
+        "bzlTransitiveDigest": "stTLqB1DjqvC1RcosQO9gDBmAlvTegb/9MYDyiRNuFo=",
+        "usagesDigest": "c1Y/KGGjUYCyd8zNIVTUh1bynVXRFz6xGKaSCBpQANM=",
+        "recordedInputs": [
+          "REPO_MAPPING:rules_android+,bazel_tools bazel_tools"
+        ],
+        "generatedRepoSpecs": {
+          "com_android_dex": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "url": "https://android.googlesource.com/platform/dalvik/+archive/5a81c499a569731e2395f7c8d13c0e0d4e17a2b6.tar.gz",
+              "build_file": "@@rules_android+//bzlmod_extensions:com_android_dex.BUILD"
+            }
+          }
+        }
+      }
+    },
+    "@@rules_android+//rules/android_sdk_repository:rule.bzl%android_sdk_repository_extension": {
+      "general": {
+        "bzlTransitiveDigest": "+rMrzIrv7sImYmkbXJYv+gFpTJQ79X3MpwwMLI2A+oA=",
+        "usagesDigest": "iEGI2aNDMkHt9LXCdViLNUUOslpiVj2DrevWWXZEFnU=",
+        "recordedInputs": [],
+        "generatedRepoSpecs": {
+          "androidsdk": {
+            "repoRuleId": "@@rules_android+//rules/android_sdk_repository:rule.bzl%_android_sdk_repository",
+            "attributes": {}
           }
         }
       }

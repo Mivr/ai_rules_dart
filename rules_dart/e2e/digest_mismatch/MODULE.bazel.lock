@@ -229,7 +229,7 @@
   "moduleExtensions": {
     "//:red.bzl%digest": {
       "general": {
-        "bzlTransitiveDigest": "kC0b+s3//xKsi14/UaKfw6ZYRGUYdRxYQDHMdxzo6v0=",
+        "bzlTransitiveDigest": "rR4oUwUGFOUULjj7xk6JBPpEhCfr1JpEGiW8ZCwrAJM=",
         "usagesDigest": "JENjO4ETxqBrmveW9yU4IgJHr//8PdYPcGXfDh9i5CM=",
         "recordedInputs": [
           "REPO_MAPPING:,rules_dart ai_rules_dart+",

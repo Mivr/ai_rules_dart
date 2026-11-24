@@ -234,8 +234,9 @@
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
         "bzlTransitiveDigest": "OAtcP3CcxrNt28m7uO7F1OvY7Foc74DDpIhzybR1jwE=",
-        "usagesDigest": "Y79Oosum1lxJ4XHnMW7kl2dd1l/KGrL0RcPqXDFX4UU=",
+        "usagesDigest": "PSFvamtqZ6ERG2Iw2HG7V5uAr0M7VwW4BAgZhWxzzkw=",
         "recordedInputs": [
+          "REPO_MAPPING:,sqlite3 sqlite3+",
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
           "FILE:@@//app/pubspec.lock 56bcff02721675cb08583f6c417b1b3713d629b4110417d24a74677f02ebe847",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock 1452d104de06eacf15905878d31e7b7c84bf72114637fee0c87da2c75dcf58da",
@@ -244,7 +245,7 @@
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
           "FILE:@@ai_rules_dart+//dart/ext/pub_plan.json 9a8318baca7377e3c4307c68140729577b22c816a17f7810980cdb35ca906598",
           "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pub_plan.json f6a39248934c419f51f8672259b7de3991c860fa4ba9c1422608f981cf8868d1",
-          "FILE:@@//app/pubspec.yaml 869d5fb821619c3c44cfecd2da3239e40011c556bfe94c31bcb439584b4cd1d1",
+          "FILE:@@//app/pubspec.yaml b0fc5d384ad72b7833d89945084e77cf6338de68a40f5dbce0b24eb1cd58450a",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.yaml 169951c2e1973cc403daba2bbd1179e4a73e1f5be390d0572f69531211e5bdee",
           "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 1d4a082706d3df1ae1f7694f5563f22af91dcbcf6be6d5dc8e16487ae54e55b7"
         ],
@@ -1901,7 +1902,13 @@
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
-              ]
+              ],
+              "hook_user_defines": "{\"path\":\"../external/sqlite3+/sqlite3.c\",\"source\":\"source\"}",
+              "hook_pubspec": "app/pubspec.yaml",
+              "hook_data": [
+                "'@@sqlite3+//:sqlite3.c'"
+              ],
+              "hook_network": false
             }
           },
           "dart_pub__sqlparser": {
