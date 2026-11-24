@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:perf/src/bazel.dart';
 import 'package:perf/src/flow.dart';
+import 'package:perf/src/flows/catalogue.dart';
 import 'package:perf/src/flows/common.dart';
 import 'package:perf/src/host.dart';
 import 'package:perf/src/proc.dart';
@@ -87,6 +89,100 @@ Ctx _ctx(String proc, {double noisy = 8}) => Ctx(
 );
 
 void main() {
+  group('adding a dependency', () {
+    const before = """
+packages:
+  collection:
+    dependency: transitive
+    version: "1.19.1"
+  flutter:
+    dependency: "direct main"
+""";
+    const after = """
+packages:
+  collection:
+    dependency: transitive
+    version: "1.19.1"
+  device_info_plus:
+    dependency: "direct main"
+    version: "13.3.0"
+  flutter:
+    dependency: "direct main"
+  win32:
+    dependency: transitive
+    version: "6.0.0"
+""";
+
+    test('the packages a lock adds', () {
+      expect(addedPackages(before, after), {'device_info_plus', 'win32'});
+      expect(addedPackages(after, before), isEmpty);
+    });
+
+    test('what may run: the app, the added packages and their Android libraries', () {
+      final added = {'device_info_plus', 'win32'};
+      for (final owner in [
+        '//:counter',
+        '@@//:app_r',
+        '@@ai_rules_flutter++flutter+deps__win32//:win32',
+        '@@ai_rules_flutter++flutter+deps__device_info_plus//:device_info_plus',
+        '@@ai_rules_flutter++android_model+android_model//:p_device_info_plus__debug_dex_m24d',
+      ]) {
+        expect(ownedByAdded(owner, added), isTrue, reason: owner);
+      }
+      for (final owner in [
+        '@@ai_rules_flutter++flutter+deps__win32_registry//:win32_registry',
+        '@@ai_rules_flutter++flutter+deps__jni//:_dartjni_cc',
+        '@@ai_rules_flutter++android_model+android_model//:p_url_launcher_android__debug',
+        '@@ai_rules_flutter++android_model+android_model//:android_jar_android-34',
+        '@@ai_rules_dart+//dart/private/tools:compile_wrapper',
+        '?',
+      ]) {
+        expect(ownedByAdded(owner, added), isFalse, reason: owner);
+      }
+    });
+
+    test(
+      'an execution log by owner, and the actions of untouched packages',
+      () {
+        final log = [
+          {'mnemonic': 'DartKernel', 'targetLabel': '//:counter'},
+          {
+            'mnemonic': 'DartKernel',
+            'targetLabel': '//:counter',
+            'cacheHit': true,
+          },
+          {
+            'mnemonic': 'RdfDex',
+            'targetLabel':
+                '@@m+android_model//:p_url_launcher_android__debug_dex',
+          },
+          {
+            'mnemonic': 'RdfDex',
+            'targetLabel':
+                '@@m+android_model//:p_url_launcher_android__debug_dex',
+          },
+          {'mnemonic': 'DartKernel', 'targetLabel': '@@f+deps__win32//:win32'},
+        ].map(jsonEncode).join('\n');
+        final executed = executedByOwner(log);
+        expect(executed, {
+          (owner: '//:counter', mnemonic: 'DartKernel'): 1,
+          (
+            owner: '@@m+android_model//:p_url_launcher_android__debug_dex',
+            mnemonic: 'RdfDex',
+          ): 2,
+          (owner: '@@f+deps__win32//:win32', mnemonic: 'DartKernel'): 1,
+        });
+        expect(untouchedReruns(executed, {'win32'}), [
+          '@@m+android_model//:p_url_launcher_android__debug_dex RdfDex x2',
+        ]);
+        expect(
+          untouchedReruns(executed, {'win32', 'url_launcher_android'}),
+          isEmpty,
+        );
+      },
+    );
+  });
+
   late Directory proc;
   setUp(() {
     proc = Directory.systemTemp.createTempSync('proc');

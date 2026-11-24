@@ -590,8 +590,9 @@ List<Flow> catalogue() {
     ..add(gradle('android.dart.stock', 'edit_dart', edits: const [_mainBody]))
     ..add(android('android.nochange.rules', 'warm'))
     ..add(gradle('android.nochange.stock', 'warm'))
-    ..add(AddPluginFlow(stock: false))
-    ..add(AddPluginFlow(stock: true))
+    ..add(AddDependencyFlow.plugin(stock: false))
+    ..add(AddDependencyFlow.plugin(stock: true))
+    ..add(AddDependencyFlow.dartPackage())
     ..add(
       android(
         'android.clean.rules',
@@ -795,63 +796,124 @@ const _flavorDefines = [
   '--dart-define=RETRIES=5',
 ];
 
-/// Adding one plugin (`device_info_plus`) to the nine-plugin app: the
-/// rules pin the Android model again (timed apart, in extra) and build;
-/// stock builds after `flutter pub add`.
-final class AddPluginFlow extends Flow {
-  /// The flow for the rules or for stock.
-  AddPluginFlow({required this.stock});
+/// Adding one dependency to an app with `flutter pub add`, then a debug
+/// build: `device_info_plus` to the nine-plugin Android app (the rules pin
+/// the Android model again, timed apart in extra) against Gradle, and the
+/// pure-Dart `equatable` to `e2e/linux_example`.
+///
+/// Every Bazel command of a rules flow runs with `--disk_cache=`: Bazel does
+/// not reuse its local action cache across a change of the disk cache
+/// setting (every action it checks misses), so building the state before
+/// with the disk cache and timing the state after without it reran every
+/// action of the app. Every output of the packages the lock adds is deleted
+/// before the timed build, so each run builds them as new. A rules run fails
+/// when an action of anything else than the added packages and the app's own
+/// targets ran: adding a dependency must not rebuild an untouched package.
+final class AddDependencyFlow extends Flow {
+  /// Adding [package] to the workspace [corpus] and building [target];
+  /// [android] pins the Android model again before the build.
+  AddDependencyFlow({
+    required this.id,
+    required this.stock,
+    required this.corpus,
+    required this.package,
+    required this.target,
+    required this.depsAnchor,
+    required this.android,
+  });
+
+  /// `device_info_plus` into the nine-plugin Android app.
+  factory AddDependencyFlow.plugin({required bool stock}) => AddDependencyFlow(
+    id: 'android.add_plugin.${stock ? 'stock' : 'rules'}',
+    stock: stock,
+    corpus: _plugins,
+    package: 'device_info_plus',
+    target: '//:app',
+    depsAnchor: '        "@deps//:camera",\n',
+    android: true,
+  );
+
+  /// The pure-Dart `equatable` into `e2e/linux_example`'s debug app.
+  factory AddDependencyFlow.dartPackage() => AddDependencyFlow(
+    id: 'flutter.add_package.rules',
+    stock: false,
+    corpus: _linux,
+    package: 'equatable',
+    target: '//:app_flutter',
+    depsAnchor: '        "@deps//:flutter",\n',
+    android: false,
+  );
+
+  @override
+  final String id;
 
   /// Which side.
   final bool stock;
 
   @override
-  String get id => 'android.add_plugin.${stock ? 'stock' : 'rules'}';
+  final String corpus;
+
+  /// The package `flutter pub add` adds.
+  final String package;
+
+  /// The target the timed build builds.
+  final String target;
+
+  /// The first line of the app's `deps` the package's label goes after.
+  final String depsAnchor;
+
+  /// Whether the app is an Android app with a pinned model.
+  final bool android;
+
   @override
   String get tool => stock ? 'stock' : 'rules_flutter';
   @override
-  String get corpus => 'e2e/android_plugins';
+  String get flow => android ? 'android_debug' : 'flutter_debug';
   @override
-  String get flow => 'android_debug';
-  @override
-  String get state => 'add_plugin';
+  String get state => android ? 'add_plugin' : 'add_package';
   @override
   bool get warm => !stock;
   @override
-  Set<String> get tags => {'android', if (stock) 'stock'};
+  Set<String> get tags => {
+    if (android) 'android' else 'flutter',
+    if (stock) 'stock',
+  };
 
   static const _files = [
     'pubspec.yaml',
     'pubspec.lock',
     'BUILD.bazel',
     'android_model.json',
+    'analysis_options.yaml',
   ];
   late String _ws;
   final _saved = <String, String>{};
   Bazel? _b;
+  Set<String> _added = const {};
 
   @override
   Bazel? get server => _b;
 
   @override
   String describe(Ctx c) => stock
-      ? 'flutter build apk --debug after `flutter pub add --offline device_info_plus` (untimed), the app built '
-            'before without it and the plugin\'s directories under build/ deleted'
-      : 'bazel build -c dbg --disk_cache= //:app after `flutter pub add --offline device_info_plus`, `bazel run '
-            '//:android_pin` (timed apart: extra.pin_s) and the label added to the app\'s deps, all untimed; the app '
-            'built before without it and the plugin\'s outputs under bazel-out deleted';
+      ? 'flutter build apk --debug after `flutter pub add --offline $package` (untimed), the app built '
+            'before without it and the added packages\' directories under build/ deleted'
+      : 'bazel build -c dbg --disk_cache= $target after `flutter pub add --offline $package`'
+            '${android ? ', `bazel run //:android_pin` (timed apart: extra.pin_s)' : ''} and the label added to '
+            'the app\'s deps, all untimed and all with --disk_cache=; the app built before without it and the '
+            'outputs of every package the lock adds deleted; fails when an action of another package runs';
 
   Cmd _stockCmd(Ctx c, List<String> a) => c.stock(a, _ws);
 
   @override
   Future<void> setUp(Ctx c) async {
     _ws = stock
-        ? await _stockCopy(_plugins)(c)
-        : await _e2e(_plugins, android: true)(c);
+        ? await _stockCopy(corpus)(c)
+        : await _e2e(corpus, android: android)(c);
     // The originals come from the repository, not from the copy, which a
     // run killed between its edit and its tear-down leaves edited.
     for (final f in _files) {
-      final file = File('${c.repo}/$_plugins/$f');
+      final file = File('${c.repo}/$corpus/$f');
       if (file.existsSync()) _saved[f] = file.readAsStringSync();
     }
     _restore();
@@ -870,11 +932,11 @@ final class AddPluginFlow extends Flow {
 
   double? _pin;
 
-  /// Deletes what an earlier run built for the added plugin, so every run
-  /// builds it as new: its directories under the app's `build/` (Gradle) or
-  /// its repositories' under `bazel-out/*/bin/external/` (the timed Bazel
-  /// build also leaves the disk cache out).
-  void _dropPluginOutputs() {
+  /// Deletes what an earlier run built for the packages the lock adds, so
+  /// every run builds them as new: their directories under the app's
+  /// `build/` (Gradle), or (Bazel) their repositories' outputs, their
+  /// Android libraries' and the app's split of each.
+  void _dropAddedOutputs() {
     final roots = stock
         ? [Directory('$_ws/build')]
         : [
@@ -882,17 +944,31 @@ final class AddPluginFlow extends Flow {
                 in Directory('$_ws/bazel-out').existsSync()
                     ? Directory('$_ws/bazel-out').listSync()
                     : const <FileSystemEntity>[])
-              Directory('${cfg.path}/bin/external'),
+              Directory('${cfg.path}/bin'),
           ];
-    for (final root in roots) {
-      if (!root.existsSync()) continue;
-      for (final e in root.listSync(followLinks: false)) {
+    void drop(Directory dir, bool Function(String) matches, int depth) {
+      if (!dir.existsSync()) return;
+      for (final e in dir.listSync(followLinks: false)) {
         final name = e.uri.pathSegments.lastWhere((p) => p.isNotEmpty);
-        if (name.startsWith('device_info_plus') ||
-            name.contains('deps__device_info_plus')) {
+        if (matches(name)) {
           rmrf(e.path);
+        } else if (depth > 0 && e is Directory) {
+          drop(e, matches, depth - 1);
         }
       }
+    }
+
+    for (final root in roots) {
+      drop(
+        root,
+        (name) =>
+            _added.contains(name) ||
+            _added.any(
+              (p) => name.endsWith('__$p') || name.contains('p_${p}__'),
+            ),
+        // bin/, bin/external/, bin/external/<android model repository>/.
+        2,
+      );
     }
   }
 
@@ -901,40 +977,56 @@ final class AddPluginFlow extends Flow {
     _restore();
     final log = c.log(id);
     await must(_stockCmd(c, ['flutter', 'pub', 'get', '--offline']), log: log);
+    final before = File('$_ws/pubspec.lock').readAsStringSync();
     if (stock) {
       await must(
         _stockCmd(c, ['flutter', 'build', 'apk', '--debug']),
         log: log,
       );
     } else {
-      await _b!.must(['build', '-c', 'dbg', '//:app']);
+      await _b!.must(['build', '-c', 'dbg', '--disk_cache=', target]);
     }
-    _dropPluginOutputs();
     await must(
-      _stockCmd(c, ['flutter', 'pub', 'add', '--offline', 'device_info_plus']),
+      _stockCmd(c, ['flutter', 'pub', 'add', '--offline', package]),
       log: log,
     );
-    if (!stock) {
+    _added = addedPackages(
+      before,
+      File('$_ws/pubspec.lock').readAsStringSync(),
+    );
+    if (!_added.contains(package)) {
+      throw StateError('`flutter pub add $package` did not add it to the lock');
+    }
+    _dropAddedOutputs();
+    // `flutter pub add` may rewrite these; the build reads them.
+    for (final f in ['analysis_options.yaml']) {
+      final saved = _saved[f];
+      if (saved != null) File('$_ws/$f').writeAsStringSync(saved);
+    }
+    if (stock) return;
+    if (android) {
       // The pin runs Gradle, which needs the stock environment (Java, the
       // SDK, the Gradle home); Bazel's own client environment stays as it
       // is for every build, so the script is written and run apart.
       final script = '${c.scratch}/android_pin.sh';
       final built = await _b!.must([
         'run',
+        '--disk_cache=',
         '--script_path=$script',
         '//:android_pin',
       ]);
       final pin = await runCmd(_stockCmd(c, [script]), log: log);
       if (!pin.ok) throw StateError('android_pin failed: ${pin.tail()}');
       _pin = (elapsedSeconds(built.stderr) ?? built.seconds) + pin.seconds;
-      final build = File('$_ws/BUILD.bazel');
-      build.writeAsStringSync(
-        build.readAsStringSync().replaceFirst(
-          '        "@deps//:camera",\n',
-          '        "@deps//:camera",\n        "@deps//:device_info_plus",\n',
-        ),
-      );
     }
+    final build = File('$_ws/BUILD.bazel');
+    final text = build.readAsStringSync();
+    if (!text.contains(depsAnchor)) {
+      throw StateError('BUILD.bazel has no line "${depsAnchor.trim()}"');
+    }
+    build.writeAsStringSync(
+      text.replaceFirst(depsAnchor, '$depsAnchor        "@deps//:$package",\n'),
+    );
   }
 
   @override
@@ -954,13 +1046,30 @@ final class AddPluginFlow extends Flow {
       'dbg',
       '--disk_cache=',
       '--execution_log_json_file=$execLog',
-      '//:app',
+      target,
     ]);
     if (!d.ok) throw StateError('run ${run + 1} failed: ${d.tail()}');
+    final log = File(execLog).readAsStringSync();
+    final executed = executedByOwner(log);
+    final untouched = untouchedReruns(executed, _added);
+    if (untouched.isNotEmpty) {
+      throw StateError(
+        'adding $package (the lock adds ${(_added.toList()..sort()).join(', ')}) ran '
+        '${untouched.length} actions of other packages: ${untouched.take(20).join('; ')}',
+      );
+    }
     return Measured(
       elapsedSeconds(d.stderr) ?? d.seconds,
-      mnemonics: mnemonicsOfFile(execLog),
-      extra: {'pin_s': _pin},
+      mnemonics: mnemonics(log),
+      extra: {
+        if (android) 'pin_s': _pin,
+        'added': _added.toList()..sort(),
+        'executed': executed.values.fold<int>(0, (a, b) => a + b),
+        'owners': {
+          for (final MapEntry(:key, :value) in executed.entries)
+            '${key.owner} ${key.mnemonic}': value,
+        },
+      },
     );
   }
 
@@ -973,6 +1082,40 @@ final class AddPluginFlow extends Flow {
     );
   }
 }
+
+/// The packages the lock [after] has under `packages` and [before] has not.
+Set<String> addedPackages(String before, String after) {
+  Set<String> names(String lock) {
+    final packages = (loadYaml(lock) as Map?)?['packages'];
+    return packages is Map ? {for (final k in packages.keys) '$k'} : {};
+  }
+
+  return names(after).difference(names(before));
+}
+
+/// Whether an action owned by [owner] (a label) may run when a lock adds
+/// [added]: one of the app's own targets (the main repository), a target of
+/// an added package's repository (`<hub>__<package>`), or an added plugin's
+/// Android library (`p_<package>__<variant>`, in the Android model's hub).
+bool ownedByAdded(String owner, Set<String> added) {
+  final slash = owner.indexOf('//');
+  if (slash < 0) return false;
+  final repo = owner.substring(0, slash).replaceAll('@', '');
+  if (repo.isEmpty) return true;
+  final colon = owner.lastIndexOf(':');
+  final name = colon > slash ? owner.substring(colon + 1) : '';
+  return added.any((p) => repo.endsWith('__$p') || name.startsWith('p_${p}__'));
+}
+
+/// The actions of [executed] that adding [added] should not have run, as
+/// `<owner> <mnemonic> x<count>`, sorted.
+List<String> untouchedReruns(
+  Map<({String owner, String mnemonic}), int> executed,
+  Set<String> added,
+) => [
+  for (final MapEntry(:key, :value) in executed.entries)
+    if (!ownedByAdded(key.owner, added)) '${key.owner} ${key.mnemonic} x$value',
+]..sort();
 
 /// Installing the app on the emulator after a Dart-only edit: the rules'
 /// split install (`//:app_install`) against `adb install -r` of the stock

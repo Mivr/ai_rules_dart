@@ -129,6 +129,23 @@ Map<String, int> mnemonics(String execLogJson) {
   );
 }
 
+/// Actions that ran (not cache hits) in a JSON execution log, counted by
+/// their owner's label (`?` when the log names none) and mnemonic.
+Map<({String owner, String mnemonic}), int> executedByOwner(
+  String execLogJson,
+) {
+  final counts = <({String owner, String mnemonic}), int>{};
+  for (final spawn in jsonObjects(execLogJson)) {
+    if (spawn['cacheHit'] == true) continue;
+    final key = (
+      owner: (spawn['targetLabel'] as String?) ?? '?',
+      mnemonic: (spawn['mnemonic'] as String?) ?? '?',
+    );
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
 /// Reads a JSON execution log file into [mnemonics]; an absent file gives an
 /// empty map.
 Map<String, int> mnemonicsOfFile(String path) {
