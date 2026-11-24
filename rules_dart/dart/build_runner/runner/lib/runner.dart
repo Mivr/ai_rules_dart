@@ -475,6 +475,13 @@ class _Runner {
         'disabled in `build.yaml`), or that directive should go; then re-run '
         'Gazelle, or edit `outs` if you wrote it by hand.',
       );
+      // What the build did write, and where: a path spelled one way by the
+      // builders and another here finds nothing.
+      final written = state.fs.written.keys.toList()..sort();
+      log.writeln(
+        'The build wrote ${written.length} file(s) under ${state.rootPath}'
+        '${written.isEmpty ? '' : ', among them:\n  ${written.take(8).join('\n  ')}'}',
+      );
       return false;
     }
     return true;
