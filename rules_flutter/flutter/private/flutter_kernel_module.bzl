@@ -24,10 +24,10 @@ load(
     "duplicated_source_owners",
     "entry_point_library",
     "entry_sources_from_library",
-    "first_per_package",
     "kernel_link_action",
     "kernel_package_config",
     "kernel_packages_consistent",
+    "owned_package_records",
     "add_module_source_args",
     "collect_native_assets",
     "library_module_source",
@@ -41,8 +41,8 @@ load(
     "APP_SCHEME",
     "app_main_location",
     "app_scheme_location",
+    "app_scheme_rel_path",
     "package_lib_prefix",
-    "stage_generated_inputs",
     "synthesize_app_package",
 )
 load(
@@ -95,13 +95,46 @@ def _no_flutter_kernel_module(reason = None):
     return [FlutterKernelModuleInfo(kernel_info = empty, product_kernel_info = empty)]
 
 def _own_package_record(info):
-    """Returns the `DartPackageInfo` for the package a `DartInfo` itself owns."""
+    """Returns the `DartPackageInfo` for the package a `DartInfo` itself owns.
+
+    Reads the records the target itself contributes (`owned_package_records`),
+    which `transitive_packages` carries first, so the answer is the one a walk
+    of the closure finds, without the walk.
+    """
     if not info.package_name:
         return None
-    for pkg in info.transitive_packages.to_list():
+    for pkg in owned_package_records(info):
         if pkg.package_name == info.package_name and pkg.lib_root == info.lib_root:
             return pkg
     return None
+
+def _package_record_arg(pkg):
+    """The `--record` value naming one package record, as the module compiler parses it.
+
+    Applied by `Args.add_all` to each record of the transitive depset when the
+    action runs, so analysis neither flattens the closure nor formats its
+    package config. The format is the one `parsePackageRecord` in rules_dart's
+    `package_config.dart` reads (`name|lib_root|language_version`), the one
+    rules_dart's own library modules pass.
+    """
+    return "%s|%s|%s" % (pkg.package_name, pkg.lib_root, getattr(pkg, "language_version", "") or "")
+
+def _direct_records_compatible(own_record, rule_deps):
+    """Whether the target's own record joins its direct dependencies' records without conflict.
+
+    A package config names one root per package and at most one root package.
+    This checks the target's own record and each direct dependency's own
+    records against each other, which is constant work in the direct edge;
+    a conflict deeper down is reported by the dependency that meets it, and a
+    conflict between two branches by the program, which checks its whole
+    closure once (`flutter_module_tools`). rules_dart's library modules do the
+    same (`lib_owns_compatible`).
+    """
+    pool = [own_record] if own_record != None else []
+    for dep in rule_deps:
+        if type(dep) == "Target" and DartInfo in dep:
+            pool.extend(owned_package_records(dep[DartInfo]))
+    return kernel_packages_consistent(pool)
 
 def _is_manual(ctx):
     if ctx.label.package.startswith("flutter/tests"):
@@ -112,7 +145,7 @@ def _is_manual(ctx):
     return tags != None and "manual" in tags
 
 def _dedup_module_sources(sources):
-    """Deduplicates `struct(uri, file)` entries by `uri`, preferring generated files over source files to match `[stage.root, '.']` resolution."""
+    """Deduplicates `struct(uri, file)` entries by `uri`, preferring generated files over source files, as `_module_roots` orders the roots."""
     by_uri = {}
     order = []
     for s in sources:
@@ -124,33 +157,89 @@ def _dedup_module_sources(sources):
             by_uri[s.uri] = s
     return [by_uri[u] for u in order]
 
-def _kernel_module_staged_inputs(ctx, sources, output, extra_inputs, packages, scheme):
-    """Dedup sources and stage every generated input; returns `(package_config, stage)`."""
+def _note_module_input(ctx, seen, f):
+    """Records `f` under its `APP_SCHEME` path; a generated file wins over a source there.
+
+    Two generated files at one path fail: no root order can serve both.
+    """
+    rel = app_scheme_rel_path(f)
+    prev = seen.get(rel)
+    if prev == None or prev == f:
+        seen[rel] = f
+        return
+    if not prev.is_source and not f.is_source:
+        fail("%s: conflicting generated inputs at %s: %s and %s" % (ctx.label, rel, prev.path, f.path))
+    if prev.is_source and not f.is_source:
+        seen[rel] = f
+
+def _module_roots(ctx, files):
+    """The `--multi-root` directories the compile reads `files` in place from.
+
+    Each file sits under `APP_SCHEME` at its workspace-relative path
+    (`app_scheme_location`); its root is the exec root for a source file and
+    its output directory for a generated one. Generated roots come first, so a
+    generated file shadows a source at the same path, and the exec root comes
+    last. The module compiler serves only the files the request declares
+    (`--input-source`), so mounting a root exposes no undeclared file.
+
+    Args:
+        ctx: The rule or aspect context, for messages.
+        files: The Files the compile reads, the target's own (bounded).
+
+    Returns:
+        The list of exec-root-relative root directories, `.` for the exec root;
+        empty when there is no file (the compiler then uses its working
+        directory, the exec root).
+    """
+    seen = {}
+    for f in files:
+        if f == None or f.is_directory:
+            continue
+        _note_module_input(ctx, seen, f)
+    generated = {}
+    source = False
+    for f in seen.values():
+        if f.is_source:
+            source = True
+        else:
+            generated[app_scheme_location(f).root] = True
+    return generated.keys() + (["."] if source else [])
+
+def _kernel_module_inputs(ctx, sources, output, extra_inputs, packages, scheme):
+    """Dedups sources and names what the compile reads; returns `(sources, package_config, roots, records)`.
+
+    The sources are read in place, through the roots `_module_roots` gives,
+    so no action stages them. `packages` is either a record list (an entry
+    module: its program flattened the closure once and the config is written
+    here) or an `(own_records, transitive)` pair (a library module: the module
+    compiler writes the config from `--record` arguments, expanded from the
+    depset when the action runs). `records` is that pair, or None.
+    """
     sources = _dedup_module_sources(sources)
     package_config = ctx.actions.declare_file(output.basename + ".package_config.json", sibling = output)
-    ctx.actions.write(
-        output = package_config,
-        content = kernel_package_config(packages, scheme = scheme),
-    )
+    records = packages if type(packages) == "tuple" else None
+    if records == None:
+        ctx.actions.write(
+            output = package_config,
+            content = kernel_package_config(packages, scheme = scheme),
+        )
 
     # An entry point a dependency module defines has no file here.
-    stage_candidates = [s.file for s in sources if s.file != None]
+    read = [s.file for s in sources if s.file != None]
     if extra_inputs != None:
-        stage_candidates = stage_candidates + extra_inputs.to_list()
+        # lint-allow: depset-flatten terminal: an entry's cross-package sources (empty unless a package is split), once per program
+        read = read + extra_inputs.to_list()
+    return sources, package_config, _module_roots(ctx, read), records
 
-    # Every source is staged and only the staging root is mounted: mounting
-    # the exec root (`.`) lets the compile read files the action did not
-    # declare, which Bazel then caches without rerunning on their change.
-    stage = stage_generated_inputs(ctx, stage_candidates, output.basename, include_sources = True)
-    return sources, package_config, stage
-
-def _kernel_module_base_args(ctx, package_config, stage, platform, options):
+def _kernel_module_base_args(ctx, package_config, roots, records, platform, options):
     """The module compiler flags naming the target, the platform and the defines.
 
     Args:
         ctx: The rule or aspect context.
         package_config: The `--packages-file` package config File.
-        stage: The staging result from `_kernel_module_staged_inputs`.
+        roots: The `--multi-root` directories from `_module_roots`.
+        records: An `(own_records, transitive)` pair the compiler writes the
+            package config from, or None when it is written at analysis.
         platform: The platform `.dill` File the module compiles against.
         options: struct with the compile options: `target`, `scheme`,
             `defines`, `define_file` and `extra_frontend_flags`.
@@ -162,8 +251,10 @@ def _kernel_module_base_args(ctx, package_config, stage, platform, options):
     args.add("--target", options.target)
     args.add("--dart-sdk-summary", platform)
     args.add("--packages-file", package_config)
-    if stage.root != None:
-        args.add("--multi-root", stage.root)
+    if records != None:
+        args.add_all(records[0], map_each = _package_record_arg, before_each = "--record")
+        args.add_all(records[1], map_each = _package_record_arg, before_each = "--record")
+    args.add_all(roots, before_each = "--multi-root")
     args.add("--multi-root-scheme", options.scheme)
 
     # The defines file first: a `-D` of the same key (the target's own defines, the global flag) wins, as in the
@@ -208,14 +299,16 @@ def _optional_kernel_outputs(module, unused_inputs_list):
     return outputs + ([module.koutline] if module.koutline != None else [])
 
 def flutter_kernel_module_action(ctx, tools, module, options):
-    """Compiles one Flutter kernel module with staged generated inputs instead of mounting `ctx.bin_dir`.
+    """Compiles one Flutter kernel module, reading its sources in place.
 
     Args:
       ctx: The rule or aspect context, used to declare outputs and register the action.
       tools: Kernel tool files (the SDK's module compiler, `dartaotruntime` and platform dill).
       module: struct with the per-module data: `sources` (structs with `uri`
-        and `file` for the module's own Dart sources), `packages` (package
-        records rendered into the `--packages-file` package config),
+        and `file` for the module's own Dart sources), `packages` (the
+        `--packages-file` package config's records: a list written at
+        analysis, or an `(own_records, transitive)` pair the compiler writes
+        it from),
         `dep_kmods` (the outline directories of the modules it compiles
         against (`--input-kmod`)), `output` (the module output: a `.kmod`
         directory for libraries, entries otherwise), `koutline` (optional
@@ -242,7 +335,7 @@ def flutter_kernel_module_action(ctx, tools, module, options):
     Returns:
       The declared sidecar file listing the sources the module left out.
     """
-    sources, package_config, stage = _kernel_module_staged_inputs(
+    sources, package_config, roots, records = _kernel_module_inputs(
         ctx,
         module.sources,
         module.output,
@@ -263,7 +356,8 @@ def flutter_kernel_module_action(ctx, tools, module, options):
     args = _kernel_module_base_args(
         ctx = ctx,
         package_config = package_config,
-        stage = stage,
+        roots = roots,
+        records = records,
         platform = platform,
         options = options,
     )
@@ -275,19 +369,18 @@ def flutter_kernel_module_action(ctx, tools, module, options):
         options = options,
     )
 
-    # The compile reads every source through the staging root, and the module
-    # compiler reads only the files the request declares: the staged copies.
-    if stage.files:
-        args.add_all(stage.files, before_each = "--input-source")
-
-    direct_inputs = [
-        package_config,
-        platform,
-    ] + [s.file for s in sources if s.file != None] + stage.files + [
+    # The compile reads each source where it is, and the module compiler reads
+    # only the files the request declares (`--input-source`).
+    direct_inputs = [platform] + [s.file for s in sources if s.file != None] + [
         f
         for f in [getattr(options, "define_file", None), getattr(options, "native_assets", None)]
         if f != None
     ]
+
+    # A config written at analysis is an input; one the compiler writes from `--record` is an output.
+    if records == None:
+        direct_inputs = [package_config] + direct_inputs
+    config_outputs = [package_config] if records != None else []
 
     ctx.actions.run(
         # The module compiler of the Dart SDK inside Flutter, run by that SDK's `dartaotruntime`.
@@ -298,7 +391,7 @@ def flutter_kernel_module_action(ctx, tools, module, options):
             transitive = [module.dep_kmods] + ([module.extra_inputs] if module.extra_inputs else []),
         ),
         tools = [tools.dartaotruntime, tools.module_compiler],
-        outputs = [module.output, excluded] + _optional_kernel_outputs(module, unused_inputs_list),
+        outputs = [module.output, excluded] + config_outputs + _optional_kernel_outputs(module, unused_inputs_list),
         unused_inputs_list = unused_inputs_list,
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel module %s" % module.output.short_path,
@@ -359,16 +452,23 @@ def _collect_dep_mod_infos(rule_deps):
     return dep_mod_infos
 
 def _modular_consistency(own_record, rule_deps, dep_kernels):
-    """The package records and whether deps agree on one modular closure."""
-    raw = depset(
+    """The package records and whether the direct edge agrees on one modular closure.
+
+    Returns `(records, packages_ok, modular)`: `records` is the
+    `(own_records, transitive)` pair the module's package config is written
+    from when the compile runs, with this target's record first (the config
+    keeps the first record of a name, as `first_per_package` did over the
+    flattened closure).
+    """
+    transitive = depset(
         transitive = [
             dep[DartInfo].transitive_packages
             for dep in rule_deps
             if type(dep) == "Target" and DartInfo in dep
         ],
-    ).to_list()
-    records = ([own_record] if own_record != None else []) + raw
-    packages_ok = kernel_packages_consistent(records)
+    )
+    records = ([own_record] if own_record != None else [], transitive)
+    packages_ok = _direct_records_compatible(own_record, rule_deps)
     modular = packages_ok and all([k.modular for k in dep_kernels])
     return records, packages_ok, modular
 
@@ -517,7 +617,7 @@ def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
         library_module_source(spec.package_name, spec.lib_root, f)
         for f in spec.own_srcs
     ]
-    deduped_packages = first_per_package(spec.records)
+    deduped_packages = spec.records
     env = module_dart_env(ctx)
     excluded = flutter_kernel_module_action(
         ctx = ctx,
@@ -915,7 +1015,9 @@ def _compile_flutter_entry_module(
         tools = tools,
         module = struct(
             sources = sources,
-            packages = first_per_package(packages),
+            # The compiler writes the config from `--record`s, keeping the first record of each name as
+            # `first_per_package` does, so no JSON is formatted here. It writes nothing for no record.
+            packages = (packages, depset()) if packages else [],
             dep_kmods = dep_outline_closure,
             output = entry,
             koutline = None,
