@@ -7,6 +7,19 @@ load(":pub_workspace_test.bzl", "pub_workspace_test_suite")
 # the private loads without suppressions; the suites are instantiated, under
 # their original target names, from `//dart/tests` and its subpackages.
 
+# The target platform of the analysis tests that read a build hook's or a link
+# hook's actions. Hooks do not run for Apple targets yet (the actions are a
+# refusal), so a test of the actions pins the platform instead of taking the
+# host's: on a Mac they would otherwise analyse for macOS.
+platform(
+    name = "linux_x64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    visibility = ["//dart:__subpackages__"],
+)
+
 exports_files(
     [
         "language_version_test.bzl",

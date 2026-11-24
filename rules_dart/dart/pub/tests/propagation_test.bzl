@@ -337,6 +337,8 @@ def _spoke_runs_build_hook_test_impl(ctx):
 spoke_runs_build_hook_test = analysistest.make(
     _spoke_runs_build_hook_test_impl,
     attrs = {"package_name": attr.string()},
+    # The actions of a build hook, which Apple targets refuse: not the host's.
+    config_settings = {"//command_line_option:platforms": str(Label("//dart/pub/tests:linux_x64"))},
 )
 
 def _ownership_violation_test_impl(ctx):

@@ -282,6 +282,8 @@ def _link_hook_actions_test_impl(ctx):
 link_hook_actions_test = analysistest.make(
     _link_hook_actions_test_impl,
     attrs = {"recorded_uses_basename": attr.string()},
+    # The actions of a link hook, which Apple targets refuse: not the host's.
+    config_settings = {"//command_line_option:platforms": str(Label("//dart/pub/tests:linux_x64"))},
 )
 
 def _validation_runs_assetless_hook_test_impl(ctx):
