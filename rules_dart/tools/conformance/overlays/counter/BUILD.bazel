@@ -19,10 +19,13 @@ flutter_library(
     ],
 )
 
+# `pub_packages` is stated: its default is the hub of the first of `deps` from
+# one, and `deps` here holds only the library.
 flutter_application(
     name = "app",
     package_name = "counter",
     main = "lib/main.dart",
+    pub_packages = "@deps//packages",
     deps = [":lib"],
 )
 
@@ -42,6 +45,7 @@ flutter_web_app(
     name = "web",
     package_name = "counter",
     compiler = "dart2js",
+    pub_packages = "@deps//packages",
     deps = [":lib"],
 )
 
