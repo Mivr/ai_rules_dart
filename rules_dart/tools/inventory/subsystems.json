@@ -199,13 +199,8 @@
       ]
     },
     {
-      "name": "bench-python",
-      "note": "Python bench harness of the Flutter rules (delete)",
-      "paths": ["rules_flutter/tools/perf/**"]
-    },
-    {
       "name": "bench-dart",
-      "note": "Dart bench harness (becomes the only one)",
+      "note": "The bench harness of both rule sets (`bazel run //perf:bench`); it replaced the Dart scale harness and the Flutter rules' Python one",
       "paths": ["rules_dart/tools/perf/**"]
     },
     {
