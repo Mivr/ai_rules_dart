@@ -41,7 +41,8 @@ load(
     "import_check_unless_wrapper",
 )
 
-visibility(["//dart/..."])
+# `//docs` extracts the rule's attribute docs (the macro of `//dart:defs.bzl` has none).
+visibility(["//dart/...", "//docs"])
 
 def _kernel_launcher_for_mode(compile_mode, launcher):
     if compile_mode == "kernel" and launcher:

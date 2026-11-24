@@ -70,6 +70,17 @@ no_dart_defines(
     visibility = ["//visibility:public"],
 )
 
+# The rules `//dart:defs.bzl` wraps in macros; `//docs` extracts their
+# attribute docs.
+exports_files(
+    [
+        "dart_binary.bzl",
+        "dart_library.bzl",
+        "dart_test.bzl",
+    ],
+    visibility = ["//docs:__pkg__"],
+)
+
 bzl_library(
     name = "analyze_targets",
     srcs = ["analyze_targets.bzl"],

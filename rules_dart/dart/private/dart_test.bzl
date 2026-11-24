@@ -56,7 +56,8 @@ load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load("//dart/private:test_package_roots.bzl", "write_package_roots")
 load("//dart/private:test_runner_info.bzl", "DartTestRunnerInfo")
 
-visibility(["//dart/..."])
+# `//docs` extracts the rule's attribute docs (the macro of `//dart:defs.bzl` has none).
+visibility(["//dart/...", "//docs"])
 
 def _check_tag_entries(target, attr_name, tags):
     """Validates that tag selectors contain no empty entries or newlines.

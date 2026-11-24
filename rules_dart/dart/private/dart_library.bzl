@@ -33,7 +33,8 @@ load(
     "library_vm_product",
 )
 
-visibility(["//dart/..."])
+# `//docs` extracts the rule's attribute docs (the macro of `//dart:defs.bzl` has none).
+visibility(["//dart/...", "//docs"])
 
 def derive_package_name(package_name_attr, label_package, label_name):
     """Derive the Dart package name from rule attributes and label.
