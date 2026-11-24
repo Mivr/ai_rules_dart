@@ -126,6 +126,10 @@ load(
     _pinned_download_and_extract = "pinned_download_and_extract",
 )
 load(
+    "//dart/private:kernel_library_state.bzl",
+    _add_package_records = "add_package_records",
+)
+load(
     "//dart/private:kernel_params.bzl",
     _kernel_compile_settings = "kernel_compile_settings",
     _kernel_module_inputs = "kernel_module_inputs",
@@ -251,6 +255,13 @@ add_module_source_args = _add_module_source_args
 entry_sources = _entry_sources
 kernel_package_config = _kernel_package_config
 kernel_packages_consistent = _kernel_packages_consistent
+
+# Adds a module's `(own_records, transitive)` package records to a module
+# compiler request as `--record name|lib_root|language_version` arguments,
+# expanded when the action runs. The compiler writes the module's
+# `package_config.json` from them, keeping the first record of each name, so
+# analysis neither flattens the closure nor formats its config.
+add_package_records = _add_package_records
 first_per_package = _first_per_package
 duplicated_source = _duplicated_source
 duplicated_source_message = _duplicated_source_message

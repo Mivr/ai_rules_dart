@@ -18,6 +18,7 @@ load(
     "EXECUTABLE_DEFINES_ATTRS",
     "KERNEL_MODULE_ATTRS",
     "MODULAR_KERNEL_TOOLCHAINS",
+    "add_package_records",
     "collect_packages",
     "derive_lib_root",
     "duplicated_source_message",
@@ -106,17 +107,6 @@ def _own_package_record(info):
         if pkg.package_name == info.package_name and pkg.lib_root == info.lib_root:
             return pkg
     return None
-
-def _package_record_arg(pkg):
-    """The `--record` value naming one package record, as the module compiler parses it.
-
-    Applied by `Args.add_all` to each record of the transitive depset when the
-    action runs, so analysis neither flattens the closure nor formats its
-    package config. The format is the one `parsePackageRecord` in rules_dart's
-    `package_config.dart` reads (`name|lib_root|language_version`), the one
-    rules_dart's own library modules pass.
-    """
-    return "%s|%s|%s" % (pkg.package_name, pkg.lib_root, getattr(pkg, "language_version", "") or "")
 
 def _direct_records_compatible(own_record, rule_deps):
     """Whether the target's own record joins its direct dependencies' records without conflict.
@@ -251,8 +241,7 @@ def _kernel_module_base_args(ctx, package_config, roots, records, platform, opti
     args.add("--dart-sdk-summary", platform)
     args.add("--packages-file", package_config)
     if records != None:
-        args.add_all(records[0], map_each = _package_record_arg, before_each = "--record")
-        args.add_all(records[1], map_each = _package_record_arg, before_each = "--record")
+        add_package_records(args, records)
     args.add_all(roots, before_each = "--multi-root")
     args.add("--multi-root-scheme", options.scheme)
 
