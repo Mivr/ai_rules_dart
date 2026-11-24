@@ -302,14 +302,38 @@ def _toolchain_tools(ctx, cc_toolchain, target):
         variables = link_variables,
     )
 
+    # An Apple toolchain's tools (apple_support's `wrapped_clang`) read their
+    # SDK and Xcode from the environment the toolchain declares for its actions
+    # (`APPLE_SDK_PLATFORM`, `XCODE_VERSION_OVERRIDE`, ...), which a hook's
+    # clean environment lacks: the wrappers export it.
+    apple = target.os in ("ios", "macos")
+    exports = ""
+    if apple:
+        env = {}
+        for action, variables in (("c-compile", compile_variables), ("c++-link-dynamic-library", link_variables)):
+            env.update(cc_common.get_environment_variables(
+                feature_configuration = features,
+                action_name = action,
+                variables = variables,
+            ))
+        exports = "".join(["export %s='%s'\n" % (k, v.replace("'", "'\\''")) for k, v in sorted(env.items())])
+
     # The toolchain's flags name exec-root-relative paths, and the hook runs in
     # its package root, so each tool runs from the exec root; every path a hook
     # passes is absolute.
-    clang = _wrapper(ctx, "clang", """\
+    clang = _wrapper(ctx, "clang", exports + """\
 cd "$BAZEL_EXECROOT" || exit 1
 # native_toolchain_c probes `clang --version` and wants exit 0; some
-# toolchains' drivers (zig cc) print the version and exit 1.
-if [ "$1" = "--version" ]; then '{cc}' --version 2>/dev/null; exit 0; fi
+# toolchains' drivers (zig cc) print the version and exit 1. When the driver
+# fails and says why, say it on stderr: the probe's answer is its stdout.
+if [ "$1" = "--version" ]; then
+  err="$TMPDIR/clang_version.$$"
+  '{cc}' --version 2>"$err"
+  status=$?
+  if [ "$status" -ne 0 ] && [ -s "$err" ]; then cat "$err" >&2; fi
+  rm -f "$err"
+  exit 0
+fi
 # Paths the hook passes are absolute and differ per sandbox: keep them out of
 # the output, as the toolchain does for its own actions.
 set -- -g0 -ffile-prefix-map="$BAZEL_EXECROOT"=. -ffile-prefix-map="$TMPDIR"=/tmp "$@"
@@ -319,7 +343,7 @@ done
 # native_toolchain_c compiles and links a one-source library in one call.
 # GNU ld ignores version-script names a library does not define; lld, which
 # Bazel's toolchains link with, refuses them unless told otherwise.
-exec '{cc}' {cflags} {lflags} "$@" -Wl,--undefined-version{strip}
+exec '{cc}' {cflags} {lflags} "$@"{undefined_version}{strip}
 """.format(
         cc = cc,
         cflags = _quote(compile_flags),
@@ -330,6 +354,8 @@ exec '{cc}' {cflags} {lflags} "$@" -Wl,--undefined-version{strip}
         # sandbox, so two clean builds differed in those bytes. ELF linkers
         # (lld, GNU ld) drop it with `-S`.
         strip = " -Wl,-S" if target.os in ("linux", "android") else "",
+        # Apple's linker has no such option.
+        undefined_version = "" if apple else " -Wl,--undefined-version",
     ))
     ar_tool = _wrapper(ctx, "ar", "cd \"$BAZEL_EXECROOT\" || exit 1\nexec '%s' \"$@\"\n" % ar)
     ld_tool = _wrapper(ctx, "ld", "cd \"$BAZEL_EXECROOT\" || exit 1\nexec '%s' \"$@\"\n" % ld)
