@@ -3,17 +3,16 @@
 module(name = "rules_flutter_smoke_test")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+
+# rules_dart is the registry's: this file is the BCR test module of the release
+# archive, which holds rules_flutter alone. In a checkout of the repository
+# `.bazelrc.checkout` takes the sibling `rules_dart/` instead.
 bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 
 local_path_override(
     module_name = "ai_rules_flutter",
     path = "../..",
-)
-
-local_path_override(
-    module_name = "ai_rules_dart",
-    path = "../../../rules_dart",
 )
 
 flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")

@@ -1,0 +1,6 @@
+{
+  "integrity": "**leave this alone**",
+  "strip_prefix": "rules_flutter-{VERSION}",
+  "url": "https://github.com/{OWNER}/{REPO}/releases/download/{TAG}/rules_flutter-v{VERSION}.tar.gz",
+  "docs_url": "https://github.com/{OWNER}/{REPO}/releases/download/{TAG}/rules_flutter-v{VERSION}.docs.tar.gz"
+}

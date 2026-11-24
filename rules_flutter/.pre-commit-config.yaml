@@ -60,12 +60,6 @@ repos:
         language: system
         files: ^\.github/workflows/release_gate(_test)?\.sh$
         pass_filenames: false
-      - id: release-prep-test
-        name: release prep tests
-        entry: bash .github/workflows/release_prep_test.sh
-        language: system
-        files: ^\.github/workflows/release_prep(_test)?\.sh$
-        pass_filenames: false
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v3.1.0
     hooks:

@@ -1,3 +1,8 @@
+# In a checkout of the repository, rules_dart is the sibling directory (run Bazel
+# from this directory). The
+# release archive leaves this file out (rules_flutter/.gitattributes) and its
+# MODULE.bazel names a rules_dart release.
+try-import %workspace%/.bazelrc.checkout
 try-import %workspace%/.bazelrc.user
 
 # `dart analyze` and the `dart format` check run as an aspect over every Dart

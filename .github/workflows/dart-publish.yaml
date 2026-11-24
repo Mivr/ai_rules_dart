@@ -1,9 +1,17 @@
-# Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
-# Publish new releases to Bazel Central Registry.
+# Publish a release of rules_dart to the Bazel Central Registry: opens a pull
+# request against bazelbuild/bazel-central-registry from the fork named below.
+#
+# Nothing calls this after a release: whether a registry pull request is opened
+# is a person's decision. Dispatch it by hand, naming the tag:
+#   gh workflow run dart-publish.yaml -f tag_name=rules_dart-v0.29.0
+#
+# The templates are `.bcr/rules_dart/` at the repository root (one folder per
+# module), and `module_roots` and `tag_prefix` below make the action read
+# them and take the version from the tag: `rules_dart-v0.29.0` is 0.29.0.
+# Off until the repository variable RELEASES_ENABLED is `true`.
 name: Dart Publish to BCR
 on:
-  # Run the publish workflow after a successful release
-  # Will be triggered from the release.yaml workflow
+  # Kept callable, so a later release workflow may call it after the release.
   workflow_call:
     inputs:
       tag_name:
@@ -21,18 +29,21 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: git tag being released
+        description: git tag being released, e.g. rules_dart-v0.29.0
         required: true
         type: string
 jobs:
   publish:
-    # Disabled in the merged repository until releasing moves here (later task).
-    if: false
+    if: vars.RELEASES_ENABLED == 'true'
     # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
     # workflow.
     uses: bazel-contrib/publish-to-bcr/.github/workflows/publish.yaml@v1.5.1
     with:
       tag_name: ${{ inputs.tag_name }}
+      # The version is the tag without this prefix, and only the module rooted
+      # at rules_dart/ is published for this tag.
+      tag_prefix: rules_dart-v
+      module_roots: rules_dart
       # Opens the PR as a draft; marking it "ready for review" triggers BCR
       # auto-approval. This is the default, made explicit for visibility.
       draft: true

@@ -7,10 +7,26 @@ e2e/digest_mismatch/fixture.bin -text
 # Configuration for 'git archive'
 # See https://git-scm.com/docs/git-archive#ATTRIBUTES
 
+# `release_prep.sh` archives this directory alone (`git archive <tag>:rules_dart`),
+# so every pattern here is relative to rules_dart/ and anchored with a leading
+# `/`: without one, `git archive` matches the basename at any depth.
+
 # Don't include examples in the distribution artifact, to reduce size.
-# You may want to add additional exclusions for folders or files that users don't need.
 examples export-ignore
-e2e/digest_mismatch export-ignore
+
+# Development files: editor and agent settings, CI, the development docs.
+/.claude/ export-ignore
+/.devcontainer/ export-ignore
+/.github/ export-ignore
+/.gitattributes export-ignore
+/ai-docs/ export-ignore
+
+# The e2e workspaces are checked out only for development. The archive keeps
+# `e2e/smoke`, which the registry entry (`.bcr/rules_dart/presubmit.yml` at the
+# repository root) names as its test module, and it names every other
+# workspace through the wildcard, so a new one is left out without a line here.
+/e2e/* export-ignore
+/e2e/smoke -export-ignore
 
 # Dev-only analysis tests load `@rules_testing`, a dev dependency: keep them out
 # of release archives so `@rules_dart//...` loads for every consumer.

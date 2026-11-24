@@ -1,9 +1,17 @@
-# Mivr/ai_rules_flutter workflow (moved from the frozen Mivr/rules_flutter fork on 2026-10-28).
-# Publish new releases to Bazel Central Registry.
+# Publish a release of rules_flutter to the Bazel Central Registry: opens a pull
+# request against bazelbuild/bazel-central-registry from the fork named below.
+#
+# Nothing calls this after a release: whether a registry pull request is opened
+# is a person's decision. Dispatch it by hand, naming the tag:
+#   gh workflow run flutter-publish.yaml -f tag_name=rules_flutter-v0.30.3
+#
+# The templates are `.bcr/rules_flutter/` at the repository root (one folder per
+# module), and `module_roots` and `tag_prefix` below make the action read
+# them and take the version from the tag: `rules_flutter-v0.30.3` is 0.30.3.
+# Off until the repository variable RELEASES_ENABLED is `true`.
 name: Flutter Publish to BCR
 on:
-  # Run the publish workflow after a successful release
-  # Will be triggered from the release.yaml workflow
+  # Kept callable, so a later release workflow may call it after the release.
   workflow_call:
     inputs:
       tag_name:
@@ -12,28 +20,30 @@ on:
     secrets:
       publish_token:
         required: true
-      # Repo-level fallback for manual dispatches, which cannot pass
-      # secrets: no caller passes it today, and the `||` below keeps
-      # reading the repo secret. Declared so the expression type-checks.
-      bcr_publish_token:
+      # Fallback token a caller may pass through; without it the expression
+      # below can only resolve the repository secret on manual dispatch.
+      BCR_PUBLISH_TOKEN:
         required: false
   # In case of problems, let release engineers retry by manually dispatching
   # the workflow from the GitHub UI
   workflow_dispatch:
     inputs:
       tag_name:
-        description: git tag being released
+        description: git tag being released, e.g. rules_flutter-v0.30.3
         required: true
         type: string
 jobs:
-  # A reusable-workflow call: `uses:` jobs take no timeout-minutes (only the
-  # called workflow's own jobs can carry one).
   publish:
-    # Disabled in the merged repository until releasing moves here (later task).
-    if: false
+    if: vars.RELEASES_ENABLED == 'true'
+    # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
+    # workflow.
     uses: bazel-contrib/publish-to-bcr/.github/workflows/publish.yaml@v1.5.1
     with:
       tag_name: ${{ inputs.tag_name }}
+      # The version is the tag without this prefix, and only the module rooted
+      # at rules_flutter/ is published for this tag.
+      tag_prefix: rules_flutter-v
+      module_roots: rules_flutter
       # Opens the PR as a draft; marking it "ready for review" triggers BCR
       # auto-approval. This is the default, made explicit for visibility.
       draft: true

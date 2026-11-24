@@ -1,0 +1,5 @@
+# Only in a checkout of the repository: the release archive leaves this file
+# out (rules_flutter/.gitattributes). Takes the sibling rules_dart/ in place of
+# the release MODULE.bazel names. A relative path is relative to the directory
+# Bazel is run from, which is this one.
+common --override_module=ai_rules_dart=../../../rules_dart

@@ -1,7 +1,0 @@
-# The release, tag, publish and auto-release workflows are disabled with
-# `if: false` until releasing moves to this repository; that constant
-# condition is deliberate there.
-paths:
-  .github/workflows/*-{auto-release,publish,release,tag}.yaml:
-    ignore:
-      - 'constant expression "false" in condition'
