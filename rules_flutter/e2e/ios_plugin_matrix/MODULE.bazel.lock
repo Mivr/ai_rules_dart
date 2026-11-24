@@ -3410,7 +3410,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "PWmUxW54RCp5pDmBZ6ECaWHBG89d2s6Szt9H48ytGW4=",
+        "bzlTransitiveDigest": "woDUkrmU/3IFMdYd+lUV/hxJ2/fkfg0Re5FcnvWBsLQ=",
         "usagesDigest": "ZptWXvi+7AWik+GGUUkxzOqqfzzGi29c+sJZrkM/fk0=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3716,6 +3716,34 @@
               "engine_base_url": ""
             }
           },
+          "flutter_cross_darwin-arm64_android-arm_profile": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
+            "attributes": {
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "downloads": {
+                "android-arm-profile/darwin-x64.zip": ""
+              },
+              "sha256s": {
+                "android-arm-profile/darwin-x64.zip": "457e51250976fae2fcc32a13686dc2b965ce9c076d540189b9fc55be0f9b5c5a"
+              },
+              "engine_base_url": "",
+              "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
+            }
+          },
+          "flutter_cross_darwin-arm64_android-arm": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
+            "attributes": {
+              "flutter_version": "3.47.7",
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "host_platform": "darwin-arm64",
+              "target_platform": "android-arm",
+              "host_repo_name": "flutter_darwin-arm64",
+              "gen_snapshot_sha256": "7d6dbd418fa29d136ae81db00e4d7a62b504d84ba8dab69271486a12d1fab2cd",
+              "gen_snapshot_label": "",
+              "profile_gen_snapshot_label": "@flutter_cross_darwin-arm64_android-arm_profile//:gen_snapshot",
+              "engine_base_url": ""
+            }
+          },
           "flutter_cross_darwin-arm64_android-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
@@ -3797,6 +3825,34 @@
               "gen_snapshot_sha256": "",
               "gen_snapshot_label": "@flutter_host_tools_release_darwin-x64//:host-tools-release/gen_snapshot",
               "profile_gen_snapshot_label": "@flutter_darwin-x64_profile//:host-tools/gen_snapshot",
+              "engine_base_url": ""
+            }
+          },
+          "flutter_cross_darwin-x64_android-arm_profile": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
+            "attributes": {
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "downloads": {
+                "android-arm-profile/darwin-x64.zip": ""
+              },
+              "sha256s": {
+                "android-arm-profile/darwin-x64.zip": "457e51250976fae2fcc32a13686dc2b965ce9c076d540189b9fc55be0f9b5c5a"
+              },
+              "engine_base_url": "",
+              "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
+            }
+          },
+          "flutter_cross_darwin-x64_android-arm": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
+            "attributes": {
+              "flutter_version": "3.47.7",
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "host_platform": "darwin-x64",
+              "target_platform": "android-arm",
+              "host_repo_name": "flutter_darwin-x64",
+              "gen_snapshot_sha256": "7d6dbd418fa29d136ae81db00e4d7a62b504d84ba8dab69271486a12d1fab2cd",
+              "gen_snapshot_label": "",
+              "profile_gen_snapshot_label": "@flutter_cross_darwin-x64_android-arm_profile//:gen_snapshot",
               "engine_base_url": ""
             }
           },
@@ -3884,6 +3940,34 @@
               "engine_base_url": ""
             }
           },
+          "flutter_cross_linux-x64_android-arm_profile": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
+            "attributes": {
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "downloads": {
+                "android-arm-profile/linux-x64.zip": ""
+              },
+              "sha256s": {
+                "android-arm-profile/linux-x64.zip": "ca0980e662ec7ad74db92eeae2fe2c17e735599e9a910ef34181495a3c14b8f1"
+              },
+              "engine_base_url": "",
+              "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
+            }
+          },
+          "flutter_cross_linux-x64_android-arm": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
+            "attributes": {
+              "flutter_version": "3.47.7",
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "host_platform": "linux-x64",
+              "target_platform": "android-arm",
+              "host_repo_name": "flutter_linux-x64",
+              "gen_snapshot_sha256": "670bfb4c6750a124aa81005c2ea0a8e60b0c29963a71e5ad9e9dc7badc5e7987",
+              "gen_snapshot_label": "",
+              "profile_gen_snapshot_label": "@flutter_cross_linux-x64_android-arm_profile//:gen_snapshot",
+              "engine_base_url": ""
+            }
+          },
           "flutter_cross_linux-x64_android-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
@@ -3968,6 +4052,34 @@
               "engine_base_url": ""
             }
           },
+          "flutter_cross_linux-arm64_android-arm_profile": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
+            "attributes": {
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "downloads": {
+                "android-arm-profile/linux-x64.zip": ""
+              },
+              "sha256s": {
+                "android-arm-profile/linux-x64.zip": "ca0980e662ec7ad74db92eeae2fe2c17e735599e9a910ef34181495a3c14b8f1"
+              },
+              "engine_base_url": "",
+              "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
+            }
+          },
+          "flutter_cross_linux-arm64_android-arm": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
+            "attributes": {
+              "flutter_version": "3.47.7",
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "host_platform": "linux-arm64",
+              "target_platform": "android-arm",
+              "host_repo_name": "flutter_linux-arm64",
+              "gen_snapshot_sha256": "670bfb4c6750a124aa81005c2ea0a8e60b0c29963a71e5ad9e9dc7badc5e7987",
+              "gen_snapshot_label": "",
+              "profile_gen_snapshot_label": "@flutter_cross_linux-arm64_android-arm_profile//:gen_snapshot",
+              "engine_base_url": ""
+            }
+          },
           "flutter_cross_linux-arm64_android-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
@@ -4049,6 +4161,34 @@
               "gen_snapshot_sha256": "",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "",
+              "engine_base_url": ""
+            }
+          },
+          "flutter_cross_windows-x64_android-arm_profile": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
+            "attributes": {
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "downloads": {
+                "android-arm-profile/windows-x64.zip": ""
+              },
+              "sha256s": {
+                "android-arm-profile/windows-x64.zip": "eb20fb88f7ff73c30792a8153fef445d9128b3eaacd323acfffbd85c64f17ca6"
+              },
+              "engine_base_url": "",
+              "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
+            }
+          },
+          "flutter_cross_windows-x64_android-arm": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
+            "attributes": {
+              "flutter_version": "3.47.7",
+              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "host_platform": "windows-x64",
+              "target_platform": "android-arm",
+              "host_repo_name": "flutter_windows-x64",
+              "gen_snapshot_sha256": "e2e5fed77bba2b37b4985c771495dd4fb0230f9757ec8eb3530bf2c66f247797",
+              "gen_snapshot_label": "",
+              "profile_gen_snapshot_label": "@flutter_cross_windows-x64_android-arm_profile//:gen_snapshot",
               "engine_base_url": ""
             }
           },
