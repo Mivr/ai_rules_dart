@@ -1,0 +1,13 @@
+name: federated_plugins
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  fed_sp:
+    path: ../../packages/fed_sp
+  fed_wrapper:
+    path: ../../packages/fed_wrapper
+  flutter:
+    sdk: flutter

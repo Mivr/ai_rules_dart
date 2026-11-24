@@ -16,11 +16,16 @@ flutter_application(
     package_name = "pub_scc_app",
     srcs = glob(["lib/**/*.dart"]),
     main = "lib/main.dart",
+    # Every package the app's pubspec.yaml names is a dependency of the app:
+    # the asset action builds the package graph from the pubspecs it is given.
     deps = [
         "@deps//:acyclic_pkg",
         "@deps//:cycle_a",
         "@deps//:cycle_b",
         "@deps//:flutter",
+        "@deps//:tri_a",
+        "@deps//:tri_b",
+        "@deps//:tri_c",
     ],
 )
 
