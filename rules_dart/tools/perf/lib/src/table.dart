@@ -208,7 +208,7 @@ String planTable(List<Row> rows) {
     'only that plugin\'s targets rebuild',
     'Gradle: ${_fmt(r['android.add_plugin.stock'])}',
     '${_fmt(add)}${add?.mnemonics.isNotEmpty ?? false ? '; ran: ${add!.mnemonics.entries.map((e) => '${e.key} ${e.value}').join(', ')}' : ''}'
-        '${add?.extra['pin_s'] is List ? '; pin ${(add!.extra['pin_s'] as List).join(', ')} s' : ''}',
+        '${add?.extra['pin_s'] is List ? '; pin ${(add!.extra['pin_s'] as List).map((v) => _n((v as num).toDouble())).join(', ')} s' : ''}',
   );
   row(
     'Nothing changed, Android',
