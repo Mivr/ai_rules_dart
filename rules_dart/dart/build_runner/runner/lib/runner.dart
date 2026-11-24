@@ -482,6 +482,16 @@ class _Runner {
         'The build wrote ${written.length} file(s) under ${state.rootPath}'
         '${written.isEmpty ? '' : ', among them:\n  ${written.take(8).join('\n  ')}'}',
       );
+      // And what it was given: a source that no package directory contains
+      // never becomes an asset, and no builder then has anything to read.
+      log.writeln(
+        'Declared inputs: ${request.inputs.length}, of which '
+        '${model.assets.length} belong to a package directory.\n'
+        'Package directories: ${model.dirs}\n'
+        'First inputs: ${request.inputs.take(5).join(', ')}\n'
+        'Execution root: ${request.execRoot}, output directory: '
+        '${request.binDir}',
+      );
       return false;
     }
     return true;
