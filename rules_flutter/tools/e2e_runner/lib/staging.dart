@@ -13,7 +13,8 @@ typedef _StarlarkToken = ({_TokKind kind, String text, int start, int end});
 typedef _SpanEdit = ({int start, int end, String replacement});
 
 /// Copies [sourceWorkspace] into [stagedWorkspace] and rewrites escaping
-/// relative `local_path_override` paths in staged module files.
+/// relative `local_path_override` paths in staged module files, and escaping
+/// relative `--override_module=<module>=<path>` flags in staged bazelrc files.
 ///
 /// Entries named `bazel-*` are skipped. Intra-workspace relative symlinks are
 /// preserved as relative symlinks inside [stagedWorkspace]; symlinks whose
@@ -41,6 +42,7 @@ void stageWorkspace({
   Directory(dstRoot).createSync(recursive: true);
   _copyTree(srcRoot, dstRoot, sourceRoot: srcRoot);
   _rewriteStagedModuleFiles(dstRoot, sourceRoot: srcRoot);
+  _rewriteStagedRcFiles(dstRoot, sourceRoot: srcRoot);
 }
 
 void _copyTree(String srcDir, String dstDir, {required String sourceRoot}) {
@@ -140,6 +142,60 @@ void _rewriteStagedModuleFiles(
       file.writeAsStringSync(updated);
     }
   }
+}
+
+/// Rewrites the bazelrc files of the staged workspace root: see
+/// [rewriteEscapingOverrideModuleFlags].
+void _rewriteStagedRcFiles(String stagedRoot, {required String sourceRoot}) {
+  for (final FileSystemEntity entry in Directory(
+    stagedRoot,
+  ).listSync(followLinks: false)) {
+    final String name = p.basename(entry.path);
+    final bool isRc =
+        name == '.bazelrc' ||
+        name.startsWith('.bazelrc.') ||
+        name.endsWith('.bazelrc');
+    if (!isRc ||
+        FileSystemEntity.typeSync(entry.path) != FileSystemEntityType.file) {
+      continue;
+    }
+    final file = File(entry.path);
+    final String original = file.readAsStringSync();
+    final String updated = rewriteEscapingOverrideModuleFlags(
+      original,
+      sourceWorkspaceDir: sourceRoot,
+    );
+    if (updated != original) {
+      file.writeAsStringSync(updated);
+    }
+  }
+}
+
+final RegExp _overrideModuleFlag = RegExp(
+  r'(--override_module=[^=\s]+=)(\S+)',
+);
+
+/// Rewrites relative `--override_module=<module>=<path>` flags in
+/// [rcContent] that escape [sourceWorkspaceDir] to absolute paths.
+///
+/// Bazel resolves a relative path of this flag against the directory it is run
+/// from, which is the workspace root, and a staged copy runs somewhere else. A
+/// path that stays inside the workspace, an absolute path and a `%workspace%/`
+/// path are left unchanged.
+String rewriteEscapingOverrideModuleFlags(
+  String rcContent, {
+  required String sourceWorkspaceDir,
+}) {
+  final String workspace = p.normalize(p.absolute(sourceWorkspaceDir));
+  return rcContent.replaceAllMapped(_overrideModuleFlag, (match) {
+    final String path = match.group(2)!;
+    if (!_isRelativeOverridePath(path) || path.startsWith('%workspace%')) {
+      return match.group(0)!;
+    }
+    final String resolved = p.normalize(p.join(workspace, path));
+    if (!_escapesWorkspace(resolved, workspace)) return match.group(0)!;
+    return '${match.group(1)}${resolved.replaceAll(r'\', '/')}';
+  });
 }
 
 /// Rewrites relative `local_path_override(..., path = "...")` arguments in

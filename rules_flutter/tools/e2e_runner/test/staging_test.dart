@@ -11,6 +11,7 @@ import 'package:test/test.dart';
 /// Entry point for staging unit tests.
 void main() {
   _registerOverrideRewriteTests();
+  _registerOverrideModuleFlagTests();
   _registerWorkspaceStageTests();
   _registerMutationTests();
 }
@@ -89,6 +90,78 @@ local_path_override(
       );
       expect(rewritten, contains('path = "/repo"'));
       expect(rewritten, contains('path = "../sibling"'));
+    });
+  });
+}
+
+void _registerOverrideModuleFlagTests() {
+  group('rewriteEscapingOverrideModuleFlags', () {
+    test('makes an escaping relative path absolute from the workspace', () {
+      final String ws = p.join(
+        Directory.systemTemp.path,
+        'repo',
+        'e2e',
+        'smoke',
+      );
+      final String sibling = p
+          .normalize(p.join(ws, '..', '..', '..', 'rules_dart'))
+          .replaceAll(r'\', '/');
+      final String rewritten = rewriteEscapingOverrideModuleFlags(
+        '# a comment\n'
+        'common --override_module=ai_rules_dart=../../../rules_dart\n'
+        'common --override_module=inner=./vendor/inner\n'
+        'common --override_module=pct=%workspace%/../x\n'
+        'common --override_module=abs=/opt/abs\n'
+        'build --override_module=two=../../two --keep_going\n',
+        sourceWorkspaceDir: ws,
+      );
+      final String two = p
+          .normalize(p.join(ws, '..', '..', 'two'))
+          .replaceAll(r'\', '/');
+      expect(
+        rewritten,
+        contains('common --override_module=ai_rules_dart=$sibling\n'),
+      );
+      expect(rewritten, contains('--override_module=inner=./vendor/inner\n'));
+      expect(rewritten, contains('--override_module=pct=%workspace%/../x\n'));
+      expect(rewritten, contains('--override_module=abs=/opt/abs\n'));
+      expect(
+        rewritten,
+        contains('build --override_module=two=$two --keep_going\n'),
+      );
+      expect(rewritten, startsWith('# a comment\n'));
+    });
+
+    test('stageWorkspace rewrites the staged rc files, not the source', () {
+      final Directory root = Directory.systemTemp.createTempSync('stage_rc_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final srcWs = Directory(p.join(root.path, 'repo', 'e2e', 'smoke'))
+        ..createSync(recursive: true);
+      File(p.join(srcWs.path, 'MODULE.bazel')).writeAsStringSync('module()\n');
+      const rc = 'common --override_module=ai_rules_dart=../../../rules_dart\n';
+      File(p.join(srcWs.path, '.bazelrc.checkout')).writeAsStringSync(rc);
+      File(p.join(srcWs.path, '.bazelrc')).writeAsStringSync(
+        'try-import %workspace%/.bazelrc.checkout\n',
+      );
+      final String stagedWs = p.join(root.path, 'scratch', 'ws');
+
+      stageWorkspace(sourceWorkspace: srcWs.path, stagedWorkspace: stagedWs);
+
+      final String sibling = p
+          .join(root.path, 'rules_dart')
+          .replaceAll(r'\', '/');
+      expect(
+        File(p.join(stagedWs, '.bazelrc.checkout')).readAsStringSync(),
+        'common --override_module=ai_rules_dart=$sibling\n',
+      );
+      expect(
+        File(p.join(stagedWs, '.bazelrc')).readAsStringSync(),
+        'try-import %workspace%/.bazelrc.checkout\n',
+      );
+      expect(
+        File(p.join(srcWs.path, '.bazelrc.checkout')).readAsStringSync(),
+        rc,
+      );
     });
   });
 }
