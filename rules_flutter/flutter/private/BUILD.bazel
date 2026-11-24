@@ -16,6 +16,16 @@ platform(
     visibility = ["//visibility:public"],
 )
 
+# Set by `flutter_android_bundle(native_debug_symbols = True)` on its own transition, never on a
+# command line: the Android AOT library keeps its symbol table, as in a stock build, where
+# gen_snapshot does not strip and the Android build does (it takes the symbols for the app bundle
+# first). The packer of the app strips the library.
+bool_flag(
+    name = "android_aot_symbols",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
 # Compilation mode config_settings for select() in macros.
 # compilation_mode is preserved across platform transitions (e.g. iOS).
 config_setting(

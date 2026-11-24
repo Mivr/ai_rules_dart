@@ -6,10 +6,14 @@
 //              lib/<abi>/*.so                                      native libraries
 //              assets/...                                          assets and the Flutter payload
 //              root/...                                            Java resources
-//   BUNDLE-METADATA/<directory>/<name>                             the mapping file, the baseline profile, ...
+//   BUNDLE-METADATA/<directory>/<name>                             the mapping file, the baseline profile, the
+//                                                                  dependency report, native debug symbols
 package rules_flutter.android;
 
 import com.android.bundle.Config;
+import com.android.tools.build.libraries.metadata.AppDependencies;
+import com.android.tools.build.libraries.metadata.Library;
+import com.android.tools.build.libraries.metadata.Repository;
 import com.android.tools.build.bundletool.commands.BuildBundleCommand;
 import com.google.common.collect.ImmutableList;
 import java.io.IOException;
@@ -23,6 +27,48 @@ import java.util.List;
 import java.util.Map;
 
 final class Bundle {
+  /**
+   * `dependencies --out dependencies.pb --library <group:name:version>|<repository index or -1>|<sha256 or empty> ...
+   * --library-dependencies <index>=<index>,... --module-dependency <index> --repository maven|ivy=<url>`:
+   * the dependency report AGP puts into an app bundle (its PerModuleReportDependenciesTask), from what
+   * the pin recorded, in the pin's order, written by AGP's own message classes (bundletool's classes
+   * of the same message encode it otherwise): the same bytes.
+   */
+  static void dependencies(List<String> args) throws Exception {
+    AndroidTool.Args a = new AndroidTool.Args(args, List.of());
+    AppDependencies.Builder report = AppDependencies.newBuilder();
+    for (String spec : a.all("--library")) {
+      String[] parts = spec.split("\\|", -1);
+      Library.Builder library = report.addLibraryBuilder();
+      if (!parts[0].isEmpty()) {
+        String[] coordinate = parts[0].split(":", 3);
+        library.getMavenLibraryBuilder().setGroupId(coordinate[0]).setArtifactId(coordinate[1]).setVersion(coordinate[2]);
+      }
+      int repository = Integer.parseInt(parts[1]);
+      if (repository >= 0) library.getRepoIndexBuilder().setValue(repository);
+      if (!parts[2].isEmpty()) library.getDigestsBuilder().setSha256(com.google.protobuf.ByteString.copyFrom(java.util.HexFormat.of().parseHex(parts[2])));
+    }
+    for (String spec : a.all("--library-dependencies")) {
+      int eq = spec.indexOf('=');
+      var dependencies = report.addLibraryDependenciesBuilder().setLibraryIndex(Integer.parseInt(spec.substring(0, eq)));
+      for (String index : spec.substring(eq + 1).split(",")) dependencies.addLibraryDepIndex(Integer.parseInt(index));
+    }
+    for (String spec : a.all("--repository")) {
+      int eq = spec.indexOf('=');
+      Repository.Builder repository = report.addRepositoriesBuilder();
+      if (spec.startsWith("ivy=")) {
+        repository.getIvyRepoBuilder().setUrl(spec.substring(eq + 1));
+      } else {
+        repository.getMavenRepoBuilder().setUrl(spec.substring(eq + 1));
+      }
+    }
+    var module = report.addModuleDependenciesBuilder().setModuleName("base");
+    for (String index : a.all("--module-dependency")) module.addDependencyIndex(Integer.parseInt(index));
+    try (java.io.OutputStream out = Files.newOutputStream(Paths.get(a.one("--out")))) {
+      report.build().writeTo(out);
+    }
+  }
+
   static int run(List<String> args, PrintStream err) throws Exception {
     AndroidTool.Args a = new AndroidTool.Args(args, List.of("--uncompressed-native-libs", "--unsigned", "--no-store-archive"));
     Path out = Paths.get(a.one("--out")).toAbsolutePath();
@@ -118,6 +164,19 @@ final class Bundle {
         int slash = name.lastIndexOf('/');
         Path file = Paths.get(spec.substring(eq + 1)).toAbsolutePath();
         if (Files.size(file) > 0) command.addMetadataFile(name.substring(0, slash), name.substring(slash + 1), file);
+      }
+      // Native debug symbols, as AGP's bundle task adds them: <abi>/<library>.sym (or .dbg).
+      java.util.Set<String> symbols = new java.util.TreeSet<>();
+      for (String zip : a.all("--symbols")) {
+        Apk.ZipIn in = new Apk.ZipIn(Paths.get(zip));
+        open.add(in);
+        for (Apk.Entry e : in.entries) {
+          if (e.name.endsWith("/") || !symbols.add(e.name)) continue;
+          Path file = work.resolve("symbols").resolve(e.name);
+          Files.createDirectories(file.getParent());
+          Files.write(file, in.content(e));
+          command.addMetadataFile("com.android.tools.build.debugsymbols", e.name, file);
+        }
       }
       command.build().execute();
 

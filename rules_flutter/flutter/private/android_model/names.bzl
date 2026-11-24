@@ -1,7 +1,7 @@
 """Names derived from keys of the Android model."""
 
 # The schema of the pin file these rules read (written by tools/model.init.gradle).
-SCHEMA = 3
+SCHEMA = 4
 
 def _san(s):
     out = []

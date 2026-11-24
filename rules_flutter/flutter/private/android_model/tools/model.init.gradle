@@ -5,7 +5,7 @@
 //       -Prdf.out=<file.json> [-Prdf.variants=debug,devDebug] [-Prdf.workspace=<dir>] [-Prdf.fallback=:a,:b]
 // from <app>/android, after `flutter pub get`.
 //
-// It writes one JSON file (schema 3) that describes every Android project of the build (the app, each
+// It writes one JSON file (schema 4) that describes every Android project of the build (the app, each
 // plugin's android/ project, library modules of the app) per variant, and the resolved Maven classpaths
 // with the sha256 of every artifact. Nothing is built: the work is configuration and dependency
 // resolution, plus the generator task of the google-services plugin when it is applied.
@@ -288,6 +288,58 @@ def rdfResolve(Object conf, Map ctx, boolean androidOrder = false, Collection ke
   return out.unique()
 }
 
+// What AGP writes into an app bundle as BUNDLE-METADATA/com.android.tools.build.libraries/dependencies.pb
+// (the Maven libraries of the app, which depends on which, and where they came from): the content of
+// its PerModuleReportDependenciesTask, computed from that task's own inputs in the same order, so that
+// the build can write the same bytes. Null when the variant has no such task (AGP writes none).
+//   libraries: [coordinate, index of its repository or -1, sha256 of its artifact or ""]
+//   library_dependencies: [index, [indices it depends on]]; module_dependencies: the app's own
+//   repositories: ["maven" or "ivy", url]
+def rdfDependencyReport(Object p, Object v) {
+  def task = rdfTry({ p.tasks.names.contains("collect${v.name.capitalize()}Dependencies".toString()) ?
+      p.tasks.getByName("collect${v.name.capitalize()}Dependencies".toString()) : null })
+  if (task == null) return null
+  def root = rdfTry({ task.rootComponent.get() })
+  def artifactCollection = rdfTry({ task.runtimeClasspathArtifacts.get() })
+  def repositories = rdfTry({ task.projectRepositories.get() })
+  if (root == null || artifactCollection == null || repositories == null) return null
+  def isProject = { id -> id instanceof org.gradle.api.artifacts.component.ProjectComponentIdentifier }
+  def files = new LinkedHashMap()
+  artifactCollection.artifacts.each { a -> files.computeIfAbsent(a.id.componentIdentifier, { [] }) << a.file }
+  def repoIndex = [:]
+  repositories.eachWithIndex { r, i -> repoIndex[r.name] = i }
+  def components = new LinkedHashSet()
+  def collect
+  collect = { c ->
+    if (!components.add(c)) return
+    c.dependencies.each { d -> if (d instanceof org.gradle.api.artifacts.result.ResolvedDependencyResult) collect(d.selected) }
+  }
+  collect(root)
+  def nodes = new LinkedHashMap()   // component id -> [ids it depends on, repository index]
+  components.each { c ->
+    if (nodes.containsKey(c.id)) return
+    def name = rdfTry({ c.repositoryName })
+    nodes[c.id] = [c.dependencies.findAll { it instanceof org.gradle.api.artifacts.result.ResolvedDependencyResult }
+        .collect { it.selected.id }.findAll { !isProject(it) }, name != null ? repoIndex[name] : null]
+  }
+  def libraries = nodes.keySet().findAll { !isProject(it) }
+  // Artifacts on the classpath that are no component of the graph (file dependencies).
+  def others = files.keySet().findAll { !nodes.containsKey(it) }
+  def indexOf = [:]
+  (libraries + others).eachWithIndex { id, i -> indexOf[id] = i }
+  def report = new TreeMap()
+  report.libraries = (libraries + others).collect { id ->
+    def f = files[id]
+    [id instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier ? "${id.group}:${id.module}:${id.version}".toString() : '',
+     nodes[id] != null && nodes[id][1] != null ? nodes[id][1] : -1,
+     f ? rdfSha256(f.first()) : '']
+  }
+  report.library_dependencies = libraries.collect { id -> [indexOf[id], nodes[id][0].collect { indexOf[it] }.findAll { it != null }] }.findAll { it[1] }
+  report.module_dependencies = (nodes.findAll { isProject(it.key) }.collectMany { it.value[0] } + others).collect { indexOf[it] }.findAll { it != null }.unique()
+  report.repositories = repositories.collect { r -> [r.class.simpleName == 'Ivy' ? 'ivy' : 'maven', r.url.toString()] }
+  return report
+}
+
 // Stores a classpath once; equal classpaths share an id.
 def rdfShare(List entries, Map ctx) {
   def md = MessageDigest.getInstance('SHA-256')
@@ -295,6 +347,54 @@ def rdfShare(List entries, Map ctx) {
   def id = 'cp_' + md.digest().encodeHex().toString().substring(0, 12)
   ctx.classpaths[id] = entries
   return id
+}
+
+// How `target` is made from `base`: [[index in base, entries dropped there, entries put there], ...]
+// in rising order (a longest common subsequence stays; an entry that moved is dropped and put).
+def rdfEdits(List base, List target) {
+  int n = base.size(), m = target.size()
+  int[][] len = new int[n + 1][m + 1]
+  for (int i = n - 1; i >= 0; i--) {
+    for (int j = m - 1; j >= 0; j--) {
+      len[i][j] = base[i] == target[j] ? len[i + 1][j + 1] + 1 : Math.max(len[i + 1][j], len[i][j + 1])
+    }
+  }
+  def edits = []
+  def cur = null
+  int i = 0, j = 0
+  while (i < n || j < m) {
+    if (i < n && j < m && base[i] == target[j]) { cur = null; i++; j++; continue }
+    if (cur == null) { cur = [i, 0, []]; edits << cur }
+    if (j >= m || (i < n && len[i + 1][j] >= len[i][j + 1])) { cur[1]++; i++ } else { cur[2] << target[j]; j++ }
+  }
+  return edits
+}
+
+// The classpaths as the pin stores them. The variants of a project have nearly the same classpath
+// (the engine of the mode, the same variant of each plugin project), so a pin with every variant
+// would be several times the pin of one: a classpath that differs little from one stored in full
+// is stored as that one's id and the differences, `[base: id, edits: rdfEdits(...)]`.
+def rdfShareCommon(Map classpaths) {
+  def out = new TreeMap()
+  def full = new LinkedHashMap()
+  classpaths.each { id, entries ->
+    def best = null, bestEdits = null, bestCost = 0
+    def own = entries as Set
+    full.each { oid, other ->
+      // Only a classpath that shares most of its entries is worth the comparison.
+      if (other.count { own.contains(it) } * 3 < Math.max(other.size(), entries.size()) * 2) return
+      def edits = rdfEdits(other, entries)
+      def cost = edits.size() + edits.sum(0) { it[2].size() }
+      if (bestEdits == null || cost < bestCost) { best = oid; bestEdits = edits; bestCost = cost }
+    }
+    if (bestEdits != null && bestCost * 3 < entries.size()) {
+      out[id] = new TreeMap([base: best, edits: bestEdits])
+    } else {
+      out[id] = entries
+      full[id] = entries
+    }
+  }
+  return out
 }
 
 def rdfWriteModel(Object g, Object app, Map rdfVariants) {
@@ -316,7 +416,7 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
   if (prop('rdf.workspace')) roots.ws = new File(prop('rdf.workspace')).absolutePath
 
   def model = new TreeMap()
-  model.schema = 3
+  model.schema = 4
   def tools = new TreeMap()
   tools.gradle = g.gradleVersion
   def agpCl = rdfTry({ app.plugins.findPlugin('com.android.application').class.classLoader })
@@ -429,6 +529,22 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
             p.plugins.findPlugin('com.android.application').class.classLoader.loadClass('com.android.builder.packaging.PackagingUtils')
                 .getMethod('getNoCompressGlobsForBundle', Collection).invoke(null, rdfTry({ a.androidResources.noCompress.toList() }, [])).toList() }, []),
         ])
+        // Bundle metadata AGP writes besides: the dependency report (dependenciesInfo.includeInBundle,
+        // read from the task AGP registered for the variant), and what it extracts from the native
+        // libraries before it strips them (ndk.debugSymbolLevel: AGP's own answer, or its rule: the
+        // DSL value, else the symbol tables of a build that is not debuggable).
+        if (rdfTry({ a.dependenciesInfo.includeInBundle }, true) != false) {
+          def report = rdfTry({ rdfDependencyReport(p, v) })
+          if (report != null) vj.bundle.dependencies = report
+        }
+        def level = rdfTry({ v.nativeBuildCreationConfig.nativeDebugSymbolLevel.toString() })
+        if (level == null) {
+          level = rdfTry({ bt?.ndk?.debugSymbolLevel })
+          rdfTry({ v.productFlavors.collect { it.second } }, []).each { fn -> if (level == null) level = rdfTry({ a.productFlavors.findByName(fn)?.ndk?.debugSymbolLevel }) }
+          if (level == null) level = rdfTry({ a.defaultConfig.ndk.debugSymbolLevel })
+          if (level == null) level = debuggable ? 'NONE' : 'SYMBOL_TABLE'
+        }
+        vj.bundle.native_debug_symbols = level.toString().toLowerCase()
         if (rdfTry({ v.outputs.size() }, 1) > 1)
           problems << "project ${p.path}, variant ${v.name}: several outputs (APK splits by ABI or density)"
       }
@@ -692,7 +808,6 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
     def r = rdfRel(f, roots)
     if (r.startsWith('app:')) inputs[r.substring(4)] = rdfSha256(f)
   }
-  addInput(new File(appRoot, 'pubspec.lock'))
   addInput(rdfTry({ g.settings.settingsScript.resource.file }) ?: rdfTry({ new File(g.startParameter.settingsFile ?: '') }))
   ['settings.gradle', 'settings.gradle.kts', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties', 'gradle/libs.versions.toml'].each { addInput(new File(root.projectDir, it)) }
   root.allprojects.each { p ->
@@ -703,6 +818,23 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
     }
   }
   model.inputs = inputs
+
+  // Of the pub lock, what the Android side depends on: the plugins that have an Android side (the
+  // Flutter tool lists them in .flutter-plugins-dependencies, which Flutter's settings plugin reads)
+  // and their versions (.dart_tool/package_graph.json). Both are written by `flutter pub get`. A
+  // build compares the list with its own; the lock's other packages can change without a new pin.
+  // An app without plugins has no such file, and an empty list (a first plugin is a change too).
+  def pluginsFile = new File(appRoot, '.flutter-plugins-dependencies')
+  if (new File(appRoot, 'pubspec.yaml').isFile()) {
+    def versions = [:]
+    rdfTry({ new groovy.json.JsonSlurper().parse(new File(appRoot, '.dart_tool/package_graph.json')).packages.each { versions[it.name] = it.version } })
+    // Not a plugin of the Flutter SDK itself (integration_test): the Dart side has it as a package
+    // like any other, and it changes with the Flutter version, which the build checks apart.
+    def sdkRoot = roots.flutter != null ? roots.flutter + File.separator : null
+    model.android_plugins = (rdfTry({ new groovy.json.JsonSlurper().parse(pluginsFile).plugins.android }) ?: [])
+        .findAll { sdkRoot == null || !new File(it.path.toString()).absolutePath.startsWith(sdkRoot) }
+        .collect { "${it.name} ${versions[it.name] ?: ''}".toString() }.unique().sort()
+  }
 
   // AGP's own tools, so that Bazel runs the same D8, manifest merger, aapt2 and signer as the stock
   // build. Resolved in detached configurations: they are not on the app's classpath.
@@ -739,7 +871,7 @@ def rdfWriteModel(Object g, Object app, Map rdfVariants) {
   }
   model.tool_classpaths = toolSets
   ctx.pruneArtifacts(toolSets.values().flatten() as Set)
-  model.classpaths = ctx.classpaths
+  model.classpaths = rdfShareCommon(ctx.classpaths)
   model.artifacts = ctx.artifacts
 
   if (problems) {

@@ -17,6 +17,7 @@ visibility(["//flutter/..."])
 
 # Flutter's profile mode (see //flutter:profile).
 _PROFILE_FLAG = "//flutter:profile"
+_AOT_SYMBOLS_FLAG = "//flutter/private:android_aot_symbols"
 
 # What a Gradle variant's build mode means for the Dart payload, whatever `-c` the command line has:
 # the variant names the mode, as `flutter build apk --release` does.
@@ -50,6 +51,7 @@ def _android_platform_transition_impl(settings, attr):
     else:
         result["//command_line_option:compilation_mode"] = settings["//command_line_option:compilation_mode"]
         result[_PROFILE_FLAG] = settings[_PROFILE_FLAG]
+    result[_AOT_SYMBOLS_FLAG] = getattr(attr, "native_debug_symbols", False)
     return result
 
 # Builds the bundle and everything behind it (the flutter_application, its
@@ -70,6 +72,7 @@ _android_platform_transition = transition(
         "//command_line_option:features",
         "//command_line_option:compilation_mode",
         _PROFILE_FLAG,
+        _AOT_SYMBOLS_FLAG,
     ],
 )
 
@@ -130,7 +133,7 @@ def _bundle_release_groups(ctx):
     if OutputGroupInfo not in ctx.attr.application:
         return groups
     app_groups = ctx.attr.application[OutputGroupInfo]
-    for name in ("debug_info", "obfuscation_map"):
+    for name in ("debug_info", "obfuscation_map", "android_plugins"):
         if hasattr(app_groups, name):
             groups[name] = getattr(app_groups, name)
     return groups
@@ -225,6 +228,12 @@ flutter_android_bundle = rule(
             doc = """The Flutter engine revision of the Java embedding the app is packaged with (an app built
 from the Gradle model reads it from the pin). When it is not the engine of the build's
 Flutter SDK the build fails: the Dart program and the embedding would not match.""",
+        ),
+        "native_debug_symbols": attr.bool(
+            doc = """The AOT library keeps its symbol table, as in a stock build, where gen_snapshot does not
+strip and the Android build does. Set by an app built from the Gradle model when its bundle
+carries native debug symbols (`ndk.debugSymbolLevel`, by default in a release build); the
+packer of the app strips the library. With `obfuscate` the compiler strips all the same.""",
         ),
         "flutter_mode": attr.string(
             doc = """Flutter's build mode of the payload: `debug` (the kernel), `profile` or `release`

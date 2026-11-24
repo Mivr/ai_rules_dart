@@ -792,7 +792,7 @@
         "https://repo.maven.apache.org/maven2/",
         "https://storage.googleapis.com/download.flutter.io/"
     ],
-    "schema": 3,
+    "schema": 4,
     "tool_classpaths": {
         "aapt2_linux": [
             "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar"

@@ -22,6 +22,7 @@ load(
     "rdf_apk",
     "rdf_art_profile",
     "rdf_bundle",
+    "rdf_dependency_report",
     "rdf_dex",
     "rdf_dex_archive",
     "rdf_dex_merge",
@@ -46,6 +47,24 @@ _TOOL_SOURCES = ["Aar.java", "AndroidTool.java", "Apk.java", "Bundle.java", "Dex
 # ABIs the Dart side can build native code for (the AOT library of a profile or release build, FFI
 # libraries, code assets).
 _DART_ABIS = ["armeabi-v7a", "arm64-v8a", "x86_64"]
+
+def _sign_property(args):
+    """What a sign program signs, as a system property of the program itself.
+
+    The program then signs the same files however it is started (`bazel run`, or a test that runs
+    it), which `args` of the target would not give: those reach only `bazel run`.
+    """
+    for a in args:
+        if "," in a or " " in a.replace("$(rootpath ", ""):
+            fail("android_model: the sign program cannot be told `%s` (a comma or a space in a path or a name)" % a)
+    return "-Drules_flutter.sign=" + ",".join(args)
+
+def _dart_abis(abis):
+    """The ABIs the Dart payload is built for: those of the app, or the first when it names none of them."""
+    return [a for a in _DART_ABIS if not abis or a in abis] or _DART_ABIS[:1]
+
+def _first_dart_abi(abis):
+    return _dart_abis(abis)[0]
 
 # What Flutter's Gradle plugin adds to versionCode per ABI with `--split-per-abi`.
 _ABI_VERSION_CODE = {"armeabi-v7a": 1, "arm64-v8a": 2, "x86_64": 4}
@@ -74,13 +93,28 @@ def _app_project(model):
             return k, p
     fail("android_model: the model has no application project")
 
+def _classpath_entries(model, cp):
+    """The entries of one stored classpath: a list, or another classpath's id and the differences."""
+    stored = model["classpaths"][cp]
+    if type(stored) == type([]):
+        return stored
+    base = model["classpaths"][stored["base"]]
+    out = []
+    done = 0
+    for at, drop, put in stored["edits"]:
+        out.extend(base[done:at])
+        out.extend(put)
+        done = at + drop
+    out.extend(base[done:])
+    return out
+
 def _classpath(model, v, which):
     """One classpath in Gradle's order, highest priority first: ("p", project, variant) or ("a", artifact)."""
     out = []
     cp = v.get(which)
     if not cp:
         return out
-    for e in model["classpaths"][cp]:
+    for e in _classpath_entries(model, cp):
         if e.startswith("project:"):
             path, _, variant = e[len("project:"):].rpartition("@")
             out.append(("p", path, variant))
@@ -640,8 +674,10 @@ def android_model_hub_targets(name, model, info):
                    native.glob(["sdk/platforms/%s/optional/*.jar" % s], allow_empty = True),
         )
     strip = "sdk/ndk/%s/toolchains/llvm/prebuilt/%s/bin/llvm-strip%s" % (app["ndk_version"], info["ndk_host"], info["exe"])
-    native.exports_files([strip])
+    objcopy = strip.replace("llvm-strip", "llvm-objcopy")
+    native.exports_files([strip, objcopy])
     native.alias(name = "llvm_strip", actual = strip)
+    native.alias(name = "llvm_objcopy", actual = objcopy)
 
     # AGP's own tools, from the pin, behind one program.
     tool_jars = []
@@ -961,9 +997,18 @@ def android_model_app(
     if split_per_abi and not abis:
         fail("android_model: `split_per_abi` needs the ABIs: set `abis` on `%s` (the model has no ndk.abiFilters)" % name)
 
-    # The pin must describe these files: a build with other Gradle files or another lock fails.
+    # The pin must describe these files and these plugins: a build with other Gradle files, or whose
+    # lock has other plugins with an Android side or other versions of them, fails. The rest of the
+    # lock (packages that are Dart only) is not the Android side's business.
+    plugin_list = None
+    if application and "android_plugins" in model:
+        rdf_output_group(name = name + "_pin_plugins_bundle", src = ":%s_bundle_%s" % (name, _first_dart_abi(abis).replace("-", "_")), group = "android_plugins", optional = True)
+        plugin_list = ":" + name + "_pin_plugins_bundle"
     rdf_pin_check(
         name = name + "_pin_check",
+        check_plugins = "android_plugins" in model,
+        plugins = model.get("android_plugins") or [],
+        plugin_list = plugin_list,
         inputs = model["inputs"],
         # The Gradle files of the workspace's library projects are read where the hub links them.
         srcs = native.glob([f for f in model["inputs"] if not _hub_input(model, f)], allow_empty = True) + [hub + "pin_inputs"],
@@ -1045,8 +1090,9 @@ def android_model_app(
             properties["VERSION_NAME"] = str(version_name)
         if v.get("max_sdk") != None:
             properties["MAX_SDK_VERSION"] = str(v["max_sdk"])
-        if not legacy_jni:
-            properties["EXTRACT_NATIVE_LIBS"] = "false"
+
+        # As AGP: said both ways (`true` with legacy packaging, where the libraries are compressed).
+        properties["EXTRACT_NATIVE_LIBS"] = "true" if legacy_jni else "false"
         rdf_manifest_merge(
             name = name + o.suffix + "_manifest",
             main = ":" + name + "_project_manifest",
@@ -1298,32 +1344,51 @@ def android_model_app(
     native_srcs = [hub + artifact_target(a) + "_native" for a in rt_artifacts if _has_native(arts[a])]
     native_srcs += [label_of(q, qv) + "_native" for q, qv in rt_projects] + [":" + name + "_project_native"]
     native_of = {}
+
+    # What the app bundle keeps of the native libraries before they are stripped, as AGP does
+    # (`ndk.debugSymbolLevel`; by default the symbol tables of a build that is not debuggable).
+    bundle_options = v.get("bundle") or {}
+    symbol_level = bundle_options.get("native_debug_symbols")
+    symbols = {"symbols": symbol_level, "objcopy": hub + "llvm_objcopy"} if symbol_level in ("symbol_table", "full") else {}
+    symbol_parts = []
     for abi in abis or [""]:
         target = name + "_native" + ("_" + abi.replace("-", "_") if abi else "")
-        rdf_native_libs(name = target, srcs = native_srcs, abis = [abi] if abi else [], strip = hub + "llvm_strip")
+        rdf_native_libs(name = target, srcs = native_srcs, abis = [abi] if abi else [], strip = hub + "llvm_strip", tool = hub + "tool_once", **symbols)
         native_of[abi] = [":" + target]
+        symbol_parts.append(target)
     dart_zip = []
     dart_zip_stored = []
     native_dir_parts = []
     if application:
-        dart_abis = [a for a in _DART_ABIS if not abis or a in abis] or _DART_ABIS[:1]
+        dart_abis = _dart_abis(abis)
         for abi in dart_abis:
             bundle = "%s_bundle_%s" % (name, abi.replace("-", "_"))
-            flutter_android_bundle(name = bundle, application = application, android_abi = abi, flutter_mode = mode, engine_revision = _engine_revision(rt_artifacts))
+            flutter_android_bundle(
+                name = bundle,
+                application = application,
+                android_abi = abi,
+                flutter_mode = mode,
+                engine_revision = _engine_revision(rt_artifacts),
+                # The AOT library keeps its symbols for the bundle, as in a stock build; it is stripped below.
+                native_debug_symbols = aot and bool(symbols),
+            )
             rdf_output_group(name = bundle + "_native", src = ":" + bundle, group = "plugin_native_libs")
-            rdf_native_libs(name = bundle + "_native_stripped", srcs = [":" + bundle + "_native"], abi = abi, strip = hub + "llvm_strip")
+            rdf_native_libs(name = bundle + "_native_stripped", srcs = [":" + bundle + "_native"], abi = abi, strip = hub + "llvm_strip", tool = hub + "tool_once", **symbols)
             dart_libs = [":" + bundle + "_native_stripped"]
+            symbol_parts.append(bundle + "_native_stripped")
 
             # The libraries of build hooks: a directory per ABI, listed when it is built.
             rdf_output_group(name = bundle + "_native_dirs", src = ":" + bundle, group = "native_lib_dirs")
-            rdf_native_dir(name = bundle + "_native_dir", srcs = [":" + bundle + "_native_dirs"], abi = abi, strip = hub + "llvm_strip", tool = hub + "tool_once")
+            rdf_native_dir(name = bundle + "_native_dir", srcs = [":" + bundle + "_native_dirs"], abi = abi, strip = hub + "llvm_strip", tool = hub + "tool_once", **symbols)
             native_dir_parts.append(":" + bundle + "_native_dir")
+            symbol_parts.append(bundle + "_native_dir")
             for group in ("debug_info", "obfuscation_map"):
                 rdf_output_group(name = "%s_%s" % (bundle, group), src = ":" + bundle, group = group, optional = True)
             if aot:
                 rdf_output_group(name = bundle + "_aot", src = ":" + bundle, group = "aot")
-                rdf_native_libs(name = bundle + "_libapp", srcs = [":" + bundle + "_aot"], abi = abi, rename = "libapp.so", strip = hub + "llvm_strip")
+                rdf_native_libs(name = bundle + "_libapp", srcs = [":" + bundle + "_aot"], abi = abi, rename = "libapp.so", strip = hub + "llvm_strip", tool = hub + "tool_once", **symbols)
                 dart_libs.append(":" + bundle + "_libapp")
+                symbol_parts.append(bundle + "_libapp")
             native_of[abi if abis else ""] = native_of.get(abi if abis else "", []) + dart_libs
         if aot:
             # `name_debug_info` and `name_obfuscation_map`: what `--split-debug-info` and `--obfuscate`
@@ -1448,9 +1513,27 @@ def android_model_app(
     if profiles:
         bundle_metadata[":" + name + "_art_prof"] = "com.android.tools.build.profiles/baseline.prof"
         bundle_metadata[":" + name + "_art_profm"] = "com.android.tools.build.profiles/baseline.profm"
-    bundle_options = v.get("bundle") or {}
+
+    # The dependency report, when the pin has one (AGP writes it for the variant).
+    report = bundle_options.get("dependencies")
+    if report:
+        rdf_dependency_report(
+            name = name + "_dependencies",
+            libraries = ["%s|%d|%s" % (l[0], l[1], l[2]) for l in report["libraries"]],
+            library_dependencies = ["%d=%s" % (d[0], ",".join([str(i) for i in d[1]])) for d in report["library_dependencies"]],
+            module_dependencies = [str(i) for i in report["module_dependencies"]],
+            repositories = ["%s=%s" % (r[0], r[1]) for r in report["repositories"]],
+            tool = hub + "tool_once",
+        )
+        bundle_metadata[":" + name + "_dependencies"] = "com.android.tools.build.libraries/dependencies.pb"
+    bundle_symbols = []
+    if symbols:
+        for part in symbol_parts:
+            rdf_output_group(name = part + "_symbols", src = ":" + part, group = "symbols")
+            bundle_symbols.append(":" + part + "_symbols")
     rdf_bundle(
         name = name + "_bundle",
+        symbols = bundle_symbols,
         resources = bundle_res,
         root_entries = metadata,
         metadata = bundle_metadata,
@@ -1552,7 +1635,7 @@ def android_model_app(
             main_class = "rules_flutter.android.Sign",
             runtime_deps = [hub + "tool_lib"],
             data = [":" + name + "_apk" + o.suffix for o in outputs],
-            args = sign_args + apk_args,
+            jvm_flags = [_sign_property(sign_args + apk_args)],
             visibility = visibility,
         )
 
@@ -1562,7 +1645,7 @@ def android_model_app(
             main_class = "rules_flutter.android.Sign",
             runtime_deps = [hub + "tool_lib"],
             data = [":" + name + "_bundle"],
-            args = sign_args + ["--bundle", "%s/app-%s.aab=$(rootpath :%s_bundle)" % (_camel(v), _dashed(v), name)],
+            jvm_flags = [_sign_property(sign_args + ["--bundle", "%s/app-%s.aab=$(rootpath :%s_bundle)" % (_camel(v), _dashed(v), name)])],
             visibility = visibility,
         )
     return struct(apk = ":" + name + "_apk", application_id = v["application_id"])

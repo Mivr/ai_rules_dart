@@ -135,6 +135,8 @@ public final class AndroidTool {
         case "gradle-aar": return GradleAar.run(rest, err);
         case "aarparts": return Aar.parts(rest, err);
         case "nativedir": return Apk.nativeDir(rest, err);
+        case "nativesymbols": return Apk.nativeSymbols(rest, err);
+        case "dependencies": Bundle.dependencies(rest); return 0;
         default:
           err.println("unknown command " + tool);
           return 2;

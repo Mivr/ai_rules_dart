@@ -3,3 +3,26 @@ commands:
   - name: test all targets
     run: bazel test //... --test_output=errors
     min_tests_executed: 2
+  - name: another version of a plugin with an Android side than the pin has fails the build and names it
+    replace_in_files:
+      - path: android_model.json
+        from: '"shared_preferences_android 2.5.4"'
+        to: '"shared_preferences_android 2.5.3"'
+    run: bazel build //:app_android_apk
+    expect:
+      non_zero: true
+      output_contains:
+        - '//:android_model.json is stale: pubspec.lock has other plugins with an Android side than it was written for'
+        - 'shared_preferences_android 2.5.4 (the pin has 2.5.3)'
+        - 'bazel run //:android_pin'
+  - name: a plugin with an Android side that the pin does not have fails the build and names it
+    replace_in_files:
+      - path: android_model.json
+        from: '"shared_preferences_android 2.5.3"'
+        to: '"some_other_plugin 1.0.0"'
+    run: bazel build //:app_android_apk
+    expect:
+      non_zero: true
+      output_contains:
+        - 'shared_preferences_android 2.5.4 (not in the pin)'
+        - 'some_other_plugin 1.0.0 (in the pin, no longer in pubspec.lock)'

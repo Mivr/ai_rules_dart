@@ -4,7 +4,10 @@ load("@rules_java//java:defs.bzl", "java_library")
 java_library(
     name = "apk_check",
     testonly = True,
-    srcs = ["ApkCheck.java"],
+    srcs = [
+        "ApkCheck.java",
+        "SignCheck.java",
+    ],
     javacopts = ["-XepDisableAllChecks"],
     visibility = ["//visibility:public"],
 )

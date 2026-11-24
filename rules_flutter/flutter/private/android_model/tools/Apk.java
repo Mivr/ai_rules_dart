@@ -341,7 +341,9 @@ final class Apk {
     String abi = a.one("--abi");
     String strip = a.one("--strip");
     Path tmp = Files.createTempFile(Paths.get(a.one("--out")).toAbsolutePath().getParent(), "strip", ".so");
-    try (ZipWriter z = new ZipWriter(Paths.get(a.one("--out")))) {
+    String symbolsOut = a.all("--symbols-out").isEmpty() ? null : a.one("--symbols-out");
+    try (ZipWriter z = new ZipWriter(Paths.get(a.one("--out")));
+        ZipWriter symbols = symbolsOut == null ? null : new ZipWriter(Paths.get(symbolsOut))) {
       for (String dir : a.rest) {
         List<Path> files;
         try (Stream<Path> s = Files.walk(Paths.get(dir), java.nio.file.FileVisitOption.FOLLOW_LINKS)) {
@@ -361,10 +363,52 @@ final class Apk {
           Process p = new ProcessBuilder(strip, "--strip-unneeded", "-o", tmp.toString(), f.toString()).inheritIO().start();
           if (p.waitFor() != 0) return 1;
           z.add(entry, Files.readAllBytes(tmp), STORE, 4);
+          if (symbols != null && !addSymbols(symbols, a.one("--objcopy"), a.one("--level"), abi + "/" + f.getFileName(), f, tmp, err)) return 1;
         }
       }
     } finally {
       Files.deleteIfExists(tmp);
+    }
+    return 0;
+  }
+
+  /**
+   * What AGP's ExtractNativeDebugMetadataTask takes from one native library for the app bundle,
+   * as the entry `<abi>/<name>.sym` (the symbol table: `llvm-objcopy --strip-debug`) or
+   * `<abi>/<name>.dbg` (`--only-keep-debug`), and as AGP nothing for a library that stripping did
+   * not make smaller (it has no symbols to give). `name` is `<abi>/<the name the library is packaged under>`.
+   */
+  private static boolean addSymbols(ZipWriter z, String objcopy, String level, String name, Path library, Path stripped, java.io.PrintStream err)
+      throws Exception {
+    boolean full = level.equals("full");
+    String entry = name + (full ? ".dbg" : ".sym");
+    if (Files.size(library) == Files.size(stripped) || z.has(entry)) return true;
+    Path out = Files.createTempFile(stripped.toAbsolutePath().getParent(), "symbols", full ? ".dbg" : ".sym");
+    try {
+      Process p = new ProcessBuilder(objcopy, full ? "--only-keep-debug" : "--strip-debug", library.toString(), out.toString()).inheritIO().start();
+      if (p.waitFor() != 0) {
+        err.println("llvm-objcopy failed on " + library);
+        return false;
+      }
+      z.add(entry, Files.readAllBytes(out), DEFLATE_DEFAULT, 1);
+      return true;
+    } finally {
+      Files.deleteIfExists(out);
+    }
+  }
+
+  /**
+   * `nativesymbols --objcopy <llvm-objcopy> --level symbol_table|full --out symbols.zip <abi>=<library>=<stripped>...`:
+   * the symbol files of native libraries for an app bundle (see `addSymbols`).
+   */
+  static int nativeSymbols(List<String> args, java.io.PrintStream err) throws Exception {
+    AndroidTool.Args a = new AndroidTool.Args(args, List.of());
+    try (ZipWriter z = new ZipWriter(Paths.get(a.one("--out")))) {
+      for (String spec : a.rest) {
+        String[] parts = spec.split("=", 3);
+        Path stripped = Paths.get(parts[2]);
+        if (!addSymbols(z, a.one("--objcopy"), a.one("--level"), parts[0] + "/" + stripped.getFileName(), Paths.get(parts[1]), stripped, err)) return 1;
+      }
     }
     return 0;
   }
@@ -611,8 +655,12 @@ final class Apk {
     Files.delete(unsigned);
   }
 
-  /** Signs an aligned APK with AGP's signer, keeping the alignment. */
+  /**
+   * Signs an aligned APK with AGP's signer, keeping the alignment. The JAR signature (below API 24)
+   * is named as AGP names it in an APK, `META-INF/CERT.SF` and `CERT.RSA`, whatever the key's alias.
+   */
   static void sign(ApkSigner.SignerConfig config, Path unsigned, Path out, int minSdk, boolean v1, boolean v2, boolean v3) throws Exception {
+    config = new ApkSigner.SignerConfig.Builder("CERT", config.getPrivateKey(), config.getCertificates()).build();
     new ApkSigner.Builder(List.of(config))
         .setInputApk(unsigned.toFile())
         .setOutputApk(out.toFile())

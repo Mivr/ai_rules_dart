@@ -50,6 +50,13 @@ public final class Sign {
     Boolean v3 = null;
     Map<String, Path> apks = new LinkedHashMap<>();
     Map<String, Path> bundles = new LinkedHashMap<>();
+    // What to sign is the target's own (a system property its launcher sets); the command line adds
+    // where to write and where the key is.
+    List<String> all = new ArrayList<>();
+    String fixed = System.getProperty("rules_flutter.sign");
+    if (fixed != null && !fixed.isEmpty()) all.addAll(List.of(fixed.split(",")));
+    all.addAll(List.of(args));
+    args = all.toArray(new String[0]);
     for (int i = 0; i < args.length; i++) {
       switch (args[i]) {
         case "--app": app = args[++i]; break;

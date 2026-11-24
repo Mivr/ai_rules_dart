@@ -1,4 +1,7 @@
 {
+    "android_plugins": [
+        
+    ],
     "artifacts": {
         "androidx/activity/activity/1.8.1/activity-1.8.1.aar": {
             "aar": {
@@ -1490,8 +1493,7 @@
         "android/build.gradle.kts": "6a26dba2cb8dfba1e74f540b0d17a89d96c1301d3c3bfda14348bed257fddcba",
         "android/gradle.properties": "0f82b18017fba6bb5ce3aa4b2d1a00c9382fc8aae7b1d9326e44b18abd66d80b",
         "android/gradle/wrapper/gradle-wrapper.properties": "b690d26223576fe4e63889fad9a00df81945cb870b9476cc5a563152a1a88a74",
-        "android/settings.gradle.kts": "016759283e88ade6eba92910583feeef88b962839b957aa414296afd2952d122",
-        "pubspec.lock": "f8e9598df8b16dd08c4f40087d79c12c772e1d82e3273310843114d10c48a1d3"
+        "android/settings.gradle.kts": "016759283e88ade6eba92910583feeef88b962839b957aa414296afd2952d122"
     },
     "proguard_texts": {
         "proguard-android-optimize.txt": "# This is a configuration file for ProGuard.\n# http://proguard.sourceforge.net/index.html#manual/usage.html\n#\n# Starting with version 2.2 of the Android plugin for Gradle, this file is distributed together with\n# the plugin and unpacked at build-time. The files in $ANDROID_HOME are no longer maintained and\n# will be ignored by new version of the Android plugin for Gradle.\n\n# Optimizations: If you don't want to optimize, use the proguard-android.txt configuration file\n# instead of this one, which turns off the optimization flags.\n-allowaccessmodification\n\n# Preserve some attributes that may be required for reflection.\n-keepattributes AnnotationDefault,\n                EnclosingMethod,\n                InnerClasses,\n                RuntimeVisibleAnnotations,\n                RuntimeVisibleParameterAnnotations,\n                RuntimeVisibleTypeAnnotations,\n                Signature\n\n-keep public class com.google.vending.licensing.ILicensingService\n-keep public class com.android.vending.licensing.ILicensingService\n-keep public class com.google.android.vending.licensing.ILicensingService\n-dontnote com.android.vending.licensing.ILicensingService\n-dontnote com.google.vending.licensing.ILicensingService\n-dontnote com.google.android.vending.licensing.ILicensingService\n\n# For native methods, see https://www.guardsquare.com/manual/configuration/examples#native\n-keepclasseswithmembernames,includedescriptorclasses class * {\n    native <methods>;\n}\n\n# Keep setters in Views so that animations can still work.\n-keepclassmembers public class * extends android.view.View {\n    void set*(***);\n    *** get*();\n}\n\n# We want to keep methods in Activity that could be used in the XML attribute onClick.\n-keepclassmembers class * extends android.app.Activity {\n    public void *(android.view.View);\n}\n\n# For enumeration classes, see https://www.guardsquare.com/manual/configuration/examples#enumerations\n-keepclassmembers enum * {\n    public static **[] values();\n    public static ** valueOf(java.lang.String);\n}\n\n-keepclassmembers class * implements android.os.Parcelable {\n    public static final ** CREATOR;\n}\n\n# Preserve annotated Javascript interface methods.\n-keepclassmembers class * {\n    @android.webkit.JavascriptInterface <methods>;\n}\n\n# The support libraries contains references to newer platform versions.\n# Don't warn about those in case this app is linking against an older\n# platform version. We know about them, and they are safe.\n-dontnote android.support.**\n-dontnote androidx.**\n-dontwarn android.support.**\n-dontwarn androidx.**\n\n# Understand the @Keep support annotation.\n-keep class android.support.annotation.Keep\n\n-keep @android.support.annotation.Keep class * {*;}\n\n-keepclasseswithmembers class * {\n    @android.support.annotation.Keep <methods>;\n}\n\n-keepclasseswithmembers class * {\n    @android.support.annotation.Keep <fields>;\n}\n\n-keepclasseswithmembers class * {\n    @android.support.annotation.Keep <init>(...);\n}\n\n# These classes are duplicated between android.jar and org.apache.http.legacy.jar.\n-dontnote org.apache.http.**\n-dontnote android.net.http.**\n\n# These classes are duplicated between android.jar and core-lambda-stubs.jar.\n-dontnote java.lang.invoke.**\n"
@@ -1566,6 +1568,7 @@
                         "abi_split": true,
                         "density_split": true,
                         "language_split": true,
+                        "native_debug_symbols": "none",
                         "store_archive": true,
                         "uncompressed_globs": [
                             "**.3[gG]2",
@@ -1787,7 +1790,7 @@
         "https://repo.maven.apache.org/maven2/",
         "https://storage.googleapis.com/download.flutter.io/"
     ],
-    "schema": 3,
+    "schema": 4,
     "tool_classpaths": {
         "aapt2_linux": [
             "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar"

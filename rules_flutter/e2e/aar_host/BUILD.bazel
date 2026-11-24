@@ -35,6 +35,20 @@ flutter_android_app(
     variant = "release",
 )
 
+# A library of another machine in an AAR of the build: the fixture is the first bytes of an ELF file
+# for x86_64 (machine 62) under `jni/arm64-v8a/`. A host app that carries it must fail to build, and the
+# failure must name the file: e2e.yaml puts it in place of the module's AAR for one command.
+genrule(
+    name = "wrong_machine_aar",
+    srcs = ["wrong_machine/AndroidManifest.xml"],
+    outs = ["wrong_machine.aar"],
+    cmd = "printf '\\177ELF\\002\\001\\001\\000\\000\\000\\000\\000\\000\\000\\000\\000\\003\\000\\076\\000\\001\\000\\000\\000' > $(RULEDIR)/libwrong_machine.so && " +
+          "$(execpath @bazel_tools//tools/zip:zipper) c $@ AndroidManifest.xml=$(location wrong_machine/AndroidManifest.xml) jni/arm64-v8a/libwrong_machine.so=$(RULEDIR)/libwrong_machine.so && " +
+          "rm $(RULEDIR)/libwrong_machine.so",
+    tags = ["manual"],
+    tools = ["@bazel_tools//tools/zip:zipper"],
+)
+
 dart_test(
     name = "verify_aar_host_test",
     size = "medium",

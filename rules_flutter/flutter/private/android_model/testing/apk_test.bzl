@@ -114,3 +114,29 @@ def android_bundle_test(name, app, entries = [], absent_entries = [], signed = T
         args = args,
         **kwargs
     )
+
+def android_sign_test(name, app, **kwargs):
+    """Runs `app`'s sign programs with a key made in the test and checks what they signed.
+
+    For an app whose signing configuration is its own (the build leaves its APKs and its bundle
+    unsigned, and `bazel run :<app>_sign` and `:<app>_bundle_sign` sign them): the test makes a key
+    store, gives it to both programs in their environment, as a CI job does, and checks that every
+    APK has a v2 signature with that key's certificate and that the bundle verifies as a jar signed
+    with it.
+
+    Args:
+      name: test name.
+      app: name of the `flutter_android_app` target in this package.
+      **kwargs: common test attributes.
+    """
+    programs = [":%s_sign" % app, ":%s_bundle_sign" % app]
+    java_test(
+        name = name,
+        size = kwargs.pop("size", "medium"),
+        main_class = "rules_flutter.android.testing.SignCheck",
+        use_testrunner = False,
+        runtime_deps = [Label("//flutter/private/android_model/testing:apk_check")],
+        data = programs,
+        args = ["--sign", "$(rootpath %s)" % programs[0], "--bundle-sign", "$(rootpath %s)" % programs[1]],
+        **kwargs
+    )

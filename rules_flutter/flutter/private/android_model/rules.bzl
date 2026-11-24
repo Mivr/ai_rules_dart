@@ -586,6 +586,7 @@ rdf_r_jar = rule(
 def _rdf_native_libs_impl(ctx):
     outs = []
     seen = {}
+    pairs = []
     for f in ctx.files.srcs:
         if not f.basename.endswith(".so") and not ctx.attr.rename:
             continue
@@ -609,7 +610,35 @@ def _rdf_native_libs_impl(ctx):
             progress_message = "Stripping %s" % f.short_path,
         )
         outs.append(out)
-    return [DefaultInfo(files = depset(outs))]
+        pairs.append((abi, f, out))
+    if not ctx.attr.symbols:
+        return [DefaultInfo(files = depset(outs))]
+
+    # For an app bundle: what each library loses when it is stripped, as AGP keeps it.
+    symbols = ctx.actions.declare_file(ctx.label.name + "_symbols.zip")
+    args = _tool_args(ctx, "nativesymbols")
+    args.add("--objcopy", ctx.executable.objcopy)
+    args.add("--level", ctx.attr.symbols)
+    args.add("--out", symbols)
+    for abi, f, out in pairs:
+        args.add("%s=%s=%s" % (abi, f.path, out.path))
+    _tool(
+        ctx,
+        args,
+        depset([f for _, f, _ in pairs] + outs + [ctx.executable.objcopy]),
+        [symbols],
+        "RdfNativeSymbols",
+        "Native debug symbols of %{label}",
+    )
+    return [DefaultInfo(files = depset(outs)), OutputGroupInfo(symbols = depset([symbols]))]
+
+_SYMBOL_ATTRS = {
+    "objcopy": attr.label(executable = True, cfg = "exec", allow_single_file = True, doc = "The NDK's llvm-objcopy; needed with `symbols`."),
+    "symbols": attr.string(
+        values = ["", "symbol_table", "full"],
+        doc = "What an app bundle keeps of the libraries (AGP's `ndk.debugSymbolLevel`), in the output group `symbols`.",
+    ),
+}
 
 rdf_native_libs = rule(
     implementation = _rdf_native_libs_impl,
@@ -619,7 +648,8 @@ rdf_native_libs = rule(
         "rename": attr.string(doc = "The name the (one) library is packaged under: the AOT library is libapp.so."),
         "srcs": attr.label_list(allow_files = True),
         "strip": attr.label(executable = True, cfg = "exec", allow_single_file = True, mandatory = True),
-    },
+        "tool": attr.label(executable = True, cfg = "exec", doc = "Needed with `symbols`."),
+    } | _SYMBOL_ATTRS,
 )
 
 def _rdf_native_dir_impl(ctx):
@@ -629,8 +659,22 @@ def _rdf_native_dir_impl(ctx):
     args.add("--strip", ctx.executable.strip)
     args.add("--out", out)
     args.add_all(ctx.files.srcs, expand_directories = False)
-    _tool(ctx, args, depset(ctx.files.srcs + [ctx.executable.strip]), [out], "RdfNativeDir", "Native libraries of %{label}")
-    return [DefaultInfo(files = depset([out]))]
+    if not ctx.attr.symbols:
+        _tool(ctx, args, depset(ctx.files.srcs + [ctx.executable.strip]), [out], "RdfNativeDir", "Native libraries of %{label}")
+        return [DefaultInfo(files = depset([out]))]
+    symbols = ctx.actions.declare_file(ctx.label.name + "_symbols.zip")
+    args.add("--objcopy", ctx.executable.objcopy)
+    args.add("--level", ctx.attr.symbols)
+    args.add("--symbols-out", symbols)
+    _tool(
+        ctx,
+        args,
+        depset(ctx.files.srcs + [ctx.executable.strip, ctx.executable.objcopy]),
+        [out, symbols],
+        "RdfNativeDir",
+        "Native libraries of %{label}",
+    )
+    return [DefaultInfo(files = depset([out])), OutputGroupInfo(symbols = depset([symbols]))]
 
 rdf_native_dir = rule(
     doc = """Directories of native libraries whose names are known only when they are built (the
@@ -642,7 +686,7 @@ rdf_native_dir = rule(
         "srcs": attr.label_list(allow_files = True, doc = "Directories."),
         "strip": attr.label(executable = True, cfg = "exec", allow_single_file = True, mandatory = True),
         "tool": attr.label(executable = True, cfg = "exec", mandatory = True),
-    },
+    } | _SYMBOL_ATTRS,
 )
 
 # ---------------------------------------------------------------------------------------------------
@@ -829,7 +873,8 @@ def _rdf_bundle_impl(ctx):
     if not ctx.attr.store_archive:
         args.add("--no-store-archive")
     args.add("--min-sdk", ctx.attr.min_sdk)
-    inputs = ctx.files.dex + ctx.files.native_libs + ctx.files.zips + res_jars + [ctx.file.resources]
+    args.add_all(ctx.files.symbols, before_each = "--symbols")
+    inputs = ctx.files.dex + ctx.files.native_libs + ctx.files.zips + ctx.files.symbols + res_jars + [ctx.file.resources]
     if unsigned:
         args.add("--unsigned")
     else:
@@ -840,6 +885,30 @@ def _rdf_bundle_impl(ctx):
         DefaultInfo(files = depset([out])),
         OutputGroupInfo(_validation = depset(ctx.files.validations)),
     ]
+
+def _rdf_dependency_report_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".pb")
+    args = _tool_args(ctx, "dependencies")
+    args.add("--out", out)
+    args.add_all(ctx.attr.libraries, before_each = "--library")
+    args.add_all(ctx.attr.library_dependencies, before_each = "--library-dependencies")
+    args.add_all(ctx.attr.module_dependencies, before_each = "--module-dependency")
+    args.add_all(ctx.attr.repositories, before_each = "--repository")
+    _tool(ctx, args, depset(), [out], "RdfDependencyReport", "Dependency report of %{label}")
+    return [DefaultInfo(files = depset([out]))]
+
+rdf_dependency_report = rule(
+    doc = """The dependency report of an app bundle (`dependencies.pb`): the Maven libraries of the app,
+    which depends on which and where each came from, as the pin recorded them from AGP's own task.""",
+    implementation = _rdf_dependency_report_impl,
+    attrs = {
+        "libraries": attr.string_list(doc = "`<group:name:version>|<index of its repository, or -1>|<sha256 of its artifact, or empty>`."),
+        "library_dependencies": attr.string_list(doc = "`<index>=<index>,...`: a library and the libraries it depends on."),
+        "module_dependencies": attr.string_list(doc = "Indices of the libraries the app's projects depend on."),
+        "repositories": attr.string_list(doc = "`maven=<url>` or `ivy=<url>`."),
+        "tool": attr.label(executable = True, cfg = "exec", mandatory = True),
+    },
+)
 
 rdf_bundle = rule(
     doc = """An app bundle (.aab) with one module, `base`, built by bundletool (the version AGP uses).
@@ -865,6 +934,7 @@ rdf_bundle = rule(
         "root_entries": attr.label_keyed_string_dict(allow_files = True, doc = "File to its path under the module's `root/`."),
         "signing": attr.string(default = "debug", values = ["debug", "none"]),
         "store_archive": attr.bool(default = True),
+        "symbols": attr.label_list(allow_files = [".zip"], doc = "Native debug symbols (`<abi>/<library>.sym`), under BUNDLE-METADATA."),
         "tool": attr.label(executable = True, cfg = "exec", mandatory = True),
         "uncompressed_globs": attr.string_list(),
         "validations": attr.label_list(allow_files = True),
@@ -889,16 +959,24 @@ def _rdf_pin_check_impl(ctx):
     for path, sha in ctx.attr.inputs.items():
         f = by_path.get(path)
         args.add("--input", "%s=%s=%s" % (path, sha, f.path if f else ""))
-    _tool(ctx, args, ctx.files.srcs, [out], "RdfPinCheck", "Checking that %s is current" % ctx.attr.model)
+
+    # The plugins of the lock that have an Android side: the pin's against the build's.
+    if ctx.attr.check_plugins and ctx.files.plugin_list:
+        args.add("--plugin-list", ctx.files.plugin_list[0])
+        args.add_all(ctx.attr.plugins, before_each = "--plugin")
+    _tool(ctx, args, ctx.files.srcs + ctx.files.plugin_list, [out], "RdfPinCheck", "Checking that %s is current" % ctx.attr.model)
     return [DefaultInfo(files = depset([out]))]
 
 rdf_pin_check = rule(
     implementation = _rdf_pin_check_impl,
     attrs = {
         "hub_prefix": attr.string(doc = "Where the hub links the app's directory; a file under it is named by the rest of its path."),
+        "check_plugins": attr.bool(doc = "Whether the pin records its plugins (a pin of an app without Flutter has none to check)."),
         "inputs": attr.string_dict(doc = "Package-relative path to the sha256 the pin recorded."),
         "model": attr.string(mandatory = True),
         "pin_command": attr.string(mandatory = True),
+        "plugin_list": attr.label(allow_files = True, doc = "The build's own list, one `<name> <version>` a line (the application's `android_plugins` output group); nothing when the app names no lock."),
+        "plugins": attr.string_list(doc = "`<name> <version>` of the plugins with an Android side that the pin was written for."),
         "srcs": attr.label_list(allow_files = True),
         "tool": attr.label(executable = True, cfg = "exec", mandatory = True),
     },

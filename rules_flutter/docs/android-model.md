@@ -16,15 +16,25 @@ build.
 4. A release or profile build is another `flutter_android_app` with `variant = "release"` (or
    `"profile"`); see "Release and profile builds" below.
 
-Pin again when `pubspec.lock`, a Gradle file of the app or the plugin set changes. A build whose files
-differ from what the pin was computed from fails and names the files and the command:
+Pin again when a Gradle file of the app changes, or the plugins of `pubspec.lock` that have an Android
+side do (one added, removed, or at another version). A build whose files or plugins differ from what the
+pin was computed from fails and names them and the command:
 
 ```
 //:android_model.json is stale: it was written by Gradle for other contents of
   android/app/build.gradle.kts
+//:android_model.json is stale: pubspec.lock has other plugins with an Android side than it was written for
+  url_launcher_android 6.3.36 (the pin has 6.3.35)
 Pin again and commit the result:
   bazel run //:android_pin
 ```
+
+The rest of `pubspec.lock` is not the Android side's business: a package that is Dart only can be
+added or upgraded without a new pin. The pin holds the list (`android_plugins`: the names
+`.flutter-plugins-dependencies` gives for Android, with the versions of
+`.dart_tool/package_graph.json`, both written by `flutter pub get`), and the build compares it with
+what the app's `pub_packages` say of the lock; an app that names no lock (`pub_packages` and no
+package of a `flutter.pub` hub in `deps`) is not compared.
 
 `bazel run //:android_pin -- --check` fails when the file is not what Gradle gives now, without writing
 it (for CI). Two pins of the same inputs are the same bytes.
@@ -114,7 +124,11 @@ The pin records every variant of the app (`debug`, `profile`, `release`, and wit
 `devRelease`, ...); `flutter_android_pin(variants = ["debug", "devRelease"])` records fewer.
 `flutter_android_app(variant = "devRelease")` builds one. The variant decides the mode, as the flag of
 `flutter build apk` does, whatever `-c` the Bazel command line has: a debuggable build type is a debug
-build, the `profile` build type a profile build, any other a release build.
+build, the `profile` build type a profile build, any other a release build. The variants of a
+project have nearly the same classpath, so the pin stores a classpath that differs little from another
+as that one's id and the differences (where Gradle orders the two alike; it does not always). With
+every variant the pin of an app with nine plugins is about 1.8 times the pin of its debug variant
+alone, where it was 2.2 times.
 
 ## Release and profile builds
 
@@ -155,8 +169,20 @@ in the proto format, the dex files, the native libraries, the assets and the Jav
 together as AGP's module task does and built by bundletool at the version AGP uses (by hash, from the
 pin), with AGP's bundle configuration (`bundle { abi, density, language }` of the Gradle file,
 uncompressed native libraries at 16 KB boundaries). Under `BUNDLE-METADATA` it carries the mapping
-file, the baseline profile, R8's build record and AGP's marker file. Every variant has a bundle target
-(`//:app_bundle` is the debug one).
+file, the baseline profile, R8's build record, AGP's marker file, and what AGP writes for the variant:
+
+- `com.android.tools.build.libraries/dependencies.pb`, the Maven libraries of the app, which depends
+  on which, and the repository of each (unless the Gradle file says `dependenciesInfo {
+  includeInBundle = false }`). The pin records the report from the inputs of AGP's own task, in its
+  order, and the build writes it with AGP's own message classes: the same bytes as the stock file.
+- `com.android.tools.build.debugsymbols/<abi>/<library>.so.sym`, the symbol table of each native
+  library that stripping makes smaller (`ndk { debugSymbolLevel }`: by default `SYMBOL_TABLE` in a
+  build that is not debuggable; `FULL` gives `.so.dbg`), taken with the NDK's `llvm-objcopy` as AGP
+  takes it. For this the AOT library is compiled without `--strip`, as in a stock build, and
+  stripped when it is packaged. With `obfuscate` the compiler strips it all the same (its symbols
+  would hold the names), so such a bundle has no symbol file for `libapp.so`.
+
+Every variant has a bundle target (`//:app_bundle` is the debug one).
 
 ### Signing
 
@@ -204,9 +230,10 @@ Android projects in the host's Gradle build.
 
 - `META-INF/version-control-info.textproto` (the commit of the checkout) and
   `kotlin-tooling-metadata.json` (a record of the Kotlin Gradle plugin) are not written.
-- A bundle has no `BUNDLE-METADATA/com.android.tools.build.libraries/dependencies.pb` (the list of
-  Maven dependencies the Play Console reads) and no native debug symbols
-  (`com.android.tools.build.debugsymbols`).
+- A release APK has no dependency block in its APK Signing Block (id `0x504b4453`: the dependency
+  report, compressed and encrypted with a key of Google Play, which AGP adds unless the Gradle file
+  says `dependenciesInfo { includeInApk = false }`). The encryption draws a new key every time, so
+  the block cannot be an output of a build that gives the same bytes twice. The bundle has the report.
 - The code is compiled by the Java and Kotlin compilers of the Bazel workspace, not by Gradle's, so
   compiler-made names (lambda numbers, synthetic classes) can differ; R8 then names classes in
   another order. Given the same class files, R8's output here is byte for byte the stock one.
@@ -242,7 +269,12 @@ project are not packaged yet.
 entries that must (or must not) be there, which split holds what, the version, and always that no class
 is defined twice, that native libraries are stored uncompressed at 16 KB boundaries, that the APK is
 signed, and that the splits hold what the whole APK holds. `abi = "x86_64"` checks that ABI's APK of
-an app built with `split_per_abi`.
+an app built with `split_per_abi`. `flutter_android_bundle_test` does the same for the app bundle.
+
+`flutter_android_sign_test(name, app)` is for an app whose signing configuration is its own: it makes
+a key store in the test, runs `<app>_sign` and `<app>_bundle_sign` with that key in their
+environment, and checks that the APK has a v2 signature with the key's certificate and that the
+bundle verifies as a jar signed with it. No key is checked in.
 
 ## Hosts
 

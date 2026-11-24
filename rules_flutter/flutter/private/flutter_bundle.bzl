@@ -22,8 +22,9 @@ rerun it.
 """
 
 load("@rules_dart//dart:providers.bzl", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "dart_info_no_package")
+load("@rules_dart//dart:utils.bzl", "dart_info_no_package", "owned_package_records")
 load("@flutter_pub_hubs//:hubs.bzl", "PUB_HUBS", "PUB_HUBS_BY_PACKAGE")
+load("//flutter:providers.bzl", "FlutterInfo")
 load("//flutter/private:flutter_assets_tool.bzl", "flutter_assets_tool_of")
 
 visibility(["//flutter/..."])
@@ -31,6 +32,7 @@ visibility(["//flutter/..."])
 FlutterPubPackagesInfo = provider(
     doc = "What a `flutter_pub_packages` target knows about its lock besides the packages.",
     fields = {
+        "android_plugins": "list[str]: `<name> <version>` of every package of the lock that is a Flutter plugin with an Android implementation (as `.flutter-plugins-dependencies` lists them), sorted. What an app's Android pin depends on of the lock.",
         "package_graph": "File or None: the lock's package graph, in the shape of pub's `.dart_tool/package_graph.json`, without the project's own package.",
     },
 )
@@ -176,6 +178,25 @@ def _tool_sdk_rel(f, marker):
 
 def _pub_packages(ctx):
     return ctx.attr.pub_packages or ctx.attr._hub_packages
+
+def lock_android_plugins(ctx):
+    """The Android plugins of the app's own pub lock, or None when its packages come from another.
+
+    The lock is the app's own when a `flutter.pub` hub reads the `pubspec.lock` of the app's
+    package; an app in a subdirectory of a project whose hub it shares has a `pubspec.lock` of its
+    own that no hub reads, and only the plugins it depends on are known.
+
+    Args:
+        ctx: The context of a rule with `BUNDLE_ATTRS`.
+
+    Returns:
+        `FlutterPubPackagesInfo.android_plugins` of the app's `pub_packages`, or None.
+    """
+    pub = _pub_packages(ctx)
+    if not pub or FlutterPubPackagesInfo not in pub or ctx.label.repo_name:
+        return None
+    own = PUB_HUBS_BY_PACKAGE.get(ctx.label.package)
+    return pub[FlutterPubPackagesInfo].android_plugins if own and own == pub.label else None
 
 def _bundle_infos(ctx):
     infos = [d[DartInfo] for d in ctx.attr.deps if DartInfo in d]
@@ -476,10 +497,40 @@ def flutter_web_bundle(
     )
     return output_dir
 
+def implements_android(plugin):
+    """Whether a plugin record has an Android implementation.
+
+    It has one when its pubspec has `flutter.plugin.platforms.android` and that entry does not hand
+    the platform to another package (`default_package`), as the Flutter tool decides it.
+
+    Args:
+        plugin: A plugin record of `FlutterInfo.plugins`.
+
+    Returns:
+        True or False.
+    """
+    android = plugin.platforms.get("android")
+    return type(android) == "dict" and "default_package" not in android
+
+def _android_plugins(deps):
+    """`<name> <version>` of the plugins among `deps` that have an Android implementation."""
+    plugins = []
+    for dep in deps:
+        if FlutterInfo not in dep:
+            continue
+        versions = {record.package_name: record.version for record in owned_package_records(dep[DartInfo])}
+        for plugin in dep[FlutterInfo].plugins:
+            if getattr(plugin, "_depth", 0) == 0 and implements_android(plugin):
+                plugins.append("%s %s" % (plugin.name, versions.get(plugin.name, "")))
+    return sorted(plugins)
+
 def _flutter_pub_packages_impl(ctx):
     return [
         dart_info_no_package(deps = ctx.attr.deps),
-        FlutterPubPackagesInfo(package_graph = ctx.file.package_graph),
+        FlutterPubPackagesInfo(
+            android_plugins = _android_plugins(ctx.attr.deps),
+            package_graph = ctx.file.package_graph,
+        ),
     ]
 
 flutter_pub_packages = rule(

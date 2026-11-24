@@ -1,4 +1,8 @@
 {
+    "android_plugins": [
+        "android_greeting_plugin 0.0.1",
+        "federated_greeting_android 0.0.1"
+    ],
     "artifacts": {
         "androidx/activity/activity/1.8.1/activity-1.8.1.aar": {
             "aar": {
@@ -1772,50 +1776,60 @@
             "org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar",
             "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
         ],
-        "cp_830ca09e19d7": [
-            "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
-            "androidx/window/window/1.2.0/window-1.2.0.aar",
-            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
-            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
-            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
-            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
-            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
-            "androidx/core/core-ktx/1.13.1/core-ktx-1.13.1.aar",
-            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
-            "androidx/core/core/1.13.1/core-1.13.1.aar",
-            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
-            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
-            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
-            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
-            "androidx/profileinstaller/profileinstaller/1.3.1/profileinstaller-1.3.1.aar",
-            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
-            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
-            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
-            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
-            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
-            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
-            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
-            "androidx/interpolator/interpolator/1.0.0/interpolator-1.0.0.aar",
-            "androidx/concurrent/concurrent-futures/1.1.0/concurrent-futures-1.1.0.jar",
-            "androidx/window/extensions/core/core/1.0.0/core-1.0.0.aar",
-            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
-            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
-            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
-            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
-            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
-            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
-            "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
-        ],
+        "cp_830ca09e19d7": {
+            "base": "cp_72cec171e447",
+            "edits": [
+                [
+                    0,
+                    3,
+                    [
+                        
+                    ]
+                ],
+                [
+                    23,
+                    0,
+                    [
+                        "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar"
+                    ]
+                ],
+                [
+                    27,
+                    1,
+                    [
+                        
+                    ]
+                ],
+                [
+                    36,
+                    1,
+                    [
+                        
+                    ]
+                ],
+                [
+                    42,
+                    8,
+                    [
+                        
+                    ]
+                ],
+                [
+                    52,
+                    7,
+                    [
+                        
+                    ]
+                ],
+                [
+                    60,
+                    0,
+                    [
+                        "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
+                    ]
+                ]
+            ]
+        },
         "cp_98a683d553ee": [
             "project::android_greeting_plugin@debug",
             "project::federated_greeting_android@debug",
@@ -1884,45 +1898,53 @@
             "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
             "org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar"
         ],
-        "cp_ac0d81ce5975": [
-            "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
-            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
-            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
-            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
-            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
-            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
-            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
-            "androidx/core/core/1.13.1/core-1.13.1.aar",
-            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
-            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
-            "androidx/window/window/1.2.0/window-1.2.0.aar",
-            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
-            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
-            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
-            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
-            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
-            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
-            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
-            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
-            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
-            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
-            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
-            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
-            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
-            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
-            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
-            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
-        ]
+        "cp_ac0d81ce5975": {
+            "base": "cp_4ee5c2ecd6bc",
+            "edits": [
+                [
+                    0,
+                    3,
+                    [
+                        
+                    ]
+                ],
+                [
+                    24,
+                    3,
+                    [
+                        
+                    ]
+                ],
+                [
+                    31,
+                    1,
+                    [
+                        
+                    ]
+                ],
+                [
+                    38,
+                    3,
+                    [
+                        
+                    ]
+                ],
+                [
+                    45,
+                    7,
+                    [
+                        
+                    ]
+                ],
+                [
+                    54,
+                    1,
+                    [
+                        
+                    ]
+                ]
+            ]
+        }
     },
     "generated_sources": {
         "io/flutter/plugins/GeneratedPluginRegistrant.java": "package io.flutter.plugins;\n\nimport androidx.annotation.Keep;\nimport androidx.annotation.NonNull;\nimport io.flutter.Log;\n\nimport io.flutter.embedding.engine.FlutterEngine;\n\n/**\n * Generated file. Do not edit.\n * This file is generated by the Flutter tool based on the\n * plugins that support the Android platform.\n */\n@Keep\npublic final class GeneratedPluginRegistrant {\n  private static final String TAG = \"GeneratedPluginRegistrant\";\n  public static void registerWith(@NonNull FlutterEngine flutterEngine) {\n    try {\n      flutterEngine.getPlugins().add(new com.example.android_greeting_plugin.AndroidGreetingPlugin());\n    } catch (Exception e) {\n      Log.e(TAG, \"Error registering plugin android_greeting_plugin, com.example.android_greeting_plugin.AndroidGreetingPlugin\", e);\n    }\n    try {\n      flutterEngine.getPlugins().add(new com.example.federated_greeting_android.FederatedGreetingAndroidPlugin());\n    } catch (Exception e) {\n      Log.e(TAG, \"Error registering plugin federated_greeting_android, com.example.federated_greeting_android.FederatedGreetingAndroidPlugin\", e);\n    }\n    try {\n      flutterEngine.getPlugins().add(new dev.flutter.plugins.integration_test.IntegrationTestPlugin());\n    } catch (Exception e) {\n      Log.e(TAG, \"Error registering plugin integration_test, dev.flutter.plugins.integration_test.IntegrationTestPlugin\", e);\n    }\n  }\n}\n"
@@ -1936,8 +1958,7 @@
         "android_greeting_plugin/android/build.gradle.kts": "144cdb771c046f33d3a77c0a1e186805edf6e52d73d3f34dc804f14d140b19d5",
         "android_greeting_plugin/android/settings.gradle.kts": "7c6af4250eb739fca0201b9e52003b76996de632759e21251c2951ec63b630af",
         "federated/federated_greeting_android/android/build.gradle.kts": "91d2571278ad354e5474c61340c9eed591baccfd8e68e29bebb9d1826324c944",
-        "federated/federated_greeting_android/android/settings.gradle.kts": "b43cdc43fd900af1d4f111dc0801990f0393b0071feb303ad6f127098e20dbc4",
-        "pubspec.lock": "14093e379de1241979cf7982cee43da3c14835b8edd7f95b6bd3efd14736b2f5"
+        "federated/federated_greeting_android/android/settings.gradle.kts": "b43cdc43fd900af1d4f111dc0801990f0393b0071feb303ad6f127098e20dbc4"
     },
     "proguard_texts": {
         "proguard-android-optimize.txt": "# This is a configuration file for ProGuard.\n# http://proguard.sourceforge.net/index.html#manual/usage.html\n#\n# Starting with version 2.2 of the Android plugin for Gradle, this file is distributed together with\n# the plugin and unpacked at build-time. The files in $ANDROID_HOME are no longer maintained and\n# will be ignored by new version of the Android plugin for Gradle.\n\n# Optimizations: If you don't want to optimize, use the proguard-android.txt configuration file\n# instead of this one, which turns off the optimization flags.\n-allowaccessmodification\n\n# Preserve some attributes that may be required for reflection.\n-keepattributes AnnotationDefault,\n                EnclosingMethod,\n                InnerClasses,\n                RuntimeVisibleAnnotations,\n                RuntimeVisibleParameterAnnotations,\n                RuntimeVisibleTypeAnnotations,\n                Signature\n\n-keep public class com.google.vending.licensing.ILicensingService\n-keep public class com.android.vending.licensing.ILicensingService\n-keep public class com.google.android.vending.licensing.ILicensingService\n-dontnote com.android.vending.licensing.ILicensingService\n-dontnote com.google.vending.licensing.ILicensingService\n-dontnote com.google.android.vending.licensing.ILicensingService\n\n# For native methods, see https://www.guardsquare.com/manual/configuration/examples#native\n-keepclasseswithmembernames,includedescriptorclasses class * {\n    native <methods>;\n}\n\n# Keep setters in Views so that animations can still work.\n-keepclassmembers public class * extends android.view.View {\n    void set*(***);\n    *** get*();\n}\n\n# We want to keep methods in Activity that could be used in the XML attribute onClick.\n-keepclassmembers class * extends android.app.Activity {\n    public void *(android.view.View);\n}\n\n# For enumeration classes, see https://www.guardsquare.com/manual/configuration/examples#enumerations\n-keepclassmembers enum * {\n    public static **[] values();\n    public static ** valueOf(java.lang.String);\n}\n\n-keepclassmembers class * implements android.os.Parcelable {\n    public static final ** CREATOR;\n}\n\n# Preserve annotated Javascript interface methods.\n-keepclassmembers class * {\n    @android.webkit.JavascriptInterface <methods>;\n}\n\n# The support libraries contains references to newer platform versions.\n# Don't warn about those in case this app is linking against an older\n# platform version. We know about them, and they are safe.\n-dontnote android.support.**\n-dontnote androidx.**\n-dontwarn android.support.**\n-dontwarn androidx.**\n\n# Understand the @Keep support annotation.\n-keep class android.support.annotation.Keep\n\n-keep @android.support.annotation.Keep class * {*;}\n\n-keepclasseswithmembers class * {\n    @android.support.annotation.Keep <methods>;\n}\n\n-keepclasseswithmembers class * {\n    @android.support.annotation.Keep <fields>;\n}\n\n-keepclasseswithmembers class * {\n    @android.support.annotation.Keep <init>(...);\n}\n\n# These classes are duplicated between android.jar and org.apache.http.legacy.jar.\n-dontnote org.apache.http.**\n-dontnote android.net.http.**\n\n# These classes are duplicated between android.jar and core-lambda-stubs.jar.\n-dontnote java.lang.invoke.**\n"
@@ -2206,6 +2227,7 @@
                         "abi_split": true,
                         "density_split": true,
                         "language_split": true,
+                        "native_debug_symbols": "none",
                         "store_archive": true,
                         "uncompressed_globs": [
                             "**.3[gG]2",
@@ -2815,7 +2837,7 @@
         "https://repo.maven.apache.org/maven2/",
         "https://storage.googleapis.com/download.flutter.io/"
     ],
-    "schema": 3,
+    "schema": 4,
     "tool_classpaths": {
         "aapt2_linux": [
             "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar"

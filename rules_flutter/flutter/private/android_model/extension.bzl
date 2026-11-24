@@ -29,6 +29,7 @@ def flutter_android_apk_test(name, **kwargs):
     rdf_unsupported(name = name, message = {message}, testonly = True)
 
 flutter_android_bundle_test = flutter_android_apk_test
+flutter_android_sign_test = flutter_android_apk_test
 """
 
 def _shown(label):
@@ -269,7 +270,7 @@ package(default_visibility = ["//visibility:public"])
 android_model_hub_targets(name = "hub", model = MODEL, info = INFO)
 """)
     ctx.file("defs.bzl", """load("@rules_flutter//flutter/private/android_model:targets.bzl", "android_model_app")
-load("@rules_flutter//flutter/private/android_model/testing:apk_test.bzl", "android_apk_test", "android_bundle_test")
+load("@rules_flutter//flutter/private/android_model/testing:apk_test.bzl", "android_apk_test", "android_bundle_test", "android_sign_test")
 load(":model.bzl", "INFO", "MODEL")
 
 _HUB = str(Label("//:BUILD.bazel")).removesuffix("BUILD.bazel")
@@ -281,6 +282,7 @@ def flutter_android_apk_test(name, **kwargs):
     android_apk_test(name = name, hub = _HUB, **kwargs)
 
 flutter_android_bundle_test = android_bundle_test
+flutter_android_sign_test = android_sign_test
 """)
 
 android_model_hub = repository_rule(

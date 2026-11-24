@@ -14,11 +14,12 @@ This rule produces outputs that platform-specific wrappers consume:
 """
 
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "DartDefinesInfo", "MODULAR_KERNEL_ATTRS", "MODULAR_KERNEL_TOOLCHAINS", "dart_link_hook_actions", "link_hook_runner_attr")
 load("//flutter:providers.bzl", "FlutterApplicationInfo", "FlutterInfo")
 load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "FLUTTER_DEPS_DOC", "PLATFORM_CONSTRAINT_ATTRS", "check_hook_errors", "collect_native_libs", "declare_flutter_assets_dir", "detect_target_platform", "flutter_build_mode", "flutter_compile_kernel", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
-load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle")
+load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle", "implements_android", "lock_android_plugins")
 load("//flutter/private:flutter_aot_compile.bzl", "flutter_aot_elf_action", "flutter_aot_gen_snapshot_flags", "flutter_aot_macho_action", "is_android_arm", "macho_snapshot_options")
 load("//flutter/private:flutter_defines_files.bzl", "DART_DEFINES_DOC", "app_defines_transition", "effective_flavor")
 load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
@@ -244,12 +245,14 @@ def _application_default_files(
         default_files.append(kernel_dill)
     return default_files
 
-def _application_providers(flutter_sdk_info, is_debug, outputs, plugins):
+def _application_providers(flutter_sdk_info, is_debug, outputs, plugins, android_plugins = None):
     """Assembles the result providers for the compiled application."""
     output_groups = {
         "native_assets_manifest": depset([outputs.native_assets_manifest_file]),
         "bundled_code_assets": depset(outputs.bundled_code_assets),
     }
+    if android_plugins:
+        output_groups["android_plugins"] = depset([android_plugins])
     if outputs.debug_info_output:
         output_groups["debug_info"] = depset([outputs.debug_info_output])
     if outputs.obfuscation_map_output:
@@ -304,7 +307,11 @@ def _flutter_application_impl(ctx):
 
     # Profile strips like release, as `flutter build --profile` does: the
     # profiler names Dart code from the snapshot, not from native symbols.
-    strip = ctx.var["COMPILATION_MODE"] == "opt"
+    # An Android app whose bundle carries native symbols (`flutter_android_bundle`
+    # sets the flag) keeps them here, as a stock build does: its packer strips.
+    strip = ctx.var["COMPILATION_MODE"] == "opt" and not (
+        flutter_sdk_info.target_os == "android" and ctx.attr._android_aot_symbols[BuildSettingInfo].value
+    )
 
     _check_aot_supported(flutter_sdk_info, is_debug)
 
@@ -417,7 +424,20 @@ def _flutter_application_impl(ctx):
         native_libs = native_libs,
         default_files = default_files,
     )
-    return _application_providers(flutter_sdk_info, is_debug, outputs, plugins)
+    # For an Android app built from its Gradle model: the plugins with an Android side, which the
+    # pin was written for and its check compares. All those of the app's own lock, with their
+    # versions (`complete`); or, when the app's packages come from another lock, those the app
+    # depends on (`partial`: the pin may hold more).
+    plugins_file = None
+    if flutter_sdk_info.target_os == "android":
+        android_plugins = lock_android_plugins(ctx)
+        kind = "complete"
+        if android_plugins == None:
+            kind = "partial"
+            android_plugins = sorted([p.name + " " for p in plugins.all_plugins if implements_android(p)])
+        plugins_file = ctx.actions.declare_file(ctx.label.name + ".android_plugins")
+        ctx.actions.write(plugins_file, "".join([line + "\n" for line in [kind] + android_plugins]))
+    return _application_providers(flutter_sdk_info, is_debug, outputs, plugins, plugins_file)
 
 flutter_application = rule(
     implementation = _flutter_application_impl,
@@ -430,6 +450,10 @@ flutter_application = rule(
                     "Passes `--print-instructions-sizes-to` to `gen_snapshot` and " +
                     "writes a size breakdown JSON to `<name>_size.json`."
                 ),
+            ),
+            "_android_aot_symbols": attr.label(
+                doc = "Whether an Android AOT library keeps its symbol table (set by `flutter_android_bundle`).",
+                default = Label("//flutter/private:android_aot_symbols"),
             ),
             # The module aspect registers nothing outside a debug build. There the app's defines, flavor and `dart_defines` are the configuration of its `deps`, so every
             # module compiles with them and the app stays modular (see `app_defines_transition`).

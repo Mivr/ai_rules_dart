@@ -1,4 +1,4 @@
-load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app", "flutter_android_bundle_test")
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app", "flutter_android_bundle_test", "flutter_android_sign_test")
 load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
 load("@rules_flutter//flutter:defs.bzl", "flutter_application")
 
@@ -108,4 +108,11 @@ flutter_android_bundle_test(
         "base/lib/x86_64/libapp.so",
     ],
     signed = False,
+)
+
+# `bazel run //:app_release_sign` and `//:app_release_bundle_sign`, run with a key store the test
+# makes (no key is checked in): the APK and the bundle come out signed with that key.
+flutter_android_sign_test(
+    name = "app_release_sign_test",
+    app = "app_release",
 )
