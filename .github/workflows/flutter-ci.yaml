@@ -103,6 +103,15 @@ on:
         required: false
         default: false
         type: boolean
+      # The Flutter Full matrix (flutter-full.yaml) is dispatchable only from
+      # the default branch, where its file is registered; this input runs it
+      # from any branch, as a call of this workflow.
+      full:
+        description: Also run the Flutter Full matrix (`macos`, its macOS legs only; `all`, with its Linux example)
+        required: false
+        default: none
+        type: choice
+        options: [none, macos, all]
 concurrency:
   # Runs on main never share a group: each gets its own run-id suffix, so a
   # push cannot cancel the nightly uncached run (or the reverse) and manual
@@ -120,6 +129,21 @@ env:
     - rules_flutter/e2e/*/MODULE.bazel
     - rules_flutter/flutter/private/versions.bzl
 jobs:
+  # The Flutter Full matrix as a reusable workflow: the macOS legs (Apple
+  # toolchains, bundles, the iOS simulator, plugins with native code) and the
+  # Android example. Only a dispatch with `full` set runs it. Not in
+  # `conclusion.needs`: it is read on its own. In the call
+  # `github.event_name` is `workflow_dispatch`.
+  full:
+    name: full
+    if: github.event_name == 'workflow_dispatch' && inputs.full != 'none'
+    permissions:
+      actions: write
+      contents: read
+    uses: ./.github/workflows/flutter-full.yaml
+    with:
+      uncached: ${{ inputs.uncached }}
+      legs: ${{ inputs.full }}
   # The macOS-specific signal Linux cannot give: building the macOS desktop
   # bundle and the iOS simulator bundle exercises the Xcode toolchain, the
   # Apple SDKs and the Apple bundle rules (packaging, simulator runtime).

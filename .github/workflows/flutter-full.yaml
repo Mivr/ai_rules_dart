@@ -54,6 +54,29 @@ on:
   schedule:
     # Nightly at 06:00 UTC.
     - cron: "0 6 * * *"
+  # Called by flutter-ci.yaml's `full` job, which a dispatch of Flutter CI runs
+  # with its `full` input set. A workflow is dispatchable only once its file is
+  # on the default branch; a reusable call is not, so the macOS legs can run on
+  # any branch. Inside the call `github.event_name` is the caller's
+  # (`workflow_dispatch`), `github.workflow` is the caller's name, and
+  # `inputs` are these.
+  workflow_call:
+    inputs:
+      uncached:
+        description: Run every job without restoring or saving any Bazel cache
+        required: false
+        default: false
+        type: boolean
+      android_linux_sandbox:
+        description: "Dev-only: also run e2e/integration_android under linux-sandbox; never gates"
+        required: false
+        default: false
+        type: boolean
+      legs:
+        description: "`all`, or `macos` for the macOS legs only (skips the Linux example)"
+        required: false
+        default: all
+        type: string
 concurrency:
   # Pushes to main share one group with no cancel-in-progress: the running
   # Full finishes, at most one newer push waits, and a later push replaces the
@@ -62,7 +85,9 @@ concurrency:
   # dispatch and a tag dispatch never cancel or queue behind each other or
   # the pushes. Full never cancels a run in progress: every Full run may be
   # gating a release or a merge.
-  group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'main-push' || format('{0}{1}', github.head_ref || github.ref, github.ref == 'refs/heads/main' && format('::{0}', github.run_id) || '') }}
+  # Not `github.workflow`: in a call that is the caller's name, and the caller's
+  # group is the same string, which GitHub reports as a deadlock.
+  group: Flutter Full-${{ github.event_name == 'push' && 'main-push' || format('{0}{1}', github.head_ref || github.ref, github.ref == 'refs/heads/main' && format('::{0}', github.run_id) || '') }}
   cancel-in-progress: false
 env:
   BAZEL_REPOSITORY_CACHE_KEY_FILES: |
@@ -116,7 +141,7 @@ jobs:
       # commit auto-release.yaml releases, so it takes 3; a release dispatch
       # on a tag takes 4, the nightly 2, and any other dispatch (a branch under
       # test) 1.
-      max-parallel: ${{ github.ref_type == 'tag' && 4 || (github.event_name == 'push' && 3 || (github.event_name == 'schedule' && 2 || 1)) }}
+      max-parallel: ${{ github.ref_type == 'tag' && 4 || (github.event_name == 'push' && 3 || (github.event_name == 'schedule' && 2 || (inputs.legs == 'macos' && 3 || 1))) }}
       matrix:
         include:
           # shard names the push-CI disk keys of the same content; only the
@@ -408,6 +433,7 @@ jobs:
   # nightly (and on tag dispatches), as `bazel test //...` — the emulator-attached
   # `verify_android_app_test` is `manual`-tagged and excluded, so no KVM.
   e2e-linux-nightly:
+    if: inputs.legs != 'macos'
     defaults:
       run:
         working-directory: rules_flutter

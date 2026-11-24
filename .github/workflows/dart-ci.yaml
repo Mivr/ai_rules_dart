@@ -24,6 +24,15 @@ on:
         required: false
         default: false
         type: boolean
+      # The Dart Full matrix (dart-full.yaml) is dispatchable only from the
+      # default branch, where its file is registered; this input runs it from
+      # any branch, as a call of this workflow.
+      full:
+        description: Also run the Dart Full matrix (`macos`, its macOS legs only; `all`, with its Linux jobs)
+        required: false
+        default: none
+        type: choice
+        options: [none, macos, all]
 concurrency:
   # Cancel previous actions from the same PR or branch except 'main' branch.
   # Tag runs (release dispatches) are never cancelled.
@@ -31,6 +40,21 @@ concurrency:
   group: concurrency-group::${{ github.workflow }}::${{ github.event.pull_request.number > 0 && format('pr-{0}', github.event.pull_request.number) || github.ref_name }}${{ github.ref_name == 'main' && format('::{0}', github.run_id) || ''}}
   cancel-in-progress: ${{ github.ref_type != 'tag' && github.ref_name != 'main' }}
 jobs:
+  # The Dart Full matrix as a reusable workflow: what runs only on a Mac
+  # (`test-macos`) and its Linux companions. Only a dispatch with `full` set
+  # runs it, so a push, a pull request and the nightly never see it. Not in
+  # `conclusion.needs`: it is read on its own. In the call `github.event_name`
+  # is `workflow_dispatch`.
+  full:
+    name: full
+    if: github.event_name == 'workflow_dispatch' && inputs.full != 'none'
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/dart-full.yaml
+    with:
+      uncached: ${{ inputs.uncached }}
+      legs: ${{ inputs.full }}
   # The e2e workspaces (plus `.`, `dev`, `tools` and `.github/workflows`) used
   # to run as one CI job per (OS, folder): ~90 jobs whose macOS third queued
   # behind the account's 5 shared macOS slots. Linux and Windows now run as 6

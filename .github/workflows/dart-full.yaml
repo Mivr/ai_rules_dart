@@ -36,12 +36,32 @@ on:
         type: boolean
   schedule:
     - cron: "0 10 * * *"
+  # Called by dart-ci.yaml's `full` job, which a dispatch of Dart CI runs with
+  # its `full` input set. A workflow is dispatchable only once its file is on
+  # the default branch; a reusable call is not, so the macOS legs can run on
+  # any branch. Inside the call `github.event_name` is the caller's
+  # (`workflow_dispatch`), `github.workflow` is the caller's name, and
+  # `inputs` are these.
+  workflow_call:
+    inputs:
+      uncached:
+        description: Run every test job without restoring or saving any Bazel cache
+        required: false
+        default: false
+        type: boolean
+      legs:
+        description: "`all`, or `macos` for the macOS legs only (skips the Linux jobs)"
+        required: false
+        default: all
+        type: string
 concurrency:
   # Pushes to main share one group: the running Full finishes, at most one
   # newer push waits, and a later push replaces the waiting one, so main is
   # proven continuously without a backlog. Other runs on main (nightly,
   # dispatches) get their own run-id suffix.
-  group: concurrency-group::${{ github.workflow }}::${{ github.event_name == 'push' && 'main-push' || format('{0}{1}', github.ref_name, github.ref_name == 'main' && format('::{0}', github.run_id) || '') }}
+  # Not `github.workflow`: in a call that is the caller's name, and the caller's
+  # group is the same string, which GitHub reports as a deadlock.
+  group: concurrency-group::Dart Full matrix::${{ github.event_name == 'push' && 'main-push' || format('{0}{1}', github.ref_name, github.ref_name == 'main' && format('::{0}', github.run_id) || '') }}
   # Tag runs (release dispatches) and runs on main are never cancelled.
   cancel-in-progress: ${{ github.ref_type != 'tag' && github.ref_name != 'main' }}
 jobs:
@@ -53,6 +73,7 @@ jobs:
   # failing coverage run, a failing check or a missing report fails the job:
   # no step tolerates failure and no instrumentation filter is empty.
   coverage:
+    if: inputs.legs != 'macos'
     defaults:
       run:
         working-directory: rules_dart
@@ -469,7 +490,7 @@ jobs:
     defaults:
       run:
         working-directory: rules_dart
-    if: github.event_name == 'schedule' || github.event_name == 'push' || github.ref_type == 'tag'
+    if: inputs.legs != 'macos' && (github.event_name == 'schedule' || github.event_name == 'push' || github.ref_type == 'tag')
     runs-on: ubuntu-latest
     # A cold build of the root workspace plus ten runs of every test, with
     # headroom for a slow night. GitHub caps jobs at 6 h.
