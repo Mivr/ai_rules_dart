@@ -591,6 +591,7 @@ jobs:
       DISK_CACHE_SHARD: linux-app
     steps:
       - uses: actions/checkout@v7
+      - uses: ./rules_flutter/.github/actions/android-ndk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -707,6 +708,7 @@ jobs:
       DISK_CACHE_SHARD: linux-small
     steps:
       - uses: actions/checkout@v7
+      - uses: ./rules_flutter/.github/actions/android-ndk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -859,6 +861,7 @@ jobs:
       DISK_CACHE_SHARD: linux-integration
     steps:
       - uses: actions/checkout@v7
+      - uses: ./rules_flutter/.github/actions/android-ndk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -962,6 +965,7 @@ jobs:
       DISK_CACHE_SHARD: linux-android
     steps:
       - uses: actions/checkout@v7
+      - uses: ./rules_flutter/.github/actions/android-ndk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -1243,6 +1247,7 @@ jobs:
       DISK_CACHE_SHARD: windows-hello
     steps:
       - uses: actions/checkout@v7
+      - uses: ./rules_flutter/.github/actions/android-ndk
       - name: Set disk cache key
         shell: bash
         run: |

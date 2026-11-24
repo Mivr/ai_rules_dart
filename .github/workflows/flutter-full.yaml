@@ -232,6 +232,7 @@ jobs:
       DISK_CACHE_DIR: ~/.cache/bazel-disk
     steps:
       - uses: actions/checkout@v7
+      - uses: ./rules_flutter/.github/actions/android-ndk
       - name: Set disk cache key
         run: |
           echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ matrix.shard }}-${{ hashFiles('rules_flutter/MODULE.bazel', 'rules_flutter/MODULE.bazel.lock', 'rules_flutter/e2e/*/MODULE.bazel', 'rules_flutter/flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
@@ -422,6 +423,7 @@ jobs:
       DISK_CACHE_SHARD: full-linux-android
     steps:
       - uses: actions/checkout@v7
+      - uses: ./rules_flutter/.github/actions/android-ndk
       - uses: ./rules_flutter/.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh

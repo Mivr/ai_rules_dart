@@ -1,0 +1,28 @@
+name: Install the Android NDK the model pins
+description: >-
+  `android_model` takes the NDK's llvm-strip from the Android SDK and fails the
+  fetch when the NDK version a workspace's `android_model.json` pins is not
+  installed. The runner images ship other NDK versions, so install the pinned
+  one next to them. Nothing is done when it is already there.
+inputs:
+  version:
+    description: The NDK version every checked-in `android_model.json` pins.
+    required: false
+    default: 28.2.13676358
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        NDK_VERSION: ${{ inputs.version }}
+      run: |
+        sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+        test -n "$sdk" || { echo "ANDROID_HOME is not set"; exit 1; }
+        if [ -d "$sdk/ndk/$NDK_VERSION" ]; then
+          echo "ndk;$NDK_VERSION is already installed in $sdk"
+          exit 0
+        fi
+        manager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+        if [ "$RUNNER_OS" = Windows ]; then manager="$manager.bat"; fi
+        "$manager" --sdk_root="$sdk" --install "ndk;$NDK_VERSION"
+        test -d "$sdk/ndk/$NDK_VERSION" || { echo "ndk;$NDK_VERSION is not under $sdk/ndk"; exit 1; }
