@@ -231,7 +231,7 @@ void main(List<String> args) {
     );
   });
 
-  test('a test with a project directory runs in it when not in place', () async {
+  test('a test with a project directory runs in it when staged', () async {
     final Directory tmp = await Directory.systemTemp.createTemp(
       'test_runner_project_',
     );
