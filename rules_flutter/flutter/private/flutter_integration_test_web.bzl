@@ -21,7 +21,7 @@ load(
 load(
     "//flutter/private:app_entrypoint.bzl",
     "app_scheme_rel_path",
-    "compile_kernel_package_config",
+    "records_package_config",
     "resolve_wrapper_main_import",
     "synthesize_app_package",
 )
@@ -138,23 +138,17 @@ def _web_integration_test_setup(ctx):
         ctx.attr.language_version,
     )
 
-    pc = compile_kernel_package_config(
-        ctx,
-        packages,
-        all_srcs + [main_file],
-        roots = {package_name: True} if package_name else None,
-    )
     return struct(
         extra_srcs = extra_srcs,
         is_debug = mode == "debug",
         lib_root = lib_root,
         main_file = main_file,
         mode = mode,
-        package_config = pc.config_file,
+        package_config = records_package_config(ctx, packages),
         package_name = package_name,
         renderer = renderer,
         sdk = flutter_sdk_info,
-        srcs = pc.srcs,
+        srcs = all_srcs + [main_file],
         user_defines = user_defines,
     )
 
@@ -230,7 +224,6 @@ def _web_integration_test_compile(ctx, setup, entrypoint):
         mode = setup.mode,
         defines = setup.user_defines,
         renderer = setup.renderer,
-        stage_salt = "",
         web_compile_tool = ctx.executable._web_template_tool,
         web_compile_inputs = web_compile_tool_inputs(setup.sdk.dart_vm_files),
         web_guard_tool = ctx.executable._web_guard_tool,

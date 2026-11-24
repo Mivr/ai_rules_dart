@@ -386,12 +386,16 @@ def _web_inputs_test_impl(ctx):
     return analysistest.end(env)
 
 def _assert_web_guarded(env, action, context):
-    """A web compile runs behind the self-contained `web_guard` executable.
+    """A web compile runs behind `web_guard`, reads in place, and has its read set checked.
 
     `web_guard` refuses disallowed directives in the compile's main and
     sources before the compiler runs; the `--declared-inputs` manifest it
-    checks against must be an action input, and no `--multi-root` may name
-    `.` (the exec root carries files the action did not declare).
+    checks against must be an action input. The compile reads every input in
+    place: its multi-roots are the output directories of its generated inputs,
+    then the exec root `.`, and no input is a staged copy. Because the exec
+    root carries files the action did not declare, the compile wrapper gets
+    the same manifest (`--declared-inputs=`) and checks the compiler's own
+    dependency report against it.
     """
     argv = action.argv if action else []
     guards = [a for a in argv if a.split("/")[-1] in ("web_guard", "web_guard.exe")]
@@ -408,8 +412,8 @@ def _assert_web_guarded(env, action, context):
         len(manifests),
         "%s must carry --declared-inputs <manifest>, got %r" % (context, argv[:8]),
     )
+    input_paths = [f.path for f in action.inputs.to_list()] if action else []
     if action and len(manifests) == 1:
-        input_paths = [f.path for f in action.inputs.to_list()]
         asserts.true(
             env,
             manifests[0] in input_paths,
@@ -420,21 +424,33 @@ def _assert_web_guarded(env, action, context):
             any([p.split("/")[-1] in ("web_guard", "web_guard.exe") for p in input_paths]),
             "%s web_guard executable must be an action input" % context,
         )
+        asserts.true(
+            env,
+            "--declared-inputs=" + manifests[0] in argv,
+            "%s must hand the compile wrapper the same manifest, got %r" % (context, argv),
+        )
     roots = []
     for i, a in enumerate(argv):
         if a == "--multi-root" and i + 1 < len(argv):
             roots.append(argv[i + 1])
         elif a.startswith("--multi-root="):
             roots.append(a.split("=", 1)[1])
-    asserts.false(
-        env,
-        "." in roots,
-        "%s must never mount the exec root '.', got multi-roots %r" % (context, roots),
-    )
     asserts.true(
         env,
-        len(roots) > 0,
-        "%s must mount its staging root, got %r" % (context, argv[:8]),
+        len(roots) > 0 and roots[-1] == ".",
+        "%s must read its sources in place, the exec root last, got multi-roots %r" % (context, roots),
+    )
+    for root in roots[:-1]:
+        asserts.true(
+            env,
+            root.startswith("bazel-out/") and root.endswith("/bin"),
+            "%s mounts only output directories before the exec root, got %r" % (context, root),
+        )
+    asserts.equals(
+        env,
+        [],
+        [p for p in input_paths if ".stage/" in p],
+        "%s stages no input" % context,
     )
 
 def _web_guard_inputs_test_impl(ctx):

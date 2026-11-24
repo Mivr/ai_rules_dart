@@ -5,12 +5,13 @@
 /// against the declared inputs (`directive_guard.dart`): a directive that
 /// names no declared file — a `file:` URI in any spelling, any other
 /// unexpected scheme, or a relative URI climbing out of the declared inputs —
-/// fails the build, under every strategy. The compile mounts only its staging
-/// root, so an undeclared file is not there to be read whatever its spelling.
-///
-/// Unlike `kernel_filter.dart`, there is no post-compile read-set check: the
-/// web compilers print no `+file://` dependency lines to verify. The guard
-/// plus the stage-only root is the whole confinement.
+/// fails the build, under every strategy. The compile reads its inputs in
+/// place, through the output directories of its generated inputs and the exec
+/// root, so under local and worker strategies an undeclared file is there to
+/// be read: after the compile, `web_template` checks the compiler's own
+/// dependency report against the same manifest and fails the build on a read
+/// the manifest does not name. The guard, that check and the sandbox (or
+/// remote execution, which exposes only declared inputs) are the confinement.
 ///
 /// A source that is not decodable UTF-8 fails closed here instead of being
 /// skipped: the front ends accept such files, so skipping the check while the
@@ -38,8 +39,9 @@ Future<void> main(List<String> argv) async {
 ///
 /// The tool flags before `--` name the compile's declared inputs
 /// (`--declared-inputs <manifest>`): the manifest lists one exec-root-relative
-/// path per line — the declared sources, then a `# staged` marker, then the
-/// staging root's symlinks to them — written by the `flutter_dart2js_action`,
+/// path per line — the declared sources, then a `# allowed-reads` marker, then
+/// the other declared files the compiler may read — written by the
+/// `flutter_dart2js_action`,
 /// `flutter_dart2wasm_action` and `flutter_dart2js_cfe_action` helpers. The
 /// `.dart` sources' directives are refused before the compiler runs when they
 /// name an undeclared file; a source that cannot be read as text fails closed
@@ -119,9 +121,8 @@ Future<int> runGuarded(
 /// The `.dart` sources the declared-inputs [manifestPath] lists, or the error
 /// to report when the manifest does not exist.
 ///
-/// The manifest lists the declared sources, then `# staged`, then the staging
-/// root's symlinks to them: the guard scans the sources (the links hold the
-/// same bytes).
+/// The manifest lists the declared sources, then `# allowed-reads`, then the
+/// other files the compiler may read: the guard scans the sources.
 ({List<String> paths, String? error}) _readGuardSources(String manifestPath) {
   final manifest = File(manifestPath);
   if (!manifest.existsSync()) {
@@ -132,15 +133,15 @@ Future<int> runGuarded(
     );
   }
   final sources = <String>[];
-  var staged = false;
+  var pastSources = false;
   for (final String line in manifest.readAsLinesSync()) {
     final String path = line.trim().replaceAll(r'\', '/');
     if (path.isEmpty) continue;
     if (path.startsWith('#')) {
-      staged = true;
+      pastSources = true;
       continue;
     }
-    if (!staged && path.endsWith('.dart')) sources.add(path);
+    if (!pastSources && path.endsWith('.dart')) sources.add(path);
   }
   return (paths: sources, error: null);
 }
@@ -171,9 +172,9 @@ int? _refuseUndecodableSources(List<String> sources, StringSink err) {
 /// The `--multi-root` values in the compiler's own [cmdArgs]: the filesystem
 /// roots the app-scheme keys resolve against.
 ///
-/// The bzl helpers pass the staging root the compilers mount as
-/// `--multi-root=<stage>`: app-scheme keys resolve against it the way the
-/// compilers resolve them.
+/// The bzl helpers pass the roots the compilers mount as `--multi-root=<root>`
+/// (the generated inputs' output directories, then `.`): app-scheme keys
+/// resolve against them the way the compilers resolve them.
 List<String> _commandMultiRoots(List<String> cmdArgs) {
   final fsRoots = <String>[];
   for (var j = 0; j < cmdArgs.length; j++) {

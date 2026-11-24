@@ -1419,7 +1419,6 @@ def _probe_request(ctx, dart, main_dart, package_config, output_dir):
             mode = "release",
             defines = [],
             renderer = "canvaskit",
-            stage_salt = "",
             web_compile_tool = None,
             web_compile_inputs = [],
             web_guard_tool = None,

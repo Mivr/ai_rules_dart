@@ -24,8 +24,8 @@ load("//flutter:providers.bzl", "FlutterNativeLibraryInfo")
 load(
     "//flutter/private:app_entrypoint.bzl",
     "app_scheme_rel_path",
-    "compile_kernel_package_config",
     "package_lib_prefix",
+    "records_package_config",
     "resolve_wrapper_main_import",
     "synthesize_app_package",
 )
@@ -191,16 +191,10 @@ def _web_write_wrapper(ctx, packages, all_srcs, lib_root, plugins, registrant):
     before calling the user's main(). This matches `flutter build web`.
 
     Returns:
-      A `(config_file, all_srcs, entrypoint, entrypoint_salt)` tuple.
+      A struct with `config_file`, `all_srcs` and `entrypoint`.
     """
-    pc = compile_kernel_package_config(
-        ctx,
-        packages,
-        all_srcs + [ctx.file.main],
-        roots = {ctx.attr.package_name: True} if ctx.attr.package_name else None,
-    )
-    config_file = pc.config_file
-    all_srcs = pc.srcs
+    config_file = records_package_config(ctx, packages)
+    all_srcs = all_srcs + [ctx.file.main]
 
     ui_web_stub = ctx.actions.declare_file(ctx.label.name + "_ui_web_stub.dart")
     ctx.actions.write(ui_web_stub, make_web_ui_web_stub_content())
@@ -210,7 +204,7 @@ def _web_write_wrapper(ctx, packages, all_srcs, lib_root, plugins, registrant):
     wrapper_depth = len(wrapper_rel.split("/")) - 1
 
     # Import the user's main via its `package:` URI when available, or via a
-    # relative path within the staged multi-root tree when `main` is outside `lib/`.
+    # relative path under the app scheme when `main` is outside `lib/`.
     wrapper_content = make_web_wrapper_main_content(
         resolve_wrapper_main_import(
             ctx.attr.package_name,
@@ -227,12 +221,10 @@ def _web_write_wrapper(ctx, packages, all_srcs, lib_root, plugins, registrant):
     all_srcs = all_srcs + [ctx.file.main, wrapper, ui_web_stub]
     if registrant:
         all_srcs = all_srcs + [registrant]
-    registrant_key = make_registrant_content(plugins, target_platform = "web")
     return struct(
         config_file = config_file,
         all_srcs = all_srcs,
         entrypoint = entrypoint,
-        entrypoint_salt = wrapper_content + "\n" + registrant_key,
     )
 
 def _wasm_options(ctx):
@@ -359,28 +351,21 @@ def _web_tree_shake_kernels(ctx, compile, shipped_renderers):
     entry.
 
     Returns:
-      A `(kernel_dills, tree_shake_key_parts)` tuple.
+      The kernel dills, one per renderer.
     """
     kernel_dills = []
-    tree_shake_key_parts = []
     for idx, r in enumerate(shipped_renderers):
         dill_suffix = "_icon_tree_shaking.dill" if idx == 0 else ("_icon_tree_shaking_%s.dill" % r)
         dill_out = ctx.actions.declare_file(ctx.label.name + dill_suffix)
         deps_out = ctx.actions.declare_file(ctx.label.name + dill_suffix + ".deps")
-        renderer_defines = web_renderer_defines(r)
-
-        r_defines = list(compile.defines) + web_mode_defines(compile.mode) + renderer_defines
-        r_salt = compile.stage_salt + "\n" + "\n".join(r_defines) + "\n" + "\n".join(ctx.attr.enable_experiments)
         flutter_dart2js_cfe_action(ctx, make_dart2js_cfe_request(
             compile,
             r,
-            r_salt,
             dill_out,
             deps_out,
         ))
         kernel_dills.append(dill_out)
-        tree_shake_key_parts.append(r + ":" + r_salt)
-    return kernel_dills, tree_shake_key_parts
+    return kernel_dills
 
 def _web_native_module_files(ctx):
     """Lists the declared native modules' library files."""
@@ -628,7 +613,6 @@ def _flutter_web_bundle_impl(ctx):
         mode = mode,
         defines = user_defines,
         renderer = renderer,
-        stage_salt = wrapped.entrypoint_salt,
         web_compile_tool = ctx.executable._web_template_tool,
         web_compile_inputs = web_compile_tool_inputs(flutter_sdk_info.dart_vm_files),
         web_guard_tool = ctx.executable._web_guard_tool,
@@ -644,7 +628,7 @@ def _flutter_web_bundle_impl(ctx):
     # against a kernel of the program, as the tool compiles one for dart2js.
     app_dill = None
     if ctx.attr.tree_shake_icons and not is_debug:
-        app_dill = _web_tree_shake_kernels(ctx, compile, [compile.renderer])[0][0]
+        app_dill = _web_tree_shake_kernels(ctx, compile, [compile.renderer])[0]
     dev_bootstrap_js = ctx.actions.declare_file(ctx.label.name + "_dev_flutter_bootstrap.js") if is_debug else None
     output_dir, output_groups = _web_write_bundle(ctx, flutter_sdk_info, program, struct(
         mode = mode,

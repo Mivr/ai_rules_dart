@@ -5,7 +5,7 @@ Both `dart compile wasm` and `dart compile js` take .dart source directly,
 not a kernel .dill.
 """
 
-load("//flutter/private:app_entrypoint.bzl", "stage_generated_inputs")
+load("//flutter/private:app_entrypoint.bzl", "in_place_roots")
 load("//flutter/private:common.bzl", "flutter_build_mode")
 
 visibility(["//flutter/..."])
@@ -190,7 +190,7 @@ def web_experiment_flags(enable_experiments):
     return ["--enable-experiment=" + e for e in enable_experiments]
 
 # The web compile request: the values every web compile carries, gathered once
-# where the rule implementation stages them and passed down as one struct.
+# where the rule implementation collects them and passed down as one struct.
 #
 # `compile` is what the rule builds: the program being compiled plus the tools
 # around it. `options` is the per-compiler tuning the rule reads from its own
@@ -211,14 +211,13 @@ def web_experiment_flags(enable_experiments):
 #   dart2wasm_platform_dill, dart2js_platform_dill: The platform dill Files.
 #   web_sdk_files: The dart2js web SDK `libraries*.json` Files.
 #   main_dart: The main .dart source File (the wrapper entrypoint).
-#   srcs: All transitive source Files.
-#   package_config: The package_config.json File.
+#   srcs: All transitive source Files, read where they are.
+#   package_config: The package_config.json File (`records_package_config`).
 #   mode: A `web_build_mode` value.
 #   defines: Dart -D defines (user defines; mode and renderer defines are
 #       added by the actions to match each shipped program).
 #   renderer: Web renderer ("skwasm" or "canvaskit").
-#   stage_salt: Salt mixed into the staging directory hash.
-#   web_compile_tool: Optional staging wrapper File, or None.
+#   web_compile_tool: Optional compile wrapper File (`web_template`), or None.
 #   web_compile_inputs: Additional input Files the wrapper needs.
 #   web_guard_tool: Optional `web_guard` executable File, or None.
 #   enable_experiments: Dart language experiments to enable.
@@ -247,7 +246,7 @@ def web_sdk_files_for_dart2js(web_sdk):
     ]
 
 def web_compile_tool_inputs(dart_vm_files):
-    """The `dartvm` executables a staging wrapper needs alongside `dart`.
+    """The `dartvm` executables the compile wrapper needs alongside `dart`.
 
     `web_template` is compiled against the Flutter toolchain and resolves
     `dartaotruntime` relative to the running `dart` executable's directory, so
@@ -313,7 +312,6 @@ def make_dart2wasm_request(compile, options, output_wasm, output_mjs, output_sou
         output_deps = None,
         web_compile_tool = compile.web_compile_tool,
         web_compile_inputs = compile.web_compile_inputs,
-        stage_salt = compile.stage_salt,
         web_guard_tool = compile.web_guard_tool,
     )
 
@@ -361,11 +359,10 @@ def make_dart2js_request(compile, options, renderer, output_dir):
         output_deps = None,
         web_compile_tool = compile.web_compile_tool,
         web_compile_inputs = compile.web_compile_inputs,
-        stage_salt = compile.stage_salt,
         web_guard_tool = compile.web_guard_tool,
     )
 
-def make_dart2js_cfe_request(compile, renderer, stage_salt, output_dill, output_deps):
+def make_dart2js_cfe_request(compile, renderer, output_dill, output_deps):
     """Builds the icon tree-shake kernel request from the gathered values.
 
     Runs with the frontend defaults (`-O` and minification on "auto", null
@@ -376,8 +373,6 @@ def make_dart2js_cfe_request(compile, renderer, stage_salt, output_dill, output_
         compile: The `compile` struct the rule implementation gathered.
         renderer: Web renderer for this kernel's defines ("canvaskit" or
             "skwasm").
-        stage_salt: Salt mixed into the staging directory hash (the caller's
-            renderer-specific salt, so each renderer's kernel stages apart).
         output_dill: Output kernel .dill File (`-o`). dart2js also writes
             `<dill>.deps` beside it, declared as `output_deps`.
         output_deps: Output depfile File (`<dill>.deps`).
@@ -413,7 +408,6 @@ def make_dart2js_cfe_request(compile, renderer, stage_salt, output_dill, output_
         output_deps = output_deps,
         web_compile_tool = compile.web_compile_tool,
         web_compile_inputs = compile.web_compile_inputs,
-        stage_salt = stage_salt,
         web_guard_tool = compile.web_guard_tool,
     )
 
@@ -427,59 +421,80 @@ def _sandbox_env(dart, writable_dir):
         env["HOME"] = writable_dir
     return env
 
-def _write_web_guard_manifest(ctx, scope, compile_sources, stage):
-    """Writes the declared-inputs manifest `web_guard` checks a compile against.
+def _write_web_inputs_manifest(ctx, scope, compile_sources, allowed_reads):
+    """Writes the declared-inputs manifest a web compile is checked against.
 
-    The manifest lists the declared sources, then a `# staged` marker, then
-    the staging root's symlinks to them — the same shape `kernel_filter`
-    reads (see `flutter_compile.bzl`). Written by path so the tool reads the
-    same files the compilers resolve through the staging root.
+    The manifest lists the declared sources, then a `# allowed-reads` marker,
+    then every other declared file the compiler may read (the package config,
+    the platform dill, the `libraries*.json` files, the SDK's files). `web_guard`
+    checks the sources' directives against it before the compile, and
+    `web_template` checks the compiler's own dependency report against it
+    after: the compile reads its sources in place under the exec root, so under
+    local and worker strategies it could otherwise read a file the action did
+    not declare. The lines are written by `Args` when the action runs, so
+    analysis formats no path.
 
     Args:
         ctx: The rule context of the rule implementation that calls this helper.
-        scope: Action-unique prefix for the manifest file: mirror the stage
-            tree's `<output-dir>.<output-base>` form, since a bare output
-            basename (`main.dart.wasm`) repeats across every bundle in the
-            package and collides.
+        scope: Action-unique prefix for the manifest file, in the
+            `<output-dir>.<output-base>` form, since a bare output basename
+            (`main.dart.wasm`) repeats across every bundle in the package.
         compile_sources: The declared main and source `File`s.
-        stage: The `stage_generated_inputs` struct for the compile.
+        allowed_reads: A depset of the other declared `File`s the compiler may read.
 
     Returns:
-        The manifest `File`. The guard itself runs as a self-contained native
-        executable (see `//flutter/private/tools:web_guard`), so the compile
-        needs no Dart VM of its own: the guarded action's inputs grow only by
-        the guard executable and this manifest.
+        The manifest `File`.
     """
     manifest = ctx.actions.declare_file(scope + ".web_inputs")
-    ctx.actions.write(
-        output = manifest,
-        content = "\n".join(
-            [f.path for f in compile_sources if f != None] +
-            ["# staged"] +
-            [f.path for f in stage.files],
-        ) + "\n",
-    )
+    content = ctx.actions.args()
+    content.set_param_file_format("multiline")
+    content.add_all(compile_sources, expand_directories = False)
+    content.add("# allowed-reads")
+    content.add_all(allowed_reads, expand_directories = False)
+    ctx.actions.write(manifest, content)
     return manifest
 
-def _web_compile_direct_inputs(req, platform_dill, stage):
-    """The compiler action's direct inputs: entry point, package config, platform dill, sources and stage."""
-    return [req.main_dart, req.package_config, platform_dill] + req.srcs + stage.files + req.web_compile_inputs
+def _web_compile_direct_inputs(req, platform_dill):
+    """The compiler action's direct inputs: entry point, package config, platform dill and sources."""
+    return [req.main_dart, req.package_config, platform_dill] + req.srcs + req.web_compile_inputs
 
-def _web_stage_inputs(ctx, web_compile_tool, sources, scope, stage_salt):
-    """Stage generated sources for a web compile, or return an empty stage."""
-    if web_compile_tool != None:
-        return stage_generated_inputs(ctx, sources, scope, include_sources = True, salt = stage_salt)
-    return struct(root = None, files = [])
+def _web_read_set(ctx, req, scope, platform_dill, transitive_inputs):
+    """What a web compile reads, and where: its roots and its declared-inputs manifest.
 
-def _web_base_args(ctx, web_compile_tool, stage, command):
-    """Start a web compiler argv: optional wrapper, `compile <command>`, multi-root."""
+    Args:
+        ctx: The rule context of the rule implementation that calls this helper.
+        req: The `req` struct.
+        scope: The manifest's action-unique prefix.
+        platform_dill: The compiler's platform dill File.
+        transitive_inputs: The SDK file depsets the action declares.
+
+    Returns:
+        `struct(compile_sources, roots, manifest)`. `roots` are the
+        `in_place_roots` the wrapper mounts (empty without a wrapper);
+        `manifest` is None when neither the wrapper nor the guard runs.
+    """
+    compile_sources = [req.main_dart] + req.srcs
+    if req.web_compile_tool == None and req.web_guard_tool == None:
+        return struct(compile_sources = compile_sources, roots = [], manifest = None)
+    manifest = _write_web_inputs_manifest(
+        ctx,
+        scope,
+        compile_sources,
+        depset([req.package_config, platform_dill] + req.web_sdk_files, transitive = transitive_inputs),
+    )
+    roots = in_place_roots(ctx, compile_sources) if req.web_compile_tool != None else []
+    return struct(compile_sources = compile_sources, roots = roots, manifest = manifest)
+
+def _web_base_args(ctx, req, read_set, command):
+    """Start a web compiler argv: optional wrapper, `compile <command>`, roots and manifest."""
     args = ctx.actions.args()
-    if web_compile_tool != None:
-        args.add(web_compile_tool)
+    if req.web_compile_tool != None:
+        args.add(req.web_compile_tool)
     args.add("compile")
     args.add(command)
-    if stage.root != None:
-        args.add("--multi-root=" + stage.root)
+    if req.web_compile_tool != None:
+        args.add_all(read_set.roots, format_each = "--multi-root=%s")
+        args.add("--declared-inputs=" + read_set.manifest.path)
     return args
 
 def _web_libraries_spec(web_sdk_files, dart2js_platform_dill):
@@ -503,18 +518,18 @@ def _web_guarded_run(ctx, args, req, run):
         ctx: The rule context of the rule implementation that calls this helper.
         args: The `ctx.actions.args()` the compile runs with.
         req: The `req` struct (carries `dart` and `web_guard_tool`).
-        run: The invocation struct (guard scope, sources, stage, inputs,
-            outputs, mnemonic, progress message and sandbox directory).
+        run: The invocation struct (read set, inputs, outputs, mnemonic,
+            progress message and sandbox directory).
     """
     executable = req.dart
     arguments = [args]
+    direct_inputs = list(run.direct_inputs)
+    if run.read_set.manifest != None:
+        direct_inputs.append(run.read_set.manifest)
     if req.web_guard_tool != None:
-        manifest = _write_web_guard_manifest(ctx, run.guard_scope, run.compile_sources, run.stage)
         executable = req.web_guard_tool
-        arguments = ["--declared-inputs", manifest.path, "--", req.dart.path, args]
-        direct_inputs = run.direct_inputs + [req.web_guard_tool, manifest]
-    else:
-        direct_inputs = run.direct_inputs
+        arguments = ["--declared-inputs", run.read_set.manifest.path, "--", req.dart.path, args]
+        direct_inputs.append(req.web_guard_tool)
     ctx.actions.run(
         executable = executable,
         arguments = arguments,
@@ -583,9 +598,10 @@ def flutter_dart2wasm_action(ctx, req):
         req: The `req` struct `make_dart2wasm_request` built.
     """
     scope = req.output_wasm.dirname.split("/")[-1] + "." + req.output_wasm.basename
-    stage = _web_stage_inputs(ctx, req.web_compile_tool, [req.main_dart] + req.srcs, scope, req.stage_salt)
+    transitive_inputs = [req.flutter_sdk_files]
+    read_set = _web_read_set(ctx, req, scope, req.dart2wasm_platform_dill, transitive_inputs)
 
-    args = _web_base_args(ctx, req.web_compile_tool, stage, "wasm")
+    args = _web_base_args(ctx, req, read_set, "wasm")
     _dart2wasm_compiler_args(args, req)
     for d in req.defines:
         args.add("-D" + d)
@@ -593,7 +609,7 @@ def flutter_dart2wasm_action(ctx, req):
     args.add("-o", req.output_wasm)
     args.add(req.main_dart)
 
-    direct_inputs = _web_compile_direct_inputs(req, req.dart2wasm_platform_dill, stage)
+    direct_inputs = _web_compile_direct_inputs(req, req.dart2wasm_platform_dill)
     if req.web_compile_tool != None:
         direct_inputs.append(req.web_compile_tool)
     outputs = [req.output_wasm, req.output_mjs]
@@ -604,11 +620,9 @@ def flutter_dart2wasm_action(ctx, req):
         args,
         req,
         struct(
-            guard_scope = scope,
-            compile_sources = [req.main_dart] + req.srcs,
-            stage = stage,
+            read_set = read_set,
             direct_inputs = direct_inputs,
-            transitive_inputs = [req.flutter_sdk_files],
+            transitive_inputs = transitive_inputs,
             outputs = outputs,
             mnemonic = "FlutterDart2Wasm",
             progress_message = "Compiling Flutter to WASM %s" % ctx.label,
@@ -659,10 +673,16 @@ def flutter_dart2js_action(ctx, req):
         ctx: The rule context of the rule implementation that calls this helper.
         req: The `req` struct `make_dart2js_request` built.
     """
-    scope = req.output_dir.basename + ".dart2js"
-    stage = _web_stage_inputs(ctx, req.web_compile_tool, [req.main_dart] + req.srcs, scope, req.stage_salt)
+    transitive_inputs = [req.flutter_sdk_files, depset(req.web_sdk_files)]
+    read_set = _web_read_set(
+        ctx,
+        req,
+        req.output_dir.dirname.split("/")[-1] + "." + req.output_dir.basename,
+        req.dart2js_platform_dill,
+        transitive_inputs,
+    )
 
-    args = _web_base_args(ctx, req.web_compile_tool, stage, "js")
+    args = _web_base_args(ctx, req, read_set, "js")
 
     # Prefer the exec-platform-specific libraries.<platform>.json from web_sdk_files
     # (falling back to web-sdk/libraries.json one level above kernel/).
@@ -687,7 +707,7 @@ def flutter_dart2js_action(ctx, req):
     args.add("-o", req.output_dir.path + "/main.dart.js")
     args.add(req.main_dart)
 
-    direct_inputs = _web_compile_direct_inputs(req, req.dart2js_platform_dill, stage)
+    direct_inputs = _web_compile_direct_inputs(req, req.dart2js_platform_dill)
     if req.web_compile_tool != None:
         direct_inputs.append(req.web_compile_tool)
     _web_guarded_run(
@@ -695,11 +715,9 @@ def flutter_dart2js_action(ctx, req):
         args,
         req,
         struct(
-            guard_scope = req.output_dir.dirname.split("/")[-1] + "." + req.output_dir.basename,
-            compile_sources = [req.main_dart] + req.srcs,
-            stage = stage,
+            read_set = read_set,
             direct_inputs = direct_inputs,
-            transitive_inputs = [req.flutter_sdk_files, depset(req.web_sdk_files)],
+            transitive_inputs = transitive_inputs,
             outputs = [req.output_dir],
             mnemonic = "FlutterDart2JS",
             progress_message = "Compiling Flutter to JavaScript %s" % ctx.label,
@@ -722,10 +740,16 @@ def flutter_dart2js_cfe_action(ctx, req):
         ctx: The rule context of the rule implementation that calls this helper.
         req: The `req` struct `make_dart2js_cfe_request` built.
     """
-    scope = req.output_dill.basename + ".dart2js_cfe"
-    stage = _web_stage_inputs(ctx, req.web_compile_tool, [req.main_dart] + req.srcs, scope, req.stage_salt)
+    transitive_inputs = [req.flutter_sdk_files, depset(req.web_sdk_files)]
+    read_set = _web_read_set(
+        ctx,
+        req,
+        req.output_dill.dirname.split("/")[-1] + "." + req.output_dill.basename,
+        req.dart2js_platform_dill,
+        transitive_inputs,
+    )
 
-    args = _web_base_args(ctx, req.web_compile_tool, stage, "js")
+    args = _web_base_args(ctx, req, read_set, "js")
 
     _dart2js_common_args(args, req)
 
@@ -744,7 +768,7 @@ def flutter_dart2js_cfe_action(ctx, req):
     args.add("-o", req.output_dill)
     args.add(req.main_dart)
 
-    direct_inputs = _web_compile_direct_inputs(req, req.dart2js_platform_dill, stage)
+    direct_inputs = _web_compile_direct_inputs(req, req.dart2js_platform_dill)
     if req.web_compile_tool != None:
         direct_inputs.append(req.web_compile_tool)
     _web_guarded_run(
@@ -752,11 +776,9 @@ def flutter_dart2js_cfe_action(ctx, req):
         args,
         req,
         struct(
-            guard_scope = req.output_dill.dirname.split("/")[-1] + "." + req.output_dill.basename,
-            compile_sources = [req.main_dart] + req.srcs,
-            stage = stage,
+            read_set = read_set,
             direct_inputs = direct_inputs,
-            transitive_inputs = [req.flutter_sdk_files, depset(req.web_sdk_files)],
+            transitive_inputs = transitive_inputs,
             outputs = [req.output_dill, req.output_deps],
             mnemonic = "FlutterDart2JSCFE",
             progress_message = "Compiling Flutter web icon kernel %s" % ctx.label,

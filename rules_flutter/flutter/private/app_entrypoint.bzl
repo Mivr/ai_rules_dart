@@ -17,7 +17,7 @@ alive across hot restart.
 """
 
 load("@rules_dart//dart:providers.bzl", "DartPackageInfo")
-load("@rules_dart//dart:utils.bzl", "generate_stable_package_config", "package_of_source")
+load("@rules_dart//dart:utils.bzl", "generate_stable_package_config", "package_of_source", "stable_path")
 
 visibility(["//flutter/..."])
 
@@ -87,6 +87,55 @@ def app_scheme_location(file):
         fail("%s: cannot place %s under a file-system root: its path does not end in %s" % (file.owner, file.path, rel))
     root = file.path[:len(file.path) - len(rel)].rstrip("/")
     return struct(uri = "%s:///%s" % (APP_SCHEME, rel), root = root)
+
+def _note_in_place_input(ctx, seen, rel, f):
+    """Records generated `f` under its `APP_SCHEME` path `rel`.
+
+    Two distinct generated files at one path fail: the compile reads the first
+    root that holds the path, so it could serve only one of them.
+    """
+    prev = seen.get(rel)
+    if prev == None:
+        seen[rel] = f
+    elif prev != f:
+        fail("%s: conflicting generated inputs at %s: %s and %s" % (
+            ctx.label,
+            rel,
+            prev.path,
+            f.path,
+        ))
+
+def in_place_roots(ctx, files):
+    """The roots a whole-program compile reads `files` in place from, under `APP_SCHEME`.
+
+    Each file sits under `APP_SCHEME` at its workspace-relative path
+    (`app_scheme_location`). Its root is the exec root (`.`) for a source file
+    and its output directory for a generated one. The generated roots come
+    first, in the order their files do, so a generated file shadows a source at
+    the same path; the exec root comes last. No file is staged and no action is
+    registered: the compile mounts these roots and reads every input where it
+    is.
+
+    Only generated files are looked at closely, and they are few; the loop over
+    `files` reads one field of each source.
+
+    Args:
+        ctx: Rule context, for the conflict message.
+        files: The `File`s the compile reads (a terminal rule's closure, read
+            once). Directories and `None` are skipped.
+
+    Returns:
+        The exec-root-relative roots: the generated roots, then `.`.
+    """
+    seen = {}
+    roots = {}
+    for f in files:
+        if f == None or f.is_source or f.is_directory:
+            continue
+        location = app_scheme_location(f)
+        _note_in_place_input(ctx, seen, location.uri, f)
+        roots[location.root] = True
+    return roots.keys() + ["."]
 
 def _source_stage_prefix(scope, seen, salt):
     """Content-hashed staging directory prefix for either staging path.
@@ -397,9 +446,9 @@ def resolve_wrapper_main_import(package_name, lib_root, main_short_path, main_pa
     Used by the web bootstrap wrapper (`make_web_wrapper_main_content`).
     Prefers `package:<name>/<main-rel-to-lib>` when the app is a Dart package
     and `main` sits under its `lib/` — this URI flows through the stable
-    `rootUri` written into `package_config.json` by `compile_package_config`,
+    `rootUri` written into `package_config.json` by `records_package_config`,
     so codegen siblings (`.g.dart`, `.freezed.dart`) reach the wrapper's
-    consuming compile via the same staged directory. Falls back to a
+    consuming compile through the same roots (`in_place_roots`). Falls back to a
     relative file path from the wrapper otherwise.
 
     Takes both of `main`'s paths because the two branches need different ones:
@@ -515,11 +564,11 @@ def compile_package_config(ctx, packages, all_srcs, extra_roots = {}):
     """Write a multi-root `package_config.json` under `APP_SCHEME`, copying no sources.
 
     Every package's `rootUri` is `org-dartlang-app:///<stable_path>`, which
-    `flutter_kernel_compile_action` resolves across the staging root via
-    `--filesystem-root` and `--filesystem-scheme org-dartlang-app`. Sources in
-    the source tree and generated siblings (`.g.dart`, `.freezed.dart`) in
-    `bazel-out` resolve under one `package:` URI — the compile stages every
-    declared input by workspace path — so the compiled `.dill` embeds stable
+    `flutter_kernel_compile_action` resolves across the roots `in_place_roots`
+    gives, via `--filesystem-root` and `--filesystem-scheme org-dartlang-app`.
+    Sources in the source tree and generated siblings (`.g.dart`, `.freezed.dart`)
+    in `bazel-out` resolve under one `package:` URI where they are, by workspace
+    path, so the compiled `.dill` embeds stable
     `org-dartlang-app:///` URIs instead of machine-specific sandbox `file://`
     paths. The same generator backs `compile_kernel_package_config`, so a
     public custom pipeline and the stock rules emit the same entries, and the
@@ -530,7 +579,7 @@ def compile_package_config(ctx, packages, all_srcs, extra_roots = {}):
       packages: List of `DartPackageInfo` (already synthesized via
         `synthesize_app_package` when applicable).
       all_srcs: Flat list of transitive source Files; should include the
-        app's own `main` so the entrypoint resolves through the staging root.
+        app's own `main`, so the entrypoint resolves through the roots.
       extra_roots: Optional dict of package name to exec-root-relative root,
         for packages with no sources in `all_srcs` (flutter, flutter_test,
         sky_engine from the toolchain) so they still get entries. Only the
@@ -599,6 +648,59 @@ def compile_kernel_package_config(ctx, packages, all_srcs, roots = None):
         ),
     )
     return struct(config_file = config_file, srcs = all_srcs, packages = packages)
+
+def _package_config_entry(pkg):
+    """One package's `package_config.json` entry under `APP_SCHEME`, as `kernel_package_config` writes it.
+
+    Runs at execution, through `Args.add_joined`, once per record.
+    """
+    lv = getattr(pkg, "language_version", "")
+    return '    {"name": "%s", "rootUri": "%s:///%s", "packageUri": "lib/"%s}' % (
+        pkg.package_name,
+        APP_SCHEME,
+        stable_path(pkg.lib_root),
+        (', "languageVersion": "%s"' % lv) if lv else "",
+    )
+
+def records_package_config(ctx, packages):
+    """Declares the program's `package_config.json`, written from its records when it is built.
+
+    Every package's `rootUri` is `org-dartlang-app:///<stable_path>`, which a
+    compile resolves across the roots `in_place_roots` gives, so sources in the
+    source tree and generated files in `bazel-out` resolve under one `package:`
+    URI where they are. The bytes are `kernel_package_config`'s for the same
+    records (every package kept), but the JSON is formatted from the record
+    list by `Args` when the file is written, so analysis holds a list
+    reference and formats nothing, however many packages the closure has.
+
+    Args:
+      ctx: The rule context.
+      packages: The program's `DartPackageInfo` records, one per name
+        (`collect_packages`, then `synthesize_app_package`).
+
+    Returns:
+      The `<name>.package_config.json` File.
+    """
+    roots = [p.package_name for p in packages if not p.lib_root]
+    if len(roots) > 1:
+        fail((
+            "%s: multiple packages declare an empty `lib_root`: %s. Each Bazel " +
+            "build graph can only attribute `lib/...` sources to one root package."
+        ) % (ctx.label, ", ".join(roots)))
+    config_file = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
+    if not packages:
+        ctx.actions.write(config_file, '{"configVersion": 2, "packages": []}\n')
+        return config_file
+    content = ctx.actions.args()
+    content.set_param_file_format("multiline")
+    content.add_joined(
+        packages,
+        map_each = _package_config_entry,
+        join_with = ",\n",
+        format_joined = '{\n  "configVersion": 2,\n  "packages": [\n%s\n  ]\n}',
+    )
+    ctx.actions.write(config_file, content)
+    return config_file
 
 def compute_wrapper_main_import(wrapper_dir_depth, main_path):
     """Relative import path from a generated wrapper to the original main.

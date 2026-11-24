@@ -13,10 +13,10 @@ void main() {
 
   group('dart2js stable scheme', () {
     test(
-      'snapshot args compile the staged entry and packages under org-dartlang-app',
+      'snapshot args compile the entry and packages under org-dartlang-app across every root',
       () {
-        const stageRootUri =
-            'file:///execroot/_main/bazel-out/k8-fastbuild/bin/pkg/app.dart2js_cfe.1234.stage/';
+        const binRootUri = 'file:///execroot/_main/bazel-out/k8-fastbuild/bin/';
+        const execRootUri = 'file:///execroot/_main/';
         final List<String> args = buildDart2JsSnapshotArgs(
           forwardArgs: [
             '--packages=/tmp/rewritten/package_config.json',
@@ -26,54 +26,118 @@ void main() {
             'out.dill',
           ],
           rewrittenPkgPath: '/tmp/rewritten/package_config.json',
-          stageRootUri: stageRootUri,
+          rootUris: [binRootUri, execRootUri],
           normMainDart: 'pkg/lib/main.dart',
         );
 
         expect(args, contains('--multi-root-scheme=org-dartlang-app'));
-        // The js frontend mounts the staging tree itself as a `file:`
-        // multi-root — never the execroot — so the compile reads only
-        // declared inputs whatever the strategy.
-        expect(args, contains('--multi-root=$stageRootUri'));
-        expect(args, contains('org-dartlang-app:///pkg/lib/main.dart'));
+        // The generated root first, so a generated file shadows a source at
+        // the same workspace path, then the exec root the sources sit in.
+        final List<String> roots = [
+          for (final a in args)
+            if (a.startsWith('--multi-root=')) a,
+        ];
+        expect(roots, [
+          '--multi-root=$binRootUri',
+          '--multi-root=$execRootUri',
+        ]);
         expect(args, contains('--packages=/tmp/rewritten/package_config.json'));
         for (final a in args) {
           expect(a, isNot(contains('sandbox')));
         }
-        expect(
-          args.last,
-          'org-dartlang-app:///pkg/lib/main.dart',
-        );
+        expect(args.last, 'org-dartlang-app:///pkg/lib/main.dart');
       },
     );
 
-    test('stage root URIs name the staging directory', () {
+    test('root URIs name the directory, the exec root as `.`', () {
+      final cwd = Uri.directory(
+        Directory.current.absolute.path,
+      ).normalizePath().toString();
+      expect(rootDirUri('.'), cwd);
       expect(
-        stageRootUri('pkg/app.dart2js.1234.stage'),
-        startsWith('file:'),
+        rootDirUri('bazel-out/k8-fastbuild/bin'),
+        '${cwd}bazel-out/k8-fastbuild/bin/',
       );
       expect(
-        stageRootUri('pkg/app.dart2js.1234.stage'),
-        endsWith('/pkg/app.dart2js.1234.stage/'),
+        rootDirUri('file:///execroot/_main/bazel-out/k8-fastbuild/bin'),
+        'file:///execroot/_main/bazel-out/k8-fastbuild/bin/',
       );
+    });
+  });
+
+  group('read set', () {
+    test('dart2js .deps name their file: reads only', () {
       expect(
-        stageRootUri(
-          'file:///execroot/_main/bazel-out/k8-fastbuild/bin/pkg/app.stage/',
+        dart2JsDepsReads(
+          'file:///execroot/_main/pkg/lib/main.dart\n'
+          'org-dartlang-app:///pkg/lib/main.dart\n'
+          'file:///execroot/_main/a%20b/lib/x.dart\n'
+          '\n',
         ),
-        'file:///execroot/_main/bazel-out/k8-fastbuild/bin/pkg/app.stage/',
+        ['/execroot/_main/pkg/lib/main.dart', '/execroot/_main/a b/lib/x.dart'],
+      );
+    });
+
+    test('a dart2wasm depfile names its prerequisites, escapes decoded', () {
+      expect(
+        depfileReads(
+          'out/main.dart.wasm: /e/pkg/lib/main.dart /e/a\\ b/x.dart \\\n'
+          ' /e/bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart\n',
+        ),
+        [
+          '/e/pkg/lib/main.dart',
+          '/e/a b/x.dart',
+          '/e/bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
+        ],
+      );
+    });
+
+    test('only declared inputs and the scratch directory may be read', () {
+      final manifest = File('${_tmp.path}/app.web_inputs')
+        ..writeAsStringSync(
+          'pkg/lib/main.dart\n'
+          'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart\n'
+          '# allowed-reads\n'
+          'external/flutter_web_sdk/kernel/dart2js_platform.dill\n',
+        );
+      final Set<String> declared = readDeclaredInputs(manifest.path);
+      expect(declared, {
+        'pkg/lib/main.dart',
+        'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
+        'external/flutter_web_sdk/kernel/dart2js_platform.dill',
+      });
+      expect(
+        undeclaredWebReads(
+          [
+            '/e/pkg/lib/main.dart',
+            '/e/pkg//lib/../lib/main.dart',
+            '/e/bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
+            'external/flutter_web_sdk/kernel/dart2js_platform.dill',
+            '/e/out/_dart2js_tmp/package_config.json',
+            // Undeclared: a source no target lists, a stale output, a host file.
+            '/e/pkg/lib/undeclared.dart',
+            '/e/bazel-out/k8-fastbuild/bin/pkg/lib/stale.dart',
+            '/etc/passwd',
+          ],
+          declared,
+          cwdPath: '/e',
+          scratchPath: '/e/out/_dart2js_tmp',
+        ),
+        [
+          '/e/pkg/lib/undeclared.dart',
+          '/e/bazel-out/k8-fastbuild/bin/pkg/lib/stale.dart',
+          '/etc/passwd',
+        ],
       );
     });
   });
 
   group('scrubDart2JsOutputs', () {
     test(
-      'rewrites temp package_config.json, stage, and cwd file URIs in .deps, .map, and .info.json',
+      'rewrites temp package_config.json, output-directory and cwd file URIs in .deps, .map, and .info.json',
       () {
         final fakeCwd = Directory('${_tmp.path}/execroot/_main')
           ..createSync(recursive: true);
-        final stageDir = Directory(
-          '${fakeCwd.path}/bazel-out/k8-fastbuild/bin/pkg/app_stage',
-        )..createSync(recursive: true);
         final outDir = Directory(
           '${fakeCwd.path}/bazel-out/k8-fastbuild/bin/pkg/app_dart2js_fallback',
         )..createSync(recursive: true);
@@ -89,20 +153,21 @@ void main() {
           ..writeAsStringSync('{"configVersion":2,"packages":[]}');
         tmpDir.deleteSync(recursive: true);
 
-        final stageUri = Uri.directory(stageDir.path).toString();
         final cwdUri = Uri.directory(fakeCwd.path).toString();
+        final binUri = '${cwdUri}bazel-out/k8-fastbuild/bin/';
         final rewrittenPkgUri = Uri.file(rewrittenPkgFile.path).toString();
 
         final depsFile = File('${outDir.path}/main.dart.js.deps')
           ..writeAsStringSync(
-            '${stageUri}pkg/lib/main.dart\n'
+            '${cwdUri}pkg/lib/main.dart\n'
+            '${binUri}pkg/lib/main.g.dart\n'
             '$rewrittenPkgUri\n'
             '${cwdUri}external/flutter_sdk/lib/core.dart\n'
             'org-dartlang-sdk:///lib/core/core.dart\n',
           );
         final mapFile = File('${outDir.path}/main.dart.js.map')
           ..writeAsStringSync(
-            '{"sources":["../../app_stage/pkg/lib/main.dart","${stageUri}pkg/lib/other.dart"]}',
+            '{"sources":["org-dartlang-app:///pkg/lib/main.dart","${binUri}pkg/lib/other.dart"]}',
           );
         final infoFile = File('${outDir.path}/main.dart.js.info.json')
           ..writeAsStringSync(
@@ -110,14 +175,13 @@ void main() {
             '"compilationDuration": 12345, '
             '"toJsonDuration": 678, '
             '"dumpInfoDuration": 90, '
-            '"uri": "${stageUri}pkg/lib/main.dart", '
-            '"rel": "bazel-out/k8-fastbuild/bin/pkg/app_stage/pkg/lib/main.dart"}',
+            '"uri": "${cwdUri}pkg/lib/main.dart", '
+            '"rel": "bazel-out/k8-fastbuild/bin/pkg/lib/main.g.dart"}',
           );
 
         scrubDart2JsOutputs(
           outDir,
           cwdPath: fakeCwd.path,
-          rootDirPath: stageDir.path,
           tmpDirPath: tmpDir.path,
           packagesPath: origPkgFile.path,
           rewrittenPkgPath: rewrittenPkgFile.path,
@@ -134,6 +198,7 @@ void main() {
             'org-dartlang-app:///external/flutter_sdk/lib/core.dart',
             'org-dartlang-app:///pkg/app.package_config.json',
             'org-dartlang-app:///pkg/lib/main.dart',
+            'org-dartlang-app:///pkg/lib/main.g.dart',
             'org-dartlang-sdk:///lib/core/core.dart',
           ]),
         );
@@ -148,7 +213,6 @@ void main() {
 
         final String infoContent = infoFile.readAsStringSync();
         expect(infoContent, isNot(contains('file:')));
-        expect(infoContent, isNot(contains('app_stage')));
         expect(infoContent, isNot(contains('bazel-out')));
         expect(
           infoContent,
@@ -157,38 +221,6 @@ void main() {
         expect(infoContent, contains('"compilationDuration": 0'));
         expect(infoContent, contains('"toJsonDuration": 0'));
         expect(infoContent, contains('"dumpInfoDuration": 0'));
-      },
-    );
-
-    test(
-      'staged app-scheme URIs normalize to their unstaged form in .deps',
-      () {
-        final fakeCwd = Directory('${_tmp.path}/execroot/_main')
-          ..createSync(recursive: true);
-        final outDir = Directory(
-          '${fakeCwd.path}/bazel-out/k8-fastbuild/bin/pkg/app_dart2js_cfe',
-        )..createSync(recursive: true);
-        final depsFile = File('${outDir.path}/app.dill.deps')
-          ..writeAsStringSync(
-            'org-dartlang-app:///flutter/tests/pkg/app.dart2js_cfe.1234.stage/flutter/tests/pkg/lib/main.dart\n'
-            'org-dartlang-app:///flutter/tests/pkg/lib/main.dart\n'
-            'org-dartlang-sdk:///lib/core/core.dart\n',
-          );
-
-        scrubDart2JsOutputs(outDir, cwdPath: fakeCwd.path);
-
-        final List<String> depsLines = depsFile
-            .readAsStringSync()
-            .split('\n')
-            .where((l) => l.isNotEmpty)
-            .toList();
-        expect(
-          depsLines,
-          equals([
-            'org-dartlang-app:///flutter/tests/pkg/lib/main.dart',
-            'org-dartlang-sdk:///lib/core/core.dart',
-          ]),
-        );
       },
     );
   });

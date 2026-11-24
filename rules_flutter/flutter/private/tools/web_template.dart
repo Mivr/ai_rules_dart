@@ -57,16 +57,19 @@ _PackageConfig _readPackageConfig(String packagesPath) {
   return (file: file, json: parsed, packages: packages);
 }
 
-/// Rewrites [packagesPath] so every package root resolves inside the compile's
-/// staging root, and writes the result to [outPath].
+/// Rewrites [packagesPath] so every package root is named under the app
+/// scheme, and writes the result to [outPath].
 ///
-/// Roots under the app scheme name the staged tree directly. Roots on the
-/// filesystem must sit under the action's working directory, where the staging
-/// root holds their staged copies; a root anywhere else (a `file:` URI the
-/// compiler would read straight off the host, outside every multi-root) fails
-/// the compile instead of passing through. Roots under any other scheme are
-/// left alone: the compiler reports what it cannot resolve.
-void _rewritePackageConfigForStage(
+/// The compile reads its inputs in place, through the `--multi-root`
+/// directories the rule names (the generated roots, then the exec root), so a
+/// root under the app scheme names a workspace path and needs nothing.
+/// Roots on the filesystem must sit under the action's working directory,
+/// where the multi-roots find them by the same workspace path; a root anywhere
+/// else (a `file:` URI the compiler would read straight off the host, outside
+/// every multi-root) fails the compile instead of passing through. Roots under
+/// any other scheme are left alone: the compiler reports what it cannot
+/// resolve.
+void _rewritePackageConfig(
   String packagesPath,
   String normCwd,
   String cwdPrefix,
@@ -103,45 +106,129 @@ void _rewritePackageConfigForStage(
   File(outPath).writeAsStringSync(json.encode(config.json));
 }
 
-/// Rewrites [packagesPath] so every package root resolves inside the compile's
-/// staging root, and writes the result to [outPath]. The wasm compiler mounts
-/// the staging root itself (see [_runDart2Wasm]), so roots under the working
-/// directory name their staged copies; a root anywhere else (a `file:` URI the
-/// compiler would read straight off the host, outside every multi-root) fails
-/// the compile instead of passing through. Roots under any other scheme are
-/// left alone: the compiler reports what it cannot resolve.
-void _rewritePackageConfig(
-  String packagesPath,
-  String normCwd,
-  String cwdPrefix,
-  String outPath,
-) {
-  final _PackageConfig config = _readPackageConfig(packagesPath);
-  for (final Map<String, dynamic> p in config.packages) {
-    final rootUri = p['rootUri'] as String;
-    if (rootUri.startsWith('org-dartlang-app:///')) continue;
-    final Uri resolved = config.file.uri.resolve(rootUri);
-    if (resolved.scheme == 'file') {
-      final String fsPath = resolved.toFilePath().replaceAll(r'\', '/');
-      if (fsPath.startsWith(cwdPrefix)) {
-        String rel = fsPath.substring(cwdPrefix.length);
-        if (rel.endsWith('/') && rel.length > 1) {
-          rel = rel.substring(0, rel.length - 1);
-        }
-        rel = _toAppSchemeRelPath(rel);
-        p['rootUri'] = 'org-dartlang-app:///$rel';
-      } else if (fsPath == normCwd || fsPath == cwdPrefix) {
-        p['rootUri'] = 'org-dartlang-app:///';
-      } else {
-        stderr.writeln(
-          'web_template compile: package ${p['name']} root $rootUri resolves '
-          'outside the declared inputs ($fsPath); refusing to compile.',
-        );
-        exit(1);
-      }
+/// The flag naming the declared-inputs manifest the read set is checked against.
+const _declaredInputsFlag = '--declared-inputs=';
+
+/// The declared inputs a `--declared-inputs` manifest lists, exec-root
+/// relative: the sources before the first `#` line and the other files the
+/// compile may read after it. The rule writes the manifest from the action's
+/// own inputs; the compile argv adds nothing to it.
+Set<String> readDeclaredInputs(String manifestPath) {
+  final declared = <String>{};
+  for (final String line in File(manifestPath).readAsLinesSync()) {
+    final String path = _normalizeReadPath(line.trim());
+    if (path.isEmpty || path.startsWith('#')) continue;
+    declared.add(path);
+  }
+  return declared;
+}
+
+/// [path] with `\` read as `/`, runs of slashes collapsed and a leading `./`
+/// dropped: the spelling the read-set comparison uses on both sides.
+String _normalizeReadPath(String path) => path
+    .replaceAll(r'\', '/')
+    .replaceAll(RegExp('/{2,}'), '/')
+    .replaceFirst(RegExp(r'^(?:\./)+'), '');
+
+/// The files a dart2js `.deps` file names: one URI per line, `file:` ones
+/// being the files the compiler read. Other schemes name a library, not a
+/// file, and are skipped: the file each resolves to has its own line.
+List<String> dart2JsDepsReads(String content) {
+  final reads = <String>[];
+  for (final String raw in content.split('\n')) {
+    final String line = raw.trim();
+    if (!line.startsWith('file:')) continue;
+    reads.add(Uri.parse(line).toFilePath());
+  }
+  return reads;
+}
+
+/// The files a dart2wasm `--depfile` names: the prerequisites of its one
+/// make rule, `\ ` escaping a space and a trailing `\` continuing a line.
+List<String> depfileReads(String content) {
+  final String joined = content.replaceAll(RegExp(r'\\\r?\n'), ' ');
+  final int colon = joined.indexOf(': ');
+  final String deps = colon < 0 ? '' : joined.substring(colon + 2);
+  final reads = <String>[];
+  final current = StringBuffer();
+  for (var i = 0; i < deps.length; i++) {
+    final String c = deps[i];
+    if (c == r'\' && i + 1 < deps.length && deps[i + 1] == ' ') {
+      current.write(' ');
+      i++;
+    } else if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+      if (current.isNotEmpty) reads.add(current.toString());
+      current.clear();
+    } else {
+      current.write(c);
     }
   }
-  File(outPath).writeAsStringSync(json.encode(config.json));
+  if (current.isNotEmpty) reads.add(current.toString());
+  return reads;
+}
+
+/// The reads in [reads] that name no declared input: each is a path the
+/// compiler opened, absolute or relative to [cwdPath]. A read under
+/// [scratchPath] (the wrapper's own rewritten package config) is allowed;
+/// any other read must be under the working directory and be listed in
+/// [declared] by its exec-root-relative path.
+///
+/// The compile reads its sources in place, through roots that hold every
+/// file of the source tree and of the output directories, so under local
+/// and worker strategies an undeclared file is there to be read. This check,
+/// over the compiler's own dependency report, fails such a build instead of
+/// caching bytes Bazel never reruns on; the sandbox, or remote execution,
+/// exposes only declared inputs in the first place.
+List<String> undeclaredWebReads(
+  Iterable<String> reads,
+  Set<String> declared, {
+  required String cwdPath,
+  required String scratchPath,
+}) {
+  final String cwd = _normalizeReadPath(cwdPath)
+      .replaceFirst(RegExp(r'/$'), '');
+  final String scratch = _normalizeReadPath(
+    scratchPath,
+  ).replaceFirst(RegExp(r'/$'), '');
+  final undeclared = <String>[];
+  for (final read in reads) {
+    String path = _normalizeReadPath(read);
+    if (!path.startsWith('/') && !RegExp('^[a-zA-Z]:').hasMatch(path)) {
+      path = '$cwd/$path';
+    }
+    path = Uri.file(path).normalizePath().toFilePath().replaceAll(r'\', '/');
+    if (path.startsWith('$scratch/')) continue;
+    if (path.startsWith('$cwd/') &&
+        declared.contains(path.substring(cwd.length + 1))) {
+      continue;
+    }
+    undeclared.add(read);
+  }
+  return undeclared;
+}
+
+/// Fails the compile when its dependency report names an undeclared read.
+void _checkReadSet(
+  String? declaredInputs,
+  List<String> reads, {
+  required String cwdPath,
+  required String scratchPath,
+}) {
+  if (declaredInputs == null) return;
+  final List<String> undeclared = undeclaredWebReads(
+    reads,
+    readDeclaredInputs(declaredInputs),
+    cwdPath: cwdPath,
+    scratchPath: scratchPath,
+  );
+  if (undeclared.isEmpty) return;
+  for (final read in undeclared) {
+    stderr.writeln(
+      'web_template compile: the compiler read $read, which is not an input '
+      'of this action. List the file in the `srcs` of the target that owns it.',
+    );
+  }
+  exit(1);
 }
 
 void _runDart2Wasm(List<String> args) {
@@ -150,10 +237,11 @@ void _runDart2Wasm(List<String> args) {
   final dartaotruntime = '$sdkBin/dartaotruntime$exeSuffix';
 
   final ({
+    String? declaredInputs,
     List<String> extraOptions,
     List<String> forwardArgs,
     String? mainDart,
-    String? multiRoot,
+    List<String> multiRoots,
     bool noSourceMaps,
     String? outputWasm,
     String? packagesPath,
@@ -176,7 +264,8 @@ void _runDart2Wasm(List<String> args) {
       packagesPath: packagesPath,
       outputWasm: outputWasm,
       mainDart: mainDart,
-      multiRoot: parsed.multiRoot,
+      multiRoots: parsed.multiRoots,
+      declaredInputs: parsed.declaredInputs,
       noSourceMaps: parsed.noSourceMaps,
       extraOptions: parsed.extraOptions,
       forwardArgs: parsed.forwardArgs,
@@ -189,7 +278,8 @@ void _runDart2Wasm(List<String> args) {
   String? packagesPath,
   String? outputWasm,
   String? mainDart,
-  String? multiRoot,
+  List<String> multiRoots,
+  String? declaredInputs,
   bool noSourceMaps,
   List<String> extraOptions,
   List<String> forwardArgs,
@@ -198,7 +288,8 @@ _parseDart2WasmArgs(List<String> args) {
   String? packagesPath;
   String? outputWasm;
   String? mainDart;
-  String? multiRoot;
+  String? declaredInputs;
+  final multiRoots = <String>[];
   var noSourceMaps = false;
   final extraOptions = <String>[];
   final forwardArgs = <String>[];
@@ -208,7 +299,9 @@ _parseDart2WasmArgs(List<String> args) {
     if (arg.startsWith('--packages=')) {
       packagesPath = arg.substring('--packages='.length);
     } else if (arg.startsWith('--multi-root=')) {
-      multiRoot = arg.substring('--multi-root='.length);
+      multiRoots.add(arg.substring('--multi-root='.length));
+    } else if (arg.startsWith(_declaredInputsFlag)) {
+      declaredInputs = arg.substring(_declaredInputsFlag.length);
     } else if (arg.startsWith('--extra-compiler-option=')) {
       extraOptions.add(arg.substring('--extra-compiler-option='.length));
     } else if (arg == '-o') {
@@ -228,7 +321,8 @@ _parseDart2WasmArgs(List<String> args) {
     packagesPath: packagesPath,
     outputWasm: outputWasm,
     mainDart: mainDart,
-    multiRoot: multiRoot,
+    multiRoots: multiRoots,
+    declaredInputs: declaredInputs,
     noSourceMaps: noSourceMaps,
     extraOptions: extraOptions,
     forwardArgs: forwardArgs,
@@ -238,7 +332,8 @@ _parseDart2WasmArgs(List<String> args) {
 /// The inputs for one `compile wasm` or `compile js` invocation.
 ///
 /// [_compileWasm] and [_compileDart2Js] share the tool, SDK, entrypoint,
-/// package, multi-root and forwarded-flag inputs; each reads only the half it
+/// package, multi-root, declared-inputs and forwarded-flag inputs; each reads
+/// only the half it
 /// needs (the scratch paths for dart2js, the output and wasm options for
 /// dart2wasm), so one request type serves both without a Map bag.
 class _WebCompileRequest {
@@ -246,7 +341,14 @@ class _WebCompileRequest {
   final String sdkBin;
   final String? packagesPath;
   final String? mainDart;
-  final String? multiRoot;
+
+  /// The roots the compile reads its inputs in place from, exec-root relative
+  /// (the generated roots, then `.`); empty to read from the working directory.
+  final List<String> multiRoots;
+
+  /// The `--declared-inputs` manifest the compiler's read set is checked
+  /// against, or null for no check.
+  final String? declaredInputs;
   final List<String> forwardArgs;
 
   /// The dart2js scratch directory and its absolute path (null for wasm).
@@ -266,8 +368,9 @@ class _WebCompileRequest {
     required this.sdkBin,
     required this.packagesPath,
     required this.mainDart,
-    required this.multiRoot,
+    required this.multiRoots,
     required this.forwardArgs,
+    this.declaredInputs,
     this.tmpPath,
     this.tmpAbsPath,
     this.cwdPath,
@@ -278,7 +381,8 @@ class _WebCompileRequest {
 }
 
 /// Compiles [mainDart] to [outputWasm] (plus its `.mjs` and optional source
-/// map) with the wasm compiler's staging root mounted.
+/// map), reading every input in place through the request's multi-roots, then
+/// checks the compiler's read set against the declared inputs.
 void _compileWasm(_WebCompileRequest req) {
   final exeSuffix = Platform.isWindows ? '.exe' : '';
   final outWasmFile = File(req.outputWasm!)..parent.createSync(recursive: true);
@@ -287,9 +391,14 @@ void _compileWasm(_WebCompileRequest req) {
   final String tmpAbsPath = tmpDir.absolute.path;
   try {
     final String cwdPath = Directory.current.absolute.path;
-    final String rootDirPath = req.multiRoot != null
-        ? Directory(req.multiRoot!).absolute.path
-        : cwdPath;
+    final List<String> rootDirPaths = req.multiRoots.isEmpty
+        ? [cwdPath]
+        : [
+            for (final r in req.multiRoots)
+              Uri.parse(rootDirUri(r))
+                  .toFilePath()
+                  .replaceFirst(RegExp(r'[/\\]$'), ''),
+          ];
     final String normCwd = cwdPath.replaceAll(r'\', '/');
     final cwdPrefix = normCwd.endsWith('/') ? normCwd : '$normCwd/';
     final rewrittenPkgPath = '${tmpDir.path}/package_config.json';
@@ -301,7 +410,8 @@ void _compileWasm(_WebCompileRequest req) {
     );
 
     final tmpWasm = '${tmpDir.path}/main.dart.wasm';
-    final String normMainDart = req.multiRoot != null
+    final depfile = '${tmpDir.path}/main.dart.wasm.d';
+    final String normMainDart = req.multiRoots.isNotEmpty
         ? _toAppSchemeRelPath(req.mainDart!)
         : req.mainDart!.replaceAll(r'\', '/');
     final wasmArgs = <String>[
@@ -309,8 +419,9 @@ void _compileWasm(_WebCompileRequest req) {
       ...req.extraOptions,
       '--packages=$rewrittenPkgPath',
       '--multi-root-scheme=org-dartlang-app',
-      '--multi-root=$rootDirPath',
+      for (final root in rootDirPaths) '--multi-root=$root',
       '--wasm-opt=${req.sdkBin}/utils/wasm-opt$exeSuffix',
+      if (req.declaredInputs != null) '--depfile=$depfile',
       ...req.forwardArgs,
       'org-dartlang-app:///$normMainDart',
       tmpWasm,
@@ -329,6 +440,14 @@ void _compileWasm(_WebCompileRequest req) {
       stdout.write(res.stdout as String);
       stderr.write(res.stderr as String);
       exit(res.exitCode);
+    }
+    if (req.declaredInputs != null) {
+      _checkReadSet(
+        req.declaredInputs,
+        depfileReads(File(depfile).readAsStringSync()),
+        cwdPath: cwdPath,
+        scratchPath: tmpAbsPath,
+      );
     }
 
     _copyWasmOutputs(req.outputWasm!, tmpDir, req.noSourceMaps, tmpWasm);
@@ -364,8 +483,8 @@ String _toAppSchemeUri(String path, String cwdPrefix) {
   return 'org-dartlang-app:///${_toAppSchemeRelPath(norm)}';
 }
 
-/// Scrubs host-specific file URIs, temporary package_config paths, stage paths,
-/// and compilation timestamps from dart2js output artifacts in [outDir].
+/// Scrubs host-specific file URIs, temporary package_config paths, output
+/// directory paths and compilation timestamps from dart2js output artifacts in [outDir].
 ///
 /// Directory-wide scrubbing is only safe when no other action writes compiler
 /// outputs into [outDir] concurrently: every scrub below is a read-modify-write
@@ -377,7 +496,6 @@ String _toAppSchemeUri(String path, String cwdPrefix) {
 void scrubDart2JsOutputs(
   Directory outDir, {
   required String cwdPath,
-  String? rootDirPath,
   String? tmpDirPath,
   String? packagesPath,
   String? rewrittenPkgPath,
@@ -395,7 +513,6 @@ void scrubDart2JsOutputs(
       scrubDart2JsFile(
         entity,
         cwdPath: cwdPath,
-        rootDirPath: rootDirPath,
         tmpDirPath: tmpDirPath,
         packagesPath: packagesPath,
         rewrittenPkgPath: rewrittenPkgPath,
@@ -418,14 +535,12 @@ void scrubDart2JsOutputs(
 void scrubDart2JsFile(
   File file, {
   required String cwdPath,
-  String? rootDirPath,
   String? tmpDirPath,
   String? packagesPath,
   String? rewrittenPkgPath,
 }) {
   final _ScrubPrefixes prefixes = _scrubPrefixesFor(
     cwdPath: cwdPath,
-    rootDirPath: rootDirPath,
     tmpDirPath: tmpDirPath,
     packagesPath: packagesPath,
     rewrittenPkgPath: rewrittenPkgPath,
@@ -433,7 +548,6 @@ void scrubDart2JsFile(
   final state = _ScrubState(file.readAsStringSync());
   _scrubPackageUris(state, prefixes);
   _scrubDirectoryUris(state, prefixes);
-  _scrubSourcemapStageRefs(state, file, prefixes);
   _scrubInfoJson(state, file, prefixes);
   _scrubDepsFile(state, file);
   if (state.changed) file.writeAsStringSync(state.content);
@@ -445,20 +559,14 @@ class _ScrubPrefixes {
   final String? rewrittenPkgUri;
   final String? origPkgUri;
   final String? tmpDirUriPrefix;
-  final String? stageUriPrefix;
   final String cwdUriPrefix;
-  final String? stageDirName;
-  final String? relStagePrefix;
 
   new({
     required this.pkgAppUri,
     required this.rewrittenPkgUri,
     required this.origPkgUri,
     required this.tmpDirUriPrefix,
-    required this.stageUriPrefix,
     required this.cwdUriPrefix,
-    required this.stageDirName,
-    required this.relStagePrefix,
   });
 }
 
@@ -480,18 +588,16 @@ class _ScrubState {
   }
 }
 
-/// Computes the host-specific spellings of the cwd, staging root, temp dir
-/// and package configs that compiler outputs may record.
+/// Computes the host-specific spellings of the cwd, temp dir and package
+/// configs that compiler outputs may record.
 _ScrubPrefixes _scrubPrefixesFor({
   required String cwdPath,
-  required String? rootDirPath,
   required String? tmpDirPath,
   required String? packagesPath,
   required String? rewrittenPkgPath,
 }) {
   final String normCwd = cwdPath.replaceAll(r'\', '/');
   final cwdPrefix = normCwd.endsWith('/') ? normCwd : '$normCwd/';
-  final String? normRootDir = rootDirPath?.replaceAll(r'\', '/');
   return _ScrubPrefixes(
     pkgAppUri: packagesPath != null
         ? _toAppSchemeUri(packagesPath, cwdPrefix)
@@ -505,23 +611,8 @@ _ScrubPrefixes _scrubPrefixesFor({
     tmpDirUriPrefix: tmpDirPath != null
         ? Uri.directory(tmpDirPath).toString()
         : null,
-    stageUriPrefix: rootDirPath != null
-        ? Uri.directory(rootDirPath).toString()
-        : null,
     cwdUriPrefix: Uri.directory(cwdPath).toString(),
-    stageDirName: rootDirPath != null ? _stageDirName(rootDirPath) : null,
-    relStagePrefix: normRootDir != null && normRootDir.startsWith(cwdPrefix)
-        ? _toAppSchemeRelPath(normRootDir.substring(cwdPrefix.length))
-        : null,
   );
-}
-
-/// The staging root's own directory name, for source-map relative spellings.
-String? _stageDirName(String rootDirPath) {
-  final List<String> segments = Directory(rootDirPath).uri.pathSegments
-      .where((s) => s.isNotEmpty)
-      .toList();
-  return segments.isNotEmpty ? segments.last : null;
 }
 
 /// Rewrites recorded package-config URIs to their stable app-scheme spelling.
@@ -534,40 +625,19 @@ void _scrubPackageUris(_ScrubState state, _ScrubPrefixes p) {
   }
 }
 
-/// Rewrites recorded temp, staging-root and working-directory URIs to the
-/// stable app-scheme root.
+/// Rewrites recorded temp, output-directory and working-directory URIs to
+/// the stable app-scheme root: a file read in place is recorded by its path
+/// under the exec root, a generated one under its output directory too, and
+/// both spellings name the same workspace path under the scheme.
 void _scrubDirectoryUris(_ScrubState state, _ScrubPrefixes p) {
   if (p.tmpDirUriPrefix != null) {
     state.replace(p.tmpDirUriPrefix!, 'org-dartlang-app:///');
-  }
-  if (p.stageUriPrefix != null) {
-    state.replace(p.stageUriPrefix!, 'org-dartlang-app:///');
   }
   state.replace(p.cwdUriPrefix, 'org-dartlang-app:///');
   state.replace(
     RegExp(r'org-dartlang-app:///(?:\./)?bazel-out/[^/]+/(?:bin|genfiles)/'),
     'org-dartlang-app:///',
   );
-  // A staged input is addressed as `<stage>/<rel>` under the same scheme,
-  // so the same file is recorded with and without the `<stage>/` prefix
-  // depending on which copy the frontend chose. Without this the depfile
-  // differs per strategy even though every URI is already stable.
-  state.replace(
-    RegExp(r'org-dartlang-app:///.*?\.stage/'),
-    'org-dartlang-app:///',
-  );
-}
-
-/// Rewrites the staging directory's relative spellings in a source map.
-void _scrubSourcemapStageRefs(_ScrubState state, File file, _ScrubPrefixes p) {
-  if (file.path.endsWith('.map') &&
-      p.stageDirName != null &&
-      p.stageDirName!.isNotEmpty) {
-    state.replace(
-      RegExp('(?:\\.\\./)+${RegExp.escape(p.stageDirName!)}/'),
-      'org-dartlang-app:///',
-    );
-  }
 }
 
 /// Normalizes a `.info.json` dump: relative output paths and compilation
@@ -575,11 +645,6 @@ void _scrubSourcemapStageRefs(_ScrubState state, File file, _ScrubPrefixes p) {
 void _scrubInfoJson(_ScrubState state, File file, _ScrubPrefixes p) {
   if (!file.path.endsWith('.info.json')) return;
   state.replace(RegExp(r'(?:\./)?bazel-out/[^/]+/(?:bin|genfiles)/'), '');
-  if (p.relStagePrefix != null &&
-      p.relStagePrefix!.isNotEmpty &&
-      state.content.contains('${p.relStagePrefix!}/')) {
-    state.replace('${p.relStagePrefix!}/', '');
-  }
   state.content = state.content
       .replaceAllMapped(
         RegExp(r'"compilationMoment":\s*"[^"]*"'),
@@ -612,20 +677,21 @@ void _scrubDepsFile(_ScrubState state, File file) {
   }
 }
 
-/// Builds the `dart2js` snapshot argv for a staged multi-root compile.
+/// Builds the `dart2js` snapshot argv for a multi-root compile that reads
+/// its inputs in place.
 ///
-/// The js frontend resolves `org-dartlang-app:///` URIs against a `file:`
-/// multi-root naming the per-action staging tree that holds both source and
-/// generated inputs; the entrypoint and every package root are addressed as
-/// URIs relative to that root, so the compile reads only declared inputs
-/// whatever the strategy. The recorded library URIs stay stable relative URIs
-/// with no sandbox or execroot absolute paths. Mirrors [_runDart2Wasm]'s
-/// stable scheme, adapted to the js frontend's `file:`-rooted multi-root
-/// (a plain path multi-root answers "Unknown scheme in uri").
+/// The js frontend resolves `org-dartlang-app:///` URIs against `file:`
+/// multi-roots naming the directories the inputs sit in (the generated roots,
+/// then the exec root), tried in order; the entrypoint and every package root
+/// are addressed by workspace path under the scheme, so the recorded library
+/// URIs stay stable, with no sandbox or execroot absolute paths. Mirrors
+/// [_runDart2Wasm]'s stable scheme, adapted to the js frontend's
+/// `file:`-rooted multi-roots (a plain path multi-root answers "Unknown scheme
+/// in uri").
 List<String> buildDart2JsSnapshotArgs({
   required List<String> forwardArgs,
   required String rewrittenPkgPath,
-  required String stageRootUri,
+  required List<String> rootUris,
   required String normMainDart,
 }) {
   final entryUri = 'org-dartlang-app:///$normMainDart';
@@ -633,21 +699,24 @@ List<String> buildDart2JsSnapshotArgs({
     for (final a in forwardArgs)
       if (a.startsWith('--packages=')) '--packages=$rewrittenPkgPath' else a,
     '--multi-root-scheme=org-dartlang-app',
-    '--multi-root=$stageRootUri',
+    for (final root in rootUris) '--multi-root=$root',
     entryUri,
   ];
 }
 
-/// The `file:` multi-root URI for the staging directory [multiRoot] names:
-/// the Bazel action passes it exec-root-relative, so absolutize against the
-/// working directory; an already-absolute or `file:` spelling is honored.
-String stageRootUri(String multiRoot) {
+/// The `file:` multi-root URI for the directory [multiRoot] names: the Bazel
+/// action passes it exec-root-relative (`.` for the exec root), so absolutize
+/// against the working directory; an already-absolute or `file:` spelling is
+/// honored. Dot segments are resolved, so `.` names the working directory.
+String rootDirUri(String multiRoot) {
   final String norm = multiRoot.replaceAll(r'\', '/');
   if (norm.startsWith('file:')) {
     final Uri uri = Uri.parse(norm);
-    return Uri.directory(uri.toFilePath()).toString();
+    return Uri.directory(uri.toFilePath()).normalizePath().toString();
   }
-  return Uri.directory(Directory(multiRoot).absolute.path).toString();
+  return Uri.directory(
+    Directory(multiRoot).absolute.path,
+  ).normalizePath().toString();
 }
 
 void _runDart2Js(List<String> args) {
@@ -656,9 +725,10 @@ void _runDart2Js(List<String> args) {
   final dartaotruntime = '$sdkBin/dartaotruntime$exeSuffix';
 
   final ({
+    String? declaredInputs,
     List<String> forwardArgs,
     String? mainDart,
-    String? multiRoot,
+    List<String> multiRoots,
     String? outJs,
     String? packagesPath,
   })
@@ -682,25 +752,23 @@ void _runDart2Js(List<String> args) {
   );
   final Directory tmpDir = scratch.tmpDir;
   final String tmpAbsPath = scratch.tmpAbsPath;
-  String? rootDirPath;
   String? rewrittenPkgPath;
   try {
-    final ({String? rewrittenPkgPath, String? rootDirPath}) compiled =
-        _compileDart2Js(
-          _WebCompileRequest(
-            dartaotruntime: dartaotruntime,
-            sdkBin: sdkBin,
-            tmpPath: tmpDir.path,
-            tmpAbsPath: tmpAbsPath,
-            multiRoot: parsed.multiRoot,
-            packagesPath: parsed.packagesPath,
-            mainDart: parsed.mainDart,
-            forwardArgs: parsed.forwardArgs,
-            cwdPath: cwdPath,
-          ),
-        );
-    rootDirPath = compiled.rootDirPath;
-    rewrittenPkgPath = compiled.rewrittenPkgPath;
+    rewrittenPkgPath = _compileDart2Js(
+      _WebCompileRequest(
+        dartaotruntime: dartaotruntime,
+        sdkBin: sdkBin,
+        tmpPath: tmpDir.path,
+        tmpAbsPath: tmpAbsPath,
+        multiRoots: parsed.multiRoots,
+        declaredInputs: parsed.declaredInputs,
+        packagesPath: parsed.packagesPath,
+        mainDart: parsed.mainDart,
+        forwardArgs: parsed.forwardArgs,
+        cwdPath: cwdPath,
+      ),
+      outJs: parsed.outJs,
+    );
   } finally {
     if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
   }
@@ -710,7 +778,6 @@ void _runDart2Js(List<String> args) {
       outJs: parsed.outJs,
       cfeOnly: cfeOnly,
       cwdPath: cwdPath,
-      rootDirPath: rootDirPath,
       tmpAbsPath: tmpAbsPath,
       packagesPath: parsed.packagesPath,
       rewrittenPkgPath: rewrittenPkgPath,
@@ -721,16 +788,18 @@ void _runDart2Js(List<String> args) {
 /// The `compile js` flags in [args].
 ({
   String? outJs,
-  String? multiRoot,
+  List<String> multiRoots,
+  String? declaredInputs,
   String? packagesPath,
   String? mainDart,
   List<String> forwardArgs,
 })
 _parseDart2JsArgs(List<String> args) {
   String? outJs;
-  String? multiRoot;
+  String? declaredInputs;
   String? packagesPath;
   String? mainDart;
+  final multiRoots = <String>[];
   final forwardArgs = <String>[];
   for (var i = 0; i < args.length; i++) {
     final String arg = args[i];
@@ -741,7 +810,9 @@ _parseDart2JsArgs(List<String> args) {
       outJs = arg.substring('-o='.length);
       forwardArgs.add(arg);
     } else if (arg.startsWith('--multi-root=')) {
-      multiRoot = arg.substring('--multi-root='.length);
+      multiRoots.add(arg.substring('--multi-root='.length));
+    } else if (arg.startsWith(_declaredInputsFlag)) {
+      declaredInputs = arg.substring(_declaredInputsFlag.length);
     } else if (arg.startsWith('--packages=')) {
       packagesPath = arg.substring('--packages='.length);
       forwardArgs.add(arg);
@@ -753,7 +824,8 @@ _parseDart2JsArgs(List<String> args) {
   }
   return (
     outJs: outJs,
-    multiRoot: multiRoot,
+    multiRoots: multiRoots,
+    declaredInputs: declaredInputs,
     packagesPath: packagesPath,
     mainDart: mainDart,
     forwardArgs: forwardArgs,
@@ -784,23 +856,20 @@ _parseDart2JsArgs(List<String> args) {
   return (tmpDir: tmpDir, tmpAbsPath: tmpDir.absolute.path);
 }
 
-/// Runs the dart2js snapshot in [tmpPath]'s scratch, staging the package
-/// config first when the compile mounts a multi-root; answers the staging
-/// root and rewritten package config the output scrub needs.
-({String? rootDirPath, String? rewrittenPkgPath}) _compileDart2Js(
-  _WebCompileRequest req,
-) {
-  String? rootDirPath;
+/// Runs the dart2js snapshot in [tmpPath]'s scratch, rewriting the package
+/// config first when the compile mounts multi-roots, then checks the
+/// compiler's read set (its `<outJs>.deps` report) against the declared
+/// inputs; answers the rewritten package config the output scrub needs.
+String? _compileDart2Js(_WebCompileRequest req, {required String? outJs}) {
   String? rewrittenPkgPath;
   List<String> jsArgs;
-  if (req.multiRoot != null &&
+  if (req.multiRoots.isNotEmpty &&
       req.packagesPath != null &&
       req.mainDart != null) {
-    rootDirPath = Uri.parse(stageRootUri(req.multiRoot!)).toFilePath();
     final String normCwd = req.cwdPath!.replaceAll(r'\', '/');
     final cwdPrefix = normCwd.endsWith('/') ? normCwd : '$normCwd/';
     rewrittenPkgPath = '${req.tmpPath!}/package_config.json';
-    _rewritePackageConfigForStage(
+    _rewritePackageConfig(
       req.packagesPath!,
       normCwd,
       cwdPrefix,
@@ -810,7 +879,7 @@ _parseDart2JsArgs(List<String> args) {
     jsArgs = buildDart2JsSnapshotArgs(
       forwardArgs: req.forwardArgs,
       rewrittenPkgPath: rewrittenPkgPath,
-      stageRootUri: stageRootUri(req.multiRoot!),
+      rootUris: [for (final root in req.multiRoots) rootDirUri(root)],
       normMainDart: relMain,
     );
   } else {
@@ -839,7 +908,23 @@ _parseDart2JsArgs(List<String> args) {
     stderr.write(res.stderr as String);
     exit(res.exitCode);
   }
-  return (rootDirPath: rootDirPath, rewrittenPkgPath: rewrittenPkgPath);
+  if (req.declaredInputs != null && outJs != null) {
+    final deps = File('$outJs.deps');
+    if (!deps.existsSync()) {
+      stderr.writeln(
+        'web_template compile: dart2js wrote no dependency report at '
+        '${deps.path}, so its reads cannot be checked; refusing the output.',
+      );
+      exit(1);
+    }
+    _checkReadSet(
+      req.declaredInputs,
+      dart2JsDepsReads(deps.readAsStringSync()),
+      cwdPath: req.cwdPath!,
+      scratchPath: req.tmpAbsPath!,
+    );
+  }
+  return rewrittenPkgPath;
 }
 
 /// What [_scrubDart2JsResults] normalizes: this action's own compiler outputs
@@ -848,7 +933,6 @@ class _Dart2JsScrubRequest {
   final String? outJs;
   final bool cfeOnly;
   final String cwdPath;
-  final String? rootDirPath;
   final String tmpAbsPath;
   final String? packagesPath;
   final String? rewrittenPkgPath;
@@ -857,7 +941,6 @@ class _Dart2JsScrubRequest {
     required this.outJs,
     required this.cfeOnly,
     required this.cwdPath,
-    required this.rootDirPath,
     required this.tmpAbsPath,
     required this.packagesPath,
     required this.rewrittenPkgPath,
@@ -881,7 +964,6 @@ void _scrubDart2JsResults(_Dart2JsScrubRequest scrub) {
     scrubDart2JsOutputs(
       File(scrub.outJs!).parent,
       cwdPath: scrub.cwdPath,
-      rootDirPath: scrub.rootDirPath,
       tmpDirPath: scrub.tmpAbsPath,
       packagesPath: scrub.packagesPath,
       rewrittenPkgPath: scrub.rewrittenPkgPath,
@@ -893,7 +975,6 @@ void _scrubDart2JsResults(_Dart2JsScrubRequest scrub) {
       scrubDart2JsFile(
         depsFile,
         cwdPath: scrub.cwdPath,
-        rootDirPath: scrub.rootDirPath,
         tmpDirPath: scrub.tmpAbsPath,
         packagesPath: scrub.packagesPath,
         rewrittenPkgPath: scrub.rewrittenPkgPath,
