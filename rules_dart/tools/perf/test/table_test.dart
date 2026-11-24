@@ -48,7 +48,10 @@ void main() {
     );
     expect(md, contains('rules only 1.00, with aspects 1.00 *'));
     expect(md, contains('| 0.150 s (0.100–0.300, n=5) |'));
-    expect(md, contains('none (ran: DartKernel, RdfApk)'));
+    expect(
+      md,
+      contains('none; ran: DartKernel, RdfApk; 3 actions from the cache'),
+    );
     expect(md, isNot(contains('KotlinCompile')));
     expect(md, contains('0.000 actions'));
     expect(md, contains('not run'));

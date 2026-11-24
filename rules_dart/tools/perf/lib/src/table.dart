@@ -68,9 +68,21 @@ String _native(Row? r) {
       if (!e.key.endsWith('(cached)') && !dartMnemonics.contains(e.key))
         e.key: e.value,
   };
-  return native.isEmpty
-      ? 'none (ran: ${r.mnemonics.keys.where((k) => !k.endsWith('(cached)')).join(', ')})'
-      : native.entries.map((e) => '${e.key} ${e.value}').join(', ');
+  final ran = [
+    for (final k in r.mnemonics.keys)
+      if (!k.endsWith('(cached)')) k,
+  ];
+  final cached = r.mnemonics.entries
+      .where((e) => e.key.endsWith('(cached)'))
+      .fold(0, (n, e) => n + e.value);
+  if (native.isNotEmpty) {
+    return native.entries.map((e) => '${e.key} ${e.value}').join(', ');
+  }
+  return [
+    'none',
+    if (ran.isNotEmpty) 'ran: ${ran.join(', ')}',
+    if (cached > 0) '$cached actions from the cache',
+  ].join('; ');
 }
 
 /// The table as Markdown.
