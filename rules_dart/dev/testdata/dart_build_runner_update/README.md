@@ -14,3 +14,9 @@ Code generation over existing BUILD files and checked-in files.
 - `off`: `# gazelle:dart_build_runner off` gives the per-directory rules.
 - `tool`: binaries (the one named like the package becomes `tool_bin`), a
   `bin/` helper and its generated part.
+- `stock`: a stock layout, as a person first writes it and as `flutter create`
+  makes it: `lib/main.dart` beside the rest of `lib/`. The library lists all of
+  `lib/`, `main.dart` included, and the test that imports
+  `package:stock/main.dart` lists only its `main` and depends on the library.
+  An executable whose `main` is `lib/main.dart` (a `flutter_application`, a
+  `dart_binary`) takes it from that library.
