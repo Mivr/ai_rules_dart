@@ -1,5 +1,13 @@
 # See https://github.com/crate-ci/typos?tab=readme-ov-file#false-positives how to ignore
 
+[default.extend-identifiers]
+# The e2e/build_runner package whose builder is json_serializable. typos splits
+# the name at the underscore and reports `ser`; the name is also the directory
+# and the Dart package, so it cannot change.
+json_ser = "json_ser"
+
 [files]
-# Vendored third-party code, kept as the SDK ships it.
-extend-exclude = ["third_party/dart_linter"]
+# Vendored third-party code, kept as the SDK ships it. android_model.json is
+# written by Gradle and is dense with ids made of hex (`cp_9ba30b4427c3`),
+# which land on real words often enough to be reported.
+extend-exclude = ["third_party/dart_linter", "**/android_model.json"]
