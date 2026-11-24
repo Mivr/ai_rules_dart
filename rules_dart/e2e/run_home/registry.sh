@@ -68,21 +68,21 @@ RUN_HOME_ENTRIES=(
   '@rules_dart//dart:dart|--verbose pub token list|caller-home|exit:0|stdout:pub-cache-token.example.com'
   # --- developer tools: safe arguments that stop before any network ---
   '@rules_dart//dart/private/tools:update_cross_sdk_versions|--versions-bzl=/nonexistent|caller-home|exit:1'
+  # --- consumer tools: run with no arguments they print their usage, before any network ---
+  '@rules_dart//dart/pub/plan:plan||caller-home|exit:2'
   # --- tool binaries run directly: configless or kernel-shaped ---
   '@rules_dart//dart/private/tools:kernel_launcher||caller-home|exit:1'
   '@rules_dart//dart/private/tools:kernel_link||caller-home|nonzero'
-  '@rules_dart//dart/private/tools:kernel_module||caller-home|nonzero'
   '@rules_dart//dart/private/tools:package_config||caller-home|nonzero'
-  '@rules_dart//dart/private/tools/hook_runner||caller-home|nonzero'
+  '@rules_dart//dart/private/tools/hook_runner:hook_runner||caller-home|nonzero'
   '@rules_dart//dart/private/tools:web_compile_runner||caller-home|nonzero'
   '@rules_dart//dart/private:analyzer_summary_tool||caller-home|nonzero'
   '@rules_dart//dart:import_check||caller-home|nonzero'
   '@rules_dart//dart:kernel_link||caller-home|nonzero'
-  '@rules_dart//dart:kernel_module||caller-home|nonzero'
   # --- public but not runnable: `bazel run` must refuse each one ---
   '@rules_dart//dart/private:analyzer_sdk_summary_input||n/a|refuse'
-  '@rules_dart//dart/ext/tools:check_dual_build_collisions_lib||n/a|refuse'
   '@rules_dart//dart/guard:directive_guard||n/a|refuse'
+  '@rules_dart//dart/pub/plan:plan_lib||n/a|refuse'
   '@rules_dart//dart/lints:rules_dart_project_lints||n/a|refuse'
   '@rules_dart//dart/runfiles:runfiles||n/a|refuse'
 )
