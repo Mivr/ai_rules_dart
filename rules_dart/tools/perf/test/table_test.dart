@@ -53,4 +53,13 @@ void main() {
     expect(md, contains('0.000 actions'));
     expect(md, contains('not run'));
   });
+
+  test('the table shows the latest quiet ok row of an id', () {
+    final rows = byId([
+      _r('dart.body.small.rules', [0.2, 0.2, 0.2, 0.2, 0.2]),
+      _r('dart.body.small.rules', [0.5, 0.5, 0.5, 0.5, 0.5], noisy: true),
+      _r('dart.body.small.rules', [], status: 'failed'),
+    ]);
+    expect(rows['dart.body.small.rules']!.median, 0.2);
+  });
 }

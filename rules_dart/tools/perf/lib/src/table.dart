@@ -36,8 +36,17 @@ String _n(double v) => v >= 100
     ? v.toStringAsFixed(1)
     : v.toStringAsFixed(v >= 1 ? 2 : 3);
 
-/// The rows of [rows] by id, the last one of each id winning.
-Map<String, Row> byId(List<Row> rows) => {for (final r in rows) r.id: r};
+/// The row of each id that the table shows: the latest that is ok and not
+/// noisy, else the latest that is ok, else the latest.
+Map<String, Row> byId(List<Row> rows) {
+  int rank(Row r) => r.status != 'ok' ? 0 : (r.noisy ? 1 : 2);
+  final out = <String, Row>{};
+  for (final r in rows) {
+    final had = out[r.id];
+    if (had == null || rank(r) >= rank(had)) out[r.id] = r;
+  }
+  return out;
+}
 
 String? _exponent(Map<String, Row> r, String shape, String mode) {
   final a = r['analysis.${shape}2000.$mode'];
