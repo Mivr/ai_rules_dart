@@ -1,7 +1,9 @@
-# The matrix workspace has no product targets: run_matrix.py queries the
-# per-plugin spokes of the `deps` hub, and the macOS step builds the spoke
-# device libraries. The lock is exported so `flutter.pub` can read it, and the
-# build test keeps `bazel test //...` meaningful in this workspace.
+# The matrix workspace has no product targets. What each pinned plugin's spoke
+# does on Linux (queries that pass, refusals where an Apple build reaches
+# them) is asserted by e2e.yaml; the macOS leg builds the spoke device
+# libraries with run_matrix.py and run_pods_matrix.py, whose self-tests run
+# here. The lock is exported so `flutter.pub` can read it, and the build test
+# keeps `bazel test //...` meaningful in this workspace.
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
@@ -24,6 +26,13 @@ build_test(
 )
 
 sh_test(
+    name = "run_matrix_test",
+    size = "small",
+    srcs = ["run_matrix.py"],
+    args = ["--self-test"],
+)
+
+sh_test(
     name = "run_pods_matrix_test",
     size = "small",
     srcs = ["run_pods_matrix.py"],
@@ -32,7 +41,10 @@ sh_test(
 
 test_suite(
     name = "self_test",
-    tests = [":run_pods_matrix_test"],
+    tests = [
+        ":run_matrix_test",
+        ":run_pods_matrix_test",
+    ],
 )
 
 test_suite(

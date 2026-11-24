@@ -1,16 +1,16 @@
 {
-  "firebase_core": "sets no `swift_package_resolved`",
-  "firebase_auth": "sets no `swift_package_resolved`",
-  "cloud_firestore": "sets no `swift_package_resolved`",
-  "firebase_messaging": "sets no `swift_package_resolved`",
+  "firebase_core": "refused",
+  "firebase_auth": "refused",
+  "cloud_firestore": "refused",
+  "firebase_messaging": "refused",
   "google_maps_flutter_ios": "ok",
-  "google_sign_in_ios": "sets no `swift_package_resolved`",
-  "sentry_flutter": "sets no `swift_package_resolved`",
+  "google_sign_in_ios": "refused",
+  "sentry_flutter": "refused",
   "image_picker_ios": "ok",
   "webview_flutter_wkwebview": "ok",
   "url_launcher_ios": "ok",
   "permission_handler_apple": "ok",
-  "flutter_inappwebview_ios": "Flutter plugin \"flutter_inappwebview_ios\": ios/flutter_inappwebview_ios.podspec:17 declares resources ('Storyboards/**/*.storyboard'), which rules_flutter does not build for plugins. Replace the plugin's BUILD file with an overlay (flutter.plugin_overlays).",
+  "flutter_inappwebview_ios": "refused",
   "google_mlkit_commons": "ok",
-  "stripe_ios": "sets no `swift_package_resolved`"
+  "stripe_ios": "refused"
 }

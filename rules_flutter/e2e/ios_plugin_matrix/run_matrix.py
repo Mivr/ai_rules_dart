@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""The real-plugin iOS fetch and build matrix (POD-2).
+"""The real-plugin iOS build matrix (POD-2), the macOS half of ios_plugin_matrix.
 
-Fetch mode reads ``expected.json`` and runs one ``bazel query`` per pinned
-plugin, comparing the result with the recorded expectation. Build mode reads
-the plugins ``expected.json`` records as ``ok`` and builds each spoke's device
-library for the iOS device platform; ``build_expected.json`` names the builds
-that are gated today, each by ``ok`` or a compile-error substring.
+Reads the plugins ``expected.json`` records as ``ok`` and builds each spoke's
+device library for the iOS device platform; ``build_expected.json`` names the
+builds that are gated today, each by ``ok`` or a compile-error substring.
+What the Linux side refuses, and where, is asserted by ``e2e.yaml``.
 
-The runner holds no plugin names: both modes are driven entirely by the JSON
-data files beside it, so a later item changes a behaviour by editing one entry
-and not this file.
+The runner holds no plugin names: it is driven entirely by the JSON data files
+beside it, so a later item changes a behaviour by editing one entry and not
+this file.
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ ROOT = Path(__file__).resolve().parent
 EXPECTED_PATH = ROOT / "expected.json"
 BUILD_EXPECTED_PATH = ROOT / "build_expected.json"
 BAZEL = ("bazel", "--max_idle_secs=60")
-FETCH_TARGET = "@deps__{plugin}//:all"
 BUILD_TARGET = "@deps__{plugin}//:{plugin}_apple_ios"
 IOS_ARM64_PLATFORM = "--platforms=@rules_flutter//flutter/platforms:ios_arm64"
 IOS_ARM64_CPU = "--ios_multi_cpus=arm64"
@@ -46,7 +44,7 @@ class Outcome:
 
 @dataclass(frozen=True)
 class Result:
-    """One PASS, FAIL or RECORD line in a mode's report."""
+    """One PASS, FAIL or RECORD line in the report."""
 
     name: str
     status: str
@@ -123,16 +121,6 @@ def print_build_failure(args: list[str], outcome: Outcome) -> None:
         return
     for line in lines[-OUTPUT_TAIL_LINES:]:
         print(line)
-
-
-def run_fetch(expected: dict[str, str], runner: Runner) -> list[Result]:
-    """Query every pinned plugin once and compare each result with its expectation."""
-    results = []
-    for plugin, want in expected.items():
-        outcome = runner(["query", FETCH_TARGET.format(plugin=plugin)])
-        ok, detail = compare(want, outcome)
-        results.append(Result(plugin, "PASS" if ok else "FAIL", detail))
-    return results
 
 
 def run_build(expected: dict[str, str], gated: dict[str, str], runner: Runner) -> list[Result]:
@@ -225,10 +213,10 @@ def _self_test_build_cases() -> tuple[list[str], int]:
 
 
 def self_test() -> int:
-    """Exercise fetch and build comparisons with fake outcomes; no Bazel, network or workspace needed."""
+    """Exercise the build comparisons with fake outcomes; no Bazel, network or workspace needed."""
     cases = [
         ("matching ok", "ok", Outcome(0, ""), True),
-        ("false ok", "ok", Outcome(1, "fetch refused"), False),
+        ("false ok", "ok", Outcome(1, "build refused"), False),
         ("passing refusal", "variables are not supported", Outcome(1, "Error: variables are not supported"), True),
         ("wrong exit for a refusal", "variables are not supported", Outcome(0, "variables are not supported"), False),
         ("missing refusal substring", "variables are not supported", Outcome(1, "another refusal"), False),
@@ -250,21 +238,18 @@ def self_test() -> int:
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    """Parse the mode and the offline self-test flag."""
-    parser = argparse.ArgumentParser(description="Run the iOS plugin matrix")
-    parser.add_argument("--mode", choices=("fetch", "build"), default="fetch")
+    """Parse the offline self-test flag."""
+    parser = argparse.ArgumentParser(description="Build the iOS plugin matrix (macOS)")
     parser.add_argument("--self-test", action="store_true", dest="self_test")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the selected mode and return its exit status."""
+    """Build the matrix, or run the self-test, and return the exit status."""
     args = parse_args(sys.argv[1:] if argv is None else argv)
     if args.self_test:
         return self_test()
     expected = load_json(EXPECTED_PATH, "expected.json")
-    if args.mode == "fetch":
-        return report(run_fetch(expected, run_bazel), "fetch")
     gated = load_json(BUILD_EXPECTED_PATH, "build_expected.json")
     return report(run_build(expected, gated, run_bazel), "build")
 

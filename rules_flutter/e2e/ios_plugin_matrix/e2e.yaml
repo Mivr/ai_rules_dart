@@ -1,8 +1,8 @@
 schema: mivr-e2e-spec/1
 commands:
-  - name: test workspace and matrix self-test
+  - name: test workspace and the matrix self-tests
     run: bazel test //... --test_output=errors
-    min_tests_executed: 2
+    min_tests_executed: 3
   - name: the firebase_core iOS side is refused where an Apple build reaches it
     run: bazel build @deps__firebase_core//:firebase_core_apple_ios_unbuildable
     expect:

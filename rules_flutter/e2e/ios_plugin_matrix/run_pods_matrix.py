@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""CocoaPods real-plugin fetch and iOS build matrix runner (POD-11).
+"""CocoaPods real-plugin iOS build matrix runner (POD-11), the macOS half of ios_plugin_matrix.
 
-Fetch mode reads ``expected_pods.json`` and queries each pinned plugin spoke in
-the ``deps_pods`` hub (``@deps_pods__<plugin>//:all``), checking for exit 0 on
-``ok`` and a non-zero exit with a case-sensitive substring match on refusals.
-Build mode compiles every fetch-``ok`` spoke for ``ios_arm64`` via
+Compiles every ``ok`` spoke of ``expected_pods.json`` for ``ios_arm64`` via
 ``--platforms=@rules_flutter//flutter/platforms:ios_arm64``; entries present in
 ``build_expected_pods.json`` gate the step while ungated ``ok`` plugins print
 ``RECORD`` without failing. Every failing build prints its command and the last
-30 output lines. Before either mode runs, ``pubspec.yaml`` is read and every
-pinned plugin must have a row in ``expected_pods.json``.
+30 output lines. Before it builds, ``pubspec.yaml`` is read and every pinned
+plugin must have a row in ``expected_pods.json``. What the Linux side refuses,
+and where, is asserted by ``e2e.yaml``.
 """
 
 from __future__ import annotations
@@ -44,7 +42,7 @@ class CommandOutput:
 
 @dataclass(frozen=True)
 class PluginCheck:
-    """Outcome row for a single plugin in fetch or build mode."""
+    """Outcome row for a single plugin."""
 
     plugin: str
     verdict: str
@@ -179,20 +177,6 @@ def evaluate_expectation(expectation: str, captured: CommandOutput) -> tuple[boo
     return True, ""
 
 
-def execute_fetch_matrix(
-    expectations: dict[str, str],
-    runner: CommandRunner,
-) -> list[PluginCheck]:
-    """Query ``@deps_pods__<plugin>//:all`` once per plugin and evaluate expectations."""
-    checks: list[PluginCheck] = []
-    for plugin, want in expectations.items():
-        target = f"@deps_pods__{plugin}//:all"
-        captured = runner(["query", target])
-        matched, reason = evaluate_expectation(want, captured)
-        checks.append(PluginCheck(plugin, "PASS" if matched else "FAIL", reason))
-    return checks
-
-
 def report_failed_build(args: list[str], captured: CommandOutput) -> None:
     """Print the ``bazel`` command line and the output tail of a non-zero build."""
     print("bazel " + " ".join(args))
@@ -201,12 +185,12 @@ def report_failed_build(args: list[str], captured: CommandOutput) -> None:
 
 
 def execute_build_matrix(
-    fetch_expectations: dict[str, str],
+    expectations: dict[str, str],
     build_gates: dict[str, str],
     runner: CommandRunner,
 ) -> list[PluginCheck]:
-    """Build each fetch-``ok`` plugin for ``ios_arm64`` and gate entries in ``build_gates``."""
-    ok_plugins = [plugin for plugin, want in fetch_expectations.items() if want == "ok"]
+    """Build each ``ok`` plugin for ``ios_arm64`` and gate entries in ``build_gates``."""
+    ok_plugins = [plugin for plugin, want in expectations.items() if want == "ok"]
     ok_set = set(ok_plugins)
     checks: list[PluginCheck] = []
     for plugin in ok_plugins:
@@ -234,7 +218,7 @@ def execute_build_matrix(
 
 
 def emit_summary(checks: list[PluginCheck], mode_label: str) -> int:
-    """Print per-plugin lines and a mode summary; return 1 when any plugin failed."""
+    """Print per-plugin lines and a summary; return 1 when any plugin failed."""
     failures = 0
     for item in checks:
         if item.verdict == "FAIL":
@@ -286,38 +270,6 @@ def _check_comparator_unit_cases() -> list[str]:
     return errors
 
 
-def _check_fetch_unit_cases() -> list[str]:
-    """Verify execute_fetch_matrix invokes bazel query per plugin and classifies outcomes."""
-    recorded_calls: list[list[str]] = []
-    responses = {
-        "@deps_pods__alpha_plugin//:all": CommandOutput(0, "@deps_pods__alpha_plugin//:lib\n"),
-        "@deps_pods__beta_plugin//:all": CommandOutput(1, "Error: unresolved SampleKit"),
-        "@deps_pods__gamma_plugin//:all": CommandOutput(1, "Error: unresolved samplekit"),
-    }
-
-    def fake_runner(cmd: list[str]) -> CommandOutput:
-        recorded_calls.append(cmd)
-        return responses[cmd[1]]
-
-    expectations = {
-        "alpha_plugin": "ok",
-        "beta_plugin": "unresolved SampleKit",
-        "gamma_plugin": "unresolved SampleKit",
-    }
-    checks = execute_fetch_matrix(expectations, fake_runner)
-    errors: list[str] = []
-    if [c.verdict for c in checks] != ["PASS", "PASS", "FAIL"]:
-        errors.append(f"unexpected fetch verdicts: {checks}")
-    expected_calls = [
-        ["query", "@deps_pods__alpha_plugin//:all"],
-        ["query", "@deps_pods__beta_plugin//:all"],
-        ["query", "@deps_pods__gamma_plugin//:all"],
-    ]
-    if recorded_calls != expected_calls:
-        errors.append(f"unexpected fetch commands: {recorded_calls}")
-    return errors
-
-
 def _check_build_unit_cases() -> list[str]:
     """Run the build cases with their failing-build dumps silenced."""
     errors, _ = _capture_stdout(_check_build_cases_verbose)
@@ -332,8 +284,8 @@ def _check_build_cases_verbose() -> list[str]:
         recorded_calls.append(cmd)
         return CommandOutput(0, "")
 
-    fetch_map = {"alpha_plugin": "ok", "beta_plugin": "unresolved pod"}
-    ungated = execute_build_matrix(fetch_map, {}, fake_ok_runner)
+    rows = {"alpha_plugin": "ok", "beta_plugin": "unresolved pod"}
+    ungated = execute_build_matrix(rows, {}, fake_ok_runner)
     errors: list[str] = []
     if len(ungated) != 1 or ungated[0].verdict != "RECORD":
         errors.append(f"ungated ok plugin must RECORD: {ungated}")
@@ -341,16 +293,16 @@ def _check_build_cases_verbose() -> list[str]:
     if recorded_calls != [want_cmd]:
         errors.append(f"build command mismatch: got {recorded_calls}, want {[want_cmd]}")
 
-    gated_pass = execute_build_matrix(fetch_map, {"alpha_plugin": "ok"}, lambda _: CommandOutput(0, ""))
+    gated_pass = execute_build_matrix(rows, {"alpha_plugin": "ok"}, lambda _: CommandOutput(0, ""))
     if [c.verdict for c in gated_pass] != ["PASS"]:
         errors.append(f"gated ok exit 0 should PASS: {gated_pass}")
 
-    gated_fail = execute_build_matrix(fetch_map, {"alpha_plugin": "ok"}, lambda _: CommandOutput(1, "err"))
+    gated_fail = execute_build_matrix(rows, {"alpha_plugin": "ok"}, lambda _: CommandOutput(1, "err"))
     if [c.verdict for c in gated_fail] != ["FAIL"]:
         errors.append(f"gated ok exit 1 should FAIL: {gated_fail}")
 
     refusal_pass = execute_build_matrix(
-        fetch_map,
+        rows,
         {"alpha_plugin": "Undefined symbol: _OBJC_CLASS_"},
         lambda _: CommandOutput(1, "ld: Undefined symbol: _OBJC_CLASS_$_Foo"),
     )
@@ -358,7 +310,7 @@ def _check_build_cases_verbose() -> list[str]:
         errors.append(f"gated refusal match should PASS: {refusal_pass}")
 
     refusal_case = execute_build_matrix(
-        fetch_map,
+        rows,
         {"alpha_plugin": "undefined symbol: _objc_class_"},
         lambda _: CommandOutput(1, "ld: Undefined symbol: _OBJC_CLASS_$_Foo"),
     )
@@ -366,12 +318,12 @@ def _check_build_cases_verbose() -> list[str]:
         errors.append(f"gated wrong-case refusal should FAIL: {refusal_case}")
 
     non_ok_gated = execute_build_matrix(
-        fetch_map,
+        rows,
         {"beta_plugin": "ok"},
         lambda _: CommandOutput(0, ""),
     )
     if not any(c.verdict == "FAIL" and c.plugin == "beta_plugin" for c in non_ok_gated):
-        errors.append(f"gating a non-ok fetch plugin should FAIL: {non_ok_gated}")
+        errors.append(f"gating a non-ok plugin should FAIL: {non_ok_gated}")
     return errors
 
 
@@ -409,12 +361,12 @@ def _check_summary_unit_cases() -> list[str]:
 def _check_failing_build_output_cases() -> list[str]:
     """Verify only non-zero builds print their command and the last 30 output lines."""
     errors: list[str] = []
-    fetch_map = {"alpha_plugin": "ok"}
+    rows = {"alpha_plugin": "ok"}
     command = f"bazel build {IOS_ARM64_PLATFORM} @deps_pods__alpha_plugin//:alpha_plugin_apple_ios"
     noisy = "\n".join(f"line {n}" for n in range(1, 41))
     for gates, label in (({}, "ungated"), ({"alpha_plugin": "ok"}, "gated"), ({"alpha_plugin": "line 40"}, "expected")):
         _, out = _capture_stdout(
-            lambda g=gates: execute_build_matrix(fetch_map, g, lambda _: CommandOutput(1, noisy))
+            lambda g=gates: execute_build_matrix(rows, g, lambda _: CommandOutput(1, noisy))
         )
         if command not in out.splitlines():
             errors.append(f"{label} failing build must print its command: {out!r}")
@@ -423,7 +375,7 @@ def _check_failing_build_output_cases() -> list[str]:
         if tail != [f"line {n}" for n in range(11, 41)]:
             errors.append(f"{label} failing build must print exactly the last 30 lines: {tail}")
     _, quiet = _capture_stdout(
-        lambda: execute_build_matrix(fetch_map, {}, lambda _: CommandOutput(0, noisy))
+        lambda: execute_build_matrix(rows, {}, lambda _: CommandOutput(0, noisy))
     )
     if quiet:
         errors.append(f"passing build must not print output: {quiet!r}")
@@ -500,7 +452,6 @@ def run_self_test() -> int:
     """Run all offline unit checks without touching Bazel, files or network."""
     errors = (
         _check_comparator_unit_cases()
-        + _check_fetch_unit_cases()
         + _check_build_unit_cases()
         + _check_summary_unit_cases()
         + _check_failing_build_output_cases()
@@ -516,9 +467,8 @@ def run_self_test() -> int:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    """Construct the CLI argument parser for fetch, build and self-test modes."""
-    parser = argparse.ArgumentParser(description="Run the CocoaPods real-plugin iOS matrix.")
-    parser.add_argument("--mode", choices=("fetch", "build"), default="fetch")
+    """Construct the CLI argument parser for the build and the self-test."""
+    parser = argparse.ArgumentParser(description="Build the CocoaPods real-plugin iOS matrix (macOS).")
     parser.add_argument("--self-test", action="store_true", dest="self_test")
     return parser
 
@@ -529,13 +479,11 @@ def main(argv: list[str] | None = None) -> int:
     if parsed.self_test:
         return run_self_test()
     workspace = resolve_workspace_dir()
-    fetch_expectations = read_expectations(workspace / EXPECTED_PODS_FILENAME, allow_empty=False)
-    check_pubspec_coverage(workspace / PUBSPEC_FILENAME, fetch_expectations)
+    expectations = read_expectations(workspace / EXPECTED_PODS_FILENAME, allow_empty=False)
+    check_pubspec_coverage(workspace / PUBSPEC_FILENAME, expectations)
     runner: CommandRunner = lambda cmd_args: invoke_bazel(workspace, cmd_args)
-    if parsed.mode == "fetch":
-        return emit_summary(execute_fetch_matrix(fetch_expectations, runner), "fetch")
     build_gates = read_expectations(workspace / BUILD_EXPECTED_PODS_FILENAME, allow_empty=False)
-    return emit_summary(execute_build_matrix(fetch_expectations, build_gates, runner), "build")
+    return emit_summary(execute_build_matrix(expectations, build_gates, runner), "build")
 
 
 if __name__ == "__main__":
