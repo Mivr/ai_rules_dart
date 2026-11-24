@@ -167,7 +167,26 @@ flutter_macos_app(
 )
 ```
 
-`flutter_application` compiles the Dart code and bundles the assets. Each platform then has a macro, like `flutter_macos_app`, that wraps it in a runnable app. Three attributes deserve a note:
+`flutter_application` compiles the Dart code and bundles the assets. Each platform then has a macro, like `flutter_macos_app`, that wraps it in a runnable app.
+
+When tests import the app, as `flutter create`'s `test/widget_test.dart` imports `package:my_app/main.dart`, put all of `lib/` in a `flutter_library` and give the app and the test only their `main`:
+
+```starlark
+flutter_library(name = "lib", package_name = "my_app", srcs = glob(["lib/**/*.dart"]), deps = ["@deps//:flutter"])
+
+flutter_application(name = "my_app", package_name = "my_app", main = "lib/main.dart", deps = [":lib"])
+
+flutter_test(
+    name = "widget_test",
+    package_name = "my_app",
+    main = "test/widget_test.dart",
+    deps = [":lib", "@deps//:flutter", "@deps//:flutter_test"],
+)
+```
+
+The library owns `lib/main.dart`, and the app takes its `main` from the library: the file compiles once, under `package:my_app/main.dart`, as `flutter build` compiles it. One source still belongs to one target: a file the app lists in `srcs` that the library lists too, or a `main` that only a library further down lists, fails the build, naming both targets.
+
+Three attributes deserve a note:
 
 - `package_name` must match the `name:` field in `pubspec.yaml`. Hot reload and code generation both rely on it.
 - `pubspec_srcs` lists the files `pubspec.yaml` names: its assets, fonts and shaders. The pubspec says what the bundle holds, as it does for `flutter build`, including the Material icon font when it sets `uses-material-design: true`. See [Assets](#assets).
@@ -1444,7 +1463,7 @@ flutter_application(
 
 | Attribute | Description |
 |---|---|
-| `main` | The entry point. Required. It can sit outside the package's `lib/`, as `flutter run -t` allows: `test_driver/app.dart`, say. See [Hot reload and hot restart](#hot-reload-and-hot-restart). |
+| `main` | The entry point. Required. It can sit outside the package's `lib/`, as `flutter run -t` allows: `test_driver/app.dart`, say. See [Hot reload and hot restart](#hot-reload-and-hot-restart). A `main` that a library in `deps` lists in its `srcs` (all of `lib/` in one `flutter_library`) is that library's: the app compiles it once, in the library. |
 | `package_name` | The Dart package name, the same as `pubspec.yaml`'s `name:`. Required. It keys the compiled libraries under stable `package:` URIs, which hot reload matches against, and resolves `package:<self>/...` imports. |
 | `srcs` | Other Dart sources in the app package, including generated ones. List here any file a `main` outside `lib/` imports by relative path. |
 | `deps` | `dart_library` or `flutter_library` targets. |

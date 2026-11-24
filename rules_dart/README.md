@@ -147,6 +147,14 @@ imports is never linked. Editing a leaf library recompiles that library and the
 dependents that reach its changed outline, not every test or kernel binary in the
 repository, and `package:test` is compiled once rather than once per test.
 
+One source belongs to one target, with one exception for the entry point: an
+executable whose `main` a library in its own `deps` lists (a `dart_library`
+over all of `lib/`, `lib/main.dart` included) takes `main` from that library.
+Its entry module compiles no copy of the file: the program's `main` is the
+library's, under the library's `package:` URI, as `dart run` names it. Any other
+source the executable and a library both list, and a `main` that only a library
+further down lists, fails the build naming both targets.
+
 A library's module compiles the sources it declares that compile for the VM.
 The compiler's own result decides which those are. A library that does not
 compile, because it imports a `dart:` library the VM lacks such as `dart:html`,
