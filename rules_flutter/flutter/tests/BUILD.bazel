@@ -53,7 +53,6 @@ load(":flutter_pubspec_test.bzl", "flutter_pubspec_test_suite")
 load(":flutter_sdk_package_test.bzl", "flutter_sdk_package_test_suite")
 load(":flutter_test_bootstrap_test.bzl", "flutter_test_bootstrap_test_suite")
 load(":flutter_test_coverage_test.bzl", "flutter_test_coverage_test_suite")
-load(":gen_l10n_test.bzl", "gen_l10n_test_suite")
 load(":gradle_model_test.bzl", "gradle_model_test_suite")
 load(":ios_integration_test_test.bzl", "ios_integration_test_test_suite")
 load(":ios_plugin_deps_test.bzl", "ios_plugin_deps_test_suite")
@@ -416,7 +415,6 @@ build_test(
     targets = [":swiftpm_local_settings_public_consumer"],
 )
 
-gen_l10n_test_suite(name = "gen_l10n_test")
 
 gradle_model_test_suite(name = "gradle_model_test")
 

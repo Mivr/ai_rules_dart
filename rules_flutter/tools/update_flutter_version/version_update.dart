@@ -220,7 +220,7 @@ Future<ArtifactOutcome> downloadAllChecksums(
   // The Flutter source tarball. Not an engine artifact — it comes from GitHub,
   // keyed by release tag rather than engine revision. Every rule that needs
   // Flutter's own Dart source pins this one checksum: the per-package SDK
-  // spokes, the vendored gen-l10n generator, and the FLUTTER_ROOT tree behind
+  // spokes, the asset tool's flutter_tools sources, and the FLUTTER_ROOT tree behind
   // `flutter:pub`. A version entry without it cannot be built.
   if (spec.pinnedSource != null) {
     checksums['__source__'] = spec.pinnedSource!;

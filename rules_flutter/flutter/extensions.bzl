@@ -33,13 +33,12 @@ load(
 load("@rules_dart//dart/pub:yaml.bzl", "lock_packages", "yaml_to_json")
 load("//flutter/private:artifact_urls.bzl", "source_strip_prefix")
 load("//flutter/private:flutter_assets_tool_repo.bzl", "flutter_assets_tool_repo")
-load("//flutter/private:flutter_gen_l10n_repo.bzl", "flutter_gen_l10n_repo")
 load("//flutter/private:flutter_pub_android_package.bzl", "android_package_repo_name", "flutter_pub_android_package")
 load("//flutter/private:flutter_pub_apple_pods.bzl", "hub_cocoapods_attrs")
 load("//flutter/private:flutter_pub_apple_pods_hub.bzl", "hub_podfile_lock")
 load("//flutter/private:flutter_pub_cycle_breaks.bzl", "apply_cycle_breaks", "cycle_breaks_lock_error")
 load("//flutter/private:flutter_pub_git.bzl", "git_package_subdir")
-load("//flutter/private:flutter_pub_lock_hub.bzl", "flutter_pub_hub_files", "hub_scc_targets", "ios_native_deps_json")
+load("//flutter/private:flutter_pub_lock_hub.bzl", "flutter_pub_hub_files", "hub_package_graph", "hub_scc_targets", "ios_native_deps_json")
 load("//flutter/private:flutter_pub_maven.bzl", "path_spoke_maven_inputs")
 load(
     "//flutter/private:flutter_pub_overlays.bzl",
@@ -48,6 +47,8 @@ load(
     "spoke_overlay_roots",
 )
 load("//flutter/private:flutter_pub_package.bzl", "flutter_pub_git_package", "flutter_pub_package", "flutter_pub_path_package", "is_maven_dep_label")
+load("//flutter/private:flutter_l10n_repo.bzl", "register_l10n_repos")
+load("//flutter/private:flutter_pub_hubs.bzl", "register_pub_hubs_index")
 load("//flutter/private:flutter_pub_path.bzl", "collect_path_deps", "foreign_lock_path_error", "is_absolute_lock_path", "is_relative_path_dependency", "workspace_relative_lock_path")
 load("//flutter/private:flutter_pub_plugin_defines.bzl", "ios_plugin_defines_lock_error")
 load("//flutter/private:flutter_pub_plugin_deps.bzl", "ios_plugin_deps_lock_error")
@@ -351,7 +352,7 @@ def _collect_registrations(modules):
     return registrations
 
 def _register_local_toolchain(name, local_path, lock_flutter_constraints, darwin_sdk, llvm_tool_repos):
-    """Registers one local-SDK toolchain and its gen-l10n repo."""
+    """Registers one local-SDK toolchain and its asset tool repo."""
     flutter_register_toolchains(
         name = name,
         local_path = local_path,
@@ -362,11 +363,6 @@ def _register_local_toolchain(name, local_path, lock_flutter_constraints, darwin
         darwin_sdk_swift_toolchain_path = darwin_sdk.swift_toolchain_path,
         darwin_sdk_llvm_tool_repos = llvm_tool_repos,
     )
-    flutter_gen_l10n_repo(
-        name = name + "_gen_l10n",
-        hub_name = "gen_l10n_deps",
-        local_path = local_path,
-    )
     flutter_assets_tool_repo(
         name = name + "_assets_tool",
         local_path = local_path,
@@ -374,7 +370,7 @@ def _register_local_toolchain(name, local_path, lock_flutter_constraints, darwin
     return struct(version = "", local_path = local_path, source_label = "")
 
 def _register_download_toolchain(name, selected, merged, darwin_sdk, llvm_tool_repos):
-    """Registers one downloaded toolchain and its gen-l10n repo."""
+    """Registers one downloaded toolchain and its asset tool repo."""
     if selected not in merged.versions:
         fail(unknown_version_message(selected))
     meta = merged.versions[selected]
@@ -397,7 +393,7 @@ def _register_download_toolchain(name, selected, merged, darwin_sdk, llvm_tool_r
     )
 
     # One extraction of the release's source tarball, shared by every SDK
-    # package spoke and the gen-l10n generator carved out of its flutter_tools.
+    # package spoke and the asset tool built from its flutter_tools.
     # Declared unconditionally because bzlmod repositories are lazy: a
     # workspace that never references them never fetches the tarball.
     source_label = declare_sdk_source(
@@ -405,12 +401,6 @@ def _register_download_toolchain(name, selected, merged, darwin_sdk, llvm_tool_r
         selected,
         flutter_source_sha256(selected, merged.versions),
         version_source_url,
-    )
-    flutter_gen_l10n_repo(
-        name = name + "_gen_l10n",
-        flutter_version = selected,
-        sdk_source = source_label,
-        hub_name = "gen_l10n_deps",
     )
     flutter_assets_tool_repo(
         name = name + "_assets_tool",
@@ -968,6 +958,10 @@ def _emit_pub_hub(module_ctx, hub, plans, hook_settings):
                 pod_hub.ios_pod_ignore,
                 pod_hub.ios_pods_json,
             ),
+            hub_package_graph(
+                {name: pkg.version for pkgs in (hub.hosted, hub.git, hub.path_pkgs) for name, pkg in pkgs.items()},
+                graph.raw,
+            ),
         ),
     )
 
@@ -1055,6 +1049,11 @@ def _toolchain_extension(module_ctx):
 
     # Handle flutter.pub() tags — resolve pubspec.lock with Flutter SDK support.
     recorded = _register_pub_hubs(module_ctx, selected_info, root_overlay_roots, pub_yaml)
+
+    # Which repositories are those hubs, for an app's default `pub_packages`,
+    # and what gen-l10n writes for each project of their locks.
+    register_pub_hubs_index(module_ctx)
+    register_l10n_repos(module_ctx, pub_yaml)
 
     # Don't declare root_module_direct_deps: flutter_register_toolchains creates
     # many repos (iOS, Android, web, desktop, cross-compile per platform) and

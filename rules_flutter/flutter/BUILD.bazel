@@ -226,6 +226,7 @@ bzl_library(
         "//flutter/private:flutter_plugin",
         "//flutter/private:flutter_prebuilt_test",
         "//flutter/private:flutter_test",
+        "@flutter_l10n//:index",
     ],
 )
 
@@ -248,7 +249,8 @@ bzl_library(
         ":repositories",
         "//flutter/private:artifact_urls",
         "//flutter/private:flutter_assets_tool_repo",
-        "//flutter/private:flutter_gen_l10n_repo",
+        "//flutter/private:flutter_l10n_repo",
+        "//flutter/private:flutter_pub_hubs",
         "//flutter/private:flutter_pub_android_package",
         "//flutter/private:flutter_pub_apple_pods",
         "//flutter/private:flutter_pub_apple_pods_hub",
@@ -415,9 +417,11 @@ bzl_library(
     srcs = ["web.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        "//flutter/private:flutter_gen_l10n",
         "//flutter/private:flutter_integration_test",
         "//flutter/private:flutter_web_application",
         "@bazel_skylib//rules:expand_template",
+        "@flutter_l10n//:index",
     ],
 )
 

@@ -9,11 +9,9 @@ else varying. Both locks state the same SDK constraint on purpose, so the
 spokes derive the same `language_version` and the package version is the only
 difference between them.
 
-This is not a hypothetical arrangement. rules_flutter's own root workspace
-already runs two hubs — `tool_deps` and `gen_l10n_deps` — which share
-nine package names and disagree on one of them, `meta`. Nothing
-there merges the two records into one target's closure today, so the case goes
-unobserved; this workspace is where it is observed.
+This is not a hypothetical arrangement: two tool hubs of one workspace, or a
+tool hub and an app's lock, share package names at different versions as a
+matter of course. This workspace is where the case is observed.
 """
 
 module(name = "dual_hub_e2e")

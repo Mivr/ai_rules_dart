@@ -46,7 +46,6 @@ flutter_web_app(
     package_name = "flavors_defines",
     compiler = "dart2js",
     defines = DEFINES,
-    pub_packages = "@deps//packages",
     pubspec_srcs = PUBSPEC_SRCS,
     # `lib/main.dart` is the web app's own entry point, so the packages it
     # imports are its direct deps.
@@ -65,7 +64,6 @@ flutter_application(
     defines = DEFINES,
     flavor = "dev",
     main = "lib/main.dart",
-    pub_packages = "@deps//packages",
     pubspec_srcs = PUBSPEC_SRCS,
     # `lib/main.dart` is the app's own entry point, so the packages it imports are its direct deps.
     deps = [":lib"] + PLUGINS + [
@@ -103,7 +101,6 @@ flutter_test(
     package_name = "flavors_defines",
     srcs = ["lib/main.dart"],
     main = "test/widget_test.dart",
-    pub_packages = "@deps//packages",
     pubspec = "pubspec.yaml",
     pubspec_srcs = PUBSPEC_SRCS,
     deps = [

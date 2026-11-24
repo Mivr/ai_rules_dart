@@ -4,7 +4,6 @@ load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_option
 load(
     "@rules_flutter//flutter:defs.bzl",
     "flutter_application",
-    "flutter_gen_l10n",
     "flutter_integration_test",
     "flutter_library",
     "flutter_test",
@@ -46,27 +45,14 @@ swift_library_group(
     deps = ["@deps__swiftpm-bigint//:BigInt"],
 )
 
-# The generated localizations `:app_test` compiles into the app and renders
-# under `Locale('es')`, so an iOS-only regression in gen-l10n output or in the
-# `output_class` / `nullable_getter` options fails the simulator run.
-flutter_gen_l10n(
-    name = "app_l10n",
-    arbs = [
-        "lib/l10n/app_en.arb",
-        "lib/l10n/app_es.arb",
-    ],
-    nullable_getter = False,
-    output_class = "Cov79Localizations",
-)
-
 flutter_integration_test(
     name = "app_test",
     package_name = "integration_ios",
     size = "large",
-    srcs = [
-        "integration_test/app_test.dart",
-        ":app_l10n",
-    ],
+    # The localizations gen-l10n writes from l10n.yaml (`output-class`,
+    # `nullable-getter`) reach the app with no target here, and render under
+    # `Locale('es')`: an iOS-only regression in them fails the simulator run.
+    srcs = ["integration_test/app_test.dart"],
     app_srcs = ["lib/main.dart"],
     defines = ["COV79_GREETING=hello, world=ok"],
     platform = "ios",
@@ -432,10 +418,7 @@ flutter_test(
     name = "app_test_lint",
     package_name = "integration_ios",
     size = "medium",
-    srcs = [
-        "lib/main.dart",
-        ":app_l10n",
-    ],
+    srcs = ["lib/main.dart"],
     main = "integration_test/app_test.dart",
     tags = ["manual"],
     deps = [

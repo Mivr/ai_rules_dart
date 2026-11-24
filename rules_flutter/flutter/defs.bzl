@@ -51,7 +51,8 @@ load("//flutter/private:flutter_aot_target.bzl", _flutter_aot_target = "flutter_
 load("//flutter/private:flutter_application.bzl", _flutter_application = "flutter_application")
 load("//flutter/private:flutter_bundle.bzl", _flutter_pub_packages = "flutter_pub_packages")
 load("//flutter/private:flutter_defines_files.bzl", _dart_defines = "dart_defines")
-load("//flutter/private:flutter_gen_l10n.bzl", _flutter_gen_l10n = "flutter_gen_l10n")
+load("@flutter_l10n//:index.bzl", "L10N_PROJECTS")
+load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach")
 load("//flutter/private:flutter_integration_test.bzl", _flutter_integration_test = "flutter_integration_test")
 load("//flutter/private:flutter_kernel_target.bzl", _flutter_kernel_target = "flutter_kernel_target")
 load("//flutter/private:flutter_library.bzl", _flutter_library = "flutter_library")
@@ -105,6 +106,7 @@ def flutter_application(name, package_name = "", defines_files = None, define_fl
         kwargs["dart_defines"] = ":" + name + "_dart_defines"
     if "pubspec" not in kwargs and native.glob(["pubspec.yaml"], allow_empty = True):
         kwargs["pubspec"] = "pubspec.yaml"
+    l10n_attach(name, kwargs, L10N_PROJECTS)
     _flutter_application(
         name = name,
         package_name = package_name or name,
@@ -115,12 +117,38 @@ def flutter_application(name, package_name = "", defines_files = None, define_fl
 # values, for `flutter_application.dart_defines`.
 dart_defines = _dart_defines
 
-flutter_gen_l10n = _flutter_gen_l10n
 flutter_integration_test = _flutter_integration_test
 flutter_kernel_target = _flutter_kernel_target
-flutter_library = _flutter_library
+
+def flutter_library(name, **kwargs):
+    """Collects Flutter Dart sources into a reusable dependency.
+
+    In a package with an `l10n.yaml`, a library whose `srcs` hold files under
+    `lib/` depends on what gen-l10n writes for the package, as `flutter build`
+    generates it: the files `l10n.yaml` and the `.arb` files say, at the paths
+    they say. A copy of those files in the source tree is left out of `srcs`.
+
+    Args:
+        name: Name of the `flutter_library` target.
+        **kwargs: All other arguments forwarded to the underlying rule.
+    """
+    l10n_attach(name, kwargs, L10N_PROJECTS)
+    _flutter_library(name = name, **kwargs)
+
 flutter_native_library = _flutter_native_library
 flutter_plugin = _flutter_plugin
 flutter_prebuilt_test = _flutter_prebuilt_test
 flutter_pub_packages = _flutter_pub_packages
-flutter_test = _flutter_test
+
+def flutter_test(name, **kwargs):
+    """Runs Flutter widget tests using the flutter_tester runtime.
+
+    In a package with an `l10n.yaml`, the test depends on what gen-l10n
+    writes for the package, as `flutter test` generates it.
+
+    Args:
+        name: Name of the `flutter_test` target.
+        **kwargs: All other arguments forwarded to the underlying rule.
+    """
+    l10n_attach(name, kwargs, L10N_PROJECTS, always = True)
+    _flutter_test(name = name, **kwargs)

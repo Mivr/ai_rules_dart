@@ -3,7 +3,7 @@ load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
 load("@rules_apple//apple:macos.bzl", "macos_application")
 load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
 load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_library")
-load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_gen_l10n", "flutter_library", "flutter_native_library", "flutter_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library", "flutter_native_library", "flutter_test")
 load(
     "@rules_flutter//flutter:macos.bzl",
     "MACOS_MINIMUM_OS_VERSION",
@@ -452,44 +452,22 @@ dart_binary(
     main = "tools/update_goldens_check.dart",
 )
 
-# --- Localizations (flutter_gen_l10n) ---
-# Exercises: the vendored `flutter gen-l10n` generator end to end — arb files in,
-# AppLocalizations Dart out, compiled and run against package:flutter.
-#
-# `app_es.arb` and `app_es_419.arb` are both present on purpose. gen-l10n emits
-# one Dart file per primary language subtag, so the two collapse into a single
-# app_localizations_es.dart. A rule deriving one output per input arb would
-# declare a file the generator never writes; this target is what holds that.
-# Undeclared regional `.arb` sitting in the same `lib/l10n/` directory; staged
-# via `data` on `:l10n_test` so it is present in the execroot alongside the
-# declared `arbs` of `:app_l10n`.
-filegroup(
-    name = "undeclared_l10n_arb",
-    srcs = ["lib/l10n/app_en_US.arb"],
-)
-
-flutter_gen_l10n(
-    name = "app_l10n",
-    arbs = [
-        "lib/l10n/app_en.arb",
-        "lib/l10n/app_es.arb",
-        "lib/l10n/app_es_419.arb",
-    ],
-)
-
+# --- Localizations (l10n.yaml) ---
+# Exercises: gen-l10n from the project's l10n.yaml, as `flutter test` runs it,
+# with no l10n target here: every test of this package depends on what it
+# writes. `app_es.arb` and `app_es_419.arb` are both present on purpose:
+# gen-l10n writes one Dart file per language, so the two share
+# `app_localizations_es.dart`, and so do `app_en.arb` and `app_en_US.arb`.
 flutter_test(
     name = "l10n_test",
     package_name = "codegen_e2e",
     size = "medium",
-    srcs = [":app_l10n"],
-    data = [":undeclared_l10n_arb"],
     main = "test/l10n_test.dart",
     target_compatible_with = _HOST_COMPATIBLE,
     deps = [
         "@deps//:flutter",
         "@deps//:flutter_localizations",
         "@deps//:flutter_test",
-        "@deps//:intl",
     ],
 )
 

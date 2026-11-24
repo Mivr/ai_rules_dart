@@ -12,7 +12,7 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("//flutter:android.bzl", "flutter_android_aab", "flutter_android_aar", "flutter_android_apk_overlay", "flutter_android_app", "flutter_android_bundle", "flutter_android_engine", "flutter_android_engine_jar", "flutter_android_manifest_gen", "flutter_android_manifest_merge", "flutter_android_permissions_manifest", "flutter_android_plugin_library", "flutter_android_registrant", "flutter_android_runner_lib_gen", "flutter_drive_test")
-load("//flutter:defs.bzl", "flutter_aot_target", "flutter_application", "flutter_gen_l10n", "flutter_integration_test", "flutter_kernel_target", "flutter_library", "flutter_native_library", "flutter_plugin", "flutter_prebuilt_test", "flutter_test")
+load("//flutter:defs.bzl", "flutter_aot_target", "flutter_application", "flutter_integration_test", "flutter_kernel_target", "flutter_library", "flutter_native_library", "flutter_plugin", "flutter_prebuilt_test", "flutter_test")
 load("//flutter:dev_files.bzl", "flutter_dev_files", "flutter_dev_packages")
 load("//flutter:ios.bzl", "flutter_apple_plugin_library", "flutter_apple_plugins_aggregator", "flutter_apple_xcframework_import", "flutter_darwin_xcframework_import", "flutter_entitlements_merge", "flutter_ios_app", "flutter_ios_engine", "flutter_ios_framework", "flutter_ios_framework_gen", "flutter_ios_info_plist_gen", "flutter_ios_native_frameworks_gen", "flutter_ios_privacy_manifests_gen", "flutter_ios_registrant_gen", "flutter_ios_runner_lib_gen", "flutter_ios_simulator_build", "flutter_ios_simulator_build_test", "flutter_ios_xcframeworks", "flutter_xtool_bundle_version", "flutter_xtool_ios_bundle", "ios_sim_debug_app")
 load("//flutter:linux.bzl", "flutter_linux_app", "flutter_linux_bundle", "flutter_linux_engine", "flutter_linux_plugin_library", "flutter_linux_registrant_gen", "flutter_linux_runner_lib_gen")
@@ -59,14 +59,6 @@ filegroup(
     srcs = [":widget_test"],
     output_group = "test_assets",
     tags = ["manual"],
-)
-
-flutter_gen_l10n(
-    name = "l10n",
-    arbs = [
-        "lib/l10n/app_en.arb",
-        "lib/l10n/app_es.arb",
-    ],
 )
 
 flutter_kernel_target(

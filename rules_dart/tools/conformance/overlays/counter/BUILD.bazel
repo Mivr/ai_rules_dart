@@ -15,7 +15,6 @@ flutter_web_app(
     name = "web",
     package_name = "counter",
     compiler = "dart2js",
-    pub_packages = "@deps//packages",
     deps = DEPS,
 )
 
@@ -24,7 +23,6 @@ flutter_test(
     package_name = "counter",
     srcs = glob(["lib/**/*.dart"]),
     main = "test/widget_test.dart",
-    pub_packages = "@deps//packages",
     pubspec = "pubspec.yaml",
     deps = DEPS + ["@deps//:flutter_test"],
 )
@@ -33,7 +31,6 @@ flutter_application(
     name = "app",
     package_name = "counter",
     main = "lib/main.dart",
-    pub_packages = "@deps//packages",
     deps = DEPS,
 )
 

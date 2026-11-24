@@ -47,6 +47,8 @@ import 'package:flutter_tools/src/git.dart';
 import 'package:flutter_tools/src/isolated/native_assets/dart_hook_result.dart';
 import 'package:flutter_tools/src/isolated/native_assets/native_assets.dart'
     show FlutterCodeAsset;
+import 'package:flutter_tools/src/localizations/localizations_utils.dart'
+    show parseLocalizationsOptionsFromYAML;
 import 'package:flutter_tools/src/project.dart';
 import 'package:flutter_tools/src/version.dart';
 import 'package:flutter_tools/src/web_template.dart';
@@ -82,11 +84,19 @@ ArgParser get _parser => ArgParser()
   // A compiled web file (`main.dart.js`, its parts, `main.dart.wasm`, ...),
   // or a directory of them.
   ..addMultiOption('web-build', splitCommas: false)
+  // gen-l10n: a file, by its path under the project, that the build declared
+  // as an output. gen-l10n must write exactly these.
+  ..addMultiOption('output', splitCommas: false)
   ..addOption(
     'project',
     help: 'The project directory, as the project files name it.',
   )
-  ..addOption('package-graph', help: "pub's `.dart_tool/package_graph.json`.")
+  ..addOption(
+    'package-graph',
+    help: "The lock's package graph, in the shape of pub's `.dart_tool/package_graph.json`.",
+  )
+  // The project's language version, when no `--package` names the project.
+  ..addOption('language-version')
   ..addOption('flutter-version', mandatory: true)
   ..addOption('engine-revision', mandatory: true)
   ..addOption('dart-version', defaultsTo: 'unknown')
@@ -254,16 +264,20 @@ Future<int> _run(String command, ArgResults args) async {
             case 'web':
               await _web(environment, args);
             case 'gen-l10n':
-              await _genL10n(environment);
+              await _genL10n(environment, args);
           }
         } on ToolExit catch (e) {
           logger.printError(e.message ?? 'flutter_assets_tool failed');
-          _explainMissingFiles(fs, project, args, logger);
+          if (command != 'gen-l10n') {
+            _explainMissingFiles(fs, project, args, logger);
+          }
           return e.exitCode ?? 1;
         } on Exception catch (e) {
           // `copyAssets` reports what failed through the logger first.
           logger.printError('$e');
-          _explainMissingFiles(fs, project, args, logger);
+          if (command != 'gen-l10n') {
+            _explainMissingFiles(fs, project, args, logger);
+          }
           return 1;
         }
         if (verbose) {
@@ -312,6 +326,10 @@ void _stageFlutterRoot(
   _pairs(args.multiOption('sdk')).forEach((String rel, String file) {
     _link(fs, fs.path.join(root.path, rel), file);
   });
+  // Made here, so `Cache` does not make it and `chmod` it in a process: the
+  // action has no `PATH` to find `chmod` on.
+  fs.directory(fs.path.join(root.path, 'bin', 'cache', 'artifacts'))
+      .createSync(recursive: true);
   final engine = <String, String>{
     'impellerc': artifacts.getHostArtifact(HostArtifact.impellerc).path,
     'const_finder': artifacts.getArtifactPath(Artifact.constFinder),
@@ -399,7 +417,9 @@ Directory _stageProject(FileSystem fs, Directory staged, ArgResults args) {
   // As `pub get` writes it, the config lists the project's own package even
   // when no library of it is built.
   if (!packages.any((Package p) => p.name == rootName)) {
-    packages.add(packageAt(rootName, staged.uri, ''));
+    packages.add(
+      packageAt(rootName, staged.uri, args.option('language-version') ?? ''),
+    );
   }
   final buffer = StringBuffer();
   PackageConfig.writeString(PackageConfig(packages), buffer);
@@ -407,33 +427,69 @@ Directory _stageProject(FileSystem fs, Directory staged, ArgResults args) {
       .childFile('package_config.json')
       .writeAsStringSync(buffer.toString());
   final String? graph = args.option('package-graph');
-  final File graphFile = dartTool.childFile('package_graph.json');
-  if (graph != null) {
-    _link(fs, graphFile.path, graph);
-  } else {
-    graphFile.writeAsStringSync(_packageGraph(fs, staged, packages));
-  }
+  dartTool
+      .childFile('package_graph.json')
+      .writeAsStringSync(
+        _packageGraph(
+          fs,
+          staged,
+          packages,
+          graph == null ? null : fs.file(_abs(graph)),
+        ),
+      );
   return staged;
 }
 
-/// pub's `package_graph.json`, from the pubspecs of the packages in the
-/// config: each package's dependencies, and the project's dev dependencies.
+/// pub's `package_graph.json` for the project.
 ///
-/// Stands in until the pub layer writes the file (then `--package-graph`
-/// passes it). A regular dependency of the project missing from the config
-/// is left in, so the tool reports it the way it reports a stale `pub get`.
-/// Any other missing package (a dev dependency of the project, or a package
-/// another package depends on that the lock or the target leaves out) is left
-/// out: none of its files are inputs, so there is nothing of it to bundle, and
-/// only `NOTICES` misses its licence, which `pub_packages` restores.
-String _packageGraph(FileSystem fs, Directory project, List<Package> packages) {
+/// The lock's packages come from the hub's graph (`--package-graph`), which
+/// pub's resolution planned: each package's dependencies. Every other package
+/// of the config (the project itself, with its dev dependencies, the members
+/// of its workspace, hand-written packages, the Flutter SDK's packages, whose
+/// dependencies the lock does not plan, or every package when there is no
+/// hub) comes from its pubspec.
+///
+/// A regular dependency of the project missing from the config is left in,
+/// so the tool reports it the way it reports a stale `pub get`. Any other
+/// missing package (a dev dependency of the project, or a package another
+/// package depends on that the lock or the target leaves out) is left out:
+/// none of its files are inputs, so there is nothing of it to bundle.
+String _packageGraph(
+  FileSystem fs,
+  Directory project,
+  List<Package> packages,
+  File? lockGraph,
+) {
   List<String> names(Object? section) => section is YamlMap
       ? (section.keys.cast<String>().toList()..sort())
       : <String>[];
   final Set<String> known = {for (final package in packages) package.name};
   final String rootName = _pubspecName(fs, project.childFile('pubspec.yaml'));
+  final planned = <String, Map<String, Object?>>{
+    if (lockGraph != null)
+      for (final Object? entry
+          in (jsonDecode(lockGraph.readAsStringSync())
+                  as Map<String, Object?>)['packages']!
+              as List<Object?>)
+        if (entry case {'name': final String name})
+          name: entry as Map<String, Object?>,
+  };
   final entries = <Map<String, Object>>[];
   for (final package in packages) {
+    final Map<String, Object?>? fromLock = package.name == rootName
+        ? null
+        : planned[package.name];
+    if (fromLock != null) {
+      entries.add(<String, Object>{
+        'name': package.name,
+        'version': '${fromLock['version'] ?? '0.0.0'}',
+        'dependencies': (fromLock['dependencies']! as List<Object?>)
+            .cast<String>()
+            .where(known.contains)
+            .toList(),
+      });
+      continue;
+    }
     final File pubspec = fs.file(package.root.resolve('pubspec.yaml'));
     final Object? yaml = pubspec.existsSync()
         ? loadYaml(pubspec.readAsStringSync())
@@ -781,33 +837,90 @@ _flutter.buildConfig = ${jsonEncode(buildConfig)};
     ..writeAsStringSync(content);
 }
 
-/// `GenerateLocalizationsTarget`, as `flutter build` runs it before compiling;
-/// its outputs are copied to the output directory at their paths in the
-/// project.
-Future<void> _genL10n(Environment environment) async {
+/// `GenerateLocalizationsTarget`, as `flutter build` and `flutter pub get` run
+/// it; the files it writes are copied to the output directory at their paths
+/// in the project.
+///
+/// The build declares those files before the tool runs, from `l10n.yaml` and
+/// the names of the `.arb` files (`--output`). The tool's own record of what
+/// it wrote is checked against them, so a file the build did not expect, or
+/// an expected one the tool did not write, fails here, naming it.
+Future<void> _genL10n(Environment environment, ArgResults args) async {
   const target = GenerateLocalizationsTarget();
   if (await target.canSkip(environment)) {
-    return;
+    throwToolExit('${args.option('label')}: the project has no l10n.yaml');
+  }
+  final FileSystem fs = environment.fileSystem;
+  // `format: true` runs `dart format`, which takes `formatter:` from
+  // analysis_options.yaml but drops every option when an `include:` names a
+  // package it cannot resolve, and the action has none of the packages an
+  // include names. The staged file keeps the project's own `formatter:`
+  // section only (written as JSON, which is YAML).
+  final File options = environment.projectDir.childFile('analysis_options.yaml');
+  if (options.existsSync()) {
+    final Object? yaml = loadYaml(options.readAsStringSync());
+    final Object? formatter = yaml is YamlMap ? yaml['formatter'] : null;
+    if (fs.isLinkSync(options.path)) {
+      fs.link(options.path).deleteSync();
+    }
+    options.writeAsStringSync(
+      jsonEncode(<String, Object?>{if (formatter != null) 'formatter': formatter}),
+    );
   }
   await target.build(environment);
-  final FileSystem fs = environment.fileSystem;
-  final record = jsonDecode(
-    environment.buildDir
-        .childFile('gen_l10n_inputs_and_outputs.json')
-        .readAsStringSync(),
-  ) as Map<String, Object?>;
-  for (final String output
-      in (record['outputs']! as List<Object?>).cast<String>()) {
-    final String rel = fs.path.relative(
-      output,
-      from: environment.projectDir.path,
+  final String project = environment.projectDir.path;
+  final record =
+      jsonDecode(
+            environment.buildDir
+                .childFile('gen_l10n_inputs_and_outputs.json')
+                .readAsStringSync(),
+          )
+          as Map<String, Object?>;
+  final Set<String> written = <String>{
+    for (final String output
+        in (record['outputs']! as List<Object?>).cast<String>())
+      fs.path.relative(output, from: project),
+  };
+  final List<String> expected = args.multiOption('output');
+  // The record lists the untranslated messages file only when there are no
+  // untranslated messages; the file is written either way.
+  final String? untranslated = parseLocalizationsOptionsFromYAML(
+    file: environment.projectDir.childFile('l10n.yaml'),
+    logger: environment.logger,
+    fileSystem: fs,
+    defaultArbDir: fs.path.join('lib', 'l10n'),
+  ).untranslatedMessagesFile;
+  if (untranslated != null && fs.isFileSync(fs.path.join(project, untranslated))) {
+    written.add(fs.path.normalize(untranslated));
+  }
+  final List<String> missing = <String>[
+    for (final rel in expected)
+      if (!written.contains(rel)) rel,
+  ];
+  final List<String> extra = <String>[
+    for (final rel in written.toList()..sort())
+      if (!expected.contains(rel)) rel,
+  ];
+  if (missing.isNotEmpty || extra.isNotEmpty) {
+    throwToolExit(
+      '${args.option('label')}: gen-l10n '
+      '${extra.isEmpty ? '' : 'wrote ${extra.join(', ')}'}'
+      '${extra.isNotEmpty && missing.isNotEmpty ? ' and ' : ''}'
+      '${missing.isEmpty ? '' : 'did not write ${missing.join(', ')}'}, '
+      'unlike what the build read from l10n.yaml and the names of the .arb '
+      'files. The build takes an .arb file\'s language from its "@@locale" '
+      'or, without one, from its name (`app_en.arb`, `app_pt_BR.arb`); give '
+      'the .arb file the tool reads differently a "@@locale", or a name that '
+      'says its locale.',
     );
+  }
+  for (final rel in expected) {
     fs
-        .file(output)
+        .file(fs.path.join(project, rel))
         .copySync(
-          (fs.file(
-            fs.path.join(environment.outputDir.path, rel),
-          )..parent.createSync(recursive: true)).path,
+          (fs.file(fs.path.join(environment.outputDir.path, rel))
+                ..parent.createSync(recursive: true))
+              .path,
         );
   }
 }

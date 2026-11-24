@@ -48,6 +48,7 @@ For `platform = "android"`:
      for crashes/ANRs, and collects test results and any uncaught errors.
 """
 
+load("@flutter_l10n//:index.bzl", "L10N_PROJECTS")
 load(
     "@rules_dart//dart:providers.bzl",
     "DartInfo",
@@ -64,6 +65,7 @@ load(
     "//flutter/private:common.bzl",
     "FLUTTER_DEPS_DOC",
 )
+load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach")
 load(
     "//flutter/private:flutter_integration_test_android.bzl",
     "declare_android_integration_test",
@@ -272,6 +274,13 @@ def flutter_integration_test(
     """
     merged_deps = _merge_integration_test_deps(deps, app_deps, app)
     resolved_package_name = package_name or name
+
+    # In a package with an l10n.yaml, what gen-l10n writes for it.
+    l10n = {"deps": merged_deps, "srcs": kwargs.get("srcs")}
+    l10n_attach(name, l10n, L10N_PROJECTS, always = True)
+    merged_deps = l10n["deps"]
+    if type(l10n["srcs"]) == "list":
+        kwargs["srcs"] = l10n["srcs"]
 
     if platform == "android":
         declare_android_integration_test(

@@ -547,6 +547,10 @@ bzl_library(
     name = "flutter_gen_l10n",
     srcs = ["flutter_gen_l10n.bzl"],
     visibility = ["//visibility:public"],
+    deps = [
+        ":flutter_assets_tool",
+        ":flutter_library",
+    ],
 )
 
 bzl_library(
@@ -555,6 +559,7 @@ bzl_library(
     visibility = ["//flutter:__subpackages__"],
     deps = [
         ":flutter_assets_tool",
+        "@flutter_pub_hubs//:hubs",
         "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",
     ],
@@ -586,12 +591,18 @@ bzl_library(
 )
 
 bzl_library(
-    name = "flutter_gen_l10n_repo",
-    srcs = ["flutter_gen_l10n_repo.bzl"],
+    name = "flutter_pub_hubs",
+    srcs = ["flutter_pub_hubs.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "flutter_l10n_repo",
+    srcs = ["flutter_l10n_repo.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":local_sdk",
-        ":repo_metadata",
+        ":flutter_pub_path",
+        "@rules_dart//dart/pub:yaml",
     ],
 )
 
@@ -625,11 +636,13 @@ bzl_library(
     deps = [
         ":app_entrypoint",
         ":common",
+        ":flutter_gen_l10n",
         ":flutter_integration_test_android",
         ":flutter_integration_test_bootstrap",
         ":flutter_integration_test_ios",
         ":flutter_integration_test_linux",
         ":flutter_integration_test_web",
+        "@flutter_l10n//:index",
         "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",
     ],
@@ -1243,6 +1256,7 @@ bzl_library(
     name = "flutter_pub_lock_hub",
     srcs = ["flutter_pub_lock_hub.bzl"],
     visibility = ["//visibility:public"],
+    deps = ["@rules_dart//dart/pub:pub_plan"],
 )
 
 bzl_library(

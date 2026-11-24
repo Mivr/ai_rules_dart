@@ -23,6 +23,8 @@ through that rule's `files`:
   its spoke is fetched, so its names cannot be planned).
 """
 
+load("@rules_dart//dart/pub:pub_plan.bzl", "package_graph_json")
+
 visibility(["//flutter/..."])
 
 # The Android platform, for an app whose plugins' Android code is not built from the pinned Gradle
@@ -345,9 +347,10 @@ def read_hub_pub_packages(ctx):
 def hub_lock_packages_build_content(packages):
     """Renders the hub's `packages/BUILD.bazel`: every package of the lock as one target.
 
-    An app's `pub_packages` names it, so the package config its asset bundle
-    reads lists every package `pub get` would list, dev dependencies too, as
-    the licences in `NOTICES` need.
+    An app's `pub_packages` (by default the hub its `deps` come from) names
+    it, so the package config its asset bundle reads lists every package
+    `pub get` would list, dev dependencies too, as the licences in `NOTICES`
+    need, and the bundle reads the lock's package graph beside it.
 
     Args:
         packages: The hub's package names.
@@ -361,13 +364,30 @@ load("@rules_flutter//flutter:defs.bzl", "flutter_pub_packages")
 
 flutter_pub_packages(
     name = "packages",
+    package_graph = "package_graph.json",
     deps = [
 {deps}    ],
     visibility = ["//visibility:public"],
 )
 """.format(deps = deps)
 
-def flutter_pub_hub_files(hub_name, packages, merged_members, swift_package_sha256, ios_native_deps):
+def hub_package_graph(versions, planned):
+    """The lock's package graph, for the hub's `packages/package_graph.json`.
+
+    Holds the packages whose dependencies the lock's plan knows (hosted, git
+    and path ones); the asset tool adds the project's own package and reads
+    the Flutter SDK's packages from their pubspecs.
+
+    Args:
+        versions: Package name to its locked version, for the planned packages.
+        planned: Package name to its planned dependency names.
+
+    Returns:
+        The JSON text.
+    """
+    return package_graph_json(versions, {name: planned.get(name, []) for name in versions})
+
+def flutter_pub_hub_files(hub_name, packages, merged_members, swift_package_sha256, ios_native_deps, package_graph = None):
     """Every file a Flutter hub adds to rules_dart's hub (`pub_lock_hub(files = ...)`).
 
     Args:
@@ -376,6 +396,7 @@ def flutter_pub_hub_files(hub_name, packages, merged_members, swift_package_sha2
         merged_members: Mapping of cycle member to its merged repository name.
         swift_package_sha256: The tag's SwiftPM checksum table.
         ios_native_deps: The rendered `ios_native_deps.json`.
+        package_graph: The rendered `packages/package_graph.json` (`hub_package_graph`).
 
     Returns:
         Dict of hub-relative path to content.
@@ -384,6 +405,7 @@ def flutter_pub_hub_files(hub_name, packages, merged_members, swift_package_sha2
     files = {
         "android/BUILD.bazel": make_flutter_pub_hub_android_build_content(sorted(packages), hub_name, scc_targets),
         "packages/BUILD.bazel": hub_lock_packages_build_content(packages),
+        "packages/package_graph.json": package_graph or hub_package_graph({}, {}),
         "ios_native_deps.json": ios_native_deps,
         "packages.bzl": hub_packages_bzl_content(hub_name, packages),
         "pub_packages.json": hub_pub_packages_json(packages, merged_members),

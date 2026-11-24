@@ -1,7 +1,6 @@
-// Exercises: `flutter_gen_l10n` output compiled and executed against
-// package:flutter. The rule's own fixture in rules_flutter proves the files are
-// declared and written; only running here proves the generated Dart is valid
-// against the real framework and that the ICU messages evaluate correctly.
+// Exercises: what gen-l10n writes from l10n.yaml, compiled and executed
+// against package:flutter: the generated Dart is valid against the real
+// framework and the ICU messages evaluate correctly.
 //
 // The es/es_419 pair is deliberate: gen-l10n emits one file per primary
 // language subtag, so both classes live in app_localizations_es.dart.
@@ -39,7 +38,7 @@ void main() {
   });
 
   test(
-    'supportedLocales carries the region variant and excludes undeclared arbs',
+    'supportedLocales carries every arb of arb-dir, region variants too',
     () {
       expect(AppLocalizations.supportedLocales, contains(const Locale('en')));
       expect(AppLocalizations.supportedLocales, contains(const Locale('es')));
@@ -49,11 +48,11 @@ void main() {
       );
       expect(
         AppLocalizations.supportedLocales,
-        isNot(contains(const Locale('en', 'US'))),
+        contains(const Locale('en', 'US')),
       );
       expect(
         lookupAppLocalizations(const Locale('en', 'US')).greeting('Ana'),
-        'Hello, Ana!',
+        'Howdy, Ana!',
       );
     },
   );

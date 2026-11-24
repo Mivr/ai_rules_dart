@@ -128,12 +128,12 @@ piece is absent:
   `darwin-x64*` / `linux-<arch>` / `windows-<arch>*` desktop engines (the
   macOS one as `FlutterMacOS.xcframework`), and the `android-*-release/` and
   `android-*-profile/` cross-compile `gen_snapshot` binaries;
-- `packages/` (the framework sources), `packages/flutter_tools/` (the
-  `gen-l10n` generator subset), and `bin/cache/pkg/sky_engine/` (the analyzer
-  package).
+- `packages/` (the framework sources, and `packages/flutter_tools/`, which
+  the asset tool is built from), and `bin/cache/pkg/sky_engine/` (the
+  analyzer package).
 
 Linked trees are watched, so SDK edits invalidate the repositories. Files a
-fetch must modify (the dartdev AOT snapshot, the gen-l10n subset) are staged
+fetch must modify (the dartdev AOT snapshot) are staged
 as repo-owned copies. The SDK tree itself is never written: every `BUILD`
 file lands in a repo-owned directory, and links are never written through,
 so a read-only system-wide install works. A `pubspec.lock` with a `flutter:`

@@ -157,7 +157,6 @@ flutter_application(
     main = "lib/main.dart",
     srcs = glob(["lib/**/*.dart"]),
     pubspec_srcs = glob(["assets/**"]),
-    pub_packages = "@deps//packages",
     deps = ["@deps//:flutter"],
 )
 
@@ -172,7 +171,7 @@ flutter_macos_app(
 
 - `package_name` must match the `name:` field in `pubspec.yaml`. Hot reload and code generation both rely on it.
 - `pubspec_srcs` lists the files `pubspec.yaml` names: its assets, fonts and shaders. The pubspec says what the bundle holds, as it does for `flutter build`, including the Material icon font when it sets `uses-material-design: true`. See [Assets](#assets).
-- `pub_packages` names every package of the lock (`@<hub>//packages`), so the package config the bundle reads is the one `pub get` writes: `NOTICES` then holds the dev dependencies' licences too. Without it, a regular dependency the pubspec names that `deps` do not reach fails the build, as a stale `pub get` does.
+- The package config the bundle reads is the one `pub get` writes: every package of the lock of the `flutter.pub` hub that `deps` come from, so `NOTICES` holds the dev dependencies' licences too, as stock's does. `pub_packages` (`@<hub>//packages`) overrides it. An app with no package from a hub gets the packages of `deps`; then a regular dependency the pubspec names that `deps` do not reach fails the build, as a stale `pub get` does.
 
 Build it, or run it with hot reload:
 
@@ -483,7 +482,7 @@ What a plain consumer's module graph pulls in, by feature. Floors are what `rule
 | iOS / macOS bundles | `rules_apple` ≥ 4.5.3, `rules_swift`, `apple_support`, `rules_cc` | 4.5.3 is the proven floor: `e2e/min_versions` pins it exactly and builds both Apple legs. `rules_swift`/`apple_support` float to the graph's maxima (4.5.3 accepts Swift at compatibility level 3). |
 | Android APK | `rules_android` 0.8.0, `rules_kotlin`, `rules_java`, `rules_jvm_external` 7.1, `rules_go` ≥ 0.59.0 | 0.8.0 is the floor: the signing overlay reads `rules_android`'s `apk_signing_method` flag, which exists only in 0.8.0+. The pinned `go_sdk.download` (Go 1.26.2, checksummed) in `rules_flutter`'s `MODULE.bazel` applies to every consumer without its own `go_sdk` block — it sorts before `rules_android`'s bundled unpinned 1.22.4 whatever order the root lists the modules in, while a root `go_sdk` block still wins; plain consumers fetch no Go SDK until a Go toolchain resolves. The `.bazelrc` Java settings above are required, and the build host needs `unzip` and `python3` for the AAR extractors. |
 | xtool Darwin backend (opt-in) | `llvm` 0.8.19, exec-host toolchain archive only | Needs only `flutter.darwin_sdk(url = ..., sha256 = ...)` or `flutter.darwin_sdk(path = ...)` in the root module — no other `MODULE.bazel` lines. Plain consumers fetch no LLVM archive and register no LLVM toolchain (see `docs/dependencies.md`). |
-| Repository tools, `gen_l10n` | Resolved inside `rules_flutter` | `rules_flutter_tool_deps` and `rules_flutter_gen_l10n_deps` are the ruleset's own isolated `pub.from_lock` hubs in rules_dart's `pub` extension, shipped with their plans, so a consumer makes no pub request for them and never names them. |
+| Repository tools | Resolved inside `rules_flutter` | `rules_flutter_tool_deps` is the ruleset's own isolated `pub.from_lock` hub in rules_dart's `pub` extension, shipped with its plan, so a consumer makes no pub request for it and never names it. |
 | No feature | No `rules_python` | The iOS screenshot/tunnel helpers are `dart_binary` drivers over a host `python3` (a documented host prerequisite like Xcode), so neither this repo's graph nor any consumer's contains `rules_python`. |
 
 Dev-only and never evaluated by consumers: `rules_multitool`, `buildifier_prebuilt`, `bazelrc-preset.bzl`, the eight `@llvm//toolchain:*` registrations, and the root-only `single_version_override` pinning this repo's own builds to `rules_apple` 5.2.0. (The `go_sdk.download` pin, by contrast, is a regular dependency so every consumer's Android host tools use it; it only downloads when a Go toolchain resolves. `llvm` itself is a regular dependency so the opt-in xtool backend can resolve it, but only a configured `flutter.darwin_sdk` — or this repo's own builds — fetches a toolchain archive.)
@@ -1429,7 +1428,6 @@ flutter_web_app(
     package_name = "my_app",
     main = "lib/main.dart",
     pubspec_srcs = glob(["assets/**"]),
-    pub_packages = "@deps//packages",
     deps = ["@deps//:flutter"],
 )
 ```
@@ -1633,7 +1631,6 @@ flutter_application(
     main = "lib/main.dart",
     srcs = glob(["lib/**/*.dart"]),
     pubspec_srcs = glob(["assets/**"]),
-    pub_packages = "@deps//packages",
     deps = [
         ":my_lib",
         "@deps//:flutter",
@@ -1650,7 +1647,7 @@ flutter_application(
 | `deps` | `dart_library` or `flutter_library` targets. |
 | `pubspec` | The app's `pubspec.yaml`, which says what the asset bundle holds. Its directory is the project directory. Defaults to the package's `pubspec.yaml`. See [Assets](docs/assets.md). |
 | `pubspec_srcs` | The files the pubspec names: assets, fonts, shaders, and `l10n.yaml` with the files it names. A named file that is not listed fails the build, naming it. |
-| `pub_packages` | Every package of the lock, `@<hub>//packages` (a `flutter_pub_packages` target), for the package config the bundle reads, as `pub get` writes it. |
+| `pub_packages` | Every package of the lock, `@<hub>//packages` (a `flutter_pub_packages` target), for the package config the bundle reads, as `pub get` writes it. By default the `packages` of the `flutter.pub` hub the first of `deps` from one belongs to; hubs declared with the same `lock` (an iOS plugin mode's twin) share the first one's. |
 | `asset_transformers` | The executables run for the pubspec's asset `transformers`, each mapped to the package name the pubspec gives: `{":binary": "package"}`. |
 | `build_name`, `build_number` | `--build-name` and `--build-number`; by default the pubspec's `version`. They reach `version.json`. |
 | `flavor` | The application flavor, e.g. `"dev"` or `"prod"`. Sets `FLUTTER_APP_FLAVOR` and bundles the pubspec's assets for that flavor, as `flutter build --flavor` does. Default `""` (no flavor). |
@@ -1846,7 +1843,6 @@ flutter_integration_test(
     app_srcs = glob(["lib/**/*.dart"]),
     pubspec = "pubspec.yaml",
     pubspec_srcs = glob(["assets/**"]),
-    pub_packages = "@deps//packages",
     deps = [
         "@deps//:flutter",
         "@deps//:flutter_test",
@@ -1874,7 +1870,6 @@ flutter_integration_test(
     app_srcs = glob(["lib/**/*.dart"]),
     pubspec = "pubspec.yaml",
     pubspec_srcs = glob(["assets/**"]),
-    pub_packages = "@deps//packages",
     deps = [
         "@deps//:flutter",
         "@deps//:flutter_test",
@@ -2156,49 +2151,38 @@ flutter_library(
 
 `e2e/build_runner` is the worked example (its root `BUILD.bazel` and `go_router_pkg/BUILD.bazel`). A hand-written generator is a `dart_binary` run by skylib's `run_binary`; `e2e/codegen` shows that shape, including generated code in dependency packages and hot reload over regenerated sources.
 
-#### flutter_gen_l10n
+#### Localizations
 
-Generates `AppLocalizations` from `.arb` files, the equivalent of `flutter gen-l10n`.
+A project with an `l10n.yaml` gets its localizations as `flutter build` and `flutter pub get` write them, with nothing in a BUILD file: no l10n target, no list of `.arb` files, no restated options.
+
+```yaml
+# l10n.yaml, beside pubspec.yaml (which sets `flutter: generate: true`)
+arb-dir: lib/l10n
+template-arb-file: app_en.arb
+output-localization-file: app_localizations.dart
+```
 
 ```starlark
-load("@rules_flutter//flutter:defs.bzl", "flutter_gen_l10n")
-
-flutter_gen_l10n(
-    name = "app_l10n",
-    arbs = [
-        "lib/l10n/app_en.arb",
-        "lib/l10n/app_es.arb",
-        "lib/l10n/app_es_419.arb",
-    ],
-)
-
-flutter_test(
-    name = "l10n_test",
+flutter_application(
+    name = "app",
     package_name = "my_app",
-    srcs = [":app_l10n"],
-    main = "test/l10n_test.dart",
-    deps = [
-        "@deps//:flutter",
-        "@deps//:flutter_localizations",
-        "@deps//:flutter_test",
-        "@deps//:intl",
-    ],
+    main = "lib/main.dart",
+    deps = ["@deps//:flutter", "@deps//:flutter_localizations"],
 )
 ```
 
-The generated files land beside the `.arb` files, and a consumer collects them by listing the target in `srcs`. The attributes mirror the flags of `flutter gen-l10n` with the same defaults: `template_arb_file`, `output_class`, `use_deferred_loading`, and so on. `l10n.yaml` is not read, because Bazel has to know the output file names during analysis and a config file read while the action runs cannot tell it.
+`l10n.yaml` decides what is written, with the Flutter tool's defaults for any key it leaves out, and the tool's own gen-l10n writes it (in the asset tool, from the release's `flutter_tools`), so `header`, `nullable-getter`, `untranslated-messages-file`, `use-deferred-loading`, `format` and every other option apply as they do for stock. The files land at the paths stock writes them to (`output-dir`, by default `arb-dir`), under `bazel-bin`. In that package, `flutter_library` and `flutter_application` targets whose `srcs` or `main` is under `lib/`, `flutter_web_app`, and every `flutter_test` and `flutter_integration_test` depend on a library of them; a copy the stock tool wrote into the source tree is left out of `srcs`.
+
+Bazel needs the names of the generated files before analysis. The `flutter` extension finds every project with an `l10n.yaml` among the directories of the `flutter.pub` locks, the members of their pub workspaces and their `path:` packages, and reads `l10n.yaml`, the `.arb` files of `arb-dir` and their `@@locale` through the pinned `yaml2json`. An `.arb` file without `@@locale` gets its language from its name, as the tool takes it (`app_en`, `app_pt_BR`, `app_zh_Hant`); when the tool reads a name differently, the action fails naming the file, and adding `@@locale` to it settles it. Adding or removing an `.arb` file, or editing `l10n.yaml`, is seen by the next build; editing an `.arb` file's messages reruns only the gen-l10n action.
 
 A few things to know:
 
-- **Keep `@@locale` consistent with the filename.** The rule derives output names from the arb filenames, while the generator decides what to write from each file's `@@locale`. If `app_english.arb` declares `"@@locale": "en"`, Bazel expects `app_localizations_english.dart` and the generator writes `app_localizations_en.dart`, which surfaces as "output was not created". Bazel cannot read file contents during analysis, so the rule cannot check this for you.
-- **Outputs are grouped by primary language.** `app_es.arb` and `app_es_419.arb` produce one `app_localizations_es.dart` holding both classes, matching upstream.
-- **Generated files always use LF line endings.** Upstream copies the line endings of `pubspec.yaml`, which would make the output depend on a file the action does not declare.
-- **There is no `format` attribute.** Formatting shells out to the `dart` binary, which the action does not have. Setting it is an error rather than a silent no-op. rules_dart's format check covers hand-written files only, so the generated sources are not checked.
-- **Two copies of `intl` are in play.** The generator has its own. An app using the generated code needs `intl` in its own lock. Upstream has the same split.
+- **`l10n.yaml`, not `generate: true` alone.** As for stock builds, a project with `generate: true` and no `l10n.yaml` gets nothing generated; `flutter gen-l10n` run by hand is the only thing that uses the command-line defaults then.
+- **A project of a lock.** A package with an `l10n.yaml` that is not the directory of a `flutter.pub` lock, a member of its workspace or a `path:` package of one fails at loading, saying so. A `path:` package's `l10n.yaml` is read only when its pubspec sets `generate: true`; the tool does not generate for a dependency otherwise.
+- **One package.** `arb-dir` and `output-dir` must be inside the project's own Bazel package (no `BUILD` file in between), as gen-l10n reads and writes there.
+- **Formatting.** With `format: true` (the default) the files are formatted with the `formatter:` options of the project's own `analysis_options.yaml`, as stock does; `formatter:` options that only an `include:`d file sets are not applied.
 
-The generator is carved out of `flutter_tools` at fetch time with a set of patches, so a Flutter version bump re-validates it. A release that moves the patch context fails the patch, and a new release also needs a `source_sha256` in `flutter/private/versions.bzl`. Two things those checks cannot catch: a newly added read of an undeclared file at run time, which shows up as a `PathNotFoundException`, and a newly adopted `dart:io` API newer than the Dart that rules_dart provides, which shows up as a compile error naming a missing type. The fix for the second is to cut the dead code that uses it, as the existing patches do for an unused `NetworkInterface` wrapper. See `flutter/private/flutter_gen_l10n_repo.bzl`.
-
-On Windows, the repository rule extracts all of `packages/flutter_tools` (about 19 MB) and uses twenty of its files. The deepest path is around 130 characters from the repository root, which fits within `MAX_PATH` given a short `output_user_root`.
+`e2e/codegen` (`:l10n_test`) is the worked example; `e2e/integration_android` and `e2e/integration_ios` set `output-class` and `nullable-getter` in their `l10n.yaml`.
 
 ### Providers
 

@@ -17,7 +17,7 @@ this file:
       - `flutter_sdk_package` → `packages/<name>`, once per SDK package in the
         lock (flutter, flutter_test, flutter_driver, flutter_localizations,
         flutter_web_plugins),
-      - `flutter_gen_l10n_repo` → `packages/flutter_tools`,
+      - `flutter_assets_tool_repo` → `packages/flutter_tools`,
       - `flutter_dev_root_repo` → `packages` and the sky_engine tree.
 
     The URL is built here rather than restated in each of them.

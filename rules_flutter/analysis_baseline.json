@@ -5,9 +5,6 @@
   "flutter/private/dartdev_patch/patch_test.dart": {
     "prefer_const_declarations": 3
   },
-  "flutter/private/gen_l10n/main.dart": {
-    "comment_references": 1
-  },
   "flutter/private/tools/android_bundle.dart": {
     "always_put_required_named_parameters_first": 1,
     "avoid_catching_errors": 1,
@@ -406,9 +403,6 @@
     "avoid_futureor_void": 1,
     "close_sinks": 1,
     "public_member_api_docs": 4
-  },
-  "flutter/tests/gen_l10n_fixture/gen_l10n_test.dart": {
-    "avoid_redundant_argument_values": 2
   },
   "flutter/tests/icon_tree_shake_fixture/cond_icons/lib/src/icon_vm.dart": {
     "implementation_imports": 1,

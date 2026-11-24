@@ -107,8 +107,6 @@ other's output.
 So bumping the pinned Flutter/Dart SDK means raising every `pubspec.yaml`'s
 `sdk:` lower bound, and the `sdks:` floor of its `pubspec.lock`, to the new
 version in the same change, then reformatting whatever the new style moves.
-The one exception is `flutter/private/gen_l10n/pubspec.yaml`, which matches
-upstream `flutter_tools` exactly.
 
 ## 2. The dev loop
 
@@ -651,9 +649,8 @@ cannot sit in `bazel test //...`. `:agreeing_bin` is the automated half and
 must keep passing — two records for `path` at the same 1.9.1 agree, so the
 guard lets them merge.
 
-The root workspace has two tool hubs, `tool_deps` and `gen_l10n_deps`, and no
-target reaches both. Do not add one: if they disagreed on a shared package, the
-edge would be the bug.
+The root workspace has one tool hub, `tool_deps`, so nothing there
+observes it.
 
 ### Golden regeneration (manual)
 

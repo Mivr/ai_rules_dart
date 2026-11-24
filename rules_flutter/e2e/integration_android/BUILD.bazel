@@ -1,22 +1,9 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options")
-load("@rules_flutter//flutter:defs.bzl", "flutter_gen_l10n", "flutter_integration_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_integration_test")
 
 exports_files(["pubspec.lock"])
-
-# The generated localizations `:app_test` compiles into the app and renders
-# under `Locale('es')`, so an Android-only regression in gen-l10n output or in
-# the `output_class` / `nullable_getter` options fails the emulator run.
-flutter_gen_l10n(
-    name = "app_l10n",
-    arbs = [
-        "lib/l10n/app_en.arb",
-        "lib/l10n/app_es.arb",
-    ],
-    nullable_getter = False,
-    output_class = "Cov13Localizations",
-)
 
 # Native FFI library `:app_test` loads through `dart:ffi`. The bundle's
 # platform transition compiles it with the Android NDK toolchain for the
@@ -50,10 +37,10 @@ flutter_integration_test(
     name = "app_test",
     package_name = "integration_android",
     size = "large",
-    srcs = [
-        "integration_test/app_test.dart",
-        ":app_l10n",
-    ],
+    # The localizations gen-l10n writes from l10n.yaml (`output-class`,
+    # `nullable-getter`) reach the app with no target here, and render under
+    # `Locale('es')`: an Android-only regression in them fails the emulator run.
+    srcs = ["integration_test/app_test.dart"],
     app_srcs = ["lib/main.dart"],
     defines = ["COV13_GREETING=hello, world=ok"],
     defines_files = ["//defines:app_defines.json"],
@@ -80,10 +67,10 @@ flutter_integration_test(
     name = "app_alt_test",
     package_name = "integration_android",
     size = "large",
-    srcs = [
-        "integration_test/app_test.dart",
-        ":app_l10n",
-    ],
+    # The localizations gen-l10n writes from l10n.yaml (`output-class`,
+    # `nullable-getter`) reach the app with no target here, and render under
+    # `Locale('es')`: an Android-only regression in them fails the emulator run.
+    srcs = ["integration_test/app_test.dart"],
     app_srcs = ["lib/main.dart"],
     defines = [
         "COV13_GREETING=hello, world=ok",

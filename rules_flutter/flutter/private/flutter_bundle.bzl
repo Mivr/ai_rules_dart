@@ -9,8 +9,10 @@ web the bootstrap files and the service worker.
 
 The app's pubspec is the source of truth for what is bundled. The files it
 names are inputs of the action: the app's own through `pubspec_srcs`, each
-package's through its `data` (a pub spoke lists the files its pubspec names).
-A file the pubspec names that is not an input fails the action, naming it.
+package's through its `data` (a pub spoke lists the files its pubspec names)
+and the non-Dart files of its `lib/` (`resources`), where an asset spelled
+`packages/<name>/<path>` is read from. A file the pubspec names that is not an
+input fails the action, naming it.
 
 What the action reads, per build mode: the pubspec and the files it names, the
 pubspec and licence of every package in the package config, and the engine
@@ -21,9 +23,25 @@ rerun it.
 
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "dart_info_no_package")
+load("@flutter_pub_hubs//:hubs.bzl", "PUB_HUBS")
 load("//flutter/private:flutter_assets_tool.bzl", "flutter_assets_tool_of")
 
 visibility(["//flutter/..."])
+
+FlutterPubPackagesInfo = provider(
+    doc = "What a `flutter_pub_packages` target knows about its lock besides the packages.",
+    fields = {
+        "package_graph": "File or None: the lock's package graph, in the shape of pub's `.dart_tool/package_graph.json`, without the project's own package.",
+    },
+)
+
+def _hub_packages_of(deps):
+    """The `packages` target of the `flutter.pub` hub the first of `deps` from one belongs to."""
+    for dep in deps:
+        packages = PUB_HUBS.get(dep.repo_name)
+        if packages:
+            return packages
+    return None
 
 BUNDLE_ATTRS = {
     "pubspec": attr.label(
@@ -41,11 +59,19 @@ BUNDLE_ATTRS = {
     "pub_packages": attr.label(
         doc = "Every package of the lock (`@<hub>//packages`), so the package config " +
               "the tool reads lists dev dependencies too, as `pub get` writes it: " +
-              "`NOTICES` holds their licences. Without it, the packages of `deps`.",
+              "`NOTICES` holds their licences. By default the `packages` of the " +
+              "`flutter.pub` hub the first of `deps` that comes from one belongs to; " +
+              "without a hub, the packages of `deps`.",
         providers = [DartInfo],
         # Only the packages' files are read, and they do not depend on the
         # configuration; in the app's own (say Android) configuration a package
         # such as `test`, whose runner needs a Dart toolchain, would not resolve.
+        cfg = "exec",
+    ),
+    "_hub_packages": attr.label(
+        doc = "The default of `pub_packages`: the `packages` of the hub of `deps`.",
+        default = _hub_packages_of,
+        providers = [DartInfo],
         cfg = "exec",
     ),
     "build_name": attr.string(
@@ -100,10 +126,13 @@ def _tool_sdk_rel(f, marker):
     i = f.path.find(marker)
     return f.path[i:] if i >= 0 else None
 
+def _pub_packages(ctx):
+    return ctx.attr.pub_packages or ctx.attr._hub_packages
+
 def _bundle_infos(ctx):
     infos = [d[DartInfo] for d in ctx.attr.deps if DartInfo in d]
-    if ctx.attr.pub_packages:
-        infos.append(ctx.attr.pub_packages[DartInfo])
+    if _pub_packages(ctx):
+        infos.append(_pub_packages(ctx)[DartInfo])
     infos.append(ctx.attr._bundle_sky_engine[DartInfo])
     return infos
 
@@ -157,7 +186,15 @@ def _common_args(ctx, tool, flutter_sdk_info, mode, flavor, args, inputs, extra_
         before_each = "--package",
         uniquify = True,
     )
-    package_files = depset(transitive = [getattr(i, "transitive_package_files", depset()) for i in infos])
+    # Each package's own files, and the non-Dart files of its `lib/`: an asset
+    # spelled `packages/<name>/<path>` is read from `lib/<path>` of package
+    # `<name>`, whichever pubspec names it.
+    package_files = depset(transitive = [getattr(i, "transitive_package_files", depset()) for i in infos] + [i.transitive_resources for i in infos])
+    pub = _pub_packages(ctx)
+    graph = pub[FlutterPubPackagesInfo].package_graph if pub and FlutterPubPackagesInfo in pub else None
+    if graph:
+        args.add("--package-graph", graph.path)
+        inputs.append(graph)
 
     for f in tool.framework_shaders:
         args.add("--sdk", _tool_sdk_rel(f, "packages/flutter/lib/") + "=" + f.path)
@@ -392,7 +429,10 @@ def flutter_web_bundle(
     return output_dir
 
 def _flutter_pub_packages_impl(ctx):
-    return [dart_info_no_package(deps = ctx.attr.deps)]
+    return [
+        dart_info_no_package(deps = ctx.attr.deps),
+        FlutterPubPackagesInfo(package_graph = ctx.file.package_graph),
+    ]
 
 flutter_pub_packages = rule(
     implementation = _flutter_pub_packages_impl,
@@ -401,6 +441,10 @@ flutter_pub_packages = rule(
         "deps": attr.label_list(
             doc = "The lock's packages.",
             providers = [DartInfo],
+        ),
+        "package_graph": attr.label(
+            doc = "The lock's package graph (`@<hub>//:package_graph.json`), which the asset tool completes with the project's own package and the packages the lock does not plan.",
+            allow_single_file = [".json"],
         ),
     },
 )

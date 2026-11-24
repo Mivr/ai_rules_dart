@@ -23,7 +23,7 @@ and `flutter/macos.bzl:66-94` do the same for the platform packaging rules.
 ### Implementation: `flutter/private/*`
 
 The implementation is the 183 `.bzl` files directly under `flutter/private/`,
-plus subdirectories such as `flutter/private/gen_l10n/`. It holds rule
+plus subdirectories such as `flutter/private/android_model/`. It holds rule
 implementations, aspects, repository rules and the helpers they share. The Dart
 programs those rules run live under `flutter/private/tools/`, for example
 `kernel_filter.dart` and `merge_plists.dart`. The asset tool lives apart, in

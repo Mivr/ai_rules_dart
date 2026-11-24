@@ -1,6 +1,6 @@
 load("@android_model//:defs.bzl", "flutter_android_app")
 load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
-load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_gen_l10n", "flutter_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_test")
 load(
     "@rules_flutter//flutter:linux.bzl",
     "flutter_linux_bundle",
@@ -11,20 +11,14 @@ load(
 
 exports_files(["pubspec.lock"])
 
-# The generated source: gen-l10n output exists only under bazel-bin, at the
-# path stock `flutter gen-l10n` would write it to (lib/l10n/).
-flutter_gen_l10n(
-    name = "l10n",
-    arbs = glob(["lib/l10n/*.arb"]),
-)
-
+# The generated source: gen-l10n writes what l10n.yaml says under bazel-bin, at
+# the path stock `flutter gen-l10n` writes it to (lib/l10n/), and the app
+# depends on it with no target here. A copy the stock tool wrote into lib/l10n/
+# is left out of `srcs`.
 flutter_application(
     name = "app_flutter",
     package_name = "counter",
-    srcs = glob(
-        ["lib/**/*.dart"],
-        exclude = ["lib/l10n/app_localizations*.dart"],
-    ) + [":l10n"],
+    srcs = glob(["lib/**/*.dart"]),
     main = "lib/main.dart",
     pub_packages = "@deps//packages",
     deps = [

@@ -13,7 +13,6 @@ bazelrc_preset(
 pub_plan_test(
     name = "pub_plan_test",
     locks = {
-        "//flutter/private/gen_l10n:pubspec.lock": "//flutter/private/gen_l10n:pub_plan.json",
         "//tools/tool_deps:pubspec.lock": "//tools/tool_deps:pub_plan.json",
     },
 )
