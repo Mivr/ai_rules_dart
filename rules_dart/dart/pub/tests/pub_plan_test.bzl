@@ -65,7 +65,7 @@ def _fake_ctx(listings, facts = {}):
         files[output] = body if type(body) == "string" else json.encode(body)
         return struct(wait = wait_ok)
 
-    def read(path, watch = "auto"):
+    def read(path, watch = "auto"):  # buildifier: disable=unused-variable (the signature of `repository_ctx.read`)
         return files[path]
 
     return struct(download = download, read = read, facts = facts, requests = requests)

@@ -1196,6 +1196,9 @@ def android_model_app(
                 profiles.append(hub + artifact_target(e[1]) + "_profile")
     final_profiles = profiles  # the rules in the names of the final dex
 
+    # Set by the dex branch below (a build that is not minified), which the split packaging of a
+    # debuggable build reads.
+    ext, libs, app_dex, r_dex, merge = None, None, None, None, None
     if minified:
         # A release build: the whole program through R8, as AGP's R8 task runs it.
         rules = []
@@ -1520,7 +1523,7 @@ def android_model_app(
     if report:
         rdf_dependency_report(
             name = name + "_dependencies",
-            libraries = ["%s|%d|%s" % (l[0], l[1], l[2]) for l in report["libraries"]],
+            libraries = ["%s|%d|%s" % (lib[0], lib[1], lib[2]) for lib in report["libraries"]],
             library_dependencies = ["%d=%s" % (d[0], ",".join([str(i) for i in d[1]])) for d in report["library_dependencies"]],
             module_dependencies = [str(i) for i in report["module_dependencies"]],
             repositories = ["%s=%s" % (r[0], r[1]) for r in report["repositories"]],

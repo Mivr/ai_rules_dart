@@ -52,12 +52,10 @@ load(
     "make_dart2wasm_request",
     "web_build_mode",
     "web_compile_tool_inputs",
-    "web_mode_defines",
-    "web_renderer_defines",
     "web_sdk_files_for_dart2js",
 )
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "layering_output_groups", "layering_toolchains")
-load("//flutter/private:plugin_registrant.bzl", "generate_dart_plugin_registrant", "make_registrant_content")
+load("//flutter/private:plugin_registrant.bzl", "generate_dart_plugin_registrant")
 load(
     "//flutter/private:validation.bzl",
     "validate_base_href",
@@ -184,7 +182,7 @@ def _web_build_package_config(ctx, packages, all_srcs, is_debug):
     ctx.actions.write(build_package_config, generate_package_config(dbg_packages, dbg_srcs, build_package_config))
     return build_package_config, [f for f in dbg_srcs if f.is_directory]
 
-def _web_write_wrapper(ctx, packages, all_srcs, lib_root, plugins, registrant):
+def _web_write_wrapper(ctx, packages, all_srcs, lib_root, registrant):
     """Writes the engine-bootstrap wrapper main and returns the entrypoint.
 
     Flutter web ALWAYS needs this wrapper to properly initialize the engine
@@ -591,11 +589,11 @@ def _flutter_web_bundle_impl(ctx):
     lib_root = sources.lib_root
 
     # Generate web wrapper main with ui_web.bootstrapEngine().
-    plugins, registrant, packages, all_srcs = _web_inject_registrant(ctx, packages, all_srcs)
+    _, registrant, packages, all_srcs = _web_inject_registrant(ctx, packages, all_srcs)
 
     build_package_config, build_package_dirs = _web_build_package_config(ctx, packages, all_srcs, is_debug)
 
-    wrapped = _web_write_wrapper(ctx, packages, all_srcs, lib_root, plugins, registrant)
+    wrapped = _web_write_wrapper(ctx, packages, all_srcs, lib_root, registrant)
     config_file = wrapped.config_file
     all_srcs = wrapped.all_srcs
 

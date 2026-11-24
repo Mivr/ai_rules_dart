@@ -76,7 +76,7 @@ def hub_packages_of_package(by_package, package):
             return by_package[candidate]
     return None
 
-def project_pub_packages(kwargs):
+def project_pub_packages(kwargs):  # buildifier: disable=unnamed-macro (a helper that sets an argument of its caller's target; it declares nothing)
     """Sets `pub_packages` to the hub of the project's lock, unless it is set.
 
     For the app, test and web macros: the hub whose lock is in the target's

@@ -25,11 +25,6 @@ load(
     "precompute_hub_apple_pods",
 )
 load("//flutter/private:flutter_pub_cycle_breaks.bzl", "apply_cycle_breaks")
-load(
-    "//flutter/private:flutter_pub_lock_hub.bzl",
-    "hub_pub_packages_json",
-    "hub_scc_targets",
-)
 load("//flutter/private:flutter_pub_package.bzl", "spoke_dep_labels")
 load(
     "//flutter/private:flutter_pub_path.bzl",
@@ -40,7 +35,6 @@ load(
 )
 load(
     "//flutter/private:flutter_pub_scc_build.bzl",
-    "adapt_scc_member_overlay_content",
     "make_scc_member_build_content",
     "make_scc_merged_spoke_build_content",
     "scc_flutter_test_package_bzl_content",

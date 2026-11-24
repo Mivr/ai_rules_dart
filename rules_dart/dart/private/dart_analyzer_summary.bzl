@@ -217,8 +217,6 @@ def _summary_state(complete = False, empty_key = False, deps_complete = None):
     """The closure facts a `DartAnalyzerSummaryInfo` carries for its dependents."""
     return struct(complete = complete, empty_key = empty_key, deps_complete = deps_complete)
 
-_NO_STATE = _summary_state()
-
 def summary_complete(dep):
     """Whether a dependency's summary provider says its closure is fully covered.
 

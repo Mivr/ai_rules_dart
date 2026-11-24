@@ -1,7 +1,7 @@
 """Unit tests for common.bzl utilities."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageInfo")
+load("//dart:providers.bzl", "DartCompileInfo")
 load(
     "//dart/private:common.bzl",
     "check_single_root_package",

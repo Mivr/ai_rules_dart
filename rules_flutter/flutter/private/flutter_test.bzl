@@ -56,7 +56,6 @@ load(
     "derive_lib_root",
     "entry_point_library",
 )
-load("//flutter:providers.bzl", "FlutterInfo")
 load(
     "//flutter/private:app_entrypoint.bzl",
     "app_main_location",

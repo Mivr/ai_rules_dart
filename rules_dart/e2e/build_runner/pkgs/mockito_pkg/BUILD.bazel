@@ -1,4 +1,4 @@
-load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+load("@rules_dart//dart:defs.bzl", "dart_build_runner")
 load("//:reference.bzl", "stock_reference_test")
 
 OUTS = ["test/repository_test.mocks.dart"]

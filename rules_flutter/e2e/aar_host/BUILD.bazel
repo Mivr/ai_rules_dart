@@ -43,7 +43,7 @@ genrule(
     srcs = ["wrong_machine/AndroidManifest.xml"],
     outs = ["wrong_machine.aar"],
     cmd = "printf '\\177ELF\\002\\001\\001\\000\\000\\000\\000\\000\\000\\000\\000\\000\\003\\000\\076\\000\\001\\000\\000\\000' > $(RULEDIR)/libwrong_machine.so && " +
-          "$(execpath @bazel_tools//tools/zip:zipper) c $@ AndroidManifest.xml=$(location wrong_machine/AndroidManifest.xml) jni/arm64-v8a/libwrong_machine.so=$(RULEDIR)/libwrong_machine.so && " +
+          "$(execpath @bazel_tools//tools/zip:zipper) c $@ AndroidManifest.xml=$(execpath wrong_machine/AndroidManifest.xml) jni/arm64-v8a/libwrong_machine.so=$(RULEDIR)/libwrong_machine.so && " +
           "rm $(RULEDIR)/libwrong_machine.so",
     tags = ["manual"],
     tools = ["@bazel_tools//tools/zip:zipper"],

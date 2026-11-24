@@ -1589,7 +1589,7 @@ def _lib_kernel_gate(ctx, opaque, rule_deps):
         return "%s compiles no module: its dependencies %s provide none (`DartKernelInfo`)" % (ctx.label, ", ".join(missing))
     return tools, deps, dep_kernels, env
 
-def _lib_kernel_records(deps, dep_kernels, own_record, own_records):
+def _lib_kernel_records(deps, own_record, own_records):
     """Returns (records, raw, own_records), or why the closure is not modular (a string)."""
     raw = depset(transitive = [dep[DartInfo].transitive_packages for dep in deps if DartInfo in dep]).to_list()
     if own_records == None:
@@ -1703,7 +1703,7 @@ def _lib_kernel_slow_state(ctx, library, options, deps, dep_kernels):
       The state struct `library_kernel_info` compiles from, or why the precise
       records do not stay modular (a string).
     """
-    recs = _lib_kernel_records(deps, dep_kernels, library.own_record, library.own_records)
+    recs = _lib_kernel_records(deps, library.own_record, library.own_records)
     if type(recs) == "string":
         return recs
     records, raw, own_records = recs

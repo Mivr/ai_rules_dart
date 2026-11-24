@@ -12,7 +12,6 @@ load(
     "render_overlay_deps",
     "resolve_overlay",
     "resolve_overlay_roots",
-    "resolve_overlay_template",
 )
 load("//flutter/private:starlark_literal.bzl", "starlark_string_literal")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")

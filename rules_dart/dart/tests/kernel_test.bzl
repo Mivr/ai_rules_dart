@@ -34,7 +34,6 @@ load(
     "modular_executable_kernel",
     "modular_executable_tools",
     "multi_root_uri",
-    "no_kernel_module",
     "package_of_source",
     "stable_entry_path",
     "stable_path",
@@ -809,7 +808,7 @@ def _worker_execution_requirements_test_impl(ctx):
     env = unittest.begin(ctx)
     runs = []
 
-    def _declare_file(name, sibling = None):  # The real one places the file beside `sibling`.
+    def _declare_file(name, sibling = None):  # buildifier: disable=unused-variable (the real one places the file beside `sibling`)
         return struct(basename = name, path = "out/" + name, short_path = name)
 
     def _args():
@@ -890,7 +889,7 @@ def _unused_inputs_wiring_test_impl(ctx):
     runs = []
     added = []
 
-    def _declare_file(name, sibling = None):  # The real one places the file beside `sibling`.
+    def _declare_file(name, sibling = None):  # buildifier: disable=unused-variable (the real one places the file beside `sibling`)
         return struct(basename = name, path = "out/" + name, short_path = name)
 
     def _args():

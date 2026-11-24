@@ -241,10 +241,14 @@ _RUNNER_DEPS = [
     "yaml",
 ]
 
-def build_runner_targets(hub, version, builder_packages):
+def build_runner_targets(name, hub, version, builder_packages):
     """The targets of a hub's `build_runner` package, written by the hub.
 
     Args:
+      name: The name of the target `dart_build_runner(runner = ...)` names,
+        `build_runner` in the hub's `build_runner` package. The other targets
+        keep their fixed names: `builders.json` and `:runner` are read by
+        label.
       hub: The hub's name, for messages.
       version: The locked `build_runner` version, or "" when the lock has none.
       builder_packages: Dict of package name to the label of its `build.yaml`
@@ -255,7 +259,7 @@ def build_runner_targets(hub, version, builder_packages):
     err = build_runner_version_error(hub, version)
     if err:
         build_runner_unavailable(
-            name = "build_runner",
+            name = name,
             message = err,
             visibility = ["//visibility:public"],
         )
@@ -313,7 +317,7 @@ def build_runner_targets(hub, version, builder_packages):
         visibility = ["//visibility:public"],
     )
     build_runner_tool(
-        name = "build_runner",
+        name = name,
         runner = ":runner",
         package_graph = "//:package_graph.json",
         sdk_summary = ":sdk_summary",

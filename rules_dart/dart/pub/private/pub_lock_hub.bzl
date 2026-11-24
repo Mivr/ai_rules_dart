@@ -38,6 +38,7 @@ load("@rules_dart//dart/build_runner/private:build_runner.bzl", "build_runner_ta
 # package of it that may define builders. `dart_build_runner(runner = ...)`
 # names `:build_runner`.
 build_runner_targets(
+    name = "build_runner",
     hub = "{hub}",
     version = "{version}",
     builder_packages = {{

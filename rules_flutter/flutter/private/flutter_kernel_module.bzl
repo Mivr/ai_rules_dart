@@ -35,7 +35,6 @@ load(
     "owned_package_records",
     _DART_MODULAR_KERNEL_ATTRS = "MODULAR_KERNEL_ATTRS",
 )
-load("//flutter:providers.bzl", "FlutterInfo")
 load(
     "//flutter/private:app_entrypoint.bzl",
     "AGENT_DIR",
@@ -692,7 +691,7 @@ def _link_flutter_test_base(ctx, target_name, package_name, kmod, dep_closure, b
         base_kmods = depset(direct = [kmod], transitive = [dep_closure])
     return base_dill, base_keys, base_kmods
 
-def _modular_dep_state(label, rule_deps, own_record, flutter_sdk_info):
+def _modular_dep_state(label, rule_deps, own_record):
     """The validated dependency kernel state, or why the target compiles no module.
 
     Collects the deps' `FlutterKernelModuleInfo` values and checks the closure
@@ -703,7 +702,6 @@ def _modular_dep_state(label, rule_deps, own_record, flutter_sdk_info):
         label: The target's label, for the reason.
         rule_deps: The target's dependency Targets.
         own_record: The `DartPackageInfo` for the target's own package.
-        flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
 
     Returns:
         struct(dep_kernels, records, twins), or
@@ -841,7 +839,7 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
     if opaque != None:
         return _no_flutter_kernel_module("%s compiles no module: %s" % (ctx.label, opaque))
 
-    dep = _modular_dep_state(ctx.label, rule_deps = rule_deps, own_record = own_record, flutter_sdk_info = flutter_sdk_info)
+    dep = _modular_dep_state(ctx.label, rule_deps = rule_deps, own_record = own_record)
     if type(dep) == "string":
         return _no_flutter_kernel_module(dep)
 

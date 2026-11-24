@@ -1,8 +1,8 @@
 """Shared utilities for Dart rules."""
 
 load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
-load("//dart/private:dart_info.bzl", "derived_package_info", "package_lib_prefix")
-load("//dart/private:source_set.bzl", "needs_source_assembly", "package_for_index", "package_index")
+load("//dart/private:dart_info.bzl", "derived_package_info")
+load("//dart/private:source_set.bzl", "package_for_index", "package_index")
 
 visibility(["//dart/..."])
 

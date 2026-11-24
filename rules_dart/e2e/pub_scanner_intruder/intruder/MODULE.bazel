@@ -6,4 +6,4 @@ module(name = "toolchain_intruder")
 
 bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
 
-dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+use_extension("@rules_dart//dart:extensions.bzl", "dart")

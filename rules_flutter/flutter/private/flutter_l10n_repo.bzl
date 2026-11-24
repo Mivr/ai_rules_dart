@@ -85,7 +85,7 @@ def _option(data, key, default = None):
         return None
     return _norm(value)
 
-def _package_boundary(rctx, project_dir, rel_dir):
+def _package_boundary(project_dir, rel_dir):
     """The first directory between the project and `rel_dir` that holds a BUILD file, or None."""
     path = project_dir
     walked = []
@@ -147,7 +147,7 @@ def _flutter_l10n_repo_impl(rctx):
         if rel.startswith("..") or is_absolute_lock_path(rel):
             rctx.file("l10n.bzl", _l10n_bzl(rctx, error = "l10n.yaml: `%s: %s` is outside the project; Bazel builds a project's localizations inside it." % (what, rel)))
             return
-        boundary = _package_boundary(rctx, project_dir, rel)
+        boundary = _package_boundary(project_dir, rel)
         if boundary:
             rctx.file("l10n.bzl", _l10n_bzl(rctx, error = (
                 "l10n.yaml: `%s: %s` is inside %s, which holds a BUILD file and so is a Bazel package of its own; " +

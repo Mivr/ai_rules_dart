@@ -283,12 +283,11 @@ def _web_integration_test_compile(ctx, setup, entrypoint):
         outputs = compile_outputs,
     )
 
-def _web_integration_test_template_files(ctx, setup):
+def _web_integration_test_template_files(ctx):
     """Writes the harness's `web/` files: the page, its bootstrap and its manifest.
 
     Args:
         ctx: The rule context of the rule implementation that calls this helper.
-        setup: The `_web_integration_test_setup` struct.
 
     Returns:
         A struct with `index_template`, `bootstrap_template` and `manifest_json`.
@@ -370,7 +369,7 @@ def _flutter_integration_test_impl(ctx):
     # The harness's own page, bootstrap and manifest are the project's `web/`
     # files; the Flutter tool's own web code writes the directory around the
     # compiled program from them and the pubspec, as `flutter build web` does.
-    template_files = _web_integration_test_template_files(ctx, setup)
+    template_files = _web_integration_test_template_files(ctx)
     output_dir = ctx.actions.declare_directory(ctx.label.name + "_web")
     write_web_bundle(
         ctx,
