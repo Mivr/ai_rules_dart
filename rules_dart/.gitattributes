@@ -16,6 +16,10 @@ e2e/digest_mismatch export-ignore
 # of release archives so `@rules_dart//...` loads for every consumer.
 /dart/tests/ export-ignore
 
+# The Starlark unit tests of the pub rules load `//dart/tests:small_suite.bzl`,
+# which the line above removes.
+/dart/pub/tests/ export-ignore
+
 # Dev-only fixture package for the exported import check's test.
 /dev/ export-ignore
 

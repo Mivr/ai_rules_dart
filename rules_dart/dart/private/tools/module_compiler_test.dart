@@ -5,7 +5,7 @@
 //
 // The tool under test is the one module actions run: the exec SDK's module
 // compiler, built from the pinned sources of that SDK's tag (see
-// `//dart/tests:module_compiler_tools.bzl`).
+// `//dart/private:module_compiler_tools.bzl`).
 
 import 'dart:convert';
 import 'dart:io';

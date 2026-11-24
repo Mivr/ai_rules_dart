@@ -3,7 +3,7 @@ load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
 load("//dart/private:versions.bzl", "TOOL_VERSIONS")
-load("//dart/tests:module_compiler_tools.bzl", "module_compiler_tools")
+load("//dart/private:module_compiler_tools.bzl", "module_compiler_tools")
 
 dart_binary(
     name = "noop",
