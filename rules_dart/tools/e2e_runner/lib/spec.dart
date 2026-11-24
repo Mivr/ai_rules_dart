@@ -115,6 +115,7 @@ final class Command {
     this.replaceInFiles = const {},
     this.minTestsExecuted,
     this.expect,
+    this.os = const [],
   });
 
   /// Display name, used in error messages; defaults to the command text.
@@ -135,7 +136,19 @@ final class Command {
 
   /// Expected exit code / output markers, when set.
   final Expect? expect;
+
+  /// The host operating systems the command runs on (`linux`, `macos`,
+  /// `windows`); empty means every one. On another host the runner skips the
+  /// command, which is how a workspace says what it expects where the answer
+  /// differs: a build that works on Linux and is refused on a Mac.
+  final List<String> os;
+
+  /// Whether the command runs on [hostOs], as `Platform.operatingSystem` names it.
+  bool runsOn(String hostOs) => os.isEmpty || os.contains(hostOs);
 }
+
+/// The operating-system names a command's `os` may list.
+const Set<String> commandOperatingSystems = {'linux', 'macos', 'windows'};
 
 /// A parsed, validated spec.
 final class Spec {
@@ -155,6 +168,7 @@ const Set<String> _commandKeys = {
   'replace_in_files',
   'min_tests_executed',
   'expect',
+  'os',
 };
 const Set<String> _expectKeys = {
   'exit_code',
@@ -455,8 +469,18 @@ Command _parseCommand(Object? raw, String specPath, int index) {
       'min_tests_executed must be >= 1',
     );
   }
+  final os = _optStrings(map, 'os', specPath, resolvedName);
+  final unknown = os.where((o) => !commandOperatingSystems.contains(o));
+  if (unknown.isNotEmpty) {
+    throw SpecError(
+      'spec $specPath: command "$resolvedName": os names '
+      '${unknown.join(', ')}, which is not one of '
+      '${commandOperatingSystems.join(', ')}',
+    );
+  }
   return Command(
     name: resolvedName,
+    os: os,
     argv: argv,
     writeFiles: _parseWriteFiles(map['write_files'], specPath, resolvedName),
     replaceInFiles: _parseReplaceInFiles(

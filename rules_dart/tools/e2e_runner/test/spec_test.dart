@@ -282,4 +282,60 @@ void main() {
     );
     expect(spec.commands.single.expect!.testXmlContains, ['greets']);
   });
+
+  group('os', () {
+    test('a command without os runs everywhere', () {
+      final spec = parseSpec(
+        'schema: mivr-e2e-spec/1\n'
+        'commands:\n'
+        '  - run: bazel test //...\n',
+        specPath: 'p',
+      );
+      final command = spec.commands.single;
+      expect(command.os, isEmpty);
+      for (final host in ['linux', 'macos', 'windows']) {
+        expect(command.runsOn(host), isTrue);
+      }
+    });
+
+    test('a list names the hosts a command runs on', () {
+      final spec = parseSpec(
+        'schema: mivr-e2e-spec/1\n'
+        'commands:\n'
+        '  - name: t\n'
+        '    run: bazel test //...\n'
+        '    os: [linux, windows]\n'
+        '  - name: refused\n'
+        '    run: bazel build //...\n'
+        '    os: macos\n',
+        specPath: 'p',
+      );
+      final [t, refused] = spec.commands;
+      expect(t.runsOn('linux'), isTrue);
+      expect(t.runsOn('windows'), isTrue);
+      expect(t.runsOn('macos'), isFalse);
+      expect(refused.runsOn('macos'), isTrue);
+      expect(refused.runsOn('linux'), isFalse);
+    });
+
+    test('an unknown operating system is refused, naming it', () {
+      expect(
+        () => parseSpec(
+          'schema: mivr-e2e-spec/1\n'
+          'commands:\n'
+          '  - name: t\n'
+          '    run: bazel test //...\n'
+          '    os: [darwin]\n',
+          specPath: 'e2e/x/e2e.yaml',
+        ),
+        throwsA(
+          isA<SpecError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('darwin'), contains('e2e/x/e2e.yaml')),
+          ),
+        ),
+      );
+    });
+  });
 }

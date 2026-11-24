@@ -321,6 +321,13 @@ void _runOne(
   required _ExecContext context,
   required RunnerConfig config,
 }) {
+  if (!command.runsOn(Platform.operatingSystem)) {
+    stdout.writeln(
+      'skipping "${command.name}": it runs on ${command.os.join(', ')}, '
+      'this host is ${Platform.operatingSystem}',
+    );
+    return;
+  }
   applyWriteFiles(command, context.stagedDir);
   applyReplaceInFiles(command, context.stagedDir, config.specPath);
   final argv = resolveArgv(
