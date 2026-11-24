@@ -315,7 +315,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "fvrBsIE0DMH2kbKDrg0OwQ5CuH42hlcVdfcp91mG0tk=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4763,7 +4763,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "2tw0s4bec0wu5KM1nbrNe10ahPXPQwdMXqT5qaU6kqY=",
+        "bzlTransitiveDigest": "15sCNxNaT1Q1zDPuLOzD+8VQyl7rmmcAQKWssZsPNCo=",
         "usagesDigest": "767YBxWUJRLS6KYWwrwTmL56HoQodNDHBzgpRSVHw7Y=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4783,8 +4783,7 @@
           "FILE:@@//go_router_pkg/pubspec.lock 1cb788c0860167546ab7db7cbd011547fbf6d2aa2ef3ff1f754e5ba14f5f5d72",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "FILE:@@//go_router_pkg/pubspec.yaml 7c97921c553f210b552c66552f2c3b973bb125366e04031bccf516ed842feea8",
-          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
-          "FILE:@@//go_router_pkg/l10n.yaml ENOENT"
+          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -7621,10 +7620,25 @@
               }
             }
           },
+          "flutter_l10n_go_router_pkg": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "go_router_pkg",
+              "is_root": true,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
           "flutter_l10n": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
             "attributes": {
-              "projects": {}
+              "projects": {
+                "go_router_pkg": "flutter_l10n_go_router_pkg"
+              }
             }
           }
         },

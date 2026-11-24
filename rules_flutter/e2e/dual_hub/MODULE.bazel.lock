@@ -315,7 +315,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3395,7 +3395,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "2tw0s4bec0wu5KM1nbrNe10ahPXPQwdMXqT5qaU6kqY=",
+        "bzlTransitiveDigest": "15sCNxNaT1Q1zDPuLOzD+8VQyl7rmmcAQKWssZsPNCo=",
         "usagesDigest": "cZDn3IZHSgznBreQUEAf7HIK8zB8Elx5hpPmPDpiOW0=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3418,10 +3418,7 @@
           "FILE:@@//hub_a/pubspec.yaml ENOENT",
           "FILE:@@//hub_b/pubspec.yaml ENOENT",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
-          "FILE:@@//hub_a/dirlink_plugin/pubspec.yaml 954fa2654e1aaecfcd33ec2f7eaeb5c2c16c8fd0446dec02e9f05339c6233830",
-          "FILE:@@//hub_a/l10n.yaml ENOENT",
-          "FILE:@@//hub_a/dirlink_plugin/l10n.yaml ENOENT",
-          "FILE:@@//hub_b/l10n.yaml ENOENT"
+          "FILE:@@//hub_a/dirlink_plugin/pubspec.yaml 954fa2654e1aaecfcd33ec2f7eaeb5c2c16c8fd0446dec02e9f05339c6233830"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -4780,10 +4777,21 @@
               }
             }
           },
+          "flutter_l10n_hub_a_dirlink_plugin": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "hub_a/dirlink_plugin",
+              "is_root": false,
+              "hub": "hub_a",
+              "hub_packages": []
+            }
+          },
           "flutter_l10n": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
             "attributes": {
-              "projects": {}
+              "projects": {
+                "hub_a/dirlink_plugin": "flutter_l10n_hub_a_dirlink_plugin"
+              }
             }
           }
         },

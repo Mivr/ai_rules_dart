@@ -233,7 +233,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "EnKk6+NHUvPr0yk52ig50DVD9LJOSVPT2HwBp/Ad7CA=",
         "recordedInputs": [
           "REPO_MAPPING:,sqlite3 sqlite3+",

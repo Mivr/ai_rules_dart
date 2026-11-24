@@ -331,7 +331,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3411,7 +3411,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "woDUkrmU/3IFMdYd+lUV/hxJ2/fkfg0Re5FcnvWBsLQ=",
+        "bzlTransitiveDigest": "pm7xP/sEYVoTxD2xFIczBJXGyMTubFDJlygHvJAwIQc=",
         "usagesDigest": "gp15IlLyUYpLTeeH6jFZJ3ThuiNBWr6aOqk9s3b+A1g=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3431,8 +3431,7 @@
           "FILE:@@//pubspec.lock 52b5b8446323c8fded9be5e6e55bafdd9bd1d438aea9e6a5272410c7f5d22ae7",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "FILE:@@//pubspec.yaml 8b94a7612a6725223edc76f0cab08bd9bd93c4e32813a67e0b0a0132d4bbbcc3",
-          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
-          "FILE:@@//l10n.yaml 211ab002352f39f3c84113e72110cd78458cb07fece7ae1cef1e2adcecd4af79"
+          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {

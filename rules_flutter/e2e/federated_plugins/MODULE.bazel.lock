@@ -316,7 +316,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3396,7 +3396,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "2tw0s4bec0wu5KM1nbrNe10ahPXPQwdMXqT5qaU6kqY=",
+        "bzlTransitiveDigest": "15sCNxNaT1Q1zDPuLOzD+8VQyl7rmmcAQKWssZsPNCo=",
         "usagesDigest": "lE263ilyMa+JFyWmbZ3Yb76PHxscgv3itVP85DGPHTQ=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3421,13 +3421,7 @@
           "FILE:@@//packages/fed_chain/pubspec.yaml b1162b1a97623037271a70564f830e20b1d55569ff46a5f581ea5f2c2100ed96",
           "FILE:@@//packages/fed_sp/pubspec.yaml 907d5254f67c890dcb7995856c2f8dc599400e3d8d1ab9a1e87b5bfbb907b18e",
           "FILE:@@//packages/fed_sp_linux/pubspec.yaml dae5d752591f52ec89f235ac07e04b1adfcbb4113bde363eb16183d545acc09a",
-          "FILE:@@//packages/fed_wrapper/pubspec.yaml 73a531e40772058a65fd95e236272b7c653571b6b5eebfea4e7a20cf435a630f",
-          "FILE:@@//l10n.yaml ENOENT",
-          "FILE:@@//packages/fed_alt_linux/l10n.yaml ENOENT",
-          "FILE:@@//packages/fed_chain/l10n.yaml ENOENT",
-          "FILE:@@//packages/fed_sp/l10n.yaml ENOENT",
-          "FILE:@@//packages/fed_sp_linux/l10n.yaml ENOENT",
-          "FILE:@@//packages/fed_wrapper/l10n.yaml ENOENT"
+          "FILE:@@//packages/fed_wrapper/pubspec.yaml 73a531e40772058a65fd95e236272b7c653571b6b5eebfea4e7a20cf435a630f"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -4901,10 +4895,83 @@
               }
             }
           },
+          "flutter_l10n_root": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "",
+              "is_root": true,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_packages_fed_alt_linux": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "packages/fed_alt_linux",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_packages_fed_chain": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "packages/fed_chain",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_packages_fed_sp": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "packages/fed_sp",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_packages_fed_sp_linux": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "packages/fed_sp_linux",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_packages_fed_wrapper": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "packages/fed_wrapper",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
           "flutter_l10n": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
             "attributes": {
-              "projects": {}
+              "projects": {
+                "": "flutter_l10n_root",
+                "packages/fed_alt_linux": "flutter_l10n_packages_fed_alt_linux",
+                "packages/fed_chain": "flutter_l10n_packages_fed_chain",
+                "packages/fed_sp": "flutter_l10n_packages_fed_sp",
+                "packages/fed_sp_linux": "flutter_l10n_packages_fed_sp_linux",
+                "packages/fed_wrapper": "flutter_l10n_packages_fed_wrapper"
+              }
             }
           }
         },

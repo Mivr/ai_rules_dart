@@ -316,7 +316,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3396,7 +3396,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "2tw0s4bec0wu5KM1nbrNe10ahPXPQwdMXqT5qaU6kqY=",
+        "bzlTransitiveDigest": "15sCNxNaT1Q1zDPuLOzD+8VQyl7rmmcAQKWssZsPNCo=",
         "usagesDigest": "Er++BW4dljQ48sHpdS+Afal3rtLm8g4BfppkDsZyXPo=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3416,8 +3416,7 @@
           "FILE:@@//pubspec.lock c4354fb4312abfcc5274701fc2025565e8abd17d58027768c131cb43156f6401",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "FILE:@@//pubspec.yaml f678cef8ec29ccf687e6ea5d208e935b5dd92fe137573d6f97322ed1e7beacc8",
-          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
-          "FILE:@@//l10n.yaml ENOENT"
+          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -5269,10 +5268,23 @@
               }
             }
           },
+          "flutter_l10n_root": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "",
+              "is_root": true,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
           "flutter_l10n": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
             "attributes": {
-              "projects": {}
+              "projects": {
+                "": "flutter_l10n_root"
+              }
             }
           }
         },

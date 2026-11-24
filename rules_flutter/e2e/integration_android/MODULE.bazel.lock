@@ -322,7 +322,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3402,7 +3402,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "2tw0s4bec0wu5KM1nbrNe10ahPXPQwdMXqT5qaU6kqY=",
+        "bzlTransitiveDigest": "15sCNxNaT1Q1zDPuLOzD+8VQyl7rmmcAQKWssZsPNCo=",
         "usagesDigest": "EDnjaMETpMqGcNUKYE2I8aQWt+q9/UO8kv36yTVQqwI=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3425,11 +3425,7 @@
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
           "FILE:@@//android_greeting_plugin/pubspec.yaml dc720996d5e0ac1cf42edca9ad34817aab3fe2da98499b2174d1e3d6c480a2fb",
           "FILE:@@//federated/federated_greeting/pubspec.yaml 724b0626133675a61277d4df935a7985559c73d255b911e7a22b28c60775cd32",
-          "FILE:@@//federated/federated_greeting_android/pubspec.yaml fde3c21d8fad9c36d4bd6f91596ec260cd0336cfe9671de69f7f1c383cc5a1f6",
-          "FILE:@@//l10n.yaml 127dba966746103bf47ac41d4ca264daf8309eed125c77887e8a4f9072962d5d",
-          "FILE:@@//android_greeting_plugin/l10n.yaml ENOENT",
-          "FILE:@@//federated/federated_greeting/l10n.yaml ENOENT",
-          "FILE:@@//federated/federated_greeting_android/l10n.yaml ENOENT"
+          "FILE:@@//federated/federated_greeting_android/pubspec.yaml fde3c21d8fad9c36d4bd6f91596ec260cd0336cfe9671de69f7f1c383cc5a1f6"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -5395,11 +5391,53 @@
               ]
             }
           },
+          "flutter_l10n_android_greeting_plugin": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "android_greeting_plugin",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
+          "flutter_l10n_federated_federated_greeting": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "federated/federated_greeting",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
+          "flutter_l10n_federated_federated_greeting_android": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "federated/federated_greeting_android",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
           "flutter_l10n": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
             "attributes": {
               "projects": {
-                "": "flutter_l10n_root"
+                "": "flutter_l10n_root",
+                "android_greeting_plugin": "flutter_l10n_android_greeting_plugin",
+                "federated/federated_greeting": "flutter_l10n_federated_federated_greeting",
+                "federated/federated_greeting_android": "flutter_l10n_federated_federated_greeting_android"
               }
             }
           }

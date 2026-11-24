@@ -322,7 +322,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3402,7 +3402,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "2tw0s4bec0wu5KM1nbrNe10ahPXPQwdMXqT5qaU6kqY=",
+        "bzlTransitiveDigest": "15sCNxNaT1Q1zDPuLOzD+8VQyl7rmmcAQKWssZsPNCo=",
         "usagesDigest": "/nL4XQ/32U3LgNOvCQrn9AThZ0YozA5JJ8P8l6Ex7d0=",
         "recordedInputs": [
           "REPO_MAPPING:,sqlite3 sqlite3+",
@@ -3425,10 +3425,7 @@
           "FILE:@@//pubspec.yaml 7d5e5c47efc1c9f6023b81a0d4971a816ad4097220fbea2266e7fbc7f4ae3f6b",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
           "FILE:@@//native_add/pubspec.yaml 61fa9aff785fd5133c326319461fc36e5e01823465569bf9f03b6f245997d99c",
-          "FILE:@@//native_link/pubspec.yaml d69a68e9ecdabc93911cb959b431b02b506b56faaa14fdedd70fc0e5a3a7b26c",
-          "FILE:@@//l10n.yaml ENOENT",
-          "FILE:@@//native_add/l10n.yaml ENOENT",
-          "FILE:@@//native_link/l10n.yaml ENOENT"
+          "FILE:@@//native_link/pubspec.yaml d69a68e9ecdabc93911cb959b431b02b506b56faaa14fdedd70fc0e5a3a7b26c"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -5746,10 +5743,47 @@
               }
             }
           },
+          "flutter_l10n_root": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "",
+              "is_root": true,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_native_add": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "native_add",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_native_link": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "native_link",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
           "flutter_l10n": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
             "attributes": {
-              "projects": {}
+              "projects": {
+                "": "flutter_l10n_root",
+                "native_add": "flutter_l10n_native_add",
+                "native_link": "flutter_l10n_native_link"
+              }
             }
           }
         },

@@ -330,7 +330,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3410,7 +3410,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "woDUkrmU/3IFMdYd+lUV/hxJ2/fkfg0Re5FcnvWBsLQ=",
+        "bzlTransitiveDigest": "pm7xP/sEYVoTxD2xFIczBJXGyMTubFDJlygHvJAwIQc=",
         "usagesDigest": "Dce3yhqvkFb5oU3hrY3rnCq/nG0LRCpmIrQd/AD2V8g=",
         "recordedInputs": [
           "REPO_MAPPING:,deps__swiftpm-bigint ai_rules_flutter++flutter+deps__swiftpm-bigint",
@@ -3438,13 +3438,7 @@
           "FILE:@@//spm_graph_plugin/pubspec.yaml d33b8c4d780bc71f1e82afdde85898d1b5ba0f98bc978d3ab828fde857914dfd",
           "FILE:@@//spm_objc_plugin/pubspec.yaml 966aab103594f09ff41969a01b992aca7dba88d2759b054856218f2da8498012",
           "FILE:@@//xcframework_plugin/pubspec.yaml 43413cdbb0e6f19dec0f33f8d8c088a5090860d2d9147063af29ee63310ae797",
-          "FILE:@@//ios/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved fa0b156c2594e9a84f43db3e772379a2bfc0733bd8e7088309e80ff2f93c3fbc",
-          "FILE:@@//l10n.yaml eaf1d45991c01926f63c7939f17cca0ba34f7b6b497a06ecd39466e3993d9110",
-          "FILE:@@//pod_bigint_plugin/l10n.yaml ENOENT",
-          "FILE:@@//spm_bigint_plugin/l10n.yaml ENOENT",
-          "FILE:@@//spm_graph_plugin/l10n.yaml ENOENT",
-          "FILE:@@//spm_objc_plugin/l10n.yaml ENOENT",
-          "FILE:@@//xcframework_plugin/l10n.yaml ENOENT"
+          "FILE:@@//ios/Runner.xcworkspace/xcshareddata/swiftpm/Package.resolved fa0b156c2594e9a84f43db3e772379a2bfc0733bd8e7088309e80ff2f93c3fbc"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -10526,11 +10520,81 @@
               ]
             }
           },
+          "flutter_l10n_pod_bigint_plugin": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "pod_bigint_plugin",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
+          "flutter_l10n_spm_bigint_plugin": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "spm_bigint_plugin",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
+          "flutter_l10n_spm_graph_plugin": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "spm_graph_plugin",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
+          "flutter_l10n_spm_objc_plugin": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "spm_objc_plugin",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
+          "flutter_l10n_xcframework_plugin": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "xcframework_plugin",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
           "flutter_l10n": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
             "attributes": {
               "projects": {
-                "": "flutter_l10n_root"
+                "": "flutter_l10n_root",
+                "pod_bigint_plugin": "flutter_l10n_pod_bigint_plugin",
+                "spm_bigint_plugin": "flutter_l10n_spm_bigint_plugin",
+                "spm_graph_plugin": "flutter_l10n_spm_graph_plugin",
+                "spm_objc_plugin": "flutter_l10n_spm_objc_plugin",
+                "xcframework_plugin": "flutter_l10n_xcframework_plugin"
               }
             }
           }

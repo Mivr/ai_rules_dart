@@ -292,7 +292,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3w4gOz6Hp3etH7JjfObZHaVwMzq4lBKSTCSltaRGgjo=",
+        "bzlTransitiveDigest": "djtD5AgvSpkyjkx6sw5e5jzsBHIp7gpXik4WEAVVv3E=",
         "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3372,7 +3372,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "2tw0s4bec0wu5KM1nbrNe10ahPXPQwdMXqT5qaU6kqY=",
+        "bzlTransitiveDigest": "15sCNxNaT1Q1zDPuLOzD+8VQyl7rmmcAQKWssZsPNCo=",
         "usagesDigest": "wON3RlziNJUIYXtV4LSnMjtQVpmDmguG52KXPLxb/PM=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3398,14 +3398,7 @@
           "FILE:@@//cycle_b/pubspec.yaml ac4096dc094d2555fe260b1809087c6d820f7512bc1552f4f6cc0243b30d3ce8",
           "FILE:@@//tri_a/pubspec.yaml e2d646c90ddcc789e9fde8147c615d1205a93d66347e82da7219ed602777ab5f",
           "FILE:@@//tri_b/pubspec.yaml 64ebea6e9b6379053b7aad0c705d4e2a29d3d05a3b5bbb35c61f516a39d3cf0d",
-          "FILE:@@//tri_c/pubspec.yaml b5479220f2da02c984669b84acd7fb0d15474e8eca08d762412a9a39ed79cc9b",
-          "FILE:@@//l10n.yaml ENOENT",
-          "FILE:@@//acyclic_pkg/l10n.yaml ENOENT",
-          "FILE:@@//cycle_a/l10n.yaml ENOENT",
-          "FILE:@@//cycle_b/l10n.yaml ENOENT",
-          "FILE:@@//tri_a/l10n.yaml ENOENT",
-          "FILE:@@//tri_b/l10n.yaml ENOENT",
-          "FILE:@@//tri_c/l10n.yaml ENOENT"
+          "FILE:@@//tri_c/pubspec.yaml b5479220f2da02c984669b84acd7fb0d15474e8eca08d762412a9a39ed79cc9b"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -4828,10 +4821,95 @@
               }
             }
           },
+          "flutter_l10n_root": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "",
+              "is_root": true,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_acyclic_pkg": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "acyclic_pkg",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_cycle_a": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "cycle_a",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_cycle_b": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "cycle_b",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_tri_a": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "tri_a",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_tri_b": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "tri_b",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
+          "flutter_l10n_tri_c": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "tri_c",
+              "is_root": false,
+              "hub": "deps",
+              "hub_packages": [
+                "flutter"
+              ]
+            }
+          },
           "flutter_l10n": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
             "attributes": {
-              "projects": {}
+              "projects": {
+                "": "flutter_l10n_root",
+                "acyclic_pkg": "flutter_l10n_acyclic_pkg",
+                "cycle_a": "flutter_l10n_cycle_a",
+                "cycle_b": "flutter_l10n_cycle_b",
+                "tri_a": "flutter_l10n_tri_a",
+                "tri_b": "flutter_l10n_tri_b",
+                "tri_c": "flutter_l10n_tri_c"
+              }
             }
           }
         },
