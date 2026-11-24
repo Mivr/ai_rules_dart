@@ -100,6 +100,12 @@ def _digest_impl(ctx):
     digest_case(name = "bad_wrong", fixture = fixture, sha256 = _WRONG_DIGEST)
     digest_case(name = "good", fixture = fixture, sha256 = _GOOD_DIGEST)
 
+    # The repositories come from the tag and constants only: nothing here
+    # depends on the machine. Without this, the lockfile records the extension
+    # with the digest of every `.bzl` file `@rules_dart//dart:utils.bzl` loads,
+    # so any edit to a rule changes this lockfile and no other.
+    return ctx.extension_metadata(reproducible = True)
+
 digest = module_extension(
     implementation = _digest_impl,
     tag_classes = {"fixture": _fixture},
