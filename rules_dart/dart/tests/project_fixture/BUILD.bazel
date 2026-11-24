@@ -1,0 +1,124 @@
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+load("//dart/tests:project_defaults_test.bzl", "project_defaults_refused_test", "project_defaults_test")
+
+exports_files(["pubspec.lock"])
+
+dart_library(
+    name = "project_fixture",
+    package_name = "project_fixture",
+    srcs = ["lib/project_fixture.dart"],
+    tags = ["manual"],
+)
+
+dart_binary(
+    name = "tool",
+    main = "bin/tool.dart",
+    tags = ["manual"],
+)
+
+dart_test(
+    name = "a_test",
+    main = "test/a_test.dart",
+    tags = ["manual"],
+    deps = [":project_fixture"],
+)
+
+# A test that states its identity keeps it, and gets no `identity_from_pubspec`.
+dart_test(
+    name = "stated_test",
+    package_name = "project_fixture",
+    language_version = "3.8",
+    main = "test/a_test.dart",
+    tags = ["manual"],
+)
+
+project_defaults_test(
+    name = "library_defaults_test",
+    package_name = "project_fixture",
+    size = "small",
+    language_version = "3.6",
+    target_under_test = ":project_fixture",
+)
+
+project_defaults_test(
+    name = "binary_defaults_test",
+    package_name = "project_fixture",
+    size = "small",
+    identity_from_pubspec = "True",
+    language_version = "3.6",
+    target_under_test = ":tool",
+)
+
+project_defaults_test(
+    name = "test_defaults_test",
+    package_name = "project_fixture",
+    size = "small",
+    data = [
+        "@@//dart/tests/project_fixture:dart_test.yaml",
+        "@@//dart/tests/project_fixture:test/fixtures/data.json",
+    ],
+    identity_from_pubspec = "True",
+    language_version = "3.6",
+    pubspec = "@@//dart/tests/project_fixture:pubspec.yaml",
+    target_under_test = ":a_test",
+)
+
+project_defaults_test(
+    name = "stated_identity_kept_test",
+    package_name = "project_fixture",
+    size = "small",
+    data = [
+        "@@//dart/tests/project_fixture:dart_test.yaml",
+        "@@//dart/tests/project_fixture:test/fixtures/data.json",
+    ],
+    identity_from_pubspec = "False",
+    language_version = "3.8",
+    pubspec = "@@//dart/tests/project_fixture:pubspec.yaml",
+    target_under_test = ":stated_test",
+)
+
+# A library of the project's directory named otherwise than the pubspec: the
+# test, which takes the pubspec's name, fails naming both and the fix.
+dart_library(
+    name = "renamed",
+    package_name = "renamed",
+    srcs = ["lib/project_fixture.dart"],
+    tags = ["manual"],
+)
+
+dart_test(
+    name = "renamed_lib_test",
+    main = "test/a_test.dart",
+    tags = ["manual"],
+    deps = [":renamed"],
+)
+
+project_defaults_refused_test(
+    name = "renamed_library_refused_test",
+    size = "small",
+    message = "is package \"project_fixture\", the `name` its directory's pubspec.yaml states, but @@//dart/tests/project_fixture:renamed declares the same directory `dart/tests/project_fixture` as package \"renamed\". One directory is one package, and pub names it \"project_fixture\": set `package_name = \"project_fixture\"` on @@//dart/tests/project_fixture:renamed",
+    target_under_test = ":renamed_lib_test",
+)
+
+# A library stating another language version than the pubspec's.
+dart_library(
+    name = "versioned",
+    package_name = "project_fixture",
+    srcs = ["lib/project_fixture.dart"],
+    language_version = "3.10",
+    tags = ["manual"],
+)
+
+dart_test(
+    name = "versioned_lib_test",
+    main = "test/a_test.dart",
+    tags = ["manual"],
+    deps = [":versioned"],
+)
+
+project_defaults_refused_test(
+    name = "versioned_library_refused_test",
+    size = "small",
+    message = "the version its directory's pubspec.yaml gives, but @@//dart/tests/project_fixture:versioned, the same package, states 3.10. One package has one language version: drop `language_version` from @@//dart/tests/project_fixture:versioned",
+    target_under_test = ":versioned_lib_test",
+)
