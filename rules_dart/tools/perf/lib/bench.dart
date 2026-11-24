@@ -61,6 +61,8 @@ run and check options:
                          (default 45)
   --passes=N             measure each flow N times back to back (default 1);
                          `agree --rows=FILE` compares the first two
+  --settle=SECONDS       wait up to this long before each timed run for the
+                         1-minute load to fall under --noisy-load (default 0)
   --noisy-load=X         1-minute load above which a run is noisy (default:
                          a quarter of the processors)
   --android-bazelrc=FILE an rc file Android workspaces import
@@ -249,6 +251,7 @@ Future<Ctx> _ctx(_Opts o) async {
     noisyLoad:
         double.tryParse(o['noisy-load'] ?? '') ??
         Platform.numberOfProcessors / 4,
+    settle: Duration(seconds: int.tryParse(o['settle'] ?? '0') ?? 0),
     bazelrcLines: o.all('bazelrc-line'),
     androidBazelrc: o['android-bazelrc'],
     options: options,

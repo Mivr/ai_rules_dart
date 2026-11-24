@@ -52,6 +52,7 @@ final class Ctx {
     required this.stockEnv,
     required this.runs,
     required this.noisyLoad,
+    this.settle = Duration.zero,
     this.bazelrcLines = const [],
     this.androidBazelrc,
     this.options = const {},
@@ -82,6 +83,11 @@ final class Ctx {
 
   /// The 1-minute load average above which a run is noisy.
   final double noisyLoad;
+
+  /// How long a run may wait, after its untimed preparation, for the
+  /// 1-minute load to fall under [noisyLoad]: the load the harness's own
+  /// set-up and preparation leave behind is not noise from other work.
+  final Duration settle;
 
   /// Lines every copied or generated workspace's `.bazelrc.user` gets (a
   /// pub mirror, say).
@@ -200,6 +206,11 @@ Future<Row> measureFlow(Flow flow, Ctx c, {void Function(String)? say}) async {
     var discarded = 0;
     for (var i = 0; runs.length < c.runs; i++) {
       await flow.prepare(c, i);
+      final settleBy = DateTime.now().add(c.settle);
+      while ((c.host.load1() ?? 0) > c.noisyLoad &&
+          DateTime.now().isBefore(settleBy)) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
       final load = c.host.load1() ?? -1;
       loads.add(load);
       servers.add(c.host.otherBazelServers(ob));
