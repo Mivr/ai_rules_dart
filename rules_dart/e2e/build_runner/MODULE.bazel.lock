@@ -229,17 +229,24 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "3+azEXI5LnCUzwlhEp2pLw7zFmg41YrGdsH+9dCYEiA=",
-        "usagesDigest": "xRtA3IcI6Sfd0xOW8DdxBQXmtqmYibDzklkkyrHvuGo=",
+        "bzlTransitiveDigest": "OAtcP3CcxrNt28m7uO7F1OvY7Foc74DDpIhzybR1jwE=",
+        "usagesDigest": "NUXPUpqSCZQLe68mrrSTciZasoZy9AISrnuVsod8WtA=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
           "FILE:@@//pubspec.lock ff8f73e84fea8ec4a1c2271d8eb51ca07fe18baaee8cec3705a443822fe097cd",
           "FILE:@@//errors/old/pubspec.lock 5b5a8ff5f3217389f8fdbee6a94868e7baf7f2c95e7f098626edcdf729fdd70a",
           "FILE:@@//errors/none/pubspec.lock c3dd6ee61cf6d0b7063c4cab9cb84572b9f7f187c5595ce01b5605be20dfee1b",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock 1452d104de06eacf15905878d31e7b7c84bf72114637fee0c87da2c75dcf58da",
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 131b54a6760682dea8f631e6a52e48a43555cfb0479ebe5aca1cc647dc36cd7c",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
-          "FILE:@@ai_rules_dart+//dart/ext/pub_plan.json 9a8318baca7377e3c4307c68140729577b22c816a17f7810980cdb35ca906598"
+          "FILE:@@ai_rules_dart+//dart/ext/pub_plan.json 9a8318baca7377e3c4307c68140729577b22c816a17f7810980cdb35ca906598",
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pub_plan.json f6a39248934c419f51f8672259b7de3991c860fa4ba9c1422608f981cf8868d1",
+          "FILE:@@//pubspec.yaml 44f7b56cbcc6020ab2bd34b59e6856a0548150c7b244519038341d2d50ee9f54",
+          "FILE:@@//errors/old/pubspec.yaml 4ebc7416b074e398b279fe3853ca54b47a8eaf531b324f74a4fadc166bb5a894",
+          "FILE:@@//errors/none/pubspec.yaml baf2c65ec8f6bc273a6d9b4dd09674d4f1ebfe840d2d4d773feb20bca9965625",
+          "FILE:@@ai_rules_dart+//dart/ext/pubspec.yaml 169951c2e1973cc403daba2bbd1179e4a73e1f5be390d0572f69531211e5bdee",
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 1d4a082706d3df1ae1f7694f5563f22af91dcbcf6be6d5dc8e16487ae54e55b7"
         ],
         "generatedRepoSpecs": {
           "dart_pub___fe_analyzer_shared": {
@@ -255,8 +262,6 @@
               "deps": [
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -298,8 +303,6 @@
                 "@dart_pub__watcher//:watcher",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -327,8 +330,6 @@
                 "@dart_pub__path//:path",
                 "@dart_pub__source_gen//:source_gen"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -344,8 +345,6 @@
               "url": "https://pub.dev/api/archives/ansicolor-2.0.3.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -361,8 +360,6 @@
               "url": "https://pub.dev/api/archives/args-2.7.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -384,8 +381,6 @@
                 "@dart_pub__collection//:collection",
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -407,8 +402,6 @@
                 "@dart_pub__source_span//:source_span",
                 "@dart_pub__string_scanner//:string_scanner"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -438,8 +431,6 @@
                 "@dart_pub__package_config//:package_config",
                 "@dart_pub__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -465,8 +456,6 @@
                 "@dart_pub__path//:path",
                 "@dart_pub__pubspec_parse//:pubspec_parse"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -514,8 +503,6 @@
                 "@dart_pub__web_socket_channel//:web_socket_channel",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -593,8 +580,6 @@
                 "@dart_pub__web_socket_channel//:web_socket_channel",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -610,8 +595,6 @@
               "url": "https://pub.dev/api/archives/built_collection-5.1.2.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -637,8 +620,6 @@
                 "@dart_pub__fixnum//:fixnum",
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -670,8 +651,6 @@
                 "@dart_pub__collection//:collection",
                 "@dart_pub__source_gen//:source_gen"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -687,8 +666,6 @@
               "url": "https://pub.dev/api/archives/charcode-1.4.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -712,8 +689,6 @@
                 "@dart_pub__source_span//:source_span",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -735,8 +710,6 @@
                 "@dart_pub__args//:args",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -760,8 +733,6 @@
                 "@dart_pub__meta//:meta",
                 "@dart_pub__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -777,8 +748,6 @@
               "url": "https://pub.dev/api/archives/clock-1.1.3.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -802,8 +771,6 @@
                 "@dart_pub__hooks//:hooks",
                 "@dart_pub__logging//:logging"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -831,8 +798,6 @@
                 "@dart_pub__matcher//:matcher",
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -848,8 +813,6 @@
               "url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -869,8 +832,6 @@
               "deps": [
                 "@dart_pub__typed_data//:typed_data"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -912,8 +873,6 @@
                 "@dart_pub__vm_service//:vm_service",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -929,8 +888,6 @@
               "url": "https://pub.dev/api/archives/crypto-3.0.8.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -964,8 +921,6 @@
                 "@dart_pub__source_span//:source_span",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1001,8 +956,6 @@
                 "@dart_pub__stream_channel//:stream_channel",
                 "@dart_pub__web//:web"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1070,8 +1023,6 @@
                 "@dart_pub__yaml//:yaml",
                 "@dart_pub__yaml_edit//:yaml_edit"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1087,8 +1038,6 @@
               "url": "https://pub.dev/api/archives/ffi-2.2.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1110,8 +1059,6 @@
                 "@dart_pub__meta//:meta",
                 "@dart_pub__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1127,8 +1074,6 @@
               "url": "https://pub.dev/api/archives/fixnum-1.1.1.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1168,8 +1113,6 @@
                 "@dart_pub__pub_semver//:pub_semver",
                 "@dart_pub__source_gen//:source_gen"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1193,8 +1136,6 @@
                 "@dart_pub__json_annotation//:json_annotation",
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1218,8 +1159,6 @@
                 "@dart_pub__package_config//:package_config",
                 "@dart_pub__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1243,8 +1182,6 @@
                 "@dart_pub__collection//:collection",
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1272,8 +1209,6 @@
                 "@dart_pub__path//:path",
                 "@dart_pub__string_scanner//:string_scanner"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1293,8 +1228,6 @@
               "deps": [
                 "@dart_pub__collection//:collection"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1324,8 +1257,6 @@
                 "@dart_pub__record_use//:record_use",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1353,8 +1284,6 @@
                 "@dart_pub__vm_service//:vm_service",
                 "@dart_pub__watcher//:watcher"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1374,8 +1303,6 @@
               "deps": [
                 "@dart_pub__async//:async"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1401,8 +1328,6 @@
                 "@dart_pub__string_scanner//:string_scanner",
                 "@dart_pub__typed_data//:typed_data"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1424,8 +1349,6 @@
                 "@dart_pub__get_it//:get_it",
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1467,8 +1390,6 @@
                 "@dart_pub__recase//:recase",
                 "@dart_pub__source_gen//:source_gen"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1492,8 +1413,6 @@
                 "@dart_pub__path//:path",
                 "@dart_pub__string_scanner//:string_scanner"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1513,8 +1432,6 @@
               "deps": [
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1556,8 +1473,6 @@
                 "@dart_pub__source_gen//:source_gen",
                 "@dart_pub__source_helper//:source_helper"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1607,8 +1522,6 @@
                 "@dart_pub__xxh3//:xxh3",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1628,8 +1541,6 @@
               "deps": [
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1645,8 +1556,6 @@
               "url": "https://pub.dev/api/archives/logging-1.3.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1674,8 +1583,6 @@
                 "@dart_pub__term_glyph//:term_glyph",
                 "@dart_pub__test_api//:test_api"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1691,8 +1598,6 @@
               "url": "https://pub.dev/api/archives/meta-1.19.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1708,8 +1613,6 @@
               "url": "https://pub.dev/api/archives/mime-2.1.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1747,8 +1650,6 @@
                 "@dart_pub__source_gen//:source_gen",
                 "@dart_pub__test_api//:test_api"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1782,8 +1683,6 @@
                 "@dart_pub__process//:process",
                 "@dart_pub__pub_semver//:pub_semver"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1799,8 +1698,6 @@
               "url": "https://pub.dev/api/archives/node_preamble-2.0.2.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1820,8 +1717,6 @@
               "deps": [
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1837,8 +1732,6 @@
               "url": "https://pub.dev/api/archives/path-1.9.1.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1858,8 +1751,6 @@
               "deps": [
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1881,8 +1772,6 @@
                 "@dart_pub__async//:async",
                 "@dart_pub__stack_trace//:stack_trace"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1906,8 +1795,6 @@
                 "@dart_pub__path//:path",
                 "@dart_pub__platform//:platform"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1931,8 +1818,6 @@
                 "@dart_pub__fixnum//:fixnum",
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1952,8 +1837,6 @@
               "deps": [
                 "@dart_pub__collection//:collection"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1981,8 +1864,6 @@
                 "@dart_pub__pub_semver//:pub_semver",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -1998,8 +1879,6 @@
               "url": "https://pub.dev/api/archives/recase-4.1.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2023,8 +1902,6 @@
                 "@dart_pub__meta//:meta",
                 "@dart_pub__pub_semver//:pub_semver"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2046,8 +1923,6 @@
                 "@dart_pub__scc__dio__dio_web_adapter//:dio",
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2083,8 +1958,6 @@
                 "@dart_pub__retrofit//:retrofit",
                 "@dart_pub__source_gen//:source_gen"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2120,8 +1993,6 @@
                 "@dart_pub__test_api//:test_api",
                 "@dart_pub__uuid//:uuid"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2155,8 +2026,6 @@
                 "@dart_pub__path//:path",
                 "@dart_pub__source_span//:source_span"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2178,8 +2047,6 @@
                 "@dart_pub__meta//:meta",
                 "@dart_pub__riverpod//:riverpod"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2219,8 +2086,6 @@
                 "@dart_pub__riverpod_annotation//:riverpod_annotation",
                 "@dart_pub__source_gen//:source_gen"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2231,7 +2096,7 @@
             "repoRuleId": "@@ai_rules_dart+//dart/pub:pub_lock_scc.bzl%pub_lock_scc_package",
             "attributes": {
               "repo_name": "dart_pub__scc__dio__dio_web_adapter",
-              "members_json": "[{\"code_assets\":[],\"deps\":[\"@dart_pub__async//:async\",\"@dart_pub__collection//:collection\",\"@dart_pub__http_parser//:http_parser\",\"@dart_pub__meta//:meta\",\"@dart_pub__mime//:mime\",\"@dart_pub__path//:path\"],\"ignore_hook\":false,\"name\":\"dio\",\"package_files\":[\"pubspec.yaml\",\"LICENSE*\"],\"planned_deps\":[\"async\",\"collection\",\"dio_web_adapter\",\"http_parser\",\"meta\",\"mime\",\"path\"],\"sha256\":\"852ec3b48cc431ac04fff978413c541502b67ffc3e26921e74e3d994694192c1\",\"source\":\"hosted\",\"url\":\"https://pub.dev/api/archives/dio-5.11.1.tar.gz\",\"version\":\"5.11.1\"},{\"code_assets\":[],\"deps\":[\"@dart_pub__http_parser//:http_parser\",\"@dart_pub__meta//:meta\",\"@dart_pub__web//:web\"],\"ignore_hook\":false,\"name\":\"dio_web_adapter\",\"package_files\":[\"pubspec.yaml\",\"LICENSE*\"],\"planned_deps\":[\"dio\",\"http_parser\",\"meta\",\"web\"],\"sha256\":\"3a1b2cd7be71086f38504956e3ebcd2837288d231ff454bafa78021244102bfc\",\"source\":\"hosted\",\"url\":\"https://pub.dev/api/archives/dio_web_adapter-2.2.2.tar.gz\",\"version\":\"2.2.2\"}]"
+              "members_json": "[{\"deps\":[\"@dart_pub__async//:async\",\"@dart_pub__collection//:collection\",\"@dart_pub__http_parser//:http_parser\",\"@dart_pub__meta//:meta\",\"@dart_pub__mime//:mime\",\"@dart_pub__path//:path\"],\"name\":\"dio\",\"package_files\":[\"pubspec.yaml\",\"LICENSE*\"],\"planned_deps\":[\"async\",\"collection\",\"dio_web_adapter\",\"http_parser\",\"meta\",\"mime\",\"path\"],\"sha256\":\"852ec3b48cc431ac04fff978413c541502b67ffc3e26921e74e3d994694192c1\",\"source\":\"hosted\",\"url\":\"https://pub.dev/api/archives/dio-5.11.1.tar.gz\",\"version\":\"5.11.1\"},{\"deps\":[\"@dart_pub__http_parser//:http_parser\",\"@dart_pub__meta//:meta\",\"@dart_pub__web//:web\"],\"name\":\"dio_web_adapter\",\"package_files\":[\"pubspec.yaml\",\"LICENSE*\"],\"planned_deps\":[\"dio\",\"http_parser\",\"meta\",\"web\"],\"sha256\":\"3a1b2cd7be71086f38504956e3ebcd2837288d231ff454bafa78021244102bfc\",\"source\":\"hosted\",\"url\":\"https://pub.dev/api/archives/dio_web_adapter-2.2.2.tar.gz\",\"version\":\"2.2.2\"}]"
             }
           },
           "dart_pub__shelf": {
@@ -2257,8 +2122,6 @@
                 "@dart_pub__stack_trace//:stack_trace",
                 "@dart_pub__stream_channel//:stream_channel"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2282,8 +2145,6 @@
                 "@dart_pub__shelf//:shelf",
                 "@dart_pub__shelf_static//:shelf_static"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2311,8 +2172,6 @@
                 "@dart_pub__path//:path",
                 "@dart_pub__shelf//:shelf"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2336,8 +2195,6 @@
                 "@dart_pub__stream_channel//:stream_channel",
                 "@dart_pub__web_socket_channel//:web_socket_channel"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2373,8 +2230,6 @@
                 "@dart_pub__source_span//:source_span",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2396,8 +2251,6 @@
                 "@dart_pub__analyzer//:analyzer",
                 "@dart_pub__source_gen//:source_gen"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2421,8 +2274,6 @@
                 "@dart_pub__source_maps//:source_maps",
                 "@dart_pub__stack_trace//:stack_trace"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2442,8 +2293,6 @@
               "deps": [
                 "@dart_pub__source_span//:source_span"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2467,8 +2316,6 @@
                 "@dart_pub__path//:path",
                 "@dart_pub__term_glyph//:term_glyph"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2506,10 +2353,6 @@
                 "@dart_pub__typed_data//:typed_data",
                 "@dart_pub__web//:web"
               ],
-              "code_assets": [
-                "@rules_dart//dart/ext/sqlite3:code_asset"
-              ],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2535,8 +2378,6 @@
                 "@dart_pub__meta//:meta",
                 "@dart_pub__source_span//:source_span"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2556,8 +2397,6 @@
               "deps": [
                 "@dart_pub__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2577,8 +2416,6 @@
               "deps": [
                 "@dart_pub__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2598,8 +2435,6 @@
               "deps": [
                 "@dart_pub__async//:async"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2615,8 +2450,6 @@
               "url": "https://pub.dev/api/archives/stream_transform-2.1.2.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2636,8 +2469,6 @@
               "deps": [
                 "@dart_pub__source_span//:source_span"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2653,8 +2484,6 @@
               "url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2722,8 +2551,6 @@
                 "@dart_pub__webkit_inspection_protocol//:webkit_inspection_protocol",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2759,8 +2586,6 @@
                 "@dart_pub__string_scanner//:string_scanner",
                 "@dart_pub__term_glyph//:term_glyph"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2820,8 +2645,6 @@
                 "@dart_pub__vm_service//:vm_service",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2841,8 +2664,6 @@
               "deps": [
                 "@dart_pub__collection//:collection"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2864,8 +2685,6 @@
                 "@dart_pub__crypto//:crypto",
                 "@dart_pub__fixnum//:fixnum"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2881,8 +2700,6 @@
               "url": "https://pub.dev/api/archives/vm_service-15.4.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2904,8 +2721,6 @@
                 "@dart_pub__async//:async",
                 "@dart_pub__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2921,8 +2736,6 @@
               "url": "https://pub.dev/api/archives/web-1.1.2.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2942,8 +2755,6 @@
               "deps": [
                 "@dart_pub__web//:web"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2971,8 +2782,6 @@
                 "@dart_pub__web//:web",
                 "@dart_pub__web_socket//:web_socket"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -2992,8 +2801,6 @@
               "deps": [
                 "@dart_pub__logging//:logging"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3009,8 +2816,6 @@
               "url": "https://pub.dev/api/archives/xxh3-1.2.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3034,8 +2839,6 @@
                 "@dart_pub__source_span//:source_span",
                 "@dart_pub__string_scanner//:string_scanner"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3061,8 +2864,6 @@
                 "@dart_pub__source_span//:source_span",
                 "@dart_pub__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3156,8 +2957,6 @@
               "deps": [
                 "@ext_pub_deps__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3199,8 +2998,6 @@
                 "@ext_pub_deps__watcher//:watcher",
                 "@ext_pub_deps__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3216,8 +3013,6 @@
               "url": "https://pub.dev/api/archives/args-2.7.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3239,8 +3034,6 @@
                 "@ext_pub_deps__collection//:collection",
                 "@ext_pub_deps__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3262,8 +3055,6 @@
                 "@ext_pub_deps__source_span//:source_span",
                 "@ext_pub_deps__string_scanner//:string_scanner"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3285,8 +3076,6 @@
                 "@ext_pub_deps__args//:args",
                 "@ext_pub_deps__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3310,8 +3099,6 @@
                 "@ext_pub_deps__meta//:meta",
                 "@ext_pub_deps__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3335,8 +3122,6 @@
                 "@ext_pub_deps__hooks//:hooks",
                 "@ext_pub_deps__logging//:logging"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3352,8 +3137,6 @@
               "url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3373,8 +3156,6 @@
               "deps": [
                 "@ext_pub_deps__typed_data//:typed_data"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3416,8 +3197,6 @@
                 "@ext_pub_deps__vm_service//:vm_service",
                 "@ext_pub_deps__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3437,8 +3216,6 @@
               "deps": [
                 "@ext_pub_deps__typed_data//:typed_data"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3472,8 +3249,6 @@
                 "@ext_pub_deps__source_span//:source_span",
                 "@ext_pub_deps__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3493,8 +3268,6 @@
               "deps": [
                 "@ext_pub_deps__hooks//:hooks"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3510,8 +3283,6 @@
               "url": "https://pub.dev/api/archives/ffi-2.2.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3533,8 +3304,6 @@
                 "@ext_pub_deps__meta//:meta",
                 "@ext_pub_deps__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3558,8 +3327,6 @@
                 "@ext_pub_deps__package_config//:package_config",
                 "@ext_pub_deps__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3587,8 +3354,6 @@
                 "@ext_pub_deps__path//:path",
                 "@ext_pub_deps__string_scanner//:string_scanner"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3618,8 +3383,6 @@
                 "@ext_pub_deps__record_use//:record_use",
                 "@ext_pub_deps__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3639,8 +3402,6 @@
               "deps": [
                 "@ext_pub_deps__async//:async"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3666,8 +3427,6 @@
                 "@ext_pub_deps__string_scanner//:string_scanner",
                 "@ext_pub_deps__typed_data//:typed_data"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3691,8 +3450,6 @@
                 "@ext_pub_deps__path//:path",
                 "@ext_pub_deps__string_scanner//:string_scanner"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3708,8 +3465,6 @@
               "url": "https://pub.dev/api/archives/logging-1.3.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3737,8 +3492,6 @@
                 "@ext_pub_deps__term_glyph//:term_glyph",
                 "@ext_pub_deps__test_api//:test_api"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3754,8 +3507,6 @@
               "url": "https://pub.dev/api/archives/meta-1.19.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3771,8 +3522,6 @@
               "url": "https://pub.dev/api/archives/mime-2.1.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3806,8 +3555,6 @@
                 "@ext_pub_deps__process//:process",
                 "@ext_pub_deps__pub_semver//:pub_semver"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3823,8 +3570,6 @@
               "url": "https://pub.dev/api/archives/node_preamble-2.0.2.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3844,8 +3589,6 @@
               "deps": [
                 "@ext_pub_deps__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3861,8 +3604,6 @@
               "url": "https://pub.dev/api/archives/path-1.9.1.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3882,8 +3623,6 @@
               "deps": [
                 "@ext_pub_deps__meta//:meta"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3905,8 +3644,6 @@
                 "@ext_pub_deps__async//:async",
                 "@ext_pub_deps__stack_trace//:stack_trace"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3930,8 +3667,6 @@
                 "@ext_pub_deps__path//:path",
                 "@ext_pub_deps__platform//:platform"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3951,8 +3686,6 @@
               "deps": [
                 "@ext_pub_deps__collection//:collection"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -3976,8 +3709,6 @@
                 "@ext_pub_deps__meta//:meta",
                 "@ext_pub_deps__pub_semver//:pub_semver"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4007,8 +3738,6 @@
                 "@ext_pub_deps__stack_trace//:stack_trace",
                 "@ext_pub_deps__stream_channel//:stream_channel"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4032,8 +3761,6 @@
                 "@ext_pub_deps__shelf//:shelf",
                 "@ext_pub_deps__shelf_static//:shelf_static"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4061,8 +3788,6 @@
                 "@ext_pub_deps__path//:path",
                 "@ext_pub_deps__shelf//:shelf"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4086,8 +3811,6 @@
                 "@ext_pub_deps__stream_channel//:stream_channel",
                 "@ext_pub_deps__web_socket_channel//:web_socket_channel"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4111,8 +3834,6 @@
                 "@ext_pub_deps__source_maps//:source_maps",
                 "@ext_pub_deps__stack_trace//:stack_trace"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4132,8 +3853,6 @@
               "deps": [
                 "@ext_pub_deps__source_span//:source_span"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4157,8 +3876,6 @@
                 "@ext_pub_deps__path//:path",
                 "@ext_pub_deps__term_glyph//:term_glyph"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4196,10 +3913,6 @@
                 "@ext_pub_deps__typed_data//:typed_data",
                 "@ext_pub_deps__web//:web"
               ],
-              "code_assets": [
-                "@rules_dart//dart/ext/sqlite3:code_asset"
-              ],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4219,8 +3932,6 @@
               "deps": [
                 "@ext_pub_deps__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4240,8 +3951,6 @@
               "deps": [
                 "@ext_pub_deps__async//:async"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4261,8 +3970,6 @@
               "deps": [
                 "@ext_pub_deps__source_span//:source_span"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4278,8 +3985,6 @@
               "url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4347,8 +4052,6 @@
                 "@ext_pub_deps__webkit_inspection_protocol//:webkit_inspection_protocol",
                 "@ext_pub_deps__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4384,8 +4087,6 @@
                 "@ext_pub_deps__string_scanner//:string_scanner",
                 "@ext_pub_deps__term_glyph//:term_glyph"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4445,8 +4146,6 @@
                 "@ext_pub_deps__vm_service//:vm_service",
                 "@ext_pub_deps__yaml//:yaml"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4466,8 +4165,6 @@
               "deps": [
                 "@ext_pub_deps__collection//:collection"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4483,8 +4180,6 @@
               "url": "https://pub.dev/api/archives/vm_service-15.4.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4506,8 +4201,6 @@
                 "@ext_pub_deps__async//:async",
                 "@ext_pub_deps__path//:path"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4523,8 +4216,6 @@
               "url": "https://pub.dev/api/archives/web-1.1.1.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4544,8 +4235,6 @@
               "deps": [
                 "@ext_pub_deps__web//:web"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4573,8 +4262,6 @@
                 "@ext_pub_deps__web//:web",
                 "@ext_pub_deps__web_socket//:web_socket"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4594,8 +4281,6 @@
               "deps": [
                 "@ext_pub_deps__logging//:logging"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4619,8 +4304,6 @@
                 "@ext_pub_deps__source_span//:source_span",
                 "@ext_pub_deps__string_scanner//:string_scanner"
               ],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4653,8 +4336,6 @@
               "url": "https://pub.dev/api/archives/meta-1.19.0.tar.gz",
               "planned_deps": [],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4714,8 +4395,6 @@
                 "web_socket_channel"
               ],
               "deps": [],
-              "code_assets": [],
-              "ignore_hook": false,
               "package_files": [
                 "pubspec.yaml",
                 "LICENSE*"
@@ -4856,6 +4535,470 @@
                 "source_gen": "@dart_pub__source_gen//:source_gen.build_yaml",
                 "source_helper": "@dart_pub__source_helper//:source_helper.build_yaml"
               }
+            }
+          },
+          "rules_dart_hook_runner_deps": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_hub.bzl%pub_lock_hub",
+            "attributes": {
+              "hub_name": "rules_dart_hook_runner_deps",
+              "spoke_prefix": "rules_dart_hook_runner_deps",
+              "packages": [
+                "args",
+                "async",
+                "code_assets",
+                "collection",
+                "crypto",
+                "data_assets",
+                "file",
+                "graphs",
+                "hooks",
+                "hooks_runner",
+                "logging",
+                "meta",
+                "package_config",
+                "path",
+                "pub_semver",
+                "record_use",
+                "source_span",
+                "string_scanner",
+                "term_glyph",
+                "typed_data",
+                "yaml"
+              ],
+              "explicit_packages": [],
+              "local_targets": {},
+              "unavailable": {},
+              "scc_targets": {},
+              "package_graph": "{\n  \"configVersion\": 1,\n  \"packages\": [\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"args\",\n      \"version\": \"2.7.0\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"async\",\n      \"version\": \"2.13.1\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"hooks\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"code_assets\",\n      \"version\": \"1.2.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"collection\",\n      \"version\": \"1.19.1\"\n    },\n    {\n      \"dependencies\": [\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"crypto\",\n      \"version\": \"3.0.7\"\n    },\n    {\n      \"dependencies\": [\n        \"hooks\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"data_assets\",\n      \"version\": \"0.20.0\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"file\",\n      \"version\": \"7.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"graphs\",\n      \"version\": \"2.3.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"crypto\",\n        \"logging\",\n        \"meta\",\n        \"pub_semver\",\n        \"record_use\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"hooks\",\n      \"version\": \"2.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"code_assets\",\n        \"collection\",\n        \"crypto\",\n        \"file\",\n        \"graphs\",\n        \"hooks\",\n        \"logging\",\n        \"meta\",\n        \"package_config\",\n        \"pub_semver\",\n        \"record_use\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"hooks_runner\",\n      \"version\": \"1.5.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"logging\",\n      \"version\": \"1.3.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"meta\",\n      \"version\": \"1.18.3\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"package_config\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"path\",\n      \"version\": \"1.9.1\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"pub_semver\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"meta\",\n        \"pub_semver\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"record_use\",\n      \"version\": \"0.6.0\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"path\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_span\",\n      \"version\": \"1.10.2\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"string_scanner\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"term_glyph\",\n      \"version\": \"1.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"typed_data\",\n      \"version\": \"1.4.0\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"yaml\",\n      \"version\": \"3.1.3\"\n    }\n  ],\n  \"roots\": []\n}\n",
+              "build_runner_version": "",
+              "builder_packages": {}
+            }
+          },
+          "rules_dart_hook_runner_deps__args": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "args",
+              "version": "2.7.0",
+              "sha256": "d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04",
+              "url": "https://pub.dev/api/archives/args-2.7.0.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__async": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "async",
+              "version": "2.13.1",
+              "sha256": "e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37",
+              "url": "https://pub.dev/api/archives/async-2.13.1.tar.gz",
+              "planned_deps": [
+                "collection",
+                "meta"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__collection//:collection",
+                "@rules_dart_hook_runner_deps__meta//:meta"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__code_assets": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "code_assets",
+              "version": "1.2.1",
+              "sha256": "bf394f466ba9205f1812a0433b392d6af280f155f56651eda7c18cc32ed493b8",
+              "url": "https://pub.dev/api/archives/code_assets-1.2.1.tar.gz",
+              "planned_deps": [
+                "collection",
+                "hooks"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__collection//:collection",
+                "@rules_dart_hook_runner_deps__hooks//:hooks"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__collection": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "collection",
+              "version": "1.19.1",
+              "sha256": "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76",
+              "url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__crypto": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "crypto",
+              "version": "3.0.7",
+              "sha256": "c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf",
+              "url": "https://pub.dev/api/archives/crypto-3.0.7.tar.gz",
+              "planned_deps": [
+                "typed_data"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__typed_data//:typed_data"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__data_assets": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "data_assets",
+              "version": "0.20.0",
+              "sha256": "8bfdbf25ec8a0f4b5a3c993042c4ab9996ba354f0b03d40f4e360f3730d71cae",
+              "url": "https://pub.dev/api/archives/data_assets-0.20.0.tar.gz",
+              "planned_deps": [
+                "hooks"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__hooks//:hooks"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__file": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "file",
+              "version": "7.0.1",
+              "sha256": "a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4",
+              "url": "https://pub.dev/api/archives/file-7.0.1.tar.gz",
+              "planned_deps": [
+                "meta",
+                "path"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__meta//:meta",
+                "@rules_dart_hook_runner_deps__path//:path"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__graphs": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "graphs",
+              "version": "2.3.2",
+              "sha256": "741bbf84165310a68ff28fe9e727332eef1407342fca52759cb21ad8177bb8d0",
+              "url": "https://pub.dev/api/archives/graphs-2.3.2.tar.gz",
+              "planned_deps": [
+                "collection"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__collection//:collection"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__hooks": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "hooks",
+              "version": "2.0.2",
+              "sha256": "9a62a50b50b769a737bc0a8ff381f333529df3ab746b2f6b02e83760231455ba",
+              "url": "https://pub.dev/api/archives/hooks-2.0.2.tar.gz",
+              "planned_deps": [
+                "collection",
+                "crypto",
+                "logging",
+                "meta",
+                "pub_semver",
+                "record_use",
+                "yaml"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__collection//:collection",
+                "@rules_dart_hook_runner_deps__crypto//:crypto",
+                "@rules_dart_hook_runner_deps__logging//:logging",
+                "@rules_dart_hook_runner_deps__meta//:meta",
+                "@rules_dart_hook_runner_deps__pub_semver//:pub_semver",
+                "@rules_dart_hook_runner_deps__record_use//:record_use",
+                "@rules_dart_hook_runner_deps__yaml//:yaml"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__hooks_runner": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "hooks_runner",
+              "version": "1.5.0",
+              "sha256": "a67ab8106545fcffcf5c43edf84b4be222fc95a9fbec8baef1bcaf4534540cfc",
+              "url": "https://pub.dev/api/archives/hooks_runner-1.5.0.tar.gz",
+              "planned_deps": [
+                "code_assets",
+                "collection",
+                "crypto",
+                "file",
+                "graphs",
+                "hooks",
+                "logging",
+                "meta",
+                "package_config",
+                "pub_semver",
+                "record_use",
+                "yaml"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__code_assets//:code_assets",
+                "@rules_dart_hook_runner_deps__collection//:collection",
+                "@rules_dart_hook_runner_deps__crypto//:crypto",
+                "@rules_dart_hook_runner_deps__file//:file",
+                "@rules_dart_hook_runner_deps__graphs//:graphs",
+                "@rules_dart_hook_runner_deps__hooks//:hooks",
+                "@rules_dart_hook_runner_deps__logging//:logging",
+                "@rules_dart_hook_runner_deps__meta//:meta",
+                "@rules_dart_hook_runner_deps__package_config//:package_config",
+                "@rules_dart_hook_runner_deps__pub_semver//:pub_semver",
+                "@rules_dart_hook_runner_deps__record_use//:record_use",
+                "@rules_dart_hook_runner_deps__yaml//:yaml"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__logging": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "logging",
+              "version": "1.3.0",
+              "sha256": "c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61",
+              "url": "https://pub.dev/api/archives/logging-1.3.0.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__meta": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "meta",
+              "version": "1.18.3",
+              "sha256": "c82594181e3312f3d0695fc95aaaf7758d75b8d4ae2bbecf223b9fd5109a059d",
+              "url": "https://pub.dev/api/archives/meta-1.18.3.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__package_config": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "package_config",
+              "version": "2.2.0",
+              "sha256": "f096c55ebb7deb7e384101542bfba8c52696c1b56fca2eb62827989ef2353bbc",
+              "url": "https://pub.dev/api/archives/package_config-2.2.0.tar.gz",
+              "planned_deps": [
+                "path"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__path//:path"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__path": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "path",
+              "version": "1.9.1",
+              "sha256": "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5",
+              "url": "https://pub.dev/api/archives/path-1.9.1.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__pub_semver": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "pub_semver",
+              "version": "2.2.0",
+              "sha256": "5bfcf68ca79ef689f8990d1160781b4bad40a3bd5e5218ad4076ddb7f4081585",
+              "url": "https://pub.dev/api/archives/pub_semver-2.2.0.tar.gz",
+              "planned_deps": [
+                "collection"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__collection//:collection"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__record_use": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "record_use",
+              "version": "0.6.0",
+              "sha256": "2551bd8eecfe95d14ae75f6021ad0248be5c27f138c2ec12fcb52b500b3ba1ed",
+              "url": "https://pub.dev/api/archives/record_use-0.6.0.tar.gz",
+              "planned_deps": [
+                "collection",
+                "meta",
+                "pub_semver"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__collection//:collection",
+                "@rules_dart_hook_runner_deps__meta//:meta",
+                "@rules_dart_hook_runner_deps__pub_semver//:pub_semver"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__source_span": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "source_span",
+              "version": "1.10.2",
+              "sha256": "56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab",
+              "url": "https://pub.dev/api/archives/source_span-1.10.2.tar.gz",
+              "planned_deps": [
+                "collection",
+                "path",
+                "term_glyph"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__collection//:collection",
+                "@rules_dart_hook_runner_deps__path//:path",
+                "@rules_dart_hook_runner_deps__term_glyph//:term_glyph"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__string_scanner": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "string_scanner",
+              "version": "1.4.1",
+              "sha256": "921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43",
+              "url": "https://pub.dev/api/archives/string_scanner-1.4.1.tar.gz",
+              "planned_deps": [
+                "source_span"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__source_span//:source_span"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__term_glyph": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "term_glyph",
+              "version": "1.2.2",
+              "sha256": "7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e",
+              "url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz",
+              "planned_deps": [],
+              "deps": [],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__typed_data": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "typed_data",
+              "version": "1.4.0",
+              "sha256": "f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006",
+              "url": "https://pub.dev/api/archives/typed_data-1.4.0.tar.gz",
+              "planned_deps": [
+                "collection"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__collection//:collection"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "rules_dart_hook_runner_deps__yaml": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "yaml",
+              "version": "3.1.3",
+              "sha256": "b9da305ac7c39faa3f030eccd175340f968459dae4af175130b3fc47e40d76ce",
+              "url": "https://pub.dev/api/archives/yaml-3.1.3.tar.gz",
+              "planned_deps": [
+                "collection",
+                "source_span",
+                "string_scanner"
+              ],
+              "deps": [
+                "@rules_dart_hook_runner_deps__collection//:collection",
+                "@rules_dart_hook_runner_deps__source_span//:source_span",
+                "@rules_dart_hook_runner_deps__string_scanner//:string_scanner"
+              ],
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
             }
           }
         },
