@@ -118,11 +118,12 @@ def _l10n_bzl(rctx, language_version, outputs = [], srcs = [], error = "", packa
     # `hubs`: each hub of the project's lock, in declaration order, as its
     # canonical repository name and the packages the generated files import
     # from it; a target takes the one its own `deps` come from (`l10n_attach`).
-    # `license` and `test_data`: the project files the macros add by default
+    # `license`, `test_data`, `test_configs` and `unlabelable`: the project
+    # files the macros add by default, and the ones they cannot
     # (`_project_files`).
     hubs = ["(Label(%r).repo_name, %s)" % ("@%s//:flutter" % hub, _hub_deps(rctx, hub)) for hub in rctx.attr.hubs]
-    files = files or struct(license = "", test_data = [])
-    return "L10N = struct(\n    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    analysis_options = %r,\n    language_version = %r,\n    hubs = [%s],\n    license = %r,\n    test_data = %r,\n)\n" % (
+    files = files or struct(license = "", test_data = [], test_configs = [], unlabelable = [])
+    return "L10N = struct(\n    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    analysis_options = %r,\n    language_version = %r,\n    hubs = [%s],\n    license = %r,\n    test_data = %r,\n    test_configs = %r,\n    unlabelable = %r,\n)\n" % (
         outputs,
         srcs,
         error,
@@ -132,11 +133,26 @@ def _l10n_bzl(rctx, language_version, outputs = [], srcs = [], error = "", packa
         ", ".join(hubs),
         files.license,
         files.test_data,
+        files.test_configs,
+        files.unlabelable,
     )
 
 # Directories under `test/` whose files are not fixtures: the stock golden
 # comparator writes its failure images to `failures/` next to the test.
 _NOT_FIXTURE_DIRS = ("failures",)
+
+# What a Bazel target name cannot hold, besides a character below a space and
+# DEL: `glob` returns such a file all the same, and the package then fails to
+# load ("invalid label"), every target of it.
+_NOT_IN_LABEL = (":", "\\", "\177")
+
+def _labelable(name):
+    return not [c for c in name.elems() if c < " " or c in _NOT_IN_LABEL]
+
+def _printable(name):
+    # As Bazel's own message spells a character a label cannot hold. A
+    # control character's `repr` (`\x01`) is not a Starlark escape.
+    return "".join(["<?>" if c < " " or c == "\177" else c for c in name.elems()])
 
 def _test_data(rctx, project_dir):
     """The files under `test/` a test of the project's package reads by default.
@@ -146,12 +162,25 @@ def _test_data(rctx, project_dir):
     is a package of its own, and its files are not listed. Each directory's
     listing is watched, so adding or removing a file fetches the repository
     again.
+
+    Returns:
+      `struct(test_data, test_configs, unlabelable)`: those files; the
+      `flutter_test_config.dart` files among the Dart sources (the project
+      root's included), which `flutter test` wraps the tests of their
+      directory in; and the files that cannot be a label (a `:`, a `\\`, a
+      control character in the name), with their names made printable.
     """
+    configs = []
+    top = project_dir.get_child("flutter_test_config.dart")
+    rctx.watch(top)
+    if top.exists and not top.is_dir:
+        configs.append("flutter_test_config.dart")
     root = rctx.path(str(project_dir) + "/test")
     rctx.watch(root)
     if not root.exists or not root.is_dir:
-        return []
+        return struct(test_data = [], test_configs = configs, unlabelable = [])
     found = []
+    unlabelable = []
     queue = [("test", root)]
     for _ in range(1000000):
         if not queue:
@@ -166,9 +195,13 @@ def _test_data(rctx, project_dir):
             if entry.is_dir:
                 if name not in _NOT_FIXTURE_DIRS:
                     queue.append((rel + "/" + name, entry))
+            elif not _labelable(rel + "/" + name):
+                unlabelable.append(_printable(rel + "/" + name))
+            elif name == "flutter_test_config.dart":
+                configs.append(rel + "/" + name)
             elif not name.endswith(".dart"):
                 found.append(rel + "/" + name)
-    return sorted(found)
+    return struct(test_data = sorted(found), test_configs = sorted(configs), unlabelable = sorted(unlabelable))
 
 def _project_files(rctx, project_dir):
     """The project files the macros add to a target by default: the licence file and the test fixtures."""
@@ -179,7 +212,8 @@ def _project_files(rctx, project_dir):
         if path.exists and not path.is_dir:
             license = name
             break
-    return struct(license = license, test_data = _test_data(rctx, project_dir))
+    tests = _test_data(rctx, project_dir)
+    return struct(license = license, test_data = tests.test_data, test_configs = tests.test_configs, unlabelable = tests.unlabelable)
 
 def pubspec_language_version(spec):
     """The `languageVersion` pub writes for the project: its `environment: sdk:` lower bound.

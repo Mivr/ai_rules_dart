@@ -195,7 +195,7 @@ def project_license(kwargs, l10n):
 # A helper of the macros that sets an argument, not a macro of its own.
 # buildifier: disable=unnamed-macro
 def project_test_data(kwargs, l10n):
-    """Adds the fixtures of the project's test tree to a test's `data`.
+    """Adds the fixtures of the project's test tree to a test's `data`, and its `flutter_test_config.dart` to `srcs`.
 
     `flutter test` runs a test with the project readable, and a test reads its
     fixtures by a path relative to the project: `test/fixtures/x.json`, the
@@ -205,6 +205,15 @@ def project_test_data(kwargs, l10n):
     the package. Files outside `test/` that a test reads (`lib/l10n/*.arb`, a
     platform manifest) are named in `data`.
 
+    `flutter test` also wraps a test in the `flutter_test_config.dart` nearest
+    its `main`, in its directory or above up to the project's: that file joins
+    `srcs` when `srcs` names none of the project's. What the config imports is
+    named in `srcs` as any other source.
+
+    A file under `test/` whose name cannot be a label (a `:`, a `\\` or a
+    control character in it) cannot be `data`: the tests of the package then
+    fail at analysis, naming those files, as one error.
+
     Args:
       kwargs: The target's arguments; changed in place.
       l10n: The `L10N_PROJECTS` table of `@flutter_l10n//:index.bzl`.
@@ -212,8 +221,55 @@ def project_test_data(kwargs, l10n):
     if native.repo_name():
         return
     project = l10n.get(native.package_name())
-    if project != None:
-        _add_project_files(kwargs, "data", getattr(project, "test_data", []))
+    if project == None:
+        return
+    _add_project_files(kwargs, "data", getattr(project, "test_data", []))
+    config = _nearest_test_config(kwargs.get("main"), getattr(project, "test_configs", []))
+    srcs = kwargs.get("srcs", [])
+    if config and not (type(srcs) == "list" and [s for s in srcs if type(s) == "string" and s.rpartition(":")[2].rpartition("/")[2] == "flutter_test_config.dart"]):
+        _add_project_files(kwargs, "srcs", [config])
+    unlabelable = getattr(project, "unlabelable", [])
+    if unlabelable:
+        name = "flutter_test_unlabelable_fixtures"
+        if not native.existing_rule(name):
+            _unlabelable_fixtures(
+                name = name,
+                files = unlabelable,
+                visibility = ["//visibility:private"],
+            )
+        _add_project_files(kwargs, "data", [":" + name])
+
+def _nearest_test_config(main, configs):
+    """The config of `configs` (package-relative paths) nearest `main`, or None."""
+    if not configs or type(main) != "string" or main.startswith("//") or main.startswith("@"):
+        return None
+    directory = main.removeprefix(":").rpartition("/")[0]
+    for _ in range(main.count("/") + 1):
+        candidate = (directory + "/" if directory else "") + "flutter_test_config.dart"
+        if candidate in configs:
+            return candidate
+        if not directory:
+            return None
+        directory = directory.rpartition("/")[0]
+    return None
+
+def _unlabelable_fixtures_impl(ctx):
+    fail(("{n} file(s) under the project's test/ cannot be Bazel labels, so no flutter_test of " +
+          "package //{pkg} has them as data: {files}. A target name cannot hold ':', '\\' or a control " +
+          "character. Rename them, or move them into a directory with a BUILD file of its own, " +
+          "whose files the default leaves out.").format(
+        n = len(ctx.attr.files),
+        pkg = ctx.label.package,
+        files = ", ".join(["'%s'" % f for f in ctx.attr.files]),
+    ))
+
+# The tests of a package whose `test/` holds a file no label can name depend
+# on this target, which fails at analysis naming the files: one error for the
+# package, rather than every target of it failing to load.
+_unlabelable_fixtures = rule(
+    implementation = _unlabelable_fixtures_impl,
+    attrs = {"files": attr.string_list()},
+)
 
 def language_version_default(kwargs, project):
     """The language version a target takes from its project, or None to leave its arguments alone.

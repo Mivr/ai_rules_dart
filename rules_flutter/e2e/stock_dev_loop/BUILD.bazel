@@ -36,11 +36,9 @@ flutter_application(
 )
 
 # The same test `flutter test` runs. Both tests are wrapped in
-# `test/flutter_test_config.dart`, as `flutter test` wraps them.
-TEST_CONFIG = [
-    "test/config_marker.dart",
-    "test/flutter_test_config.dart",
-]
+# `test/flutter_test_config.dart`, as `flutter test` wraps them: the macro adds
+# it to `srcs`, and `srcs` names what it imports.
+TEST_CONFIG = ["test/config_marker.dart"]
 
 flutter_test(
     name = "widget_test",

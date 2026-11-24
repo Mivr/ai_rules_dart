@@ -16,6 +16,17 @@ void main() {
     );
   });
 
+  test('a fixture whose name has a space or a non-ASCII letter is read', () {
+    expect(
+      File('test/fixtures/two words.txt').readAsStringSync(),
+      'two words\n',
+    );
+    expect(
+      jsonDecode(File('test/fixtures/über sicht.json').readAsStringSync()),
+      {'title': 'Übersicht'},
+    );
+  });
+
   test('flutter_test_config.dart wraps the test', () {
     expect(configuredBy, 'test/flutter_test_config.dart');
   });

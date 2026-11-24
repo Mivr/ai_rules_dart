@@ -1606,10 +1606,11 @@ Bazel's test protocol applies, as it does to `dart_test`:
   ```
 
   Forget it and the test fails as the Dart VM reports a missing file, `PathNotFoundException: Cannot open file, path = 'android/app/src/main/AndroidManifest.xml'`; the runner does not add a hint, since it would have to read the test's output to know.
+- **A file whose name cannot be a label is not.** A name may hold a space or any non-ASCII letter (`test/fixtures/über sicht.json` is `data` like any other), but a Bazel label cannot hold `:`, `\` or a control character. `glob` returns such a file anyway and the whole package then fails to load (`invalid label`), so the default leaves it out instead and the package's tests fail at analysis with one error naming every such file. Rename them, or move them into a directory with a BUILD file of its own.
 
 The test runs in its project's directory, as under `flutter test`: the directory of its `pubspec` (its Bazel package's without one), in runfiles. So these paths, and `File('pubspec.yaml')`, resolve as under `flutter test` for a project in a subdirectory of the workspace too. The runner hands `flutter_tester` absolute paths, goldens are read relative to the test file, and coverage reports name sources by their URIs, so none of them depends on that directory.
 
-A `flutter_test_config.dart` among the test's `srcs` wraps the test as under `flutter test`: the one in the test's directory or the nearest above it, up to the project's directory, has its `testExecutable` run around the test's `main`. It has to be in `srcs` to be found.
+The `flutter_test_config.dart` that `flutter test` wraps a test in, the one in the test's directory or the nearest above it up to the project's directory, wraps it here too: for a test in a project's package the macro adds it to `srcs` when `srcs` names none, and its `testExecutable` runs around the test's `main`. What it imports goes in `srcs`; a file it imports that is not there fails the compile, naming that file.
 
 Assets load as under `flutter test`: the runner gives `flutter_tester` the `UNIT_TEST_ASSETS` and `APP_NAME` that `flutter test` gives it, so `package:flutter_test` answers an asset load from the test's bundle at once, and an SVG or image a widget loads is there by the next frame.
 
