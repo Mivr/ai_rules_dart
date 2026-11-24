@@ -155,8 +155,9 @@ Future<void> _copyEntity(FileSystemEntity entity, String target) async {
   }
 }
 
-/// Points the scratch copy's `local_path_override` at the real repository and
-/// adds the scratch test, its source and the stale golden.
+/// Points the scratch copy's `local_path_override`s at the real repository (and
+/// its sibling `rules_dart/`) and adds the scratch test, its source and the
+/// stale golden.
 Future<void> _prepare(Directory workspace, Directory source) async {
   final module = File('${workspace.path}/MODULE.bazel');
   final repoRoot = source.parent.parent.absolute.path;
@@ -164,8 +165,15 @@ Future<void> _prepare(Directory workspace, Directory source) async {
   if (!text.contains('path = "../.."')) {
     throw _StepFailure('prepare', 'MODULE.bazel has no `path = "../.."`');
   }
+  const dartOverride = 'path = "../../../rules_dart"';
+  if (!text.contains(dartOverride)) {
+    throw _StepFailure('prepare', 'MODULE.bazel has no `$dartOverride`');
+  }
+  final dartRoot = '${source.parent.parent.parent.absolute.path}/rules_dart';
   await module.writeAsString(
-    text.replaceFirst('path = "../.."', 'path = "$repoRoot"'),
+    text
+        .replaceFirst('path = "../.."', 'path = "$repoRoot"')
+        .replaceFirst(dartOverride, 'path = "$dartRoot"'),
   );
   final build = File('${workspace.path}/BUILD.bazel');
   await build.writeAsString((await build.readAsString()) + _scratchBuild);
