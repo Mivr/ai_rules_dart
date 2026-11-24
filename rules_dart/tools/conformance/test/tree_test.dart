@@ -106,4 +106,42 @@ void main() {
     );
     expect(canonicalJson('not json'), isNull);
   });
+
+  test('the order of wasmHashes is its own item, apart from the hashes', () {
+    String bootstrap(String hashes) =>
+        '_flutter.buildConfig = {"engineRevision":"e","wasmHashes":$hashes,'
+        '"builds":[]};';
+    final Items s = webItems(
+      build('s', {
+        ...base,
+        'flutter_bootstrap.js': bootstrap('{"b.wasm":"2","a.wasm":"1"}'),
+      }),
+      Applied(),
+    );
+    final Items r = webItems(
+      build('r', {
+        ...base,
+        'flutter_bootstrap.js': bootstrap('{"a.wasm":"1","b.wasm":"2"}'),
+      }),
+      Applied(),
+    );
+    final diff = diffItems(s, r);
+    expect([for (final d in diff.differences) d.item], [wasmHashesOrderItem]);
+    expect(
+      diff.differences.single.detail,
+      'stock b.wasm, a.wasm, rules a.wasm, b.wasm',
+    );
+
+    final Items other = webItems(
+      build('o', {
+        ...base,
+        'flutter_bootstrap.js': bootstrap('{"a.wasm":"9","b.wasm":"2"}'),
+      }),
+      Applied(),
+    );
+    expect(
+      [for (final d in diffItems(r, other).differences) d.item],
+      ['bootstrap:flutter_bootstrap.js'],
+    );
+  });
 }

@@ -47,12 +47,57 @@ Items webItems(Directory root, Applied applied) {
       continue;
     }
     final List<int> bytes = File('${root.path}/$path').readAsBytesSync();
+    List<int> normalised = _normaliseText(path, bytes, applied);
+    if (path == 'flutter_bootstrap.js') {
+      final ({String text, List<String> order})? split = splitWasmHashesOrder(
+        utf8.decode(normalised, allowMalformed: true),
+      );
+      if (split != null) {
+        normalised = utf8.encode(split.text);
+        items[wasmHashesOrderItem] = Value(
+          _digest(utf8.encode(split.order.join('\n'))),
+          split.order.join(', '),
+        );
+      }
+    }
     items['${webCategory(path)}:$path'] = Value(
-      _digest(_normaliseText(path, bytes, applied)),
+      _digest(normalised),
       '${bytes.length} B',
     );
   }
   return items;
+}
+
+/// The item that holds the order of the keys of `wasmHashes` in
+/// `flutter_bootstrap.js`, apart from the file's content.
+const wasmHashesOrderItem = 'bootstrap:flutter_bootstrap.js:wasmHashes order';
+
+/// [text] with the keys of the build config's `wasmHashes` in sorted order,
+/// and the order they had; null when the text has no such object.
+///
+/// The order is the file system's listing order of the renderer's directory
+/// on the machine that built it, so it is its own item: the by-design list
+/// says which side sorts it, and the file's content is compared without it.
+({String text, List<String> order})? splitWasmHashesOrder(String text) {
+  final RegExpMatch? m = RegExp(r'"wasmHashes"\s*:\s*(\{[^{}]*\})')
+      .firstMatch(text);
+  if (m == null) return null;
+  final Object? hashes;
+  try {
+    hashes = jsonDecode(m[1]!);
+  } on FormatException {
+    return null;
+  }
+  if (hashes is! Map<String, Object?>) return null;
+  final List<String> sorted = hashes.keys.toList()..sort();
+  return (
+    text: text.replaceRange(
+      m.start,
+      m.end,
+      '"wasmHashes":${jsonEncode({for (final k in sorted) k: hashes[k]})}',
+    ),
+    order: hashes.keys.toList(),
+  );
 }
 
 /// [bytes], with the normalisers that apply to [path] applied.
