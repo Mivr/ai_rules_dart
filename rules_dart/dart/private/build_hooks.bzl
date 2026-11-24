@@ -26,7 +26,10 @@ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cc_toolchain", "use_cc_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 
-visibility(["//dart/...", "//flutter/...", "@rules_flutter//flutter/..."])
+# rules_flutter loads this file. A package specification naming another
+# repository (`@rules_flutter//flutter/...`) is refused by Bazel 9.0.0, the
+# floor, so the file is public to the loader, as `dart/utils.bzl` is.
+visibility("public")
 
 def _hook_runner_default(hook_srcs):
     """Only a library whose build hook runs names the runner.

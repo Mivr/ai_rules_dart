@@ -12,7 +12,10 @@ load("//dart/private:apple_hook_replacements.bzl", "APPLE_OS_CONSTRAINTS", "appl
 load("//dart/pub/private:pub_workspace.bzl", "pub_workspace_root")
 load("//dart/pub/private:yaml2json.bzl", "yaml_to_json")
 
-visibility(["//dart/...", "@rules_flutter//flutter/..."])
+# rules_flutter loads this file. A package specification naming another
+# repository (`@rules_flutter//flutter/...`) is refused by Bazel 9.0.0, the
+# floor, so the file is public to the loader, as `dart/utils.bzl` is.
+visibility("public")
 
 HOOK_TAG_ATTRS = {
     "hook_data": attr.label_keyed_string_dict(
