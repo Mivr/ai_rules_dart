@@ -284,7 +284,7 @@ void main() {
         () => layOut('// other\n'),
         throwsA(
           isA<LayoutException>().having(
-            (e) => e.message,
+            (e) => fwd(e.message),
             'message',
             allOf(
               startsWith(

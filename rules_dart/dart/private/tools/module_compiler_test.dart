@@ -28,6 +28,10 @@ void _write(String path, String text) => File('${_ws.path}/$path')
 
 Uint8List _read(String path) => File('${_ws.path}/$path').readAsBytesSync();
 
+/// A run's standard output with Windows' `\r\n` as `\n`.
+String _lines(ProcessResult result) =>
+    (result.stdout as String).replaceAll('\r\n', '\n');
+
 String _text(String path) => File('${_ws.path}/$path').readAsStringSync();
 
 List<String> _dills(String dir) => [
@@ -1087,7 +1091,7 @@ void main() => print('$fromRequest|$fromFile|$overridden');
     final ProcessResult result = _runLinked('out/entry.kmod', [
       'out/leaf.kmod',
     ]);
-    expect(result.stdout, 'a,b=c, d|bye, now|request\n');
+    expect(_lines(result), 'a,b=c, d|bye, now|request\n');
   });
 
   test('a module that imports a package it does not depend on directly is '
@@ -1242,7 +1246,7 @@ String headline() => greet('top');
     _write('app/main.dart', '''
 import 'dart:ffi';
 
-@Native<Int32 Function()>(symbol: 'getpid', assetId: 'package:app/pid')
+@Native<Int32 Function()>(symbol: '${Platform.isWindows ? '_getpid' : 'getpid'}', assetId: 'package:app/pid')
 external int getpid();
 
 void main() => print(getpid() > 0 ? 'resolved' : 'zero');
@@ -1269,7 +1273,7 @@ native-assets:
     _compile(_entryArgs('app/main.dart', deps: ['leaf']));
     final ProcessResult unmapped = _runLinked('out/entry.kmod', []);
     expect(unmapped.exitCode, 0, reason: '${unmapped.stderr}');
-    expect(unmapped.stdout, 'resolved\n');
+    expect(_lines(unmapped), 'resolved\n');
     _compile(_moduleArgs('leaf', out: 'mapped'));
     _compile(
       _entryArgs(
@@ -1281,7 +1285,10 @@ native-assets:
     );
     final ProcessResult mapped = _runLinked('mapped/entry.kmod', []);
     expect(mapped.exitCode, isNot(0));
-    expect(mapped.stderr, contains(lost));
+    expect(
+      mapped.stderr,
+      anyOf(contains(lost), contains(lost.replaceAll('/', r'\'))),
+    );
   });
 
   test('a library module refuses a native-assets mapping', () {

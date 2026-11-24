@@ -15,8 +15,14 @@ const _prompt =
     'bazel-out/x64_windows-fastbuild/bin/external/sqlite3/'
     'sqlite3.hook_tools/msvc_env.bat';
 
+// A path is absolute with a leading `/` or, on Windows, a drive.
 String _absolute(String path) =>
-    path.startsWith('/') ? path : '$_execRoot/$path';
+    path.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path)
+    ? path
+    : '$_execRoot/$path';
+
+/// [path] as the build input spells a file: `Uri.toFilePath()`.
+String _native(String path) => Uri.file(path).toFilePath();
 
 void _touch(String path) => File(path).createSync(recursive: true);
 
@@ -85,12 +91,12 @@ void main() {
       );
       expect(errors, isEmpty);
       final Map<String, Object?> json = _cCompilerJson(input);
-      expect(json['cc'], '$_msvc/cl.exe');
-      expect(json['ld'], '$_msvc/link.exe');
-      expect(json['ar'], '$_msvc/lib.exe');
+      expect(json['cc'], _native('$_msvc/cl.exe'));
+      expect(json['ld'], _native('$_msvc/link.exe'));
+      expect(json['ar'], _native('$_msvc/lib.exe'));
       expect(json['windows'], {
         'developer_command_prompt': {
-          'script': '$_execRoot/$_prompt',
+          'script': _native('$_execRoot/$_prompt'),
           'arguments': <String>[],
         },
       });
@@ -140,7 +146,10 @@ void main() {
     expect(errors, isEmpty);
     final Map<String, Object?> json = _cCompilerJson(input);
     expect(json.containsKey('windows'), isFalse);
-    expect(json['cc'], '$_execRoot/bazel-out/k8/bin/x.hook_tools/clang');
+    expect(
+      json['cc'],
+      _native('$_execRoot/bazel-out/k8/bin/x.hook_tools/clang'),
+    );
   });
 
   test('no C toolchain gives no c_compiler', () {
