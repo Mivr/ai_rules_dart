@@ -211,6 +211,7 @@ Future<int> _run(String command, ArgResults args) async {
     fs,
     scratch.childDirectory('project'),
     args,
+    command,
   );
 
   try {
@@ -328,7 +329,8 @@ void _stageFlutterRoot(
   });
   // Made here, so `Cache` does not make it and `chmod` it in a process: the
   // action has no `PATH` to find `chmod` on.
-  fs.directory(fs.path.join(root.path, 'bin', 'cache', 'artifacts'))
+  fs
+      .directory(fs.path.join(root.path, 'bin', 'cache', 'artifacts'))
       .createSync(recursive: true);
   final engine = <String, String>{
     'impellerc': artifacts.getHostArtifact(HostArtifact.impellerc).path,
@@ -373,7 +375,12 @@ void _stageFlutterRoot(
 /// per declared file, and `.dart_tool/` holding the package config and the
 /// package graph that `pub get` writes. The tool writes into it (gen-l10n
 /// does), so nothing it writes reaches the sources.
-Directory _stageProject(FileSystem fs, Directory staged, ArgResults args) {
+Directory _stageProject(
+  FileSystem fs,
+  Directory staged,
+  ArgResults args,
+  String command,
+) {
   final String source = _abs(args.option('project') ?? '.');
   _pairs(args.multiOption('project-file')).forEach((String rel, String file) {
     if (rel.startsWith('/') || fs.path.split(rel).contains('..')) {
@@ -435,6 +442,8 @@ Directory _stageProject(FileSystem fs, Directory staged, ArgResults args) {
           staged,
           packages,
           graph == null ? null : fs.file(_abs(graph)),
+          // gen-l10n reads no package of the project.
+          command == 'gen-l10n' ? null : '${args.option('label')}',
         ),
       );
   return staged;
@@ -459,6 +468,7 @@ String _packageGraph(
   Directory project,
   List<Package> packages,
   File? lockGraph,
+  String? label,
 ) {
   List<String> names(Object? section) => section is YamlMap
       ? (section.keys.cast<String>().toList()..sort())
@@ -506,6 +516,21 @@ String _packageGraph(
           map['dev_dependencies'],
         ).where(known.contains).toList(),
     });
+  }
+  // The tool reads the graph from the root and stops at the first package it
+  // has no entry for, saying to run `pub get`; here the fix is a BUILD edit.
+  final List<String> absent = <String>[
+    for (final entry in entries)
+      if (entry['name'] == rootName)
+        for (final dep in entry['dependencies']! as List<String>)
+          if (!known.contains(dep)) dep,
+  ];
+  if (label != null && absent.isNotEmpty) {
+    throwToolExit(
+      '$label: pubspec.yaml depends on ${absent.join(', ')}, which no '
+      'package of the target provides. Add ${absent.length == 1 ? 'its target' : 'their targets'} '
+      'to `deps`, or name the lock\'s packages with `pub_packages = "@<hub>//packages"`.',
+    );
   }
   return jsonEncode(<String, Object>{
     'roots': <String>[rootName],
@@ -856,7 +881,9 @@ Future<void> _genL10n(Environment environment, ArgResults args) async {
   // package it cannot resolve, and the action has none of the packages an
   // include names. The staged file keeps the project's own `formatter:`
   // section only (written as JSON, which is YAML).
-  final File options = environment.projectDir.childFile('analysis_options.yaml');
+  final File options = environment.projectDir.childFile(
+    'analysis_options.yaml',
+  );
   if (options.existsSync()) {
     final Object? yaml = loadYaml(options.readAsStringSync());
     final Object? formatter = yaml is YamlMap ? yaml['formatter'] : null;
@@ -864,18 +891,18 @@ Future<void> _genL10n(Environment environment, ArgResults args) async {
       fs.link(options.path).deleteSync();
     }
     options.writeAsStringSync(
-      jsonEncode(<String, Object?>{if (formatter != null) 'formatter': formatter}),
+      jsonEncode(<String, Object?>{
+        if (formatter != null) 'formatter': formatter,
+      }),
     );
   }
   await target.build(environment);
   final String project = environment.projectDir.path;
-  final record =
-      jsonDecode(
-            environment.buildDir
-                .childFile('gen_l10n_inputs_and_outputs.json')
-                .readAsStringSync(),
-          )
-          as Map<String, Object?>;
+  final record = jsonDecode(
+    environment.buildDir
+        .childFile('gen_l10n_inputs_and_outputs.json')
+        .readAsStringSync(),
+  ) as Map<String, Object?>;
   final Set<String> written = <String>{
     for (final String output
         in (record['outputs']! as List<Object?>).cast<String>())
@@ -890,7 +917,8 @@ Future<void> _genL10n(Environment environment, ArgResults args) async {
     fileSystem: fs,
     defaultArbDir: fs.path.join('lib', 'l10n'),
   ).untranslatedMessagesFile;
-  if (untranslated != null && fs.isFileSync(fs.path.join(project, untranslated))) {
+  if (untranslated != null &&
+      fs.isFileSync(fs.path.join(project, untranslated))) {
     written.add(fs.path.normalize(untranslated));
   }
   final List<String> missing = <String>[
@@ -918,9 +946,9 @@ Future<void> _genL10n(Environment environment, ArgResults args) async {
     fs
         .file(fs.path.join(project, rel))
         .copySync(
-          (fs.file(fs.path.join(environment.outputDir.path, rel))
-                ..parent.createSync(recursive: true))
-              .path,
+          (fs.file(
+            fs.path.join(environment.outputDir.path, rel),
+          )..parent.createSync(recursive: true)).path,
         );
   }
 }

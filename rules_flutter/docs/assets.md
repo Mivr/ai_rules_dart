@@ -51,7 +51,7 @@ flutter_application(
 - `pub_packages`: `@<hub>//packages`, to name the lock yourself (another hub,
   or an app none of whose `deps` comes from a hub). With no hub, the package
   config holds the packages `deps` reach. A regular dependency of the app
-  they miss fails the build, as a stale `pub get` does; any other package
+  they miss fails the build, naming the target and the package; any other package
   they miss (a dev dependency, or a package another package depends on) is
   left out, as none of its files are inputs.
 - A package's assets, fonts and shaders are bundled only when the app's

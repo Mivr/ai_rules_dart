@@ -186,11 +186,19 @@ def _apple_ios_privacy(apple):
         return apple.ios_privacy
     return []
 
-def _render_dart_member_content(package_name, language_version, version, plugin):
-    """Renders the `dart_package_member` block (and `test` runner when needed)."""
+def _render_dart_member_content(package_name, language_version, version, plugin, assets = None):
+    """Renders the `dart_package_member` block (and `test` runner when needed).
+
+    The member's `data` holds the files its pubspec names (`assets`), as a
+    single package spoke's library does: the merged library's `DartInfo` is
+    what an app's bundle reads a package's files from.
+    """
     hook_error = plugin.hook_error if plugin and hasattr(plugin, "hook_error") else ""
     link_hook = plugin.link_hook if plugin and hasattr(plugin, "link_hook") else ""
     package_files = plugin.package_files if plugin and hasattr(plugin, "package_files") else None
+    if assets and assets.data_patterns:
+        base = package_files if package_files != None else ["pubspec.yaml", "LICENSE*"]
+        package_files = base + [p for p in assets.data_patterns if p not in base]
     if package_files != None:
         content = make_dart_package_member_build_content(
             package_name,
@@ -265,7 +273,7 @@ def make_scc_member_build_content(
     defines = plugin.defines if plugin and hasattr(plugin, "defines") else []
     platforms_json = plugin.platforms_json if plugin and hasattr(plugin, "platforms_json") else ""
 
-    dart_content = _render_dart_member_content(package_name, language_version, version, plugin)
+    dart_content = _render_dart_member_content(package_name, language_version, version, plugin, assets)
     dart_loads, dart_body = _split_loads_and_body(dart_content)
     extra_loads, _ = _split_loads_and_body(plugin_extra_loads(macos_srcs, ios_srcs, linux_src, windows_src))
     apple_libs_arg = plugin_apple_libs_arg(package_name, macos_srcs, ios_srcs)
