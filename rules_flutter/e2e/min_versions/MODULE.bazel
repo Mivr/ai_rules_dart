@@ -3,7 +3,7 @@
 module(name = "rules_flutter_min_versions")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
 
 # Every regular dependency is declared at the floor rules_flutter supports,
 # never at the release this repository compiles. The comments in the root
