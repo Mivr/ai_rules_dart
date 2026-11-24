@@ -346,6 +346,8 @@ def _base_runner_env(ctx, flutter_sdk_info, artifacts, selection):
         # Display path for the suite. Used in package:test report output.
         "FLUTTER_TEST_PATH": selection.test_path if selection.test_path else artifacts.dill.basename,
         "FLUTTER_TEST_IMPELLER": "1" if selection.enable_impeller else "",
+        # The package's name, the tester's `APP_NAME` as `flutter test` sets it.
+        "FLUTTER_TEST_APP_NAME": getattr(ctx.attr, "package_name", "") or "",
     }
     if artifacts.assets_dir != None:
         env["FLUTTER_TEST_ASSETS"] = runfiles_path(artifacts.assets_dir, workspace_name)

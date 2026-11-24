@@ -1608,6 +1608,8 @@ The test runs in the runfiles directory of the main repository, so these paths r
 
 A `flutter_test_config.dart` among the test's `srcs` wraps the test as under `flutter test`: the one in the test's directory or the nearest above it, up to the project's directory, has its `testExecutable` run around the test's `main`. It has to be in `srcs` to be found.
 
+Assets load as under `flutter test`: the runner gives `flutter_tester` the `UNIT_TEST_ASSETS` and `APP_NAME` that `flutter test` gives it, so `package:flutter_test` answers an asset load from the test's bundle at once, and an SVG or image a widget loads is there by the next frame.
+
 #### Golden files
 
 Goldens under the project's `test/` are `data` by default (above). A golden elsewhere, or in a package the extension does not know, must be listed in `data`, or the test cannot see it:

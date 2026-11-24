@@ -468,6 +468,7 @@ class _Harness {
         impeller: run.impeller,
       ),
       run.updateGoldens,
+      assetsDir: run.assetsDir,
     );
 
     // Capture flutter_tester output so engine errors are visible. In coverage
@@ -597,7 +598,16 @@ class _Harness {
   /// Private HOME policy (RT37-flutter:02): only the home-locating keys are
   /// overridden, at a fresh dir [dispose] removes; everything else is
   /// inherited unchanged.
-  Future<Process> _spawnTester(List<String> command, bool updateGoldens) {
+  ///
+  /// `UNIT_TEST_ASSETS` and `APP_NAME` are what `flutter test` sets for the
+  /// tester: with them `package:flutter_test` answers asset loads from
+  /// [assetsDir] synchronously, as under stock, so an asset a widget loads
+  /// (an SVG, say) is there by the next frame.
+  Future<Process> _spawnTester(
+    List<String> command,
+    bool updateGoldens, {
+    String? assetsDir,
+  }) {
     final Directory testerHome = run_home.createPrivateHome(
       Platform.environment['TEST_TMPDIR'] ?? Directory.systemTemp.path,
     );
@@ -609,6 +619,9 @@ class _Harness {
         'FLUTTER_TEST': 'true',
         'FLUTTER_TEST_HARNESS_PORT': '${_server.port}',
         if (updateGoldens) 'FLUTTER_TEST_UPDATE_GOLDENS': '1',
+        if (assetsDir != null)
+          'UNIT_TEST_ASSETS': File(assetsDir).absolute.path,
+        'APP_NAME': Platform.environment['FLUTTER_TEST_APP_NAME'] ?? '',
         ...run_home.privateHomeEnv(testerHome.path),
       },
     );
