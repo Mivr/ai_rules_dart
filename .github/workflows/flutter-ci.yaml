@@ -1310,13 +1310,14 @@ jobs:
       # The lockfiles are made on Linux x64 (rules_dart/docs/CHORES.md, "Lock
       # File Refresh"): prove the one of the workspace built below holds on
       # Windows, where no extension of the graph may need an entry that a Linux
-      # lockfile lacks. Not `bazel mod deps`: that evaluates every extension,
-      # among them gazelle's, which needs a Go SDK for the host, and the Go
-      # SDKs this repository pins have no Windows entry (nothing here builds Go
-      # on Windows, and the toolchain registration is lazy).
+      # lockfile lacks. It analyzes what the next step tests, and nothing more:
+      # not `bazel mod deps`, and not `bazel build //...` either, which also
+      # analyzes the Android app (`--build_tests_only` skips it) and so asks rules_android's gazelle extension
+      # for a Go SDK for the host. The Go SDKs this repository pins have no
+      # Windows entry (nothing here builds Go on Windows).
       - name: Lockfile holds on Windows
         working-directory: rules_flutter/e2e/hello_world
-        run: bazel build --nobuild --lockfile_mode=error //...
+        run: bazel build --nobuild --build_tests_only --lockfile_mode=error //...
       - name: bazel test //... (e2e/hello_world)
         if: runner.os == 'Windows'
         working-directory: rules_flutter/e2e/hello_world
