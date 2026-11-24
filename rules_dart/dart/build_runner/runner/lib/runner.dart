@@ -87,6 +87,8 @@ import 'package:pub_semver/pub_semver.dart';
 import 'package:watcher/watcher.dart' show ChangeType;
 import 'package:yaml/yaml.dart';
 
+import 'declared_paths.dart';
+
 /// Entry point called by the generated `entry.dart`.
 ///
 /// [buildYamls] maps each builder package to the text of its `build.yaml`,
@@ -859,7 +861,7 @@ class _TargetState {
     for (final e in model.assets.entries) {
       final path = packagePaths[e.value.package];
       if (path == null) continue;
-      fs.addDisk(p.join(path, e.value.path), e.key);
+      fs.addDisk(declaredPath(path, e.value.path), e.key);
       assetsByPackage.putIfAbsent(e.value.package, () => {}).add(e.value);
     }
   }
@@ -993,8 +995,11 @@ class _DeclaredFilesystem implements Filesystem {
   /// The bytes the build wrote for [asset] of [root], at its package path or
   /// in the artifact tree.
   Uint8List? outputBytes(String rootPath, String root, String asset) =>
-      written[p.join(rootPath, asset)] ??
-      written[p.join(rootPath, '.dart_tool', 'build', 'generated', root, asset)];
+      written[declaredPath(rootPath, asset)] ??
+      written[declaredPath(
+        rootPath,
+        '.dart_tool/build/generated/$root/$asset',
+      )];
 
   @override
   bool existsSync(String path) {
@@ -1030,7 +1035,7 @@ class _DeclaredFilesystem implements Filesystem {
 
   @override
   void deleteDirectorySync(String path) {
-    final prefix = '$path/';
+    final prefix = '$path${p.separator}';
     written.removeWhere((k, _) => k.startsWith(prefix));
     _deleted.addAll(_disk.keys.where((k) => k.startsWith(prefix)));
   }

@@ -274,7 +274,7 @@ def build_runner_targets(name, hub, version, builder_packages):
     _dart_library(
         name = "runner_lib",
         package_name = "rules_dart_build_runner",
-        srcs = ["lib/runner.dart"],
+        srcs = ["lib/declared_paths.dart", "lib/runner.dart"],
         language_version = "3.4",
         deps = ["//:" + d for d in _RUNNER_DEPS],
     )

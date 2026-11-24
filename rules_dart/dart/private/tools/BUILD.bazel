@@ -773,6 +773,17 @@ dart_test(
 )
 
 dart_test(
+    name = "declared_paths_test",
+    size = "small",
+    srcs = ["//dart/build_runner:runner/declared_paths.dart"],
+    main = "declared_paths_test.dart",
+    deps = [
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
     name = "directive_guard_test",
     size = "small",
     srcs = ["//dart/guard:lib/directive_guard.dart"],

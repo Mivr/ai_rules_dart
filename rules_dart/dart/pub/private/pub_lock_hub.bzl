@@ -15,6 +15,7 @@ visibility(["//dart/..."])
 # so they compile there against the hub's own lock.
 _RUNNER_SOURCES = {
     "build_runner/bin/gen_entry.dart": Label("//dart/build_runner:runner/bin/gen_entry.dart"),
+    "build_runner/lib/declared_paths.dart": Label("//dart/build_runner:runner/declared_paths.dart"),
     "build_runner/lib/runner.dart": Label("//dart/build_runner:runner/lib/runner.dart"),
 }
 

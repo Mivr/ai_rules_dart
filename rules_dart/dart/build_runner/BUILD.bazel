@@ -4,6 +4,7 @@
 exports_files(
     [
         "runner/bin/gen_entry.dart",
+        "runner/declared_paths.dart",
         "runner/lib/runner.dart",
     ],
     visibility = ["//visibility:public"],
