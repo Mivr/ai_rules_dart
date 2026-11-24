@@ -1,0 +1,636 @@
+# Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
+name: Dart Full matrix
+# Pre-release coverage: the macOS work push CI (ci.yaml) does not run, cut to
+# what Linux and Windows do not already prove (see `test-macos`). Linux and
+# Windows keep full coverage on every push, so they are not repeated here.
+# A release passes on a main push or nightly run of this workflow on the
+# tagged commit, or on a dispatch of it on the tag (see release.yaml); auto-release.yaml releases each main commit that
+# both this and ci.yaml pass on.
+# Triggers: every push to main (one run at a time, newest commit wins: see
+# `concurrency`), the nightly schedule and manual dispatch (the release gate
+# dispatches it on a tag, with caches).
+# `schedule` runs and `uncached` dispatches are UNCACHED (see the cache inputs below): no
+# Bazel disk cache and no external cache is restored and nothing is saved, so
+# every test really executes instead of replaying the disk cache; only the
+# content-addressed repository cache and the bazelisk cache restore (every
+# fetch is sha256-pinned). Branch pushes never trigger this workflow; pass
+# `uncached: true` to a manual dispatch for a cold run. A tag run (release dispatch)
+# runs every job, matrix entry and step below, with caches: no job skips work on
+# a tag run that the nightly `schedule` run does. It has no 7-minute target. Its
+# macOS work is one job, so it holds one of the 5 macOS slots the account
+# shares with ai_rules_flutter (two shards of every folder took 53 + 37 min on
+# the v0.28.3 tag).
+# One job is not macOS: `flake-sweep-nightly` runs every test in the root
+# workspace ten times on Linux, the cases in random order, to catch a test
+# that fails only now and then or only in some order. It is not push coverage
+# repeated, so it lives here, on the nightly schedule and tag pushes only.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      uncached:
+        description: Run every test job without restoring or saving any Bazel cache
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "0 10 * * *"
+  # Called by dart-ci.yaml's `full` job, which a dispatch of Dart CI runs with
+  # its `full` input set. A workflow is dispatchable only once its file is on
+  # the default branch; a reusable call is not, so the macOS legs can run on
+  # any branch. Inside the call `github.event_name` is the caller's
+  # (`workflow_dispatch`), `github.workflow` is the caller's name, and
+  # `inputs` are these.
+  workflow_call:
+    inputs:
+      uncached:
+        description: Run every test job without restoring or saving any Bazel cache
+        required: false
+        default: false
+        type: boolean
+      legs:
+        description: "`all`, or `macos` for the macOS legs only (skips the Linux jobs)"
+        required: false
+        default: all
+        type: string
+concurrency:
+  # Pushes to main share one group: the running Full finishes, at most one
+  # newer push waits, and a later push replaces the waiting one, so main is
+  # proven continuously without a backlog. Other runs on main (nightly,
+  # dispatches) get their own run-id suffix.
+  # Not `github.workflow`: in a call that is the caller's name, and the caller's
+  # group is the same string, which GitHub reports as a deadlock.
+  group: concurrency-group::Dart Full matrix::${{ github.event_name == 'push' && 'main-push' || format('{0}{1}', github.ref_name, github.ref_name == 'main' && format('::{0}', github.run_id) || '') }}
+  # Tag runs (release dispatches) and runs on main are never cancelled.
+  cancel-in-progress: ${{ github.ref_type != 'tag' && github.ref_name != 'main' }}
+jobs:
+  # The same Linux coverage job as ci.yaml's `coverage`, repeated here so the
+  # release gate proves it on the tagged commit.
+  # `bazel coverage` writes the combined report only after every test of the
+  # invocation has finished, so each report is copied (a later Bazel command may
+  # replace `bazel-out`) and checked by its own `bazel run` step afterwards. A
+  # failing coverage run, a failing check or a missing report fails the job:
+  # no step tolerates failure and no instrumentation filter is empty.
+  coverage:
+    if: inputs.legs != 'macos'
+    defaults:
+      run:
+        working-directory: rules_dart
+    runs-on: ubuntu-latest
+    # A cold e2e/coverage coverage run, then a cold root-workspace coverage run
+    # of //dart/runfiles; healthy runs finish well inside this. The last_green
+    # step below has its own limit and adds the e2e workspaces.
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: e2e/coverage - coverage run, then the fixture report check
+        working-directory: rules_dart/e2e/coverage
+        run: |
+          bazel --max_idle_secs=60 coverage --combined_report=lcov --instrumentation_filter='^//' --instrument_test_targets=false //...
+          report="$(mktemp)"
+          cp bazel-out/_coverage/_coverage_report.dat "$report"
+          bazel --max_idle_secs=60 run //:lcov_check -- "$report"
+          bazel --max_idle_secs=60 test --test_output=errors //...
+      - name: Root workspace - coverage of the runfiles test
+        run: |
+          bazel --max_idle_secs=60 coverage --combined_report=lcov --instrumentation_filter='^//dart[/:]' --instrument_test_targets=false //dart/runfiles/...
+          cp bazel-out/_coverage/_coverage_report.dat "$RUNNER_TEMP/ruleset_coverage_report.dat"
+          bazel --max_idle_secs=60 shutdown
+      - name: e2e/coverage - ruleset report check
+        working-directory: rules_dart/e2e/coverage
+        run: bazel --max_idle_secs=60 run //:lcov_check_ruleset -- "$RUNNER_TEMP/ruleset_coverage_report.dat"
+      # The e2e workspaces under Bazel's last_green build, so an upstream
+      # regression shows up before the release. Like ci.yaml's `last_rc` it
+      # never blocks: a red workspace is a `::warning::` naming the folder,
+      # and neither this step nor the job fails because of it. The folders are
+      # the Linux `test` shards' of ci.yaml that have an `e2e.yaml`; each
+      # staged copy takes the version written to its `.bazelversion`.
+      - name: e2e workspaces on last_green (never blocking)
+        continue-on-error: true
+        timeout-minutes: 150
+        shell: bash
+        run: |
+          ws="$GITHUB_WORKSPACE/rules_dart"
+          logdir="${RUNNER_TEMP}/last-green-logs"
+          outbasedir="${RUNNER_TEMP}/bazel-servers"
+          rm -rf "$logdir"
+          mkdir -p "$logdir"
+          folders=""
+          while IFS= read -r folder; do
+            [ -f "$ws/$folder/e2e.yaml" ] && folders="$folders$folder"$'\n'
+          done < <(yq -o=json . ../.github/workflows/dart-ci.yaml | jq -r '.jobs.test.strategy.matrix.include[] | select(.os == "ubuntu-latest") | .folders')
+          if [ -z "$folders" ]; then
+            echo "::warning::no folder with an e2e.yaml found for the last_green run"
+            exit 0
+          fi
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            echo "last_green" > "$ws/$folder/.bazelversion"
+          done <<< "$folders"
+          first="$(head -n 1 <<< "$folders")"
+          label="$(cd "$ws/$first" && bazel --max_idle_secs=60 version | grep '^Build label:')" || label="unknown"
+          (cd "$ws/$first" && bazel --max_idle_secs=60 shutdown) || true
+          echo "Workspaces run under last_green: $label"
+          case "$label" in
+            "Build label: "*) expected_label="${label%$'\r'}" ;;
+            *) expected_label="Build label: unknown" ;;
+          esac
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            spec_json="$(yq -o=json . "$ws/$folder/e2e.yaml")"
+            jq --arg lbl "$expected_label" \
+              '.commands = [{name: "bazel version", run: "bazel version", expect: {stdout_contains: $lbl, output_regex: ("^" + ($lbl | gsub("(?<c>[.\\[\\]*^$()+?{|\\\\])"; "\\\(.c)")) + "\\r?$")}}] + .commands' \
+              <<< "$spec_json" > "$ws/$folder/e2e.yaml"
+          done <<< "$folders"
+          run_one() {
+            slug="$(printf '%s' "$1" | tr '/.' '_')"
+            rc=0
+            (
+              cd "$ws/tools" &&
+              bazel --max_idle_secs=60 --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+            ) >"$logdir/$slug.log" 2>&1 || rc=1
+            (cd "$ws/tools" && bazel --max_idle_secs=60 --output_base="$outbasedir/$slug" shutdown) >>"$logdir/$slug.log" 2>&1 ||
+              echo "::warning::bazel shutdown failed for $1" >>"$logdir/$slug.log"
+            echo "$rc" >"$logdir/$slug.status"
+            { echo "===== $1 (exit $rc) ====="; cat "$logdir/$slug.log"; }
+          }
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            while [ "$(jobs -rp | wc -l)" -ge 3 ]; do sleep 5; done
+            run_one "$folder" &
+          done <<< "$folders"
+          wait
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            slug="$(printf '%s' "$folder" | tr '/.' '_')"
+            [ "$(cat "$logdir/$slug.status" 2>/dev/null)" = 0 ] || echo "::warning::$folder is red on last_green ($label)"
+          done <<< "$folders"
+          exit 0
+  # macOS runs only what Linux and Windows CI (ci.yaml's `test` shards, which
+  # test every folder below and every folder dropped here on Linux) do not
+  # already prove: darwin toolchain and Dart SDK resolution, native executables
+  # and AOT snapshots, native assets and FFI linked with the Apple toolchain,
+  # cross-compilation from a darwin host, and darwin paths under the darwin
+  # sandbox. One job, so it takes one of the 5 macOS slots it shares with
+  # ai_rules_flutter.
+  # `folders` run whole (`bazel test //...`, through the e2e runner when the
+  # folder has an e2e.yaml). `darwin_folders` run only their darwin-relevant
+  # tests: a `bazel query` for the tests that depend on C/C++ code, a code
+  # asset, a link hook or a cross-compile `platform`, plus the packages named
+  # after the folder on its line (host tools whose tests read and write darwin
+  # paths). Their other tests are portable and Linux tests them.
+  # Dropped from macOS (one line each: why the Linux run is enough; ci.yaml's
+  # `test` job runs each on Linux and Windows):
+  # - .github/workflows: build-only, workflow text checks, no host code.
+  # - dev: gazelle golden testdata for the dev tool, pure Dart and Go text.
+  # - tools: repo tooling (e2e runner, changelog), built here only to run specs.
+  # - e2e/analysis: `dart analyze` diagnostics, host-independent.
+  # - e2e/analyze_composition: analysis aspect composition, host-independent.
+  # - e2e/codegen: source generation, kernel only, no native code.
+  # - e2e/dart_test: package:test runner on the Dart VM, same as Linux.
+  # - e2e/dart_test_pkg: test package layout, pure Dart.
+  # - e2e/fix: `dart fix` manifests, text in and text out.
+  # - e2e/guard_reuse: pub guard reuse, Starlark and lockfile logic.
+  # - e2e/isolated_hub: pub hub isolation, resolution logic only.
+  # - e2e/library_deps: library dependency graph, pure Dart.
+  # - e2e/pub_deps: pub resolution, sha256-pinned archives, host-independent.
+  # - e2e/pub_lock: lockfile parsing, host-independent.
+  # - e2e/pub_lock_cross_module: lockfile merging across modules, logic only.
+  # - e2e/pub_lock_dedup: lockfile dedup, logic only.
+  # - e2e/pub_lock_git: git-pinned lock entries, fetch logic only.
+  # - e2e/pub_lock_scc: lockfile cycles, logic only.
+  # - e2e/pub_lock_upgrade: version-conflict upgrade, logic only.
+  # - e2e/pub_workspace: pub workspace resolution, logic only.
+  # - e2e/smoke: consumer smoke incl. web; e2e/hello_world is the macOS smoke.
+  # - e2e/web_app: web (dart2js/wasm) output, host-independent.
+  # Each folder runs under its own Bazel server (`--output_base` under
+  # RUNNER_TEMP): the folders otherwise share the output base setup-bazel
+  # pins, so concurrent folders wait on its lock, kill each other's servers
+  # and flake with exit 1. The disk and repository caches stay shared, so
+  # cache warmth is unaffected.
+  # Red-by-design workspaces (ci.yaml's `expected-failure` job) and the
+  # pub-fetch Powershell/PATH steps are push-CI-only and not repeated here:
+  # on a release tag, ci.yaml itself runs every job, so the release gate still
+  # proves them on the tagged commit.
+  # Each folder's log is streamed under a `===== <folder> =====` header the
+  # moment that folder finishes (not after all waves), and uploaded as an
+  # artifact `if: always()`, so a killed job still leaves its evidence.
+  # The nightly's macOS job duplicates a main-push run of this workflow when
+  # one has already passed on the same commit (Full runs on every push to
+  # main), and the account has only 5 macOS runners. The nightly then skips
+  # its macOS job; its Linux jobs still run cold. It skips only after a push
+  # run *passed*, so a nightly that skipped never stands in for macOS proof the
+  # push run did not give (the release gate and auto-release.yaml accept both).
+  dedupe:
+    name: macOS already proven on this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      skip-macos: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          skip=false
+          if [ "$EVENT" = schedule ]; then
+            n=$(gh run list --repo "$REPO" --workflow dart-full.yaml --commit "$SHA" --event push --status success --limit 20 \
+              --json headBranch --jq '[.[] | select(.headBranch == "main")] | length' || echo 0)
+            if [ "$n" -gt 0 ]; then skip=true; fi
+          fi
+          echo "skip=$skip" | tee -a "$GITHUB_OUTPUT"
+  test-macos:
+    defaults:
+      run:
+        working-directory: rules_dart
+    name: test-macos (shard ${{ matrix.shard }})
+    needs: dedupe
+    if: needs.dedupe.outputs.skip-macos != 'true'
+    runs-on: macos-latest
+    # Cold nightly and `uncached` runs need the headroom. GitHub caps jobs at
+    # 6 h.
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: 1
+            parallelism: 3
+            cache: full-macos-1
+            # Longest first, so the long folders never start last.
+            # - e2e/link_hook: native assets through link hooks, Apple linker.
+            # - e2e/gazelle: Go gazelle binary linked by apple_support's cc.
+            # - e2e/cross_compile: exe and AOT for four Linux targets from a
+            #   darwin host.
+            # - e2e/hello_world: the plain macOS host smoke: darwin toolchain
+            #   resolution, every compile mode built and run, split debug info.
+            # - e2e/sdk_coupling: the darwin exec-tools toolchains registered
+            #   by name beside a different target SDK.
+            # - e2e/root_sdk_pin: a pinned older SDK's darwin archive.
+            folders: |
+              e2e/link_hook
+              e2e/gazelle
+              e2e/cross_compile
+              e2e/hello_world
+              e2e/sdk_coupling
+              e2e/root_sdk_pin
+            # - .: cc fixtures, the webcrypto and sqlite3 code assets, link
+            #   modules and cross fixtures, plus the action tools' and
+            #   runfiles' own tests (darwin paths and sandbox).
+            # - e2e/ext_exemplar: sqlite3 and webcrypto over FFI and its
+            #   own dylib; its codegen tests are portable.
+            darwin_folders: |
+              . //dart/private/tools/... //dart/runfiles/...
+              e2e/ext_exemplar
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          module-root: rules_dart
+          bazelisk-cache: true
+          # Manual dispatches without `uncached: true`, tag runs included,
+          # restore caches. `schedule`
+          # runs restore neither the Bazel disk cache nor the external cache
+          # and save nothing, so every test really executes instead of
+          # replaying the disk cache. The content-addressed repository cache
+          # and the bazelisk cache still restore (every fetch is
+          # sha256-pinned).
+          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && matrix.cache || false }}
+          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          repository-cache: ${{ github.event_name != 'schedule' && (github.ref_type == 'tag' || !inputs.uncached) }}
+          # Only main saves: a branch restores main's keys, and the gate's ci/
+          # candidate saves duplicated them (7 GB on 2026-11-04), evicting main's
+          # under the 10 GB repository cache limit.
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
+          cache-version: "1"
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+            common --enable_bzlmod=true
+            # Memory bounds: a shard runs PARALLELISM=3 folders at once (see
+            # the Test step). By default every server grows its JVM heap to
+            # ~1/4 of host RAM and schedules actions as if it owned the whole
+            # machine, so concurrent cold servers exhaust a 4-CPU/16 GB runner
+            # and the job dies on a shutdown signal (exit 143). Per server:
+            # heap 2 GB (3 x 2 = 6 GB, was ~3 x 4 = 12 GB), 1 CPU (3 of 4
+            # cores), scheduled RAM 15% of host RAM (3 x 15% = 45%, ~7.2 GB of
+            # 16 GB): heaps plus scheduled actions stay near ~13 GB, leaving
+            # room for the OS, the Bazel clients and JVM off-heap.
+            # HOST-relative so smaller runners (macOS) scale the same
+            # fractions. Scheduling limits only: action keys are unchanged, so
+            # cache warmth is unaffected.
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=1
+            build --local_resources=memory=HOST_RAM*.15
+      - name: Test
+        env:
+          FOLDERS: ${{ matrix.folders }}
+          DARWIN_FOLDERS: ${{ matrix.darwin_folders }}
+          PARALLELISM: ${{ matrix.parallelism }}
+        shell: bash
+        run: |
+          ws="${GITHUB_WORKSPACE//\\//}/rules_dart"
+          # Per-folder logs live under RUNNER_TEMP so the upload step below
+          # can ship them even when this step fails or the job is killed.
+          logdir="${RUNNER_TEMP}/shard-logs"
+          rm -rf "$logdir"
+          mkdir -p "$logdir"
+          # One Bazel server per folder (see run_one below): without this the
+          # folders share the output base setup-bazel pins, so each folder
+          # waits on "Another command holds the output base lock" and kills
+          # the previous folder's server. The disk and repository caches stay
+          # shared, so cache warmth is unaffected.
+          outbasedir="${RUNNER_TEMP}/bazel-servers"
+          # Every entry: the darwin folders (longest) first, then the rest.
+          # A darwin entry is `<folder> [extra patterns]`; a plain one is
+          # `<folder>`.
+          entries="$(printf '%s\n' "$DARWIN_FOLDERS" | sed '/^[[:space:]]*$/d; s/^/darwin /')"$'\n'"$(printf '%s\n' "$FOLDERS" | sed '/^[[:space:]]*$/d; s/^/all /')"
+          # Pin the Bazel version in every folder, as the old per-folder
+          # Configure step did.
+          while read -r scope folder extra; do
+            [ -z "$folder" ] && continue
+            echo "9.3.0" > "$ws/$folder/.bazelversion"
+          done <<< "$entries"
+          # The darwin-relevant tests of a workspace: every test that depends
+          # on C/C++ code, a code asset, a link hook or a cross-compile
+          # `platform`, plus every test under the extra patterns. Manual
+          # targets stay out, as `//...` leaves them out.
+          darwin_query() {
+            q='tests(rdeps(//..., kind("^cc_|dart_code_asset|dart_link_hook|^platform ", deps(//...))))'
+            for p in $1; do
+              q="$q + tests($p)"
+            done
+            printf '%s\n' "($q) except attr(tags, \"\\bmanual\\b\", //...)"
+          }
+          # A plain folder with an e2e.yaml runs through the e2e runner,
+          # built and started from tools/ with its own Bazel server (the runner
+          # stages a copy of the workspace and picks its own output base for
+          # it); one without a spec runs `bazel test //...` itself. A darwin
+          # folder tests only what darwin_query finds, and fails when the
+          # query fails or finds nothing.
+          run_one() {
+            scope="$1"
+            folder="$2"
+            extra="$3"
+            slug="$(printf '%s' "$folder" | tr '/.' '_')"
+            if (
+              if [ "$scope" = darwin ]; then
+                cd "$ws/$folder" &&
+                bazel --output_base="$outbasedir/$slug" query --output=label "$(darwin_query "$extra")" >"$logdir/$slug.targets" &&
+                echo "darwin-scoped tests ($(wc -l <"$logdir/$slug.targets" | tr -d ' ')):" &&
+                cat "$logdir/$slug.targets" &&
+                [ -s "$logdir/$slug.targets" ] &&
+                bazel --output_base="$outbasedir/$slug" test --test_output=errors --target_pattern_file="$logdir/$slug.targets"
+              elif [ -f "$ws/$folder/e2e.yaml" ]; then
+                cd "$ws/tools" &&
+                bazel --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$folder" --bazel=bazel
+              else
+                cd "$ws/$folder" &&
+                bazel --output_base="$outbasedir/$slug" test --test_output=errors //...
+              fi
+            ) >"$logdir/$slug.log" 2>&1; then
+              echo 0 >"$logdir/$slug.status"
+            else
+              echo 1 >"$logdir/$slug.status"
+            fi
+          }
+          running=0
+          # Folders already printed by print_done below.
+          printed=""
+          # Print the log of every finished folder not printed yet.
+          print_done() {
+            while read -r scope folder extra; do
+              [ -z "$folder" ] && continue
+              slug="$(printf '%s' "$folder" | tr '/.' '_')"
+              case " $printed " in
+                *" $slug "*) continue ;;
+              esac
+              if [ -f "$logdir/$slug.status" ]; then
+                echo "===== $folder (exit $(cat "$logdir/$slug.status")) ====="
+                cat "$logdir/$slug.log"
+                printed="$printed $slug "
+              fi
+            done <<< "$entries"
+          }
+          # Block until at least one more folder finishes, then stream the
+          # newly finished logs. Polling (not `wait -n`) so this also runs
+          # under macOS bash 3.2.
+          wait_one() {
+            before=0
+            for s in "$logdir"/*.status; do
+              [ -f "$s" ] || continue
+              before=$((before + 1))
+            done
+            while true; do
+              print_done
+              have=0
+              for s in "$logdir"/*.status; do
+                [ -f "$s" ] || continue
+                have=$((have + 1))
+              done
+              [ "$have" -gt "$before" ] && return 0
+              sleep 10
+            done
+          }
+          while read -r scope folder extra; do
+            [ -z "$folder" ] && continue
+            run_one "$scope" "$folder" "$extra" &
+            running=$((running + 1))
+            if [ "$running" -ge "$PARALLELISM" ]; then
+              wait_one
+              running=$((running - 1))
+            fi
+          done <<< "$entries"
+          wait
+          print_done
+          fail=0
+          while read -r scope folder extra; do
+            [ -z "$folder" ] && continue
+            slug="$(printf '%s' "$folder" | tr '/.' '_')"
+            [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
+          done <<< "$entries"
+          exit "$fail"
+      # Ship the per-folder logs even when the Test step fails or the job is
+      # killed, so a dead shard still leaves its evidence for diagnosis.
+      - name: Upload shard logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: shard-logs-macos-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-logs
+          if-no-files-found: warn
+          retention-days: 3
+  # Nightly flake sweep: every non-`manual` test in the root workspace runs
+  # ten times, uncached and with no retry, with twice as many tests at once
+  # as the runner has CPUs, so a test that fails only now and then, or only
+  # under load, is reported FLAKY instead of shipping on a lucky pass. The
+  # `dart_test` targets get `--test-randomize-ordering-seed=random`, so
+  # `package:test` runs their cases in a fresh order each run and prints the
+  # seed into the test log, from which a failing order can be run again. The
+  # other tests run in a second invocation without it: a `go_test` rejects
+  # the unknown option and would fail every run.
+  # Bazel counts a FLAKY test as passed in its exit code, so the last step
+  # reads the build events and fails on any FLAKY test, on a test shard whose
+  # p95 is over half of its timeout (its `size`, or its `timeout` where it
+  # states one), and on an unsharded test whose p95 is over 120 s, which
+  # needs a `shard_count`. Exit code 4 (no test ran) fails the sweep. It runs
+  # on the nightly schedule, on pushes to main (release proof for
+  # auto-release.yaml) and on tag runs like every other job here, never on a
+  # pull request; its cache inputs follow `test-macos`', so nightly runs
+  # restore no disk or external cache.
+  flake-sweep-nightly:
+    defaults:
+      run:
+        working-directory: rules_dart
+    if: inputs.legs != 'macos' && (github.event_name == 'schedule' || github.event_name == 'push' || github.ref_type == 'tag')
+    runs-on: ubuntu-latest
+    # A cold build of the root workspace plus ten runs of every test, with
+    # headroom for a slow night. GitHub caps jobs at 6 h.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          module-root: rules_dart
+          bazelisk-cache: true
+          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && 'flake-sweep-nightly' || false }}
+          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          cache-save: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          cache-version: "1"
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+            common --enable_bzlmod=true
+      - name: Sweep every test ten times
+        shell: bash
+        run: |
+          failed=0
+          # One sweep over the root workspace's non-`manual` tests; its build
+          # events go to flake_nightly_<name>.json for the check below.
+          sweep() {
+            name="$1"
+            shift
+            set +e
+            bazel test //... \
+              --flaky_test_attempts=1 \
+              --runs_per_test=10 \
+              --runs_per_test_detects_flakes \
+              --nocache_test_results \
+              --local_test_jobs=HOST_CPUS*2 \
+              --test_tag_filters=-manual \
+              --test_output=errors \
+              --build_event_json_file="$RUNNER_TEMP/flake_nightly_$name.json" \
+              "$@"
+            status=$?
+            set -e
+            if [ "$status" -eq 4 ]; then
+              echo "ERROR: the $name sweep exited 4: no test ran"
+              failed=1
+            elif [ "$status" -ne 0 ]; then
+              echo "ERROR: the $name sweep exited $status"
+              failed=1
+            fi
+          }
+          sweep dart --test_lang_filters=dart --test_arg=--test-randomize-ordering-seed=random
+          sweep other --test_lang_filters=-dart
+          exit "$failed"
+      # Runs after a failed sweep too, so a night with a failing test still
+      # reports the FLAKY tests and timings beside it.
+      - name: Fail on any FLAKY test or a p95 over its size or shard_count
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          python3 - "$RUNNER_TEMP/flake_nightly_dart.json" "$RUNNER_TEMP/flake_nightly_other.json" <<'PY'
+          import json
+          import math
+          import sys
+
+          # The longest an unsharded test may take at p95, in seconds, before
+          # it has to be split into shards.
+          UNSHARDED_CEILING = 120.0
+
+
+          def seconds(duration):
+              """A protobuf Duration as JSON ("12.5s"), in seconds."""
+              return float(duration.rstrip("s"))
+
+
+          def read(paths):
+              """FLAKY labels, shard counts, timeouts and run times by shard."""
+              flaky, shards, timeouts, runs = set(), {}, {}, {}
+              for path in paths:
+                  with open(path, encoding="utf-8") as handle:
+                      for line in handle:
+                          if line.strip():
+                              note(json.loads(line), flaky, shards, timeouts, runs)
+              return flaky, shards, timeouts, runs
+
+
+          def note(event, flaky, shards, timeouts, runs):
+              """Records what one build event says about a test."""
+              ident = event.get("id", {})
+              if "testSummary" in ident:
+                  label = ident["testSummary"]["label"]
+                  summary = event.get("testSummary", {})
+                  shards[label] = summary.get("shardCount", 1)
+                  if summary.get("overallStatus") == "FLAKY":
+                      flaky.add(label)
+              elif "testResult" in ident:
+                  label = ident["testResult"]["label"]
+                  result = event.get("testResult", {})
+                  if result.get("status") == "FLAKY":
+                      flaky.add(label)
+                  shard = ident["testResult"].get("shard", 1)
+                  duration = seconds(result.get("testAttemptDuration", "0s"))
+                  runs.setdefault((label, shard), []).append(duration)
+              elif "targetCompleted" in ident and "aspect" not in ident["targetCompleted"]:
+                  timeout = event.get("completed", {}).get("testTimeout")
+                  if timeout:
+                      timeouts[ident["targetCompleted"]["label"]] = seconds(timeout)
+
+
+          def p95(values):
+              """The nearest-rank 95th percentile of values."""
+              ordered = sorted(values)
+              return ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)]
+
+
+          def timing_problems(shards, timeouts, runs):
+              """Each shard whose p95 is over half of its test's timeout, and
+              each unsharded test whose p95 is over the ceiling."""
+              problems = []
+              for (label, shard), values in sorted(runs.items()):
+                  late = p95(values)
+                  timeout = timeouts.get(label)
+                  if timeout is None:
+                      problems.append(label + ": no test timeout in the build events")
+                  elif late > timeout / 2:
+                      problems.append("%s shard %s: p95 %.1fs is over half of its %.0fs timeout" % (label, shard, late, timeout))
+                  if shards.get(label, 1) <= 1 and late > UNSHARDED_CEILING:
+                      problems.append("%s: unsharded p95 %.1fs is over %.0fs; give it a shard_count" % (label, late, UNSHARDED_CEILING))
+              return problems
+
+
+          flaky, shards, timeouts, runs = read(sys.argv[1:])
+          if not shards:
+              print("ERROR: no test summaries in the build events")
+              sys.exit(1)
+          problems = ["%s: FLAKY" % label for label in sorted(flaky)]
+          problems += timing_problems(shards, timeouts, runs)
+          for problem in problems:
+              print("ERROR: " + problem)
+          if problems:
+              sys.exit(1)
+          print("OK: %d tests, none FLAKY, every p95 within its size and shard_count" % len(shards))
+          PY

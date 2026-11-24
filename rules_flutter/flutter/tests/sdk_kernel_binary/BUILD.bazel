@@ -1,0 +1,3 @@
+load(":sdk_kernel_binary_test.bzl", "sdk_kernel_binary_test_suite")
+
+sdk_kernel_binary_test_suite(name = "sdk_kernel_binary_test")

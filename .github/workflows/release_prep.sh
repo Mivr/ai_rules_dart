@@ -1,173 +1,193 @@
 #!/usr/bin/env bash
-
+#
+# Prepares the release of one module of this repository: the archive of the
+# module, its docs archive, and the release notes on standard output.
+#
+# bazel-contrib's reusable release workflow runs this script at the repository
+# root, with the checked-out tag as its argument, and a hard-coded path. The
+# tag says which module it is: rules_dart-v0.29.0 or rules_flutter-v0.30.3.
+#
+#   rules_<module>-v<version>.tar.gz       the module only (`git archive` of the
+#                                          tag, run in rules_<module>/), under
+#                                          the prefix rules_<module>-<version>/
+#   rules_<module>-v<version>.docs.tar.gz  the generated API docs
+#
+# Both are written to $RELEASE_OUT (default: the current directory). What
+# `export-ignore` in the module's .gitattributes removes is not in the
+# archive.
 set -o errexit -o nounset -o pipefail
 
-# Argument provided by reusable workflow caller, see
-# https://github.com/bazel-contrib/.github/blob/d197a6427c5435ac22e56e33340dff912bc9334e/.github/workflows/release_ruleset.yaml#L72
+die() {
+  echo "release_prep: $*" >&2
+  exit 1
+}
+
 TAG="${1:-}"
-if [[ -z "$TAG" ]]; then
-  echo "release_prep: tag argument is required" >&2
-  exit 1
+[[ -n "$TAG" ]] || die "tag argument is required"
+if [[ "$TAG" =~ ^(rules_dart|rules_flutter)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+  MODULE="${BASH_REMATCH[1]}"
+  VERSION="${BASH_REMATCH[2]}"
+else
+  die "tag '$TAG' is not rules_dart-vX.Y.Z or rules_flutter-vX.Y.Z"
 fi
 
-if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "release_prep: tag '$TAG' is not a valid semver tag (v<major>.<minor>.<patch>)" >&2
-  exit 1
-fi
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+OUT="${RELEASE_OUT:-$PWD}"
+REPO="${GITHUB_REPOSITORY:-Mivr/ai_rules_dart}"
+PREFIX="${MODULE}-${VERSION}"
+ARCHIVE="${MODULE}-v${VERSION}.tar.gz"
+DOCS_ARCHIVE="${MODULE}-v${VERSION}.docs.tar.gz"
+DOWNLOAD="https://github.com/${REPO}/releases/download"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
 
-# The prefix is chosen to match what GitHub generates for source archives
-# This guarantees that users can easily switch from a released artifact to a source archive
-# with minimal differences in their code (e.g. strip_prefix remains the same)
-PREFIX="rules_dart-${TAG:1}"
-ARCHIVE="rules_dart-$TAG.tar.gz"
+# The sha256 SRI integrity Bazel verifies for an archive_override.
+integrity_of() {
+  echo "sha256-$(openssl dgst -sha256 -binary "$1" | openssl base64 -A)"
+}
 
-# NB: configuration for 'git archive' is in /.gitattributes
-# `gzip -n`: no filename or timestamp in the header, so the same tag always
-# yields the same archive bytes (and the same sha256).
-git archive --format=tar --prefix=${PREFIX}/ ${TAG} | gzip -n > $ARCHIVE
-SHA=$(shasum -a 256 $ARCHIVE | awk '{print $1}')
-# SRI integrity for the `archive_override` snippet below: the base64 sha256
-# Bazel verifies on download. It is computed from the archive just built, so
-# the printed URL, integrity and strip_prefix always describe this release.
-INTEGRITY="sha256-$(openssl dgst -sha256 -binary "$ARCHIVE" | openssl base64 -A)"
+# The archive. The prefix is what GitHub's own source archives use, so a
+# consumer can switch from this artifact to a source archive with the same
+# strip_prefix. `gzip -n` drops the file name and time from the header, and
+# every entry has the time of the tagged commit: the same tag always yields the
+# same bytes, and the same sha256.
+# Run inside the module's directory, `git archive <tag>` archives that
+# directory alone, with paths relative to it. It is not `<tag>:<module>`: the
+# tree of a directory is not a commit, and `export-subst` (the stamp in
+# rules_dart/BUILD.bazel) expands only for a commit.
+# NB: what is left out of the archive is configured in <module>/.gitattributes.
+git rev-parse --verify --quiet "${TAG}:${MODULE}" >/dev/null ||
+  die "tag ${TAG} has no ${MODULE}/ directory"
+(cd "$ROOT/$MODULE" && git archive --format=tar --prefix="${PREFIX}/" "$TAG") | gzip -n >"$OUT/$ARCHIVE"
+INTEGRITY="$(integrity_of "$OUT/$ARCHIVE")"
 
-# Add generated API docs to the release, see https://github.com/bazelbuild/bazel-central-registry/issues/5593
-docs="$(mktemp -d)"; targets="$(mktemp)"
-bazel --output_base="$docs" query --output=label --output_file="$targets" 'kind("starlark_doc_extract rule", //...)'
-bazel --output_base="$docs" build --target_pattern_file="$targets"
-GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-$PWD}"
-tar --create --auto-compress \
-    --directory "$(bazel --output_base="$docs" info bazel-bin)" \
-    --file "$GITHUB_WORKSPACE/${ARCHIVE%.tar.gz}.docs.tar.gz" .
-
-cat << EOF
+# What a consumer pastes into MODULE.bazel. Neither module is on the Bazel
+# Central Registry unless a registry entry has been merged, so the archive
+# itself is named: every byte is verified against the integrity below.
+snippet_dart() {
+  cat <<EOF
 Add to your \`MODULE.bazel\` file:
 
 \`\`\`starlark
-bazel_dep(name = "ai_rules_dart", version = "${TAG:1}", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "${VERSION}", repo_name = "rules_dart")
+
 archive_override(
     module_name = "ai_rules_dart",
-    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/${TAG}/${ARCHIVE}"],
+    urls = ["${DOWNLOAD}/${TAG}/${ARCHIVE}"],
     integrity = "${INTEGRITY}",
     strip_prefix = "${PREFIX}",
 )
 \`\`\`
 EOF
+}
 
-# Release notes from the `Changelog:` trailers since the newest published release.
-# The reusable workflow checks out only the tagged commit, without other tags.
-fetch_args=(--tags)
-if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
-  fetch_args+=(--unshallow)
-fi
-if ! git fetch "${fetch_args[@]}" origin; then
-  echo "release_prep: git fetch --tags failed" >&2
-  exit 1
-fi
+# rules_flutter needs the rules_dart release its MODULE.bazel names as its
+# floor, so the consumer gets that archive too. Its integrity is computed from
+# the bytes downloaded, after they match the digest GitHub recorded for the
+# release asset.
+fetch() {
+  curl --fail --show-error --location --silent --output "$2" "$1"
+}
 
-REPO="${REPO:-Mivr/ai_rules_dart}"
+snippet_flutter() {
+  local floor dart_tag dart_archive dart_prefix hex digest
+  floor="$(git show "${TAG}:${MODULE}/MODULE.bazel" |
+    sed -n 's/^bazel_dep(name = "ai_rules_dart", version = "\([^"]*\)".*/\1/p' | head -n 1)"
+  [[ -n "$floor" ]] || die "no ai_rules_dart bazel_dep in ${TAG}:${MODULE}/MODULE.bazel"
+  dart_tag="rules_dart-v${floor}"
+  dart_archive="${dart_tag}.tar.gz"
+  dart_prefix="rules_dart-${floor}"
+  fetch "${DOWNLOAD}/${dart_tag}/${dart_archive}" "$TMP/$dart_archive" ||
+    die "cannot download ${DOWNLOAD}/${dart_tag}/${dart_archive}: release rules_dart ${floor} first"
+  fetch "https://api.github.com/repos/${REPO}/releases/tags/${dart_tag}" "$TMP/dart_release.json" ||
+    die "cannot read the release ${dart_tag} from the GitHub API"
+  digest="$(jq -r --arg name "$dart_archive" \
+    '[.assets[]? | select(.name == $name) | .digest][0] // empty' "$TMP/dart_release.json")" ||
+    die "cannot parse the release ${dart_tag}"
+  [[ -n "$digest" ]] || die "release ${dart_tag} records no digest for ${dart_archive}"
+  hex="$(openssl dgst -sha256 "$TMP/$dart_archive" | awk '{print $NF}')"
+  [[ "$digest" == "sha256:${hex}" ]] ||
+    die "${dart_archive} sha256 ${hex} does not match release digest ${digest}"
+  cat <<EOF
+Add to your \`MODULE.bazel\` file:
 
-BASE_TAG=""
-PAGE=1
-PREV_PAGE_BODY=""
-SAME_PAGE_COUNT=0
+\`\`\`starlark
+bazel_dep(name = "ai_rules_flutter", version = "${VERSION}", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "${floor}", repo_name = "rules_dart")
 
-while [ -z "$BASE_TAG" ]; do
-  API_URL="https://api.github.com/repos/${REPO}/releases?per_page=100&page=${PAGE}"
-  if ! PAGE_BODY=$(curl --fail --show-error --location -s "$API_URL"); then
-    echo "release_prep: request to GitHub releases API failed for $API_URL" >&2
-    exit 1
-  fi
+archive_override(
+    module_name = "ai_rules_flutter",
+    urls = ["${DOWNLOAD}/${TAG}/${ARCHIVE}"],
+    integrity = "${INTEGRITY}",
+    strip_prefix = "${PREFIX}",
+)
 
-  # Stop if an unpaginated test stub repeats the same page body indefinitely,
-  # while still allowing multi-page fixtures with repeated intermediate pages.
-  if [ "$PAGE" -gt 1 ] && [ "$PAGE_BODY" = "$PREV_PAGE_BODY" ]; then
-    SAME_PAGE_COUNT=$((SAME_PAGE_COUNT + 1))
-    if [ "$SAME_PAGE_COUNT" -ge 5 ]; then
-      break
-    fi
-  else
-    SAME_PAGE_COUNT=0
-  fi
-  PREV_PAGE_BODY="$PAGE_BODY"
+archive_override(
+    module_name = "ai_rules_dart",
+    urls = ["${DOWNLOAD}/${dart_tag}/${dart_archive}"],
+    integrity = "$(integrity_of "$TMP/$dart_archive")",
+    strip_prefix = "${dart_prefix}",
+)
+\`\`\`
+EOF
+}
 
-  PARSER_RC=0
-  PARSER_OUTPUT=$(python3 -c '
-import json, re, sys
-
-semver = re.compile(r"v([0-9]+)\.([0-9]+)\.([0-9]+)")
-tm = semver.fullmatch(sys.argv[1])
-if not tm:
-    sys.exit(3)
-target = tuple(map(int, tm.groups()))
-
-try:
-    releases = json.load(sys.stdin)
-except ValueError:
-    sys.exit(3)
-
-if not isinstance(releases, list):
-    sys.exit(3)
-
-if len(releases) == 0:
-    sys.exit(4)
-
-candidates = []
-for r in releases:
-    if not isinstance(r, dict):
-        sys.exit(3)
-    draft = r.get("draft", False)
-    if draft is not False and draft is not None:
-        continue
-    cand_tag = r.get("tag_name")
-    if not isinstance(cand_tag, str):
-        continue
-    cm = semver.fullmatch(cand_tag)
-    if not cm:
-        continue
-    cand = tuple(map(int, cm.groups()))
-    if cand < target:
-        candidates.append((cand, cand_tag))
-
-if candidates:
-    # Pick the newest published release older than the target
-    newest = max(candidates, key=lambda c: c[0])
-    print(newest[1])
-    sys.exit(0)
-
-sys.exit(2)
-' "$TAG" <<<"$PAGE_BODY") || PARSER_RC=$?
-
-  case "$PARSER_RC" in
-    0)
-      BASE_TAG="$PARSER_OUTPUT"
-      ;;
-    2)
-      PAGE=$((PAGE + 1))
-      if [ "$PAGE" -gt 50 ]; then
-        break
-      fi
-      ;;
-    4)
-      break
-      ;;
-    *)
-      echo "release_prep: could not parse GitHub releases response" >&2
-      exit 1
-      ;;
-  esac
+# The tags that have a published (not draft) release. A tag the release gate
+# refused stays in git but has no release, so "the previous release" is not
+# "the previous tag". There is no fallback to the whole history.
+PUBLISHED="$TMP/published"
+: >"$PUBLISHED"
+PER_PAGE="${RELEASE_PREP_PER_PAGE:-100}"
+for page in $(seq 1 50); do
+  url="https://api.github.com/repos/${REPO}/releases?per_page=${PER_PAGE}&page=${page}"
+  fetch "$url" "$TMP/releases_${page}.json" ||
+    die "request to GitHub releases API failed for $url"
+  jq -e 'type == "array"' "$TMP/releases_${page}.json" >/dev/null 2>&1 ||
+    die "could not parse GitHub releases response for $url"
+  jq -r '.[] | select(.draft == false) | .tag_name' "$TMP/releases_${page}.json" >>"$PUBLISHED"
+  [[ "$(jq 'length' "$TMP/releases_${page}.json")" -ge "$PER_PAGE" ]] || break
 done
 
-if [ -z "$BASE_TAG" ]; then
-  echo "release_prep: no earlier published release found for $TAG" >&2
-  exit 1
+# What the consumer pastes; any failure here stops before the slow work.
+if [[ "$MODULE" == rules_dart ]]; then
+  SNIPPET="$(snippet_dart)"
+else
+  SNIPPET="$(snippet_flutter)"
 fi
 
-echo
-# git-cliff is provided by rules_multitool, which now lives in the tools/
-# module (tools/MODULE.bazel): the root module has no `@multitool` repo, so
-# run it from tools/ with --workdir pointing back at the repo root. Same
-# flags and tag range as before, so the notes are unchanged in content.
-ROOT="$PWD"
-(cd tools && bazel run @multitool//tools/git-cliff -- \
-    --workdir "$ROOT" --config "$ROOT/cliff.toml" --strip header "${BASE_TAG}..${TAG}")
+# The notes are the `Changelog:` trailers of the commits that touch the
+# module, from the newest published release of the module (or, for a module
+# with none here, the commit of its last release before it moved) to the tag
+# (see AGENTS.md). The release job checks out the tag alone, so fetch the
+# history and the tags first.
+fetch_args=(--tags)
+if [[ "$(git rev-parse --is-shallow-repository)" == true ]]; then
+  fetch_args+=(--unshallow)
+fi
+git fetch "${fetch_args[@]}" origin || die "git fetch --tags failed"
+
+TOOLS="$ROOT/rules_dart/tools"
+quiet=(--ui_event_filters=-info --noshow_progress --show_result=0)
+BASE="$(cd "$TOOLS" && bazel run "${quiet[@]}" //release:release -- base \
+  --module="$MODULE" --tag="$TAG" --published="$PUBLISHED")" ||
+  die "cannot find where the notes of ${TAG} start"
+git rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null ||
+  die "the notes of ${TAG} start at ${BASE}, which is not in the repository history"
+# The generated API docs, for the registry, see
+# https://github.com/bazelbuild/bazel-central-registry/issues/5593
+DOCS_BASE="$TMP/docs"
+bazel_docs() { (cd "$ROOT/$MODULE" && bazel --output_base="$DOCS_BASE" "$@"); }
+bazel_docs query --output=label --output_file="$TMP/doc_targets" 'kind("starlark_doc_extract rule", //...)' >&2
+[[ -s "$TMP/doc_targets" ]] || die "no starlark_doc_extract target found in ${MODULE}"
+bazel_docs build --target_pattern_file="$TMP/doc_targets" >&2
+DOCS_BIN="$(bazel_docs info bazel-bin)"
+tar --create --auto-compress --directory "$DOCS_BIN" --file "$OUT/$DOCS_ARCHIVE" .
+bazel_docs shutdown >/dev/null 2>&1 || true
+[[ -s "$OUT/$DOCS_ARCHIVE" ]] || die "the docs archive ${DOCS_ARCHIVE} is empty"
+
+printf '%s\n\n' "$SNIPPET"
+# git-cliff comes from rules_multitool in the tools/ module of rules_dart; the
+# work directory is the repository, the configuration the module's own.
+(cd "$TOOLS" && bazel run "${quiet[@]}" @multitool//tools/git-cliff -- \
+  --workdir "$ROOT" --config "$ROOT/$MODULE/cliff.toml" --strip header "${BASE}..${TAG}")

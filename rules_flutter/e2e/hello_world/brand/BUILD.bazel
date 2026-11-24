@@ -1,0 +1,17 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_library")
+
+package(
+    default_visibility = ["//sub:__pkg__"],
+)
+
+# A first-party package whose pubspec names an asset. An app whose pubspec
+# depends on it bundles it at `packages/brand/assets/brand.txt`.
+flutter_library(
+    name = "brand",
+    package_name = "brand",
+    srcs = ["lib/brand.dart"],
+    data = [
+        "assets/brand.txt",
+        "pubspec.yaml",
+    ],
+)

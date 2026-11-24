@@ -1,0 +1,69 @@
+load("@android_model_sub//:defs.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin", "flutter_drive_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_integration_test")
+
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["debug"],
+)
+
+flutter_integration_test(
+    name = "sub_test",
+    package_name = "sub",
+    size = "large",
+    srcs = ["integration_test/sub_test.dart"],
+    android_app = flutter_android_app,
+    app_srcs = ["lib/main.dart"],
+    platform = "android",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = [
+        "assets/sub.txt",
+        "shaders/sub.frag",
+    ],
+    deps = [
+        "//libs/brand",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+    ],
+)
+
+# The app itself, for `flutter_drive_test`: a host-side driver against the app on the emulator.
+flutter_application(
+    name = "sub_app",
+    package_name = "sub",
+    srcs = ["lib/main.dart"],
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = [
+        "assets/sub.txt",
+        "shaders/sub.frag",
+    ],
+    deps = [
+        "//libs/brand",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_android_app(
+    name = "sub_android",
+    abis = ["x86_64"],
+    application = ":sub_app",
+)
+
+# The driver connects to the launched app's VM service and exits 0, so this passes only when the
+# emulator ran the debug APK and the rule forwarded the URI. `manual`: e2e.yaml runs both by name.
+flutter_drive_test(
+    name = "drive_pass_test",
+    app = ":sub_android_apk",
+    driver = "test_driver/pass_driver.dart",
+)
+
+# Red twin: the driver exits 1 and prints DRIVE_RED_MUST_FAIL.
+flutter_drive_test(
+    name = "drive_fail_test",
+    app = ":sub_android_apk",
+    driver = "test_driver/fail_driver.dart",
+)

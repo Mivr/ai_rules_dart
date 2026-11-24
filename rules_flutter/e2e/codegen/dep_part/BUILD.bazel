@@ -1,0 +1,36 @@
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+load("@rules_flutter//flutter:defs.bzl", "flutter_library")
+
+# Dependency package mixing a hand-written source with a generated `part`.
+# Consumed by //:app — exercises per-dependency source assembly and the dev
+# tool resolving a generated part in a NON-app package.
+
+run_binary(
+    name = "settings_gen",
+    srcs = ["lib/settings.dart"],
+    outs = ["lib/settings.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/settings.dart)",
+        "--output",
+        "$(execpath lib/settings.g.dart)",
+    ],
+    tool = ":settings_generator",
+)
+
+flutter_library(
+    name = "dep_part",
+    package_name = "dep_part",
+    srcs = [
+        "lib/settings.dart",
+        ":settings_gen",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# The generator `:settings_gen` runs, built for the exec platform.
+dart_binary(
+    name = "settings_generator",
+    main = "tools/settings_generator.dart",
+)

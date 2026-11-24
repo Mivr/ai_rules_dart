@@ -1,0 +1,14 @@
+# Local-registry lock for the hosted-archive guard e2e: an entry path climbing
+# above the package root must fail the fetch before extraction.
+# See pubspec.ok.lock for the url placeholder.
+packages:
+  evil_path_dotdot:
+    dependency: "direct main"
+    description:
+      name: evil_path_dotdot
+      sha256: "07d64d557c0f0d3ba51791e7f1d76c60a916a22443b9b9fa741aff78d76be878"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

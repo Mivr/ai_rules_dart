@@ -1,0 +1,44 @@
+"""Plugin whose private headers live beside, above and below its sources.
+
+The layout mirrors `permission_handler_apple`: a public umbrella header under
+`include/`, an internal header of the same basename without include guards, and
+`strategies/` and `util/` headers importing a shared header from the parent
+directory. The plugin compiles only when private headers stay out of the
+public module and their directories reach the ObjC compile.
+"""
+
+load("@rules_flutter//flutter:ios.bzl", "flutter_apple_plugin_library")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+package(default_visibility = ["//:__subpackages__"])
+
+_IOS_ONLY = ["@platforms//os:ios"]
+
+flutter_apple_plugin_library(
+    name = "plugin",
+    srcs = glob([
+        "*.h",
+        "*.m",
+        "include/**/*.h",
+        "strategies/*.h",
+        "strategies/*.m",
+        "util/*.h",
+        "util/*.m",
+    ]),
+    includes = [
+        "include",
+        "include/sample",
+    ],
+    module_name = "plugin_private_headers",
+    platform = "ios",
+    target_compatible_with = _IOS_ONLY,
+)
+
+swift_library(
+    name = "consumer",
+    srcs = ["consumer.swift"],
+    module_name = "plugin_private_headers_consumer",
+    tags = ["manual"],
+    target_compatible_with = _IOS_ONLY,
+    deps = [":plugin"],
+)

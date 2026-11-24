@@ -1,0 +1,93 @@
+########################
+# Import bazelrc presets
+import %workspace%/tools/preset.bazelrc
+import %workspace%/tools/strict.bazelrc
+
+# Never retry failed tests: a retry hides a flake.
+test --flaky_test_attempts=1
+
+# Don't want to push a rules author to update their deps if not needed.
+# https://bazel.build/reference/command-line-reference#flag--check_direct_dependencies
+# https://bazelbuild.slack.com/archives/C014RARENH0/p1691158021917459?thread_ts=1691156601.420349&cid=C014RARENH0
+common --config=ruleset
+
+# `dart analyze` and the `dart format` check run as an aspect over every Dart
+# target a `bazel test` names; any diagnostic, down to an info, fails the build.
+# Tag a target `no-dart-analyze` or `no-dart-format` to opt it out of one.
+# The config line is `common` because `bazel run` of `dart_fix`/`dart_format`
+# reads it too.
+test --aspects=@rules_dart//dart:analyze.bzl%dart_analyze
+test --output_groups=+dart_analyze
+test --output_groups=+dart_format
+common --@rules_dart//dart:analysis_config=//:analysis_config
+
+# Bazel settings that apply to this repository.
+# Take care to document any settings that you expect users to apply.
+#
+# There is no CI-only bazelrc. `tools/strict.bazelrc` is a developer-visible
+# config imported above: `--config=strict` turns on the incompatible flags Bazel
+# has yet to flip, and CI's `strict` job and a developer run the same set. Other
+# flags that CI adds and a developer does not are written inline on the `bazel`
+# invocations in .github/workflows/ci.yaml.
+
+# Ensure that the MODULE.bazel.lock file is complete and committed.
+# This is an important security measure: it ensures that developers on the
+# same rule set download dependencies at the same versions with the same bits.
+# This setting does not affect modules that depend on this module.
+#
+# When updating dependencies:
+#     bazel mod tidy --lockfile_mode=refresh
+#     bazel build --nobuild --lockfile_mode=update //...
+#     bazel build --nobuild --lockfile_mode=error //...
+#
+# All three, in that order. `mod tidy` settles the module graph but evaluates
+# only the extensions it happens to need, so on its own it leaves a lock a
+# build then rejects ("The module extension '...' does not exist in the
+# lockfile"). The `update` pass is what forces the rest in; the `error` pass is
+# what proves the result is self-consistent.
+#
+# In this repo there is a fourth step, first: move every gitignored
+# `.bazelrc.user` aside — the root's plus one per `e2e/*` workspace. Enumerate
+# them rather than counting from memory, because the set grows with the
+# workspaces: `find . -name .bazelrc.user -not -path './bazel-*'`. An
+# `--override_module` line in one applies to `mod tidy` too, and regenerating
+# through it writes a lock that omits the very registry entry it overrides.
+# (rules_dart itself is the sibling directory through `MODULE.bazel`, so it
+# needs no such line.)
+#
+# When testing different versions of Bazel, use --lockfile_mode=update or
+# --lockfile_mode=off. The lock file format changes over time, and different
+# versions of Bazel may expect different syntax. Bazel also implicitly requires
+# some modules, and different versions have different dependencies, which
+# also affects the contents of the lock file.
+common --lockfile_mode=error
+
+# `//tools/pip_lock_guard:pip_facts_test` re-derives rules_python's pip "facts"
+# from the checked-in requirements files and fails on any drift, on every host.
+# That matters independently of the lock: a checkout overriding a module (e.g. a
+# sibling rules_dart) has to turn lockfile checking off entirely, and every
+# checkout here does.
+#
+# The lock itself is host-independent under rules_python 2.3.2, whose facts `v2`
+# record the union of all three per-OS requirements files, so it can be
+# regenerated on any host. Windows is unverified: CI's only Windows job builds a
+# separate module with no pip dependency, so it never reads this lock. If it
+# ever disagrees, measure rather than relaxing `--lockfile_mode` again.
+
+# rules_jvm_external 7+ and rules_android 0.7.2+ ship internal tool jars
+# compiled at Java 21+. Bazel's `--tool_java_runtime_version` defaults to
+# `remotejdk_11`, which produces UnsupportedClassVersionError at action
+# execution time, and `--tool_java_language_version` defaults to 8/11
+# (older than the Records syntax in those rulesets' source). Pin to the
+# current LTS so the toolchain compiles and runs them cleanly.
+common --tool_java_language_version=25
+common --tool_java_runtime_version=remotejdk_25
+
+# Load any settings specific to the current user.
+# .bazelrc.user should appear in .gitignore so that settings are not shared with team members
+# This needs to be last statement in this
+# config, as the user configuration should be able to overwrite flags from this file.
+# See https://docs.bazel.build/versions/master/best-practices.html#bazelrc
+# (Note that we use .bazelrc.user so the file appears next to .bazelrc in directory listing,
+# rather than user.bazelrc as suggested in the Bazel docs)
+try-import %workspace%/.bazelrc.user

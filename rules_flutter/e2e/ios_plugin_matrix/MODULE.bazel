@@ -1,0 +1,71 @@
+"E2e test: the real-plugin fetch matrix for iOS native dependencies (POD-2)"
+
+module(name = "rules_flutter_ios_plugin_matrix")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+bazel_dep(name = "apple_support", version = "2.9.1")
+bazel_dep(name = "rules_apple", version = "5.2.0")
+bazel_dep(name = "rules_cc", version = "0.2.26")
+bazel_dep(name = "rules_swift", version = "4.1.2")
+bazel_dep(name = "rules_shell", version = "0.8.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+flutter.pub(
+    name = "deps_pods",
+    ios_podfile_lock = "//:Podfile.lock",
+    lock = "//:pubspec.lock",
+)
+use_repo(
+    flutter,
+    "deps",
+    "deps__cloud_firestore",
+    "deps__firebase_auth",
+    "deps__firebase_core",
+    "deps__firebase_messaging",
+    "deps__flutter_inappwebview_ios",
+    "deps__google_maps_flutter_ios",
+    "deps__google_mlkit_commons",
+    "deps__google_sign_in_ios",
+    "deps__image_picker_ios",
+    "deps__permission_handler_apple",
+    "deps__sentry_flutter",
+    "deps__stripe_ios",
+    "deps__url_launcher_ios",
+    "deps__webview_flutter_wkwebview",
+    "deps_pods",
+    "deps_pods__cloud_firestore",
+    "deps_pods__firebase_auth",
+    "deps_pods__firebase_core",
+    "deps_pods__firebase_messaging",
+    "deps_pods__flutter_inappwebview_ios",
+    "deps_pods__google_maps_flutter_ios",
+    "deps_pods__google_mlkit_commons",
+    "deps_pods__google_sign_in_ios",
+    "deps_pods__image_picker_ios",
+    "deps_pods__permission_handler_apple",
+    "deps_pods__sentry_flutter",
+    "deps_pods__stripe_ios",
+    "deps_pods__url_launcher_ios",
+    "deps_pods__webview_flutter_wkwebview",
+    "flutter_ios_engine",
+    "flutter_toolchains",
+)
+
+register_toolchains("@flutter_toolchains//:all")

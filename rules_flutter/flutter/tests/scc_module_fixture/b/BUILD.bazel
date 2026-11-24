@@ -1,0 +1,10 @@
+load("@rules_dart//dart:defs.bzl", "dart_package_member")
+
+# One member of the cycle `../BUILD.bazel` merges: its own package and `lib/` root.
+dart_package_member(
+    name = "b",
+    package_name = "scc_module_b",
+    srcs = ["lib/b.dart"],
+    tags = ["manual"],
+    visibility = ["//flutter/tests:__subpackages__"],
+)

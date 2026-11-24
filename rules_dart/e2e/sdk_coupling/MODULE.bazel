@@ -1,0 +1,55 @@
+module(name = "sdk_coupling_e2e")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../..",
+)
+
+# `run_binary` runs the part generator.
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+
+# Register two Dart SDK toolchains:
+# - `exec_dart` for `//dart:exec_tools_toolchain_type`
+# - `target_dart` for `//dart:toolchain_type`
+# They are the same version, and have to be: a tool snapshot the exec SDK builds
+# does not load in another SDK's runtime (`Wrong full snapshot version`), so a
+# target on another SDK cannot run it. This workspace proves that the two
+# registrations stay separate, not that their versions differ. Name a listed
+# version; the rules' default is the natural one.
+# Every internal kernel tool (`copy_tree`, `analyzer_summary`,
+# `analyze_runner`, `format_runner`, `fix_runner`, `kernel_link`)
+# must compile with `exec_dart` so it matches the VM that executes it, while
+# target binaries and tests compile and run with `target_dart`.
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+dart.toolchain(
+    name = "exec_dart",
+    dart_version = "3.13.5",
+)
+dart.toolchain(
+    name = "target_dart",
+    dart_version = "3.13.5",
+)
+use_repo(dart, "exec_dart_toolchains", "target_dart_toolchains")
+
+register_toolchains(
+    "@exec_dart_toolchains//:linux-x64_exec_tools_toolchain",
+    "@exec_dart_toolchains//:linux-arm64_exec_tools_toolchain",
+    "@exec_dart_toolchains//:macos-x64_exec_tools_toolchain",
+    "@exec_dart_toolchains//:macos-arm64_exec_tools_toolchain",
+    "@exec_dart_toolchains//:windows-x64_exec_tools_toolchain",
+    "@target_dart_toolchains//:all",
+)
+
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "pub_deps",
+    lock = "//:pubspec.lock",
+    on_version_conflict = "upgrade",
+)
+pub.package(
+    name = "very_good_analysis",
+    sha256 = "0bd5eb8d6be76aa0d71e70cbdae6cac8f784f761170568e3c2214a6948c7f6d3",
+    version = "11.0.0",
+)
+use_repo(pub, "pub_deps", "very_good_analysis")

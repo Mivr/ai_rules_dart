@@ -1,0 +1,16 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: cquery cycle_breaks cycle_a
+    run: bazel cquery @deps__cycle_a//:cycle_a
+  - name: cquery cycle_breaks cycle_b
+    run: bazel cquery @deps__cycle_b//:cycle_b
+  - name: cquery cycle_breaks cycle_app
+    run: bazel cquery @deps//:cycle_app
+  - name: cquery automatic scc cycle_a
+    run: bazel cquery @deps_cycle//:cycle_a
+  - name: cquery automatic scc cycle_b
+    run: bazel cquery @deps_cycle//:cycle_b
+  - name: cquery automatic scc cycle_app
+    run: bazel cquery @deps_cycle//:cycle_app
+  - name: cquery automatic scc merged spoke
+    run: bazel cquery @deps_cycle__scc__cycle_a__cycle_b//:all

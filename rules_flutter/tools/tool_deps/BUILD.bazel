@@ -1,0 +1,10 @@
+# The pub lock of rules_flutter's own tools and tests, the `@tool_deps` hub
+# (MODULE.bazel). Regenerate the plan after changing the lock:
+#   bazel run @rules_dart//dart/pub/plan -- write --lock tools/tool_deps/pubspec.lock --out tools/tool_deps/pub_plan.json
+exports_files(
+    [
+        "pub_plan.json",
+        "pubspec.lock",
+    ],
+    visibility = ["//visibility:public"],
+)

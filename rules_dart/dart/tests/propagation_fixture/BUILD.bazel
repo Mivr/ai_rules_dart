@@ -1,0 +1,66 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("//dart:defs.bzl", "dart_binary")
+load("//dart/pub/tests:propagation_test.bzl", "diamond_probe", "manifest_contains_test", "ownership_violation_test", "version_conflict_test")
+
+# The near side of the diamond. `:app` names no `code_assets` at all — it
+# depends on `prop_a`, which depends on `prop_b`, which owns the asset.
+
+dart_binary(
+    name = "app",
+    main = "main.dart",
+    deps = ["//dart/tests/propagation_fixture/a"],
+)
+
+diamond_probe(
+    name = "diamond_probe_target",
+    # The index and the library.
+    expected_file_count = 2,
+    expected_indexes = ["code_asset.assets.json"],
+    deps = ["//dart/tests/propagation_fixture/a"],
+)
+
+build_test(
+    name = "diamond_probe_test",
+    targets = [":diamond_probe_target"],
+)
+
+manifest_contains_test(
+    name = "propagated_asset_in_manifest_test",
+    size = "small",
+    expected_files = ["code_asset.assets.json"],
+    target_under_test = ":app",
+)
+
+ownership_violation_test(
+    name = "ownership_violation_test",
+    size = "small",
+    target_under_test = "//dart/tests/propagation_fixture/b:misowned",
+)
+
+# Two assets claiming one id fail the manifest step when it runs (the
+# Dart VM resolves an id to exactly one library): ids are known only then.
+# `hook_runner_test.dart` covers that message.
+
+# Two hubs supplying one package at different versions — the shape a pair of
+# drifted lock files produces, with `pub.from_lock()` and rules_flutter's
+# `flutter.pub()` each generating a spoke for the same package. The two
+# `dart_library` targets stand in for those spokes, so the fixture needs no
+# network. Before the agreement check this built successfully: first-record-wins
+# resolved `dupver` to whichever arrived first in dependency order, and the
+# other version's sources were simply never compiled against.
+
+dart_binary(
+    name = "dupver_app",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [
+        "//dart/tests/propagation_fixture/dupver_a:dupver",
+        "//dart/tests/propagation_fixture/dupver_b:dupver",
+    ],
+)
+
+version_conflict_test(
+    name = "version_conflict_test",
+    size = "small",
+    target_under_test = ":dupver_app",
+)

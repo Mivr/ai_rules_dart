@@ -1,0 +1,30 @@
+load("//flutter:defs.bzl", "flutter_integration_test")
+load("//flutter/tests:layering_test.bzl", "layering_integration_fixtures")
+
+# `lib/app.dart` imports `package:leaf`, which reaches the targets only through
+# `mid`. Each target is checked over its entry and `app_srcs`, so it needs
+# `leaf` as a direct dep. They are `manual`: `:linux_it` built with
+# `--output_groups=_validation` fails naming `leaf`, and its twin
+# `:linux_fixed_it`, which declares it, passes.
+layering_integration_fixtures(
+    name = "integration",
+    deps = [
+        "//flutter/tests/layering_fixture/mid",
+        "//flutter/tests/layering_integ_fixture/flutter_test_dep",
+    ],
+)
+
+flutter_integration_test(
+    name = "linux_fixed_it",
+    package_name = "layering_integ_fixture",
+    srcs = ["test/entry.dart"],
+    app_srcs = ["lib/app.dart"],
+    platform = "linux",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//flutter/tests/layering_fixture/leaf",
+        "//flutter/tests/layering_fixture/mid",
+        "//flutter/tests/layering_integ_fixture/flutter_test_dep",
+    ],
+)

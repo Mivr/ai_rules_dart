@@ -1,0 +1,1 @@
+exports_files(["rules_apple_macos_extension_app_intents.patch"])

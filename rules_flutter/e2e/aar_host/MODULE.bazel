@@ -1,0 +1,47 @@
+"""E2e test: a native Android host app that embeds a Flutter module packaged as an AAR (add-to-app).
+
+The host is a plain Android Gradle project (`android/`, no Flutter Gradle plugin) built from the pinned
+Gradle model, `android_model.json`, written by `bazel run //:android_pin`. It names the Flutter engine
+and its Java embedding as Maven dependencies; the module's AAR is built here by `flutter_android_aar`.
+"""
+
+module(name = "rules_flutter_aar_host")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
+bazel_dep(name = "platforms", version = "1.1.0")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+
+# Named, not inherited: the host's Gradle file (android/app/build.gradle.kts) names the engine
+# revision of this Flutter release, and the module's AOT library must be built by the same one.
+flutter.toolchain(flutter_version = "3.47.7")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(
+    flutter,
+    "deps",
+    "flutter_android_headless_runtime",
+    "flutter_toolchains",
+)
+
+register_toolchains("@flutter_toolchains//:all")
+
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
+
+register_toolchains("@android_model//:kotlin_toolchain")

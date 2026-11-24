@@ -1,0 +1,10 @@
+load("//flutter:defs.bzl", "flutter_library")
+
+flutter_library(
+    name = "app",
+    package_name = "registrant_twin_app",
+    srcs = ["lib/app.dart"],
+    tags = ["manual"],
+    visibility = ["//flutter/tests:__subpackages__"],
+    deps = ["//flutter/tests/registrant_twin_fixture/flutter"],
+)

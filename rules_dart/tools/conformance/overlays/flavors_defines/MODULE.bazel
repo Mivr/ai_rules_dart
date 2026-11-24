@@ -1,0 +1,33 @@
+module(name = "conformance_flavors_defines")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
+bazel_dep(name = "rules_android_ndk", version = "0.1.5")
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_toolchains", "flutter_web_sdk")
+
+register_toolchains("@flutter_toolchains//:all")
+
+# The NDK C toolchain, for the native code the Dart side builds (libdartjni.so of package:jni).
+android_ndk = use_extension("@rules_android_ndk//:extension.bzl", "android_ndk_repository_extension")
+use_repo(android_ndk, "androidndk")
+
+register_toolchains("@androidndk//:all")
+
+# Android from the Gradle model: android_model.json is the pin of this corpus project
+# (`bazel run //:android_pin` in a copy of it with this overlay).
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
+
+register_toolchains("@android_model//:kotlin_toolchain")
+
+bazel_dep(name = "llvm", version = "0.8.19")
+
+register_toolchains("@llvm//toolchain:linux_x86_64_to_linux_x86_64")

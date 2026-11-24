@@ -1,0 +1,24 @@
+# The test module is e2e/smoke of the release archive (the module's directory,
+# `rules_flutter-v<version>.tar.gz`), so everything it names is in the archive. Run by
+# hand on Linux with Bazel 9.3.0 against the archives of a rehearsal release
+# (see RELEASING.md at the repository root); the other platforms and Bazel
+# versions of the matrix have not been run.
+bcr_test_module:
+  module_path: "e2e/smoke"
+  matrix:
+    platform: ["debian11", "macos", "ubuntu2204", "windows"]
+    bazel: ["9.0.0", "9.x", "rolling"]
+  tasks:
+    run_tests:
+      name: "Run test module"
+      platform: ${{ platform }}
+      bazel: ${{ bazel }}
+      # rules_android registers `@androidsdk//:all`, so every build fetches the
+      # SDK named by ANDROID_HOME. The macOS agents point it at an SDK with
+      # build-tools 30.0.3, which rules_android rejects, failing the smoke test
+      # before it runs. Unset, the SDK repository is an empty stub.
+      environment:
+        ANDROID_HOME: ""
+        ANDROID_NDK_HOME: ""
+      test_targets:
+        - "//..."

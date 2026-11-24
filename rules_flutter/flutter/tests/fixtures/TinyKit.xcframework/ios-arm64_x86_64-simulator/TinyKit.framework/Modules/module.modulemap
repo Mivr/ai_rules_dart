@@ -1,0 +1,5 @@
+framework module TinyKit {
+	umbrella header "TinyKit.h"
+	export *
+	module * { export * }
+}

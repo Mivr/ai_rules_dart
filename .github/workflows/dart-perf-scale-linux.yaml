@@ -1,0 +1,71 @@
+name: Dart Perf Scale Linux
+# The analysis phase of generated graphs of 2,000 and 5,000 libraries, deep and
+# wide, with and without the analyze and format aspects, by the bench harness
+# (rules_dart/tools/perf); the rows and the plan's table are uploaded.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      head_ref:
+        description: "Git ref under measurement"
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout bench tooling
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: tools-src
+      - name: Enable and verify Linux user namespaces
+        run: tools-src/rules_dart/.github/scripts/enable_linux_sandbox.sh
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: false
+          disk-cache: false
+          external-cache: false
+          repository-cache: false
+          cache-save: false
+      - name: Configure tooling Bazel version
+        run: |
+          if [ -f tools-src/rules_dart/.bazelversion ]; then
+            cp tools-src/rules_dart/.bazelversion tools-src/rules_dart/tools/.bazelversion
+          fi
+      - name: Checkout rules under measurement
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.head_ref || github.sha }}
+          path: rules-head
+          fetch-depth: 0
+      - name: Measure the analysis phase
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/scale-out"
+          (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/tooling-outbase" run //perf:bench -- run \
+            --flows="analysis.,actions_per_source.,-tag:stock" \
+            --repo="$GITHUB_WORKSPACE/rules-head" \
+            --scratch="$RUNNER_TEMP/bench" \
+            --out="$GITHUB_WORKSPACE/scale-out/rows.jsonl")
+          (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/tooling-outbase" run //perf:bench -- table \
+            --rows="$GITHUB_WORKSPACE/scale-out/rows.jsonl" \
+            --out="$GITHUB_WORKSPACE/scale-out/table.md")
+          cat "$GITHUB_WORKSPACE/scale-out/table.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Shut down tooling Bazel server
+        if: ${{ always() }}
+        run: |
+          if [ -d tools-src/rules_dart/tools ]; then
+            (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/tooling-outbase" shutdown) || echo "bazel shutdown failed" >&2
+          fi
+      - name: Upload the rows and the table
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-scale
+          path: scale-out
+          if-no-files-found: error
+          retention-days: 7

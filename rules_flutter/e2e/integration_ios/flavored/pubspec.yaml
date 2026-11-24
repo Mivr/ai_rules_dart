@@ -1,0 +1,25 @@
+# The project of the flavored apps and tests (`:app_dev`, `:app_prod`,
+# `:flavor_dev_test`, `:flavor_prod_test`): the root's app over the
+# `flavor_assets` package, whose pubspec names one asset per flavor. A
+# directory of its own because every app over a pubspec must have each package
+# it names in its dependencies, and the other suites here do not depend on
+# `//flavor_assets`. `lib/main.dart` shows the logo, a copy of which sits
+# beside this file: a project's assets live under its directory.
+name: integration_ios
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  flavor_assets:
+    path: ../flavor_assets
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo.png

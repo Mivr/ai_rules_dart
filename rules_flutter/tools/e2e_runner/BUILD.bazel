@@ -1,0 +1,73 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+_LIB_DEPS = [
+    "@tool_deps//:args",
+    "@tool_deps//:path",
+    "@tool_deps//:yaml",
+]
+
+dart_library(
+    name = "lib",
+    package_name = "e2e_runner",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = _LIB_DEPS,
+)
+
+# Spec-driven e2e workspace runner (`mivr-e2e-spec/1`). Stages an e2e workspace
+# into an isolated scratch directory with its own `--output_base`, rewrites
+# escaping `local_path_override` paths, rejects Bazel exit code 4, enforces
+# `min_tests_executed` from BEP and JUnit `test.xml`, and runs `bazel shutdown`
+# on every exit path.
+dart_binary(
+    name = "e2e_runner",
+    main = "bin/e2e_runner.dart",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":lib",
+        "@tool_deps//:args",
+        "@tool_deps//:path",
+    ],
+)
+
+dart_test(
+    name = "spec_test",
+    size = "small",
+    main = "test/spec_test.dart",
+    deps = [
+        ":lib",
+        "@tool_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "staging_test",
+    size = "small",
+    main = "test/staging_test.dart",
+    deps = [
+        ":lib",
+        "@tool_deps//:path",
+        "@tool_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "junit_test",
+    size = "small",
+    main = "test/junit_test.dart",
+    deps = [
+        ":lib",
+        "@tool_deps//:path",
+        "@tool_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "runner_test",
+    size = "small",
+    main = "test/runner_test.dart",
+    deps = [
+        ":lib",
+        "@tool_deps//:path",
+        "@tool_deps//:test",
+    ],
+)

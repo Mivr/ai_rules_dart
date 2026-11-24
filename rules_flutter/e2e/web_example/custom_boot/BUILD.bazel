@@ -1,0 +1,70 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("@rules_flutter//flutter:web.bzl", "flutter_web_app", "flutter_web_bundle")
+
+# The templating surface, exercised by a real build.
+#
+# A project of its own (`pubspec.yaml`, `web/`) because `web/flutter_bootstrap.js`
+# is read from the project's `web/` directory: in the workspace root it would
+# have silently become the bootstrap of every Tier 1 target there.
+#
+# Being nested is also what makes this the workspace's coverage for a web app
+# outside the workspace root, where an app's `package:` URIs must resolve
+# against its own package rather than the root's.
+
+# Tier 1 with both templates supplied: web/index.html carrying web_defines and
+# a placeholder no define names (left in place, as the Flutter tool leaves it),
+# and web/flutter_bootstrap.js carrying the built-ins.
+flutter_web_app(
+    name = "custom_boot",
+    package_name = "custom_boot",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    web_defines = {"API_URL": "https://api.example.com"},
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+# Tier 2 inlining the substituted bootstrap into the page.
+#
+# Its project is `inline/` (a pubspec and `web/index.html`), so the page is not
+# this package's `web/index.html`; with no `web/flutter_bootstrap.js` there, the
+# Flutter tool's own default bootstrap is what is inlined.
+#
+# build_test only, and deliberately so: this target cannot build in `-c dbg`.
+# The dev tool serves index.html as built, next to a flutter_bootstrap.js the
+# build substituted for DDC — so an index carrying an inlined copy of the
+# bundle's would boot the built bundle and hot reload would do nothing, which
+# the templating pass refuses rather than letting a developer discover it from
+# a dead reload key.
+flutter_web_bundle(
+    name = "inline_boot",
+    package_name = "custom_boot",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "inline/pubspec.yaml",
+    pubspec_srcs = ["inline/web/index.html"],
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+build_test(
+    name = "custom_boot_build_test",
+    size = "small",
+    targets = [
+        ":custom_boot",
+        ":inline_boot",
+    ],
+)
+
+dart_test(
+    name = "verify_templating_test",
+    size = "small",
+    data = [
+        ":custom_boot",
+        ":inline_boot",
+    ],
+    main = "test/verify_templating_test.dart",
+)

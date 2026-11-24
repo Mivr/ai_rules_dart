@@ -1,0 +1,10 @@
+/bazel-*
+.bazelrc.user
+.dart_tool/
+# What `dart run build_runner build` writes when the references are made
+# (see README.md). Bazel declares these paths as outputs.
+/pkgs/**/*.g.dart
+/pkgs/**/*.freezed.dart
+/pkgs/**/*.mocks.dart
+/pkgs/**/*.config.dart
+/pkgs/**/*.module.dart

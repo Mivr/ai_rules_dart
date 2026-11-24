@@ -1,0 +1,3 @@
+"Reproducibility canary fixture exercising nondeterministic execution."
+
+module(name = "repro_canary")

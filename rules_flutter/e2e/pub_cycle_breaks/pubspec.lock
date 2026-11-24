@@ -1,0 +1,33 @@
+# Hand-written lock for the cycle-break proof: the only resolved packages
+# are the `cycle_a`, `cycle_b` and `cycle_app` path packages, plus the Flutter
+# SDK entry `flutter.pub` requires. The fixture never runs `dart pub get`.
+packages:
+  cycle_a:
+    dependency: "direct main"
+    description:
+      path: "cycle_a"
+      relative: true
+    source: path
+    version: "0.1.0"
+  cycle_app:
+    dependency: "direct main"
+    description:
+      path: "cycle_app"
+      relative: true
+    source: path
+    version: "0.1.0"
+  cycle_b:
+    dependency: "direct main"
+    description:
+      path: "cycle_b"
+      relative: true
+    source: path
+    version: "0.1.0"
+  flutter:
+    dependency: "direct main"
+    description: flutter
+    source: sdk
+    version: "0.0.0"
+sdks:
+  dart: ">=3.13.0 <4.0.0"
+  flutter: ">=3.18.0-18.0.pre.54"

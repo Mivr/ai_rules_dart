@@ -1,0 +1,692 @@
+"""Plugin registrant generation (Dart and native).
+
+Generates the Dart source that imports and registers all dartPluginClass plugins
+at application startup, and native registrant source files for method channel
+plugins (pluginClass) on desktop platforms.
+"""
+
+load(
+    "//flutter/private:plugin_federation.bzl",
+    "collect_legacy_dart_plugins",
+    "collect_platform_dart_plugins",
+    "resolve_federated_plugins",
+)
+
+visibility(["//flutter/..."])
+
+def _render_plugin_registrant(dart_plugins):
+    """Renders the `_PluginRegistrant` Dart source for collected entries."""
+    lines = ["// GENERATED — do not edit.", "// ignore_for_file: depend_on_referenced_packages"]
+    lines += ["import 'package:%s/%s';" % (p.package, p.dart_file_name) for p in dart_plugins]
+    lines += ["", "@pragma('vm:entry-point')", "class _PluginRegistrant {"]
+    lines += ["  @pragma('vm:entry-point')", "  static void register() {"]
+
+    # Non-web Dart plugins use the no-arg `registerWith()` signature (e.g.
+    # PathProviderFoundation, UrlLauncherMacOS). Web plugins use the
+    # registrar-passing signature, handled by _make_web_registrant_content.
+    lines += ["    %s.registerWith();" % p.dart_plugin_class for p in dart_plugins]
+    return "\n".join(lines + ["  }", "}", ""])
+
+def make_registrant_content(plugins, target_platform = None):
+    """Generate Dart source content for plugin registration.
+
+    Two output shapes depending on `target_platform`:
+
+    - **`web`**: imports `package:flutter_web_plugins/flutter_web_plugins.dart`
+      to get `webPluginRegistrar`, then for each plugin whose web entry has
+      a `pluginClass` (the convention Flutter uses for web plugins —
+      web plugins are pure Dart and `pluginClass` is the Dart class), emits
+      a plain `registerPlugins()` function calling
+      `<PluginClass>.registerWith(webPluginRegistrar);`. Called by the web
+      bootstrap wrapper's main (there is no engine pre-main hook on web).
+      The `fileName` override (from `flutter.plugin.platforms.web.fileName`)
+      is honored.
+    - **Other platforms (or `None`)**: the upstream engine-invocable shape —
+      `@pragma('vm:entry-point') class _PluginRegistrant` with a static
+      `register()` that calls each `dartPluginClass`'s `registerWith()`. The engine
+      looks this class up in the library named by
+      `-Dflutter.dart_plugin_registrant` and invokes `register()` before
+      `main()` on every root-isolate launch — including hot restart, which
+      is what keeps plugin registration alive after a restart. `fileName` (or legacy `dartFileName`) is honored.
+
+    Args:
+        plugins: List of plugin structs (name, platforms dict).
+        target_platform: Optional platform string (e.g. "web", "linux", "android").
+            When set, only registers plugins for that platform. When None,
+            falls back to legacy "first platform with dartPluginClass wins".
+
+    Returns:
+        String of Dart source code, or empty string if there are no Dart
+        plugins.
+    """
+    if target_platform:
+        resolved_plugins = resolve_federated_plugins(plugins, target_platform)
+        if target_platform == "web":
+            return _make_web_registrant_content(resolved_plugins)
+        dart_plugins = collect_platform_dart_plugins(resolved_plugins, target_platform)
+    else:
+        # Legacy: pick first platform with dartPluginClass.
+        dart_plugins = collect_legacy_dart_plugins(plugins)
+
+    if not dart_plugins:
+        return ""
+
+    return _render_plugin_registrant(dart_plugins)
+
+def _make_web_registrant_content(plugins):
+    """Generate the Dart registrant source for Flutter web.
+
+    Web plugins are pure Dart, and Flutter's `flutter pub get` accepts
+    either `pluginClass` (most modern web plugins, e.g. `url_launcher_web`,
+    `package_info_plus`) or `dartPluginClass` (older convention, still
+    used by some plugins).
+
+    When `pluginClass` is set, the registrar is the global
+    `webPluginRegistrar` from `package:flutter_web_plugins`. When only
+    `dartPluginClass` is set, fall back to the same `null`-registrar
+    convention used on mobile/desktop.
+    """
+    resolved_plugins = resolve_federated_plugins(plugins, "web")
+    web_plugins_with_registrar = []
+    web_plugins_no_registrar = []
+    for plugin in resolved_plugins:
+        info = plugin.platforms.get("web", {})
+        if not info:
+            continue
+        plugin_class = info.get("pluginClass", "")
+        if plugin_class and plugin_class != "none":
+            file_name = info.get("fileName", info.get("dartFileName", plugin.name + ".dart"))
+            web_plugins_with_registrar.append(struct(
+                package = plugin.name,
+                plugin_class = plugin_class,
+                file_name = file_name,
+            ))
+            continue
+        dart_class = info.get("dartPluginClass", "")
+        if dart_class:
+            file_name = info.get("fileName", info.get("dartFileName", plugin.name + ".dart"))
+            web_plugins_no_registrar.append(struct(
+                package = plugin.name,
+                plugin_class = dart_class,
+                file_name = file_name,
+            ))
+
+    if not web_plugins_with_registrar and not web_plugins_no_registrar:
+        return ""
+
+    lines = ["// GENERATED — do not edit.", "// ignore_for_file: depend_on_referenced_packages"]
+    if web_plugins_with_registrar:
+        lines.append("import 'package:flutter_web_plugins/flutter_web_plugins.dart';")
+    for p in web_plugins_with_registrar + web_plugins_no_registrar:
+        lines.append("import 'package:%s/%s';" % (p.package, p.file_name))
+    lines.append("")
+    lines.append("void registerPlugins() {")
+    for p in web_plugins_with_registrar:
+        lines.append("  %s.registerWith(webPluginRegistrar);" % p.plugin_class)
+    for p in web_plugins_no_registrar:
+        # `dartPluginClass`-only plugins use the no-arg signature on web
+        # too — same as Flutter's non-web Dart-side registrant convention.
+        lines.append("  %s.registerWith();" % p.plugin_class)
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+def _collect_native_plugins(plugins, target_platform):
+    """Collect plugins with a native pluginClass for the given platform.
+
+    Args:
+        plugins: List of plugin structs.
+        target_platform: Platform string ("linux", "windows", "macos", "ios", "android").
+
+    Returns:
+        List of structs with name, plugin_class, and (for android) package fields.
+    """
+    resolved_plugins = resolve_federated_plugins(plugins, target_platform)
+    result = []
+    for plugin in resolved_plugins:
+        info = plugin.platforms.get(target_platform, {})
+        if info:
+            plugin_class = info.get("pluginClass", "")
+            if plugin_class and plugin_class != "none":
+                result.append(struct(
+                    name = plugin.name,
+                    plugin_class = plugin_class,
+                    package = info.get("package", ""),
+                ))
+    return result
+
+def _ensure_native_plugins(plugins, target_platform):
+    """Ensure plugins are resolved and collected as native plugins.
+
+    Args:
+        plugins: List of plugin structs.
+        target_platform: Target platform string.
+
+    Returns:
+        List of collected native plugin structs.
+    """
+    resolved = resolve_federated_plugins(plugins, target_platform)
+    if resolved and hasattr(resolved[0], "platforms") and not hasattr(resolved[0], "plugin_class"):
+        return _collect_native_plugins(resolved, target_platform)
+    return resolved
+
+def make_linux_registrant_content(plugins):
+    """Generate C++ source for Linux native plugin registration.
+
+    Args:
+        plugins: List of plugin structs (from _collect_native_plugins).
+
+    Returns:
+        String of C++ source code for generated_plugin_registrant.cc.
+    """
+    native_plugins = _ensure_native_plugins(plugins, "linux")
+    lines = [
+        "// GENERATED — do not edit.",
+        "#include <flutter_linux/flutter_linux.h>",
+        "",
+    ]
+
+    # Include each plugin's header when present so its linkage declaration
+    # (standard Flutter Linux plugins wrap `<plugin>_register_with_registrar`
+    # in `G_BEGIN_DECLS` / `extern "C"`) matches the definition; fall back to
+    # a forward declaration for headerless plugins.
+    for p in native_plugins:
+        fn_name = _to_snake_case(p.plugin_class)
+        pkg_name = getattr(p, "name", "")
+        if pkg_name:
+            lines.append("#if __has_include(<%s/%s.h>)" % (pkg_name, fn_name))
+            lines.append("#include <%s/%s.h>" % (pkg_name, fn_name))
+            lines.append('#elif __has_include("%s.h")' % fn_name)
+            lines.append('#include "%s.h"' % fn_name)
+            lines.append("#else")
+            lines.append("extern void %s_register_with_registrar(FlPluginRegistrar* registrar);" % fn_name)
+            lines.append("#endif")
+        else:
+            lines.append('#if __has_include("%s.h")' % fn_name)
+            lines.append('#include "%s.h"' % fn_name)
+            lines.append("#else")
+            lines.append("extern void %s_register_with_registrar(FlPluginRegistrar* registrar);" % fn_name)
+            lines.append("#endif")
+
+    lines.append("")
+    lines.append("void fl_register_plugins(FlPluginRegistry* registry) {")
+    for p in native_plugins:
+        fn_name = _to_snake_case(p.plugin_class)
+        lines.append("  g_autoptr(FlPluginRegistrar) %s_registrar =" % fn_name)
+        lines.append('      fl_plugin_registry_get_registrar_for_plugin(registry, "%s");' % p.plugin_class)
+        lines.append("  %s_register_with_registrar(%s_registrar);" % (fn_name, fn_name))
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+def make_windows_registrant_content(plugins):
+    """Generate C++ source for Windows native plugin registration.
+
+    Args:
+        plugins: List of plugin structs (from _collect_native_plugins).
+
+    Returns:
+        String of C++ source code for generated_plugin_registrant.cc.
+    """
+    native_plugins = _ensure_native_plugins(plugins, "windows")
+    lines = [
+        "// GENERATED — do not edit.",
+        "#include <flutter/plugin_registry.h>",
+        "",
+    ]
+
+    # Forward declarations (PascalCase with RegisterWithRegistrar suffix).
+    for p in native_plugins:
+        lines.append("void %sRegisterWithRegistrar(" % p.plugin_class)
+        lines.append("    flutter::PluginRegistrarWindows* registrar);")
+
+    lines.append("")
+    lines.append("void RegisterPlugins(flutter::PluginRegistry* registry) {")
+    for p in native_plugins:
+        lines.append("  %sRegisterWithRegistrar(" % p.plugin_class)
+        lines.append('      registry->GetRegistrarForPlugin("%s"));' % p.plugin_class)
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+def make_macos_registrant_content(plugins):
+    """Generate Swift source for macOS native plugin registration.
+
+    Produces the free function `RegisterGeneratedPlugins(registry:)` that
+    the macOS runner's MainFlutterWindow.swift calls at startup. Each
+    plugin's Swift module is imported by package name — Bazel
+    swift_library targets default to a module name matching the package
+    name (lowercased) unless overridden via `apple_module_name`.
+
+    Args:
+        plugins: List of plugin structs (from _collect_native_plugins).
+
+    Returns:
+        String of Swift source code for GeneratedPluginRegistrant.swift.
+    """
+    native_plugins = _ensure_native_plugins(plugins, "macos")
+    lines = [
+        "// GENERATED — do not edit.",
+        "import FlutterMacOS",
+    ]
+    seen_modules = {}
+    for p in native_plugins:
+        module_name = p.name
+        if module_name not in seen_modules:
+            seen_modules[module_name] = True
+            lines.append("import %s" % module_name)
+    lines.append("")
+    lines.append("func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {")
+    for p in native_plugins:
+        lines.append('    %s.register(with: registry.registrar(forPlugin: "%s"))' % (p.plugin_class, p.plugin_class))
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+def make_android_registrant_content(plugins, java_package = "io.flutter.plugins"):
+    """Generate Java source for Android plugin registration.
+
+    Mirrors `flutter pub get`'s `GeneratedPluginRegistrant.java`. Each
+    plugin's Java/Kotlin class is registered against the FlutterEngine
+    by constructing it and adding it to the engine's plugin set. The
+    fully-qualified class name comes from `flutter.plugin.platforms.
+    android.package` + `pluginClass`.
+
+    Args:
+        plugins: List of plugin structs (must include `package` and
+            `plugin_class` from _collect_native_plugins for "android").
+        java_package: Java package for the GeneratedPluginRegistrant
+            class itself. Defaults to `io.flutter.plugins` to match
+            flutter_tools' convention.
+
+    Returns:
+        String of Java source code for GeneratedPluginRegistrant.java.
+    """
+    native_plugins = _ensure_native_plugins(plugins, "android")
+    lines = [
+        "// GENERATED — do not edit.",
+        "package %s;" % java_package,
+        "",
+        "import androidx.annotation.Keep;",
+        "import androidx.annotation.NonNull;",
+        "import io.flutter.Log;",
+        "import io.flutter.embedding.engine.FlutterEngine;",
+        "",
+        "@Keep",
+        "public final class GeneratedPluginRegistrant {",
+        '  private static final String TAG = "GeneratedPluginRegistrant";',
+        "  public static void registerWith(@NonNull FlutterEngine flutterEngine) {",
+    ]
+    for p in native_plugins:
+        # A guessed package names a class that does not exist, and the
+        # registrant then fails to compile saying only that.
+        java_pkg = getattr(p, "package", "")
+        if not java_pkg:
+            fail(
+                "plugin %s registers %s on Android but names no Java " % (p.name, p.plugin_class) +
+                "package: set `android_package` on its flutter_plugin (or " +
+                "`android.package` in `plugin_platforms_json`).",
+            )
+        fqcn = "%s.%s" % (java_pkg, p.plugin_class)
+        lines.append("    try {")
+        lines.append("      flutterEngine.getPlugins().add(new %s());" % fqcn)
+        lines.append("    } catch (Exception e) {")
+        lines.append('      Log.e(TAG, "Error registering plugin %s, %s", e);' % (p.name, fqcn))
+        lines.append("    }")
+    lines.append("  }")
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+def make_ios_registrant_content(plugins):
+    """Generate Swift source for iOS native plugin registration.
+
+    Produces the `GeneratedPluginRegistrant` class with a static `register`
+    method that the iOS runner's AppDelegate calls at startup. Each
+    plugin's Swift module is imported by package name — Bazel
+    swift_library targets default to a module name matching the package
+    name (lowercased) unless overridden via `apple_module_name`.
+
+    Args:
+        plugins: List of plugin structs (from _collect_native_plugins).
+
+    Returns:
+        String of Swift source code for GeneratedPluginRegistrant.swift.
+    """
+    native_plugins = _ensure_native_plugins(plugins, "ios")
+    lines = [
+        "// GENERATED — do not edit.",
+        "import Flutter",
+    ]
+    seen_modules = {}
+    for p in native_plugins:
+        module_name = p.name
+        if module_name not in seen_modules:
+            seen_modules[module_name] = True
+            lines.append("import %s" % module_name)
+    lines.append("")
+    lines.append("@objc class GeneratedPluginRegistrant: NSObject {")
+    lines.append("    @objc static func register(with registry: FlutterPluginRegistry) {")
+    for p in native_plugins:
+        lines.append('        %s.register(with: registry.registrar(forPlugin: "%s")!)' % (p.plugin_class, p.plugin_class))
+    lines.append("    }")
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+def make_ios_objc_header_content():
+    """Generate the ObjC header for iOS native plugin registration.
+
+    Byte-for-byte the flutter tool's `_objcPluginRegistryHeaderTemplate` in
+    `packages/flutter_tools/lib/src/flutter_plugins.dart` (Flutter 3.47.7,
+    the repo's default toolchain; the template is identical in every
+    release listed in `//flutter/private:versions.bzl`) once Dart parses
+    the template literal: a `'''` string drops its empty first line, so
+    the rendered file starts with `//`. The header names no plugin, so it
+    takes no input.
+
+    Returns:
+        String of ObjC source code for GeneratedPluginRegistrant.h.
+    """
+    lines = [
+        "//",
+        "//  Generated file. Do not edit.",
+        "//",
+        "",
+        "// clang-format off",
+        "",
+        "#ifndef GeneratedPluginRegistrant_h",
+        "#define GeneratedPluginRegistrant_h",
+        "",
+        "#import <Flutter/Flutter.h>",
+        "",
+        "NS_ASSUME_NONNULL_BEGIN",
+        "",
+        "@interface GeneratedPluginRegistrant : NSObject",
+        "+ (void)registerWithRegistry:(NSObject<FlutterPluginRegistry>*)registry;",
+        "@end",
+        "",
+        "NS_ASSUME_NONNULL_END",
+        "#endif /* GeneratedPluginRegistrant_h */",
+        "",
+    ]
+    return "\n".join(lines)
+
+def make_ios_objc_impl_content(native_plugins):
+    """Generate the ObjC source for iOS native plugin registration.
+
+    Byte-for-byte the flutter tool's
+    `_objcPluginRegistryImplementationTemplate` in
+    `packages/flutter_tools/lib/src/flutter_plugins.dart` (Flutter 3.47.7,
+    the repo's default toolchain; the template is identical in every
+    release listed in `//flutter/private:versions.bzl`), rendered with
+    `framework = "Flutter"` and an empty `prefix`: the tool only ever
+    fills `prefix` from `IOSPlugin.classPrefix`, which its own
+    `IOSPlugin.fromYaml` always sets to `""`. Each plugin keeps the
+    tool's `__has_include` / `@import` fallback and its
+    `registerWithRegistrar:` call.
+
+    Args:
+        native_plugins: List of plugin structs (from _collect_native_plugins
+            for "ios") with `name` and `plugin_class` fields.
+
+    Returns:
+        String of ObjC source code for GeneratedPluginRegistrant.m.
+    """
+    native_plugins = _ensure_native_plugins(native_plugins, "ios")
+    lines = [
+        "//",
+        "//  Generated file. Do not edit.",
+        "//",
+        "",
+        "// clang-format off",
+        "",
+        '#import "GeneratedPluginRegistrant.h"',
+        "",
+    ]
+    for p in native_plugins:
+        lines.append("#if __has_include(<%s/%s.h>)" % (p.name, p.plugin_class))
+        lines.append("#import <%s/%s.h>" % (p.name, p.plugin_class))
+        lines.append("#else")
+        lines.append("@import %s;" % p.name)
+        lines.append("#endif")
+        lines.append("")
+    lines.append("@implementation GeneratedPluginRegistrant")
+    lines.append("")
+    lines.append("+ (void)registerWithRegistry:(NSObject<FlutterPluginRegistry>*)registry {")
+    for p in native_plugins:
+        lines.append('  [%s registerWithRegistrar:[registry registrarForPlugin:@"%s"]];' % (p.plugin_class, p.plugin_class))
+    lines.append("}")
+    lines.append("")
+    lines.append("@end")
+    lines.append("")
+    return "\n".join(lines)
+
+def filter_excluded_native_plugins(native_plugins, exclude_plugins, target_platform):
+    """Drop the named plugins from a collected native plugin list.
+
+    Args:
+        native_plugins: List of plugin structs (from _collect_native_plugins)
+            with `name` fields.
+        exclude_plugins: Plugin module names to omit from the registrant.
+        target_platform: Platform string, named in the error when an
+            excluded name matches nothing.
+
+    Returns:
+        The native plugins whose names are not in `exclude_plugins`.
+    """
+    valid_names = [p.name for p in native_plugins]
+    unknown = [name for name in exclude_plugins if name not in valid_names]
+    if unknown:
+        fail("exclude_plugins names %d unknown %s plugin(s): %s; valid names: %s" % (
+            len(unknown),
+            target_platform,
+            ", ".join(sorted(unknown)),
+            ", ".join(sorted(valid_names)) if valid_names else "(none)",
+        ))
+    excluded = {name: True for name in exclude_plugins}
+    return [p for p in native_plugins if p.name not in excluded]
+
+def _to_snake_case(name):
+    """Convert PascalCase to snake_case.
+
+    Args:
+        name: A PascalCase string (e.g. "UrlLauncherPlugin").
+
+    Returns:
+        snake_case string (e.g. "url_launcher_plugin").
+    """
+    result = []
+    for i, c in enumerate(name.elems()):
+        if c.isupper() and i > 0:
+            result.append("_")
+        result.append(c.lower())
+    return "".join(result)
+
+_EMPTY_LINUX_REGISTRANT = """\
+// GENERATED — no native plugins.
+#include <flutter_linux/flutter_linux.h>
+
+void fl_register_plugins(FlPluginRegistry* registry) {}
+"""
+
+_EMPTY_WINDOWS_REGISTRANT = """\
+// GENERATED — no native plugins.
+#include <flutter/plugin_registry.h>
+
+void RegisterPlugins(flutter::PluginRegistry* registry) {}
+"""
+
+_EMPTY_MACOS_REGISTRANT = """\
+// GENERATED — no native plugins.
+import FlutterMacOS
+
+func RegisterGeneratedPlugins(registry: FlutterPluginRegistry) {}
+"""
+
+_EMPTY_IOS_REGISTRANT = """\
+// GENERATED — no native plugins.
+import Flutter
+
+@objc class GeneratedPluginRegistrant: NSObject {
+    @objc static func register(with registry: FlutterPluginRegistry) {}
+}
+"""
+
+_EMPTY_ANDROID_REGISTRANT = """\
+// GENERATED — no native plugins.
+package io.flutter.plugins;
+
+import androidx.annotation.Keep;
+import androidx.annotation.NonNull;
+import io.flutter.embedding.engine.FlutterEngine;
+
+@Keep
+public final class GeneratedPluginRegistrant {
+  public static void registerWith(@NonNull FlutterEngine flutterEngine) {}
+}
+"""
+
+_LINUX_REGISTRANT_HEADER = """\
+#ifndef GENERATED_PLUGIN_REGISTRANT_
+#define GENERATED_PLUGIN_REGISTRANT_
+#include <flutter_linux/flutter_linux.h>
+void fl_register_plugins(FlPluginRegistry* registry);
+#endif
+"""
+
+_WINDOWS_REGISTRANT_HEADER = """\
+#ifndef GENERATED_PLUGIN_REGISTRANT_
+#define GENERATED_PLUGIN_REGISTRANT_
+#include <flutter/plugin_registry.h>
+void RegisterPlugins(flutter::PluginRegistry* registry);
+#endif
+"""
+
+def generate_native_plugin_registrant_header(ctx, target_platform):
+    """Generate a native plugin registrant header file.
+
+    Produces the .h that declares the registration function so runner code
+    can #include "flutter/generated_plugin_registrant.h".
+
+    Args:
+        ctx: The rule context of the rule implementation that calls this helper.
+        target_platform: Platform string ("linux" or "windows").
+
+    Returns:
+        File: The generated .h file, or None for unsupported platforms.
+    """
+    if target_platform == "linux":
+        content = _LINUX_REGISTRANT_HEADER
+    elif target_platform == "windows":
+        content = _WINDOWS_REGISTRANT_HEADER
+    else:
+        return None
+
+    header = ctx.actions.declare_file(ctx.label.name + "_native_plugin_registrant.h")
+    ctx.actions.write(header, content)
+    return header
+
+def generate_native_plugin_registrant(ctx, plugins, target_platform, exclude_plugins = []):
+    """Generate a native plugin registrant source file.
+
+    Always generates a file (no-op if no native plugins) so the runner can
+    unconditionally call the registration function.
+
+    Args:
+        ctx: The rule context of the rule implementation that calls this helper.
+        plugins: List of plugin structs.
+        target_platform: Platform string ("linux", "windows", "macos",
+            "ios", "android").
+        exclude_plugins: Plugin module names to omit from the registrant.
+            A name that is not a native plugin for the platform is an
+            error, listing the valid names.
+
+    Returns:
+        File: The generated native source file, or None for unsupported platforms.
+    """
+    native_plugins = _collect_native_plugins(plugins, target_platform)
+    native_plugins = filter_excluded_native_plugins(native_plugins, exclude_plugins, target_platform)
+
+    if target_platform == "linux":
+        content = make_linux_registrant_content(native_plugins) if native_plugins else _EMPTY_LINUX_REGISTRANT
+        ext = ".cc"
+    elif target_platform == "windows":
+        content = make_windows_registrant_content(native_plugins) if native_plugins else _EMPTY_WINDOWS_REGISTRANT
+        ext = ".cc"
+    elif target_platform == "macos":
+        content = make_macos_registrant_content(native_plugins) if native_plugins else _EMPTY_MACOS_REGISTRANT
+        ext = ".swift"
+    elif target_platform == "ios":
+        content = make_ios_registrant_content(native_plugins) if native_plugins else _EMPTY_IOS_REGISTRANT
+        ext = ".swift"
+    elif target_platform == "android":
+        content = make_android_registrant_content(native_plugins) if native_plugins else _EMPTY_ANDROID_REGISTRANT
+
+        # Android needs the file in a `io/flutter/plugins/` subdir, the
+        # Java package layout; the caller places it accordingly.
+        ext = ".java"
+    else:
+        return None
+
+    if target_platform == "android":
+        registrant = ctx.actions.declare_file(ctx.label.name + "/io/flutter/plugins/GeneratedPluginRegistrant.java")
+    else:
+        registrant = ctx.actions.declare_file(ctx.label.name + "_native_plugin_registrant" + ext)
+    ctx.actions.write(registrant, content)
+    return registrant
+
+def generate_ios_objc_registrant(ctx, plugins, exclude_plugins = []):
+    """Generate the ObjC iOS plugin registrant header and source files.
+
+    The pair matches the flutter tool's own
+    `GeneratedPluginRegistrant.h` / `GeneratedPluginRegistrant.m`
+    byte-for-byte for the same plugin set (see
+    `make_ios_objc_impl_content`). Both files are declared under a
+    directory named after the target, under the tool's own file names, so
+    the implementation's `#import "GeneratedPluginRegistrant.h"` resolves
+    to its sibling header.
+
+    Args:
+        ctx: The rule context of the rule implementation that calls this helper.
+        plugins: List of plugin structs.
+        exclude_plugins: Plugin module names to omit from the registrant.
+            A name that is not a native iOS plugin is an error, listing
+            the valid names.
+
+    Returns:
+        Tuple of (header File, implementation File).
+    """
+    native_plugins = _collect_native_plugins(plugins, "ios")
+    native_plugins = filter_excluded_native_plugins(native_plugins, exclude_plugins, "ios")
+    header = ctx.actions.declare_file(ctx.label.name + "/GeneratedPluginRegistrant.h")
+    impl = ctx.actions.declare_file(ctx.label.name + "/GeneratedPluginRegistrant.m")
+    ctx.actions.write(header, make_ios_objc_header_content())
+    ctx.actions.write(impl, make_ios_objc_impl_content(native_plugins))
+    return (header, impl)
+
+def generate_dart_plugin_registrant(
+        ctx,
+        plugins,
+        target_platform = None,
+        declared_path = None):
+    """Generate a Dart plugin registrant source file via ctx.actions.write.
+
+    Args:
+        ctx: The rule context of the rule implementation that calls this helper.
+        plugins: List of plugin structs.
+        target_platform: Optional platform string to filter plugins by.
+        declared_path: Optional package-relative path to declare it at.
+
+    Returns:
+        File: The registrant, or None with no Dart plugins.
+    """
+    content = make_registrant_content(
+        plugins,
+        target_platform = target_platform,
+    )
+    if not content:
+        return None
+    registrant = ctx.actions.declare_file(declared_path or ctx.label.name + "_plugin_registrant.dart")
+    ctx.actions.write(registrant, content)
+    return registrant

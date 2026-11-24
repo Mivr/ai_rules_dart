@@ -1,0 +1,6 @@
+name: download_e2e
+publish_to: none
+environment:
+  sdk: ^3.10.0
+dependencies:
+  sqlite3: 3.9.2

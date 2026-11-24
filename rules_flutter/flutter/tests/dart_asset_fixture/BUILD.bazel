@@ -1,0 +1,63 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_dart//dart:defs.bzl", "dart_code_asset", "dart_library")
+load("//flutter:defs.bzl", "flutter_library")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+
+# A `dart_library` that owns a native code asset Bazel builds. Nothing here
+# mentions Flutter — the point is that rules_flutter picks the asset up off the
+# Dart package graph.
+
+cc_library(
+    name = "empty",
+    srcs = ["empty.cc"],
+    target_compatible_with = HOST_COMPATIBLE,
+)
+
+cc_shared_library(
+    name = "asset_fixture_shared",
+    shared_lib_name = select({
+        "@platforms//os:ios": "libasset_fixture.dylib",
+        "@platforms//os:macos": "libasset_fixture.dylib",
+        "@platforms//os:windows": "asset_fixture.dll",
+        "//conditions:default": "libasset_fixture.so",
+    }),
+    target_compatible_with = HOST_COMPATIBLE,
+    visibility = [
+        "//flutter/tests:__subpackages__",
+        "//tests/rules_testing:__pkg__",
+    ],
+    deps = [":empty"],
+)
+
+dart_code_asset(
+    name = "code_asset",
+    asset_id = "package:asset_fixture/src/ffi/asset_fixture.g.dart",
+    shared_library = ":asset_fixture_shared",
+    target_compatible_with = HOST_COMPATIBLE,
+)
+
+dart_library(
+    name = "asset_fixture",
+    package_name = "asset_fixture",
+    srcs = ["lib/fixture.dart"],
+    code_assets = [":code_asset"],
+    target_compatible_with = HOST_COMPATIBLE,
+    visibility = ["//flutter/tests:__subpackages__"],
+)
+
+# A code asset is owned by the package whose id namespaces it, and a
+# `flutter_library` claiming someone else's must be refused. The rule is
+# rules_dart's, and it reaches Flutter's package rule because both build their
+# provider through `dart_info()` — which is the point of routing construction
+# through one constructor rather than restating the checks per rule set. Left
+# `manual` so only the analysistest that wraps it builds it.
+flutter_library(
+    name = "misowned_asset_fixture",
+    package_name = "not_asset_fixture",
+    srcs = ["lib/fixture.dart"],
+    code_assets = [":code_asset"],
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    visibility = ["//flutter/tests:__pkg__"],
+)

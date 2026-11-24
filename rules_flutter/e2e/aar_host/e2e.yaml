@@ -1,0 +1,27 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: build host app
+    run: bazel build //:host_app_apk
+  - name: test aar host on emulator
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 1
+    expect:
+      exit_code: 0
+  - name: a native library of another machine fails the packer, which names the file
+    replace_in_files:
+      - path: BUILD.bazel
+        from: 'aars = [":module_aar"],'
+        to: 'aars = [":wrong_machine_aar"],'
+    run: bazel build //:host_app_apk
+    expect:
+      non_zero: true
+      output_contains:
+        - 'lib/arm64-v8a/libwrong_machine.so is not a native library of arm64-v8a: its ELF machine is 62, and arm64-v8a is 183'
+  - name: host app fails when AAR is left out
+    replace_in_files:
+      - path: BUILD.bazel
+        from: 'aars = [":wrong_machine_aar"],'
+        to: ''
+    run: bazel test //... --test_output=errors
+    expect:
+      non_zero: true

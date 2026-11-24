@@ -1,0 +1,24 @@
+name: pub_scc_app
+description: E2E Flutter application proving SCC pub spokes.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.18.0"
+
+dependencies:
+  acyclic_pkg:
+    path: acyclic_pkg
+  cycle_a:
+    path: cycle_a
+  cycle_b:
+    path: cycle_b
+  tri_a:
+    path: tri_a
+  tri_b:
+    path: tri_b
+  tri_c:
+    path: tri_c
+  flutter:
+    sdk: flutter

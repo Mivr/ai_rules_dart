@@ -1,0 +1,39 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: an app without a pin says how to write one
+    run: bazel build //nopin:app
+    expect:
+      non_zero: true
+      output_contains:
+        - '//nopin:android_model.json does not exist or is empty'
+        - 'bazel run //nopin:android_pin'
+  - name: a pin of another schema says to pin again
+    run: bazel build //schema:app
+    expect:
+      non_zero: true
+      output_contains: '//schema:android_model.json has schema 1 and these rules read schema 4. Pin again: `bazel run //schema:android_pin`'
+  - name: a Gradle file changed after the pin fails the build and names the file
+    run: bazel build //stale:app_pin_check
+    expect:
+      non_zero: true
+      output_contains:
+        - '//stale:android_model.json is stale'
+        - 'android/app/build.gradle.kts'
+        - 'bazel run //stale:android_pin'
+  - name: what the rules do not build is named, project by project
+    run: bazel build --nobuild //unsupported:app
+    expect:
+      non_zero: true
+      output_contains:
+        - 'project :lib: build feature `viewBinding`'
+        - 'project :lib: AIDL sources'
+        - 'project :lib: Kotlin compiler plugin kotlin-parcelize-compiler-2.4.0.jar'
+        - 'project :lib: Kotlin compiler argument -Xsome-flag'
+        - 'project :app: file dependency app:android/app/libs/local.jar'
+        - 'project :app: native code built by CMake'
+        - 'project :app: `minifyEnabled` on the debuggable build type `debug`'
+  - name: a variant the pin does not hold names the ones it has
+    run: bazel build --nobuild //variant:app
+    expect:
+      non_zero: true
+      output_contains: 'has no variant `release` of the app (it has debug)'

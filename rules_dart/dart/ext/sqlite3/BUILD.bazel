@@ -1,0 +1,28 @@
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("//dart:defs.bzl", "dart_code_asset")
+
+# package:sqlite3's library on Apple OSes, where build hooks do not run yet
+# (`//dart/private:apple_hook_replacements.bzl`): a cc_shared_library over the
+# BCR `sqlite3` module, bound to sqlite3's own code-asset id. Elsewhere the
+# package's hook builds it. Goes when build hooks are proven on macOS CI.
+
+cc_shared_library(
+    name = "libsqlite3",
+    shared_lib_name = "libsqlite3.dylib",
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = ["@sqlite3"],
+)
+
+dart_code_asset(
+    name = "code_asset",
+    # sqlite3's bindings declare @ffi.DefaultAsset(...) in lib/src/ffi/
+    # libsqlite3.g.dart; its hook emits the code asset under this id.
+    asset_id = "package:sqlite3/src/ffi/libsqlite3.g.dart",
+    shared_library = ":libsqlite3",
+    visibility = ["//visibility:public"],
+)

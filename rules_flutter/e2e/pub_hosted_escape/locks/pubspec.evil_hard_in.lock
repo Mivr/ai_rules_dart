@@ -1,0 +1,14 @@
+# Local-registry lock for the hosted-archive guard e2e: even an in-package
+# hard-link entry must fail the fetch before extraction.
+# See pubspec.ok.lock for the url placeholder.
+packages:
+  evil_hard_in:
+    dependency: "direct main"
+    description:
+      name: evil_hard_in
+      sha256: "2e48a6e0dc5094a18d70e16b23851fa980912577b97afb10c3b664fe3c625903"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

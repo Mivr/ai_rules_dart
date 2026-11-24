@@ -1,0 +1,14 @@
+# Local-registry lock for the hosted-archive guard e2e: a symlink climbing above
+# the package root must fail the fetch before extraction.
+# See pubspec.ok.lock for the url placeholder.
+packages:
+  evil_esc:
+    dependency: "direct main"
+    description:
+      name: evil_esc
+      sha256: "9bc0a20957728603bf6822c4931540dfe466db1268ef564813fb276dc5a5674a"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

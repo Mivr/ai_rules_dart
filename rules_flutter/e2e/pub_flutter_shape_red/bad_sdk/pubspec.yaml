@@ -1,0 +1,10 @@
+name: bad_sdk
+description: Red-path fixture path package with an unreadable environment.sdk string.
+version: 0.1.0
+publish_to: none
+
+environment:
+  # Deliberately unreadable: pub_semver refuses a bare partial version.
+  # The spoke fetch must fail naming the package, its pubspec.yaml and
+  # environment.sdk instead of deriving a default language version.
+  sdk: "3.10"

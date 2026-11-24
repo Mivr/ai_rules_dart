@@ -1,0 +1,31 @@
+module(name = "codegen_e2e")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../..",
+)
+
+# `run_binary` runs the //tools generators; `build_test` guards
+# //source_set_pkg:colocated.
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")
+
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "pub_deps",
+    lock = "//:pubspec.lock",
+)
+
+# The lint ruleset the fixtures are analyzed under. Deliberately outside
+# `pubspec.lock`: it is a dependency of `//:options`, not of any fixture's code.
+pub.package(
+    name = "very_good_analysis",
+    sha256 = "0bd5eb8d6be76aa0d71e70cbdae6cac8f784f761170568e3c2214a6948c7f6d3",
+    version = "11.0.0",
+)
+use_repo(pub, "pub_deps", "very_good_analysis")

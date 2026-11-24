@@ -1,0 +1,1 @@
+dirlink any asset, served through the linked assets/ directory

@@ -1,0 +1,28 @@
+name: build_hooks
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  # A pub package whose build hook compiles C (SQLite, from the source file
+  # the user define below names), and two path packages: one whose build hook
+  # compiles C, one with a build hook and a link hook.
+  sqlite3: ^3.9.2
+  native_add:
+    path: native_add
+  native_link:
+    path: native_link
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true
+hooks:
+  user_defines:
+    sqlite3:
+      # Compile SQLite from the amalgamation Bazel provides
+      # (`flutter.pub(hook_data = ...)` in MODULE.bazel) instead of
+      # downloading a prebuilt library, which a sandboxed hook may not do.
+      source: source
+      path: external/sqlite3+/sqlite3.c

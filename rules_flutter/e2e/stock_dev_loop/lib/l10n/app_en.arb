@@ -1,0 +1,7 @@
+{
+  "@@locale": "en",
+  "appTitle": "Counter",
+  "@appTitle": {"description": "The title of the app"},
+  "genMark": "gen0",
+  "@genMark": {"description": "The marker a hot reload of the generated source changes"}
+}

@@ -1,0 +1,9 @@
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config")
+
+# Dev-only; //:analysis_config is the label to use (see the comment there).
+dart_analysis_config(
+    name = "analysis_config",
+    baseline = "//:analysis_baseline.json",
+    options = ["//:analysis_options"],
+    visibility = ["//:__pkg__"],
+)

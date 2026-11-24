@@ -1,0 +1,565 @@
+"""Construction of `DartInfo` and the `DartPackageInfo` records it carries.
+
+`DartInfo` is read by everything and built by more than rules_dart: a rule set
+that wraps Dart libraries — `flutter_library`, `dart_proto_library` — has to
+produce one too. Building it by hand means enumerating every field and merging
+every transitive depset one at a time, which made each new field a breaking
+change for every such rule set, and made each of them independently work out how
+the new field merges.
+
+The worse half of that is not the churn. When a field is missing, the correct
+fix (forward the dependencies' values) and the tempting fix (declare it
+`depset()` to silence the error) look identical in a diff, and the second one
+silently drops every dependency's contribution at that boundary. Handing the
+merge to one function makes that mistake unrepresentable rather than merely
+warned against.
+
+Two constructors cover every `DartInfo` a build produces. `dart_info()` is for a
+target that *contributes a package* — it always records one `DartPackageInfo` of
+its own. `dart_info_no_package()` is for one that deliberately carries none:
+`flutter_material_icons` ships a font and no Dart, and provides `DartInfo` only
+because `flutter_application(deps = ...)` requires one on every dep. Neither
+takes a field list, and the enumeration they share lives in `_merged_dart_info`
+below, so a field added to `DartInfo` is a change to this file and nowhere else.
+A target that owns several packages at once — one `dart_library` merged over a
+pub dependency cycle, whose members each keep their own `package_name` and
+`lib/` root — calls `dart_info_multi()` with one record per member package.
+
+The narrow signature is the point for the second one. A target with no package
+can have no `srcs`, no `lib_root`, and no `code_assets` — assets ride
+`DartPackageInfo`, which it does not have — so leaving them out makes the
+degeneracy structural rather than a convention a caller has to honour.
+
+`DartPackageInfo` — the record `transitive_packages` carries — has a second
+construction shape that needed the same treatment: *derivation*.
+`colocate_packages` rewrites a package's `lib_root` to its assembled directory
+and `merge_package_records` unions two records' code assets; each builds a
+record from an existing one. Hand-written, those sites re-list the fields they
+carry, and a field one of them forgets is dropped from *that record only* — so
+the loss is conditional on which build shape reached which site (a package that
+happened to need source assembly loses it, a pure-source package keeps it),
+which is worse to diagnose than losing it everywhere. `derived_package_info()`
+carries every field through and overrides only what is named.
+
+`DartAnalyzableInfo` is built here for the same reason rather than beside the
+rules that provide it: it is a `DartInfo` plus the sources that belong to no
+package's `lib/`, and the tempting alternative — a provider with its own
+`transitive_*` fields — is precisely the second enumeration point everything
+above exists to prevent. Its two constructors therefore nest a `DartInfo` some
+constructor above built, instead of restating any part of it:
+`dart_analyzable_info()` nests a `dart_info_no_package()` for an entrypoint that
+contributes nothing, and `dart_analyzable_info_with_package()` nests a
+`dart_info()` for an executable whose sources *are* a package — the shape a
+downstream `flutter_test` has, and the one that made hand-building the outer
+provider look like the only option.
+
+So construction goes through here and reading does not: `DartInfo` stays public
+and is indexed directly by every consumer. The one deliberate exception is
+`//dart/tests/no_lv_fixture`, which hand-builds a provider missing
+`language_version` precisely to prove the tolerance for pre-existing shapes
+still holds; a fixture asserting that older producers keep working cannot be
+written through a constructor that makes them current.
+
+`language_version` is the one parameter these constructors require rather than
+default, which is a deliberate exception to the paragraph above: adding a field
+here is supposed to reach every call site *without* touching them, and this one
+obliges every caller to state it. The reason is that its empty value is not
+inert. An absent `languageVersion` in a generated `package_config.json` does not
+mean "no language version" — the SDK reads it as the *current* one, so a caller
+that simply forgot the argument silently compiles that package under newer
+syntax and semantics than its own pubspec allows. Defaulting made "I forgot" and
+"this package states none" the same call, and the two have different
+consequences. The other optional parameters do not share that shape: the
+collections mean "none of these", `version`'s empty is a supported state
+`package_agreement_error` reads as "knows less", and a hook's attributes are
+derived at repository generation rather than stated by a developer. Requiring the
+argument narrows how the constructors may be *called*, not what a package may
+say: `language_version = ""` remains legal and keeps its meaning, which
+`dart_info_fixture`'s `empty_language_version_test` pins.
+"""
+
+load("//dart:providers.bzl", "DartAnalyzableInfo", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
+load("//dart/private:closure_facts.bzl", "closure_facts")
+
+visibility(["//dart/..."])
+
+def package_lib_prefix(lib_root):
+    """Returns the short_path prefix under which a package's importable files live.
+
+    A Dart package resolves `package:<name>/x.dart` against `<lib_root>/lib/`,
+    so that — not `lib_root` itself — is the prefix that answers "does this file
+    belong to the package?" and "what is this file's package-relative path?".
+    The root package (empty `lib_root`) is the same rule with an empty left half,
+    which is the whole reason to write it once: open-coded, the conditional is
+    easy to drop, and dropping it silently widens the prefix to the package's
+    entire directory — `test/`, `tool/` and `bin/` included.
+
+    Lives here, next to the `DartPackageInfo` that defines `lib_root`, because
+    this file loads only `//dart:providers.bzl` while `source_set.bzl`,
+    `common.bzl` and `dart_library.bzl` — the three consumers — already load it.
+    Any other home would introduce a load cycle or a new edge.
+
+    Args:
+      lib_root: A `DartPackageInfo.lib_root` — the package root's short_path,
+        empty for the root workspace package.
+
+    Returns:
+      The trailing-slashed prefix, e.g. `"pkgs/sub/lib/"` or `"lib/"`.
+    """
+    return (lib_root + "/lib/") if lib_root else "lib/"
+
+def check_code_asset_ownership(label, package_name, assets):
+    """Checks that every declared asset id is namespaced to the owning package.
+
+    Upstream requires `CodeAsset.id` to be `package:<package>/<name>` where
+    `<package>` is the package that owns the asset — "Code assets are
+    name-spaced in their own package to avoid naming conflicts" — and the hook
+    runner refuses a hook output that breaks it. A `dart_code_asset` a library
+    owns is held to the same rule.
+
+    Args:
+      label: The owning rule's label (included in the error message).
+      package_name: The package name this library declares.
+      assets: List of `DartCodeAssetInfo`.
+
+    Returns:
+      An error message string on the first mismatch, else `None`.
+    """
+    prefix = "package:%s/" % package_name
+    for asset in assets:
+        if not asset.asset_id.startswith(prefix):
+            return (
+                ("%s: code asset id `%s` is not namespaced to this package. " +
+                 "Expected it to start with `%s`, because a code asset is " +
+                 "owned by the package declaring it. Either set " +
+                 "`package_name = \"…\"` to the owning package, or move the " +
+                 "asset to that package's `dart_library`.") %
+                (label, asset.asset_id, prefix)
+            )
+    return None
+
+def dart_info(
+        label,
+        package,
+        deps = [],
+        srcs = [],
+        resources = [],
+        code_assets = [],
+        link_hook = None,
+        hooks = None):
+    """Builds a `DartInfo` for a library, merging its dependencies' closures.
+
+    The caller supplies only what this target contributes itself; everything
+    transitive is merged here. Adding a field to `DartInfo` is therefore a
+    change to this file and nothing else.
+
+    Attribute hygiene stays with the calling rule — whether `srcs` and
+    `srcs_dir` are mutually exclusive, whether a file sits under the package's
+    `lib/` — because those are statements about that rule's attributes, and a
+    rule generating its package as one tree artifact has no such files to check.
+    What belongs here is what is true of any `DartInfo`: the merges, the package
+    record, and code-asset ownership.
+
+    Args:
+      label: The constructing rule's label, for error messages.
+      package: The struct from `dart_package_identity()`: the package name,
+        `lib/` root, language version, resolved version this target provides,
+        and its runtime `package_files` (its `data` files).
+      deps: Targets providing `DartInfo` whose closures are merged in.
+      srcs: This target's own Dart sources (or its source directory).
+      resources: This target's own non-Dart files under `lib/`.
+      code_assets: Targets providing `DartCodeAssetInfo` that this package owns.
+      link_hook: The package's `hook/link.dart` File, or None.
+      hooks: The struct `build_hook_outputs()` returns, or None for a library
+        without hooks: the build hook's output directory and what a link hook
+        run needs.
+
+    Returns:
+      A `DartInfo`.
+    """
+    own_assets = [dep[DartCodeAssetInfo] for dep in code_assets]
+    err = check_code_asset_ownership(label, package.package_name, own_assets)
+    if err != None:
+        fail(err)
+
+    dep_infos = [dep[DartInfo] for dep in deps]
+    own_package_files = list(getattr(package, "package_files", []))
+    native_assets = [f for a in own_assets for f in getattr(a, "files", ())]
+    if hooks != None and hooks.build_output != None:
+        native_assets.append(hooks.build_output)
+
+    this_pkg = DartPackageInfo(
+        package_name = package.package_name,
+        lib_root = package.lib_root,
+        version = package.version,
+        language_version = package.language_version,
+        native_assets = tuple(native_assets),
+        link_hook = link_hook,
+        hooks = hooks.record if hooks != None else None,
+        hook_error = "",
+    )
+
+    return _merged_dart_info(
+        label = label,
+        deps = deps,
+        dep_infos = dep_infos,
+        package_name = package.package_name,
+        lib_root = package.lib_root,
+        srcs = srcs,
+        resources = resources,
+        packages = [this_pkg],
+        native_assets = native_assets,
+        package_file_records = [
+            struct(
+                package_name = package.package_name,
+                lib_root = package.lib_root,
+                files = own_package_files,
+            ),
+        ] if own_package_files else [],
+    )
+
+def dart_info_no_package(deps = []):
+    """Builds a `DartInfo` for a target that contributes no Dart package.
+
+    For a target that has to be listed in a `deps` attribute requiring
+    `DartInfo` but ships no Dart: `flutter_material_icons` provides a font, and
+    wants the provider present, not contributing. It records no
+    `DartPackageInfo`, so nothing it is listed on gains a `package_config.json`
+    entry or a source to compile.
+
+    There is deliberately no `package_name`, `lib_root`, `srcs`, `resources` or
+    `code_assets` here. `DartInfo.package_name` and `.lib_root` describe the
+    package a target contributes, and no consumer reads them off the provider —
+    package identity is read from `transitive_packages` — so a no-package target
+    reports the empty string for both rather than inventing a name with no
+    record behind it. Code assets are owned by a `DartPackageInfo`, which this
+    target does not have.
+
+    `deps` exists because a facade that groups other libraries is still a
+    coherent no-package target, and forwarding their closures is then the whole
+    job.
+
+    Args:
+      deps: Targets providing `DartInfo` whose closures are merged in.
+
+    Returns:
+      A `DartInfo` carrying its dependencies' closures and nothing else.
+    """
+    return _merged_dart_info(
+        label = None,
+        deps = deps,
+        dep_infos = [dep[DartInfo] for dep in deps],
+        package_name = "",
+        lib_root = "",
+        srcs = [],
+        resources = [],
+        packages = [],
+        native_assets = [],
+        package_file_records = [],
+    )
+
+def dart_info_multi(label, records, deps = [], srcs = [], resources = [], package_files = []):
+    """Builds a `DartInfo` for a library that owns several packages at once.
+
+    The one case `dart_info()` cannot state: a single `dart_library` merged
+    over a pub dependency cycle, whose member packages each keep their own
+    `package_name` and their own `lib/` root. The members' sources are
+    compiled and summarized together, in one module, against a package config
+    naming every member — which is what keeps a cycle in the pubspec graph
+    from becoming a cycle in the Bazel target graph.
+
+    The records arrive built (by the `dart_package_member` targets the merged
+    library names in `members`), so this takes them rather than the facts
+    they were built from. Names must be distinct: two records for one name
+    would silently compile against whichever came first, so a duplicate fails
+    here, where the merged library is declared, rather than deep in a
+    consumer.
+
+    Args:
+      label: The constructing rule's label, for error messages.
+      records: The member packages' `DartPackageInfo` records, one per
+        package, in a stable order. Must be non-empty with distinct names:
+        an empty merge is what `dart_info_no_package()` is for.
+      deps: Targets providing `DartInfo` whose closures are merged in. Edges
+        inside the merged cycle are gone already — the members name no
+        dependency on each other — so these are only the edges leaving it.
+      srcs: The members' own Dart sources.
+      resources: The members' own non-Dart files under their `lib/`s.
+      package_files: One `(package_name, lib_root, files)` record per member
+        that ships runtime `data`, in the same order as `records`, plus an
+        empty-identity record for the merged target's own `data` when it has
+        some. Empty when nothing ships data.
+
+    Returns:
+      A `DartInfo` whose `owned_packages` are `records`.
+    """
+    if not records:
+        fail("%s: `dart_info_multi()` needs at least one package record. A merged library over an empty cycle is what `dart_info_no_package()` is for." % label)
+    seen = {}
+    for record in records:
+        if record.package_name in seen:
+            fail(("%s: merged library owns package \"%s\" twice (at `%s` and `%s`). " +
+                  "One package name resolves to one `lib/` root; name the two packages differently.") % (
+                label,
+                record.package_name,
+                seen[record.package_name],
+                record.lib_root,
+            ))
+        seen[record.package_name] = record.lib_root
+
+    return _merged_dart_info(
+        label = label,
+        deps = deps,
+        dep_infos = [dep[DartInfo] for dep in deps],
+        package_name = "",
+        lib_root = "",
+        srcs = srcs,
+        resources = resources,
+        packages = list(records),
+        native_assets = [
+            f
+            for record in records
+            for f in getattr(record, "native_assets", ())
+        ],
+        package_file_records = package_files,
+    )
+
+def dart_analyzable_info(deps = [], srcs = []):
+    """Builds a `DartAnalyzableInfo` for an executable target.
+
+    The third constructor, and the one place `DartAnalyzableInfo` is built. It
+    adds no depset of its own beyond `srcs`: the closure is the `DartInfo` that
+    `dart_info_no_package()` already knows how to merge, carried whole rather
+    than re-enumerated field by field — which is the mistake this file exists to
+    prevent, and which a provider with its own `transitive_*` fields would
+    reintroduce one merge at a time.
+
+    `srcs` is the one thing that `DartInfo` genuinely cannot carry. An
+    entrypoint contributes no package (under pub it belongs to the root package
+    but lives outside its `lib/`), so no `DartPackageInfo` can name it and no
+    `package:` URI reaches it — but the analyzer still has to see it.
+
+    Args:
+      deps: Targets providing `DartInfo` whose closures the entrypoint reaches.
+      srcs: The target's own entrypoint sources (its `main` and `srcs`). Pass
+        the rule's own `File`s, before any colocation copy: consumers stage by
+        `short_path`, and a colocated copy's is the assembled directory's.
+
+    Returns:
+      A `DartAnalyzableInfo`.
+    """
+    return DartAnalyzableInfo(
+        dart_info = dart_info_no_package(deps = deps),
+        srcs = depset(srcs),
+        package_srcs = depset(),
+    )
+
+def dart_analyzable_info_with_package(
+        label,
+        package,
+        deps = [],
+        srcs = [],
+        package_srcs = [],
+        resources = [],
+        code_assets = []):
+    """Builds a `DartAnalyzableInfo` for an executable that contributes a package.
+
+    The sibling of `dart_analyzable_info()`, for the one case its narrow
+    signature cannot state: a target that is an executable *and* owns a package.
+    A downstream `flutter_test` is the shape — it names a `package_name` and its
+    sources are that package's `lib/` files, which import each other by
+    `package:` URI. Built through `dart_analyzable_info()`, those imports have no
+    package record to resolve against and every one of them reports
+    `uri_does_not_exist`; the analyzer is right, because nothing in a
+    package-less closure names the package they ask for.
+
+    So this nests a `dart_info()` where the other nests a
+    `dart_info_no_package()`, and that is the whole difference. Neither
+    enumerates a `DartInfo` field, which is what keeps a rule in this position
+    from writing `DartAnalyzableInfo(dart_info = dart_info(...))` by hand — a
+    second construction site for the outer provider, and precisely what this
+    file exists to prevent.
+
+    The two source lists are not interchangeable, and swapping them fails
+    silently rather than loudly: staging places both by `short_path`, so
+    analysis resolves either way, and a `lib/` file routed through `srcs` is
+    merely invisible to every `DartInfo` consumer downstream. Split them by
+    `package:` reachability — a file under `lib_root`'s `lib/`, reachable as
+    `package:<package_name>/…`, belongs in `package_srcs`; a file outside it (a
+    `test/` entrypoint, a `bin/` main) belongs in `srcs`, which no
+    `DartPackageInfo` can name.
+
+    Args:
+      label: The constructing rule's label, for error messages.
+      package: The struct from `dart_package_identity()`: the package name,
+        `lib/` root, language version, and resolved version this target
+        provides. Required: an executable contributing no package is what
+        `dart_analyzable_info()` is for.
+      deps: Targets providing `DartInfo` whose closures are merged in.
+      srcs: The target's own sources belonging to no package's `lib/` — its
+        entrypoint. Pass the rule's own `File`s, before any colocation copy:
+        consumers stage by `short_path`, and a colocated copy's is the assembled
+        directory's.
+      package_srcs: The target's own sources that *are* the package's `lib/`
+        files, reachable as `package:<package_name>/…`.
+      resources: This target's own non-Dart files under `lib/`.
+      code_assets: Targets providing `DartCodeAssetInfo` that this package owns.
+
+    Returns:
+      A `DartAnalyzableInfo` whose nested `DartInfo` records this package.
+    """
+    if not package.package_name:
+        fail(("%s: `package_name` is empty. An executable that contributes no " +
+              "package is what `dart_analyzable_info()` is for; this " +
+              "constructor is for one that does.") % label)
+
+    return DartAnalyzableInfo(
+        dart_info = dart_info(
+            label = label,
+            package = package,
+            deps = deps,
+            srcs = package_srcs,
+            resources = resources,
+            code_assets = code_assets,
+        ),
+        srcs = depset(srcs),
+        package_srcs = depset(package_srcs),
+    )
+
+def derived_package_info(pkg, lib_root = None, native_assets = None, link_hook = None, hook_error = None):
+    """Copies `pkg`, overriding the named fields and carrying the rest through.
+
+    Deriving one package record from another — `colocate_packages` rewriting
+    `lib_root` to an assembled directory, `merge_package_records` unioning two
+    records' assets — is a copy, not a construction, and the caller has an
+    opinion about one or two fields at most. Passing the rest through by
+    default means a field added to `DartPackageInfo` reaches every derived
+    record without those sites being touched, and means neither of them can be
+    the one that quietly drops it.
+
+    Reads are tolerant (`getattr` with a default): a `DartPackageInfo` built by
+    an older producer, or by `//dart/tests/no_lv_fixture`, legitimately omits
+    the later fields, and a derived copy of such a record should be as complete
+    as the original rather than failing on it.
+
+    Args:
+      pkg: The `DartPackageInfo` (or `DartPackageInfo`-shaped struct) to copy.
+      lib_root: Replacement `lib_root`, or `None` to keep `pkg`'s.
+      native_assets: Replacement `native_assets` tuple, or `None` to keep `pkg`'s.
+      link_hook: Replacement `link_hook` File, or `None` to keep `pkg`'s.
+      hook_error: Replacement `hook_error`, or `None` to keep `pkg`'s.
+
+    Returns:
+      A `DartPackageInfo`.
+    """
+
+    # Paired with the `DartPackageInfo(...)` in `dart_info()` above: one builds
+    # a record from a rule's attributes, this one from an existing record.
+    # Those are the only two places the fields are named, and both are here.
+    return DartPackageInfo(
+        package_name = pkg.package_name,
+        lib_root = pkg.lib_root if lib_root == None else lib_root,
+        version = getattr(pkg, "version", ""),
+        language_version = getattr(pkg, "language_version", ""),
+        native_assets = (
+            getattr(pkg, "native_assets", ()) if native_assets == None else native_assets
+        ),
+        link_hook = getattr(pkg, "link_hook", None) if link_hook == None else link_hook,
+        hooks = getattr(pkg, "hooks", None),
+        hook_error = getattr(pkg, "hook_error", "") if hook_error == None else hook_error,
+    )
+
+def _merged_dart_info(
+        label,
+        deps,
+        dep_infos,
+        package_name,
+        lib_root,
+        srcs,
+        resources,
+        packages,
+        native_assets,
+        package_file_records):
+    """Merges a target's own contributions with its dependencies' closures.
+
+    The single place `DartInfo`'s fields are enumerated. Both public
+    constructors route through here, so neither has to be touched when a field
+    is added — and neither can be the one that forgets to forward it.
+
+    Args:
+      label: The constructing rule's label, or None for a target that owns
+        no package record. Names the owner in `closure_facts`.
+      deps: The dependency targets, in the order of `dep_infos`.
+      dep_infos: The `DartInfo` of each dependency.
+      package_name: Value for `DartInfo.package_name`.
+      lib_root: Value for `DartInfo.lib_root`.
+      srcs: This target's own Dart sources.
+      resources: This target's own non-Dart files under `lib/`.
+      packages: This target's own `DartPackageInfo` records (zero or one).
+      native_assets: This target's own native assets (`DartPackageInfo.native_assets`).
+      package_file_records: This target's own `(package_name, lib_root,
+        files)` records, one per package that ships runtime `data`.
+
+    Returns:
+      A `DartInfo`.
+    """
+    return DartInfo(
+        package_name = package_name,
+        lib_root = lib_root,
+        owned_packages = list(packages),
+        transitive_srcs = depset(
+            direct = srcs,
+            transitive = [info.transitive_srcs for info in dep_infos],
+        ),
+        # Beside `transitive_srcs`, never inside it: the two lists are routed to
+        # different places. Everything that stages a whole package — the
+        # analyzer's project tree, a binary's runfiles — wants both; everything
+        # that feeds the compiler wants only the first.
+        transitive_resources = depset(
+            direct = resources,
+            transitive = [info.transitive_resources for info in dep_infos],
+        ),
+        # The target's own records, not the closure: a consumer that wants the
+        # closure reads `transitive_package_files`, exactly as it reads
+        # `transitive_srcs` beside `owned_packages`. Both are optional on a
+        # dependency for the same reason `transitive_native_assets` is: a
+        # producer built before the field existed legitimately omits it.
+        package_files = list(package_file_records),
+        transitive_package_files = depset(
+            direct = [
+                f
+                for record in package_file_records
+                for f in record.files
+            ],
+            transitive = [
+                getattr(info, "transitive_package_files", depset())
+                for info in dep_infos
+            ],
+        ),
+        transitive_packages = depset(
+            direct = packages,
+            transitive = [info.transitive_packages for info in dep_infos],
+        ),
+        # The libraries travel alongside the package records rather than being
+        # recovered from them: a depset of providers cannot be flattened back
+        # into `File`s without losing the depset, and runfiles need the files.
+        #
+        # Alone among the four, this one tolerates a dependency that omits it.
+        # That is the documented contract for the field (see
+        # `collect_native_assets`), and dropping the guard would break
+        # providers built before it existed. The other three are read
+        # unguarded: a missing one is a dependency that forgot to forward, and
+        # failing loudly is the whole point.
+        transitive_native_assets = depset(
+            direct = native_assets,
+            transitive = [
+                info.transitive_native_assets
+                for info in dep_infos
+                if hasattr(info, "transitive_native_assets")
+            ],
+        ),
+        # Optional for readers, like the two fields above: a dependency built
+        # without it leaves this target without it, and readers then take
+        # their precise path. See `closure_facts.bzl`.
+        closure_facts = closure_facts(label, packages, resources, dep_infos, [str(dep.label) for dep in deps]),
+    )

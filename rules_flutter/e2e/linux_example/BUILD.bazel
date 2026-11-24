@@ -1,0 +1,305 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load(
+    "@rules_flutter//flutter:linux.bzl",
+    "flutter_linux_app",
+    "flutter_linux_bundle",
+    "flutter_linux_engine",
+    "flutter_linux_registrant_gen",
+    "flutter_linux_runner_lib_gen",
+)
+load(":debug_kernel.bzl", "debug_kernel")
+
+exports_files(["pubspec.lock"])
+
+flutter_application(
+    name = "app_flutter",
+    package_name = "linux_example",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+# The app again, over a pure-Dart plugin with `dartPluginClass`, so its debug
+# kernel carries a generated plugin registrant. Not a bundle: only
+# `:app_debug_kernel` reads it.
+flutter_application(
+    name = "app_flutter_registrant",
+    package_name = "linux_example",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    tags = ["manual"],
+    deps = [
+        "//dart_registration_plugin",
+        "@deps//:flutter",
+    ],
+)
+
+# =============================================================================
+# Shared Tier 2 targets (used by approaches 2 & 3)
+# =============================================================================
+
+# Marked Linux-only like every other target here: on a non-Linux host the
+# resolved toolchain has no libflutter_linux_gtk.so and the rule hard-fails
+# during analysis, which makes `bazel test //...` on macOS an error rather
+# than a skip.
+flutter_linux_engine(
+    name = "flutter_engine",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+flutter_linux_registrant_gen(
+    name = "app_registrant",
+    application = ":app_flutter",
+)
+
+# =============================================================================
+# Approach 1: Flutter-generated runner (flutter_linux_app)
+#
+# Recommended for most users. Requires linux/runner/ from `flutter create`.
+# The macro auto-discovers C++ runner files, uses the flutter create
+# registrant, and assembles the bundle automatically.
+# =============================================================================
+
+flutter_linux_app(
+    name = "app",
+    application = ":app_flutter",
+    gtk_app_id = "com.example.linuxexample",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# =============================================================================
+# Approach 2: Bazel-generated runner (flutter_linux_runner_lib_gen)
+#
+# For users without `flutter create` output. Uses template runner from
+# rules_flutter. No C++ code needed. User wires runner + bundle manually.
+# =============================================================================
+
+flutter_linux_runner_lib_gen(
+    name = "bazel_runner",
+    engine = ":flutter_engine",
+    gtk_app_id = "com.example.linuxexample",
+    registrant = ":app_registrant",
+    window_title = "Linux Example",
+)
+
+flutter_linux_bundle(
+    name = "app_bazel_runner",
+    application = ":app_flutter",
+    runner = ":bazel_runner",
+    tags = ["manual"],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+build_test(
+    name = "linux_app_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":app"],
+)
+
+build_test(
+    name = "linux_bazel_runner_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":app_bazel_runner"],
+)
+
+dart_test(
+    name = "verify_linux_bundle_test",
+    size = "small",
+    data = [":app"],
+    main = "test/verify_linux_bundle_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+dart_test(
+    name = "verify_window_title_test",
+    size = "small",
+    data = [":app_bazel_runner"],
+    main = "test/verify_window_title_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# The modular debug kernel of the registrant app, built under `-c dbg`.
+debug_kernel(
+    name = "app_debug_kernel",
+    app = ":app_flutter_registrant",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# Kernel consistency: the linked modular debug kernel holds no two disagreeing
+# Source entries for one URI, and the pinned SDK `dart` VM loads it past
+# `kernel_loader`. #421 shipped a kernel that failed both on a Linux build no
+# test ever loaded into a VM.
+dart_test(
+    name = "kernel_consistency_test",
+    size = "medium",
+    data = [":app_debug_kernel"],
+    env = {"APP_DILL": "$(rlocationpath :app_debug_kernel)"},
+    main = "test/kernel_consistency_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables: each Dart file is checked against the nearest
+# listed one above it.
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Static analysis over this example's Dart. The app rule is a bundle and
+# carries no DartInfo, so the sources are declared once more as a library for
+# the analyzer to stage.
+flutter_library(
+    name = "app_lib",
+    package_name = "linux_example",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "//defines_env",
+        "@deps//:flutter",
+    ],
+)
+
+# =============================================================================
+# Debug apps with defines: the defines, the defines file and the flavor are
+# the configuration of the app's `deps`, so every dependency module compiles
+# with them and the app stays modular.
+# =============================================================================
+
+flutter_application(
+    name = "app_defines_dev",
+    package_name = "linux_example",
+    dart_defines = "//defines_config:dev",
+    # The value holds a comma: a module takes a define whole.
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
+    flavor = "defcfgdev",
+    main = "lib/main_defines.dart",
+    pub_packages = "@deps//packages",
+    tags = ["manual"],
+    deps = [
+        "//defines_env",
+        "@deps//:flutter",
+    ],
+)
+
+# Equal settings, deps listed in another order: shares every module with
+# :app_defines_dev.
+flutter_application(
+    name = "app_defines_dev_twin",
+    package_name = "linux_example",
+    dart_defines = "//defines_config:dev",
+    # The value holds a comma: a module takes a define whole.
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
+    flavor = "defcfgdev",
+    main = "lib/main_defines.dart",
+    pub_packages = "@deps//packages",
+    tags = ["manual"],
+    deps = [
+        "//defines_env",
+        "@deps//:flutter",
+    ],
+)
+
+# Other settings: its own copy of every module.
+flutter_application(
+    name = "app_defines_prod",
+    package_name = "linux_example",
+    dart_defines = "//defines_config:prod",
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_PROD"],
+    flavor = "defcfgprod",
+    main = "lib/main_defines.dart",
+    pub_packages = "@deps//packages",
+    tags = ["manual"],
+    deps = [
+        "//defines_env",
+        "@deps//:flutter",
+    ],
+)
+
+# The defines file spelled as before `dart_defines`: still modular, with its
+# own `dart_defines` target (`:app_defines_files_dart_defines`).
+flutter_application(
+    name = "app_defines_files",
+    package_name = "linux_example",
+    # The value holds a comma: a module takes a define whole.
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DEV,comma"],
+    defines_files = ["//defines_config:dev.json"],
+    flavor = "defcfgdev",
+    main = "lib/main_defines.dart",
+    pub_packages = "@deps//packages",
+    tags = ["manual"],
+    deps = [
+        "//defines_env",
+        "@deps//:flutter",
+    ],
+)
+
+debug_kernel(
+    name = "app_defines_dev_kernel",
+    app = ":app_defines_dev",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+debug_kernel(
+    name = "app_defines_prod_kernel",
+    app = ":app_defines_prod",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# A Dart test and a kernel binary with `defines` over the same library: their
+# `deps` edge carries the defines, so they stay modular.
+dart_test(
+    name = "dart_defines_env_test",
+    size = "small",
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DART_TEST"],
+    main = "test/dart_defines_env_test.dart",
+    deps = ["//defines_env"],
+)
+
+dart_binary(
+    name = "dart_defines_env_bin",
+    compile_mode = "kernel",
+    defines = ["DEFCFG_FOO=DEFCFG_FOO_DART_BIN"],
+    main = "bin/defines_env_main.dart",
+    deps = ["//defines_env"],
+)
+
+# A dependency module of a debug app compiles with the app's define, defines
+# file and flavor; one of a kernel binary with the binary's `defines`.
+dart_test(
+    name = "defines_config_test",
+    size = "small",
+    data = [
+        ":app_defines_dev_kernel",
+        ":app_defines_prod_kernel",
+        ":dart_defines_env_bin",
+    ],
+    env = {
+        "APP_DEV_DILL": "$(rlocationpath :app_defines_dev_kernel)",
+        "APP_PROD_DILL": "$(rlocationpath :app_defines_prod_kernel)",
+        "DART_BIN_DILL": "$(rlocationpath :dart_defines_env_bin)",
+    },
+    main = "test/defines_config_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+)

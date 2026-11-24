@@ -1,0 +1,19 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+
+# A package with a link hook: `hook/link.dart` reads the recorded uses of
+# `Glyph` and emits `package:glyphs/glyphs/index.json`, and fails the build on
+# a `Glyph` constructed at run time. The shape a Flutter package that indexes
+# its own assets takes: a `flutter_plugin` with no platforms.
+flutter_plugin(
+    name = "glyphs",
+    srcs = glob(["lib/**/*.dart"]),
+    link_hook = "hook/link.dart",
+    platforms = [],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@deps//:data_assets",
+        "@deps//:hooks",
+        "@deps//:meta",
+        "@deps//:record_use",
+    ],
+)

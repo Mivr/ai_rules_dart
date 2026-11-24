@@ -1,0 +1,9 @@
+exports_files([
+    "pubspec.evil_abs.lock",
+    "pubspec.evil_esc.lock",
+    "pubspec.evil_hard_in.lock",
+    "pubspec.evil_hard_out.lock",
+    "pubspec.evil_path_abs.lock",
+    "pubspec.evil_path_dotdot.lock",
+    "pubspec.ok.lock",
+])

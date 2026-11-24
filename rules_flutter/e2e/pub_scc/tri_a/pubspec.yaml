@@ -1,0 +1,11 @@
+name: tri_a
+description: 3-cycle member A
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  tri_b:
+    path: ../tri_b

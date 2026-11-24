@@ -1,0 +1,79 @@
+{
+  "bazel_skylib": {
+    "floor": "1.8.0",
+    "current": "1.9.2",
+    "resolved": "1.9.2",
+    "lifted_by": ["ai_rules_dart"],
+    "symbol": "`@bazel_skylib//:bzl_library.bzl`, `//rules:build_test.bzl`, `//rules:common_settings.bzl`, `//rules:expand_template.bzl`, `//rules:write_file.bzl` and `//lib:unittest.bzl`"
+  },
+  "package_metadata": {
+    "floor": "0.0.5",
+    "current": "0.0.13",
+    "resolved": "0.0.13",
+    "lifted_by": ["ai_rules_dart"],
+    "symbol": "`@package_metadata//licenses/rules:license.bzl`, `@package_metadata//purl:purl.bzl` (`purl.bazel()`) and `@package_metadata//rules:package_metadata.bzl`"
+  },
+  "platforms": {
+    "floor": "1.1.0",
+    "current": "1.1.0",
+    "resolved": "1.1.0",
+    "lifted_by": [],
+    "symbol": "`@platforms//:incompatible`, `@platforms//os:{android,ios,linux,macos,windows}` and `@platforms//cpu:{aarch64,arm64,x86_64}`"
+  },
+  "rules_cc": {
+    "floor": "0.2.20",
+    "current": "0.2.26",
+    "resolved": "0.2.26",
+    "lifted_by": ["ai_rules_dart"],
+    "symbol": "`@rules_cc//cc:cc_shared_library.bzl`, `@rules_cc//cc:objc_library.bzl`, `@rules_cc//cc/common:cc_shared_library_info.bzl` and `@rules_cc//cc:find_cc_toolchain.bzl`"
+  },
+  "apple_support": {
+    "floor": "2.2.0",
+    "current": "2.9.1",
+    "resolved": "2.9.1",
+    "lifted_by": ["rules_cc"],
+    "symbol": "`@apple_support//constraints:{device,simulator}`, `@apple_support//platforms:ios_arm64` and the `@apple_support//crosstool:setup.bzl` `apple_cc_configure_extension`"
+  },
+  "rules_apple": {
+    "floor": "4.5.3",
+    "current": "5.2.0",
+    "resolved": "4.5.3",
+    "lifted_by": [],
+    "symbol": "`@rules_apple//apple:ios.bzl`, `@rules_apple//apple:macos.bzl`, `@rules_apple//apple:versioning.bzl`, the framework/app-intent imports and the internal `AppleBundleInfo` constructor"
+  },
+  "rules_swift": {
+    "floor": "3.5.0",
+    "current": "4.1.2",
+    "resolved": "3.5.0",
+    "lifted_by": [],
+    "symbol": "`@rules_swift//swift:swift.bzl` (`swift_library`) and the `SwiftInfo`/`swift_interop_info` surface at `compatibility_level = 3`"
+  },
+  "rules_kotlin": {
+    "floor": "2.3.0",
+    "current": "2.4.20",
+    "resolved": "2.3.0",
+    "lifted_by": [],
+    "symbol": "`@rules_kotlin//kotlin:jvm.bzl` (`kt_jvm_library`) and `//kotlin:core.bzl` (`define_kt_toolchain`, `kt_kotlinc_options`, `kt_ksp_plugin`), with a compiler that reads the Kotlin 2.4 standard library of a Flutter 3.47 app"
+  },
+  "rules_java": {
+    "floor": "9.0.0",
+    "current": "9.9.0",
+    "resolved": "9.3.0",
+    "lifted_by": ["rules_kotlin"],
+    "symbol": "`@rules_java//java:defs.bzl` (`java_binary`, `java_import`, `java_library`, `java_plugin`, `java_test`), `@rules_java//java/common:java_info.bzl` (`JavaInfo`) and the Java toolchain rules"
+  },
+  "ai_rules_dart": {
+    "floor": "0.28.3",
+    "current": "0.28.3",
+    "resolved": "0.28.3",
+    "lifted_by": [],
+    "symbol": "`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `@rules_dart//dart/pub:pub_scc.bzl`, `@rules_dart//dart/pub:yaml.bzl` and `dart_analysis_config(baseline = ...)`"
+  },
+  "llvm": {
+    "floor": "0.8.17",
+    "current": "0.8.19",
+    "resolved": "0.8.17",
+    "lifted_by": [],
+    "symbol": "`@llvm//extensions:llvm_toolchain_minimal.bzl` and the `llvm-toolchain-minimal-<os>-<cpu>` repos"
+  }
+}

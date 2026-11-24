@@ -1,0 +1,17 @@
+# gazelle:dart_package_name directive_name
+
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_package_metadata")
+
+dart_package_metadata(
+    name = "pkg",
+    package_name = "declared_name",
+    language_version = "3.11",
+)
+
+dart_library(
+    name = "directive_name",
+    package_name = "directive_name",
+    srcs = ["event.dart"],
+    visibility = ["//visibility:public"],
+    deps = ["@freezed_annotation"],
+)

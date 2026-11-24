@@ -1,0 +1,50 @@
+"E2e test: Flutter app with native FFI dependency"
+
+module(name = "rules_flutter_ffi_example")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+bazel_dep(name = "apple_support", version = "2.9.1")
+bazel_dep(name = "rules_apple", version = "5.2.0")
+bazel_dep(name = "rules_swift", version = "4.1.2")
+bazel_dep(name = "rules_cc", version = "0.2.26")
+bazel_dep(name = "platforms", version = "1.1.0")
+
+# The SQLite amalgamation package:sqlite3's build hook compiles
+# (`hooks.user_defines` in pubspec.yaml).
+bazel_dep(name = "sqlite3", version = "3.53.4")
+
+bazel_dep(name = "llvm", version = "0.8.19", dev_dependency = True)
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+register_toolchains(
+    "@llvm//toolchain:linux_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:linux_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:linux_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:linux_x86_64_to_linux_x86_64",
+    "@llvm//toolchain:macos_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:macos_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:macos_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:macos_x86_64_to_linux_x86_64",
+    dev_dependency = True,
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    hook_data = {"@sqlite3//:sqlite3.c": "sqlite3"},
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_ios_engine", "flutter_macos_engine", "flutter_toolchains")
+
+register_toolchains("@flutter_toolchains//:all")

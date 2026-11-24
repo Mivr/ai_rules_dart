@@ -1,0 +1,11 @@
+# The generic runner's sources. A pub hub links them into its own
+# `build_runner` package and compiles them there against the hub's lock, so
+# the runner is built from the user's `build_runner` and builders.
+exports_files(
+    [
+        "runner/bin/gen_entry.dart",
+        "runner/declared_paths.dart",
+        "runner/lib/runner.dart",
+    ],
+    visibility = ["//visibility:public"],
+)

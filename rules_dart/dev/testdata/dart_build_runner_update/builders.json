@@ -1,0 +1,311 @@
+{
+  "version": 1,
+  "builders": [
+    {
+      "key": "built_value_generator:built_value",
+      "package": "built_value_generator",
+      "auto_apply": "dependents",
+      "build_to": "cache",
+      "build_extensions": {
+        ".dart": [
+          ".built_value.g.part"
+        ]
+      },
+      "applies_builders": [
+        "source_gen:combining_builder"
+      ],
+      "required_inputs": [],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "drift_dev:analyzer",
+      "package": "drift_dev",
+      "auto_apply": "none",
+      "build_to": "cache",
+      "build_extensions": {
+        ".dart": [
+          ".dart.drift_elements.json",
+          ".dart.drift_module.json",
+          ".dart.types.temp.dart"
+        ],
+        ".drift": [
+          ".drift.drift_elements.json",
+          ".drift.drift_module.json",
+          ".drift.types.temp.dart"
+        ]
+      },
+      "applies_builders": [
+        "drift_dev:preparing_builder"
+      ],
+      "required_inputs": [
+        ".drift_prep.json"
+      ],
+      "runs_before": [
+        "drift_dev:not_shared"
+      ],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "drift_dev:drift_dev",
+      "package": "drift_dev",
+      "auto_apply": "dependents",
+      "build_to": "cache",
+      "build_extensions": {
+        ".dart": [
+          ".drift.g.part",
+          ".dart.drift_module.json",
+          ".dart.types.temp.dart",
+          ".dart.drift_elements.json"
+        ],
+        ".drift": [
+          ".drift.drift_module.json",
+          ".drift.types.temp.dart",
+          ".drift.drift_elements.json"
+        ]
+      },
+      "applies_builders": [
+        "source_gen:combining_builder",
+        "drift_dev:preparing_builder"
+      ],
+      "required_inputs": [
+        ".drift_prep.json"
+      ],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "drift_dev:modular",
+      "package": "drift_dev",
+      "auto_apply": "none",
+      "build_to": "source",
+      "build_extensions": {
+        ".dart": [
+          ".drift.dart"
+        ],
+        ".drift": [
+          ".drift.dart"
+        ]
+      },
+      "applies_builders": [
+        "drift_dev:analyzer"
+      ],
+      "required_inputs": [
+        ".drift.drift_module.json"
+      ],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "drift_dev:not_shared",
+      "package": "drift_dev",
+      "auto_apply": "none",
+      "build_to": "source",
+      "build_extensions": {
+        ".dart": [
+          ".drift.dart"
+        ]
+      },
+      "applies_builders": [],
+      "required_inputs": [
+        ".drift_prep.json"
+      ],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "drift_dev:preparing_builder",
+      "package": "drift_dev",
+      "auto_apply": "none",
+      "build_to": "cache",
+      "build_extensions": {
+        ".moor": [
+          ".drift_prep.json",
+          ".expr.temp.dart"
+        ],
+        ".drift": [
+          ".drift_prep.json",
+          ".expr.temp.dart"
+        ]
+      },
+      "applies_builders": [
+        "drift_dev:cleanup"
+      ],
+      "required_inputs": [],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "freezed:freezed",
+      "package": "freezed",
+      "auto_apply": "dependents",
+      "build_to": "source",
+      "build_extensions": {
+        ".dart": [
+          ".freezed.dart"
+        ]
+      },
+      "applies_builders": [],
+      "required_inputs": [],
+      "runs_before": [
+        "json_serializable:json_serializable"
+      ],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "go_router_builder:go_router_builder",
+      "package": "go_router_builder",
+      "auto_apply": "dependents",
+      "build_to": "cache",
+      "build_extensions": {
+        ".dart": [
+          "go_router.g.part"
+        ]
+      },
+      "applies_builders": [
+        "source_gen:combining_builder"
+      ],
+      "required_inputs": [],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "injectable_generator:injectable_builder",
+      "package": "injectable_generator",
+      "auto_apply": "dependents",
+      "build_to": "cache",
+      "build_extensions": {
+        ".dart": [
+          ".injectable.json"
+        ]
+      },
+      "applies_builders": [],
+      "required_inputs": [],
+      "runs_before": [
+        "injectable_generator:injectable_config_builder"
+      ],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "injectable_generator:injectable_config_builder",
+      "package": "injectable_generator",
+      "auto_apply": "dependents",
+      "build_to": "source",
+      "build_extensions": {
+        ".dart": [
+          ".config.dart",
+          ".module.dart"
+        ]
+      },
+      "applies_builders": [],
+      "required_inputs": [],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "json_serializable:json_serializable",
+      "package": "json_serializable",
+      "auto_apply": "dependents",
+      "build_to": "cache",
+      "build_extensions": {
+        ".dart": [
+          "json_serializable.g.part"
+        ]
+      },
+      "applies_builders": [
+        "source_gen:combining_builder"
+      ],
+      "required_inputs": [],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "mockito:mockBuilder",
+      "package": "mockito",
+      "auto_apply": "dependents",
+      "build_to": "source",
+      "build_extensions": {
+        ".dart": [
+          ".mocks.dart"
+        ]
+      },
+      "applies_builders": [],
+      "required_inputs": [],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": {
+        "include": [
+          "test/**"
+        ],
+        "exclude": null
+      }
+    },
+    {
+      "key": "retrofit_generator:retrofit_generator",
+      "package": "retrofit_generator",
+      "auto_apply": "dependents",
+      "build_to": "cache",
+      "build_extensions": {
+        ".dart": [
+          ".retrofit.g.part"
+        ]
+      },
+      "applies_builders": [
+        "source_gen:combining_builder"
+      ],
+      "required_inputs": [],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "riverpod_generator:riverpod_generator",
+      "package": "riverpod_generator",
+      "auto_apply": "dependents",
+      "build_to": "cache",
+      "build_extensions": {
+        ".dart": [
+          ".riverpod.g.part"
+        ]
+      },
+      "applies_builders": [
+        "source_gen:combining_builder"
+      ],
+      "required_inputs": [],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    },
+    {
+      "key": "source_gen:combining_builder",
+      "package": "source_gen",
+      "auto_apply": "none",
+      "build_to": "source",
+      "build_extensions": {
+        ".dart": [
+          ".g.dart"
+        ]
+      },
+      "applies_builders": [
+        "source_gen:part_cleanup"
+      ],
+      "required_inputs": [
+        ".g.part"
+      ],
+      "runs_before": [],
+      "is_optional": false,
+      "generate_for": null
+    }
+  ]
+}

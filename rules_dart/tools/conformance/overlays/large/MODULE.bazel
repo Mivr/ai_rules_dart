@@ -1,0 +1,26 @@
+module(name = "conformance_large")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    # Both hooks download a prebuilt library, which each checks against the
+    # sha256 its own release lists. powersync's has no other way (a local
+    # Rust build needs an edit to the hook and `cargo`); sqlite3's other ways
+    # need `hooks: user_defines:` in the corpus pubspec.
+    hook_network = [
+        "powersync",
+        "sqlite3",
+    ],
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_toolchains", "flutter_web_sdk")
+
+register_toolchains("@flutter_toolchains//:all")
+
+bazel_dep(name = "llvm", version = "0.8.19")
+
+register_toolchains("@llvm//toolchain:linux_x86_64_to_linux_x86_64")

@@ -1,0 +1,34 @@
+schema: mivr-e2e-spec/1
+# A modular kernel compile rejects an import shape where a library or entry
+# source reaches a dependency-defined source through a relative or multi-root
+# URI. Each red case fails before the compiler runs with a refusal naming the
+# `package:` URI to use, under the persistent worker and under the local
+# strategy; the `package:` shape of the same edges still compiles. See
+# README.md.
+commands:
+  - name: a multi-root import of a dep source fails the library
+    run: bazel build //pkg:bad_lib_app
+    expect:
+      non_zero: true
+      output_contains:
+        - "cannot compile package:pkg/a.dart: import 'org-dartlang-root:///dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+  - name: a multi-root import of a dep source fails the library under the local strategy
+    run: bazel build --spawn_strategy=standalone //pkg:bad_lib_app
+    expect:
+      non_zero: true
+      output_contains:
+        - "reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+  - name: a relative import of a dep source fails the entry
+    run: bazel build //pkg:bad_bin
+    expect:
+      non_zero: true
+      output_contains:
+        - "cannot compile org-dartlang-root:///pkg/bin/main.dart: import '../../dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+  - name: a relative import of a dep source fails the entry under the local strategy
+    run: bazel build --spawn_strategy=standalone //pkg:bad_bin
+    expect:
+      non_zero: true
+      output_contains:
+        - "reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+  - name: the package shape of the same edges compiles
+    run: bazel build //pkg:good_app

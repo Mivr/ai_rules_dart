@@ -1,0 +1,9 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+# A `dependency_overrides` fork of the hosted `clock`: the hosted `fake_async`
+# depends on this target, as `dart pub get` resolves it.
+dart_library(
+    name = "clock",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+)

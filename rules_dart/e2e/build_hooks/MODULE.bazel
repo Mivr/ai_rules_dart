@@ -1,0 +1,56 @@
+module(name = "build_hooks_e2e")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../..",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.26")
+
+# The SQLite amalgamation sqlite3's hook compiles in source mode.
+bazel_dep(name = "sqlite3", version = "3.53.4")
+
+# The C toolchain a build hook gets is the one Bazel resolves for the target.
+bazel_dep(name = "hermetic_cc_toolchain", version = "4.3.0")
+
+cc_toolchains = use_extension("@hermetic_cc_toolchain//toolchain:ext.bzl", "toolchains")
+use_repo(cc_toolchains, "zig_sdk")
+
+register_toolchains(
+    "@zig_sdk//toolchain:linux_amd64_gnu.2.28",
+    "@zig_sdk//toolchain:linux_arm64_gnu.2.28",
+)
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")
+
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "pub_deps",
+    # The user define in pubspec.yaml names this file; the hook reads it.
+    hook_data = {"@sqlite3//:sqlite3.c": "sqlite3"},
+    lock = "//:pubspec.lock",
+    # This lock shares packages with rules_dart's own tool lock, which can be
+    # older for some of them; there is one version per package, so take ours.
+    on_version_conflict = "upgrade",
+)
+
+# The same sqlite3 without the user define: its hook downloads, which the
+# sandbox refuses, naming the package.
+pub.from_lock(
+    name = "download_deps",
+    isolated = True,
+    lock = "//download:pubspec.lock",
+)
+
+# ... and with this one hook allowed the network.
+pub.from_lock(
+    name = "download_net_deps",
+    hook_network = ["sqlite3"],
+    isolated = True,
+    lock = "//download:pubspec.lock",
+)
+use_repo(pub, "download_deps", "download_net_deps", "pub_deps")

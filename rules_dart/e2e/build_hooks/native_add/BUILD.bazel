@@ -1,0 +1,20 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+# A hand-written package with a build hook: the hook compiles C through
+# package:native_toolchain_c with the C toolchain Bazel resolved.
+dart_library(
+    name = "native_add",
+    srcs = ["lib/native_add.dart"],
+    build_hook = "hook/build.dart",
+    hook_srcs = glob([
+        "hook/**",
+        "src/**",
+    ]) + ["pubspec.yaml"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pub_deps//:code_assets",
+        "@pub_deps//:hooks",
+        "@pub_deps//:logging",
+        "@pub_deps//:native_toolchain_c",
+    ],
+)

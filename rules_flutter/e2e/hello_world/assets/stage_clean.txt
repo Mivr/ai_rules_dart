@@ -1,0 +1,1 @@
+Removed by `verify_macos_stage_clean_test` during its local rebuild, then restored.

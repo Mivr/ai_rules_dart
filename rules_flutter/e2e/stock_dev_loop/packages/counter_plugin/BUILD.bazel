@@ -1,0 +1,16 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+
+# A plugin with Dart code only: the registrant calls CounterPlugin.registerWith().
+flutter_plugin(
+    name = "counter_plugin",
+    package_name = "counter_plugin",
+    srcs = glob(["lib/**/*.dart"]),
+    dart_plugin_class = "CounterPlugin",
+    data = ["pubspec.yaml"],
+    platforms = [
+        "android",
+        "linux",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@deps//:flutter"],
+)

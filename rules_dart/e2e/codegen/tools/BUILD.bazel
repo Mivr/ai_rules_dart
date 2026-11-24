@@ -1,0 +1,18 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+# Trivial in-tree generators shared by the fixtures, run by `run_binary`. The
+# choice of generator is incidental to what's under test (generated-input
+# co-location), so these are hand-written, not real codegen packages. Each takes
+# `--input <src> --output <path>` and imports only `dart:` core libraries.
+
+dart_binary(
+    name = "part_gen",
+    main = "part_gen.dart",
+    visibility = ["//visibility:public"],
+)
+
+dart_binary(
+    name = "lib_gen",
+    main = "lib_gen.dart",
+    visibility = ["//visibility:public"],
+)

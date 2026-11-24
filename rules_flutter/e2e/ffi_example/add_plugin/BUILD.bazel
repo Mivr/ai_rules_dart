@@ -1,0 +1,32 @@
+load("@rules_dart//dart:defs.bzl", "dart_code_asset")
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+
+# Demonstrate the Native Assets pipeline end to end: the shared library is
+# bound to a Dart code-asset id, and the Dart side binds with a bare
+# `@Native(symbol: ...)` — no asset id, no paths, no Platform switch. The id
+# below is the default the Dart VM derives for annotations in
+# `lib/add_plugin.dart` (the library's URI), which is exactly how hook-built
+# pub packages behave, so the same Dart source works under `flutter run`.
+#
+# The library keeps the file name its platform gives it (`libadd.so`,
+# `libadd.dylib`, `add.dll`), and the app bundles it where the manifest names
+# it. Runtime binds are proven by //:verify_linux_runtime_test and
+# //:verify_macos_runtime_test.
+dart_code_asset(
+    name = "add_code_asset",
+    asset_id = "package:add_plugin/add_plugin.dart",
+    shared_library = "//:add",
+)
+
+flutter_plugin(
+    name = "add_plugin",
+    srcs = ["lib/add_plugin.dart"],
+    code_assets = [":add_code_asset"],
+    platforms = [
+        "ios",
+        "macos",
+        "linux",
+        "windows",
+    ],
+    visibility = ["//visibility:public"],
+)

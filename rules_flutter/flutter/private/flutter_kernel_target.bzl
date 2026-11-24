@@ -1,0 +1,50 @@
+"""Internal rule for compiling Flutter sources to a kernel .dill file.
+
+This is the base compilation step shared by all Flutter platform targets.
+"""
+
+load("@rules_dart//dart:providers.bzl", "DartInfo")
+load("@rules_dart//dart:utils.bzl", "MODULAR_KERNEL_ATTRS", "MODULAR_KERNEL_TOOLCHAINS")
+load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_DEPS_DOC", "KERNEL_COMPILE_ATTRS", "flutter_compile_kernel", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
+load("//flutter/private:flutter_defines_files.bzl", "debug_defines_transition")
+load("//flutter/private:flutter_kernel_module.bzl", "flutter_kernel_module_aspect")
+
+visibility(["//flutter/..."])
+
+def _flutter_kernel_target_impl(ctx):
+    flutter_sdk_info = resolve_flutter_sdk_info(ctx)
+    kernel_dill = flutter_compile_kernel(
+        ctx = ctx,
+        flutter_sdk_info = flutter_sdk_info,
+        target = make_kernel_target(aot = True if ctx.attr.aot else None),
+        inputs = make_kernel_inputs(),
+    ).kernel_dill
+
+    return [
+        DefaultInfo(files = depset([kernel_dill])),
+    ]
+
+flutter_kernel_target = rule(
+    implementation = _flutter_kernel_target_impl,
+    # The compile inputs come from the shared bundle rather than a copy of it,
+    # so this rule cannot drift from what `flutter_compile_kernel` reads.
+    attrs = KERNEL_COMPILE_ATTRS | {
+        "deps": attr.label_list(
+            doc = FLUTTER_DEPS_DOC,
+            providers = [DartInfo],
+            aspects = [flutter_kernel_module_aspect],
+            # In a debug build the target's `defines` are the configuration of its `deps`, so every module
+            # compiles with them and the target stays modular.
+            cfg = debug_defines_transition,
+        ),
+        "aot": attr.bool(
+            doc = "If True, compile for AOT (--aot --tfa). Automatically True in opt/fastbuild mode.",
+            default = False,
+        ),
+    } | MODULAR_KERNEL_ATTRS,
+    toolchains = [
+        "@rules_flutter//flutter:toolchain_type",
+        config_common.toolchain_type("@rules_flutter//flutter/private:product_tools_toolchain_type", mandatory = False),
+    ] + COPY_TO_DIRECTORY_TOOLCHAINS + MODULAR_KERNEL_TOOLCHAINS,
+    doc = "Compiles Flutter sources to a kernel .dill file.",
+)

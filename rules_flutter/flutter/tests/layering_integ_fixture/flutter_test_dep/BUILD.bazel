@@ -1,0 +1,11 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+# Stub dep exposing Dart package `flutter_test` for the integration-test
+# layering fixtures. Its own Bazel package gives it a package root distinct
+# from the test target's own, which `synthesize_app_package` requires.
+dart_library(
+    name = "flutter_test_dep",
+    package_name = "flutter_test",
+    srcs = ["lib/flutter_test.dart"],
+    visibility = ["//flutter/tests:__subpackages__"],
+)

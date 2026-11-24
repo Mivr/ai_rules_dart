@@ -1,0 +1,46 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+load("@rules_flutter//flutter:macos.bzl", "flutter_apple_plugin_library")
+
+# A plugin written in the workspace that ships fragment shaders, the shape of
+# a Liquid Glass UI kit: its pubspec's `flutter: shaders:` names them, and
+# `platforms`, `plugin_class` and `android_package` repeat its `flutter:
+# plugin: platforms:`. `data` carries the pubspec and the shaders with the
+# file they include. The app in //glass_app draws with both shaders and calls
+# the native side.
+flutter_plugin(
+    name = "glass_plugin",
+    package_name = "glass_plugin",
+    srcs = ["lib/glass_plugin.dart"],
+    android_package = "com.example.glass_plugin",
+    apple_libs = select({
+        "@platforms//os:macos": [":glass_plugin_apple_macos"],
+        "@platforms//os:ios": [":glass_plugin_apple_ios"],
+        "//conditions:default": [],
+    }),
+    data = glob(["shaders/**"]) + ["pubspec.yaml"],
+    platforms = [
+        "android",
+        "ios",
+        "macos",
+    ],
+    plugin_class = "GlassPlugin",
+    visibility = ["//visibility:public"],
+    deps = ["@deps//:flutter"],
+)
+
+flutter_apple_plugin_library(
+    name = "glass_plugin_apple_macos",
+    srcs = ["macos/Classes/GlassPlugin.swift"],
+    module_name = "glass_plugin",
+    platform = "macos",
+)
+
+flutter_apple_plugin_library(
+    name = "glass_plugin_apple_ios",
+    srcs = ["ios/Classes/GlassPlugin.swift"],
+    module_name = "glass_plugin",
+    platform = "ios",
+)
+
+# The Android side (android/) is a stock plugin project: an app that depends on this package by path
+# has it in its Gradle build, and so in its pin (see //glass_app).

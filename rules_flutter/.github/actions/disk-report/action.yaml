@@ -1,0 +1,18 @@
+name: Disk report
+description: Logs free disk space and the Bazel directory sizes under a label.
+inputs:
+  label:
+    description: What point of the job this report is for.
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        LABEL: ${{ inputs.label }}
+      run: |
+        echo "===== disk report: ${LABEL} ====="
+        df -h /
+        for d in "$HOME/.cache/bazel" "$HOME/.cache/bazel-disk" "$HOME/.cache/bazel-repo" "$HOME/.cache/bazelisk"; do
+          if [ -d "$d" ]; then du -sh "$d" 2>/dev/null; else echo "missing: $d"; fi
+        done

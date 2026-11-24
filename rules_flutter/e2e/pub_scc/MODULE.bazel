@@ -1,0 +1,79 @@
+"E2E workspace proving flutter.pub strongly connected component (SCC) merged spokes."
+
+module(name = "rules_flutter_pub_scc")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+
+bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
+
+bazel_dep(name = "bazel_skylib", version = "1.8.0")
+bazel_dep(name = "package_metadata", version = "0.0.5")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_cc", version = "0.2.20")
+bazel_dep(name = "apple_support", version = "2.2.0")
+bazel_dep(name = "rules_apple", version = "4.5.3")
+bazel_dep(name = "rules_swift", version = "3.5.0")
+bazel_dep(name = "rules_java", version = "9.0.0")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+bazel_dep(name = "llvm", version = "0.8.17", dev_dependency = True)
+
+register_toolchains(
+    "@llvm//toolchain:linux_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:linux_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:linux_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:linux_x86_64_to_linux_x86_64",
+    "@llvm//toolchain:macos_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:macos_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:macos_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:macos_x86_64_to_linux_x86_64",
+    dev_dependency = True,
+)
+
+single_version_override(
+    module_name = "platforms",
+    version = "1.1.0",
+)
+
+single_version_override(
+    module_name = "rules_apple",
+    version = "4.5.3",
+)
+
+single_version_override(
+    module_name = "rules_swift",
+    version = "3.5.0",
+)
+
+single_version_override(
+    module_name = "llvm",
+    version = "0.8.17",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(
+    flutter,
+    "deps",
+    "deps__acyclic_pkg",
+    "deps__scc__cycle_a__cycle_b",
+    "deps__scc__tri_a__tri_b__tri_c",
+    "flutter_ios_engine",
+    "flutter_macos_engine",
+    "flutter_toolchains",
+)
+
+register_toolchains("@flutter_toolchains//:all")

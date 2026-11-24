@@ -1,0 +1,672 @@
+"""Implementation of the dart_binary rule."""
+
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("//dart:providers.bzl", "DartCodeAssetInfo", "DartCompileInfo", "DartInfo", "DartRecordedUsesInfo")
+load("//dart/private:binary_compile.bzl", "binary_compile", "kernel_flag_defines")
+load("//dart/private:build_hooks.bzl", "NATIVE_ASSETS_CONSUMER_ATTRS")
+load(
+    "//dart/private:build_settings.bzl",
+    "EXECUTABLE_DEFINES_FILE_SETTING",
+    "EXECUTABLE_DEFINES_SETTING",
+    "EXTRA_DART_DEFINES_ATTR",
+    "REFUSED_DART_LIBRARIES_ATTR",
+    "executable_defines_settings",
+)
+load(
+    "//dart/private:common.bzl",
+    "DART_ABI_CONSTRAINT_ATTRS",
+    "collect_transitive_resources",
+    "runfiles_path",
+)
+load("//dart/private:dart_compile.bzl", "recorded_uses_kind")
+load(
+    "//dart/private:dart_import_check.bzl",
+    "dart_import_check_aspect",
+    "executable_import_check",
+)
+load(
+    "//dart/private:dart_kernel.bzl",
+    "BINARY_MODULAR_KERNEL_ATTRS",
+    "EXEC_TOOLS_TOOLCHAIN",
+    "MODULAR_KERNEL_TOOLCHAINS",
+    "dart_kernel_module_aspect",
+)
+load("//dart/private:dart_link_check.bzl", "LINK_MODULES_ATTRS", "link_modules_check")
+load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
+load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_hook_error", "executable_native_assets", "executable_package")
+load("//dart/private:package_files.bzl", "collect_transitive_package_files")
+load(
+    "//dart/private/tools:compile_wrapper.bzl",
+    "COMPILE_WRAPPER_ATTRS",
+    "import_check_unless_wrapper",
+)
+
+visibility(["//dart/..."])
+
+def _kernel_launcher_for_mode(compile_mode, launcher):
+    if compile_mode == "kernel" and launcher:
+        return Label("//dart/private/tools:kernel_launcher")
+    return None
+
+def binary_output_basename(name, compile_mode, is_windows):
+    """Returns a `dart_binary`'s output filename with the platform exe extension.
+
+    Includes the platform-appropriate executable extension.
+
+    A native `exe` gets a `.exe` suffix on Windows so it is launchable and
+    discoverable by the conventional name (e.g. via runfiles
+    `rlocation("…/app.exe")`). Without it the output is a bare `app`, and a
+    consumer looking up `app.exe` misses — falling through to a non-existent
+    path. The snapshot modes use fixed extensions on every platform.
+
+    Args:
+      name: The target name (`ctx.label.name`).
+      compile_mode: One of `exe`, `aot-snapshot`, `kernel`, `jit-snapshot`.
+      is_windows: Whether the target platform is Windows.
+
+    Returns:
+      The output filename string.
+    """
+    if compile_mode == "exe":
+        return name + (".exe" if is_windows else "")
+    elif compile_mode == "aot-snapshot":
+        return name + ".aot"
+    elif compile_mode == "kernel":
+        return name + ".dill"
+    elif compile_mode == "jit-snapshot":
+        return name + ".jit"
+    fail("Unknown compile_mode: %s" % compile_mode)
+
+def is_tool_bin_path(bin_dir_path):
+    """Returns whether a `ctx.bin_dir.path` belongs to a tool (exec) configuration.
+
+    Bazel names an exec configuration's output root with an `exec` segment, as in
+    `bazel-out/k8-opt-exec-2B5C4A8F/bin`, while an ordinary configuration's root,
+    such as `bazel-out/k8-opt/bin`, has none. This is the public signal the rule
+    uses in place of the private `ctx.configuration` tool-configuration check.
+    An ordinary configuration must never return True: it would then take the
+    exec-tools SDK and drop its package runfiles.
+
+    Args:
+      bin_dir_path: The `ctx.bin_dir.path` string of the rule being analyzed.
+
+    Returns:
+      True when a path segment is an exec configuration name, else False.
+    """
+    for segment in bin_dir_path.split("/"):
+        if "-exec-" in segment or segment.endswith("-exec"):
+            return True
+    return False
+
+def _binary_sdk_toolchain_type(ctx):
+    """The compiling SDK's toolchain type: exec tools for tool configurations, else the target toolchain."""
+    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
+    if is_tool_bin_path(ctx.bin_dir.path) and exec_tc != None and exec_tc.dart_sdk_info != None:
+        return EXEC_TOOLS_TOOLCHAIN
+    return "//dart:toolchain_type"
+
+def _binary_sdk_info(ctx):
+    """Selects the compiling SDK: the exec-tools SDK for tool configurations, else the target toolchain's."""
+    return ctx.toolchains[_binary_sdk_toolchain_type(ctx)].dart_sdk_info
+
+def _binary_recorded_uses(ctx, compile_mode):
+    """Declares the recorded-uses file when `record_use` is set. Returns (compile_recorded_uses, recorded_uses_info)."""
+    compile_recorded_uses = None
+    recorded_uses_info = []
+    if ctx.attr.record_use:
+        recorded_uses = ctx.actions.declare_file(ctx.label.name + ".recorded_uses.json")
+        kind = recorded_uses_kind(compile_mode)
+        if kind == "aot":
+            compile_recorded_uses = recorded_uses
+        else:
+            ctx.actions.write(output = recorded_uses, content = "{}")
+        recorded_uses_info = [DartRecordedUsesInfo(file = recorded_uses, kind = kind)]
+    return compile_recorded_uses, recorded_uses_info
+
+def _runtime_package_files(ctx):
+    """The dependency package files this binary may stage in its runfiles.
+
+    A build-time tool (`cfg = "exec"`) or the `package:test` runner entrypoint
+    must contribute none: the tool's whole runfiles tree becomes an input of
+    the action that runs it, and the runner's does for `DartTestRunnerSnapshot`.
+    Staging a package's `pubspec.yaml` there would change those action inputs
+    and keys even though nothing reads the file. Every other binary is a
+    program somebody runs, and its dependency package roots belong beside it.
+
+    Args:
+      ctx: The `dart_binary` rule context.
+
+    Returns:
+      A depset of the dependency package files to add to runfiles.
+    """
+    if is_tool_bin_path(ctx.bin_dir.path):
+        return depset()
+    if DartTestRunnerMainInfo in ctx.attr.main:
+        return depset()
+    return collect_transitive_package_files(ctx.attr.deps)
+
+def _instrumented_files(ctx):
+    """The `bazel coverage` provider: the binary's Dart sources, its deps' and its data's."""
+    return coverage_common.instrumented_files_info(
+        ctx,
+        source_attributes = ["srcs", "main"],
+        dependency_attributes = ["deps", "data"],
+        extensions = ["dart"],
+    )
+
+def _binary_optional_outputs(ctx, compile_mode):
+    """Declares the recorded-uses and split-debug outputs for a `dart_binary`.
+
+    Args:
+      ctx: The rule context.
+      compile_mode: The `dart compile` mode.
+
+    Returns:
+      A struct with `recorded_uses` (File or None), `recorded_uses_info`
+      (provider list) and `debug_info` (File or None).
+    """
+    compile_recorded_uses, recorded_uses_info = _binary_recorded_uses(ctx, compile_mode)
+    return struct(
+        recorded_uses = compile_recorded_uses,
+        recorded_uses_info = recorded_uses_info,
+        debug_info = _binary_debug_info(ctx, compile_mode),
+    )
+
+def _binary_debug_info(ctx, compile_mode):
+    """Declares the `<name>.debug` symbols file when `split_debug_info` is set.
+
+    Args:
+      ctx: The rule context.
+      compile_mode: The `dart compile` mode.
+
+    Returns:
+      The declared symbols File, or None when splitting is off.
+    """
+    if not ctx.attr.split_debug_info:
+        return None
+    if compile_mode not in ("exe", "aot-snapshot"):
+        fail(("dart_binary: `split_debug_info` is only valid with `compile_mode` " +
+              "\"exe\" or \"aot-snapshot\", but %s sets `compile_mode` = %r.") %
+             (ctx.label, compile_mode))
+    return ctx.actions.declare_file(ctx.label.name + ".debug")
+
+def _binary_compile_info(result):
+    """The `DartCompileInfo` provider for a compiled binary.
+
+    Args:
+      result: The struct describing the compiled binary.
+
+    Returns:
+      A `DartCompileInfo` carrying the raw compiled file and its mode.
+    """
+    return DartCompileInfo(
+        executable = result.output,
+        compile_mode = result.compile_mode,
+        sdk_version = result.dart_sdk_info.version,
+    )
+
+def _binary_output_groups(ctx, result):
+    """The documented `snapshot` and `debug_info` output groups, plus `_validation`.
+
+    Args:
+      ctx: The rule context, for the import check.
+      result: The struct describing the compiled binary.
+
+    Returns:
+      `OutputGroupInfo` exposing the raw compiled file and, when it exists,
+      the split symbols file.
+    """
+    checks = [executable_import_check(ctx, result.own.record), link_modules_check(ctx)]
+    validation = depset(transitive = checks)
+    if result.debug_info == None:
+        return OutputGroupInfo(snapshot = depset([result.output]), _validation = validation)
+    return OutputGroupInfo(
+        snapshot = depset([result.output]),
+        debug_info = depset([result.debug_info]),
+        _validation = validation,
+    )
+
+def _binary_declared_files(result):
+    """The `DefaultInfo.files` of a compiled binary.
+
+    The raw compile output is always present. A split symbols file joins it,
+    so a build-only consumer still gets the artifact it asked for.
+
+    Args:
+      result: The struct describing the compiled binary.
+
+    Returns:
+      A depset of files.
+    """
+    files = [result.output]
+    if result.debug_info != None:
+        files.append(result.debug_info)
+    return depset(files)
+
+def _snapshot_runner(result):
+    """The pinned-SDK VM that runs a snapshot output.
+
+    Args:
+      result: The struct describing the compiled binary.
+
+    Returns:
+      The `dart` File for `jit-snapshot`, or the `dartaotruntime` File for
+      `aot-snapshot` (including a cross target's own runtime).
+    """
+    if result.compile_mode == "jit-snapshot":
+        return result.dart_sdk_info.dart
+    cross_runtime = getattr(result.dart_sdk_info, "cross_dartaotruntime", None)
+    if cross_runtime != None:
+        return cross_runtime
+    for f in result.dart_sdk_info.compile_files.to_list():
+        if f.basename in ("dartaotruntime", "dartaotruntime.exe"):
+            return f
+    fail(("dart_binary: `compile_mode = \"aot-snapshot\"` needs a " +
+          "`dartaotruntime` in the pinned SDK %s, but the toolchain names none.") %
+         result.dart_sdk_info.version)
+
+def _binary_snapshot_outputs(ctx, result):
+    """The launcher-executable providers for `aot-snapshot` and `jit-snapshot`.
+
+    The launcher runs the target's own pinned-SDK VM on the raw snapshot in
+    runfiles, forwarding every argument. The raw snapshot stays in
+    `DefaultInfo.files` and the `snapshot` output group so build-only consumers
+    keep receiving the compiled artifact.
+
+    Args:
+      ctx: The rule context.
+      result: The struct describing the compiled binary.
+
+    Returns:
+      The providers for a snapshot-mode `dart_binary`.
+    """
+    runner = _snapshot_runner(result)
+    launcher = ctx.actions.declare_file(
+        ctx.label.name + (".bat" if result.is_windows else ".sh"),
+    )
+    template = ctx.file._snapshot_launcher_bat if result.is_windows else ctx.file._snapshot_launcher_sh
+    ctx.actions.expand_template(
+        template = template,
+        output = launcher,
+        substitutions = {
+            "@RULES_DART_RUNNER@": runfiles_path(runner, ctx.workspace_name),
+            "@RULES_DART_SNAPSHOT@": runfiles_path(result.output, ctx.workspace_name),
+        },
+        is_executable = True,
+    )
+    runfiles = ctx.runfiles(
+        files = ctx.files.data + result.code_asset_libs + [result.output, runner],
+        transitive_files = depset(
+            transitive = [
+                collect_transitive_resources(ctx.attr.deps),
+                _runtime_package_files(ctx),
+                result.dart_sdk_info.runtime_files,
+            ],
+        ),
+    ).merge_all(
+        [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data],
+    )
+    return [
+        DefaultInfo(
+            files = _binary_declared_files(result),
+            executable = launcher,
+            runfiles = runfiles,
+        ),
+        _binary_compile_info(result),
+        _binary_output_groups(ctx, result),
+        # What makes the `dart_analyze` aspect and `dart_fix` reach this entrypoint
+        # without making this target a legal `deps` entry. Staging goes by
+        # `short_path`, which is the source file's own path.
+        result.own.analyzable,
+        _instrumented_files(ctx),
+    ] + result.recorded_uses_info
+
+def _binary_launcher_outputs(ctx, result):
+    """The launcher-executable providers for `kernel` mode with `launcher = True`.
+
+    Args:
+      ctx: The rule context.
+      result: The struct describing the compiled binary.
+
+    Returns:
+      The providers for a kernel-mode `dart_binary` with a native launcher.
+    """
+    launcher_exe = ctx.actions.declare_file(
+        ctx.label.name + (".exe" if result.is_windows else ""),
+    )
+    ctx.actions.symlink(
+        output = launcher_exe,
+        target_file = ctx.executable._kernel_launcher,
+        is_executable = True,
+    )
+    config_file = ctx.actions.declare_file(
+        ctx.label.name + ".kernel_launcher.json",
+    )
+    ctx.actions.write(
+        output = config_file,
+        content = json.encode({
+            "dart": runfiles_path(result.dart_sdk_info.dart, ctx.workspace_name),
+            "dill": runfiles_path(result.output, ctx.workspace_name),
+            "dart_exec": result.dart_sdk_info.dart.path,
+            "dill_exec": result.output.path,
+        }),
+    )
+    runfiles = ctx.runfiles(
+        files = ctx.files.data + result.code_asset_libs + [result.output, config_file, result.dart_sdk_info.dart],
+        transitive_files = depset(
+            transitive = [
+                collect_transitive_resources(ctx.attr.deps),
+                _runtime_package_files(ctx),
+                result.dart_sdk_info.runtime_files,
+            ],
+        ),
+    ).merge_all(
+        [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data] +
+        [ctx.attr._kernel_launcher[DefaultInfo].default_runfiles],
+    )
+    return [
+        DefaultInfo(
+            files = depset([launcher_exe]),
+            executable = launcher_exe,
+            runfiles = runfiles,
+        ),
+        RunEnvironmentInfo(
+            environment = {
+                "RULES_DART_KERNEL_CONFIG": runfiles_path(config_file, ctx.workspace_name),
+            },
+        ),
+        _binary_compile_info(result),
+        _binary_output_groups(ctx, result),
+        result.own.analyzable,
+        _instrumented_files(ctx),
+    ] + result.recorded_uses_info
+
+def _binary_default_outputs(ctx, result):
+    """The standard executable providers, with package resources in runfiles.
+
+    Args:
+      ctx: The rule context.
+      result: The struct describing the compiled binary.
+
+    Returns:
+      The providers for a `dart_binary` without a launcher.
+    """
+
+    # Resources ride the runfiles, not the compile. A dep's `lib/**` non-Dart
+    # files are part of the package at run time under pub, and the compiled
+    # binary is the one place that cannot recover them: `Isolate.resolvePackageUri`
+    # returns null in an AOT binary with no package_config above it, so a
+    # package cannot read its own shipped files back out. Staging them here is
+    # what makes `rlocation` work for them.
+    runfiles = ctx.runfiles(
+        files = ctx.files.data + result.code_asset_libs,
+        transitive_files = depset(
+            transitive = [
+                collect_transitive_resources(ctx.attr.deps),
+                _runtime_package_files(ctx),
+            ],
+        ),
+    ).merge_all(
+        [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data],
+    )
+
+    return [
+        DefaultInfo(
+            files = _binary_declared_files(result),
+            executable = result.output,
+            runfiles = runfiles,
+        ),
+        _binary_compile_info(result),
+        _binary_output_groups(ctx, result),
+        # What makes the `dart_analyze` aspect and `dart_fix` reach this entrypoint
+        # without making this target a legal `deps` entry. Staging goes by
+        # `short_path`, which is the source file's own path.
+        result.own.analyzable,
+        _instrumented_files(ctx),
+    ] + result.recorded_uses_info
+
+def _dart_binary_impl(ctx):
+    # A `dart_binary` evaluated in the execution configuration (`cfg = "exec"`)
+    # is a build-time tool — a code generator, analyzer/format runner, link-hook
+    # runner, or kernel compiler — and will be executed by the host's
+    # `//dart:exec_tools_toolchain_type` VM. Compile it with that same SDK so a
+    # kernel tool's `.dill` format and SDK hash always match the VM that runs it.
+    dart_sdk_info = _binary_sdk_info(ctx)
+
+    own_files = [ctx.file.main] + ctx.files.srcs
+    own = executable_package(ctx, own_files)
+
+    if ctx.attr.code_assets_from_deps:
+        hook_err = executable_hook_error(ctx.label, own)
+        if hook_err != None:
+            fail(hook_err)
+
+    # Determine output filename (Windows gets the `.exe` extension — see
+    # `binary_output_basename`).
+    compile_mode = ctx.attr.compile_mode
+    is_windows = ctx.target_platform_has_constraint(
+        ctx.attr._os_windows[platform_common.ConstraintValueInfo],
+    )
+    output = ctx.actions.declare_file(
+        binary_output_basename(ctx.label.name, compile_mode, is_windows),
+    )
+
+    # Assets reach a binary two ways: from the packages in `deps` (their
+    # build hooks' outputs and their `code_assets`, as depending on a package
+    # gets you its assets in a stock build), or named outright.
+    native_assets = executable_native_assets(ctx)
+
+    # The compiler records the uses of `@RecordUse` definitions only when it
+    # tree-shakes, so the other modes get the file it writes when there is
+    # nothing to record: a link hook then runs over no uses, as for a program
+    # that uses none. `split_debug_info` declares its symbols file in the same
+    # place, so the compile action can write both.
+    optional_outputs = _binary_optional_outputs(ctx, compile_mode)
+
+    result = struct(
+        output = output,
+        compile_mode = compile_mode,
+        dart_sdk_info = dart_sdk_info,
+        code_asset_libs = binary_compile(ctx, struct(
+            dart_sdk_info = dart_sdk_info,
+            toolchain_type = _binary_sdk_toolchain_type(ctx),
+            own = own,
+            own_files = own_files,
+            output = output,
+            compile_mode = compile_mode,
+            optional_outputs = optional_outputs,
+            native_assets = native_assets,
+        )),
+        recorded_uses_info = optional_outputs.recorded_uses_info,
+        debug_info = optional_outputs.debug_info,
+        own = own,
+        is_windows = is_windows,
+    )
+
+    if compile_mode == "kernel" and ctx.attr.launcher:
+        return _binary_launcher_outputs(ctx, result)
+    if compile_mode in ("aot-snapshot", "jit-snapshot") and ctx.attr.snapshot_launcher:
+        return _binary_snapshot_outputs(ctx, result)
+    return _binary_default_outputs(ctx, result)
+
+def _binary_defines_transition_impl(_settings, attr):
+    # Only a binary that may link modules carries its `defines` to its
+    # closure: `kernel`, or `exe`/`aot-snapshot` with `link_modules`. Any other
+    # binary compiles from sources, and moving its closure to another
+    # configuration would only rebuild the libraries' own actions there.
+    links = attr.modular_kernel and (
+        attr.compile_mode == "kernel" or
+        (attr.compile_mode in ("exe", "aot-snapshot") and attr.link_modules)
+    )
+    if not links:
+        return executable_defines_settings([])
+
+    # A kernel binary's `-D` flags in `dart_compile_flags` are defines too,
+    # after `defines`, as the source compile orders them.
+    flag_defines = kernel_flag_defines(attr.dart_compile_flags)[0] if attr.compile_mode == "kernel" else []
+    return executable_defines_settings(attr.defines + flag_defines)
+
+_binary_defines_transition = transition(
+    implementation = _binary_defines_transition_impl,
+    inputs = [],
+    outputs = [EXECUTABLE_DEFINES_SETTING, EXECUTABLE_DEFINES_FILE_SETTING],
+)
+
+# The attributes `dart_binary` shares with the other executable rules, merged into one dict.
+_SHARED_BINARY_ATTRS = dict(
+    DART_ABI_CONSTRAINT_ATTRS | NATIVE_ASSETS_CONSUMER_ATTRS,
+    **dict(
+        COMPILE_WRAPPER_ATTRS,
+        **dict(
+            EXTRA_DART_DEFINES_ATTR,
+            **dict(
+                REFUSED_DART_LIBRARIES_ATTR,
+                **dict(EXECUTABLE_PACKAGE_ATTRS, **dict(LINK_MODULES_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS))
+            )
+        )
+    )
+)
+
+dart_binary = rule(
+    implementation = _dart_binary_impl,
+    attrs = dict({
+        "main": attr.label(
+            doc = "The Dart entrypoint file containing a top-level `main()` function.",
+            mandatory = True,
+            allow_single_file = [".dart"],
+        ),
+        "srcs": attr.label_list(
+            doc = "Additional Dart source files that are part of this binary's package but not reachable via `deps`.",
+            allow_files = [".dart"],
+        ),
+        "deps": attr.label_list(
+            doc = "`dart_library` targets this binary depends on. When the binary links modules, its `defines` are the environment every module of this closure compiles with, so binaries with equal `defines` share every module.",
+            providers = [DartInfo],
+            aspects = [dart_kernel_module_aspect, dart_import_check_aspect],
+            cfg = _binary_defines_transition,
+        ),
+        "_import_check": attr.label(
+            doc = "The tool that checks this binary's imports against its direct `deps` (see the `dart_layering_check` feature). `None` for the tool itself, which cannot name itself.",
+            default = import_check_unless_wrapper,
+            executable = True,
+            cfg = "exec",
+        ),
+        "data": attr.label_list(
+            doc = "Additional files needed at runtime. These are added to runfiles so they can be found via the runfiles tree when using `bazel run`.",
+            allow_files = True,
+        ),
+        "code_assets": attr.label_list(
+            doc = """`dart_code_asset` targets the binary's `@Native` FFI bindings resolve against, \
+besides the code assets its `deps` bring (their packages' build hooks, and their own \
+`code_assets`). The program embeds the mapping, and the libraries ship in runfiles, in one \
+directory resolved relative to the executable.""",
+            providers = [DartCodeAssetInfo],
+        ),
+        "code_assets_from_deps": attr.bool(
+            default = True,
+            doc = """Whether to take the native code assets of `deps`: the outputs of their packages' \
+build hooks, and their `code_assets`. Defaults to `True`.
+
+Leave this on for a program that runs the packages it depends on. Turn it off for a `dart_binary` \
+used purely as a *build tool* — a code generator, a linter — which imports pub packages for their \
+Dart API but never loads their native libraries: no build hook then runs for it (`drift_dev` \
+depends on `package:sqlite3`, but generating code never calls into libsqlite3). The rule set's \
+own tools set it to `False`.""",
+        ),
+        "compile_mode": attr.string(
+            doc = """\
+The `dart compile` mode. Determines the output format:
+
+- `exe` (default): Self-contained native machine code. No Dart SDK needed at runtime. Best for deployment.
+- `aot-snapshot`: AOT-compiled snapshot. Requires `dartaotruntime` to execute. Smaller than `exe`.
+- `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles as kernel modules linked into one kernel: the entry module against the dependency `.koutline` outlines, then the link. `defines` and the `-D` entries of `dart_compile_flags` are the environment every module of the closure compiles with; code assets ride the entry module's native-assets mapping. A shape the modules cannot take (any other `dart_compile_flags` entry, a dependency with no module, a package at two roots, a source in two targets) fails at analysis, naming the target and the reason. `modular_kernel = False` compiles the whole program with `gen_kernel` instead: only the rule set's own tools do, because the link tool cannot link itself.
+- `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, at the keyed absolute path for its output (`/tmp/rules_dart_jit-<key>`, where `<key>` is 16 lowercase hex characters of a deterministic digest of the output's root-relative path) used as its working directory and with no `--packages` value, so the snapshot is byte-identical across builds. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build (see `app_jit_snapshot.dart`). The training runs from a copy of the SDK's `dart`, so the snapshot does not depend on where the SDK is installed or where the build runs. A training waits for the keyed lock up to `--@rules_dart//dart:jit_snapshot_lock_timeout` seconds (default 300), printing the holder's PID while it waits; when the keyed training path is blocked by an entry another user owns, or the lock stays held past the deadline, the action fails and names the entry rather than training elsewhere under the same action key; `--@rules_dart//dart:jit_snapshot_fallback=true` allows the non-reproducible private-scratch fallback instead. A fallback-trained snapshot stays cached under the same action key (in the local action cache and the output tree) until `bazel clean`, so a build after the host is fixed keeps the fallback bytes. With the flag on, both snapshot actions carry `no-cache`, so they are never uploaded to or served from a disk or remote cache.
+
+`exe` and `aot-snapshot` compile from sources by default: the whole-program front end reads every transitive `.dart` file, then `dart compile` runs, whatever `modular_kernel` says. Per-library modules are compiled against the JIT platform, so the default keeps the AOT answers to `dart.library.*`. With `link_modules = True` (an opt-in) they take the per-library kernel modules joined into one kernel instead, when the target is eligible for modular compilation (the `kernel` mode's rules, plus `dart.vm.product` true and not the `dbg` compilation mode): a body edit in one library recompiles that module only, then the whole-program steps (tree shaking, `gen_snapshot`) run over the joined kernel and no `.dart` source is an input of them. An ineligible target takes the source path silently. Opting in also runs a validation that refuses a closure using `dart:mirrors` or `dart.library.mirrors` (see `link_modules`). `jit-snapshot` always compiles from sources.
+""",
+            default = "exe",
+            values = ["exe", "aot-snapshot", "kernel", "jit-snapshot"],
+        ),
+        "dart_compile_flags": attr.string_list(
+            doc = """\
+Extra compiler flags, appended after the compilation-mode defaults so they can override them (e.g., `--extra-gen-snapshot-options=--optimization_level=3`).
+
+Each flag goes to the stage that consumes it. A source entrypoint is first compiled to a kernel by `gen_kernel`, the Dart front end, and then by `dart compile`. The front end takes these flags, so they go to `gen_kernel`:
+
+- `--enable-experiment=<name>`, or `--enable-experiment <name>`
+- `-D<KEY=VALUE>`, `--define=<KEY=VALUE>`, or `-D <KEY=VALUE>`, `--define <KEY=VALUE>`
+- `--enable-asserts`
+
+Every other flag goes to `dart compile`. In the `kernel` mode a `-D` entry is a define of the closure's modules, and any other entry fails the build: a module compile takes no other front-end flag (set `modular_kernel = False` to pass them to `gen_kernel`). For a pre-built kernel, all flags go to `dart compile`. The `jit-snapshot` mode takes no `dart compile` flags, so any other flag there is an error. A comma-containing `-D`/`--define` value takes the same comma-safe path as `defines`: the compile runs the toolchain's patched `gen_kernel` snapshot.""",
+        ),
+        "_jit_snapshot_fallback": attr.label(
+            doc = "Whether `--fallback-allowed` is passed when the keyed training path is unavailable.",
+            default = "//dart:jit_snapshot_fallback",
+            providers = [BuildSettingInfo],
+        ),
+        "_jit_lock_timeout": attr.label(
+            doc = "Seconds a `jit-snapshot` training waits for the keyed training lock. Passed as `--lock-timeout=` only when it differs from the default.",
+            default = "//dart:jit_snapshot_lock_timeout",
+            providers = [BuildSettingInfo],
+        ),
+        "launcher": attr.bool(
+            default = False,
+            doc = """Whether `compile_mode = "kernel"` also emits a native launcher executable as \
+`DefaultInfo.executable` so the target can be invoked directly with `bazel run` or `ctx.executable`, \
+while `DartCompileInfo.executable` continues to carry the compiled `.dill` kernel for \
+rules that run it on their own VM.""",
+        ),
+        "_kernel_launcher": attr.label(
+            default = _kernel_launcher_for_mode,
+            executable = True,
+            cfg = "target",
+            doc = "The native launcher binary symlinked as `DefaultInfo.executable` when `compile_mode = \"kernel\"` and `launcher = True`.",
+        ),
+        "snapshot_launcher": attr.bool(
+            default = True,
+            doc = """Whether `aot-snapshot` and `jit-snapshot` also emit a run \
+launcher as `DefaultInfo.executable`.
+
+On by default. Turn it off only for a build-time tool that executes its raw snapshot \
+directly through `dartaotruntime` or `dart` (for example rules_dart's own `kernel_link` \
+worker), where the raw file must stay the executable.""",
+        ),
+        "split_debug_info": attr.bool(
+            default = False,
+            doc = """Whether to compile with `--save-debugging-info` and \
+`--dwarf-stack-traces` and declare a separate DWARF symbols file.
+
+Only `compile_mode = "exe"` and `compile_mode = "aot-snapshot"` support it; setting it on \
+`kernel` or `jit-snapshot` fails analysis naming `compile_mode`. The symbols file is \
+`<name>.debug` and is exposed through the `debug_info` output group (and `DefaultInfo.files`). \
+Off by default, so no extra file is produced.""",
+        ),
+        "_snapshot_launcher_sh": attr.label(
+            default = "//dart/private/tools:snapshot_launcher.sh.tpl",
+            allow_single_file = True,
+            doc = "The POSIX shell launcher template for `aot-snapshot` and `jit-snapshot` targets.",
+        ),
+        "_snapshot_launcher_bat": attr.label(
+            default = "//dart/private/tools:snapshot_launcher.bat.tpl",
+            allow_single_file = True,
+            doc = "The Windows batch launcher template for `aot-snapshot` and `jit-snapshot` targets.",
+        ),
+        "defines": attr.string_list(
+            doc = "Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` flag.",
+        ),
+        "record_use": attr.bool(
+            doc = """Record the uses of `@RecordUse` definitions (`package:meta`) as \
+`<name>.recorded_uses.json`, provided as `DartRecordedUsesInfo` for `dart_link_hook`. \
+In the `exe` and `aot-snapshot` modes the compiler records them as it tree-shakes. The \
+`kernel` and `jit-snapshot` modes do not tree-shake, so nothing is recorded and the file is \
+the empty JSON object `{}` (`kind = "empty"`).""",
+        ),
+        "_allowlist_function_transition": attr.label(
+            doc = "Allowlist target permitting the Starlark function transition this rule applies. Defaults to `@bazel_tools//tools/allowlists/function_transition_allowlist`.",
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
+    }, **_SHARED_BINARY_ATTRS),
+    executable = True,
+    toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
+    doc = "Compiles a Dart application using `dart compile`.",
+)

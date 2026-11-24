@@ -1,0 +1,18 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: analysis and build targets
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 2
+    expect:
+      exit_code: 0
+  - name: iOS simulator passing driver
+    run: bazel test //:drive_pass_test --test_output=errors
+    expect:
+      exit_code: 0
+      test_log_contains: DRIVE_PASS_OK
+  - name: iOS simulator failing driver
+    run: bazel test //:drive_fail_test --test_output=errors
+    expect:
+      non_zero: true
+      output_contains: DRIVE_RED_MUST_FAIL
+      test_log_contains: DRIVE_RED_MUST_FAIL

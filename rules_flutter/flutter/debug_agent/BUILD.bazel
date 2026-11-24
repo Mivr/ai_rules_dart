@@ -1,0 +1,43 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("//flutter:defs.bzl", "flutter_plugin")
+load(":unset.bzl", "flutter_unset")
+
+# `package:rules_flutter_debug_agent`: the `ext.rules_flutter.*` service extensions, as a Dart-only
+# plugin a debug app adds as a dev dependency (README.md). Its `package:flutter` is the app's own,
+# from the app's pub hub, named by the flag below:
+#   build --@rules_flutter//flutter/debug_agent:flutter=@deps//:flutter
+flutter_plugin(
+    name = "debug_agent",
+    package_name = "rules_flutter_debug_agent",
+    srcs = glob(["lib/**/*.dart"]),
+    dart_plugin_class = "RulesFlutterDebugAgent",
+    platforms = [
+        "android",
+        "ios",
+        "linux",
+        "macos",
+        "windows",
+    ],
+    # Built by an app that sets the flag; this repository sets none.
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+    deps = [":flutter"],
+)
+
+label_flag(
+    name = "flutter",
+    build_setting_default = ":flutter_unset",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+flutter_unset(
+    name = "flutter_unset",
+    tags = ["manual"],
+)
+
+bzl_library(
+    name = "unset",
+    srcs = ["unset.bzl"],
+    visibility = ["//visibility:private"],
+)

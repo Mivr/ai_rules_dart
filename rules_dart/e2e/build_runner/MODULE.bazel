@@ -1,0 +1,37 @@
+"E2e test: dart_build_runner runs the builders of the lock and writes what stock `dart run build_runner build` writes"
+
+module(name = "build_runner_e2e")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../..",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")
+
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "pub_deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(pub, "pub_deps")
+
+# Locks the runner cannot be built from (see errors/): each fails the
+# `dart_build_runner` targets that use it, with a message.
+pub.from_lock(
+    name = "old_build_runner",
+    isolated = True,
+    lock = "//errors/old:pubspec.lock",
+)
+pub.from_lock(
+    name = "none_build_runner",
+    isolated = True,
+    lock = "//errors/none:pubspec.lock",
+)
+use_repo(pub, "none_build_runner", "old_build_runner")

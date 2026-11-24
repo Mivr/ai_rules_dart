@@ -1,0 +1,660 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_setting", "string_list_setting")
+load(":build_hooks.bzl", "hook_cc_toolchain")
+load(":build_settings.bzl", "no_dart_defines")
+load(":dart_analyze_aspect.bzl", "dart_analysis_config")
+load(":dart_analyzer_summary.bzl", "analyzer_sdk_summary")
+
+# The SDK's own library summary, read by every analyzer-summary action. Built
+# once per SDK, and only when an action needs it: `manual`, so a wildcard build
+# never builds it, and the aspects reach it by label. See dart_analyzer_summary.bzl.
+analyzer_sdk_summary(
+    name = "analyzer_sdk_summary",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# The aspects' analyzer attributes point at these aliases, which route
+# unconditionally to `//dart:analyzer_summary_tool` and `:analyzer_sdk_summary`.
+# `analyzer_summary` is the sole analysis engine on supported SDKs (3.13 to 3.14,
+# bounded by `ANALYZER_MIN_LANGUAGE_VERSION` and `ANALYZER_MAX_LANGUAGE_VERSION`
+# in `dart_analyzer_summary.bzl`) for both summary mode
+# (`--//dart:analyzer_summaries=true`) and full-source mode
+# (`--//dart:analyzer_summaries=false`). Both targets are `manual`, so a
+# wildcard build never builds them unless an action requires them.
+alias(
+    name = "analyzer_summary_tool",
+    actual = "//dart:analyzer_summary_tool",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "analyzer_sdk_summary_input",
+    actual = ":analyzer_sdk_summary",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# The `dart.vm.product` value library modules compile with. `dart_test` transitions
+# it to `False`, as `dart test` runs on the non-product VM; kernel binaries keep
+# `True`. A library shared by both compiles once per value.
+bool_setting(
+    name = "vm_product",
+    build_setting_default = True,
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# The environment of the executable whose closure is being built: its own
+# defines (a Flutter app adds its flavor), canonical order, and its defines file.
+# Written by the executable's `deps` transition and reset to the defaults on
+# every edge that leaves Dart. See `executable_defines_settings`.
+string_list_setting(
+    name = "executable_dart_defines",
+    build_setting_default = [],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+label_setting(
+    name = "executable_dart_defines_file",
+    build_setting_default = ":no_dart_defines_file",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+no_dart_defines(
+    name = "no_dart_defines_file",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "analyze_targets",
+    srcs = ["analyze_targets.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_analyzer_summary",
+        ":project_staging",
+    ],
+)
+
+bzl_library(
+    name = "build_settings",
+    srcs = ["build_settings.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "closure_facts",
+    srcs = ["closure_facts.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "common",
+    srcs = ["common.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":dart_info",
+        ":source_set",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "copy_toolchain",
+    srcs = ["copy_toolchain.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+    ],
+)
+
+bzl_library(
+    name = "dart_analysis_options",
+    srcs = ["dart_analysis_options.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_analysis_test",
+    srcs = ["dart_analysis_test.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_analyze_aspect",
+    ],
+)
+
+bzl_library(
+    name = "dart_analyze_aspect",
+    srcs = ["dart_analyze_aspect.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":analyze_targets",
+        ":closure_facts",
+        ":common",
+        ":dart_analyze_summary_fallback",
+        ":dart_analyzer_summary",
+        ":format_mode",
+        ":project_layout",
+        ":source_set",
+        "//dart:providers",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "aot_tool",
+    srcs = ["aot_tool.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_analyze_summary_fallback",
+    srcs = ["dart_analyze_summary_fallback.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aot_tool",
+        ":common",
+        ":dart_analyzer_summary",
+        ":project_layout",
+    ],
+)
+
+bzl_library(
+    name = "dart_analyzer_summary",
+    srcs = ["dart_analyzer_summary.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aot_tool",
+        ":closure_facts",
+        ":common",
+        ":project_staging",
+        ":source_set",
+        "//dart:providers",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "dart_binary",
+    srcs = ["dart_binary.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":binary_compile",
+        ":build_settings",
+        ":common",
+        ":dart_compile",
+        ":dart_import_check",
+        ":dart_kernel",
+        ":dart_link_check",
+        ":dart_test_runner",
+        ":executable_package",
+        ":package_files",
+        "//dart:providers",
+        "//dart/private/tools:compile_wrapper_bzl",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "dart_code_asset",
+    srcs = ["dart_code_asset.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart:providers",
+        "@rules_cc//cc/common",
+        "@rules_cc//cc/common:cc_shared_library_info_bzl",
+    ],
+)
+
+bzl_library(
+    name = "dart_compile",
+    srcs = ["dart_compile.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":kernel_front_end",
+        "//dart/private/tools:compile_wrapper_bzl",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "dart_fix",
+    srcs = ["dart_fix.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_analyze_aspect",
+    ],
+)
+
+bzl_library(
+    name = "dart_format",
+    srcs = ["dart_format.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_analyze_aspect",
+        ":source_set",
+    ],
+)
+
+bzl_library(
+    name = "dart_info",
+    srcs = ["dart_info.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":closure_facts",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_info_params",
+    srcs = ["dart_info_params.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "dart_import_check",
+    srcs = ["dart_import_check.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_settings",
+        ":dart_kernel",
+        ":entry_point",
+        ":kernel_library_state",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_link_check",
+    srcs = ["dart_link_check.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_kernel",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "dart_kernel",
+    srcs = ["dart_kernel.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aot_tool",
+        ":build_settings",
+        ":closure_facts",
+        ":common",
+        ":dart_info",
+        ":entry_point",
+        ":kernel_exec_link",
+        ":kernel_library_state",
+        ":kernel_params",
+        "//dart:providers",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "binary_compile",
+    srcs = ["binary_compile.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_settings",
+        ":common",
+        ":dart_compile",
+        ":dart_kernel",
+        ":dart_test_runner",
+        ":kernel_params",
+        ":source_set",
+        "//dart/private/tools:compile_wrapper_bzl",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "kernel_exec_link",
+    srcs = ["kernel_exec_link.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "kernel_front_end",
+    srcs = ["kernel_front_end.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "//dart/private/tools:compile_wrapper_bzl",
+    ],
+)
+
+bzl_library(
+    name = "coverage_map",
+    srcs = ["coverage_map.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [":dart_info"],
+)
+
+bzl_library(
+    name = "dart_library",
+    srcs = ["dart_library.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_hooks",
+        ":build_settings",
+        ":common",
+        ":coverage_map",
+        ":dart_info",
+        ":dart_info_params",
+        ":dart_kernel",
+        ":kernel_library_state",
+        ":kernel_params",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_link_hook",
+    srcs = ["dart_link_hook.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":source_set",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_package_member",
+    srcs = ["dart_package_member.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_info",
+        ":dart_info_params",
+        ":dart_library",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_package_metadata",
+    srcs = ["dart_package_metadata.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_sdk_binary",
+    srcs = ["dart_sdk_binary.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+    ],
+)
+
+# The target's C toolchain for build hooks, or nothing (`build_hooks.bzl`).
+hook_cc_toolchain(
+    name = "hook_cc_toolchain",
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "build_hooks",
+    srcs = ["build_hooks.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@bazel_skylib//rules:common_settings",
+        "@rules_cc//cc:find_cc_toolchain_bzl",
+        "@rules_cc//cc/common",
+    ],
+)
+
+bzl_library(
+    name = "test_runner_info",
+    srcs = ["test_runner_info.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "dart_test",
+    srcs = ["dart_test.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_settings",
+        ":common",
+        ":coverage_map",
+        ":dart_compile",
+        ":dart_import_check",
+        ":dart_kernel",
+        ":dart_test_runner",
+        ":executable_package",
+        ":kernel_params",
+        ":package_files",
+        ":source_set",
+        ":test_package_roots",
+        ":test_runner_info",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_test_runner",
+    srcs = ["dart_test_runner.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_compile",
+        ":dart_import_check",
+        ":dart_kernel",
+        ":test_runner_info",
+        "//dart:providers",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "dart_web_application",
+    srcs = ["dart_web_application.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_settings",
+        ":common",
+        ":executable_package",
+        ":project_staging",
+        ":source_set",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "download",
+    srcs = ["download.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "entry_point",
+    srcs = ["entry_point.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_info",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "executable_package",
+    srcs = ["executable_package.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":closure_facts",
+        ":common",
+        ":dart_info",
+        ":dart_info_params",
+        ":dart_library",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "format_mode",
+    srcs = ["format_mode.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "kernel_library_state",
+    srcs = ["kernel_library_state.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_info",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "kernel_params",
+    srcs = ["kernel_params.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "package_config",
+    srcs = ["package_config.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "test_package_roots",
+    srcs = ["test_package_roots.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "package_files",
+    srcs = ["package_files.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "project_layout",
+    srcs = ["project_layout.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "project_staging",
+    srcs = ["project_staging.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":source_set",
+    ],
+)
+
+bzl_library(
+    name = "resolved_toolchain",
+    srcs = ["resolved_toolchain.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "source_set",
+    srcs = ["source_set.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":coverage_map",
+        ":dart_info",
+    ],
+)
+
+bzl_library(
+    name = "toolchain_selection",
+    srcs = ["toolchain_selection.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "toolchains_repo",
+    srcs = ["toolchains_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":versions",
+    ],
+)
+
+bzl_library(
+    name = "module_compiler",
+    srcs = ["module_compiler.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "module_compiler_repo",
+    srcs = ["module_compiler_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":download",
+        ":module_compiler_versions",
+    ],
+)
+
+bzl_library(
+    name = "module_compiler_versions",
+    srcs = ["module_compiler_versions.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "apple_hook_replacements",
+    srcs = ["apple_hook_replacements.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [":versions"],
+)
+
+bzl_library(
+    name = "versions",
+    srcs = ["versions.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+dart_analysis_config(
+    name = "empty_analysis_config",
+    visibility = ["//visibility:public"],
+)

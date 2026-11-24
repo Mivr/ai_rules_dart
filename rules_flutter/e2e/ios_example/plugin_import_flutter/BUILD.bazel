@@ -1,0 +1,67 @@
+"""Sandboxed `@import` fixtures for prebuilt Apple frameworks.
+
+Each plugin compiles `.m` sources that use `@import Flutter;` or
+`@import TinyPluginKit;`, which only resolves when the framework's
+`Modules/module.modulemap` is staged into the `darwin-sandbox` compile.
+"""
+
+load("@rules_flutter//flutter:ios.bzl", "flutter_apple_plugin_library", "flutter_apple_xcframework_import")
+load("@rules_flutter//flutter:macos.bzl", "flutter_apple_plugin_objc_library")
+
+package(default_visibility = ["//:__subpackages__"])
+
+_IOS_ONLY = ["@platforms//os:ios"]
+
+flutter_apple_plugin_library(
+    name = "pure_objc_plugin",
+    srcs = [
+        "pure_objc.h",
+        "pure_objc.m",
+    ],
+    module_name = "plugin_import_pure_objc",
+    platform = "ios",
+    target_compatible_with = _IOS_ONLY,
+)
+
+flutter_apple_plugin_objc_library(
+    name = "local_objc_plugin",
+    srcs = ["local_objc.m"],
+    hdrs = ["local_objc.h"],
+    module_name = "plugin_import_local_objc",
+    platform = "ios",
+)
+
+flutter_apple_plugin_library(
+    name = "mixed_plugin",
+    srcs = [
+        "mixed.h",
+        "mixed.m",
+        "mixed.swift",
+    ],
+    module_name = "plugin_import_mixed",
+    platform = "ios",
+    target_compatible_with = _IOS_ONLY,
+)
+
+flutter_apple_xcframework_import(
+    name = "tiny_plugin_kit",
+    framework = ":TinyPluginKit.xcframework",
+    linkage = "static",
+)
+
+filegroup(
+    name = "TinyPluginKit.xcframework",
+    srcs = glob(["TinyPluginKit.xcframework/**"]),
+)
+
+flutter_apple_plugin_library(
+    name = "xcframework_plugin",
+    srcs = [
+        "xcframework_dep.h",
+        "xcframework_dep.m",
+    ],
+    module_name = "plugin_import_xcframework",
+    platform = "ios",
+    target_compatible_with = _IOS_ONLY,
+    deps = [":tiny_plugin_kit"],
+)

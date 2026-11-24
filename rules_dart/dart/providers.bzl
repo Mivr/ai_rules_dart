@@ -1,0 +1,263 @@
+"""Providers for Dart rules."""
+
+load(
+    "//dart/private:test_runner_info.bzl",
+    _DartTestRunnerInfo = "DartTestRunnerInfo",
+    _DartTestRunnerSnapshotInfo = "DartTestRunnerSnapshotInfo",
+)
+
+visibility("public")
+
+# Re-exported so generated `package:test` spoke repositories and other rule sets
+# name the runner providers without loading from `//dart/private`.
+DartTestRunnerInfo = _DartTestRunnerInfo
+DartTestRunnerSnapshotInfo = _DartTestRunnerSnapshotInfo
+
+# The upstream `code_assets` link-mode vocabulary, verbatim (see
+# `code_assets/lib/src/code_assets/syntax.g.dart`). Declared here, next to the
+# provider whose field carries it, so that consumers in other rule sets —
+# rules_flutter builds its own bundling layer over `DartCodeAssetInfo` — share
+# one definition rather than keeping a copy that can drift.
+#
+# `static` is deliberately absent: upstream reserves it, but neither the Dart
+# VM nor the Flutter engine implements it (dart-lang/sdk#49418).
+CODE_ASSET_LINK_MODES = (
+    "dynamic_loading_bundle",
+    "dynamic_loading_system",
+    "dynamic_loading_executable",
+    "dynamic_loading_process",
+)
+
+DartInfo = provider(
+    doc = """Information about a Dart library's sources and transitive dependencies.
+
+Read this directly off any target that provides it. To *build* one, call \
+`dart_info()` from `//dart:utils.bzl` rather than this constructor — or \
+`dart_info_no_package()` when the target ships no Dart package and provides \
+`DartInfo` only to satisfy a `deps` attribute requiring one. A target that \
+owns several packages at once (one `dart_library` merged over a pub \
+dependency cycle) calls `dart_info_multi()` with one record per package. \
+Either takes what \
+a target contributes itself and merges every dependency's closure internally, \
+so a field added here needs no change in the rule sets that produce `DartInfo` \
+— rules_flutter and rules_dart_proto both do. Constructing it here means \
+enumerating and merging each field by hand, and a field left empty rather than \
+forwarded silently discards every dependency's values.""",
+    fields = {
+        "package_name": "str: The Dart package name for this library. Empty when the target owns no single package: a facade owns none, and a merged multi-package target owns several (see `owned_packages`).",
+        "lib_root": "str: The short_path-based path to the package root directory (parent of `lib/`). Configuration-independent; consumers derive exec-root paths from source File objects. Empty together with `package_name` when the target owns no single package.",
+        "owned_packages": "list[DartPackageInfo]: The package records this target itself contributes, in order. Most targets contribute exactly one; a merged multi-package target contributes one per member package; a facade contributes none. `transitive_packages` carries these first, then every dependency's. Prefer `owned_package_records()` over reading this directly, so producers that predate the field keep working.",
+        "transitive_srcs": "depset[File]: All transitive Dart source files, including this library's own sources.",
+        "transitive_resources": "depset[File]: Non-Dart files shipped inside `lib/` (see `dart_library`'s `resources`) by this library and all transitive deps. Carried beside `transitive_srcs` rather than within it because the two are routed differently: everything that stages a whole package wants both, and nothing that feeds the compiler wants these.",
+        "package_files": "list[struct]: This target's own per-package runtime files, one record per package it contributes (its `data` files, for a `dart_library`). Each record has `package_name` (str), `lib_root` (str) and `files` (list[File]), so a consumer can find a transitive package's root and its `pubspec.yaml` without walking runfiles. A merged multi-package library's own `data` has no single package to name, so its record carries an empty `package_name` and `lib_root`; its files are still in `transitive_package_files`. Empty when the target contributes none. Optional: a producer built against a rules_dart predating the field omits it; read it with `getattr(..., [])`.",
+        "transitive_package_files": "depset[File]: The runtime `data` files of this library and all transitive deps. Runfiles-only: never in `DefaultInfo.files`, `transitive_resources`, or an action's inputs. Optional: a producer built against a rules_dart predating the field omits it; read it with `getattr(..., depset())`.",
+        "transitive_packages": "depset[DartPackageInfo]: Package records for this library and all transitive deps.",
+        "transitive_native_assets": "depset[File]: The native assets of this library and all transitive deps: each build hook's output directory (the hook runner's `assets.json` and the files the hook produced), and each `dart_code_asset`'s `.assets.json` with its library. An executable turns them into its native-assets manifest. Carried beside `transitive_packages` because a depset of providers cannot be turned back into files for action inputs.",
+        "closure_facts": "struct or None: Small facts about the closure, merged from the dependencies' facts where the provider is built, so a consumer need not walk `transitive_packages` to learn them: the closure's root packages, Flutter embedder files, whether any record has native assets or a root inside another package's `lib/`, the labels merged, and a depset naming the owner of each package name and root. None when a dependency carries none. Optional: read it with `getattr(..., None)`; a reader without it takes the path that walks the closure. Internal to rules_dart: its shape may change.",
+    },
+)
+
+DartPackageMetadataInfo = provider(
+    doc = """The two facts a Dart package states about itself: its name and the \
+language version its sources are written against.
+
+Distinct from `DartPackageInfo`, which is a *record of a package in the build \
+graph* — where its sources live, what version pub resolved, what native assets \
+it owns — accumulated by `dart_info()` and carried in depsets. This is the \
+*declaration* a `dart_package_metadata` target makes, read back through an \
+attribute by the rules that would otherwise each ask for the same two strings.
+
+It exists because those two facts are properties of a package, not of a rule, \
+and a package is routinely built by more than one rule: several \
+`dart_library` and `dart_package_member` targets contributing to one package \
+must agree on both, and they can live in different BUILD files, where no macro \
+can hold them together. A referenceable declaration can.
+
+Deliberately a leaf: it carries no `DartInfo`, so a `dart_package_metadata` \
+cannot be mistaken for a dependency. `attr.label(providers = ...)` is \
+require-only, and a target providing `DartInfo` would make \
+`dart_library(deps = [":pkg"])` legal with nothing to say about it — the same \
+trap `DartAnalyzableInfo` exists to avoid.""",
+    fields = {
+        "package_name": "str: The Dart package name used in `package:` imports. Required.",
+        "language_version": "str: Dart language version implied by the package's `environment.sdk` constraint, in `<major>.<minor>` form. Empty when the package states none.",
+    },
+)
+
+DartPackageInfo = provider(
+    doc = "Record of a single Dart package in the build graph, carried in depsets within DartInfo.",
+    fields = {
+        "package_name": "str: The Dart package name. Required.",
+        "lib_root": "str: The short_path-based path to the package root directory (parent of `lib/`). Configuration-independent. Required; empty string for the root package.",
+        "version": "str: The package's own version, as resolved by pub (e.g. `2.2.0`). Optional; empty string when unknown, which is what a `dart_library` written by hand and a producer predating this field both carry. Recorded so that two records for one package name can be checked for agreement — see `package_agreement_error`.",
+        "language_version": "str: Dart language version implied by the package's `environment.sdk` constraint, in `<major>.<minor>` form. Optional; empty string when unknown.",
+        "native_assets": "tuple[File]: This package's native assets: its build hook's output directory, and the `.assets.json` and library of each `dart_code_asset` it owns. A tuple rather than a list because `DartPackageInfo` is carried in a depset, whose elements must be hashable. Optional; empty when the package has none.",
+        "link_hook": "File or None: The package's `hook/link.dart`, which `dart_link_hook` runs. Optional; `None` when the package has none, and absent from a record built by a producer predating the field.",
+        "hooks": "struct or None: What running this package's link hook needs, set when it has a hook: `inputs` (tuple[File]: the package's files a hook reads), `user_defines` (File or None: its `hooks.user_defines` slice), `pubspec` (str: the pubspec those come from) and `network` (bool). Optional; internal to rules_dart.",
+        "hook_error": "str: Why this package's build hook cannot run here (a member of a merged pub dependency cycle), or empty. An executable reaching the package fails with it. Optional.",
+    },
+)
+
+DartImportCheckInfo = provider(
+    doc = """The strict-layering check results of a target and every library below it.
+
+Provided by `dart_import_check_aspect` on each `DartInfo` target in an \
+executable's closure. Each library's check reads that library's own sources \
+and writes one empty stamp when they import only packages its own `deps` \
+provide (see the `dart_layering_check` feature); the stamps are what a \
+`_validation` output group builds, so building the executable runs every \
+check. A provider of its own rather than a field of `DartInfo`: the check is a \
+validation, and no compile action reads it.""",
+    fields = {
+        "stamps": "depset[File]: The import-check result files of this target and every library below it. Empty for a target in another repository, which is not checked, and for one built with the `dart_layering_check` feature disabled.",
+    },
+)
+
+DartAnalyzableInfo = provider(
+    doc = """An executable target's analyzable closure: everything \
+the `dart_analyze` aspect and `dart_fix` need to stage a project around its \
+entrypoint.
+
+Provided by executable rules — `dart_binary`, `dart_test`, `dart_js_binary`, \
+`dart_wasm_binary` here, and downstream by rules whose target is an executable \
+that *also* contributes a package (a `flutter_test` whose `srcs` are its own \
+package's `lib/` files). The executables here contribute one too when they \
+state a `package`, `package_name` or `language_version`. A library needs nothing extra: for it `DartInfo` *is* \
+the analyzable closure, and the aspect accepts either provider, which is what \
+keeps `dart_proto_library` analyzable without adopting anything. The aspect \
+checks a target's own files: its `DefaultInfo` `.dart` files (a library's \
+sources) plus this provider's `srcs`.
+
+The separation is what makes an entrypoint analyzable without making it a valid \
+dependency. Every `deps` attribute in this rule set and downstream ones gates on \
+`providers = [DartInfo]`, so an executable returning `DartInfo` would make \
+`dart_library(deps = [":some_binary"])` legal — and Bazel has no way to express \
+"provides it but is not a dep", `attr.label(providers = ...)` being require-only. \
+A distinct outer provider that *nests* the `DartInfo` says the same thing \
+structurally: consumable by whoever asks for it, invisible to whoever asks for \
+`DartInfo`.
+
+Build one with either constructor in `//dart:utils.bzl`, never by hand. \
+`dart_analyzable_info()` builds the nested `DartInfo` through \
+`dart_info_no_package()`, for an entrypoint that contributes no package — under \
+pub it belongs to the root package but sits outside its `lib/`. \
+`dart_analyzable_info_with_package()` builds it through `dart_info()`, for a \
+target whose sources *are* a package: without that record its own \
+`package:<self>/…` imports resolve against nothing and every one of them \
+reports `uri_does_not_exist`.""",
+    fields = {
+        "dart_info": "DartInfo: the dependency closure, as the `dart_analyzable_info*()` constructors build it — package-less, or carrying this target's own package record.",
+        "srcs": "depset[File]: the target's own sources that belong to no package's `lib/` — its `main`, a `test/` entrypoint — and which therefore no `DartPackageInfo` can name. Sources that *are* a package's `lib/` files ride the nested `DartInfo` instead.",
+        "package_srcs": "depset[File]: the target's own sources that *are* its package's `lib/` files — the ones `dart_analyzable_info_with_package()` was given; empty for a package-less target. Named separately because the nested `DartInfo` holds them only inside its transitive closure, beside every dependency's, and a target's `DefaultInfo` (a web bundle, a test executable) need not list its sources at all. Optional: a producer built against a rules_dart without the field omits it.",
+    },
+)
+
+DartPackageConfigInfo = provider(
+    doc = "A generated `package_config.json` file that maps `package:` URIs to source locations.",
+    fields = {
+        "file": "File: The generated package_config.json.",
+    },
+)
+
+DartCompileInfo = provider(
+    doc = "Information about a compiled Dart output.",
+    fields = {
+        "executable": "File: The compiled output file.",
+        "compile_mode": "str: The compilation mode used (`exe`, `aot-snapshot`, `kernel`, or `jit-snapshot`).",
+        "sdk_version": "str: The version of the Dart SDK (`DartSdkInfo.version`) that compiled `executable`.",
+    },
+)
+
+DartCodeAssetInfo = provider(
+    doc = """A native code asset (a Bazel-built dynamic library) bound to the \
+Dart `@Native`/`@DefaultAsset` asset id the owning package uses.
+
+Produced by the `dart_code_asset` rule and owned by a library through its \
+`code_assets` attribute: an executable depending on the library embeds the \
+mapping into its kernel and ships the library, exactly as it does with the \
+code assets of a package's build hook.""",
+    fields = {
+        "asset_id": "str: The code-asset id the owning package declares (its `@ffi.DefaultAsset` / `@Native(assetId:)`), e.g. `package:sqlite3/src/ffi/libsqlite3.g.dart`.",
+        "link_mode": "str: How the runtime loads the asset. One of `dynamic_loading_bundle`, `dynamic_loading_system`, `dynamic_loading_executable`, `dynamic_loading_process` — the upstream `code_assets` strings, verbatim.",
+        "dynamic_library": "File or None: The dynamic library (`.so`/`.dylib`/`.dll`) the asset resolves to. Set only for `dynamic_loading_bundle`; `None` otherwise.",
+        "system_uri": "str: System library URI (e.g. `libsqlite3.so.0`) for `dynamic_loading_system`. Empty string otherwise.",
+        "files": "tuple[File]: The asset in the form a build hook's output takes: an `.assets.json` (the hook runner's result JSON, naming the library relative to itself) and the library. What a library owning the asset carries in `DartPackageInfo.native_assets`.",
+    },
+)
+
+DartRecordedUsesInfo = provider(
+    doc = """The uses of `@RecordUse` definitions the compiler recorded while \
+building an executable: which annotated classes were instantiated with which \
+constant fields, which annotated static methods were called with which \
+constant arguments.
+
+Provided by a `dart_binary` with `record_use = True`, and read by \
+`dart_link_hook`, which hands the file to each package's `hook/link.dart` as \
+`LinkInput.recordedUses`. The file is the JSON the Dart compiler writes, \
+unchanged.""",
+    fields = {
+        "file": "File: The recorded-uses JSON.",
+        "kind": "str: `aot` when the compiler recorded the uses — the `exe` and `aot-snapshot` modes, whose tree-shaking is what makes the set of uses known — or `empty` for the `kernel` and `jit-snapshot` modes, which record nothing; their file is the empty JSON object the compiler writes when there is nothing to record.",
+    },
+)
+
+DartDataAssetInfo = provider(
+    doc = """Data assets: files a Dart program reads at run time by asset id, \
+the counterpart of `DartCodeAssetInfo` for data rather than native code.
+
+Produced by `dart_link_hook` from the data assets its link hooks emit. Carries \
+only what upstream's `DataAsset` carries — package, name, file — and no \
+bundling paths: where the file lands inside an application is the bundler's \
+decision (rules_flutter's, for a Flutter app).""",
+    fields = {
+        "assets": "depset[struct]: One struct per data asset, with `package` (str: the owning package), `name` (str: the asset's name within the package, e.g. `glyphs/index.json`), `file` (File) and `id` (str: `package:<package>/<name>`, the id Dart code loads it by).",
+    },
+)
+
+DartAnalysisOptionsInfo = provider(
+    doc = """An `analysis_options.yaml` together with the packages its \
+`include:` directives resolve against.
+
+A shared lint ruleset is published as a pub package and pulled in by \
+`package:` URI, which the analyzer resolves through the staged project's \
+`package_config.json`. So an options file can carry package dependencies, and \
+the only alternative — adding the ruleset to the analyzed library's own `deps` \
+— leaks a lint-only package into that library's `DartInfo`, and from there \
+into every binary and test downstream of it.
+
+Produced by `dart_analysis_options` and consumed by `dart_analysis_config` \
+(for the `dart_analyze` aspect and `dart_format`), which stages these packages for options resolution alone: \
+they are resolvable from the project, never themselves analyzed, and never \
+merged into the analyzed target's provider.""",
+    fields = {
+        "file": "File: The `analysis_options.yaml`.",
+        "packages": "list[DartPackageInfo]: Package records for every package the includes may reference.",
+        "transitive_srcs": "depset[File]: Dart sources of those packages.",
+        "transitive_resources": "depset[File]: Non-Dart `lib/` files of those packages — where a published ruleset's yaml actually lives.",
+    },
+)
+
+DartKernelInfo = provider(
+    doc = """A library's module, and the modules its closure links against.
+
+Read off any `dart_library`, and forwarded by a target that wraps one (see
+`dart_test_package`). A kernel executable compiles only as modules: one that
+depends on a target that does not provide it, or whose closure is not modular,
+fails, naming the library and `not_modular`.""",
+    fields = {
+        "kmod": "File or None: this library's module, a directory of one kernel per component of its sources and an `index.json` that lists them. None for a façade with no sources of its own, and when no module is compiled.",
+        "koutline": "File or None: this library's outline directory: `outline.dill` (the module without executable code, which a dependent compiles against), the sources the module left out under `sources/`, and an `index.json` naming both. None for a façade with no sources of its own, and when no module is compiled.",
+        "transitive_kmods": "depset[File], postorder: the module directories of this library and every transitive dependency, dependencies first. An executable's link reads their indexes.",
+        "transitive_koutlines": "depset[File], postorder: the outline module directories of this library and every transitive dependency, dependencies first. A dependent module or entry module names them as `--input-kmod`.",
+        "modular": "bool: Whether this closure compiles and links module by module. False when anything in it cannot; a kernel executable that reaches it then fails with `not_modular`.",
+        "not_modular": "str or None: why the closure is not modular, naming the library that compiles no module. None when it is modular.",
+        "closure_excluded": "depset[File]: the `.vm_excluded.txt` sidecar of this library's module and of every module it links against: each lists the sources its module left out for the target, and why. A report; no compile reads it.",
+        "cross_pkg_srcs": "depset[File]: transitive `.dart` sources needed only when a cross-package cycle excludes sources from modular compilation.",
+        "owned": "depset[(str, str)]: a `(label, short_path)` for each source of this library and of every library it depends on. An executable finds a source that two libraries list, see `duplicated_source`.",
+        "edges": "depset[(str, str)]: a `(label, dep_label)` for each `dart_library` this library and every library it depends on names as a dependency. Read with `owned`, to tell a source two libraries list one under the other from two that do not depend on each other.",
+        "base_dill": "File or None: optional pre-linked shared base `.dill` (e.g. for `package:test` or `package:flutter_test`) carried by this closure.",
+        "base_keys": "File or None: the `.keys` manifest listing the `<kmod>:<dill>` SCCs already present in `base_dill`.",
+        "base_kmods": "depset[File]: `.kmod` directories fully seeded into `base_dill`.",
+        "unseeded_base_kmods": "depset[File]: `.kmod` directories in `base_dill`'s closure that were not seeded (e.g. CLI-only test deps), prunable unless also in user deps.",
+    },
+)

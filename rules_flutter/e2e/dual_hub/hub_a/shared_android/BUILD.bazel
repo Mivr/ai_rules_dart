@@ -1,0 +1,6 @@
+# DIRLINK-USER-ANDROID-SENTINEL
+#
+# User-owned file. A fetch that symlinks a directory instead of mirroring
+# it writes the spoke's generated android/BUILD.bazel through the link and
+# overwrites this sentinel; the hermeticity test fails if it ever changes.
+# Watched by the fetch, never linked into the spoke.

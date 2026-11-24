@@ -1,0 +1,16 @@
+targets:
+  $default:
+    builders:
+      source_gen:combining_builder:
+        options:
+          ignore_for_file:
+            - type=lint
+            - unused_element
+          preamble: "// Combined package: generated, do not edit."
+      json_serializable:
+        options:
+          any_map: true
+          checked: true
+      riverpod_generator:
+        generate_for:
+          - lib/src/api.dart

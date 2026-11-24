@@ -1,0 +1,147 @@
+"e2e: the minimum supported versions of the modules rules_flutter depends on"
+
+module(name = "rules_flutter_min_versions")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+
+# Every regular dependency is declared at the floor rules_flutter supports,
+# never at the release this repository compiles. The comments in the root
+# MODULE.bazel name the symbol that sets each floor; this workspace is the
+# proof that the set builds together. Some of these floors are lifted by
+# another module's own requirement (ai_rules_dart asks for newer
+# rules_cc, bazel_skylib and package_metadata; rules_kotlin asks for newer
+# rules_java, and the newer rules_cc asks for newer apple_support). Those
+# modules stay at the floor here and MVS
+# selects the lift, which `//:dependency_floors_test` asserts and attributes;
+# pinning them down with an override would hide the graph a consumer gets.
+bazel_dep(name = "bazel_skylib", version = "1.8.0")
+bazel_dep(name = "package_metadata", version = "0.0.5")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_cc", version = "0.2.20")
+bazel_dep(name = "apple_support", version = "2.2.0")
+bazel_dep(name = "rules_apple", version = "4.5.3")
+bazel_dep(name = "rules_swift", version = "3.5.0")
+bazel_dep(name = "rules_kotlin", version = "2.3.0")
+bazel_dep(name = "rules_java", version = "9.0.0")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+# rules_dart is the sibling in this checkout, the same way every other e2e
+# workspace takes it. The version on the `bazel_dep` above is the floor
+# rules_flutter declares for the release; Bazel ignores it here, so what this
+# workspace proves about rules_dart is its requirements on the other modules
+# (the lifts `//:dependency_floors_test` attributes), not a published version.
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+# Hermetic host C++ toolchain: CI images and bare hosts may have no
+# gcc/ar, and the local cc_configure detection fails without them (same
+# block as e2e/integration_android). llvm's floor is 0.8.17 (the xtool SDK
+# and the prebuilt-toolchain repos this workspace registers); llvm itself
+# asks for rules_cc 0.2.22, bazel_skylib 1.9.0 and rules_go 0.62.0, which
+# ai_rules_dart lifts further.
+bazel_dep(name = "llvm", version = "0.8.17", dev_dependency = True)
+
+register_toolchains(
+    "@llvm//toolchain:linux_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:linux_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:linux_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:linux_x86_64_to_linux_x86_64",
+    "@llvm//toolchain:macos_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:macos_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:macos_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:macos_x86_64_to_linux_x86_64",
+    dev_dependency = True,
+)
+
+# The floors that can bind are pinned exactly: a root `single_version_override`
+# makes MVS ignore any other requester, so this workspace keeps testing the
+# release rules_flutter promises instead of floating with the graph. The
+# Apple pair is the proven floor from the original workspace; rules_kotlin,
+# llvm and platforms are the remaining floors no other module asks to raise.
+#
+# The lifted floors are deliberately NOT overridden here: ai_rules_dart
+# asks for newer rules_cc, bazel_skylib and package_metadata; rules_kotlin
+# asks for a newer rules_java; rules_cc 0.2.26 asks for apple_support 2.9.1.
+# Forcing those below their
+# requester's floor would build a graph no consumer can get (and would hide a
+# real requirement), so they stay declared at the floor and
+# `//:dependency_floors_test` asserts the lifted value and its source. The
+# root `single_version_override`s keep rules_flutter's own CI on current
+# releases; consumers ignore both sets.
+single_version_override(
+    module_name = "platforms",
+    version = "1.1.0",
+)
+
+single_version_override(
+    module_name = "rules_apple",
+    version = "4.5.3",
+)
+
+single_version_override(
+    module_name = "rules_swift",
+    version = "3.5.0",
+)
+
+single_version_override(
+    module_name = "rules_kotlin",
+    version = "2.3.0",
+)
+
+single_version_override(
+    module_name = "llvm",
+    version = "0.8.17",
+)
+
+# The resolved-version proof: a repository rule reads each selected module's
+# own `MODULE.bazel` (the sibling rules_dart has no version and is left out), so
+# `//:dependency_floors_test` asserts the graph Bazel actually built instead
+# of a checked-in model of it.
+resolved_module_versions = use_repo_rule("//:resolved_module_versions.bzl", "resolved_module_versions")
+
+resolved_module_versions(
+    name = "resolved_module_versions",
+    floors = "@rules_flutter//flutter/tests:dependency_floors.json",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+
+# Minimal lock: only the `flutter` SDK dependency and its hosted transitive
+# closure (characters, collection, material_color_utilities, meta,
+# vector_math). Regenerated with the pinned toolchain's own Dart SDK plus a
+# FLUTTER_ROOT assembled from the framework packages the toolchain already
+# materializes (packages/flutter, packages/sky_engine) and
+# bin/cache/flutter.version.json stamped 3.47.7/Dart 3.13.5:
+#   FLUTTER_ROOT=<root> PUB_CACHE=<scratch> dart pub get
+# then copied here. Every hosted entry carries a sha256; the two `sdk`
+# entries resolve against the pinned toolchain, not the network. The lock
+# records no `flutter:` sdk floor (only `flutter pub` writes one), so the
+# extension's newer-resolver check is skipped — the build against 3.47.7
+# itself is the proof.
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(
+    flutter,
+    "deps",
+    "flutter_ios_engine",
+    "flutter_macos_engine",
+    "flutter_toolchains",
+)
+
+register_toolchains("@flutter_toolchains//:all")
+
+# The app's Android side is built from the pinned Gradle model, written by `bazel run //:android_pin`.
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
+
+register_toolchains("@android_model//:kotlin_toolchain")

@@ -1,0 +1,114 @@
+# run_home audit list: executable targets under @rules_flutter//... that are
+# OUTSIDE the RT37-flutter:02 class, with the reason each one is not a
+# registry row. run_home_test.sh checks closure: every executable target its
+# enumeration queries return must appear in registry.tsv or here.
+#
+# Columns (tab-separated): label-or-prefix, reason. A trailing `/...` entry
+# covers the whole subtree.
+#
+# - The //flutter/private/tools binaries are build-time exec tools. They run
+#   on the Dart AOT runtime and never spawn the dart CLI, pub,
+#   flutter_tools, or any other HOME-writing program: their only effects
+#   are the output files Bazel asks for. `bazel run`ning one with real args
+#   touches only the given paths, so there is no caller-HOME telemetry to
+#   suppress and no launcher env to scrub.
+@rules_flutter//flutter/private/tools:android_bundle	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:bundle_app	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:compile_shader	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:const_finder	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:defines_files	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:extract_library_tags	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:generate_asset_manifest	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:kernel_filter	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:macho_edit	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:macho_fat_archive_test	unit test of the fat-archive writer; runs on the host, spawns no CLI
+@rules_flutter//flutter/private/tools:merge_android_manifests	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:merge_plists	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:pub_runner	exec runner for //flutter:pub; covered via the //flutter:pub registry row
+@rules_flutter//flutter/private/tools:flutter_test_runner	exec runner for flutter_test; covered via the widget_test registry rows
+@rules_flutter//flutter/private/tools:flutter_integration_test_runner	exec runner for flutter_integration_test; covered via the app_test registry rows
+@rules_flutter//flutter/private/tools:flutter_drive_runner	exec runner for flutter_drive_test; needs emulator + Android SDK; its launcher env is the flutter_integration_test android one
+@rules_flutter//flutter/private/tools:strip_native_libs	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:web_template	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:web_guard	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/tools:xtool_pack	exec build tool (AOT); outputs only, no CLI spawn
+@rules_flutter//flutter/private/gen_l10n:gen_l10n	exec build tool (AOT); outputs only, no CLI spawn
+# - The //flutter/private/... unit tests are `bazel run`-able Dart test
+#   binaries, but they test pure functions (bytes in, bytes out) and never
+#   spawn the telemetry CLIs; rules_dart's dart_test launcher already
+#   suppresses CLI analytics. They are exercised by the acceptance gate
+#   `bazel test //flutter/private/tools/...`.
+@rules_flutter//flutter/private/dartdev_patch:patch_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:android_bundle_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:apk_overlay_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:bazel_test_protocol_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:bundle_app_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:chmod_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:compile_shader_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:const_finder_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:copy_local_file_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:defines_files_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:extract_library_tags_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:flutter_drive_runner_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:flutter_integration_test_android_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:flutter_integration_test_ios_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:flutter_integration_test_runner_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:flutter_test_runner_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:generate_asset_manifest_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:ios_simulator_boot_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:kernel_define_flagfiles_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:kernel_filter_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:kernel_read_set_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:macho_edit_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:macho_payload_floor_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:macho_section_type_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:merge_android_manifests_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:merge_plists_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:native_exe_output_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:run_home_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:sha256_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:strip_native_libs_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:web_guard_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:web_template_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:xtool_pack_test	Dart unit test; no CLI spawn
+@rules_flutter//flutter/private/tools:zlib_raw_static_test	Dart unit test; no CLI spawn
+# - //flutter/tests/... holds the Starlark/build test fixtures: analysis
+#   tests, action-input tests, and flutter_test/flutter_integration_test
+#   instances exercising the same runner code paths the registry rows
+#   cover. They run under `bazel test` process sandboxing via the
+#   acceptance gate `bazel test //flutter/tests/...`, never as hand-driven
+#   `bazel run` entry points; the subtree pattern keeps the ratchet closed
+#   over the generated manifest_validate_test_test_N targets too.
+@rules_flutter//flutter/tests/...	build/test fixtures under the acceptance gate; same runner code paths as the registry rows
+# - //tools/** is outside this task's paths, but the enumeration must still
+#   account for it. These labels were enumerated once from the main module
+#   (`bazel query 'kind(".*_binary rule", //tools/...)'`) and are attested
+#   here: //tools/... does not load from a downstream workspace, so the
+#   script re-enumerates them only when the queries succeed and otherwise
+#   says so.
+@rules_flutter//tools/changelog:check	dev tooling outside this task's paths; needs a follow-up for CLI spawns
+@rules_flutter//tools/repo_contents_cache:repo_contents_cache	dev tooling outside this task's paths; spawns only `bazel fetch` into temporary output bases
+@rules_flutter//tools/repo_contents_cache:cache_check_test	Dart unit test over fake directory trees; no CLI spawn and no HOME writes
+@rules_flutter//tools/update_flutter_version:update_flutter_version	dev tooling outside this task's paths; needs a follow-up for CLI spawns
+@rules_flutter//tools/vm:vm_scripts	dev tooling outside this task's paths; needs a follow-up for CLI spawns
+# - Platform app instances for macOS, Windows, iOS and Android, and the
+#   Android integration test, live in e2e/hello_world and
+#   e2e/integration_android (this workspace stays Linux-runnable so the
+#   gate runs on Linux CI). They are bundle rules, not executable, and are
+#   built — never `bazel run` — by their own workspaces.
+e2e/hello_world:macos-windows-ios-apps	bundle rules, not executable; built by e2e/hello_world
+e2e/integration_android:android-integration	needs emulator + Android SDK; run by e2e/integration_android
+e2e/android_sharedprefs:android_registrant_build_test	build_test over flutter_android_registrant; analysis-only, no CLI spawn
+e2e/android_sharedprefs:registrants_test	Dart test over generated registrant files; run by e2e/android_sharedprefs, no CLI spawn
+e2e/federated_plugins:registrants_test	Dart test over generated registrant files; run by e2e/federated_plugins, no CLI spawn
+e2e/aar_host:host_app	android_binary APK; needs emulator + Android SDK, built by e2e/aar_host
+e2e/aar_host:verify_aar_host_test	Dart emulator test; needs emulator + Android SDK, run by e2e/aar_host
+@rules_flutter//tools/doc_check:doc_check	pure-Dart doc checker; reads extract protos only, no CLI spawn and no HOME writes
+@rules_flutter//tools/doc_check:rules_test	pure-Dart rule test over fixture protos; no CLI spawn and no HOME writes
+e2e/integration_ios:flavor_dev_test	macOS-only iOS simulator test; run by e2e/integration_ios
+e2e/integration_ios:flavor_prod_test	macOS-only iOS simulator test; run by e2e/integration_ios
+e2e/drive_ios:ios_dart_side_build_test	build_test over the portable Dart side of e2e/drive_ios; analysis-only, no CLI spawn
+e2e/drive_ios:ios_dart_analysis_test	dart_analysis_test over e2e/drive_ios Dart sources; run by e2e/drive_ios, no CLI spawn
+e2e/drive_ios:drive_pass_test	flutter_drive_test on the iOS simulator; needs macOS, Xcode and a simulator runtime, run by e2e/drive_ios
+e2e/drive_ios:drive_fail_test	red-twin flutter_drive_test whose driver exits 1; needs macOS, Xcode and a simulator runtime, run by e2e/drive_ios
+@rules_flutter//flutter/private/android_model/testing:host_paths_test	Java unit test of a path function (pure JDK); starts no program and writes no file

@@ -1,0 +1,79 @@
+load("@android_model_flavored//:defs.bzl", "flutter_android_app")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_integration_test")
+
+# The Android project has the two flavors too (android/app/build.gradle.kts); a test builds the debug
+# variant of its flavor.
+flutter_android_pin(
+    name = "android_pin",
+    variants = [
+        "devDebug",
+        "prodDebug",
+    ],
+)
+
+flutter_application(
+    name = "app_dev",
+    package_name = "flavored",
+    srcs = ["lib/main.dart"],
+    flavor = "dev",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = [
+        "//libs/flavor_assets",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_application(
+    name = "app_prod",
+    package_name = "flavored",
+    srcs = ["lib/main.dart"],
+    flavor = "prod",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = [
+        "//libs/flavor_assets",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_integration_test(
+    name = "dev_test",
+    package_name = "flavored",
+    size = "large",
+    srcs = ["integration_test/dev_test.dart"],
+    android_app = flutter_android_app,
+    android_variant = "devDebug",
+    app_srcs = ["lib/main.dart"],
+    flavor = "dev",
+    platform = "android",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    deps = [
+        "//libs/flavor_assets",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+    ],
+)
+
+flutter_integration_test(
+    name = "prod_test",
+    package_name = "flavored",
+    size = "large",
+    srcs = ["integration_test/prod_test.dart"],
+    android_app = flutter_android_app,
+    android_variant = "prodDebug",
+    app_srcs = ["lib/main.dart"],
+    flavor = "prod",
+    platform = "android",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    deps = [
+        "//libs/flavor_assets",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:integration_test",
+    ],
+)

@@ -1,0 +1,13 @@
+name: cycle_app
+description: Cycle-break fixture app depending on both sides of the cycle.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  cycle_a:
+    path: ../cycle_a
+  cycle_b:
+    path: ../cycle_b

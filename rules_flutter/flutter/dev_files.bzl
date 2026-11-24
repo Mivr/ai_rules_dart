@@ -1,0 +1,172 @@
+"""The aspects that request the files the dev loop reads.
+
+`flutter_dev` (`tools/flutter_dev`) reads build outputs off disk and hands the
+app to the stock `flutter` tool. Bazel materializes an output when it belongs to
+a target named on the command line, and a launchable target names only its
+bundle.
+
+This cannot be an output group on that target: on Apple platforms it is
+`rules_apple`'s `macos_application` / `ios_application`. Nor a sibling target:
+those rules apply a split transition to their `deps`, so the
+`flutter_application` the app was assembled from sits in a configuration
+(`…-ST-<hash>`) nothing can name and no sibling re-derives. An aspect rides the
+existing dep edges in the configuration they already have.
+
+`flutter_dev_files` fills two groups, with only what the stock tool and the IDE
+read:
+
+- `flutter_stock_dev`: per application, its package config and a JSON file
+  naming that config, the package and the Flutter version of the toolchain.
+  Nothing else of the application, so a web session builds no kernel.
+- `flutter_stock_dev_generated`: every generated Dart source of the main
+  repository that a target lists in `srcs` (gen-l10n output, builder output),
+  with a JSON file per such target mapping each source to the target that
+  generates it, and a JSON file per `flutter_gen_l10n` target. The tool links
+  each source into the source tree, where the stock generator would write it,
+  and builds the generating targets in the top-level configuration, so that
+  rebuilding one of them after an input edit updates what the link names.
+
+A second aspect, `flutter_dev_packages`, names the packages below the app's
+`dev_dependencies`, so that the package config `flutter_dev` writes holds them
+as `pub get`'s does (`flutter_lints`, `flutter_test` and their closure).
+"""
+
+load("@rules_dart//dart:providers.bzl", "DartInfo")
+load("@rules_dart//dart:utils.bzl", "owned_package_records")
+load("//flutter:providers.bzl", "FlutterApplicationInfo")
+
+visibility("public")
+
+# The groups `flutter_dev` requests (see the module docstring).
+STOCK_DEV_GROUP = "flutter_stock_dev"
+STOCK_DEV_GENERATED_GROUP = "flutter_stock_dev_generated"
+
+# The group of `flutter_dev_packages` (below).
+STOCK_DEV_PACKAGES_GROUP = "flutter_stock_dev_packages"
+
+_FLUTTER_TOOLCHAIN = "@rules_flutter//flutter:toolchain_type"
+
+def _generated_dart_srcs(ctx):
+    """The generated Dart files of the main repository this target lists in `srcs`."""
+    srcs = getattr(ctx.rule.files, "srcs", None) or []
+    return [
+        f
+        for f in srcs
+        if not f.is_source and f.extension == "dart" and not f.short_path.startswith("../")
+    ]
+
+def _stock_dev_info(target, ctx):
+    """Writes the JSON `flutter_dev` reads for one application."""
+    toolchain = ctx.toolchains[_FLUTTER_TOOLCHAIN]
+    sdk = getattr(toolchain, "flutter_sdk_info", None) if toolchain else None
+    app = target[FlutterApplicationInfo]
+    info = ctx.actions.declare_file(ctx.label.name + ".flutter_stock_dev.json")
+    ctx.actions.write(info, json.encode({
+        "debug": app.is_debug,
+        "flutterVersion": sdk.version if sdk else None,
+        "label": str(ctx.label),
+        "package": getattr(ctx.rule.attr, "package_name", None),
+        "packageConfig": app.package_config.path,
+    }))
+    return [info, app.package_config]
+
+def _flutter_dev_files_aspect_impl(target, ctx):
+    stock = []
+    generated = []
+
+    # The application itself.
+    if FlutterApplicationInfo in target:
+        stock.append(depset(_stock_dev_info(target, ctx)))
+
+    # Each generated source with the target that generates it, so the tool can rebuild that
+    # target alone. A source two targets list is written twice, with the same content.
+    own_generated = _generated_dart_srcs(ctx)
+    if own_generated:
+        generators = ctx.actions.declare_file(ctx.label.name + ".flutter_stock_dev_generated.json")
+        ctx.actions.write(generators, json.encode({"sources": {f.short_path: str(f.owner) for f in own_generated}}))
+        generated.append(depset(own_generated + [generators]))
+
+    # The stock tool runs its own gen-l10n when the project has an `l10n.yaml`, into the same
+    # paths: the tool must not link this target's outputs there then.
+    if ctx.rule.kind == "flutter_gen_l10n":
+        stock_generator = ctx.actions.declare_file(ctx.label.name + ".flutter_stock_dev_generated.json")
+        ctx.actions.write(stock_generator, json.encode({"stockGenerator": "gen-l10n", "label": str(ctx.label)}))
+        generated.append(depset([stock_generator]))
+
+    # Anything below it. `attr_aspects = ["*"]` rather than a named edge list:
+    # the path from a launchable target down to its `flutter_application` runs
+    # through rules this project does not own (`macos_application` → its
+    # `deps` → a generated runner), so naming the edges would encode another
+    # project's attribute names and break silently when they change.
+    for attr_name in dir(ctx.rule.attr):
+        attr = getattr(ctx.rule.attr, attr_name)
+        deps = attr if type(attr) == "list" else [attr]
+        for dep in deps:
+            if type(dep) == "Target" and OutputGroupInfo in dep:
+                groups = dep[OutputGroupInfo]
+                for name, into in [(STOCK_DEV_GROUP, stock), (STOCK_DEV_GENERATED_GROUP, generated)]:
+                    group = getattr(groups, name, None)
+                    if group != None:
+                        into.append(group)
+
+    return [OutputGroupInfo(**{
+        STOCK_DEV_GROUP: depset(transitive = stock),
+        STOCK_DEV_GENERATED_GROUP: depset(transitive = generated),
+    })]
+
+flutter_dev_files = aspect(
+    implementation = _flutter_dev_files_aspect_impl,
+    attr_aspects = ["*"],
+    toolchains = [config_common.toolchain_type(_FLUTTER_TOOLCHAIN, mandatory = False)],
+    doc = """Collects the `flutter_application` outputs `flutter_dev` reads.
+
+Applied by `flutter_dev`, not by users:
+
+    bazel build //:app \\
+      --aspects=@rules_flutter//flutter:dev_files.bzl%flutter_dev_files \\
+      --output_groups=+flutter_stock_dev,+flutter_stock_dev_generated
+
+Requesting the group is what makes those files top-level, so bazel writes them
+to this machine even when a cache served the actions that produced them.
+""",
+)
+
+def _app_scheme_root(lib_root):
+    """A package root as the package config's `org-dartlang-app:///` path: `external/<repo>/...`."""
+    return "external/" + lib_root[len("../"):] if lib_root.startswith("../") else lib_root
+
+def _flutter_dev_packages_aspect_impl(target, ctx):
+    files = []
+    if DartInfo in target:
+        records = [r for r in owned_package_records(target[DartInfo]) if r.package_name]
+        if records:
+            out = ctx.actions.declare_file(ctx.label.name + ".flutter_stock_dev_packages.json")
+            ctx.actions.write(out, json.encode({"packages": [
+                {
+                    "languageVersion": r.language_version,
+                    "name": r.package_name,
+                    "root": _app_scheme_root(r.lib_root),
+                }
+                for r in records
+            ]}))
+            files.append(depset([out]))
+    for attr_name in dir(ctx.rule.attr):
+        attr = getattr(ctx.rule.attr, attr_name)
+        for dep in (attr if type(attr) == "list" else [attr]):
+            if type(dep) == "Target" and OutputGroupInfo in dep:
+                group = getattr(dep[OutputGroupInfo], STOCK_DEV_PACKAGES_GROUP, None)
+                if group != None:
+                    files.append(group)
+    return [OutputGroupInfo(**{STOCK_DEV_PACKAGES_GROUP: depset(transitive = files)})]
+
+flutter_dev_packages = aspect(
+    implementation = _flutter_dev_packages_aspect_impl,
+    attr_aspects = ["*"],
+    doc = """Names the Dart packages below a target and where each one's root is.
+
+`flutter_dev` applies it to the app's `dev_dependencies` (`@<hub>//:flutter_test`, ...), which no
+application depends on, so that the package config it writes for the stock tool and the IDE lists
+them as `pub get`'s does: one small JSON file per package, in the `flutter_stock_dev_packages`
+group.
+""",
+)

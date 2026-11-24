@@ -1,0 +1,29 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+load("//:reference.bzl", "stock_reference_test")
+
+OUTS = ["lib/db/database.g.dart"]
+
+dart_build_runner(
+    name = "gen",
+    outs = OUTS,
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:drift"],
+)
+
+dart_library(
+    name = "drift_pkg",
+    package_name = "drift_pkg",
+    srcs = glob(
+        ["lib/**/*.dart"],
+        exclude = OUTS,
+    ) + [":" + o for o in OUTS if o.startswith("lib/")],
+    language_version = "3.13",
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:drift"],
+)
+
+stock_reference_test(
+    name = "stock_test",
+    outs = OUTS,
+    package = "drift_pkg",
+)

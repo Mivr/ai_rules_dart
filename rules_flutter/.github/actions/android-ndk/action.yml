@@ -1,0 +1,45 @@
+name: Install the Android SDK packages the models pin
+description: >-
+  `android_model` takes android.jar, the lambda stubs of the build tools and the
+  NDK's llvm-strip from the Android SDK, and fails the fetch when a package a
+  workspace's `android_model.json` pins is not installed. The runner images ship
+  other versions (the macOS image has fewer platforms than the Linux one), so
+  install the pinned ones next to them. Nothing is done for a package that is
+  already there.
+inputs:
+  version:
+    description: The NDK version every checked-in `android_model.json` pins.
+    required: false
+    default: 28.2.13676358
+  packages:
+    description: >-
+      The other SDK packages the pins name (`compile_sdk` and `build_tools`),
+      space separated, as `sdkmanager` spells them.
+    required: false
+    default: platforms;android-34 platforms;android-35 platforms;android-36 build-tools;36.0.0
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        NDK_VERSION: ${{ inputs.version }}
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+        test -n "$sdk" || { echo "ANDROID_HOME is not set"; exit 1; }
+        missing=""
+        for package in "ndk;$NDK_VERSION" $PACKAGES; do
+          if [ ! -d "$sdk/${package//;//}" ]; then missing="$missing $package"; fi
+        done
+        if [ -z "$missing" ]; then
+          echo "every package is already installed in $sdk"
+          exit 0
+        fi
+        manager="$sdk/cmdline-tools/latest/bin/sdkmanager"
+        if [ "$RUNNER_OS" = Windows ]; then manager="$manager.bat"; fi
+        echo "installing:$missing"
+        # shellcheck disable=SC2086
+        "$manager" --sdk_root="$sdk" --install $missing
+        for package in $missing; do
+          test -d "$sdk/${package//;//}" || { echo "$package is not under $sdk"; exit 1; }
+        done

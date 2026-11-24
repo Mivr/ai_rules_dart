@@ -1,0 +1,19 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+
+dart_build_runner(
+    name = "codegen",
+    outs = ["lib/model.freezed.dart"],
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:freezed_annotation"],
+)
+
+dart_library(
+    name = "renamed",
+    package_name = "renamed",
+    srcs = [
+        "lib/model.dart",
+        ":lib/model.freezed.dart",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:freezed_annotation"],
+)

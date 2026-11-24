@@ -1,0 +1,23 @@
+schema: mivr-e2e-spec/1
+# Strict layering: a target may import only the packages its own `deps`
+# provide. `//:user` imports a package only `//:mid` depends on, so the default
+# build fails naming the target, the file and the package; the
+# `dart_layering_check` feature turns the check off, and adding the package's
+# target to `deps` satisfies it. See README.md.
+commands:
+  - name: a transitive-only import fails
+    run: bazel build //:user
+    expect:
+      non_zero: true
+      output_contains:
+        - "//:user: user.dart imports 'package:leaf/leaf.dart', but package 'leaf' is not a direct dependency of //:user"
+  - name: a conditional alternative is checked too
+    run: bazel build //:conditional
+    expect:
+      non_zero: true
+      output_contains:
+        - "package 'leaf' is not a direct dependency of //:conditional"
+  - name: the feature turns the check off
+    run: bazel build --features=-dart_layering_check //:user
+  - name: a direct dependency or a facade satisfies the check
+    run: bazel build //:user_ok //:facade_user //:conditional_ok

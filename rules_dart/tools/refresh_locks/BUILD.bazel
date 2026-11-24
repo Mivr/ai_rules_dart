@@ -1,0 +1,26 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# Refreshes, or checks (`--check`), the MODULE.bazel.lock of every Bazel
+# workspace of the repository:
+# `cd rules_dart/tools && bazel run //refresh_locks -- --help`.
+dart_library(
+    name = "refresh_locks_lib",
+    package_name = "refresh_locks",
+    srcs = glob(["lib/**/*.dart"]),
+)
+
+dart_binary(
+    name = "refresh_locks",
+    main = "bin/refresh_locks.dart",
+    deps = [":refresh_locks_lib"],
+)
+
+dart_test(
+    name = "refresh_locks_test",
+    size = "small",
+    main = "test/refresh_locks_test.dart",
+    deps = [
+        ":refresh_locks_lib",
+        "@pub_deps//:test",
+    ],
+)

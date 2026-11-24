@@ -1,0 +1,21 @@
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_test")
+
+dart_library(
+    name = "stock",
+    package_name = "stock",
+    srcs = [
+        "lib/main.dart",
+        "lib/src/counter.dart",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:args"],
+)
+
+dart_test(
+    name = "main_test",
+    main = "test/main_test.dart",
+    deps = [
+        ":stock",
+        "@pub_deps//:test",
+    ],
+)

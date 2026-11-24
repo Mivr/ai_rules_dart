@@ -1,0 +1,35 @@
+load("//flutter:defs.bzl", "dart_defines", "flutter_plugin")
+load("//flutter/tests:defines_config_test.bzl", "native_probe")
+
+# Its own Bazel package: a Dart package derives its `lib_root` from
+# `ctx.label.package`, so it cannot share the suite's.
+package(default_visibility = ["//flutter/tests:__pkg__"])
+
+# A plugin with Dart sources (compiled as a module under each environment) and
+# a native dependency (which must keep one configuration).
+flutter_plugin(
+    name = "plugin",
+    package_name = "defines_config_plugin",
+    srcs = ["lib/plugin.dart"],
+    native_deps = [":native"],
+    tags = ["manual"],
+)
+
+native_probe(
+    name = "native",
+    tags = ["manual"],
+)
+
+dart_defines(
+    name = "defines_a",
+    tags = ["manual"],
+    values = ["DEFINES_CONFIG=file"],
+)
+
+# The same values as `:defines_a`, but another target: it is another
+# configuration.
+dart_defines(
+    name = "defines_b",
+    tags = ["manual"],
+    values = ["DEFINES_CONFIG=file"],
+)

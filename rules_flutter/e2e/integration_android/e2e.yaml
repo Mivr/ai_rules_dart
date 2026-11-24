@@ -1,0 +1,27 @@
+schema: mivr-e2e-spec/1
+commands:
+  # Build first, and let Bazel's persistent workers (two JVMs of about 1.3 GB:
+  # dex and R8) exit with the build. The tests then boot the emulator (qemu,
+  # about 3 GB resident) without those JVMs and without bundles still building
+  # beside it: on a 16 GB runner the two overlapped, used memory reached 15.5 GB
+  # and runs of this workspace have lost their runner at the first emulator
+  # test, with no log.
+  - name: build all targets, then release the workers
+    # At most two worker JVMs at a time (the default is four of each mnemonic,
+    # about 1.3 GB each) while four bundles build: the passing run of this leg
+    # peaked at 8 GB of swap and a load of 22 in this phase.
+    run: bazel build //... --worker_quit_after_build --worker_max_instances=2
+  - name: test all targets
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 4
+  - name: Android emulator passing driver
+    run: bazel test //apps/sub:drive_pass_test --test_output=errors
+    expect:
+      exit_code: 0
+      test_log_contains: DRIVE_PASS_OK
+  - name: Android emulator failing driver
+    run: bazel test //apps/sub:drive_fail_test --test_output=errors
+    expect:
+      non_zero: true
+      output_contains: DRIVE_RED_MUST_FAIL
+      test_log_contains: DRIVE_RED_MUST_FAIL

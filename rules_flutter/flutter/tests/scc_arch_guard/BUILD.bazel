@@ -1,0 +1,3 @@
+load(":flutter_pub_scc_target_test.bzl", "flutter_pub_scc_target_test_suite")
+
+flutter_pub_scc_target_test_suite(name = "flutter_pub_scc_target_test")

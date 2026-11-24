@@ -1,0 +1,18 @@
+name: rules_flutter_tools
+description: >-
+  Pub dependencies of rules_flutter's own tools and tests (the changelog and
+  doc checks, the e2e runner, the test runners, the VM helpers): one isolated
+  hub, `@tool_deps`, shipped with its plan.
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  args: ^2.4.0
+  boolean_selector: ^2.1.0
+  path: ^1.9.0
+  yaml: ^3.1.0
+
+dev_dependencies:
+  test: ^1.25.0

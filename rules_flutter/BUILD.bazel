@@ -1,0 +1,51 @@
+load("@package_metadata//licenses/rules:license.bzl", "license")
+load("@package_metadata//purl:purl.bzl", "purl")
+load("@package_metadata//rules:package_metadata.bzl", "package_metadata")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_options")
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables under `bazel test`. Each Dart file is analyzed and
+# format-checked against the nearest listed one above it, as in the IDE; this
+# workspace has one, at the root.
+dart_analysis_options(
+    name = "analysis_options",
+    src = "analysis_options.yaml",
+    visibility = ["//lint:__pkg__"],
+)
+
+# The config, with its baseline, lives in //lint: `baseline` needs a newer
+# rules_dart than the floor a consumer resolves, and a consumer loads this
+# package (for //:package_metadata) but never //lint.
+alias(
+    name = "analysis_config",
+    actual = "//lint:analysis_config",
+)
+
+exports_files(
+    [
+        "analysis_baseline.json",
+        "analysis_options.yaml",
+    ],
+    visibility = [
+        "//flutter/tests:__subpackages__",
+        "//lint:__pkg__",
+    ],
+)
+
+package_metadata(
+    name = "package_metadata",
+    purl = purl.bazel(
+        module_name(),
+        module_version(),
+    ),
+    visibility = ["//visibility:public"],
+)
+
+license(
+    name = "license",
+    kind = "@package_metadata//licenses/spdx:Apache-2.0",
+    text = "LICENSE",
+)
+
+# Exported for the dependency-floor test, which reads the declared minimums.
+exports_files(["MODULE.bazel"])

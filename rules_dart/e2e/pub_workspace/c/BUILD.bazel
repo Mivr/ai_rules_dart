@@ -1,0 +1,17 @@
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_test")
+
+exports_files(["pubspec.yaml"])
+
+dart_library(
+    name = "c",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+    deps = ["//b"],
+)
+
+dart_test(
+    name = "c_test",
+    size = "small",
+    main = "test/c_test.dart",
+    deps = [":c"],
+)

@@ -1,0 +1,3 @@
+# One `phrasing | reason` per line: a doc sentence that genuinely belongs on
+# more than 3 attributes. Never use it to silence a gap that could be
+# documented. An entry used on 3 or fewer attributes fails the test.

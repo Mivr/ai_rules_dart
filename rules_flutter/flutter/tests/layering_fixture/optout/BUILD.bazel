@@ -1,0 +1,25 @@
+load("//flutter:defs.bzl", "flutter_test")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+load("//flutter/tests:layering_test.bzl", "layering_off_test")
+
+# The per-package opt-out: the same violation as `:bad_test` in the parent
+# package, switched off for every target here.
+package(features = ["-dart_layering_check"])
+
+flutter_test(
+    name = "off_test",
+    package_name = "layering_optout",
+    main = "test/off_test.dart",
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    deps = [
+        "//flutter/tests/flutter_test_analyze_fixture/fake_test_api",
+        "//flutter/tests/layering_fixture/mid",
+    ],
+)
+
+layering_off_test(
+    name = "optout_test",
+    size = "small",
+    target_under_test = ":off_test",
+)

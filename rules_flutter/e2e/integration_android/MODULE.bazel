@@ -1,0 +1,83 @@
+"E2e test: Flutter Android integration test (flutter_integration_test)"
+
+module(name = "rules_flutter_integration_android")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "rules_android_ndk", version = "0.1.5")
+bazel_dep(name = "rules_cc", version = "0.2.26")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+bazel_dep(name = "rules_java", version = "9.9.0")
+
+bazel_dep(name = "llvm", version = "0.8.19", dev_dependency = True)
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+register_toolchains(
+    "@llvm//toolchain:linux_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:linux_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:linux_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:linux_x86_64_to_linux_x86_64",
+    "@llvm//toolchain:macos_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:macos_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:macos_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:macos_x86_64_to_linux_x86_64",
+    dev_dependency = True,
+)
+
+# Pinned past the 0.1.5 release for 16KB page alignment.
+archive_override(
+    module_name = "rules_android_ndk",
+    sha256 = "0f566314be1257379d42630e068618169e410e4ecf964b28e0c72559e2196658",
+    strip_prefix = "rules_android_ndk-987213e7f982de48696f3b9cd031ff4e3e065c7c",
+    urls = ["https://github.com/bazelbuild/rules_android_ndk/archive/987213e7f982de48696f3b9cd031ff4e3e065c7c.tar.gz"],
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(
+    flutter,
+    "deps",
+    "flutter_android_headless_runtime",
+    "flutter_toolchains",
+)
+
+register_toolchains("@flutter_toolchains//:all")
+
+# Override rules_android's Go SDK with sha256-pinned 1.26.2 archives.
+# The NDK's C toolchain builds the FFI library and the native asset of `:app_test` for the emulator's ABI.
+android_ndk_repository_extension = use_extension(
+    "@rules_android_ndk//:extension.bzl",
+    "android_ndk_repository_extension",
+)
+use_repo(android_ndk_repository_extension, "androidndk")
+
+register_toolchains("@androidndk//:all")
+
+# The Android side of each app is built from the pinned Gradle model of its own Android project,
+# written by `bazel run //:android_pin` (and `//apps/sub:android_pin`, `//apps/flavored:android_pin`).
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+android_model.pin(
+    name = "android_model_sub",
+    model = "//apps/sub:android_model.json",
+)
+android_model.pin(
+    name = "android_model_flavored",
+    model = "//apps/flavored:android_model.json",
+)
+use_repo(android_model, "android_model", "android_model_flavored", "android_model_sub")
+
+register_toolchains("@android_model//:kotlin_toolchain")

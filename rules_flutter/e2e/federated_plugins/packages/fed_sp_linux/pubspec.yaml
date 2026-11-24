@@ -1,0 +1,16 @@
+name: fed_sp_linux
+version: 0.0.1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    implements: fed_sp
+    platforms:
+      linux:
+        pluginClass: FedSpLinuxPlugin

@@ -1,0 +1,10 @@
+name: android_sharedprefs
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.5.0
+dev_dependencies:
+  very_good_analysis: ^10.3.0

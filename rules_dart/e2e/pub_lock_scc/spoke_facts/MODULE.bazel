@@ -1,0 +1,56 @@
+module(name = "pub_lock_scc_spoke_facts_e2e")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../..",
+)
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")
+
+# Green workspace: `bazel build //:app` (after rewriting the FIXTURES_ROOT
+# placeholder, see below) plans `spoke_a` -> [`spoke_b`], the rest with no
+# dependencies, from the fixture registry's package listings, and records
+# those plans as the pub extension's facts in MODULE.bazel.lock. The committed
+# lock holds none of them: their keys name the registry, whose path is the
+# checkout's. The spoke-mismatch check is exercised by CI
+# (.github/workflows/dart-ci.yaml, step `pub_lock_scc_spoke_facts`), which
+# corrupts the recorded facts in place and rebuilds: each case below must then
+# fail at fetch, naming the package, instead of failing analysis with a bare
+# target cycle (or, for the fake edge, passing silently with the fake fact
+# re-recorded).
+#
+# - `spoke_a` really depends on `spoke_b`: with its fact wronged to [], planning
+#   sees no cycle and leaves spokes; `spoke_a`'s fetch fails naming the package:
+#
+#     Error in fail: pub_lock_package "ai_rules_dart++pub+spokes__spoke_a":
+#     package "spoke_a" lists different dependencies than cycle planning
+#     used (planned [], pubspec [spoke_b]). ...
+#
+# - `spoke_d` really has no dependencies: with its fact wronged to [`spoke_c`]
+#   (no cycle resulting) the build would pass with the fake fact re-recorded;
+#   instead `spoke_d`'s fetch fails naming the package:
+#
+#     Error in fail: pub_lock_package "ai_rules_dart++pub+spokes__spoke_d":
+#     package "spoke_d" lists different dependencies than cycle planning
+#     used (planned [spoke_c], pubspec []). ...
+#
+# Both failures name the package, list the planned and the real names, and
+# give the lockfile recovery step. Recovering (remove the pub extension's
+# `facts` entry and its `moduleExtensions` entry from MODULE.bazel.lock,
+# delete the `MODULE.bazel.lock` inside Bazel's output base, build again)
+# builds cleanly, planning then records the real names. The fixtures live in
+# e2e/pub_lock_scc/fixtures/ (served over file://, with a package listing
+# under api/packages/ beside each archive; the FIXTURES_ROOT placeholder in
+# pubspec.spoke.lock is rewritten to the absolute path before building, and
+# restored afterwards).
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub", dev_dependency = True)
+pub.from_lock(
+    name = "spokes",
+    isolated = True,
+    lock = "//:pubspec.spoke.lock",
+)
+use_repo(pub, "spokes")

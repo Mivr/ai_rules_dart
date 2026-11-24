@@ -1,0 +1,57 @@
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load("@rules_flutter//flutter:ios.bzl", "IOS_MINIMUM_OS_VERSION", "flutter_ios_xcframeworks")
+
+# One plain application. Its only dependency is the small first-party plugin
+# in //plugin, so the xcframework set has a native plugin to prove.
+flutter_application(
+    name = "app_flutter",
+    package_name = "ios_framework_example",
+    main = "lib/main.dart",
+    min_os_version = IOS_MINIMUM_OS_VERSION,
+    deps = [
+        "//plugin:ios_framework_plugin",
+        "@deps//:flutter",
+    ],
+)
+
+# The add-to-app artifact set: App, Flutter, FlutterPluginRegistrant and the
+# plugin xcframework. The test below reads these exact outputs.
+flutter_ios_xcframeworks(
+    name = "app_xcframeworks",
+    application = ":app_flutter",
+)
+
+# The assertion lane runs on the macOS leg of full.yaml. It is not `manual`, so
+# `bazel test //...` builds and runs it there; the linux e2e workspaces skip it
+# through `target_compatible_with`.
+dart_test(
+    name = "verify_ios_xcframeworks_test",
+    data = [
+        ":app_xcframeworks",
+        "@flutter_ios_engine//:Flutter_xcframework",
+    ],
+    main = "test/verify_ios_xcframeworks_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = ["@rules_flutter//flutter/private/tools:macho_reader"],
+)
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Static analysis over the app's Dart, since the application rule is a bundle
+# and carries no DartInfo.
+flutter_library(
+    name = "app_lib",
+    package_name = "ios_framework_example",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = ["@deps//:flutter"],
+)

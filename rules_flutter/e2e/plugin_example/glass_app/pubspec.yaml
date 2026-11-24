@@ -1,0 +1,14 @@
+# The project of the glass apps. It depends on `glass_plugin`, whose pubspec
+# names the shaders the app draws with: they are bundled at
+# `packages/glass_plugin/shaders/`.
+name: glass_app
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  glass_plugin:
+    path: ../glass_plugin
+flutter:
+  uses-material-design: true

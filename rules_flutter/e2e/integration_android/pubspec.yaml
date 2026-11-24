@@ -1,0 +1,36 @@
+name: integration_android
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  # A plugin of this workspace with Android code: a path dependency, as in any Flutter project. Its
+  # Android project (android_greeting_plugin/android) is part of the app's Gradle build and so of
+  # the pin.
+  android_greeting_plugin:
+    path: android_greeting_plugin
+  federated_greeting:
+    path: federated/federated_greeting
+  # First-party package (`//libs/cov13font`) whose pubspec declares the font
+  # family the integration test renders. Built by its hand-written
+  # flutter_library, not by the pub hub, so it is not in pubspec.lock.
+  cov13font:
+    path: libs/cov13font
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  very_good_analysis: ^10.3.0
+flutter:
+  generate: true
+  uses-material-design: true
+  assets:
+    - assets/logo.png

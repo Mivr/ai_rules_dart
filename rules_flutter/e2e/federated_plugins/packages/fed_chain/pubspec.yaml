@@ -1,0 +1,17 @@
+name: fed_chain
+version: 0.0.1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  fed_alt_linux:
+    path: ../fed_alt_linux
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      linux:
+        pluginClass: FedChainPlugin

@@ -1,0 +1,17 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_library")
+
+# A first-party package whose pubspec names one asset per flavor. An app built
+# with `flavor = "dev"` bundles only the dev one, at
+# `packages/flavor_assets/assets/dev_asset.txt`.
+flutter_library(
+    name = "flavor_assets",
+    package_name = "flavor_assets",
+    srcs = ["lib/flavor_assets.dart"],
+    data = [
+        "assets/dev_asset.txt",
+        "assets/prod_asset.txt",
+        "pubspec.yaml",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@deps//:flutter"],
+)

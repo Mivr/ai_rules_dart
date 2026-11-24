@@ -1,0 +1,14 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_test")
+
+flutter_test(
+    name = "sources_test",
+    package_name = "pub_sources",
+    size = "small",
+    main = "test/sources_test.dart",
+    deps = [
+        "@deps//:args",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:hello_plugin",
+    ],
+)

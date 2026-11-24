@@ -1,0 +1,11 @@
+.dart_tool/
+build/
+.flutter-plugins-dependencies
+.packages
+*.iml
+.gradle/
+local.properties
+# The release key (see android/app/build.gradle.kts): never checked in.
+key.properties
+*.jks
+*.keystore

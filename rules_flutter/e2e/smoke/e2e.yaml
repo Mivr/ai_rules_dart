@@ -1,0 +1,25 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test all targets
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 22
+    expect:
+      exit_code: 0
+  - name: undeclared-import compile fails on the guard refusal
+    run: bazel build //:consumer_negative
+    expect:
+      non_zero: true
+      output_contains: is not a declared input
+  # Analyzer red path for a real `flutter_library`: `bad_flutter_lib` carries one
+  # `unused_element` diagnostic and a `dart:ui` import, so the `dart_analyze`
+  # aspect in `.bazelrc` must fail `bazel test`. The path pins the diagnostic's
+  # workspace location, and `uri_does_not_exist` would mean `dart:ui` no longer
+  # resolves through the `sky_engine` closure.
+  - name: Analyzer diagnostics in a flutter_library fail the build
+    run: bazel test //:bad_flutter_lib
+    expect:
+      non_zero: true
+      output_contains:
+        - unused_element
+        - lib/bad_flutter.dart
+      output_not_contains: uri_does_not_exist

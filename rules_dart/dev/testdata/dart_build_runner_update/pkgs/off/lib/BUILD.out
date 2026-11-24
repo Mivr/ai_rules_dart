@@ -1,0 +1,9 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "off",
+    package_name = "off",
+    srcs = ["user.dart"],
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:json_annotation"],
+)

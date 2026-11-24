@@ -1,0 +1,16 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+# Run by `run_binary` in //clean and //dirty to generate their parts.
+dart_binary(
+    name = "part_gen",
+    main = "part_gen.dart",
+    visibility = ["//visibility:public"],
+)
+
+# Runs as an action executable, which a source file cannot be.
+dart_binary(
+    name = "check_fixes",
+    compile_mode = "exe",
+    main = "check_fixes.dart",
+    visibility = ["//visibility:public"],
+)

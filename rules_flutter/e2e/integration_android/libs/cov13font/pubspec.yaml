@@ -1,0 +1,12 @@
+name: cov13font
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  fonts:
+    - family: Cov13Sans
+      fonts:
+        - asset: fonts/Cov13Sans-Regular.ttf

@@ -1,0 +1,38 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("//dart:defs.bzl", "dart_binary", "dart_library")
+load(":defs.bzl", "pub_plan_test")
+
+# Writes and checks the plan a module ships with a lock it gives its users
+# (`pub.from_lock(plan = ...)`):
+#   bazel run @rules_dart//dart/pub/plan -- write --lock <pubspec.lock> --out <plan.json>
+dart_binary(
+    name = "plan",
+    main = "bin/plan.dart",
+    visibility = ["//visibility:public"],
+    deps = [":plan_lib"],
+)
+
+dart_library(
+    name = "plan_lib",
+    package_name = "rules_dart_pub_plan",
+    srcs = ["lib/plan.dart"],
+    visibility = ["//visibility:public"],
+    deps = ["@ext_pub_deps//:yaml"],
+)
+
+exports_files(
+    ["test/plan_test.dart"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "defs",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+# The plan rules_dart ships for its own tool lock.
+pub_plan_test(
+    name = "plan_test",
+    locks = {"//dart/ext:pubspec.lock": "//dart/ext:pub_plan.json"},
+)

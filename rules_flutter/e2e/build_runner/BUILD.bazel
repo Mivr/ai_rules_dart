@@ -1,0 +1,10 @@
+load("@rules_dart//dart:defs.bzl", "build_runner_sdk_summary")
+
+# The SDK summary for packages that import Flutter: the Dart SDK plus the
+# engine libraries `sky_engine`'s `_embedder.yaml` lists (`dart:ui`, ...).
+build_runner_sdk_summary(
+    name = "flutter_sdk_summary",
+    embedder = "@flutter_sky_engine//:sky_engine",
+    runner = "@build_deps//build_runner:runner",
+    visibility = ["//visibility:public"],
+)

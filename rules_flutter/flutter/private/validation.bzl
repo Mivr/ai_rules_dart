@@ -1,0 +1,457 @@
+"""Shared validation and sanitization helpers for Flutter rules."""
+
+visibility(["//flutter/..."])
+
+def is_valid_bundle_id(bundle_id):
+    """Check if a bundle_id is a well-formed reverse-DNS identifier.
+
+    Requires at least 2 dot-separated segments, no leading/trailing dots,
+    no consecutive dots, and only alphanumeric, '.', and '-' characters.
+
+    Args:
+        bundle_id: The bundle identifier string to check.
+
+    Returns:
+        True if the bundle_id is valid, False otherwise.
+    """
+    if len(bundle_id) == 0:
+        return False
+    if bundle_id[0] == "." or bundle_id[-1] == ".":
+        return False
+    if ".." in bundle_id:
+        return False
+    if "." not in bundle_id:
+        return False
+    for c in bundle_id.elems():
+        if not (c.isalpha() or c.isdigit() or c in ".-"):
+            return False
+    return True
+
+# Swift keywords that cannot be used bare as a module name. `import <keyword>`
+# and `<keyword>.SomeClass` both fail to parse, so a target so named would
+# produce a runner that cannot be imported or referenced from an Info.plist.
+_SWIFT_RESERVED_MODULE_NAMES = (
+    "associatedtype",
+    "class",
+    "deinit",
+    "enum",
+    "extension",
+    "fileprivate",
+    "func",
+    "import",
+    "init",
+    "inout",
+    "internal",
+    "let",
+    "open",
+    "operator",
+    "private",
+    "precedencegroup",
+    "protocol",
+    "public",
+    "rethrows",
+    "static",
+    "struct",
+    "subscript",
+    "typealias",
+    "var",
+    "break",
+    "case",
+    "catch",
+    "continue",
+    "default",
+    "defer",
+    "do",
+    "else",
+    "fallthrough",
+    "for",
+    "guard",
+    "if",
+    "in",
+    "repeat",
+    "return",
+    "throw",
+    "switch",
+    "where",
+    "while",
+    "as",
+    "Any",
+    "false",
+    "is",
+    "nil",
+    "self",
+    "Self",
+    "super",
+    "throws",
+    "true",
+    "try",
+)
+
+def validate_swift_module_name(module_name, what):
+    """Validate that a string can be used verbatim as a Swift module name.
+
+    Args:
+        module_name: The candidate module name.
+        what: Description of where the name came from, used in the failure
+            message (e.g. "flutter_macos_app(name = ...)").
+    """
+    if not is_valid_swift_module_name(module_name):
+        fail(
+            ("%s: %r cannot be used as a Swift module name. Apple's NIB and " +
+             "Info.plist class lookups spell classes as <module>.<Class>, so " +
+             "the module name must be a bare Swift identifier: a letter or " +
+             "'_' followed by letters, digits or '_', and not a Swift " +
+             "keyword. Rename the target.") % (what, module_name),
+        )
+
+def is_valid_swift_module_name(module_name):
+    """Check if a string is a bare Swift identifier usable as a module name.
+
+    Args:
+        module_name: The candidate module name.
+
+    Returns:
+        True if the name is a valid Swift module name, False otherwise.
+    """
+    if len(module_name) == 0:
+        return False
+    if module_name in _SWIFT_RESERVED_MODULE_NAMES:
+        return False
+    first = module_name[0]
+    if not (first.isalpha() or first == "_"):
+        return False
+    for c in module_name.elems():
+        if not (c.isalpha() or c.isdigit() or c == "_"):
+            return False
+    return True
+
+_VALID_WEB_COMPILER_RENDERER = {
+    "dart2wasm": ["skwasm", "canvaskit"],
+    "dart2js": ["canvaskit"],
+}
+
+def web_renderer(compiler, renderer):
+    """The renderer a web target uses: the one it names, else its compiler's.
+
+    dart2js can only render with CanvasKit, so naming it is not required;
+    dart2wasm defaults to skwasm, as `flutter build web --wasm` does.
+
+    Args:
+        compiler: Web compiler ("dart2wasm" or "dart2js").
+        renderer: The `renderer` attribute; empty when unset.
+
+    Returns:
+        "skwasm" or "canvaskit".
+    """
+    if renderer:
+        return renderer
+    return "canvaskit" if compiler == "dart2js" else "skwasm"
+
+def validate_web_compiler_renderer(compiler, renderer):
+    """Validate that a web compiler+renderer combination is supported.
+
+    Args:
+        compiler: Web compiler ("dart2wasm" or "dart2js").
+        renderer: Web renderer ("skwasm" or "canvaskit").
+    """
+    if not is_valid_web_compiler_renderer(compiler, renderer):
+        fail("Invalid web compiler+renderer combination: %s+%s. skwasm requires dart2wasm." % (compiler, renderer))
+
+def validate_web_wasm_only_attrs(compiler, set_attrs, what):
+    """Refuse wasm-only settings on a target that runs no wasm compile.
+
+    `compiler = "dart2wasm"` runs both compilers — dart2wasm for the app and
+    dart2js for the browsers without WASM — so a dart2js-only setting is live
+    in both compiler modes. The reverse is not true: `compiler = "dart2js"`
+    runs no wasm compile at all, and a wasm-only setting there would be
+    accepted and reach nothing.
+
+    Args:
+        compiler: The target's `compiler` attr value.
+        set_attrs: Names of wasm-only attrs the target set away from their
+            defaults. Determined by the caller, which is where the values are.
+        what: Label named in the failure message.
+    """
+    if compiler != "dart2js" or not set_attrs:
+        return
+    fail(
+        "%s: %s only affect%s the WASM compile, and `compiler = \"dart2js\"` " % (
+            what,
+            ", ".join(sorted(set_attrs)),
+            "" if len(set_attrs) > 1 else "s",
+        ) +
+        "runs none. Drop the setting, or switch to `compiler = \"dart2wasm\"` " +
+        "— which also builds a dart2js fallback, so the JS settings still apply.",
+    )
+
+def validate_base_href(base_href, what):
+    """Validate a web `<base href>` value.
+
+    Same rule `flutter build web --base-href` enforces: relative URLs on the
+    page resolve against everything up to the last `/`, so a value missing
+    either slash silently resolves assets somewhere other than the deploy root
+    — a page that works when served from `/` and breaks on a deep link.
+
+    Args:
+        base_href: The value to check.
+        what: Label or attr named in the failure message.
+    """
+    if not base_href.startswith("/") or not base_href.endswith("/"):
+        fail("%s: base_href must start and end with '/', got %r" % (what, base_href))
+
+def validate_static_assets_url(static_assets_url, what):
+    """Validate a web `$FLUTTER_STATIC_ASSETS_URL` value.
+
+    Same rule `flutter build web --static-assets-url` enforces: only a trailing
+    slash, because the value is a URL prefix that may legitimately name another
+    origin.
+
+    Args:
+        static_assets_url: The value to check.
+        what: Label or attr named in the failure message.
+    """
+    if not static_assets_url.endswith("/"):
+        fail("%s: static_assets_url must end with '/', got %r" % (what, static_assets_url))
+
+def is_valid_web_compiler_renderer(compiler, renderer):
+    """Check if a web compiler+renderer combination is supported.
+
+    Args:
+        compiler: Web compiler ("dart2wasm" or "dart2js").
+        renderer: Web renderer ("skwasm" or "canvaskit").
+
+    Returns:
+        True if the combination is valid, False otherwise.
+    """
+    allowed = _VALID_WEB_COMPILER_RENDERER.get(compiler)
+    if allowed == None:
+        return False
+    return renderer in allowed
+
+# Define keys and namespaces reserved by the ruleset, Flutter tool, and Dart
+# SDK: the dart.vm.* mode keys come from the compilation mode (see
+# flutter_compile_kernel and the web compile actions), dart.library.* and
+# dart.tool.* are owned by the Dart SDK/compiler, and flutter.* (including
+# flutter.dart_plugin_registrant) is owned by the Flutter framework/engine.
+# User-supplied values would silently corrupt mode semantics, SDK library
+# availability, or plugin registration, so they are rejected up front.
+RESERVED_DART_DEFINE_PREFIXES = ("dart.vm.", "dart.library.", "dart.tool.", "flutter.")
+RESERVED_DART_DEFINE_NAMESPACES = ("dart.vm.*", "dart.library.*", "dart.tool.*", "flutter.*")
+RESERVED_DART_DEFINE_KEYS = ("dart.vm.profile", "dart.vm.product", "flutter.dart_plugin_registrant")
+
+def validate_flavor(target_label, flavor):
+    """Validate that flavor contains no whitespace, '=' or ','.
+
+    Args:
+        target_label: The target label for error messages.
+        flavor: The flavor string to validate (empty string or None is allowed).
+    """
+    if not flavor:
+        return
+    for c in flavor.elems():
+        if c.isspace() or c == "=" or c == ",":
+            fail(
+                ("%s: invalid flavor %r (not a valid Dart define value): " +
+                 "flavor must not contain whitespace, '=' or ','") % (target_label, flavor),
+            )
+
+def validate_flavor_defines(target_label, flavor, defines):
+    """Validate that defines do not conflict with the target's flavor.
+
+    Args:
+        target_label: The target label for error messages.
+        flavor: The flavor string (or empty string/None if unflavored).
+        defines: List of define strings (KEY=VALUE or KEY).
+    """
+    effective_flavor = flavor if flavor else ""
+    for define in defines:
+        parts = define.split("=", 1)
+        key = parts[0]
+        val = parts[1] if len(parts) > 1 else ""
+        if key == "FLUTTER_APP_FLAVOR":
+            if not effective_flavor:
+                fail(
+                    ("%s: conflicting FLUTTER_APP_FLAVOR define %r (%r) on unflavored target " +
+                     "(flavor %r, none); the flavor is set by the flavor attribute only") % (
+                        target_label,
+                        val,
+                        define,
+                        effective_flavor,
+                    ),
+                )
+            if val != effective_flavor:
+                fail(
+                    ("%s: conflicting FLUTTER_APP_FLAVOR define %r (%r) does not match " +
+                     "flavor %r; the flavor is set by the flavor attribute only") % (
+                        target_label,
+                        val,
+                        define,
+                        effective_flavor,
+                    ),
+                )
+
+def merge_dart_defines_with_flavor(target_label, defines, extra_defines, flavor = None):
+    """Validate and merge Dart defines with extra defines and flavor.
+
+    Args:
+        target_label: The target label for error messages.
+        defines: Target's declared `defines` list.
+        extra_defines: Values from `extra_dart_defines` build setting.
+        flavor: Target's flavor string (`""` when unflavored), or None when
+            the rule declares no `flavor` attribute.
+
+    Returns:
+        List of merged define strings.
+    """
+    validate_dart_defines(defines, "defines attribute of %s" % target_label)
+    merged = list(defines) + list(extra_defines)
+    if flavor == None:
+        return merged
+    validate_flavor(target_label, flavor)
+    validate_flavor_defines(target_label, flavor, merged)
+    if flavor:
+        flavor_define = "FLUTTER_APP_FLAVOR=" + flavor
+        if flavor_define not in merged:
+            merged.append(flavor_define)
+    return merged
+
+def detect_target_platform(is_ios, is_macos, is_linux, is_windows, is_android):
+    """Detect the Flutter target platform from constraint booleans.
+
+    Args:
+        is_ios: True if target platform is iOS.
+        is_macos: True if target platform is macOS.
+        is_linux: True if target platform is Linux.
+        is_windows: True if target platform is Windows.
+        is_android: True if target platform is Android.
+
+    Returns:
+        Platform string: "ios", "macos", "linux", "windows", or "android".
+        Fails if no platform matches.
+    """
+    if is_ios:
+        return "ios"
+    if is_macos:
+        return "macos"
+    if is_linux:
+        return "linux"
+    if is_windows:
+        return "windows"
+    if is_android:
+        return "android"
+    fail(
+        "No supported Flutter target platform detected. " +
+        "Supported platforms: android, ios, macos, linux, windows. " +
+        "Use --platforms= to set the target platform.",
+    )
+
+def validate_dart_defines(defines, what):
+    """Validate a list of Dart environment defines (KEY=VALUE strings).
+
+    Args:
+        defines: List of define strings to validate.
+        what: Description of where the defines came from, used in the
+            failure message (e.g. a target label or a flag name).
+    """
+    for define in defines:
+        if not is_valid_dart_define(define):
+            fail(
+                ("Invalid Dart define %r in %s: defines must be non-empty " +
+                 "and must not set reserved defines (%s; %s) — the build " +
+                 "and SDK set these from the compilation mode and target platform") % (
+                    define,
+                    what,
+                    ", ".join(RESERVED_DART_DEFINE_NAMESPACES),
+                    ", ".join(RESERVED_DART_DEFINE_KEYS),
+                ),
+            )
+
+def is_valid_dart_define(define):
+    """Check if a Dart environment define is acceptable.
+
+    Args:
+        define: A define string, normally KEY=VALUE (a bare KEY is treated
+            as a key with no value, matching frontend_server -D semantics).
+
+    Returns:
+        True if the define is valid, False otherwise.
+    """
+    if len(define) == 0:
+        return False
+    key = define.split("=", 1)[0]
+    if len(key) == 0 or key in RESERVED_DART_DEFINE_KEYS:
+        return False
+    for prefix in RESERVED_DART_DEFINE_PREFIXES:
+        if key.startswith(prefix) or key == prefix[:-1]:
+            return False
+    return True
+
+def escape_html(text):
+    """Escape HTML special characters in a string.
+
+    Args:
+        text: The text string to escape.
+
+    Returns:
+        The escaped string safe for use in HTML attributes and content.
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+def validate_minimum_os_version(macro, name, value, floor, platform):
+    """Fail when a deployment target is below what the vended engine can serve.
+
+    The engine is a prebuilt framework with a minimum of its own, and a bundle
+    cannot honour one below it — the link warns, and the app is left claiming
+    an OS the engine it loads was never built to run on. Failing here names the
+    rule, the attribute and the floor, where the linker's warning names none of
+    them and arrives once per consumer forever.
+
+    Args:
+        macro: The macro's name, for the message.
+        name: The target's name, for the message.
+        value: The caller's `minimum_os_version`.
+        floor: The vended engine's own minimum — see `constants.bzl`.
+        platform: "iOS" or "macOS", for the message.
+    """
+    if not minimum_os_version_is_below(value, floor):
+        return
+    fail(
+        ("%s(name = %r): minimum_os_version = %r is below %s %s, which is " +
+         "what the prebuilt engine these rules vend is built for. A lower " +
+         "deployment target does not widen the audience — the bundle would " +
+         "claim an OS the engine cannot run on. Pass %r or higher.") % (
+            macro,
+            name,
+            value,
+            platform,
+            floor,
+            floor,
+        ),
+    )
+
+def minimum_os_version_is_below(value, floor):
+    """Whether deployment target [value] is lower than [floor].
+
+    Compared segment by segment rather than as text: "10.9" is above "10.14"
+    by string order and below it by version order, and macOS spent years in
+    exactly that range.
+
+    Args:
+        value: A version like "15.0".
+        floor: A version like "15.0".
+
+    Returns:
+        True if [value] is below [floor].
+    """
+    return _version_parts(value) < _version_parts(floor)
+
+def _version_parts(value):
+    """`"15.0"` as a comparable list. Fails on anything that is not a version."""
+    numbers = []
+    for part in value.split("."):
+        if not part.isdigit():
+            fail("%r is not a version, so it cannot be a deployment target." % value)
+        numbers.append(int(part))
+
+    # Padded so "15" and "15.0" compare equal rather than by length.
+    return numbers + [0] * (3 - len(numbers))

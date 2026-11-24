@@ -1,0 +1,293 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+
+bzl_library(
+    name = "build_content",
+    srcs = ["build_content.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "language_version",
+    srcs = ["language_version.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_sdk_constraint",
+    ],
+)
+
+bzl_library(
+    name = "parser_sources",
+    srcs = ["parser_sources.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_archive_scan",
+    srcs = ["pub_archive_scan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pub_symlink",
+    ],
+)
+
+bzl_library(
+    name = "pinned_sources",
+    srcs = ["pinned_sources.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pin_checks",
+    ],
+)
+
+bzl_library(
+    name = "pin_checks",
+    srcs = ["pin_checks.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pubspec_data",
+    srcs = ["pubspec_data.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_sdk_constraint",
+    ],
+)
+
+bzl_library(
+    name = "yaml2json",
+    srcs = ["yaml2json.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/private:download",
+    ],
+)
+
+bzl_library(
+    name = "pub_lock_hub",
+    srcs = ["pub_lock_hub.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_lock_package",
+    srcs = ["pub_lock_package.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_content",
+        ":language_version",
+        ":pinned_sources",
+        ":pub_hooks",
+        ":pub_scan",
+        ":pub_scc_verify",
+        ":pub_symlink",
+        ":pubspec_data",
+        ":yaml2json",
+        "//dart/private:download",
+    ],
+)
+
+bzl_library(
+    name = "pub_scan",
+    srcs = ["pub_scan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pub_archive_scan",
+        ":pub_scanner_sdk",
+        ":pub_symlink",
+    ],
+)
+
+bzl_library(
+    name = "pub_emit",
+    srcs = ["pub_emit.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_content",
+        ":package_graph",
+        ":pub_hooks",
+        ":pub_lock_hub",
+        ":pub_lock_package",
+        ":pub_repository",
+        ":pub_scc_entries",
+        ":scc",
+        "//dart/pub:pub_lock_scc",
+    ],
+)
+
+bzl_library(
+    name = "package_graph",
+    srcs = ["package_graph.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_plan",
+    srcs = ["pub_plan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pinned_sources",
+        ":pub_lock_package",
+        ":pub_scan",
+        ":pub_scc_facts",
+        ":pubspec_data",
+        ":yaml2json",
+        "//dart/private:download",
+    ],
+)
+
+bzl_library(
+    name = "pub_repository",
+    srcs = ["pub_repository.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_content",
+        ":language_version",
+        ":pinned_sources",
+        ":pub_hooks",
+        ":pub_scan",
+        ":pub_symlink",
+        ":pubspec_data",
+        ":yaml2json",
+        "//dart/private:download",
+    ],
+)
+
+bzl_library(
+    name = "pub_sources",
+    srcs = ["pub_sources.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_unavailable",
+    srcs = ["pub_unavailable.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["//dart:providers"],
+)
+
+bzl_library(
+    name = "pub_workspace",
+    srcs = ["pub_workspace.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml2json",
+    ],
+)
+
+bzl_library(
+    name = "pub_root_pin",
+    srcs = ["pub_root_pin.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pin_checks",
+        ":pub_repository",
+        ":version",
+    ],
+)
+
+bzl_library(
+    name = "pub_scanner_repo",
+    srcs = ["pub_scanner_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pub_scanner_sdk",
+    ],
+)
+
+bzl_library(
+    name = "pub_scanner_sdk",
+    srcs = ["pub_scanner_sdk.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/private:toolchains_repo",
+    ],
+)
+
+bzl_library(
+    name = "pub_scc_entries",
+    srcs = ["pub_scc_entries.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_hooks",
+    srcs = ["pub_hooks.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pub_workspace",
+        ":yaml2json",
+        "//dart/private:apple_hook_replacements",
+    ],
+)
+
+bzl_library(
+    name = "pub_scc_facts",
+    srcs = ["pub_scc_facts.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pub_symlink",
+    ],
+)
+
+bzl_library(
+    name = "pub_scc_verify",
+    srcs = ["pub_scc_verify.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":scc",
+    ],
+)
+
+bzl_library(
+    name = "pub_symlink",
+    srcs = ["pub_symlink.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "scc",
+    srcs = ["scc.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "version",
+    srcs = ["version.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/private:versions",
+    ],
+)
+
+bzl_library(
+    name = "yaml_sdk_constraint",
+    srcs = ["yaml_sdk_constraint.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+# Bare scanner sources for `//dart/pub:pub_scan_test`, which imports the
+# scanner and drives its verdict function over inline-built archives.
+exports_files(
+    [
+        "pub_scan.dart",
+        "pub_scan_test.dart",
+    ],
+)
+
+# Bare sources, so that other packages can name them.
+exports_files(
+    [
+        "build_content.bzl",
+        "language_version.bzl",
+        "pinned_sources.bzl",
+        "pub_lock_hub.bzl",
+        "pub_lock_package.bzl",
+        "pub_repository.bzl",
+        "pub_scan.bzl",
+        "pub_scc_facts.bzl",
+        "pub_symlink.bzl",
+        "scc.bzl",
+        "version.bzl",
+    ],
+)

@@ -1,0 +1,21 @@
+# The generic build_runner runner. Bazel does not read this file: a pub hub
+# compiles the runner against the user's lock. It lets an editor resolve the
+# sources.
+name: rules_dart_build_runner
+publish_to: none
+environment:
+  sdk: ^3.4.0
+# No versions on purpose: the user's lock decides every one.
+dependencies:
+  analyzer: any
+  build: any
+  build_config: any
+  build_runner: any
+  built_collection: any
+  glob: any
+  logging: any
+  package_config: any
+  path: any
+  pub_semver: any
+  watcher: any
+  yaml: any

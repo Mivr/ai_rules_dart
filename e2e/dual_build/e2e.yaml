@@ -1,4 +1,0 @@
-schema: mivr-e2e-spec/1
-commands:
-  - name: build
-    run: bazel build //...

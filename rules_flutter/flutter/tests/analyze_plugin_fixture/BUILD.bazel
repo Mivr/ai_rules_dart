@@ -1,0 +1,10 @@
+load("//flutter:defs.bzl", "flutter_plugin")
+
+# A `flutter_plugin` over code that imports `dart:ui`, analyzed with nothing
+# but its own sources. It names no `sky_engine`: the rule supplies that package
+# to analysis itself, as `flutter_library` does (see `../analyze_fixture`).
+flutter_plugin(
+    name = "analyze_plugin_fixture",
+    package_name = "analyze_plugin_fixture",
+    srcs = ["lib/selection.dart"],
+)

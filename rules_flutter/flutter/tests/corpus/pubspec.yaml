@@ -1,0 +1,5 @@
+name: corpus_app
+
+flutter:
+  assets:
+    - data/blob.txt

@@ -1,0 +1,60 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_bundle")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+load("@rules_flutter//flutter:ios.bzl", "flutter_ios_app", "flutter_ios_simulator_build_test")
+load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app")
+
+# A package shader SkSL cannot compile (pkg/shaders/indexed.frag indexes a
+# uniform array in a loop). It builds for the platforms that render with
+# Impeller, with a warning, as under `flutter build`; a web build of it fails,
+# since web compiles SkSL alone. The app draws with it and checks the pixel
+# (lib/main.dart). The app's pubspec depends on the package, which is what
+# bundles its shader.
+flutter_application(
+    name = "app_flutter",
+    package_name = "impeller_shader_app",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = [
+        "//impeller_shader/pkg",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_macos_app(
+    name = "app_macos",
+    application = ":app_flutter",
+    bundle_id = "com.example.impellershader",
+    tags = ["manual"],
+)
+
+flutter_ios_app(
+    name = "app_ios",
+    application = ":app_flutter",
+    bundle_id = "com.example.impellershader",
+    tags = ["manual"],
+)
+
+# The app's Dart payload for Android (the shaders compiled for it), without an Android project.
+flutter_android_bundle(
+    name = "app_android",
+    application = ":app_flutter",
+    tags = ["manual"],
+)
+
+build_test(
+    name = "impeller_shader_build_test",
+    targets = [":app_android"],
+)
+
+build_test(
+    name = "impeller_shader_macos_build_test",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_macos"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "impeller_shader_ios_build_test",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_ios"],
+)

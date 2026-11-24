@@ -1,0 +1,11 @@
+load("//flutter:defs.bzl", "flutter_library")
+
+# Its own Bazel package: a library's `lib_root` comes from its package, and two
+# packages cannot share a `rootUri` in one `package_config.json`.
+flutter_library(
+    name = "flutter",
+    package_name = "flutter",
+    srcs = ["lib/flutter.dart"],
+    tags = ["manual"],
+    visibility = ["//flutter/tests:__subpackages__"],
+)

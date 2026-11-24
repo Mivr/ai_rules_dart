@@ -1,0 +1,36 @@
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+load("@rules_flutter//flutter:defs.bzl", "flutter_library")
+
+# Dependency package whose hand-written source IMPORTS a generated standalone
+# library (catalog.g.dart). Consumed by //:app — exercises the import-as-library
+# codegen shape in a non-app package.
+
+run_binary(
+    name = "catalog_gen",
+    srcs = ["lib/catalog.dart"],
+    outs = ["lib/catalog.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/catalog.dart)",
+        "--output",
+        "$(execpath lib/catalog.g.dart)",
+    ],
+    tool = ":catalog_generator",
+)
+
+flutter_library(
+    name = "dep_lib",
+    package_name = "dep_lib",
+    srcs = [
+        "lib/catalog.dart",
+        ":catalog_gen",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# The generator `:catalog_gen` runs, built for the exec platform.
+dart_binary(
+    name = "catalog_generator",
+    main = "tools/catalog_generator.dart",
+)

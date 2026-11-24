@@ -1,0 +1,11 @@
+{
+    "name": "android_example",
+    "short_name": "android_example",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0175C2",
+    "theme_color": "#0175C2",
+    "description": "A Flutter web application.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false
+}

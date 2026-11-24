@@ -1,0 +1,92 @@
+# Cut a release of rules_flutter whenever a new `rules_flutter-v*.*.*` tag is pushed
+# to the repo. One repository holds two modules with their own tag lines;
+# flutter-release.yaml answers to `rules_flutter-v*.*.*`.
+#
+# Every job is off until the repository variable RELEASES_ENABLED is `true`.
+name: Flutter Release
+on:
+  # Can be triggered from the flutter-tag.yaml workflow
+  workflow_call:
+    inputs:
+      tag_name:
+        required: true
+        type: string
+  # Or, developers can manually push a tag from their clone
+  push:
+    tags:
+      - "rules_flutter-v*.*.*"
+permissions:
+  id-token: write
+  attestations: write
+  contents: write
+  # The gate dispatches flutter-ci.yaml and flutter-full.yaml on the tag, and polls
+  # their runs.
+  actions: write
+jobs:
+  # Releases reuse proof instead of replaying tests. A tag push starts no CI or
+  # Full run. For each of flutter-ci.yaml and flutter-full.yaml, release_gate.sh takes
+  # the first of: a successful run on the tagged commit that is a nightly
+  # `schedule`, a push to main (Full runs on every push to main) or a
+  # `workflow_dispatch` on the tag, reused as it is; a nightly or main-push run
+  # on that commit still in progress, waited for; or a `workflow_dispatch` on
+  # the tag, which the gate dispatches when none exists yet. Dispatched runs run
+  # every job with the caches a pull request gets; only the nightly and
+  # `uncached` dispatches run cold. A release flutter-auto-release.yaml starts
+  # finds both proofs already there. The gate judges each run's current status
+  # on every poll, and it fails closed: a failed or cancelled run, a dispatched
+  # run that never appears, or no passing run within the deadline blocks the
+  # release.
+  gate:
+    if: vars.RELEASES_ENABLED == 'true'
+    defaults:
+      run:
+        working-directory: rules_flutter
+    runs-on: ubuntu-latest
+    # The gate's deadline is 350 minutes: uncached CI takes ~25 minutes and the
+    # uncached Full matrix ~60 minutes, with headroom for slow runners. The
+    # timeout only bounds a hung gate past that deadline. GitHub caps jobs at
+    # 6 h.
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Reuse a nightly proof or run the uncached CI and Full workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag_name || github.ref_name }}
+        # The tagged commit, from the tag: when flutter-auto-release.yaml calls
+        # this through flutter-tag.yaml, github.sha is main's head, not the tagged
+        # commit.
+        run: bash .github/workflows/release_gate.sh "$TAG" "$(gh api "repos/$REPO/commits/$TAG" --jq .sha)"
+  release:
+    if: vars.RELEASES_ENABLED == 'true'
+    needs: gate
+    # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
+    # workflow. The gate job above carries its own timeout.
+    #
+    # The reusable workflow checks out the tag at the repository root, runs
+    # `bazel_test_command` there and then the root's
+    # .github/workflows/release_prep.sh with the tag, which reads the module
+    # from the tag's prefix and builds the archive of rules_flutter/ only. It
+    # uploads the files, attests them and creates the GitHub release.
+    uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@1d798ff015ed0696433e01e2c3ccbb2abefadad7 # v7.7.0
+    with:
+      release_files: rules_flutter-v*.tar.gz
+      # The gate job above already refuses to release without passing CI and
+      # Full runs on the tagged commit (a nightly or a dispatch on the tag), so
+      # this job repeats no tests: it only loads the module's workspace to
+      # verify the checkout before cutting the archive. A cold `bazel test
+      # //...` here timed out small tests on v0.11.0 even though the same
+      # commit was green, so testing again buys no coverage and only
+      # reintroduces cold-runner flakes. Loading and analysing every target
+      # (`--nobuild`) checks that the checkout resolves without the ~8 minute
+      # cold build. The module is a directory of the repository: there is no
+      # MODULE.bazel at the root.
+      bazel_test_command: cd rules_flutter && bazel build --nobuild //...
+      # No setup-bazel caches: a tag ref's caches are never restored by any
+      # later run; they only evict main's under the 10 GB repository limit.
+      mount_bazel_caches: false
+      prerelease: false
+      tag_name: ${{ inputs.tag_name || github.ref_name }}

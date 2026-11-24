@@ -1,0 +1,419 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_apple//apple:macos.bzl", "macos_application")
+load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library", "flutter_native_library")
+load(
+    "@rules_flutter//flutter:ios.bzl",
+    "IOS_DEFAULT_LAUNCH_STORYBOARD",
+    "IOS_MINIMUM_OS_VERSION",
+    "flutter_ios_engine",
+    "flutter_ios_framework_gen",
+    "flutter_ios_info_plist_gen",
+    "flutter_ios_native_frameworks_gen",
+    "flutter_ios_registrant_gen",
+    "flutter_ios_runner_lib_gen",
+    "flutter_ios_simulator_build_test",
+    "ios_sim_debug_app",
+)
+load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
+load(
+    "@rules_flutter//flutter:macos.bzl",
+    "MACOS_MINIMUM_OS_VERSION",
+    "flutter_macos_engine",
+    "flutter_macos_framework_gen",
+    "flutter_macos_info_plist_gen",
+    "flutter_macos_menu_xib_gen",
+    "flutter_macos_native_libs_gen",
+    "flutter_macos_registrant_gen",
+    "flutter_macos_runner_lib_gen",
+)
+load("@rules_flutter//flutter:windows.bzl", "flutter_windows_app")
+
+exports_files(["pubspec.lock"])
+
+cc_library(
+    name = "add_cc",
+    srcs = ["native/add.c"],
+    hdrs = ["native/add.h"],
+)
+
+cc_shared_library(
+    name = "add",
+    visibility = ["//add_plugin:__pkg__"],
+    deps = [":add_cc"],
+)
+
+cc_library(
+    name = "mul_cc",
+    srcs = ["native/mul.c"],
+    hdrs = ["native/mul.h"],
+)
+
+cc_shared_library(
+    name = "mul",
+    deps = [":mul_cc"],
+)
+
+flutter_native_library(
+    name = "mul_native",
+    binding_contract = ["native/mul.h"],
+    library = ":mul",
+    visibility = ["//mul_plugin:__pkg__"],
+)
+
+flutter_application(
+    name = "ffi_app",
+    package_name = "ffi_example",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = [
+        "//add_plugin",
+        "//mul_plugin",
+        # No code asset is named anywhere in this workspace. drift pulls
+        # package:sqlite3, whose own build hook compiles SQLite from the
+        # source file its user define names (`pubspec.yaml`,
+        # `flutter.pub(hook_data = ...)`).
+        "@deps//:drift",
+        "@deps//:flutter",
+    ],
+)
+
+flutter_macos_framework_gen(
+    name = "ffi_macos_framework",
+    application = ":ffi_app",
+)
+
+flutter_macos_registrant_gen(
+    name = "ffi_macos_registrant",
+    application = ":ffi_app",
+)
+
+flutter_macos_native_libs_gen(
+    name = "ffi_macos_native_libs",
+    application = ":ffi_app",
+)
+
+flutter_macos_engine(
+    name = "flutter_engine",
+)
+
+flutter_macos_info_plist_gen(
+    name = "ffi_macos_info_plist",
+    app_name = "FFI Example",
+)
+
+flutter_macos_menu_xib_gen(
+    name = "runner_menu_xib",
+    app_name = "FFI Example",
+)
+
+flutter_macos_runner_lib_gen(
+    name = "runner_lib",
+    engine = ":flutter_engine",
+    registrant = ":ffi_macos_registrant",
+)
+
+apple_bundle_version(
+    name = "ffi_macos_version",
+    build_version = "1.0",
+    short_version_string = "1.0",
+    tags = ["manual"],
+)
+
+macos_application(
+    name = "ffi_macos",
+    additional_contents = {
+        ":ffi_macos_framework": "Frameworks",
+        ":ffi_macos_native_libs": "Frameworks",
+    },
+    bundle_id = "com.example.ffi",
+    infoplists = [":ffi_macos_info_plist"],
+    minimum_os_version = MACOS_MINIMUM_OS_VERSION,
+    resources = [":runner_menu_xib"],
+    tags = ["manual"],
+    version = ":ffi_macos_version",
+    deps = [":runner_lib"],
+)
+
+# =============================================================================
+# iOS — exercises the Native Asset -> signed .framework bundling + runtime load.
+# Built with a fully Bazel-generated runner (no ios/Runner/ scaffolding).
+# =============================================================================
+
+flutter_ios_framework_gen(
+    name = "ffi_ios_framework",
+    application = ":ffi_app",
+)
+
+flutter_ios_registrant_gen(
+    name = "ffi_ios_registrant",
+    application = ":ffi_app",
+)
+
+flutter_ios_engine(
+    name = "ffi_ios_engine",
+)
+
+flutter_ios_native_frameworks_gen(
+    name = "ffi_ios_native_frameworks",
+    application = ":ffi_app",
+)
+
+flutter_ios_info_plist_gen(
+    name = "ffi_ios_info_plist",
+    app_name = "FFI Example",
+)
+
+flutter_ios_runner_lib_gen(
+    name = "ffi_ios_runner_lib",
+    engine = ":ffi_ios_engine",
+    registrant = ":ffi_ios_registrant",
+)
+
+ios_application(
+    name = "ffi_ios",
+    bundle_id = "com.example.ffi",
+    families = ["iphone"],
+    infoplists = [":ffi_ios_info_plist"],
+    launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+    minimum_os_version = IOS_MINIMUM_OS_VERSION,
+    tags = ["manual"],
+    version = ":ffi_macos_version",
+    deps = [
+        ":ffi_ios_framework",
+        ":ffi_ios_native_frameworks",
+        ":ffi_ios_runner_lib",
+    ],
+)
+
+flutter_linux_app(
+    name = "ffi_linux",
+    application = ":ffi_app",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# No windows/runner/ scaffolding here — uses the built-in runner template.
+flutter_windows_app(
+    name = "ffi_windows",
+    application = ":ffi_app",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+dart_test(
+    name = "verify_macos_bundle_test",
+    size = "medium",
+    data = [":ffi_macos"],
+    main = "test/verify_macos_bundle_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# Behavioral runtime test: launches the macOS app binary and asserts both the
+# Native Assets bind (add) and the native_deps raw open (mul) worked.
+# "manual"/"exclusive" — needs a GUI session. Run:
+#   bazel test :verify_macos_runtime_test --test_tag_filters= \
+#     --strategy=TestRunner=standalone
+dart_test(
+    name = "verify_macos_runtime_test",
+    size = "medium",
+    data = [":ffi_macos"],
+    main = "test/verify_macos_runtime_test.dart",
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# `manual`, so `bazel test //...` never gives it to the analysis aspect; this
+# checks it anyway.
+dart_analysis_test(
+    name = "verify_macos_runtime_test_analysis",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":verify_macos_runtime_test"],
+)
+
+dart_test(
+    name = "verify_linux_bundle_test",
+    size = "small",
+    data = [":ffi_linux"],
+    main = "test/verify_linux_bundle_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# Behavioral runtime test: launches the Linux runner and asserts both the
+# Native Assets bind (add) and the native_deps raw open (mul) worked.
+# "manual"/"exclusive" — needs an X display (Xvfb on headless boxes; see the
+# test's doc comment for the invocation).
+dart_test(
+    name = "verify_linux_runtime_test",
+    size = "medium",
+    data = [":ffi_linux"],
+    main = "test/verify_linux_runtime_test.dart",
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# `manual`, so `bazel test //...` never gives it to the analysis aspect; this
+# checks it anyway.
+dart_analysis_test(
+    name = "verify_linux_runtime_test_analysis",
+    size = "small",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":verify_linux_runtime_test"],
+)
+
+dart_test(
+    name = "verify_windows_bundle_test",
+    size = "small",
+    data = [":ffi_windows"],
+    main = "test/verify_windows_bundle_test.dart",
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = ["@rules_dart//dart/runfiles"],
+)
+
+# Behavioral runtime test: launches the Windows runner and asserts both the
+# Native Assets bind (add) and the native_deps raw open (mul) worked.
+# "manual"/"exclusive" — needs a display adapter for the engine's D3D surface.
+dart_test(
+    name = "verify_windows_runtime_test",
+    size = "medium",
+    data = [":ffi_windows"],
+    main = "test/verify_windows_runtime_test.dart",
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+    target_compatible_with = ["@platforms//os:windows"],
+    deps = ["@rules_dart//dart/runfiles"],
+)
+
+# `manual`, so `bazel test //...` never gives it to the analysis aspect; this
+# checks it anyway.
+dart_analysis_test(
+    name = "verify_windows_runtime_test_analysis",
+    size = "small",
+    target_compatible_with = ["@platforms//os:windows"],
+    targets = [":verify_windows_runtime_test"],
+)
+
+# The simulator runs the JIT engine, so the app is transitioned to a debug,
+# sim_arm64 build (no need to pass -c dbg / --ios_multi_cpus on the test).
+ios_sim_debug_app(
+    name = "ffi_ios_sim_debug",
+    app = ":ffi_ios",
+    tags = ["manual"],
+)
+
+# Behavioral runtime test: launches the app on an iOS simulator and asserts the
+# bundled native-asset framework actually loaded (add(3, 4) == 7 at runtime).
+# "manual" — needs a usable simulator. `eternal` (with its `enormous` size):
+# a cold CI simulator boots for minutes and its first launch takes minutes
+# more, and every simctl phase inside carries its own shorter deadline, so a
+# hang fails naming its step long before Bazel would kill the test. Run:
+#   bazel test :verify_ios_simulator_test --test_tag_filters=
+dart_test(
+    name = "verify_ios_simulator_test",
+    size = "enormous",
+    timeout = "eternal",
+    data = [":ffi_ios_sim_debug"],
+    main = "test/verify_ios_simulator_test.dart",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# `manual`, so `bazel test //...` never gives it to the analysis aspect; this
+# checks it anyway.
+dart_analysis_test(
+    name = "verify_ios_simulator_test_analysis",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":verify_ios_simulator_test"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_bundle_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":ffi_ios"],
+)
+
+filegroup(
+    name = "ffi_native_assets_manifest",
+    srcs = [":ffi_app"],
+    output_group = "native_assets_manifest",
+)
+
+build_test(
+    name = "ffi_build_test",
+    size = "small",
+    targets = [
+        ":ffi_app",
+        ":ffi_native_assets_manifest",
+        ":add",
+        ":mul",
+        "//add_plugin",
+        "//mul_plugin",
+    ],
+)
+
+build_test(
+    name = "macos_bundle_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":ffi_macos"],
+)
+
+build_test(
+    name = "linux_bundle_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":ffi_linux"],
+)
+
+build_test(
+    name = "windows_bundle_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:windows"],
+    targets = [":ffi_windows"],
+)
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables: each Dart file is checked against the nearest
+# listed one above it.
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Static analysis over this example's Dart. The app rule is a bundle and
+# carries no DartInfo, so the sources are declared once more as a library for
+# the analyzer to stage.
+flutter_library(
+    name = "app_lib",
+    package_name = "ffi_example",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "//add_plugin",
+        "//mul_plugin",
+        "@deps//:drift",
+        "@deps//:flutter",
+    ],
+)

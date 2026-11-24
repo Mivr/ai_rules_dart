@@ -1,0 +1,8 @@
+schema: mivr-e2e-spec/1
+# Mixed hosted and git packages: fetching them needs no host tools (CI builds
+# it from PowerShell on Windows, and with stubbed `find`, `cp`, `rm` on Linux).
+commands:
+  - name: build
+    run: bazel build //...
+  - name: run
+    run: bazel run //:app

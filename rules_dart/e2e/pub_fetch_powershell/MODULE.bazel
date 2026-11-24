@@ -1,0 +1,19 @@
+module(name = "pub_fetch_powershell_e2e")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../..",
+)
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")
+
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub", dev_dependency = True)
+pub.from_lock(
+    name = "pub_deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(pub, "pub_deps")

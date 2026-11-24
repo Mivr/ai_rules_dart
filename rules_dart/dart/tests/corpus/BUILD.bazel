@@ -1,0 +1,208 @@
+# One fixture per public rule and macro, in one package: the package builds and
+# analyses every rule and macro of `//dart:defs.bzl`, `//dart/pub:defs.bzl` and
+# and `corpus_test` runs.
+
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load(
+    "//dart:defs.bzl",
+    "dart_analysis_config",
+    "dart_analysis_options",
+    "dart_analysis_test",
+    "dart_binary",
+    "dart_code_asset",
+    "dart_fix",
+    "dart_format",
+    "dart_js_binary",
+    "dart_library",
+    "dart_link_hook",
+    "dart_package_member",
+    "dart_package_metadata",
+    "dart_source_set",
+    "dart_test",
+    "dart_wasm_binary",
+)
+load("//dart/pub:defs.bzl", "parse_semver", "semver_gt")
+
+# `parse_semver` and `semver_gt` are functions, not rules: the corpus
+# instantiates them by using what they return, so `language_version` below and
+# `corpus_test`'s `size` consume them.
+
+# --- the package facts, declared once ---------------------------------------
+
+dart_package_metadata(
+    name = "pkg",
+    package_name = "corpus",
+    language_version = "%d.%d" % parse_semver("3.11.0")[:2],
+)
+
+# --- library, binary, test, source set, member ------------------------------
+
+dart_library(
+    name = "corpus_lib",
+    srcs = [
+        "lib/corpus.dart",
+        ":generated_src",
+    ],
+    link_hook = "hook/link.dart",
+    package = ":pkg",
+    deps = ["@ext_pub_deps//:hooks"],
+)
+
+dart_binary(
+    name = "app_bin",
+    code_assets = [":code_asset"],
+    main = "bin/main.dart",
+    deps = [
+        ":corpus_lib",
+        ":source_set_lib",
+    ],
+)
+
+# The opted-in linked path (`link_modules`) for each mode that takes it.
+[
+    dart_binary(
+        name = "linked_bin_" + mode.replace("-", "_"),
+        compile_mode = mode,
+        link_modules = True,
+        main = "bin/main.dart",
+        deps = [
+            ":corpus_lib",
+            ":source_set_lib",
+        ],
+    )
+    for mode in [
+        "exe",
+        "aot-snapshot",
+    ]
+]
+
+dart_test(
+    name = "corpus_test",
+    size = "small" if semver_gt("1.0.0", "0.9.0") else "medium",
+    code_assets = [":code_asset"],
+    main = "test/smoke_test.dart",
+    deps = [
+        ":corpus_lib",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_source_set(
+    name = "source_set",
+    srcs = ["lib/source_set_fixture.dart"],
+)
+
+dart_library(
+    name = "source_set_lib",
+    package_name = "corpus_source_set",
+    language_version = "3.11",
+    srcs_dir = ":source_set",
+)
+
+dart_package_member(
+    name = "member",
+    package_name = "corpus_member",
+    srcs = ["lib/member.dart"],
+    language_version = "3.11",
+)
+
+dart_library(
+    name = "merged",
+    members = [":member"],
+)
+
+# --- analysis ---------------------------------------------------------------
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+dart_analysis_test(
+    name = "analysis_test",
+    size = "small",
+    targets = [
+        ":app_bin",
+        ":corpus_lib",
+        ":corpus_test",
+        ":gen",
+        ":merged",
+        ":web_js",
+        ":web_wasm",
+    ],
+)
+
+dart_fix(
+    name = "fix",
+    target = ":corpus_lib",
+)
+
+dart_format(name = "format")
+
+# --- web --------------------------------------------------------------------
+
+dart_js_binary(
+    name = "web_js",
+    main = "bin/web_main.dart",
+)
+
+dart_wasm_binary(
+    name = "web_wasm",
+    main = "bin/web_main.dart",
+)
+
+# --- generated source -------------------------------------------------------
+
+dart_binary(
+    name = "gen",
+    main = "gen.dart",
+)
+
+run_binary(
+    name = "generated_src",
+    srcs = ["lib/codegen_fixture.dart"],
+    outs = ["lib/codegen_fixture.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/codegen_fixture.dart)",
+        "--output",
+        "$(execpath lib/codegen_fixture.g.dart)",
+    ],
+    tool = ":gen",
+)
+
+# --- code asset and link hook ----------------------------------------------
+
+write_file(
+    name = "prebuilt_library",
+    out = "libcorpus.so",
+    content = [],
+)
+
+dart_code_asset(
+    name = "code_asset",
+    asset_id = "package:corpus/libcorpus.so",
+    prebuilt = ":prebuilt_library",
+)
+
+dart_link_hook(
+    name = "link_hook",
+    recorded_uses = "uses.json",
+    deps = [":corpus_lib"],
+)
+
+# `bazel test //dart/tests/corpus:...` names this suite in the acceptance
+# command; Bazel treats the label after `:` as a literal target name.
+test_suite(
+    name = "...",
+    tests = [
+        ":analysis_test",
+        ":corpus_test",
+    ],
+)

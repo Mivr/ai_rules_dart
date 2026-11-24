@@ -1,0 +1,15 @@
+import 'converters.dart';
+
+CREATE TABLE categories (
+  id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE,
+  colour INTEGER NOT NULL MAPPED BY `const ColourConverter()`
+);
+
+CREATE INDEX categories_name ON categories (name);
+
+categoriesWithCount:
+  SELECT c.*, (SELECT COUNT(*) FROM todos t WHERE t.category = c.id) AS amount
+  FROM categories c ORDER BY name;
+
+deleteCategory: DELETE FROM categories WHERE id = :id;

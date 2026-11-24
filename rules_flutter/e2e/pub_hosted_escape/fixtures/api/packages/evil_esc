@@ -1,0 +1,1 @@
+{"name": "evil_esc", "versions": [{"version": "1.0.0", "archive_sha256": "9bc0a20957728603bf6822c4931540dfe466db1268ef564813fb276dc5a5674a", "pubspec": {"name": "evil_esc", "version": "1.0.0", "environment": {"sdk": ">=3.0.0 <4.0.0"}}}]}

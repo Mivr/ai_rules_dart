@@ -1,0 +1,9 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "below_export",
+    package_name = "mirrors_export",
+    srcs = ["lib/mirrors_export.dart"],
+    tags = ["manual"],
+    visibility = ["//flutter/tests:__subpackages__"],
+)

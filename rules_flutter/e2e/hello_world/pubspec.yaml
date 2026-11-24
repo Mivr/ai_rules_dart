@@ -1,0 +1,40 @@
+name: hello_world
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_localized_locales: ^2.0.5
+  path_probe:
+    path: path_probe
+  path_probe_no_build:
+    path: path_probe_no_build
+  platform_assets:
+    path: platform_assets
+  unversioned_path:
+    path: unversioned_path
+dev_dependencies:
+  very_good_analysis: ^10.3.0
+  test: ^1.30.0
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true
+  # A directory entry: `assets/stage_clean.txt` is the macOS rebuild fixture,
+  # which `verify_macos_stage_clean_test` deletes between two builds. Its
+  # sibling `stage_keep.txt` keeps the directory there when it does.
+  assets:
+    - assets/
+  # A first-party font family: the regular and bold faces of HelloSans. The
+  # bytes are generated fixtures (see fonts/README.md), and the committed
+  # files are the ones the iOS bundle and Android APK tests compare against.
+  fonts:
+    - family: HelloSans
+      fonts:
+        - asset: fonts/HelloSans-Regular.ttf
+        - asset: fonts/HelloSans-Bold.ttf
+          weight: 700

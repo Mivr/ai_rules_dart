@@ -1,0 +1,9 @@
+module(name = "repro_canary")
+
+# The canary itself uses no rule of rules_dart. The override only lets the e2e
+# runner find the repository root it stages the workspace against.
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../..",
+)

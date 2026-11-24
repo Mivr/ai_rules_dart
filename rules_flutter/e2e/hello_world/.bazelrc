@@ -1,0 +1,20 @@
+# Use a remote JDK so the build works without a local Java installation.
+common --java_runtime_version=remotejdk_25
+common --tool_java_language_version=25
+common --tool_java_runtime_version=remotejdk_25
+
+# Exercised by :dart_defines_test — repeatable flag, one define per
+# occurrence. No comma in the value: a debug (modular) compile, which every
+# flutter_test is, refuses one until the module compiler is replaced.
+common --@rules_flutter//flutter:extra_dart_defines=E2E_FLAG=from_flag
+common --@rules_flutter//flutter:extra_dart_defines=E2E_WINNER=flag
+
+try-import %workspace%/.bazelrc.user
+
+# `dart analyze` and the `dart format` check run as an aspect over every Dart
+# target a `bazel test` names. The config line is `common` because `bazel run`
+# of `dart_fix`/`dart_format` reads it too.
+test --aspects=@rules_dart//dart:analyze.bzl%dart_analyze
+test --output_groups=+dart_analyze
+test --output_groups=+dart_format
+common --@rules_dart//dart:analysis_config=//:analysis_config

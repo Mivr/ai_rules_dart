@@ -1,0 +1,55 @@
+load("@package_metadata//licenses/rules:license.bzl", "license")
+load("@package_metadata//purl:purl.bzl", "purl")
+load("@package_metadata//rules:package_metadata.bzl", "package_metadata")
+load("//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options")
+
+package_metadata(
+    name = "package_metadata",
+    purl = purl.bazel(
+        module_name(),
+        module_version(),
+    ),
+    visibility = ["//visibility:public"],
+)
+
+license(
+    name = "license",
+    kind = "@package_metadata//licenses/spdx:Apache-2.0",
+    text = "LICENSE",
+)
+
+# Every `analysis_options.yaml` in this repository, for the `dart_analyze`
+# aspect `.bazelrc` applies under `bazel test`, and for `dart_format`.
+dart_analysis_options(
+    name = "analysis_options",
+    src = "analysis_options.yaml",
+)
+
+# The fixture options packages live under //dart/tests, which release archives
+# omit (.gitattributes `export-ignore`); list them only where that package
+# exists. A package probe is impossible from here (`glob` and `subpackages`
+# do not see below `//dart`), so `git archive` stamps this file instead
+# (.gitattributes `export-subst`): the placeholder below is replaced by a
+# commit hash in an archive and stays literal in a worktree or full checkout.
+_ARCHIVE_STAMP = "$Format:%H$"
+
+_HAS_DART_TESTS = _ARCHIVE_STAMP.startswith("$Format")
+
+_TEST_FIXTURE_OPTIONS = [
+    "//dart/tests/analyze_aspect_fixture:options",
+    "//dart/tests/analyze_aspect_fixture/nested:loud_options",
+    "//dart/tests/analyze_aspect_fixture/vendored:options",
+    "//dart/tests/format_fixture:wide_options",
+    "//dart/tests/format_fixture/rel_include:options",
+    "//dart/tests/format_fixture/rel_include:sub_options",
+    "//dart/tests/format_run_fixture:options",
+    "//dart/tests/format_run_fixture:sub_options",
+    "//dart/tests/format_run_fixture:undeclared_options",
+    "//dart/tests/resource_consumer:options",
+]
+
+dart_analysis_config(
+    name = "analysis_config",
+    baseline = "analysis_baseline.json",
+    options = [":analysis_options"] + (_TEST_FIXTURE_OPTIONS if _HAS_DART_TESTS else []),
+)

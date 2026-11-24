@@ -1,0 +1,12 @@
+name: ext_exemplar
+environment:
+  sdk: ^3.11.0
+dependencies:
+  sqlite3: ^3.5.2
+  test: ^1.25.0
+  webcrypto: ^0.6.1
+hooks:
+  user_defines:
+    sqlite3:
+      source: source
+      path: external/sqlite3+/sqlite3.c

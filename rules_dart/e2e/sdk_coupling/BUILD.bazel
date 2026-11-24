@@ -1,0 +1,91 @@
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load(
+    "@rules_dart//dart:defs.bzl",
+    "dart_analysis_config",
+    "dart_analysis_options",
+    "dart_analysis_test",
+    "dart_binary",
+    "dart_format",
+    "dart_library",
+    "dart_source_set",
+    "dart_test",
+)
+
+exports_files(["pubspec.lock"])
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    visibility = ["//visibility:public"],
+    deps = ["@very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# The generator, built for the exec platform as a `run_binary` tool.
+dart_binary(
+    name = "part_gen_bin",
+    main = "tools/part_gen.dart",
+)
+
+# 1. Codegen + `copy_tree` (`dart_source_set` -> `dart_library(srcs_dir = ...)`).
+run_binary(
+    name = "message_part",
+    srcs = ["lib/message.dart"],
+    outs = ["lib/message.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/message.dart)",
+        "--output",
+        "$(execpath lib/message.g.dart)",
+    ],
+    tool = ":part_gen_bin",
+)
+
+dart_source_set(
+    name = "message_srcs",
+    srcs = [
+        "lib/message.dart",
+        ":message_part",
+    ],
+)
+
+dart_library(
+    name = "message_lib",
+    package_name = "sdk_coupling_staged",
+    language_version = "3.11",
+    srcs_dir = ":message_srcs",
+)
+
+# 2. Explicit `dart_analysis_test` and `dart_format` targets alongside the
+# `.bazelrc`-enabled `dart_analyze` aspect (`+dart_analyze,+dart_format`).
+dart_analysis_test(
+    name = "analysis_test",
+    size = "small",
+    targets = [":part_gen_bin"],
+)
+
+dart_format(
+    name = "format",
+)
+
+# 3. Target test running on `target_dart` while all build tools ran on
+# `exec_dart`. The test reads its expected version from the `target_dart` SDK.
+dart_test(
+    name = "sdk_coupling_test",
+    size = "small",
+    args = ["$(rlocationpath @target_dart_toolchains//sdk/default:dart)"],
+    data = [
+        "@target_dart_toolchains//sdk/default:compile_files",
+        "@target_dart_toolchains//sdk/default:dart",
+    ],
+    main = "test/sdk_coupling_test.dart",
+    deps = [
+        ":message_lib",
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)

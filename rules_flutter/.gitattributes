@@ -1,0 +1,29 @@
+# Exclude development-only files from release archives.
+#
+# `release_prep.sh` archives this directory alone (`git archive <tag>` run in
+# rules_flutter/), so every pattern is relative to rules_flutter/. Each is
+# anchored with a leading `/`. Without one, `git archive` matches the basename
+# at any depth, so an unanchored `e2e/` would also strip any nested `e2e/`
+# directory and the published archive could fail to load.
+#
+# `/e2e/*` leaves out every e2e workspace but `e2e/smoke`, which the registry
+# entry (`.bcr/rules_flutter/presubmit.yml` at the repository root) names as
+# `module_path`: the registry resolves it inside the extracted archive. A new
+# workspace is left out without a line here (the whole tree is 12MB against a
+# 1.2MB archive, so the exclusions are what keep the download small).
+/.claude/ export-ignore
+/.devcontainer/ export-ignore
+/.github/ export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/.pre-commit-config.yaml export-ignore
+/.typos.toml export-ignore
+/ai-docs/ export-ignore
+/dev/ export-ignore
+/tests/rules_testing/ export-ignore
+/references/ export-ignore
+/tools/BUILD.bazel export-ignore
+/tools/changelog/ export-ignore
+/e2e/* export-ignore
+/e2e/smoke -export-ignore
+/e2e/smoke/.bazelrc.checkout export-ignore

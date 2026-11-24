@@ -1,0 +1,35 @@
+"E2e test: dart_build_runner runs a builder over a package that imports Flutter, and writes what stock `dart run build_runner build` writes"
+
+module(name = "rules_flutter_build_runner_e2e")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//go_router_pkg:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_sky_engine", "flutter_toolchains")
+
+register_toolchains("@flutter_toolchains//:all")
+
+# The same lock through the Dart pub extension, for the build_runner runner:
+# its hub compiles `build_runner` and the builders of the lock.
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "build_deps",
+    lock = "//go_router_pkg:pubspec.lock",
+)
+use_repo(pub, "build_deps")

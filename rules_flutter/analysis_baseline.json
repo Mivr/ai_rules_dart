@@ -1,0 +1,510 @@
+{
+  "flutter/private/dartdev_patch/patch.dart": {
+    "sort_constructors_first": 1
+  },
+  "flutter/private/dartdev_patch/patch_test.dart": {
+    "prefer_const_declarations": 3
+  },
+  "flutter/private/tools/android_bundle.dart": {
+    "always_put_required_named_parameters_first": 1,
+    "avoid_catching_errors": 1,
+    "avoid_redundant_argument_values": 2
+  },
+  "flutter/private/tools/bazel_test_protocol.dart": {
+    "comment_references": 5
+  },
+  "flutter/private/tools/bundle_app.dart": {
+    "avoid_dynamic_calls": 12,
+    "avoid_redundant_argument_values": 1
+  },
+  "flutter/private/tools/code_resources.dart": {
+    "dangling_library_doc_comments": 1
+  },
+  "flutter/private/tools/crc32.dart": {
+    "parameter_assignments": 1
+  },
+  "flutter/private/tools/defines_files.dart": {
+    "no_wall_clock_in_actions": 1
+  },
+  "flutter/private/tools/extract_library_tags.dart": {
+    "parameter_assignments": 6,
+    "prefer_final_locals": 2,
+    "unnecessary_raw_strings": 1,
+    "unnecessary_string_escapes": 1
+  },
+  "flutter/private/tools/flutter_drive_common.dart": {
+    "process_requires_environment": 1
+  },
+  "flutter/private/tools/flutter_drive_ios.dart": {
+    "no_wall_clock_in_actions": 2,
+    "process_requires_environment": 1
+  },
+  "flutter/private/tools/flutter_drive_runner.dart": {
+    "no_wall_clock_in_actions": 2
+  },
+  "flutter/private/tools/flutter_integration_test_android.dart": {
+    "async_return_with_no_await": 1,
+    "avoid_catching_errors": 1,
+    "avoid_redundant_argument_values": 1,
+    "no_wall_clock_in_actions": 6
+  },
+  "flutter/private/tools/flutter_integration_test_ios.dart": {
+    "async_return_with_no_await": 1,
+    "no_wall_clock_in_actions": 2,
+    "process_requires_environment": 1
+  },
+  "flutter/private/tools/flutter_integration_test_launcher.dart": {
+    "comment_references": 1,
+    "no_home_env_reads": 1,
+    "no_wall_clock_in_actions": 1
+  },
+  "flutter/private/tools/flutter_integration_test_runner.dart": {
+    "always_put_required_named_parameters_first": 4,
+    "annotate_overrides": 3,
+    "async_return_with_no_await": 2,
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_escaping_inner_quotes": 1,
+    "cast_nullable_to_non_nullable": 1,
+    "comment_references": 1,
+    "leading_newlines_in_multiline_strings": 1,
+    "no_dynamic_casts": 2,
+    "no_wall_clock_in_actions": 4,
+    "prefer_initializing_formals": 4,
+    "unnecessary_async": 1
+  },
+  "flutter/private/tools/flutter_integration_test_web_serve.dart": {
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_catching_errors": 1,
+    "omit_obvious_local_variable_types": 1
+  },
+  "flutter/private/tools/flutter_test_coverage.dart": {
+    "use_null_aware_elements": 1
+  },
+  "flutter/private/tools/flutter_test_runner.dart": {
+    "always_put_required_named_parameters_first": 8,
+    "annotate_overrides": 3,
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_catching_errors": 2,
+    "avoid_escaping_inner_quotes": 1,
+    "cast_nullable_to_non_nullable": 1,
+    "close_sinks": 1,
+    "comment_references": 1,
+    "dangling_library_doc_comments": 1,
+    "no_wall_clock_in_actions": 4,
+    "prefer_const_constructors": 1,
+    "process_requires_environment": 1
+  },
+  "flutter/private/tools/ios_simulator_boot.dart": {
+    "avoid_dynamic_calls": 2,
+    "avoid_print": 1,
+    "curly_braces_in_flow_control_structures": 1,
+    "inference_failure_on_collection_literal": 1,
+    "no_dynamic_casts": 2,
+    "process_requires_environment": 1,
+    "sort_constructors_first": 8,
+    "unnecessary_raw_strings": 2,
+    "unreachable_from_main": 1
+  },
+  "flutter/private/tools/kernel_filter.dart": {
+    "avoid_redundant_argument_values": 1,
+    "prefer_foreach": 1,
+    "prefer_single_quotes": 1,
+    "process_requires_environment": 1,
+    "unintended_html_in_doc_comment": 3,
+    "unnecessary_raw_strings": 2
+  },
+  "flutter/private/tools/macho_cli.dart": {
+    "dangling_library_doc_comments": 1
+  },
+  "flutter/private/tools/macho_codesign.dart": {
+    "avoid_redundant_argument_values": 25,
+    "dangling_library_doc_comments": 1,
+    "noop_primitive_operations": 1,
+    "prefer_constructors_over_static_methods": 1
+  },
+  "flutter/private/tools/macho_constants.dart": {
+    "dangling_library_doc_comments": 1
+  },
+  "flutter/private/tools/macho_copy.dart": {
+    "comment_references": 1,
+    "dangling_library_doc_comments": 1,
+    "directives_ordering": 1
+  },
+  "flutter/private/tools/macho_fat.dart": {
+    "avoid_redundant_argument_values": 14,
+    "dangling_library_doc_comments": 1,
+    "sort_constructors_first": 1
+  },
+  "flutter/private/tools/macho_framework.dart": {
+    "comment_references": 1,
+    "dangling_library_doc_comments": 1,
+    "sort_constructors_first": 1,
+    "use_raw_strings": 1
+  },
+  "flutter/private/tools/macho_parse.dart": {
+    "comment_references": 2,
+    "dangling_library_doc_comments": 1,
+    "sort_constructors_first": 1
+  },
+  "flutter/private/tools/macho_patch.dart": {
+    "avoid_redundant_argument_values": 1,
+    "comment_references": 1,
+    "dangling_library_doc_comments": 1,
+    "type_annotate_public_apis": 2
+  },
+  "flutter/private/tools/macho_ranges.dart": {
+    "dangling_library_doc_comments": 1
+  },
+  "flutter/private/tools/macho_strip.dart": {
+    "comment_references": 2,
+    "dangling_library_doc_comments": 1,
+    "noop_primitive_operations": 1
+  },
+  "flutter/private/tools/macho_stub.dart": {
+    "dangling_library_doc_comments": 1,
+    "directives_ordering": 1
+  },
+  "flutter/private/tools/macho_verify.dart": {
+    "dangling_library_doc_comments": 1,
+    "process_requires_environment": 1
+  },
+  "flutter/private/tools/merge_plists.dart": {
+    "comment_references": 1,
+    "dangling_library_doc_comments": 1,
+    "sort_constructors_first": 3,
+    "unintended_html_in_doc_comment": 2,
+    "unnecessary_raw_strings": 2
+  },
+  "flutter/private/tools/plist_info.dart": {
+    "avoid_redundant_argument_values": 4,
+    "dangling_library_doc_comments": 1,
+    "sort_constructors_first": 1
+  },
+  "flutter/private/tools/plist_parse.dart": {
+    "dangling_library_doc_comments": 1,
+    "sort_constructors_first": 2,
+    "type_annotate_public_apis": 1,
+    "unnecessary_raw_strings": 1
+  },
+  "flutter/private/tools/pub.dart": {
+    "process_requires_environment": 1
+  },
+  "flutter/private/tools/sha256.dart": {
+    "unnecessary_ignore": 1
+  },
+  "flutter/private/tools/test/android_bundle_test.dart": {
+    "directives_ordering": 1,
+    "prefer_function_declarations_over_variables": 2
+  },
+  "flutter/private/tools/test/bazel_test_protocol_test.dart": {
+    "use_null_aware_elements": 2
+  },
+  "flutter/private/tools/test/extract_library_tags_test.dart": {
+    "missing_whitespace_between_adjacent_strings": 2
+  },
+  "flutter/private/tools/test/flutter_integration_test_ios_test.dart": {
+    "async_return_with_no_await": 2,
+    "comment_references": 3,
+    "unnecessary_async": 2
+  },
+  "flutter/private/tools/test/flutter_integration_test_runner_test.dart": {
+    "async_return_with_no_await": 4,
+    "avoid_catches_without_on_clauses": 1,
+    "discarded_futures": 1,
+    "inference_failure_on_collection_literal": 1,
+    "unnecessary_async": 1,
+    "use_raw_strings": 1
+  },
+  "flutter/private/tools/test/flutter_test_runner_test.dart": {
+    "avoid_escaping_inner_quotes": 2,
+    "close_sinks": 1,
+    "inference_failure_on_collection_literal": 1,
+    "unnecessary_async": 1
+  },
+  "flutter/private/tools/test/ios_simulator_boot_test.dart": {
+    "async_return_with_no_await": 1,
+    "avoid_redundant_argument_values": 5,
+    "sort_constructors_first": 3,
+    "type_annotate_public_apis": 1
+  },
+  "flutter/private/tools/test/kernel_filter_test.dart": {
+    "async_return_with_no_await": 1,
+    "avoid_escaping_inner_quotes": 1,
+    "prefer_single_quotes": 6,
+    "unnecessary_async": 1,
+    "use_null_aware_elements": 1
+  },
+  "flutter/private/tools/test/macho_edit_test.dart": {
+    "avoid_js_rounded_ints": 2,
+    "avoid_redundant_argument_values": 76,
+    "avoid_single_cascade_in_expression_statements": 1,
+    "directives_ordering": 1,
+    "no_leading_underscores_for_local_identifiers": 14,
+    "noop_primitive_operations": 1,
+    "prefer_const_constructors": 28,
+    "prefer_const_declarations": 2,
+    "unnecessary_raw_strings": 1
+  },
+  "flutter/private/tools/test/macho_payload_floor_test.dart": {
+    "dangling_library_doc_comments": 1,
+    "prefer_const_constructors": 1,
+    "prefer_const_declarations": 1,
+    "specify_nonobvious_property_types": 1
+  },
+  "flutter/private/tools/test/macho_section_type_test.dart": {
+    "dangling_library_doc_comments": 1
+  },
+  "flutter/private/tools/test/macho_test_support.dart": {
+    "dangling_library_doc_comments": 1,
+    "prefer_const_constructors": 2,
+    "prefer_foreach": 1
+  },
+  "flutter/private/tools/test/merge_plists_test.dart": {
+    "avoid_escaping_inner_quotes": 2
+  },
+  "flutter/private/tools/test/run_home_test.dart": {
+    "specify_nonobvious_property_types": 2
+  },
+  "flutter/private/tools/test/web_guard_test.dart": {
+    "prefer_single_quotes": 1
+  },
+  "flutter/private/tools/test/web_template_test.dart": {
+    "avoid_escaping_inner_quotes": 1,
+    "use_raw_strings": 2
+  },
+  "flutter/private/tools/test/xtool_pack_test.dart": {
+    "avoid_redundant_argument_values": 16,
+    "directives_ordering": 1,
+    "leading_newlines_in_multiline_strings": 1,
+    "prefer_const_constructors": 6,
+    "use_raw_strings": 1
+  },
+  "flutter/private/tools/test_support.dart": {
+    "avoid_bool_literals_in_conditional_expressions": 1,
+    "avoid_catching_errors": 1,
+    "cast_nullable_to_non_nullable": 1
+  },
+  "flutter/private/tools/web_guard.dart": {
+    "async_return_with_no_await": 1,
+    "avoid_redundant_argument_values": 1,
+    "prefer_foreach": 1,
+    "prefer_single_quotes": 1,
+    "process_requires_environment": 1,
+    "unintended_html_in_doc_comment": 3
+  },
+  "flutter/private/tools/web_template.dart": {
+    "comment_references": 3,
+    "no_wall_clock_in_actions": 1,
+    "omit_obvious_local_variable_types": 1,
+    "process_requires_environment": 2,
+    "sort_constructors_first": 5,
+    "unnecessary_brace_in_string_interps": 1
+  },
+  "flutter/private/tools/xtool_bundle.dart": {
+    "avoid_redundant_argument_values": 3,
+    "dangling_library_doc_comments": 1,
+    "parameter_assignments": 2,
+    "prefer_foreach": 1,
+    "sort_constructors_first": 2
+  },
+  "flutter/private/tools/xtool_framework.dart": {
+    "avoid_redundant_argument_values": 4,
+    "dangling_library_doc_comments": 1
+  },
+  "flutter/private/tools/xtool_hash.dart": {
+    "avoid_redundant_argument_values": 8,
+    "dangling_library_doc_comments": 1
+  },
+  "flutter/private/tools/xtool_pack.dart": {
+    "always_put_required_named_parameters_first": 1,
+    "avoid_catching_errors": 1,
+    "parameter_assignments": 3,
+    "type_annotate_public_apis": 1,
+    "unintended_html_in_doc_comment": 5
+  },
+  "flutter/private/tools/xtool_runner.dart": {
+    "always_put_required_named_parameters_first": 3,
+    "dangling_library_doc_comments": 1,
+    "sort_constructors_first": 1
+  },
+  "flutter/private/tools/xtool_stub.dart": {
+    "always_put_required_named_parameters_first": 1,
+    "dangling_library_doc_comments": 1
+  },
+  "flutter/private/tools/zip_reader.dart": {
+    "comment_references": 4,
+    "dangling_library_doc_comments": 1,
+    "parameter_assignments": 3,
+    "prefer_const_constructors": 1,
+    "sort_constructors_first": 1
+  },
+  "flutter/private/tools/zip_writer.dart": {
+    "avoid_redundant_argument_values": 1,
+    "comment_references": 1,
+    "dangling_library_doc_comments": 1,
+    "prefer_foreach": 1,
+    "sort_constructors_first": 1,
+    "specify_nonobvious_property_types": 2,
+    "type_annotate_public_apis": 2,
+    "unnecessary_parenthesis": 3
+  },
+  "flutter/tests/analyze_fixture/lib/geometry.dart": {
+    "public_member_api_docs": 2
+  },
+  "flutter/tests/analyze_plugin_fixture/lib/selection.dart": {
+    "public_member_api_docs": 2
+  },
+  "flutter/tests/dbg_assert_fixture/lib/assert_helper.dart": {
+    "public_member_api_docs": 2
+  },
+  "flutter/tests/dbg_assert_fixture/test/modular_dbg_assert_test.dart": {
+    "avoid_catching_errors": 3,
+    "unnecessary_ignore": 1
+  },
+  "flutter/tests/flutter_test_analyze_fixture/fake_test_api/lib/backend.dart": {
+    "avoid_futureor_void": 1,
+    "close_sinks": 1,
+    "public_member_api_docs": 4
+  },
+  "flutter/tests/icon_tree_shake_fixture/cond_icons/lib/src/icon_vm.dart": {
+    "implementation_imports": 1,
+    "public_member_api_docs": 1
+  },
+  "flutter/tests/icon_tree_shake_fixture/cond_icons/lib/src/icon_web.dart": {
+    "implementation_imports": 1,
+    "public_member_api_docs": 1
+  },
+  "flutter/tests/icon_tree_shake_fixture/lib/foundation.dart": {
+    "do_not_use_environment": 2,
+    "public_member_api_docs": 3
+  },
+  "flutter/tests/icon_tree_shake_fixture/lib/material.dart": {
+    "public_member_api_docs": 10
+  },
+  "flutter/tests/icon_tree_shake_fixture/lib/src/widgets/icon_data.dart": {
+    "public_member_api_docs": 7
+  },
+  "flutter/tests/ios_integration_dep/lib/stub.dart": {
+    "public_member_api_docs": 1
+  },
+  "flutter/tests/lib/dependency_floors_lib.dart": {
+    "avoid_positional_boolean_parameters": 1,
+    "public_member_api_docs": 2
+  },
+  "flutter/tests/lint_baseline_fixture/lib/green.dart": {
+    "avoid_print": 2
+  },
+  "flutter/tests/linux_integration_dep/lib/stub.dart": {
+    "public_member_api_docs": 1
+  },
+  "flutter/tests/macos_framework_layout_test.dart": {
+    "avoid_redundant_argument_values": 5,
+    "sort_constructors_first": 1,
+    "use_raw_strings": 1
+  },
+  "flutter/tests/objc_registrant_drift_test.dart": {
+    "parameter_assignments": 3
+  },
+  "flutter/tests/resources_fixture/lib/fixture.dart": {
+    "unnecessary_library_directive": 1,
+    "unnecessary_library_name": 1
+  },
+  "tools/changelog/check_commit_messages.dart": {
+    "async_return_with_no_await": 1,
+    "parameter_assignments": 1,
+    "process_requires_environment": 1,
+    "specify_nonobvious_property_types": 1,
+    "unnecessary_raw_strings": 5
+  },
+  "tools/e2e_runner/lib/runner.dart": {
+    "no_wall_clock_in_actions": 1,
+    "process_requires_environment": 4
+  },
+  "tools/e2e_runner/lib/staging.dart": {
+    "process_requires_environment": 1
+  },
+  "tools/repo_contents_cache/bazel_fetch.dart": {
+    "process_requires_environment": 1
+  },
+  "tools/repo_contents_cache/check_repo_contents_cache.dart": {
+    "no_wall_clock_in_actions": 1
+  },
+  "tools/update_flutter_version/artifact_list.dart": {
+    "sort_constructors_first": 1,
+    "specify_nonobvious_property_types": 1
+  },
+  "tools/update_flutter_version/main.dart": {
+    "avoid_print": 13,
+    "process_requires_environment": 1
+  },
+  "tools/update_flutter_version/shader_flags.dart": {
+    "no_adjacent_strings_in_list": 1,
+    "unnecessary_raw_strings": 2
+  },
+  "tools/update_flutter_version/test/artifact_list_test.dart": {
+    "specify_nonobvious_property_types": 2
+  },
+  "tools/update_flutter_version/test/shader_flags_test.dart": {
+    "no_adjacent_strings_in_list": 1
+  },
+  "tools/update_flutter_version/version_update.dart": {
+    "async_return_with_no_await": 1,
+    "avoid_catches_without_on_clauses": 2,
+    "avoid_print": 19,
+    "avoid_redundant_argument_values": 5,
+    "comment_references": 1,
+    "no_wall_clock_in_actions": 1,
+    "process_requires_environment": 6
+  },
+  "tools/vm/create_linux_vm.dart": {
+    "avoid_print": 18,
+    "leading_newlines_in_multiline_strings": 1,
+    "no_wall_clock_in_actions": 3
+  },
+  "tools/vm/create_windows_vm.dart": {
+    "avoid_print": 23,
+    "no_wall_clock_in_actions": 1,
+    "unintended_html_in_doc_comment": 2
+  },
+  "tools/vm/deploy_bundle.dart": {
+    "avoid_catches_without_on_clauses": 6,
+    "avoid_print": 25,
+    "avoid_redundant_argument_values": 1,
+    "no_wall_clock_in_actions": 2,
+    "prefer_const_declarations": 2,
+    "process_requires_environment": 3,
+    "unintended_html_in_doc_comment": 2,
+    "use_raw_strings": 9
+  },
+  "tools/vm/deploy_bundle_test.dart": {
+    "use_raw_strings": 2
+  },
+  "tools/vm/gcloud.dart": {
+    "async_return_with_no_await": 2,
+    "avoid_catches_without_on_clauses": 1,
+    "no_wall_clock_in_actions": 2,
+    "process_requires_environment": 2,
+    "unnecessary_async": 2
+  },
+  "tools/vm/gcloud_test.dart": {
+    "dangling_library_doc_comments": 1
+  },
+  "tools/vm/hermetic_dart.dart": {
+    "process_requires_environment": 2
+  },
+  "tools/vm/run_e2e.dart": {
+    "avoid_print": 3,
+    "no_wall_clock_in_actions": 4,
+    "prefer_single_quotes": 1,
+    "process_requires_environment": 4,
+    "unintended_html_in_doc_comment": 1,
+    "use_raw_strings": 10
+  },
+  "tools/vm/vm_deploy.dart": {
+    "avoid_escaping_inner_quotes": 1,
+    "prefer_single_quotes": 2
+  },
+  "tools/vm/vm_e2e.dart": {
+    "avoid_positional_boolean_parameters": 2
+  }
+}

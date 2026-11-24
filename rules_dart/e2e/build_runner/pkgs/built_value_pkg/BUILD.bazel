@@ -1,0 +1,39 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+load("//:reference.bzl", "stock_reference_test")
+
+OUTS = [
+    "lib/src/book.g.dart",
+    "lib/src/serializers.g.dart",
+    "lib/src/shelf.g.dart",
+]
+
+dart_build_runner(
+    name = "gen",
+    outs = OUTS,
+    runner = "@pub_deps//build_runner",
+    deps = [
+        "@pub_deps//:built_collection",
+        "@pub_deps//:built_value",
+    ],
+)
+
+dart_library(
+    name = "built_value_pkg",
+    package_name = "built_value_pkg",
+    srcs = glob(
+        ["lib/**/*.dart"],
+        exclude = OUTS,
+    ) + [":" + o for o in OUTS if o.startswith("lib/")],
+    language_version = "3.13",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pub_deps//:built_collection",
+        "@pub_deps//:built_value",
+    ],
+)
+
+stock_reference_test(
+    name = "stock_test",
+    outs = OUTS,
+    package = "built_value_pkg",
+)

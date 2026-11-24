@@ -1,0 +1,16 @@
+name: federated_greeting
+version: 0.0.1
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  federated_greeting_android:
+    path: ../federated_greeting_android
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        default_package: federated_greeting_android

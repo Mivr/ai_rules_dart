@@ -1,0 +1,17 @@
+name: spm_graph_plugin
+description: E2e fixture proving a transitive SwiftPM graph (swift-algorithms through swift-numerics down to a C shim) links into a plugin's Apple library.
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: SpmGraphPlugin

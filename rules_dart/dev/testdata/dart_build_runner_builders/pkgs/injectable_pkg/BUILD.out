@@ -1,0 +1,29 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+
+dart_library(
+    name = "injectable_pkg",
+    package_name = "injectable_pkg",
+    srcs = [
+        "lib/injection.dart",
+        "lib/src/data/http_client.dart",
+        "lib/src/domain/user_service.dart",
+        ":lib/injection.config.dart",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//pkgs/injectable_micro",
+        "@pub_deps//:get_it",
+        "@pub_deps//:injectable",
+    ],
+)
+
+dart_build_runner(
+    name = "gen",
+    outs = ["lib/injection.config.dart"],
+    runner = "@pub_deps//build_runner",
+    deps = [
+        "//pkgs/injectable_micro",
+        "@pub_deps//:get_it",
+        "@pub_deps//:injectable",
+    ],
+)

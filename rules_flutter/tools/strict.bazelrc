@@ -1,0 +1,52 @@
+# Strict incompatible-flag set: `bazel test --config=strict //...`.
+#
+# Every boolean `--incompatible_*` flag that Bazel 9.3.0 still defaults to
+# false is listed below, so a flag Bazel flips by default is tested before it
+# flips. `@bazelrc-preset.bzl//:strict` is not used: it gates every entry on
+# Bazel 8.0.0 or newer within the same major, so it emits nothing on Bazel 9.x.
+#
+# CI's `strict` job runs this config; it is non-blocking until the burn-in
+# ends on 2026-11-14.
+#
+# Left out on purpose: the flags below fail inside a dependency, so setting
+# one breaks `//...` for every developer until the dependency moves. Each was
+# measured with `bazel build --nobuild --keep_going <flag> //...`:
+#
+#   --incompatible_no_rule_outputs_param
+#       @rules_apple: apple/internal/environment_plist.bzl:88 calls `rule()`
+#       with `outputs`; every load of @rules_apple//apple fails.
+#   --incompatible_disable_target_default_provider_fields
+#       @bazel_lib: lib/private/write_source_file.bzl:442 reads
+#       `ctx.attr.in_file.files` (target //tools:preset.update). Also
+#       @buildifier_prebuilt: buildifier/buildifier_binary.bzl:15 reads
+#       `runner.files` (@buildifier_prebuilt//buildifier:buildifier), and
+#       @rules_apple: apple/internal/apple_toolchains.bzl:129
+#       (@rules_apple//apple/internal:mac_tools_toolchain).
+#   --incompatible_stop_exporting_build_file_path
+#       @bazel_lib: lib/private/diff_test.bzl:89 reads `ctx.build_file_path`
+#       (target //tools:preset.update_test), and lib/private/run_binary.bzl
+#       through expand_variables.bzl:84 (@llvm//runtimes/libcxx:c++).
+#   --incompatible_stop_exporting_language_modules
+#       @with_cfg.bzl: with_cfg/private/rule_defaults.bzl:24 and :31-33 use
+#       `CcToolchainConfigInfo` and `apple_common`, and @llvm:
+#       toolchain/runtimes/cc_runtime_shared_library.bzl:4 loads them in turn.
+#       First-party, flutter/tests/ios_test.bzl:191 builds a fake
+#       `apple_common.XcodeVersionConfig`, which this flag also refuses.
+common:strict --incompatible_auto_exec_groups
+common:strict --incompatible_check_external_repo_source_dir_package_boundary
+common:strict --incompatible_check_testonly_for_output_files
+common:strict --incompatible_config_setting_private_default_visibility
+common:strict --incompatible_default_to_explicit_init_py
+common:strict --incompatible_disable_native_android_rules
+common:strict --incompatible_disable_native_apple_binary_rule
+common:strict --incompatible_disable_non_executable_java_binary
+common:strict --incompatible_disable_starlark_host_transitions
+common:strict --incompatible_disallow_sdk_frameworks_attributes
+common:strict --incompatible_enable_apple_toolchain_resolution
+common:strict --incompatible_no_implicit_file_export
+common:strict --incompatible_objc_alwayslink_by_default
+common:strict --incompatible_python_disallow_native_rules
+common:strict --incompatible_remote_local_fallback_for_remote_cache
+common:strict --incompatible_resolve_select_keys_eagerly
+common:strict --incompatible_strip_executable_safely
+common:strict --incompatible_use_cc_configure_from_rules_cc

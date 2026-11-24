@@ -1,50 +1,13 @@
-# See CONTRIBUTING.md for instructions.
-# Hooks run with prek (https://github.com/j178/prek), which reads this
-# pre-commit format. See https://pre-commit.com/hooks.html for more hooks
-# The commit message check runs in commit-msg stage
-# but we don't want to run the other hooks on commit messages
+# Hooks for the files at the repository root. prek runs this file and, in
+# workspace mode, the .pre-commit-config.yaml of each module (rules_dart/,
+# rules_flutter/) in that module's directory, with paths relative to it, so
+# each module keeps its own hooks. `prek install -f` at the root installs
+# both stages for all of them.
 default_stages: [pre-commit]
-# One `prek install` sets up both stages
 default_install_hook_types: [pre-commit, commit-msg]
-# Use a slightly older version of node by default
-# as the default uses a very new version of GLIBC
-default_language_version:
-  node: 16.18.0
 repos:
-  - repo: meta
-    hooks:
-      - id: check-hooks-apply
-      - id: check-useless-excludes
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-      - id: check-executables-have-shebangs
-      - id: check-shebang-scripts-are-executable
-      - id: check-toml
-      - id: check-yaml
-      - id: destroyed-symlinks
-      - id: detect-private-key
-      # Vendored third-party code, kept byte-for-byte as the SDK ships it.
-      # The git bundle below is a binary fixture: rewriting its bytes would
-      # corrupt it.
-      - id: end-of-file-fixer
-        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
-      - id: trailing-whitespace
-        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
-  # Check formatting and lint for starlark code. This is the only buildifier
-  # entry point; both hooks read the warning set from the root
-  # `.buildifier.json`. The format hook runs with `-lint=off`, so formatting
-  # never rewrites a lint finding; the lint hook keeps its upstream
-  # `-lint=warn` default and reports findings against that warning set. Keep
-  # `rev` on the same buildifier version (first three components) as the
-  # `buildifier_prebuilt` dev dependency in `MODULE.bazel`.
-  - repo: https://github.com/keith/pre-commit-buildifier
-    rev: 10.1.0
-    hooks:
-      - id: buildifier
-        args: [-lint=off]
-      - id: buildifier-lint
-  # Lint the GitHub workflows with pinned actionlint and ShellCheck releases.
+  # Lint the rules_dart GitHub workflows (the ones rules_dart linted before
+  # the merge) with pinned actionlint and ShellCheck releases.
   # The hook downloads each platform's archive from its release only when the
   # cache is empty, verifies its sha256 against the pinned checksum below (an
   # unknown platform or a missing checksum fails closed), then lints every
@@ -99,46 +62,18 @@ repos:
           }
           al_bin="$(fetch "${al_base}" "${al_asset}" "${al_want}" "" "actionlint${exe}")"
           sc_bin="$(fetch "${sc_base}" "${sc_asset}" "${sc_want}" "${sc_subdir}" "shellcheck${exe}")"
-          "${al_bin}" -shellcheck="${sc_bin}" -pyflakes= .github/workflows/*.yaml
+          "${al_bin}" -shellcheck="${sc_bin}" -pyflakes= .github/workflows/dart-*.yaml
           ' _
         language: system
-        files: ^\.github/workflows/[^/]+\.ya?ml$
+        files: ^\.github/workflows/dart-[^/]+\.ya?ml$
         pass_filenames: false
-  # The release gate script's test: a fake gh on PATH, no network, seconds.
+  # The release script's test: fakes for bazel and curl on PATH and a real git
+  # repository of two modules, no network, seconds.
   - repo: local
     hooks:
-      - id: release-gate-test
-        name: release gate tests
-        entry: bash .github/workflows/release_gate_test.sh
-        language: system
-        files: ^\.github/workflows/release_gate(_test)?\.sh$
-        pass_filenames: false
       - id: release-prep-test
         name: release prep tests
         entry: bash .github/workflows/release_prep_test.sh
         language: system
         files: ^\.github/workflows/release_prep(_test)?\.sh$
         pass_filenames: false
-  # Enforce the commit message policy in AGENTS.md: a conventional-commit
-  # subject and the `Changelog:` trailer rules
-  - repo: local
-    hooks:
-      - id: commit-message
-        name: commit message policy
-        entry: bash -c 'cd tools && exec bazel run --ui_event_filters=-info --noshow_progress --show_result=0 //changelog:check -- "$@"' _
-        language: system
-        stages: [commit-msg]
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: v3.1.0
-    hooks:
-      - id: prettier
-        exclude: ^third_party/dart_linter/
-  - repo: https://github.com/google/yamlfmt
-    rev: v0.21.0
-    hooks:
-      - id: yamlfmt
-  - repo: https://github.com/crate-ci/typos
-    rev: v1.51.1
-    hooks:
-      - id: typos
-        exclude: ^third_party/dart_linter/

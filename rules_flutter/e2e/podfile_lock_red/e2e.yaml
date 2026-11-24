@@ -1,0 +1,9 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: tab-indented Podfile.lock fails at hub evaluation
+    run: bazel query @red_deps//...
+    expect:
+      non_zero: true
+      output_contains:
+        - "cannot read YAML: Error: YAML parsing error in file"
+        - ":Podfile.lock' at line 2, column 1"

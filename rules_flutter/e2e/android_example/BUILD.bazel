@@ -1,0 +1,350 @@
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app", "flutter_android_bundle_test")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_bundle", "flutter_android_pin")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load("@rules_flutter//flutter:web.bzl", "flutter_web_bundle")
+
+exports_files(["pubspec.lock"])
+
+# =============================================================================
+# Shared: Flutter application (Dart compilation)
+# =============================================================================
+
+# Native FFI library. The app's Dart payload is built for each of the app's ABIs, and this library
+# with it, by the Android NDK's toolchain.
+cc_library(
+    name = "add_cc",
+    srcs = ["native/add.c"],
+    hdrs = ["native/add.h"],
+)
+
+cc_shared_library(
+    name = "add",
+    deps = [":add_cc"],
+)
+
+flutter_application(
+    name = "app_flutter",
+    package_name = "android_example",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    native_deps = [":add"],
+    pub_packages = "@deps//packages",
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+# =============================================================================
+# The Android app
+#
+# The Android side is the app's stock Android project (android/, as
+# `flutter create --platforms=android .` writes it), built from its pinned
+# Gradle model: `bazel run //:android_pin` writes android_model.json. A build
+# is one variant of that project, as with `flutter build apk --debug`,
+# `--profile` and `--release`.
+# =============================================================================
+
+flutter_android_pin(name = "android_pin")
+
+# The debug build: `//:app` as split APKs, `//:app_apk` as one APK, `bazel run //:app_install`.
+flutter_android_app(
+    name = "app",
+    application = ":app_flutter",
+)
+
+# The profile build: the AOT library, the profile engine, the profile manifest (INTERNET for the VM
+# service).
+flutter_android_app(
+    name = "app_profile",
+    abis = [
+        "arm64-v8a",
+        "x86_64",
+    ],
+    application = ":app_flutter",
+    variant = "profile",
+)
+
+# The app's Dart payload for Android with the size analysis of gen_snapshot.
+flutter_android_bundle(
+    name = "app_analyze_size",
+    analyze_size = True,
+    application = ":app_flutter",
+    flutter_mode = "release",
+)
+
+# =============================================================================
+# Release builds (what a release engineer ships)
+#
+# `:app_release` carries the three release flags; `:app_release_plain` is the
+# same program with all three off, so the symbols test cannot pass vacuously.
+# `tree_shake_icons` defaults to True, so the twin turns it off explicitly to
+# carry the full MaterialIcons font. Each application has its own
+# `package_name` so two applications in one package do not share outputs.
+# `//:app_release_apk` is the APK, `//:app_release_bundle` the app bundle,
+# `//:app_release_mapping` R8's mapping file, `//:app_release_debug_info` and
+# `//:app_release_obfuscation_map` the Dart symbols and the obfuscation map.
+# =============================================================================
+
+flutter_application(
+    name = "app_flutter_release",
+    package_name = "android_example_release",
+    srcs = ["lib/release_main.dart"],
+    main = "lib/release_main.dart",
+    obfuscate = True,
+    pub_packages = "@deps//packages",
+    split_debug_info = True,
+    tree_shake_icons = True,
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+flutter_application(
+    name = "app_flutter_release_plain",
+    package_name = "android_example_release_plain",
+    srcs = ["lib/release_main.dart"],
+    main = "lib/release_main.dart",
+    obfuscate = False,
+    pub_packages = "@deps//packages",
+    split_debug_info = False,
+    tree_shake_icons = False,
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+flutter_android_app(
+    name = "app_release",
+    abis = ["arm64-v8a"],
+    application = ":app_flutter_release",
+    variant = "release",
+)
+
+flutter_android_app(
+    name = "app_release_plain",
+    abis = ["arm64-v8a"],
+    application = ":app_flutter_release_plain",
+    variant = "release",
+)
+
+# =============================================================================
+
+flutter_web_bundle(
+    name = "app_web",
+    package_name = "android_example",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = glob(["web/**"]),
+    deps = ["@deps//:flutter"],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+build_test(
+    name = "android_app_build_test",
+    size = "small",
+    targets = [
+        ":app",
+        ":app_apk",
+        ":app_bundle",
+    ],
+)
+
+build_test(
+    name = "web_build_test",
+    size = "small",
+    targets = [":app_web"],
+)
+
+# What the debug build holds: the runner and the registrant, the FFI library for every ABI the Dart
+# side builds, the kernel in its own split.
+flutter_android_apk_test(
+    name = "app_apk_test",
+    app = "app",
+    classes = [
+        "Lcom/example/flutterapp/MainActivity;",
+        "Lio/flutter/plugins/GeneratedPluginRegistrant;",
+    ],
+    entries = [
+        "assets/flutter_assets/kernel_blob.bin",
+        "lib/arm64-v8a/libadd.so",
+        "lib/x86_64/libadd.so",
+        "lib/arm64-v8a/libflutter.so",
+    ],
+    split_entries = {"dart": "assets/flutter_assets/kernel_blob.bin"},
+    splits = [
+        "app",
+        "dart",
+    ],
+)
+
+# Opens the profile APK: libapp.so, libflutter.so and the FFI library are there for each ABI, each an
+# ELF of that ABI's machine, with flutter_assets and the engine's Java classes.
+dart_test(
+    name = "verify_android_apk_test",
+    size = "medium",
+    data = [":app_profile_apk"],
+    main = "test/verify_android_apk_test.dart",
+)
+
+# The release app bundle: one AOT library per ABI in the base module, signed with the debug key as
+# the Flutter template's release build type says.
+flutter_android_bundle_test(
+    name = "app_release_bundle_test",
+    absent_entries = ["base/assets/flutter_assets/kernel_blob.bin"],
+    app = "app_release",
+    entries = [
+        "base/lib/arm64-v8a/libapp.so",
+        "base/lib/arm64-v8a/libflutter.so",
+        "BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map",
+    ],
+)
+
+# Opens the release APKs: the obfuscated one has no `MyApp` in `libapp.so`,
+# keeps its symbols in a separate `.symbols` file and ships a subset icon
+# font; the twin keeps all of it.
+dart_test(
+    name = "verify_android_release_symbols_test",
+    size = "medium",
+    srcs = ["test/android_artifact_reader.dart"],
+    data = [
+        ":app_release_apk",
+        ":app_release_debug_info",
+        ":app_release_obfuscation_map",
+        ":app_release_plain_apk",
+    ],
+    main = "test/verify_android_release_symbols_test.dart",
+)
+
+dart_test(
+    name = "verify_android_analyze_size_test",
+    size = "medium",
+    data = [":app_analyze_size"],
+    main = "test/verify_android_analyze_size_test.dart",
+)
+
+dart_test(
+    name = "verify_android_app_test",
+    size = "large",
+    data = [":app_apk"],
+    main = "test/verify_android_app_test.dart",
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+)
+
+# `manual`, so `bazel test //...` never gives it to the analysis aspect; this
+# checks it anyway.
+dart_analysis_test(
+    name = "verify_android_app_test_analysis",
+    size = "small",
+    targets = [":verify_android_app_test"],
+)
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables: each Dart file is checked against the nearest
+# listed one above it.
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Static analysis over this example's Dart. The app rule is a bundle and
+# carries no DartInfo, so the sources are declared once more as a library for
+# the analyzer to stage.
+flutter_library(
+    name = "app_lib",
+    package_name = "android_example",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+# =============================================================================
+# Widget-creation tracking
+# =============================================================================
+
+# Two applications over the same sources and deps that differ only in
+# `track_widget_creation`, each built into a debug APK.
+flutter_application(
+    name = "app_tracked_flutter",
+    package_name = "android_example",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    native_deps = [":add"],
+    pub_packages = "@deps//packages",
+    track_widget_creation = True,
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+flutter_application(
+    name = "app_untracked_flutter",
+    package_name = "android_example",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    native_deps = [":add"],
+    pub_packages = "@deps//packages",
+    track_widget_creation = False,
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+flutter_android_app(
+    name = "app_tracked",
+    abis = ["x86_64"],
+    application = ":app_tracked_flutter",
+)
+
+flutter_android_app(
+    name = "app_untracked",
+    abis = ["x86_64"],
+    application = ":app_untracked_flutter",
+)
+
+# Reads assets/flutter_assets/kernel_blob.bin of both debug APKs: the
+# transformer's creation-location parameter is in the tracked one only.
+dart_test(
+    name = "verify_android_widget_tracking_test",
+    size = "medium",
+    srcs = [
+        "test/android_artifact_reader.dart",
+        "test/apk_reader.dart",
+    ],
+    data = [
+        ":app_tracked_apk",
+        ":app_untracked_apk",
+    ],
+    env = {
+        "TRACKED_APK": "$(rootpath :app_tracked_apk)",
+        "UNTRACKED_APK": "$(rootpath :app_untracked_apk)",
+    },
+    main = "test/verify_android_widget_tracking_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+)

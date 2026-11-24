@@ -1,0 +1,13 @@
+name: federated_plugins
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  fed_alt_linux:
+    path: ../../packages/fed_alt_linux
+  fed_sp:
+    path: ../../packages/fed_sp
+  flutter:
+    sdk: flutter

@@ -1,0 +1,34 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test all targets
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 2
+  - name: a change of pubspec.lock that touches no plugin with an Android side needs no new pin
+    replace_in_files:
+      - path: pubspec.lock
+        from: 'dart: ">=3.13.0 <4.0.0"'
+        to: 'dart: ">=3.12.0 <4.0.0"'
+    run: bazel build //:app_android_pin_check
+  - name: another version of a plugin with an Android side than the pin has fails the build and names it
+    replace_in_files:
+      - path: android_model.json
+        from: '"shared_preferences_android 2.5.4"'
+        to: '"shared_preferences_android 2.5.3"'
+    run: bazel build //:app_android_apk
+    expect:
+      non_zero: true
+      output_contains:
+        - '//:android_model.json is stale: pubspec.lock has other plugins with an Android side than it was written for'
+        - 'shared_preferences_android 2.5.4 (the pin has 2.5.3)'
+        - 'bazel run //:android_pin'
+  - name: a plugin with an Android side that the pin does not have fails the build and names it
+    replace_in_files:
+      - path: android_model.json
+        from: '"shared_preferences_android 2.5.3"'
+        to: '"some_other_plugin 1.0.0"'
+    run: bazel build //:app_android_apk
+    expect:
+      non_zero: true
+      output_contains:
+        - 'shared_preferences_android 2.5.4 (not in the pin)'
+        - 'some_other_plugin 1.0.0 (in the pin, no longer in pubspec.lock)'

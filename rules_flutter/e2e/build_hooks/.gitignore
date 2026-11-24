@@ -1,0 +1,6 @@
+bazel-*
+.bazelrc.user
+.dart_tool/
+.flutter-plugins-dependencies
+.gradle/
+local.properties

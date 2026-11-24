@@ -1,0 +1,62 @@
+"""Hosted-archive escape guard: hostile tarballs must fail their fetch.
+
+Every `flutter.pub` hosted spoke scans its archive with rules_dart's
+header scanner before extracting it, and walks the extracted tree before
+reading it. The archives under `fixtures/` are served over `file://` (the
+locks' `FIXTURES_ROOT` placeholder is rewritten to the absolute path by the
+CI step). `fixtures/api/packages/<name>` is each package's listing, what
+pub.dev serves at that path: planning reads the dependency names there, so
+no hostile archive is opened before its own spoke fetches it. Clean
+packages share one hub; each hostile package gets its own
+hub so its refusal is asserted independently. `ok_app` must stay green —
+including `ok_inlink`, whose in-package relative symlink scans clean and
+is materialised as a regular file. Each hostile app must fail its fetch
+before extraction with the refusal naming the package and the entry.
+"""
+
+module(name = "pub_hosted_escape_e2e")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "ok_deps",
+    lock = "//locks:pubspec.ok.lock",
+)
+flutter.pub(
+    name = "eh_out",
+    lock = "//locks:pubspec.evil_hard_out.lock",
+)
+flutter.pub(
+    name = "eh_in",
+    lock = "//locks:pubspec.evil_hard_in.lock",
+)
+flutter.pub(
+    name = "eabs",
+    lock = "//locks:pubspec.evil_abs.lock",
+)
+flutter.pub(
+    name = "eesc",
+    lock = "//locks:pubspec.evil_esc.lock",
+)
+flutter.pub(
+    name = "ep_abs",
+    lock = "//locks:pubspec.evil_path_abs.lock",
+)
+flutter.pub(
+    name = "ep_dotdot",
+    lock = "//locks:pubspec.evil_path_dotdot.lock",
+)
+use_repo(flutter, "eabs", "eesc", "eh_in", "eh_out", "ep_abs", "ep_dotdot", "ok_deps")

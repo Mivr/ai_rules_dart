@@ -1,0 +1,45 @@
+From bae583e2dc79599a4d479d35e9604fb98e368a06 Mon Sep 17 00:00:00 2001
+From: Aran Donohue <aran@arandonohue.com>
+Date: Thu, 8 Oct 2026 18:06:58 -0700
+Subject: [PATCH] Support app_intents in macos_extension
+
+macOS WidgetKit extensions need App Intents metadata for configurable
+widgets, ControlWidget buttons and interactive Toggle(intent:), but
+macos_extension had no app_intents attribute. Mirror ios_extension: add
+rule_attrs.app_intents_attrs and the app_intents_metadata_bundle_partial.
+---
+ apple/internal/macos_rules.bzl | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/apple/internal/macos_rules.bzl b/apple/internal/macos_rules.bzl
+index 0a2eb678..ad276116 100644
+--- a/apple/internal/macos_rules.bzl
++++ b/apple/internal/macos_rules.bzl
+@@ -857,6 +857,15 @@ def _macos_extension_impl(ctx):
+         fail("Internal Error: Unexpectedly found product_type " + rule_descriptor.product_type)
+ 
+     processor_partials = [
++        partials.app_intents_metadata_bundle_partial(
++            actions = actions,
++            cc_toolchains = cc_toolchain_forwarder,
++            deps = ctx.split_attr.app_intents,
++            label = label,
++            mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
++            platform_prerequisites = platform_prerequisites,
++            json_tool = ctx.attr._json_tool.files_to_run,
++        ),
+         partials.apple_bundle_info_partial(
+             actions = actions,
+             bundle_extension = bundle_extension,
+@@ -2629,6 +2638,9 @@ point (typically expressed through Swift's `@main` attribute).""",
+     attrs = [
+         apple_support.platform_constraint_attrs(),
+         rule_attrs.app_icon_attrs(),
++        rule_attrs.app_intents_attrs(
++            deps_cfg = transition_support.apple_platform_split_transition,
++        ),
+         rule_attrs.binary_linking_attrs(
+             deps_cfg = transition_support.apple_platform_split_transition,
+             extra_deps_aspects = [
+-- 
+2.54.0 (Apple Git-157)

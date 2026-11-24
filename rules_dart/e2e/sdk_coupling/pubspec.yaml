@@ -1,0 +1,5 @@
+name: sdk_coupling_e2e
+environment:
+  sdk: ^3.11.0
+dependencies:
+  test: ^1.25.0

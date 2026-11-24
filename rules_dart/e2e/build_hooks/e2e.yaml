@@ -1,0 +1,13 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 3
+  - name: download_refused
+    run: bazel build //download:refused
+    expect:
+      non_zero: true
+      output_contains:
+        - "The build hook of package:sqlite3 tried to download at build time."
+        - "`hooks: user_defines: sqlite3:`"
+        - 'list "sqlite3" in `hook_network`'

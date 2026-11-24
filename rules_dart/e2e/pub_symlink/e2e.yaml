@@ -1,0 +1,123 @@
+schema: mivr-e2e-spec/1
+# The tar header scan (`dart/pub/private/pub_archive_scan.bzl`) over a local
+# file:// registry. Each hostile hosted hub must fail its fetch before
+# extraction with the refusal naming package, entry path, entry kind and raw
+# target. The git case (`//:app`) is a scratch git remote the first commands
+# create inside the staged workspace, with fixed dates so its commit is the
+# one `pubspec.lock` is pointed at. The nested `cycle` workspace and the
+# `MODULE.bazel.lock` greps stay CI shell steps.
+commands:
+  - name: a scratch git remote whose package smuggles a symlink above its root
+    write_files:
+      evil_remote/evil_pkg/pubspec.yaml: |
+        name: evil_pkg
+        version: 1.0.0
+        environment:
+          sdk: ">=3.0.0 <4.0.0"
+      evil_remote/evil_pkg/lib/ok.dart: |
+        String get ok => "ok";
+    args: [git, init, -q, evil_remote]
+  - name: the symlink
+    args: [ln, -s, ../../outside.txt, evil_remote/evil_pkg/lib/evil.dart]
+  - name: stage it
+    args: [git, -C, evil_remote, add, -A]
+  - name: commit it with fixed identity and dates
+    args:
+      - env
+      - GIT_AUTHOR_NAME=t
+      - GIT_AUTHOR_EMAIL=t@t.t
+      - GIT_COMMITTER_NAME=t
+      - GIT_COMMITTER_EMAIL=t@t.t
+      - GIT_AUTHOR_DATE=2026-01-01T00:00:00Z
+      - GIT_COMMITTER_DATE=2026-01-01T00:00:00Z
+      - git
+      - -C
+      - evil_remote
+      - commit
+      - -q
+      - -m
+      - init
+  - name: the commit is the one the lock names
+    args: [git, -C, evil_remote, rev-parse, HEAD]
+    expect:
+      stdout_contains: b2d5cc1f3280a5c4ec6f48154085bc0a9e51a149
+  - name: clean hosted packages with an in-package symlink stay green
+    replace_in_files:
+      MODULE.bazel:
+        # The git package is cloned and scanned while the extension plans, so
+        # it would fail every build: point `pub_deps` at a clean lock until the
+        # last command.
+        - find: 'lock = "//:pubspec.lock"'
+          replace: 'lock = "//:pubspec.ok.lock"'
+      pubspec.lock:
+        - find: "0000000000000000000000000000000000000000"
+          replace: b2d5cc1f3280a5c4ec6f48154085bc0a9e51a149
+        - find: file:///tmp/pub_symlink_evil
+          replace: file://${WORKSPACE}/evil_remote
+      pubspec.ok.lock:
+        - find: file://FIXTURES_ROOT
+          replace: file://${WORKSPACE}/fixtures
+      pubspec.evil_hard_out.lock:
+        - find: file://FIXTURES_ROOT
+          replace: file://${WORKSPACE}/fixtures
+      pubspec.evil_hard_in.lock:
+        - find: file://FIXTURES_ROOT
+          replace: file://${WORKSPACE}/fixtures
+      pubspec.evil_abs.lock:
+        - find: file://FIXTURES_ROOT
+          replace: file://${WORKSPACE}/fixtures
+      pubspec.evil_esc.lock:
+        - find: file://FIXTURES_ROOT
+          replace: file://${WORKSPACE}/fixtures
+      pubspec.evil_path_abs.lock:
+        - find: file://FIXTURES_ROOT
+          replace: file://${WORKSPACE}/fixtures
+      pubspec.evil_path_dotdot.lock:
+        - find: file://FIXTURES_ROOT
+          replace: file://${WORKSPACE}/fixtures
+    run: bazel build //:ok_app
+  - name: an escaping hard-link is refused
+    run: bazel build //:evil_hard_out_app
+    expect:
+      non_zero: true
+      output_contains: 'pub package "evil_hard_out": hard-link "lib/evil.dart" points at "../../outside.txt"'
+  - name: an in-package hard-link is refused
+    run: bazel build //:evil_hard_in_app
+    expect:
+      non_zero: true
+      output_contains: 'pub package "evil_hard_in": hard-link "lib/evil.dart" points at "lib/ok.dart"'
+  - name: an absolute symlink target is refused
+    run: bazel build //:evil_abs_app
+    expect:
+      non_zero: true
+      output_contains: 'pub package "evil_abs": symlink "lib/evil.dart" escapes the package (points at "/etc/passwd")'
+  - name: an escaping hosted symlink is refused
+    run: bazel build //:evil_esc_app
+    expect:
+      non_zero: true
+      output_contains: 'pub package "evil_esc": symlink "lib/evil.dart" escapes the package (points at "../../outside.txt")'
+  - name: an absolute entry path is refused
+    run: bazel build //:evil_path_abs_app
+    expect:
+      non_zero: true
+      output_contains: 'pub package "evil_path_abs": entry "/abs.dart" escapes the package'
+  - name: a climbing entry path is refused
+    run: bazel build //:evil_path_dotdot_app
+    expect:
+      non_zero: true
+      output_contains: 'pub package "evil_path_dotdot": entry "../outside.dart" escapes the package'
+  - name: an escaping git symlink is refused
+    replace_in_files:
+      MODULE.bazel:
+        - find: |
+            name = "pub_deps",
+                isolated = True,
+                lock = "//:pubspec.ok.lock",
+          replace: |
+            name = "pub_deps",
+                isolated = True,
+                lock = "//:pubspec.lock",
+    run: bazel build //:app
+    expect:
+      non_zero: true
+      output_contains: 'pub package "evil_pkg": symlink "lib/evil.dart" escapes the package'

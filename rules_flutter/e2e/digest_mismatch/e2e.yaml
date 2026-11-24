@@ -1,0 +1,54 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: wrong-digest sky_engine fetch fails on checksum
+    run: bazel fetch @red_sky_engine//...
+    expect:
+      non_zero: true
+      output_contains: but wanted 0000000000000000000000000000000000000000000000000000000000000000
+  - name: empty digest refused
+    run: bazel fetch @digest_empty//...
+    expect:
+      non_zero: true
+      output_contains: sha256 must be exactly 64 lowercase hex characters
+  - name: short digest refused
+    run: bazel fetch @digest_short//...
+    expect:
+      non_zero: true
+      output_contains: sha256 must be exactly 64 lowercase hex characters
+  - name: uppercase digest refused
+    run: bazel fetch @digest_upper//...
+    expect:
+      non_zero: true
+      output_contains: sha256 must be exactly 64 lowercase hex characters
+  - name: sri digest refused
+    run: bazel fetch @digest_sri//...
+    expect:
+      non_zero: true
+      output_contains: sha256 must be exactly 64 lowercase hex characters
+  - name: conditional digest refused
+    run: bazel fetch @digest_conditional//...
+    expect:
+      non_zero: true
+      output_contains: sha256 must be exactly 64 lowercase hex characters
+  - name: wrong download digest refused on checksum
+    run: bazel fetch @digest_wrong_download//...
+    expect:
+      non_zero: true
+      output_contains: but wanted 0000000000000000000000000000000000000000000000000000000000000000
+  - name: wrong extract digest refused on checksum
+    run: bazel fetch @digest_wrong_extract//...
+    expect:
+      non_zero: true
+      output_contains: but wanted 0000000000000000000000000000000000000000000000000000000000000000
+  - name: correct download digest succeeds
+    run: bazel fetch @digest_ok_download//...
+    expect:
+      exit_code: 0
+  - name: correct extract digest succeeds
+    run: bazel fetch @digest_ok_extract//...
+    expect:
+      exit_code: 0
+  - name: build fetched ok targets
+    run: bazel build @digest_ok_download//:fetched.bin @digest_ok_extract//:hello.txt
+    expect:
+      exit_code: 0

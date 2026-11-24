@@ -1,0 +1,36 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+
+# Android targets from a pinned Gradle model: see extension.bzl.
+exports_files(["debug.keystore"])
+
+# The build actions and the provider a test runner reads from an app's APK.
+bzl_library(
+    name = "rules",
+    srcs = ["rules.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["@rules_java//java/common"],
+)
+
+bzl_library(
+    name = "names",
+    srcs = ["names.bzl"],
+    visibility = ["//flutter:__subpackages__"],
+)
+
+bzl_library(
+    name = "extension",
+    srcs = ["extension.bzl"],
+    visibility = ["//flutter:__subpackages__"],
+    deps = [
+        ":names",
+        "//flutter/private:download",
+        "@rules_dart//dart/pub:yaml",
+    ],
+)
+
+bzl_library(
+    name = "pin",
+    srcs = ["pin.bzl"],
+    visibility = ["//flutter:__subpackages__"],
+    deps = ["@rules_java//java:core_rules"],
+)

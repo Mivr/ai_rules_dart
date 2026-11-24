@@ -1,0 +1,11 @@
+name: injectable_micro
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.13.0
+dependencies:
+  get_it: ^9.3.0
+  injectable: ^3.0.0
+dev_dependencies:
+  build_runner: ^2.16.1
+  injectable_generator: ^3.1.3

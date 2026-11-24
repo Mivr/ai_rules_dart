@@ -1,0 +1,48 @@
+"""Cycle-break proof: one lock, two hubs, and automatic SCC merging.
+
+`cycle_a` and `cycle_b` are workspace-relative path packages that each
+declare the other, exactly the shape a lock takes when pub resolves two
+packages against each other through conditional imports. `cycle_app` depends
+on both, so both spokes are reachable from an app target.
+
+`deps` breaks `cycle_a`'s edge to `cycle_b` with `cycle_breaks`; `deps_cycle`
+is the same lock with no `cycle_breaks`. `flutter.pub` automatically detects
+the SCC between `cycle_a` and `cycle_b` and emits the merged spoke
+`deps_cycle__scc__cycle_a__cycle_b`.
+"""
+
+module(name = "rules_flutter_pub_cycle_breaks")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    cycle_breaks = {"cycle_a": ["cycle_b"]},
+    lock = "//:pubspec.lock",
+)
+flutter.pub(
+    name = "deps_cycle",
+    lock = "//:pubspec.lock",
+)
+use_repo(
+    flutter,
+    "deps",
+    "deps__cycle_a",
+    "deps__cycle_app",
+    "deps__cycle_b",
+    "deps_cycle",
+    "deps_cycle__cycle_app",
+    "deps_cycle__scc__cycle_a__cycle_b",
+)

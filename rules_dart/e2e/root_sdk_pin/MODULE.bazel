@@ -1,0 +1,17 @@
+module(name = "root_sdk_pin_e2e")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../..",
+)
+
+# This workspace exists to show that a root module's SDK pin resolves and wins
+# over the version rules_dart itself requests, so it names a version. It shows
+# the second part only while the pinned version is not rules_dart's default:
+# with one version listed it can pin only the default.
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+dart.toolchain(dart_version = "3.13.5")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")

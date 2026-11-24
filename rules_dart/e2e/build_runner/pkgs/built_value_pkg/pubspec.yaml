@@ -1,0 +1,11 @@
+name: built_value_pkg
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.13.0
+dependencies:
+  built_collection: ^5.1.2
+  built_value: ^8.13.0
+dev_dependencies:
+  build_runner: ^2.16.1
+  built_value_generator: ^8.13.0

@@ -1,0 +1,77 @@
+load("@android_model//:defs.bzl", "flutter_android_app")
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_aar", "flutter_android_pin")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+
+exports_files(["pubspec.lock"])
+
+flutter_application(
+    name = "module",
+    srcs = ["lib/main.dart"],
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+# The Flutter module as an AAR: the AOT library and flutter_assets.
+flutter_android_aar(
+    name = "module_aar",
+    package_name = "com.example.module",
+    android_abi = "x86_64",
+    application = ":module",
+)
+
+# `bazel run //:android_pin` writes android_model.json from the host's Gradle project.
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["release"],
+)
+
+# The native host app, built from the pin, carrying the module's AAR.
+flutter_android_app(
+    name = "host_app",
+    aars = [":module_aar"],
+    variant = "release",
+)
+
+# A library of another machine in an AAR of the build: the fixture is the first bytes of an ELF file
+# for x86_64 (machine 62) under `jni/arm64-v8a/`. A host app that carries it must fail to build, and the
+# failure must name the file: e2e.yaml puts it in place of the module's AAR for one command.
+genrule(
+    name = "wrong_machine_aar",
+    srcs = ["wrong_machine/AndroidManifest.xml"],
+    outs = ["wrong_machine.aar"],
+    cmd = "printf '\\177ELF\\002\\001\\001\\000\\000\\000\\000\\000\\000\\000\\000\\000\\003\\000\\076\\000\\001\\000\\000\\000' > $(RULEDIR)/libwrong_machine.so && " +
+          "$(execpath @bazel_tools//tools/zip:zipper) c $@ AndroidManifest.xml=$(execpath wrong_machine/AndroidManifest.xml) jni/arm64-v8a/libwrong_machine.so=$(RULEDIR)/libwrong_machine.so && " +
+          "rm $(RULEDIR)/libwrong_machine.so",
+    tags = ["manual"],
+    tools = ["@bazel_tools//tools/zip:zipper"],
+)
+
+dart_test(
+    name = "verify_aar_host_test",
+    size = "medium",
+    srcs = ["test/verify_aar_host_test.dart"],
+    data = [
+        ":host_app_apk",
+        "@flutter_android_headless_runtime//:adb",
+        "@flutter_android_headless_runtime//:all_files",
+        "@flutter_android_headless_runtime//:emulator",
+    ],
+    env = {
+        "ADB_RLOCATION": "$(rlocationpath @flutter_android_headless_runtime//:adb)",
+        "EMULATOR_RLOCATION": "$(rlocationpath @flutter_android_headless_runtime//:emulator)",
+        "HOST_APK_RLOCATIONS": "$(rlocationpaths :host_app_apk)",
+    },
+    main = "test/verify_aar_host_test.dart",
+    tags = [
+        "exclusive",
+        "local",
+        "no-sandbox",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "@rules_dart//dart/runfiles",
+    ],
+)

@@ -1,0 +1,127 @@
+load("@android_model//:defs.bzl", "flutter_android_app")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_kernel_target")
+load("@rules_flutter//flutter:ios.bzl", "flutter_ios_app", "flutter_ios_simulator_build_test")
+load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app")
+
+exports_files(["MODULE.bazel"])
+
+# One minimal app per native platform, built against the minimum supported
+# rules_apple, rules_swift, rules_kotlin and rules_java (pinned in MODULE.bazel). The Android leg is
+# Linux-only through target_compatible_with, so `bazel test //...` on Linux
+# builds the Dart app plus the Android leg while the Apple legs skip
+# themselves through target_compatible_with; on macOS the Dart app and both
+# Apple legs run and the Android leg is reported incompatible. Loading this
+# package on any host already proves every rules_apple/rules_swift/rules_kotlin
+# load in our macros resolves against the floors.
+
+flutter_application(
+    name = "app",
+    package_name = "min_versions",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:collection",
+        "@deps//:flutter",
+    ],
+)
+
+# The kernel path on its own, next to the full application target: the floor
+# has to compile Dart to a kernel as well as package a bundle.
+flutter_kernel_target(
+    name = "app_kernel",
+    package_name = "min_versions",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:collection",
+        "@deps//:flutter",
+    ],
+)
+
+build_test(
+    name = "kernel_build_test",
+    targets = [":app_kernel"],
+)
+
+# The Android leg: the stock Android project (android/), built from its pinned Gradle model with the
+# minimum supported rules_kotlin. `bazel run //:android_pin` writes android_model.json.
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["debug"],
+)
+
+flutter_android_app(
+    name = "app_android",
+    application = ":app",
+)
+
+build_test(
+    name = "android_build_test",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":app_android_apk"],
+)
+
+flutter_ios_app(
+    name = "app_ios",
+    # No ios/Runner scaffold: build the bundled template runner instead.
+    # (Consumers normally have ios/Runner/*.swift from `flutter create`.)
+    srcs = [
+        "@rules_flutter//flutter/private/runners/ios:AppDelegate.swift",
+        "@rules_flutter//flutter/private/runners/ios:SceneDelegate.swift",
+    ],
+    application = ":app",
+    bundle_id = "com.example.minversions",
+)
+
+flutter_macos_app(
+    name = "app_macos",
+    # No macos/Runner scaffold: build the bundled template runner instead.
+    srcs = [
+        "@rules_flutter//flutter/private/runners/macos:AppDelegate.swift",
+        "@rules_flutter//flutter/private/runners/macos:MainFlutterWindow.swift",
+    ],
+    application = ":app",
+    bundle_id = "com.example.minversions",
+    # No macos/Runner entitlements pair: a single explicit file instead.
+    entitlements = "macos/Entitlements.plist",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_build_test",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_ios"],
+)
+
+build_test(
+    name = "macos_build_test",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_macos"],
+)
+
+# The resolved-graph proof. `@resolved_module_versions` reads each selected
+# module's own MODULE.bazel, so this compares the graph Bazel built with the
+# floors (and the lifts another module's requirement causes), not with the
+# versions this workspace happens to name.
+dart_test(
+    name = "dependency_floors_test",
+    size = "small",
+    data = [
+        "MODULE.bazel",
+        "dependency_floors_test.dart",
+        "@resolved_module_versions//:versions.json",
+        "@rules_flutter//flutter/tests:dependency_floors.json",
+    ],
+    env = {
+        "FLOOR_TABLE": "$(rlocationpath @rules_flutter//flutter/tests:dependency_floors.json)",
+        "MODULE_BZL": "$(rlocationpath //:MODULE.bazel)",
+        "RESOLVED_VERSIONS": "$(rlocationpath @resolved_module_versions//:versions.json)",
+    },
+    main = "dependency_floors_test.dart",
+    deps = [
+        "@rules_flutter//flutter/tests:dependency_floors_lib",
+    ],
+)

@@ -1,0 +1,168 @@
+PODS:
+  - cloud_firestore (7.1.0):
+    - Flutter
+    - firebase_core
+    - Firebase/Firestore (= 12.19.3)
+  - firebase_auth (7.0.1):
+    - Flutter
+    - firebase_core
+    - Firebase/Auth (= 12.19.3)
+  - firebase_core (5.1.0):
+    - Flutter
+    - Firebase/CoreOnly (= 12.19.3)
+  - firebase_messaging (17.0.1):
+    - Flutter
+    - firebase_core
+    - Firebase/Messaging (= 12.19.3)
+  - "Firebase/Auth (12.19.3)":
+    - Firebase/CoreOnly
+  - Firebase/CoreOnly (12.19.3):
+    - FirebaseCore (= 12.19.3)
+  - "Firebase/Firestore (12.19.3)":
+    - Firebase/CoreOnly
+  - "Firebase/Messaging (12.19.3)":
+    - Firebase/CoreOnly
+  - FirebaseCore (12.19.3)
+  - Flutter (1.0.0)
+  - flutter_inappwebview_ios (0.0.1):
+    - Flutter
+    - flutter_inappwebview_ios/Core (= 0.0.1)
+    - OrderedSet (= 6.0.3)
+  - "flutter_inappwebview_ios/Core (0.0.1)":
+    - Flutter
+    - OrderedSet (= 6.0.3)
+  - "Google-Maps-iOS-Utils (6.1.3)":
+    - GoogleMaps
+  - google_maps_flutter_ios (0.0.1):
+    - Flutter
+    - GoogleMaps (= 10.15.0)
+    - Google-Maps-iOS-Utils (= 6.1.3)
+  - GoogleMaps (10.15.0)
+  - google_mlkit_commons (0.13.0):
+    - Flutter
+    - MLKitVision (= 10.0.0)
+  - google_sign_in_ios (0.0.1):
+    - Flutter
+    - GoogleSignIn (= 9.0.0)
+  - GoogleSignIn (9.0.0)
+  - image_picker_ios (0.0.1):
+    - Flutter
+  - MLKitVision (10.0.0)
+  - OrderedSet (6.0.3)
+  - permission_handler_apple (9.4.8):
+    - Flutter
+  - stripe_ios (0.0.1):
+    - Flutter
+    - Stripe (= 26.13.0)
+    - StripePaymentSheet (= 26.13.0)
+    - StripePayments (= 26.13.0)
+    - StripePaymentsUI (= 26.13.0)
+    - StripeApplePay (= 26.13.0)
+    - StripeFinancialConnections (= 26.13.0)
+    - stripe_ios/stripe_ios (= 0.0.1)
+    - stripe_ios/stripe_objc (= 0.0.1)
+  - "stripe_ios/stripe_ios (0.0.1)":
+    - Flutter
+    - Stripe (= 26.13.0)
+    - StripePaymentSheet (= 26.13.0)
+    - StripePayments (= 26.13.0)
+    - StripePaymentsUI (= 26.13.0)
+    - StripeApplePay (= 26.13.0)
+    - StripeFinancialConnections (= 26.13.0)
+    - stripe_ios/stripe_objc (= 0.0.1)
+  - "stripe_ios/stripe_objc (0.0.1)":
+    - Flutter
+    - Stripe (= 26.13.0)
+    - StripePaymentSheet (= 26.13.0)
+    - StripePayments (= 26.13.0)
+    - StripePaymentsUI (= 26.13.0)
+    - StripeApplePay (= 26.13.0)
+    - StripeFinancialConnections (= 26.13.0)
+  - Stripe (26.13.0)
+  - StripeApplePay (26.13.0)
+  - StripeFinancialConnections (26.13.0)
+  - StripePaymentSheet (26.13.0)
+  - StripePayments (26.13.0)
+  - StripePaymentsUI (26.13.0)
+  - url_launcher_ios (0.0.1):
+    - Flutter
+  - webview_flutter_wkwebview (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - cloud_firestore (from `.symlinks/plugins/cloud_firestore/ios`)
+  - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
+  - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
+  - firebase_messaging (from `.symlinks/plugins/firebase_messaging/ios`)
+  - flutter_inappwebview_ios (from `.symlinks/plugins/flutter_inappwebview_ios/ios`)
+  - google_maps_flutter_ios (from `.symlinks/plugins/google_maps_flutter_ios/ios`)
+  - google_mlkit_commons (from `.symlinks/plugins/google_mlkit_commons/ios`)
+  - google_sign_in_ios (from `.symlinks/plugins/google_sign_in_ios/darwin`)
+  - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
+  - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
+  - stripe_ios (from `.symlinks/plugins/stripe_ios/ios`)
+  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+  - webview_flutter_wkwebview (from `.symlinks/plugins/webview_flutter_wkwebview/darwin`)
+
+EXTERNAL SOURCES:
+  cloud_firestore:
+    :path: ".symlinks/plugins/cloud_firestore/ios"
+  firebase_auth:
+    :path: ".symlinks/plugins/firebase_auth/ios"
+  firebase_core:
+    :path: ".symlinks/plugins/firebase_core/ios"
+  firebase_messaging:
+    :path: ".symlinks/plugins/firebase_messaging/ios"
+  flutter_inappwebview_ios:
+    :path: ".symlinks/plugins/flutter_inappwebview_ios/ios"
+  google_maps_flutter_ios:
+    :path: ".symlinks/plugins/google_maps_flutter_ios/ios"
+  google_mlkit_commons:
+    :path: ".symlinks/plugins/google_mlkit_commons/ios"
+  google_sign_in_ios:
+    :path: ".symlinks/plugins/google_sign_in_ios/darwin"
+  image_picker_ios:
+    :path: ".symlinks/plugins/image_picker_ios/ios"
+  permission_handler_apple:
+    :path: ".symlinks/plugins/permission_handler_apple/ios"
+  stripe_ios:
+    :path: ".symlinks/plugins/stripe_ios/ios"
+  url_launcher_ios:
+    :path: ".symlinks/plugins/url_launcher_ios/ios"
+  webview_flutter_wkwebview:
+    :path: ".symlinks/plugins/webview_flutter_wkwebview/darwin"
+
+SPEC REPOS:
+  trunk:
+    - Firebase
+    - FirebaseCore
+    - Google-Maps-iOS-Utils
+    - GoogleMaps
+    - GoogleSignIn
+    - MLKitVision
+    - OrderedSet
+    - Stripe
+    - StripeApplePay
+    - StripeFinancialConnections
+    - StripePaymentSheet
+    - StripePayments
+    - StripePaymentsUI
+
+SPEC CHECKSUMS:
+  Firebase: "1111111111111111111111111111111111111111"
+  FirebaseCore: "2222222222222222222222222222222222222222"
+  Google-Maps-iOS-Utils: "3333333333333333333333333333333333333331"
+  GoogleMaps: "3333333333333333333333333333333333333333"
+  GoogleSignIn: "4444444444444444444444444444444444444444"
+  MLKitVision: "5555555555555555555555555555555555555555"
+  OrderedSet: "6666666666666666666666666666666666666666"
+  Stripe: "7777777777777777777777777777777777777771"
+  StripeApplePay: "7777777777777777777777777777777777777772"
+  StripeFinancialConnections: "7777777777777777777777777777777777777773"
+  StripePaymentSheet: "7777777777777777777777777777777777777774"
+  StripePayments: "7777777777777777777777777777777777777775"
+  StripePaymentsUI: "7777777777777777777777777777777777777776"
+
+PODFILE CHECKSUM: "9999999999999999999999999999999999999999"
+
+COCOAPODS: 1.14.3

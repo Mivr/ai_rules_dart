@@ -1,0 +1,79 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library", "dart_test")
+load("//:reference.bzl", "stock_reference_test")
+
+dart_library(
+    name = "app",
+    package_name = "app",
+    srcs = [
+        "lib/app.dart",
+        "lib/src/db/database.dart",
+        "lib/src/models/settings.dart",
+        "lib/src/models/user.dart",
+        "lib/src/user_repository.dart",
+        "lib/src/user_service.dart",
+        ":lib/src/db/database.g.dart",
+        ":lib/src/models/settings.freezed.dart",
+        ":lib/src/models/settings.g.dart",
+        ":lib/src/models/user.g.dart",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pub_deps//:drift",
+        "@pub_deps//:freezed_annotation",
+        "@pub_deps//:json_annotation",
+    ],
+)
+
+dart_test(
+    name = "models_test",
+    srcs = ["test/fixtures.dart"],
+    main = "test/models_test.dart",
+    deps = [
+        ":app",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "user_service_test",
+    srcs = [":test/user_service_test.mocks.dart"],
+    main = "test/user_service_test.dart",
+    deps = [
+        ":app",
+        "@pub_deps//:mockito",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_build_runner(
+    name = "gen",
+    outs = [
+        "lib/src/db/database.g.dart",
+        "lib/src/models/settings.freezed.dart",
+        "lib/src/models/settings.g.dart",
+        "lib/src/models/user.g.dart",
+        "test/user_service_test.mocks.dart",
+    ],
+    runner = "@pub_deps//build_runner",
+    deps = [
+        "@pub_deps//:drift",
+        "@pub_deps//:freezed_annotation",
+        "@pub_deps//:json_annotation",
+        "@pub_deps//:mockito",
+        "@pub_deps//:test",
+    ],
+)
+
+# Not written by Gazelle: compares the generated files with what stock
+# `dart run build_runner build` wrote (reference/app).
+stock_reference_test(
+    name = "stock_test",
+    generated = [
+        "lib/src/db/database.g.dart",
+        "lib/src/models/settings.freezed.dart",
+        "lib/src/models/settings.g.dart",
+        "lib/src/models/user.g.dart",
+        "test/user_service_test.mocks.dart",
+    ],
+    package = "app",
+)

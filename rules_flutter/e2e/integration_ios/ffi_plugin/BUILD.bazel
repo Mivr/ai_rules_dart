@@ -1,0 +1,37 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+
+# The first-party C code the plugin links into the app. On iOS the symbol is
+# statically linked into the app binary with `alwayslink`, so the Dart side
+# reaches it through `DynamicLibrary.process()` rather than opening a dylib.
+cc_library(
+    name = "ffi_answer_cc",
+    srcs = ["native/ffi_answer.c"],
+    hdrs = ["native/ffi_answer.h"],
+    linkstatic = True,
+    alwayslink = True,
+)
+
+# The plugin's iOS metadata declares the FFI shape pub uses (`ffiPlugin`):
+# there is no `pluginClass` to register and no `dartPluginClass`; the package
+# exists to link its native library. `ios_libs` routes the CcInfo to the iOS
+# runner aggregator, while `native_deps` names the same native library for the
+# plugin's dev-loop source tracking.
+_FFI_PLUGIN_PLATFORMS = json.encode({
+    "ios": {
+        "ffiPlugin": True,
+    },
+})
+
+flutter_plugin(
+    name = "ffi_plugin",
+    package_name = "ffi_plugin",
+    srcs = ["lib/ffi_plugin.dart"],
+    ios_libs = select({
+        "@platforms//os:ios": [":ffi_answer_cc"],
+        "//conditions:default": [],
+    }),
+    native_deps = [":ffi_answer_cc"],
+    plugin_platforms_json = _FFI_PLUGIN_PLATFORMS,
+    visibility = ["//visibility:public"],
+)

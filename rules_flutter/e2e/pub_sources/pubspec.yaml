@@ -1,0 +1,23 @@
+name: pub_sources
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # A git package from a subdirectory of its repository, at a branch the lock
+  # resolves to a commit.
+  args:
+    git:
+      url: https://github.com/dart-lang/core.git
+      ref: main
+      path: pkgs/args
+  # A Flutter plugin next to the app.
+  hello_plugin:
+    path: plugins/hello_plugin
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter

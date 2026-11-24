@@ -1,0 +1,49 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# The bench harness: every flow of the plan's target table, for the rules and
+# for the stock tools, measured the same way, into ledger rows; the merge
+# gate's regression check; the table. It drives Bazel, the stock SDK and the
+# emulator in scratch workspaces, so run it with `bazel run`:
+#
+#   cd rules_dart/tools
+#   bazel run //perf:bench -- list
+#   bazel run //perf:bench -- run --flows=tag:cheap --scratch=DIR
+#   bazel run //perf:bench -- check --flows=tag:cheap --baseline=rows.jsonl --scratch=DIR
+dart_library(
+    name = "perf",
+    package_name = "perf",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:yaml"],
+)
+
+dart_binary(
+    name = "bench",
+    main = "bin/bench.dart",
+    visibility = ["//visibility:public"],
+    deps = [":perf"],
+)
+
+[
+    dart_test(
+        name = name + "_test",
+        size = "small",
+        main = "test/" + name + "_test.dart",
+        deps = [
+            ":perf",
+            "@pub_deps//:test",
+        ],
+    )
+    for name in [
+        "bazel",
+        "check",
+        "daemon",
+        "flow",
+        "generate",
+        "host",
+        "ledger",
+        "pub",
+        "stats",
+        "table",
+    ]
+]

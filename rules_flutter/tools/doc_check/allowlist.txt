@@ -1,0 +1,2 @@
+# One `symbol[.attr] reason` per line. This list may only shrink: an entry that
+# covers no violation fails the test. It starts empty and should stay empty.

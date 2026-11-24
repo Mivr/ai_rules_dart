@@ -1,0 +1,413 @@
+"""Create a repository to hold the toolchains.
+
+This follows guidance here:
+https://docs.bazel.build/versions/main/skylark/deploying.html#registering-toolchains
+"
+Note that in order to resolve toolchains in the analysis phase
+Bazel needs to analyze all toolchain targets that are registered.
+Bazel will not need to analyze all targets referenced by toolchain.toolchain attribute.
+If in order to register toolchains you need to perform complex computation in the repository,
+consider splitting the repository with toolchain targets
+from the repository with <LANG>_toolchain targets.
+"
+The "complex computation" in our case is downloading large engine artifacts.
+This guidance tells us how to avoid that: we put the toolchain targets in the alias repository
+with only the toolchain attribute pointing into the platform-specific repositories.
+"""
+
+load(":xtool_sdk_render.bzl", "XTOOL_DARWIN_TARGETS")
+
+visibility(["//flutter/..."])
+
+# Host platforms on which Flutter builds can run.
+# Keys are platform strings used in Flutter artifact URLs.
+HOST_PLATFORMS = {
+    "darwin-arm64": struct(
+        compatible_with = [
+            "@platforms//os:macos",
+            "@platforms//cpu:aarch64",
+        ],
+        os = "macos",
+        arch = "arm64",
+    ),
+    "darwin-x64": struct(
+        compatible_with = [
+            "@platforms//os:macos",
+            "@platforms//cpu:x86_64",
+        ],
+        os = "macos",
+        arch = "x64",
+    ),
+    "linux-x64": struct(
+        compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:x86_64",
+        ],
+        os = "linux",
+        arch = "x64",
+    ),
+    "linux-arm64": struct(
+        compatible_with = [
+            "@platforms//os:linux",
+            "@platforms//cpu:aarch64",
+        ],
+        os = "linux",
+        arch = "arm64",
+    ),
+    "windows-x64": struct(
+        compatible_with = [
+            "@platforms//os:windows",
+            "@platforms//cpu:x86_64",
+        ],
+        os = "windows",
+        arch = "x64",
+    ),
+}
+
+# Cross-compilation target platforms.
+# For each (host, target) pair, a toolchain is registered that runs on the
+# host and produces output for the target.
+TARGET_PLATFORMS = {
+    "android-arm": struct(
+        compatible_with = [
+            "@platforms//os:android",
+            "@platforms//cpu:armv7",
+        ],
+    ),
+    "android-arm64": struct(
+        compatible_with = [
+            "@platforms//os:android",
+            "@platforms//cpu:aarch64",
+        ],
+    ),
+    "android-x64": struct(
+        compatible_with = [
+            "@platforms//os:android",
+            "@platforms//cpu:x86_64",
+        ],
+    ),
+    "ios-arm64": struct(
+        compatible_with = [
+            "@platforms//os:ios",
+            "@platforms//cpu:aarch64",
+        ],
+    ),
+    "ios-x64": struct(
+        compatible_with = [
+            "@platforms//os:ios",
+            "@platforms//cpu:x86_64",
+        ],
+    ),
+}
+
+# Desktop cross-platform pairs: host → list of desktop targets.
+# Desktop targets ARE host platforms (they use HOST_PLATFORMS for constraints).
+# Desktop cross-toolchains only support debug/JIT mode across desktop OSes;
+# gen_snapshot cannot cross-compile between desktop OSes for AOT.
+DESKTOP_CROSS_PAIRS = {
+    "darwin-arm64": ["linux-x64", "windows-x64"],
+    "darwin-x64": ["linux-x64", "windows-x64"],
+    "linux-x64": ["darwin-arm64", "darwin-x64", "windows-x64"],
+    "linux-arm64": ["darwin-arm64", "darwin-x64", "windows-x64"],
+    "windows-x64": ["darwin-x64", "linux-x64"],
+}
+
+# Which (host, target) cross-compilation pairs are supported.
+CROSS_COMPILATION_PAIRS = {
+    "darwin-arm64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "darwin-x64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "linux-x64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "linux-arm64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "windows-x64": ["android-arm", "android-arm64", "android-x64"],
+}
+
+# Which (host, target) cross-compilation pairs have a target-compatible AOT
+# gen_snapshot binary and therefore register an aot_toolchain.
+# Apple AOT snapshots (ios-*, darwin-*) may only be produced by a Darwin-target
+# gen_snapshot, which Flutter publishes only for macOS hosts (darwin-*).
+AOT_CROSS_COMPILATION_PAIRS = {
+    "darwin-arm64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "darwin-x64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "linux-x64": ["android-arm", "android-arm64", "android-x64"],
+    "linux-arm64": ["android-arm", "android-arm64", "android-x64"],
+    "windows-x64": ["android-arm", "android-arm64", "android-x64"],
+}
+
+def supports_aot_cross_compilation(host_platform, target_platform):
+    """Returns True if (host_platform, target_platform) has a target-compatible AOT gen_snapshot.
+
+    Args:
+      host_platform: The host platform key, such as `"linux-x64"`.
+      target_platform: The target platform key, such as `"android-arm64"`.
+
+    Returns:
+      True when `AOT_CROSS_COMPILATION_PAIRS` lists the target for that host, otherwise False.
+    """
+    return target_platform in AOT_CROSS_COMPILATION_PAIRS.get(host_platform, [])
+
+def _native_toolchains_section(user_repository_name):
+    """Renders the native (host == target) toolchain targets."""
+    section = ""
+    for [platform, meta] in HOST_PLATFORMS.items():
+        section += """
+toolchain(
+    name = "{platform}_toolchain",
+    exec_compatible_with = {compatible_with},
+    target_compatible_with = {compatible_with},
+    toolchain = "@{user_repository_name}_{platform}//:flutter_toolchain",
+    toolchain_type = "@rules_flutter//flutter:toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "{platform}_product_tools_toolchain",
+    exec_compatible_with = {compatible_with},
+    toolchain = "@{user_repository_name}_{platform}//:product_tools_toolchain",
+    toolchain_type = "@rules_flutter//flutter/private:product_tools_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "{platform}_font_subset_toolchain",
+    exec_compatible_with = {compatible_with},
+    toolchain = "@{user_repository_name}_{platform}//:font_subset_toolchain",
+    toolchain_type = "@rules_flutter//flutter/private:font_subset_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "{platform}_aot_toolchain",
+    exec_compatible_with = {compatible_with},
+    target_compatible_with = {compatible_with},
+    toolchain = "@{user_repository_name}_{platform}//:aot_toolchain",
+    toolchain_type = "@rules_flutter//flutter/private:aot_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "{platform}_desktop_engine_toolchain",
+    exec_compatible_with = {compatible_with},
+    target_compatible_with = {compatible_with},
+    toolchain = "@{user_repository_name}_{platform}//:desktop_engine_toolchain",
+    toolchain_type = "@rules_flutter//flutter/private:desktop_engine_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+""".format(
+            platform = platform,
+            user_repository_name = user_repository_name,
+            compatible_with = meta.compatible_with,
+        )
+    return section
+
+def _material_icons_section(user_repository_name):
+    """Renders the single material-icons toolchain target."""
+    return """
+toolchain(
+    name = "material_icons_toolchain",
+    toolchain = "@{user_repository_name}_material_fonts//:material_icons_toolchain",
+    toolchain_type = "@rules_flutter//flutter/private:material_icons_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+""".format(
+        user_repository_name = user_repository_name,
+    )
+
+def _dart_toolchains_section(user_repository_name):
+    """Renders the Dart SDK toolchains bundled with the Flutter release.
+
+    These mirror rules_dart 0.7.2's native and exec-tools registrations. A
+    root module's register_toolchains is ordered before its dependencies',
+    so for a native build these win over rules_dart's own. Cross-compiled
+    Dart is deliberately not registered here: those resolutions still fall
+    back to rules_dart's SDK.
+    """
+    section = ""
+    for [platform, meta] in HOST_PLATFORMS.items():
+        section += """
+toolchain(
+    name = "{platform}_dart_toolchain",
+    exec_compatible_with = {compatible_with},
+    target_compatible_with = {compatible_with},
+    toolchain = "@{user_repository_name}_{platform}//:dart_toolchain",
+    toolchain_type = "@rules_dart//dart:toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "{platform}_dart_exec_tools_toolchain",
+    exec_compatible_with = {compatible_with},
+    toolchain = "@{user_repository_name}_{platform}//:dart_toolchain",
+    toolchain_type = "@rules_dart//dart:exec_tools_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+""".format(
+            platform = platform,
+            user_repository_name = user_repository_name,
+            compatible_with = meta.compatible_with,
+        )
+    return section
+
+def _cross_toolchains_section(user_repository_name):
+    """Renders mobile cross-compilation toolchain targets (plus AOT where supported)."""
+    section = ""
+    for [host_platform, targets] in CROSS_COMPILATION_PAIRS.items():
+        host_meta = HOST_PLATFORMS[host_platform]
+        for target_platform in targets:
+            target_meta = TARGET_PLATFORMS[target_platform]
+            section += """
+toolchain(
+    name = "{host}_to_{target}_toolchain",
+    exec_compatible_with = {exec_compatible_with},
+    target_compatible_with = {target_compatible_with},
+    toolchain = "@{user_repository_name}_cross_{host}_{target}//:flutter_toolchain",
+    toolchain_type = "@rules_flutter//flutter:toolchain_type",
+    visibility = ["//visibility:public"],
+)
+""".format(
+                host = host_platform,
+                target = target_platform,
+                user_repository_name = user_repository_name,
+                exec_compatible_with = host_meta.compatible_with,
+                target_compatible_with = target_meta.compatible_with,
+            )
+            if supports_aot_cross_compilation(host_platform, target_platform):
+                section += """
+toolchain(
+    name = "{host}_to_{target}_aot_toolchain",
+    exec_compatible_with = {exec_compatible_with},
+    target_compatible_with = {target_compatible_with},
+    toolchain = "@{user_repository_name}_cross_{host}_{target}//:aot_toolchain",
+    toolchain_type = "@rules_flutter//flutter/private:aot_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+""".format(
+                    host = host_platform,
+                    target = target_platform,
+                    user_repository_name = user_repository_name,
+                    exec_compatible_with = host_meta.compatible_with,
+                    target_compatible_with = target_meta.compatible_with,
+                )
+    return section
+
+def _desktop_cross_toolchains_section(user_repository_name):
+    """Renders desktop cross-platform toolchain targets (debug only — no aot_toolchain)."""
+    section = ""
+    for [host_platform, targets] in DESKTOP_CROSS_PAIRS.items():
+        host_meta = HOST_PLATFORMS[host_platform]
+        for target_platform in targets:
+            target_meta = HOST_PLATFORMS[target_platform]
+            section += """
+toolchain(
+    name = "{host}_to_{target}_desktop_toolchain",
+    exec_compatible_with = {exec_compatible_with},
+    target_compatible_with = {target_compatible_with},
+    toolchain = "@{user_repository_name}_desktop_cross_{host}_{target}//:flutter_toolchain",
+    toolchain_type = "@rules_flutter//flutter:toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain(
+    name = "{host}_to_{target}_desktop_engine_toolchain",
+    exec_compatible_with = {exec_compatible_with},
+    target_compatible_with = {target_compatible_with},
+    toolchain = "@{user_repository_name}_desktop_cross_{host}_{target}//:desktop_engine_toolchain",
+    toolchain_type = "@rules_flutter//flutter/private:desktop_engine_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+""".format(
+                host = host_platform,
+                target = target_platform,
+                user_repository_name = user_repository_name,
+                exec_compatible_with = host_meta.compatible_with,
+                target_compatible_with = target_meta.compatible_with,
+            )
+    return section
+
+def _xtool_toolchains_section(user_repository_name):
+    """Renders the xtool Darwin cc `toolchain()` targets that point into the xtool SDK repository.
+
+    The constraints mirror the `toolchain()` targets of `@<name>_xtool_darwin_sdk`
+    exactly, so registering this hub resolves the same toolchains, but Bazel
+    only loads (and so fetches) the SDK repository once a toolchain's
+    constraints and `use_xtool_backend` setting match the build.
+
+    Args:
+      user_repository_name: Base repository name prefix (e.g. `"flutter"`).
+
+    Returns:
+      The rendered `BUILD.bazel` section declaring the xtool cc `toolchain` targets.
+    """
+    section = ""
+    for target_key in sorted(XTOOL_DARWIN_TARGETS.keys()):
+        meta = XTOOL_DARWIN_TARGETS[target_key]
+        section += """
+toolchain(
+    name = "xtool_{key}_cc_toolchain",
+    exec_compatible_with = ["@platforms//os:linux"],
+    target_compatible_with = [
+        "{os_constraint}",
+        "{cpu_constraint}",
+    ],
+    target_settings = ["@rules_flutter//flutter/settings:use_xtool_backend"],
+    toolchain = "@{user_repository_name}_xtool_darwin_sdk//:{key}_cc_toolchain_impl",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+    visibility = ["//visibility:public"],
+)
+""".format(
+            key = target_key,
+            os_constraint = meta.os_constraint,
+            cpu_constraint = meta.cpu_constraint,
+            user_repository_name = user_repository_name,
+        )
+    return section
+
+def generate_toolchains_build(user_repository_name):
+    """Generates BUILD.bazel content for the toolchains repository.
+
+    Args:
+      user_repository_name: Base repository name prefix (e.g. `"flutter"`) used to reference SDK and cross repos.
+
+    Returns:
+      The rendered `BUILD.bazel` file content string declaring all `toolchain` targets.
+    """
+    build_content = """# Generated by toolchains_repo.bzl
+#
+# These can be registered via register_toolchains() or passed to --extra_toolchains flag.
+# By default all these toolchains are registered by the flutter_register_toolchains macro
+# so you don't normally need to interact with these targets.
+
+"""
+
+    # Native (host == target) toolchains.
+    build_content += _native_toolchains_section(user_repository_name)
+
+    build_content += _material_icons_section(user_repository_name)
+
+    # Dart toolchains: the SDK bundled with this Flutter release, declared by
+    # flutter_engine_artifacts as rules_dart's dart_toolchain.
+    build_content += _dart_toolchains_section(user_repository_name)
+
+    # Cross-compilation toolchains.
+    build_content += _cross_toolchains_section(user_repository_name)
+
+    # Desktop cross-platform toolchains (debug only — no aot_toolchain).
+    build_content += _desktop_cross_toolchains_section(user_repository_name)
+
+    # xtool Darwin cc toolchains (gated by apple_backend_xtool; implementation
+    # lives in @<name>_xtool_darwin_sdk so non-xtool builds never fetch it).
+    build_content += _xtool_toolchains_section(user_repository_name)
+
+    return build_content
+
+def _flutter_toolchains_repo_impl(repository_ctx):
+    repository_ctx.file("BUILD.bazel", generate_toolchains_build(repository_ctx.attr.user_repository_name))
+    return repository_ctx.repo_metadata(reproducible = True)
+
+flutter_toolchains_repo = repository_rule(
+    _flutter_toolchains_repo_impl,
+    doc = """Creates a repository with toolchain definitions for all known platforms
+     which can be registered or selected.""",
+    attrs = {
+        "user_repository_name": attr.string(doc = "Base name for all created repos"),
+    },
+)

@@ -1,0 +1,17 @@
+name: build_runner_e2e
+publish_to: none
+environment:
+  sdk: ^3.13.0
+workspace:
+  - pkgs/built_value_pkg
+  - pkgs/combined
+  - pkgs/drift_pkg
+  - pkgs/freezed_json
+  - pkgs/injectable_micro
+  - pkgs/injectable_pkg
+  - pkgs/json_define
+  - pkgs/json_release
+  - pkgs/json_ser
+  - pkgs/mockito_pkg
+  - pkgs/retrofit_pkg
+  - pkgs/riverpod_pkg

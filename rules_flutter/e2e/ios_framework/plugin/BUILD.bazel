@@ -1,0 +1,28 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+load("@rules_flutter//flutter:ios.bzl", "flutter_apple_plugin_library")
+
+# A first-party plugin: Dart metadata plus one Swift class registered by the
+# generated GeneratedPluginRegistrant.swift. `ios_libs` accepts the compiled
+# Apple library directly, which is what the xcframework macro turns into
+# one xcframework per native plugin.
+flutter_plugin(
+    name = "ios_framework_plugin",
+    package_name = "ios_framework_plugin",
+    srcs = ["lib/plugin.dart"],
+    ios_libs = select({
+        "@platforms//os:ios": [":ios_framework_plugin_ios"],
+        "//conditions:default": [],
+    }),
+    platforms = ["ios"],
+    plugin_class = "IosFrameworkPlugin",
+    visibility = ["//visibility:public"],
+    deps = ["@deps//:flutter"],
+)
+
+flutter_apple_plugin_library(
+    name = "ios_framework_plugin_ios",
+    srcs = ["ios/Classes/IosFrameworkPlugin.swift"],
+    module_name = "ios_framework_plugin",
+    platform = "ios",
+    visibility = ["//visibility:public"],
+)

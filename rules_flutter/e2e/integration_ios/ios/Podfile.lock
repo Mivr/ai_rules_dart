@@ -1,0 +1,27 @@
+PODS:
+  - pod_bigint_plugin (0.0.1):
+    - BigInt (= 6.0.1)
+    - Flutter
+  - BigInt (6.0.1)
+  - Flutter (1.0.0)
+
+DEPENDENCIES:
+  - Flutter
+  - pod_bigint_plugin (from `.symlinks/plugins/pod_bigint_plugin/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  pod_bigint_plugin:
+    :path: ".symlinks/plugins/pod_bigint_plugin/ios"
+
+SPEC REPOS:
+  trunk:
+    - BigInt
+
+SPEC CHECKSUMS:
+  BigInt: 63feef7820abb1a8fb08587d7da56bb0b7db8751
+
+PODFILE CHECKSUM: 0000000000000000000000000000000000000000
+
+COCOAPODS: 1.14.3

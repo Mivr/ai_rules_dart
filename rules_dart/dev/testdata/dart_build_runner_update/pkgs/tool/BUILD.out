@@ -1,0 +1,43 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_build_runner", "dart_library")
+
+dart_library(
+    name = "tool",
+    package_name = "tool",
+    srcs = [
+        "lib/model.dart",
+        ":lib/model.g.dart",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:json_annotation"],
+)
+
+dart_binary(
+    name = "other",
+    main = "bin/other.dart",
+)
+
+dart_binary(
+    name = "tool_bin",
+    srcs = [
+        "bin/src/args.dart",
+        ":bin/src/args.g.dart",
+    ],
+    main = "bin/tool.dart",
+    deps = [
+        ":tool",
+        "@pub_deps//:args",
+    ],
+)
+
+dart_build_runner(
+    name = "gen",
+    outs = [
+        "bin/src/args.g.dart",
+        "lib/model.g.dart",
+    ],
+    runner = "@pub_deps//build_runner",
+    deps = [
+        "@pub_deps//:args",
+        "@pub_deps//:json_annotation",
+    ],
+)

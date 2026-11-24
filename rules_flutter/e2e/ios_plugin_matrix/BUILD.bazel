@@ -1,0 +1,41 @@
+# The matrix workspace has no product targets: run_matrix.py queries the
+# per-plugin spokes of the `deps` hub, and the macOS step builds the spoke
+# device libraries. The lock is exported so `flutter.pub` can read it, and the
+# build test keeps `bazel test //...` meaningful in this workspace.
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+exports_files([
+    "Podfile.lock",
+    "pubspec.lock",
+])
+
+filegroup(
+    name = "mapped_apple_deps",
+    visibility = ["//visibility:public"],
+)
+
+build_test(
+    name = "workspace_test",
+    targets = [
+        "//:Podfile.lock",
+        "//:pubspec.lock",
+    ],
+)
+
+sh_test(
+    name = "run_pods_matrix_test",
+    size = "small",
+    srcs = ["run_pods_matrix.py"],
+    args = ["--self-test"],
+)
+
+test_suite(
+    name = "self_test",
+    tests = [":run_pods_matrix_test"],
+)
+
+test_suite(
+    name = "run_pods_matrix_self_test",
+    tests = [":run_pods_matrix_test"],
+)

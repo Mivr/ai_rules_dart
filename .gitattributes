@@ -1,28 +1,10 @@
+# Every text file is checked out with LF on every system, Windows included.
+#
+# A lockfile records the digest of each file an extension reads (pubspec.lock,
+# pub_plan.json, pubspec.yaml, BUILD and Package.resolved files of the e2e
+# workspaces) and of every .bzl file in an extension's closure. A CRLF checkout
+# changes all of them, and `--lockfile_mode=error` then reports the lock stale.
+# The Windows runners' Git has `core.autocrlf=true`; the `eol` attribute wins
+# over it. A file whose exact bytes matter opts out below it (`-text`), as
+# rules_dart/.gitattributes does for e2e/digest_mismatch/fixture.bin.
 * text=auto eol=lf
-
-# Digest fixtures hash exact bytes: never normalize them.
-e2e/digest_mismatch/fixture.bin -text
-
-#################################
-# Configuration for 'git archive'
-# See https://git-scm.com/docs/git-archive#ATTRIBUTES
-
-# Don't include examples in the distribution artifact, to reduce size.
-# You may want to add additional exclusions for folders or files that users don't need.
-examples export-ignore
-e2e/digest_mismatch export-ignore
-
-# Dev-only analysis tests load `@rules_testing`, a dev dependency: keep them out
-# of release archives so `@rules_dart//...` loads for every consumer.
-/dart/tests/ export-ignore
-
-# Dev-only fixture package for the exported import check's test.
-/dev/ export-ignore
-
-# Stamps the archive marker `//:analysis_config` reads to drop the options
-# packages that /dart/tests/ no longer provides.
-/BUILD.bazel export-subst
-
-# Occasionally there's a need to "stamp" the release version into a file
-# See https://blog.aspect.build/releasing-bazel-rulesets-rust for details if you need this.
-# dart/version.bzl export-subst

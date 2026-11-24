@@ -1,0 +1,60 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_source_set", "dart_test")
+load(":colocate.bzl", "colocated_sources")
+
+# A package assembled explicitly via dart_source_set and consumed via srcs_dir
+# (the pre-assembled single-directory path, which the consumer uses as-is).
+
+run_binary(
+    name = "message_part",
+    srcs = ["lib/message.dart"],
+    outs = ["lib/message.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/message.dart)",
+        "--output",
+        "$(execpath lib/message.g.dart)",
+    ],
+    tool = "//tools:part_gen",
+)
+
+dart_source_set(
+    name = "srcs",
+    srcs = [
+        "lib/message.dart",
+        ":message_part",
+    ],
+)
+
+dart_library(
+    name = "source_set_fixture",
+    package_name = "source_set_fixture",
+    language_version = "3.11",
+    srcs_dir = ":srcs",
+    visibility = ["//visibility:public"],
+)
+
+dart_test(
+    name = "lib_test",
+    size = "small",
+    main = "test/lib_test.dart",
+    deps = [
+        ":source_set_fixture",
+        "@pub_deps//:test",
+    ],
+)
+
+# Exercises COPY_TO_DIRECTORY_TOOLCHAINS, colocate_packages, and
+# colocate_entrypoint from a rule defined in this external module.
+colocated_sources(
+    name = "colocated",
+    srcs = [":message_part"],
+    main = "lib/message.dart",
+    deps = ["//part_pkg:part_pkg_fixture"],
+)
+
+build_test(
+    name = "colocated_test",
+    targets = [":colocated"],
+)

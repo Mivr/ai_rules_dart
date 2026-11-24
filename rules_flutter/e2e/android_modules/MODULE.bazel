@@ -1,0 +1,38 @@
+"""A Flutter app whose Android project has library modules with generated code.
+
+`:ksp_lib` (Moshi's KSP processor, a resource of its own), `:kapt_lib` (Dagger through kapt, an asset)
+and `:java_lib` (Dagger in javac) are Gradle projects beside `:app`. The Android side is built from the
+pinned Gradle model, `android_model.json`, written by `bazel run //:android_pin`.
+"""
+
+module(name = "android_modules")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_toolchains")
+
+register_toolchains("@flutter_toolchains//:all")
+
+# Android from the Gradle model.
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
+
+register_toolchains("@android_model//:kotlin_toolchain")

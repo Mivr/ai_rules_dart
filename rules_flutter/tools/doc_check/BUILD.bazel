@@ -1,0 +1,50 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+
+# Checks the Starlark documentation `starlark_doc_extract` wrote for
+# `//docs:all_doc_extracts`; `//docs:doc_check_test` runs it in `bazel test //...`.
+# `bazel run //tools/doc_check -- --emit-api FILE.binaryproto...` prints the
+# public API surface, `--emit-rule-kinds` prints each extract's rule kinds.
+
+exports_files([
+    "allowlist.txt",
+    "doc_check_docs_test.dart",
+    "shared_phrasings.txt",
+    "stardoc_output.proto",
+])
+
+_LIB = [
+    "doc_check.dart",
+    "emit.dart",
+    "failure.dart",
+    "policy.dart",
+    "rules.dart",
+    "source_probe.dart",
+    "stardoc.dart",
+    "wire.dart",
+]
+
+filegroup(
+    name = "lib",
+    srcs = _LIB,
+    visibility = ["//docs:__pkg__"],
+)
+
+dart_binary(
+    name = "doc_check",
+    srcs = _LIB,
+    main = "doc_check.dart",
+    visibility = ["//visibility:public"],
+)
+
+dart_test(
+    name = "rules_test",
+    size = "small",
+    srcs = _LIB + [
+        "test/fixtures.dart",
+        "test/proto_writer.dart",
+    ],
+    main = "test/doc_check_test.dart",
+    deps = [
+        "@tool_deps//:test",
+    ],
+)

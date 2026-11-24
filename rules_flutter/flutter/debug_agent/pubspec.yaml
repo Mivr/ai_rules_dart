@@ -1,0 +1,29 @@
+name: rules_flutter_debug_agent
+description: >-
+  Service extensions (`ext.rules_flutter.*`) that let a script or a coding
+  agent drive a running debug Flutter app: tap, enter text, read text, wait for
+  a widget, press keys. A Dart-only plugin; add it as a dev dependency.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+  flutter: ">=3.47.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        dartPluginClass: RulesFlutterDebugAgent
+      ios:
+        dartPluginClass: RulesFlutterDebugAgent
+      linux:
+        dartPluginClass: RulesFlutterDebugAgent
+      macos:
+        dartPluginClass: RulesFlutterDebugAgent
+      windows:
+        dartPluginClass: RulesFlutterDebugAgent

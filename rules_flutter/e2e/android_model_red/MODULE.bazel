@@ -1,0 +1,36 @@
+"""Builds that must fail, each with the reason and what to do: a missing pin, a stale pin, a pin of
+another schema, a Gradle feature the rules do not build, a variant the pin does not hold."""
+
+module(name = "android_model_red")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+
+[
+    android_model.pin(
+        name = "red_" + case,
+        model = "//%s:android_model.json" % case,
+    )
+    for case in [
+        "nopin",
+        "schema",
+        "stale",
+        "unsupported",
+        "variant",
+    ]
+]
+
+use_repo(android_model, "red_nopin", "red_schema", "red_stale", "red_unsupported", "red_variant")

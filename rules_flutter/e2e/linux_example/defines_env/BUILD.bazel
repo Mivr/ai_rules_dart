@@ -1,0 +1,10 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+# A dependency that reads the environment, reached by the apps with defines
+# and by the Dart test and binary with defines.
+dart_library(
+    name = "defines_env",
+    package_name = "defines_env",
+    srcs = ["lib/defines_env.dart"],
+    visibility = ["//visibility:public"],
+)

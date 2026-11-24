@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The Flutter tool needs INTERNET to connect to the running app in
+         profile mode, the same grant `flutter create` writes here. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+</manifest>

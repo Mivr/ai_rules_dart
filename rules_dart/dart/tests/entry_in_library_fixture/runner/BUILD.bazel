@@ -1,0 +1,11 @@
+load("//dart:defs.bzl", "dart_library")
+
+exports_files(["lib/runner_main.dart"])
+
+dart_library(
+    name = "runner",
+    package_name = "entry_in_library_runner",
+    srcs = ["lib/runner_main.dart"],
+    visibility = ["//dart/tests/entry_in_library_fixture:__pkg__"],
+    deps = ["@ext_pub_deps//:test"],
+)

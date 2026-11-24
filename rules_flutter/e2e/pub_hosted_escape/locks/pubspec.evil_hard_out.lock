@@ -1,0 +1,14 @@
+# Local-registry lock for the hosted-archive guard e2e: the tarball's hard-link
+# entry climbing out of the package must fail the fetch before extraction.
+# See pubspec.ok.lock for the url placeholder.
+packages:
+  evil_hard_out:
+    dependency: "direct main"
+    description:
+      name: evil_hard_out
+      sha256: "c90cb2ff161872ee5bdf9c9f7e42e76e1d6d54618356e8d5b121c4ca3461723c"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

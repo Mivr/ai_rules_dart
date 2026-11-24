@@ -1,0 +1,54 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# Builds the corpus with the stock tools and with the rules, compares the
+# outputs and prints a parity score per project and kind. It reads the
+# overlays and the by-design list from the repository by path, and runs the
+# stock SDK and Bazel, so run it with `bazel run`:
+#
+#   cd rules_dart/tools
+#   bazel run //conformance -- --corpus=DIR --work=DIR [--projects=counter]
+#
+# `overlays/<project>/` holds the files that put each corpus project under
+# Bazel; `by_design.json` the differences that are by design, with reasons.
+dart_library(
+    name = "conformance_lib",
+    package_name = "conformance",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "//inventory:inventory_lib",
+        "@pub_deps//:crypto",
+    ],
+)
+
+dart_binary(
+    name = "conformance",
+    main = "bin/conformance.dart",
+    deps = [
+        ":conformance_lib",
+        "//inventory:inventory_lib",
+    ],
+)
+
+[
+    dart_test(
+        name = name + "_test",
+        size = "small",
+        main = "test/" + name + "_test.dart",
+        deps = [
+            ":conformance_lib",
+            "@pub_deps//:crypto",
+            "@pub_deps//:test",
+        ],
+    )
+    for name in [
+        "apk",
+        "by_design",
+        "compare",
+        "items",
+        "proc",
+        "records",
+        "report",
+        "rules_side",
+        "tree",
+    ]
+]

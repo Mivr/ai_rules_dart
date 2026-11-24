@@ -1,0 +1,11 @@
+# Use a remote JDK so the build works without a local Java installation.
+common --java_runtime_version=remotejdk_25
+common --tool_java_language_version=25
+common --tool_java_runtime_version=remotejdk_25
+
+# Flutter Android AAR requires release (-c opt) or profile mode.
+build -c opt
+
+common --lockfile_mode=error
+
+try-import %workspace%/.bazelrc.user

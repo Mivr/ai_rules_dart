@@ -1,0 +1,299 @@
+"""Strongly connected components over a pubspec dependency graph.
+
+`pub.from_lock()` generates one `dart_library` per hosted package, with `deps`
+taken from each package's pubspec. When two packages depend on each other
+(`dio` and `dio_web_adapter` do), those libraries form a cycle in the Bazel
+target graph and analysis fails — before any action runs.
+
+The fix merges every dependency cycle into one `dart_library` that carries all
+of the cycle's packages. Finding the cycles is Tarjan's algorithm over the
+graph the extension builds from the lock's packages and their `dependencies:`
+names (see `//dart/pub:extensions.bzl`). This module holds
+that one pure function so it can be unit tested without downloading anything.
+"""
+
+visibility(["//dart/..."])
+
+def _successor_map(names, dep_map, in_graph):
+    """Successors filtered to in-graph edges and sorted, for determinism."""
+    return {
+        name: sorted([
+            dep
+            for dep in dep_map[name]
+            if dep in in_graph and dep != name
+        ])
+        for name in names
+    }
+
+def _tarjan_visit(node, index_of, lowlink, on_stack, stack, counter):
+    """Records the first visit of `node` in the shared Tarjan state."""
+    index_of[node] = counter[0]
+    lowlink[node] = counter[0]
+    counter[0] += 1
+    stack.append(node)
+    on_stack[node] = True
+
+def _tarjan_advance(node, child, index_of, lowlink, on_stack, work):
+    """Follows one edge: descends into an unvisited child or relaxes `lowlink`."""
+    if child not in index_of:
+        work.append((child, 0))
+    elif on_stack.get(child, False):
+        if index_of[child] < lowlink[node]:
+            lowlink[node] = index_of[child]
+
+def _tarjan_pop_component(node, stack, on_stack):
+    """Pops one component off the stack, sorted."""
+    component = []
+    for _ in range(len(stack)):
+        member = stack.pop()
+        on_stack[member] = False
+        component.append(member)
+        if member == node:
+            break
+    return sorted(component)
+
+def _tarjan_finish(node, work, index_of, lowlink, stack, on_stack, result):
+    """Pops a finished node, propagates its lowlink, and emits a root component."""
+    work.pop()
+    if work:
+        parent = work[-1][0]
+        if lowlink[node] < lowlink[parent]:
+            lowlink[parent] = lowlink[node]
+    if lowlink[node] == index_of[node]:
+        result.append(_tarjan_pop_component(node, stack, on_stack))
+
+def _tarjan_walk(root, successors, state, budget):
+    """Iteratively walks the reachable graph from `root`, appending components to the state's result.
+
+    Args:
+      root: The package name to walk from.
+      successors: Dict of package name to its sorted in-graph successors.
+      state: The shared Tarjan `struct` built by `compute_sccs` (`index_of`,
+        `lowlink`, `on_stack`, `stack`, `counter`, `result`).
+      budget: Step budget for the walk (see `compute_sccs`).
+    """
+    work = [(root, 0)]
+    for _ in range(budget):
+        if not work:
+            break
+        node = work[-1][0]
+        child_pos = work[-1][1]
+        if child_pos == 0 and node not in state.index_of:
+            _tarjan_visit(node, state.index_of, state.lowlink, state.on_stack, state.stack, state.counter)
+        deps = successors[node]
+        if child_pos < len(deps):
+            work[-1] = (node, child_pos + 1)
+            _tarjan_advance(node, deps[child_pos], state.index_of, state.lowlink, state.on_stack, work)
+        else:
+            _tarjan_finish(node, work, state.index_of, state.lowlink, state.stack, state.on_stack, state.result)
+
+def compute_sccs(dep_map):
+    """Computes the strongly connected components of a dependency graph.
+
+    Iterative Tarjan's algorithm, so deep graphs cannot overflow a call stack
+    Starlark does not even have. Deterministic: nodes are visited in sorted
+    order and successors in sorted order, so the same graph always yields the
+    same components whatever order the caller built the map in.
+
+    Args:
+      dep_map: Dict of package name to the names it depends on. Edges naming
+        a package the map does not hold are ignored — a dependency on a
+        package outside the lock (an SDK package, an explicit
+        `pub.package()`) cannot be part of a lock-internal cycle. A
+        self-edge is ignored for the same reason it is dropped from generated
+        deps: a target depending on itself is a cycle of one, and merging it
+        with itself changes nothing.
+
+    Returns:
+      List of components, each a sorted list of package names. The outer list
+      is sorted by each component's first name. Singletons included: the
+      caller keeps them as one-package spokes and merges only the components
+      with more than one member.
+    """
+    names = sorted(dep_map.keys())
+    in_graph = {name: True for name in names}
+
+    # Successors, filtered and sorted: only edges inside the graph, in a
+    # fixed order, so iteration order cannot leak into the result.
+    successors = _successor_map(names, dep_map, in_graph)
+
+    # The Tarjan walk state travels together through every step, so it is one
+    # struct built here and passed down, rather than six parameters on each
+    # call. Its dict and list fields are mutated in place through the struct.
+    state = struct(
+        index_of = {},
+        lowlink = {},
+        on_stack = {},
+        stack = [],
+        counter = [0],
+        result = [],
+    )
+
+    # Step budget for the iterative walk: each iteration pushes a node, pops
+    # one, or advances past one edge, so `2 * nodes + edges + 1` always
+    # suffices. (`while` does not exist in Bazel's Starlark.)
+    total_edges = 0
+    for name in names:
+        total_edges += len(successors[name])
+    budget = 2 * len(names) + total_edges + 1
+
+    for root in names:
+        if root in state.index_of:
+            continue
+        _tarjan_walk(root, successors, state, budget)
+
+    order = {}
+    for component in state.result:
+        first = component[0]
+        order[first] = component
+    return [order[key] for key in sorted(order.keys())]
+
+def normalize_pub_dep(dep, hub_names, spoke_prefixes):
+    """Normalizes one user-declared `pub.package()` dep to a package name.
+
+    Lock packages name each other by package name (their pubspecs do), but
+    an explicit `pub.package()` names repositories: a bare spoke
+    (`dart_pub__foo`), a spoke label (`@dart_pub__foo//:foo`), or a hub alias
+    (`@my_hub//:foo`). All three mean package `foo` for cycle purposes. A
+    label on an unknown repository names no lock package, so it contributes
+    no edge.
+
+    Args:
+      dep: The user-declared dep string.
+      hub_names: All hub repository names in scope.
+      spoke_prefixes: Spoke repo name prefixes in scope (`dart_pub` for the
+        shared scope, hub names for isolated ones).
+
+    Returns:
+      The package name, or "" when the dep names no lock package.
+    """
+    label = dep[1:] if dep.startswith("@") else dep
+    if "//" in label:
+        repo, _, target = label.partition("//")
+        name = target[1:] if target.startswith(":") else target.split("/")[0]
+        if repo in hub_names:
+            return name
+        for prefix in spoke_prefixes:
+            if repo == prefix + "__" + name:
+                return name
+        return ""
+    if dep.startswith("@"):
+        return ""
+    for prefix in spoke_prefixes:
+        if dep.startswith(prefix + "__"):
+            return dep[len(prefix) + 2:]
+    return dep
+
+def package_dep_graph(package_deps, explicit_deps, scope_names, hub_names, spoke_prefixes):
+    """Builds the package dependency graph of one lock scope.
+
+    Pure given the dependency names: the extension resolves each package's
+    names once (from the lockfile facts or one pubspec parse) and calls this
+    to plan the merges, so the shape is unit tested without any download.
+    Each name is one edge: names are never rendered back into pubspec text,
+    so a name carrying quotes, newlines or colons cannot split into several
+    names.
+
+    Args:
+      package_deps: Dict of package name to its dependency names.
+      explicit_deps: Dict of explicit `pub.package()` name to its
+        user-declared deps.
+      scope_names: Every package name in scope (hosted plus explicit).
+      hub_names: All hub repository names in scope.
+      spoke_prefixes: Spoke repo name prefixes in scope.
+
+    Returns:
+      Dict of package name to its sorted in-scope dependency names, with
+      self-edges dropped.
+    """
+    in_scope = {name: True for name in scope_names}
+    graph = {}
+    for name, deps in package_deps.items():
+        graph[name] = sorted([d for d in deps if d in in_scope and d != name])
+    for name, user_deps in explicit_deps.items():
+        normalized = [
+            normalize_pub_dep(d, hub_names, spoke_prefixes)
+            for d in user_deps
+        ]
+        graph[name] = sorted([d for d in normalized if d in in_scope and d != name])
+    return graph
+
+def scc_repo_name(spoke_prefix, members):
+    """Names the merged repository holding one dependency cycle.
+
+    Deterministic in the sorted member names, so every hub aliasing the
+    cycle, and every spoke depending into it, names the same repository.
+
+    Args:
+      spoke_prefix: The scope's spoke repo name prefix.
+      members: The cycle's sorted member package names. Must be non-empty.
+
+    Returns:
+      The merged repository name.
+    """
+    return spoke_prefix + "__scc__" + "__".join(members)
+
+def rewrite_vanished_spoke(dep, vanished):
+    """Rewrites a dep on a merged-away spoke to its merged repository.
+
+    Args:
+      dep: A user-declared dep string (a bare repo name or a label).
+      vanished: Dict of vanished spoke repo name to merged repo name.
+
+    Returns:
+      The dep naming the merged repository, or `dep` unchanged.
+    """
+    bare = dep[1:] if dep.startswith("@") else dep
+    repo, sep, rest = bare.partition("//")
+    if repo in vanished:
+        fixed = vanished[repo] + (sep + rest if sep else "")
+        return ("@" if dep.startswith("@") else "") + fixed
+    return dep
+
+def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, package_deps):
+    """Plans the merges of one lock scope from its packages' dependency names.
+
+    Args:
+      scope_names: Every package name in scope (hosted plus explicit).
+      explicit_deps: Dict of explicit package name to user-declared deps.
+      hub_names: All hub repository names in scope.
+      spoke_prefix: The scope's spoke repo name prefix.
+      package_deps: Dict of package name to its sorted dependency names — the
+        names planning consumes, from the lockfile facts, the server's
+        listing or one pubspec read each. Each name is one edge: names are
+        never rendered back into pubspec text, so quotes, newlines or colons
+        in a name cannot split it into several.
+
+    Returns:
+      `struct(members, merged, package_deps)`: `members` maps every merged
+      package name to its merged repository name; `merged` maps each merged
+      repository name to its sorted member names; `package_deps` carries the
+      sorted names planning used, so every repository records what was
+      planned for later verification against the real pubspecs. Cycles
+      touching an explicit `pub.package()` are left alone — that repository
+      is user-managed, so nothing can be merged into it, and the target cycle
+      fails as it does today.
+    """
+    graph = package_dep_graph(
+        package_deps,
+        explicit_deps,
+        scope_names,
+        hub_names,
+        [spoke_prefix],
+    )
+    members = {}
+    merged = {}
+    for component in compute_sccs(graph):
+        if len(component) < 2:
+            continue
+        if any([m in explicit_deps for m in component]):
+            continue
+        repo = scc_repo_name(spoke_prefix, component)
+        merged[repo] = component
+        for member in component:
+            members[member] = repo
+    return struct(
+        members = members,
+        merged = merged,
+        package_deps = {name: sorted(package_deps[name]) for name in package_deps.keys()},
+    )

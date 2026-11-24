@@ -1,0 +1,6 @@
+name: unversioned_path
+description: "Fixture path package with no version field (publish_to none); pub get locks it as 0.0.0."
+publish_to: none
+
+environment:
+  sdk: ^3.13.0

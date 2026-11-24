@@ -1,0 +1,394 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_library", "dart_test")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+load("//flutter/private:flutter_aot_target.bzl", "flutter_aot_target")
+load(":action_inputs_test.bzl", "action_inputs_test_suite")
+load(":agent_uris_test.bzl", "agent_uris_test_suite")
+load(":android_aar_test.bzl", "android_aar_test_suite")
+load(":aot_flags_test.bzl", "aot_flags_test_suite")
+load(":app_entrypoint_test.bzl", "app_entrypoint_test_suite")
+load(":apple_objc_deps_test.bzl", "apple_objc_deps_test_suite")
+load(":apple_private_headers_test.bzl", "apple_private_headers_test_suite")
+load(":apple_shared_engine_test.bzl", "apple_shared_engine_test_suite")
+load(":architecture_fixtures.bzl", "architecture_fixtures")
+load(":artifact_urls_test.bzl", "artifact_urls_test_suite")
+load(":common_test.bzl", "common_test_suite")
+load(":compile_api_test.bzl", "compile_api_test_suite")
+load(":cpp_client_wrapper_test.bzl", "cpp_client_wrapper_test_suite")
+load(":custom_kernel_defines_test.bzl", "custom_kernel_defines_test_suite")
+load(":debug_modular_app_test.bzl", "debug_modular_app_test_suite")
+load(":define_flagfiles_test.bzl", "define_flagfiles_test_suite")
+load(":defines_config_test.bzl", "defines_config_test_suite")
+load(":defines_files_test.bzl", "defines_files_test_suite")
+load(":facade_reexports_test.bzl", "facade_reexports_test_suite")
+load(":flavor_ios_test.bzl", "flavor_ios_test_suite")
+load(":flavor_test.bzl", "flavor_test_suite")
+load(":flutter_apple_xcframework_import_test.bzl", "flutter_apple_xcframework_import_test_suite")
+load(":flutter_application_test.bzl", "flutter_application_test_suite")
+load(":flutter_drive_test_test.bzl", "flutter_drive_test_test_suite")
+load(":flutter_info_test.bzl", "flutter_info_test_suite")
+load(":flutter_integration_test_test.bzl", "flutter_integration_test_test_suite")
+load(":flutter_library_test.bzl", "flutter_library_test_suite")
+load(":flutter_plugin_test.bzl", "flutter_plugin_test_suite")
+load(":flutter_prebuilt_test.bzl", "flutter_prebuilt_test_suite")
+load(":flutter_pub_apple_deps_test.bzl", "flutter_pub_apple_deps_test_suite")
+load(":flutter_pub_apple_pods_test.bzl", "flutter_pub_apple_pods_test_suite")
+load(":flutter_pub_apple_test.bzl", "flutter_pub_apple_test_suite")
+load(":flutter_pub_cycle_breaks_test.bzl", "flutter_pub_cycle_breaks_test_suite")
+load(":flutter_pub_overlays_test.bzl", "flutter_pub_overlays_test_suite")
+load(":flutter_pub_package_test.bzl", "flutter_pub_package_test_suite")
+load(":flutter_pub_plugin_defines_test.bzl", "flutter_pub_plugin_defines_test_suite")
+load(":flutter_pub_scc_test.bzl", "flutter_pub_scc_test_suite")
+load(":flutter_pubspec_test.bzl", "flutter_pubspec_test_suite")
+load(":flutter_sdk_package_test.bzl", "flutter_sdk_package_test_suite")
+load(":flutter_test_bootstrap_test.bzl", "flutter_test_bootstrap_test_suite")
+load(":flutter_test_coverage_test.bzl", "flutter_test_coverage_test_suite")
+load(":ios_integration_test_test.bzl", "ios_integration_test_test_suite")
+load(":ios_plugin_deps_test.bzl", "ios_plugin_deps_test_suite")
+load(":ios_split_debug_assets_test.bzl", "ios_split_debug_assets_test_suite")
+load(":ios_test.bzl", "ios_apple_plugin_test_suite", "ios_test_suite")
+load(":kernel_target_modular_test.bzl", "kernel_target_modular_test_suite")
+load(":l10n_hub_test.bzl", "l10n_hub_test_suite")
+load(":language_version_test.bzl", "language_version_test_suite")
+load(":linux_integration_runner_test.bzl", "linux_integration_runner_test_suite")
+load(":linux_runner_defines_test.bzl", "linux_runner_defines_test_suite")
+load(":linux_sysroot_link_test.bzl", "linux_sysroot_link_test_suite")
+load(":local_sdk_test.bzl", "local_sdk_test_suite")
+load(":macos_test.bzl", "macos_apple_plugin_test_suite", "macos_test_suite")
+load(":modular_api_test.bzl", "modular_api_test_suite")
+load(":native_assets_test.bzl", "native_assets_test_suite")
+load(":native_sources_test.bzl", "native_sources_test_suite")
+load(":objc_drift_test.bzl", "objc_drift_test_suite")
+load(":path_package_test.bzl", "path_package_test_suite")
+load(":platform_bundle_test.bzl", "platform_bundle_test_suite")
+load(":plist_merge_test.bzl", "plist_merge_test_suite")
+load(":plugin_federation_test.bzl", "plugin_federation_test_suite")
+load(":plugin_registrant_test.bzl", "plugin_registrant_test_suite")
+load(":podfile_lock_test.bzl", "podfile_lock_test_suite")
+load(":podspec_read_test.bzl", "podspec_read_test_suite")
+load(":podspec_xcconfig_defines_test.bzl", "podspec_xcconfig_defines_test_suite")
+load(":profile_mode_test.bzl", "profile_mode_test_suite")
+load(":pub_lock_sdks_test.bzl", "pub_lock_sdks_test_suite")
+load(":pub_packages_default_test.bzl", "pub_packages_default_test_suite")
+load(":registrant_twin_test.bzl", "registrant_twin_test_suite")
+load(":repo_metadata_test.bzl", "repo_metadata_test_suite")
+load(":scc_module_test.bzl", "scc_module_test_suite")
+load(":sdk_source_and_ios_engine_repos_test.bzl", "sdk_source_and_ios_engine_repos_test_suite")
+load(":starlark_hygiene_test.bzl", "starlark_hygiene_test_suite")
+load(":starlark_literal_test.bzl", "starlark_literal_test_suite")
+load(":stock_dev_files_test.bzl", "stock_dev_files_test_suite")
+load(":swiftpm_local_defines_test.bzl", "swiftpm_local_defines_test_suite")
+load(":swiftpm_local_refusal_test.bzl", "swiftpm_local_refusal_test_suite")
+load(":swiftpm_local_settings_test.bzl", "swiftpm_local_settings_fixture")
+load(":swiftpm_manifest_test.bzl", "swiftpm_manifest_test_suite")
+load(":swiftpm_package_test.bzl", "swiftpm_package_test_suite")
+load(":swiftpm_plugin_local_test.bzl", "swiftpm_plugin_local_test_suite")
+load(":swiftpm_resolved_test.bzl", "swiftpm_resolved_test_suite")
+load(":swiftpm_translate_test.bzl", "swiftpm_translate_test_suite")
+load(":toolchain_selection_test.bzl", "toolchain_selection_test_suite")
+load(":toolchain_test.bzl", "toolchain_test_suite")
+load(":toolchains_repo_test.bzl", "toolchains_repo_test_suite")
+load(":unpinned_sdk_test.bzl", "unpinned_sdk_test_suite")
+load(":unused_inputs_test.bzl", "unused_inputs_test_suite")
+load(":validation_test.bzl", "validation_test_suite")
+load(":versions_test.bzl", "versions_test_suite")
+load(":web_test.bzl", "web_test_suite")
+load(":xcframework_plist_test.bzl", "xcframework_plist_test_suite")
+load(":xtool_hub_toolchains_test.bzl", "xtool_hub_toolchains_test_suite")
+load(":xtool_static_xcframework_test.bzl", "xtool_static_xcframework_test_suite")
+
+# The dependency-floor table is read by the repository lint
+# (//rules_dart/tools/inventory) and by e2e/min_versions, which resolves the
+# same declared floors.
+exports_files(["dependency_floors.json"])
+
+# The checked-in TinyKit fixtures the Apple framework-import tests and the iOS
+# integration workspace consume. Both are tiny static frameworks: no download
+# and no build step fetches or compiles them.
+filegroup(
+    name = "TinyKit.xcframework",
+    srcs = glob(["fixtures/TinyKit.xcframework/**"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "TinyKit.framework",
+    srcs = glob(["fixtures/TinyKit.framework/**"]),
+    visibility = ["//visibility:public"],
+)
+
+# The `MODULE.bazel` and floor-table reader of e2e/min_versions.
+dart_library(
+    name = "dependency_floors_lib",
+    package_name = "dependency_floors",
+    srcs = ["lib/dependency_floors_lib.dart"],
+    visibility = ["//visibility:public"],
+)
+
+# Inspects the AAR `flutter_android_aar` produces: it builds the Dart AOT
+# library for Android, so it runs on Linux CI.
+dart_test(
+    name = "android_aar_inspect_test",
+    size = "small",
+    data = [
+        ":release_aar",
+        ":release_aar_x64",
+    ],
+    env = {
+        "AAR": "$(rlocationpath :release_aar)",
+        "AAR_X64": "$(rlocationpath :release_aar_x64)",
+    },
+    main = "android_aar_inspect_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "@rules_dart//dart/runfiles",
+        "@tool_deps//:test",
+    ],
+)
+
+action_inputs_test_suite(name = "action_inputs_test")
+
+android_aar_test_suite(name = "android_aar_test")
+
+versions_test_suite(name = "versions_test")
+
+artifact_urls_test_suite(name = "artifact_urls_test")
+
+toolchain_test_suite(name = "toolchain_test")
+
+toolchain_selection_test_suite(name = "toolchain_selection_test")
+
+unused_inputs_test_suite(name = "unused_inputs_test")
+
+common_test_suite(name = "common_test")
+
+compile_api_test_suite(name = "compile_api_test")
+
+cpp_client_wrapper_test_suite(name = "cpp_client_wrapper_test")
+
+custom_kernel_defines_test_suite(name = "custom_kernel_defines_test")
+
+defines_config_test_suite(name = "defines_config_test")
+
+define_flagfiles_test_suite(name = "define_flagfiles_test")
+
+defines_files_test_suite(name = "defines_files_test")
+
+ios_test_suite(name = "ios_test")
+
+ios_split_debug_assets_test_suite(name = "ios_split_debug_assets_test")
+
+ios_apple_plugin_test_suite(name = "ios_apple_plugin_test")
+
+ios_plugin_deps_test_suite(name = "ios_plugin_deps_test")
+
+ios_integration_test_test_suite(name = "ios_integration_test_test")
+
+macos_test_suite(name = "macos_test")
+
+macos_apple_plugin_test_suite(name = "macos_apple_plugin_test")
+
+plist_merge_test_suite(name = "plist_merge_test")
+
+web_test_suite(name = "web_test")
+
+flutter_info_test_suite(name = "flutter_info_test")
+
+flutter_integration_test_test_suite(name = "flutter_integration_test_test")
+
+flutter_drive_test_test_suite(name = "flutter_drive_test_test")
+
+flutter_library_test_suite(name = "flutter_library_test")
+
+flutter_plugin_test_suite(name = "flutter_plugin_test")
+
+flutter_prebuilt_test_suite(name = "flutter_prebuilt_test")
+
+flutter_pub_apple_test_suite(name = "flutter_pub_apple_test")
+
+flutter_pub_apple_pods_test_suite(name = "flutter_pub_apple_pods_test")
+
+flutter_pub_apple_deps_test_suite(name = "flutter_pub_apple_deps_test")
+
+flutter_pub_package_test_suite(name = "flutter_pub_package_test")
+
+flutter_pub_plugin_defines_test_suite(name = "flutter_pub_plugin_defines_test")
+
+flutter_pub_cycle_breaks_test_suite(name = "flutter_pub_cycle_breaks_test")
+
+flutter_pub_overlays_test_suite(name = "flutter_pub_overlays_test")
+
+flutter_pubspec_test_suite(name = "flutter_pubspec_test")
+
+flutter_sdk_package_test_suite(name = "flutter_sdk_package_test")
+
+sdk_source_and_ios_engine_repos_test_suite(name = "sdk_source_and_ios_engine_repos_test")
+
+flutter_test_bootstrap_test_suite(name = "flutter_test_bootstrap_test")
+
+flutter_test_coverage_test_suite(name = "flutter_test_coverage_test")
+
+plugin_federation_test_suite(name = "plugin_federation_test")
+
+plugin_registrant_test_suite(name = "plugin_registrant_test")
+
+objc_drift_test_suite(name = "objc_drift_test")
+
+path_package_test_suite(name = "path_package_test")
+
+registrant_twin_test_suite(name = "registrant_twin_test")
+
+scc_module_test_suite(name = "scc_module_test")
+
+kernel_target_modular_test_suite(name = "kernel_target_modular_test")
+
+debug_modular_app_test_suite(name = "debug_modular_app_test")
+
+stock_dev_files_test_suite(name = "stock_dev_files_test")
+
+unpinned_sdk_test_suite(name = "unpinned_sdk_test")
+
+# The twin and the plain module both link: the swapped dill holds the constant
+# registrant URI where the SDK constant is read, the plain one does not.
+dart_test(
+    name = "registrant_twin_link_test",
+    size = "small",
+    data = [
+        ":registrant_twin_plain",
+        ":registrant_twin_swapped",
+    ],
+    env = {
+        "PLAIN_DILL": "$(rlocationpath :registrant_twin_plain)",
+        "SWAPPED_DILL": "$(rlocationpath :registrant_twin_swapped)",
+    },
+    main = "registrant_twin_link_test.dart",
+    deps = [
+        "@rules_dart//dart/runfiles",
+        "@tool_deps//:test",
+    ],
+)
+
+repo_metadata_test_suite(name = "repo_metadata_test")
+
+platform_bundle_test_suite(name = "platform_bundle_test")
+
+linux_runner_defines_test_suite(name = "linux_runner_defines_test")
+
+linux_integration_runner_test_suite(name = "linux_integration_runner_test")
+
+linux_sysroot_link_test_suite(name = "linux_sysroot_link_test")
+
+language_version_test_suite(name = "language_version_test")
+
+local_sdk_test_suite(name = "local_sdk_test")
+
+starlark_hygiene_test_suite(name = "starlark_hygiene_test")
+
+profile_mode_test_suite(name = "profile_mode_test")
+
+app_entrypoint_test_suite(name = "app_entrypoint_test")
+
+agent_uris_test_suite(name = "agent_uris_test")
+
+pub_packages_default_test_suite(name = "pub_packages_default_test")
+
+l10n_hub_test_suite(name = "l10n_hub_test")
+
+apple_objc_deps_test_suite(name = "apple_objc_deps_test")
+
+apple_private_headers_test_suite(name = "apple_private_headers_test")
+
+apple_shared_engine_test_suite(name = "apple_shared_engine_test")
+
+pub_lock_sdks_test_suite(name = "pub_lock_sdks_test")
+
+toolchains_repo_test_suite(name = "toolchains_repo_test")
+
+facade_reexports_test_suite(name = "facade_reexports_test")
+
+flutter_application_test_suite(name = "flutter_application_test")
+
+flutter_apple_xcframework_import_test_suite(name = "flutter_apple_xcframework_import_test")
+
+xcframework_plist_test_suite(name = "xcframework_plist_test")
+
+xtool_hub_toolchains_test_suite(name = "xtool_hub_toolchains_test")
+
+xtool_static_xcframework_test_suite(name = "xtool_static_xcframework_test")
+
+native_assets_test_suite(name = "native_assets_test")
+
+native_sources_test_suite(name = "native_sources_test")
+
+modular_api_test_suite(name = "modular_api_test")
+
+validation_test_suite(name = "validation_test")
+
+starlark_literal_test_suite(name = "starlark_literal_test")
+
+swiftpm_package_test_suite(name = "swiftpm_package_test")
+
+swiftpm_plugin_local_test_suite(name = "swiftpm_plugin_local_test")
+
+swiftpm_local_defines_test_suite(name = "swiftpm_local_defines_test")
+
+swiftpm_local_refusal_test_suite(name = "swiftpm_local_refusal_test")
+
+swiftpm_manifest_test_suite(name = "swiftpm_manifest_test")
+
+swiftpm_resolved_test_suite(name = "swiftpm_resolved_test")
+
+podfile_lock_test_suite(name = "podfile_lock_test")
+
+podspec_read_test_suite(name = "podspec_read_test")
+
+podspec_xcconfig_defines_test_suite(name = "podspec_xcconfig_defines_test")
+
+swiftpm_translate_test_suite(name = "swiftpm_translate_test")
+
+# Build-level twin of the translation tests: a C library whose
+# `.headerSearchPath` reaches its own sources through `implementation_deps`.
+# Its public consumer builds; `:swiftpm_local_settings_private_consumer`
+# includes a header under the private search path and must fail to build.
+swiftpm_local_settings_fixture(name = "swiftpm_local_settings")
+
+build_test(
+    name = "swiftpm_local_settings_build_test",
+    targets = [":swiftpm_local_settings_public_consumer"],
+)
+
+# Regression: `flutter_aot_target` with obfuscation and split debug info must
+# run gen_snapshot successfully and produce the debugging-info output.
+flutter_aot_target(
+    name = "aot_split_debug_target",
+    package_name = "lv_fixture",
+    srcs = ["lib/language_version_main.dart"],
+    main = "lib/language_version_main.dart",
+    obfuscate = True,
+    split_debug_info = True,
+    target_compatible_with = HOST_COMPATIBLE,
+)
+
+build_test(
+    name = "aot_split_debug_build_test",
+    target_compatible_with = HOST_COMPATIBLE,
+    targets = [":aot_split_debug_target"],
+)
+
+aot_flags_test_suite(name = "aot_flags_test")
+
+flutter_pub_scc_test_suite(name = "flutter_pub_scc_test")
+
+flavor_test_suite(name = "flavor_test")
+
+flavor_ios_test_suite(name = "flavor_ios_test")
+
+architecture_fixtures(name = "arch_inv")
+
+# FF6 architecture invariants (Gate 13 section D): the provider analysis cases.
+test_suite(
+    name = "architecture_invariants_test",
+    tests = [
+        "//tests/rules_testing:architecture_analysis_cases",
+    ],
+)

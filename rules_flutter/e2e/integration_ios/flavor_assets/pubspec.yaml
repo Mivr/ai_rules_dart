@@ -1,0 +1,15 @@
+name: flavor_assets
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  assets:
+    - path: assets/dev_asset.txt
+      flavors:
+        - dev
+    - path: assets/prod_asset.txt
+      flavors:
+        - prod

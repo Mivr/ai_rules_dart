@@ -1,0 +1,102 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+load(
+    "@rules_flutter//flutter:ios.bzl",
+    "flutter_ios_app",
+    "flutter_ios_simulator_build",
+    "flutter_ios_simulator_build_test",
+)
+
+exports_files(["MODULE.bazel"])
+
+flutter_application(
+    name = "app",
+    package_name = "pub_scc_app",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    # Every package the app's pubspec.yaml names is a dependency of the app:
+    # the asset action builds the package graph from the pubspecs it is given.
+    deps = [
+        "@deps//:acyclic_pkg",
+        "@deps//:cycle_a",
+        "@deps//:cycle_b",
+        "@deps//:flutter",
+        "@deps//:tri_a",
+        "@deps//:tri_b",
+        "@deps//:tri_c",
+    ],
+)
+
+dart_test(
+    name = "scc_3cycle_test",
+    size = "small",
+    srcs = ["test/scc_3cycle_test.dart"],
+    main = "test/scc_3cycle_test.dart",
+    deps = [
+        "@deps//:tri_a",
+        "@deps//:tri_b",
+        "@deps//:tri_c",
+    ],
+)
+
+dart_test(
+    name = "asset_bundle_test",
+    size = "small",
+    srcs = ["test/asset_bundle_test.dart"],
+    data = [":app"],
+    main = "test/asset_bundle_test.dart",
+    deps = [
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+# No Android leg: `cycle_a` and `cycle_b` are Android plugins whose pubspecs name each other, and the
+# stock Gradle build cannot order their compile tasks ("Circular dependency between the following
+# tasks: :cycle_a:bundleLibCompileToJarDebug ..."). The pin step says the same when it is run on such
+# an app. The cycle is a property of the Dart packages, which the targets above and the iOS leg build.
+
+flutter_ios_app(
+    name = "app_ios",
+    srcs = [
+        "@rules_flutter//flutter/private/runners/ios:AppDelegate.swift",
+        "@rules_flutter//flutter/private/runners/ios:SceneDelegate.swift",
+    ],
+    application = ":app",
+    bundle_id = "dev.example.pubscc",
+)
+
+flutter_ios_simulator_build(
+    name = "app_ios_simulator",
+    testonly = True,
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_ios"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "ios_build_test",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_ios"],
+)
+
+dart_test(
+    name = "verify_ios_bundle_test",
+    size = "small",
+    srcs = [
+        "test/verify_ios_bundle_test.dart",
+        "test/zip_archive.dart",
+    ],
+    data = [
+        ":__app_ios_registrant",
+        ":app_ios_simulator",
+    ],
+    env = {
+        "IPA_RLOCATION": "$(rlocationpaths :app_ios_simulator)",
+        "REGISTRANT_RLOCATION": "$(rlocationpaths :__app_ios_registrant)",
+    },
+    main = "test/verify_ios_bundle_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "@rules_dart//dart/runfiles",
+    ],
+)

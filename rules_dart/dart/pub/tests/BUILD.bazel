@@ -1,0 +1,50 @@
+load(":pub_plan_test.bzl", "pub_plan_test_suite")
+load(":pub_sources_test.bzl", "pub_sources_test_suite")
+load(":pub_workspace_test.bzl", "pub_workspace_test_suite")
+
+# Sources of the Starlark unit-test suites that load `//dart/pub/private:*`.
+# They live inside `//dart/pub` so buildifier's `bzl-visibility` lint allows
+# the private loads without suppressions; the suites are instantiated, under
+# their original target names, from `//dart/tests` and its subpackages.
+
+# The target platform of the analysis tests that read a build hook's or a link
+# hook's actions. Hooks do not run for Apple targets yet (the actions are a
+# refusal), so a test of the actions pins the platform instead of taking the
+# host's: on a Mac they would otherwise analyse for macOS.
+platform(
+    name = "linux_x64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    visibility = ["//dart:__subpackages__"],
+)
+
+exports_files(
+    [
+        "language_version_test.bzl",
+        "link_hook_test.bzl",
+        "pin_checks_test.bzl",
+        "propagation_test.bzl",
+        "pub_archive_scan_test.bzl",
+        "pub_plan_test.bzl",
+        "pub_root_pin_test.bzl",
+        "pub_scc_facts_test.bzl",
+        "pub_scc_test.bzl",
+        "pub_sources_test.bzl",
+        "pub_symlink_test.bzl",
+        "pub_workspace_test.bzl",
+        "pubspec_data_test.bzl",
+        "pubspec_guard_test.bzl",
+        "semver_test.bzl",
+        "yaml2json_probe.bzl",
+        "yaml2json_test.bzl",
+    ],
+    visibility = ["//dart:__subpackages__"],
+)
+
+pub_plan_test_suite(name = "pub_plan_test")
+
+pub_sources_test_suite(name = "pub_sources_test")
+
+pub_workspace_test_suite(name = "pub_workspace_test")

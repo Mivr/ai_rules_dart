@@ -1,0 +1,494 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@rules_apple//apple:macos.bzl", "macos_application")
+load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load(
+    "@rules_flutter//flutter:macos.bzl",
+    "MACOS_MINIMUM_OS_VERSION",
+    "flutter_macos_app",
+    "flutter_macos_engine",
+    "flutter_macos_framework_gen",
+    "flutter_macos_info_plist_gen",
+    "flutter_macos_menu_xib_gen",
+    "flutter_macos_native_libs_gen",
+    "flutter_macos_registrant_gen",
+    "flutter_macos_runner_lib_gen",
+)
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load(":profile_build.bzl", "profile_build")
+
+exports_files(["pubspec.lock"])
+
+# =============================================================================
+# Shared: Flutter application + native plugin
+# =============================================================================
+
+cc_library(
+    name = "add_cc",
+    srcs = ["native/add.c"],
+    hdrs = ["native/add.h"],
+)
+
+cc_shared_library(
+    name = "add",
+    visibility = ["//packages/add_plugin:__pkg__"],
+    deps = [":add_cc"],
+)
+
+# A native library that does not sit at the root of its package, which is the
+# shape of a vendored prebuilt (`third_party/foo/lib/libfoo.dylib`) or a
+# genrule writing into a subdirectory. `add` above is the other shape: a
+# cc_shared_library output lands at its package root.
+#
+# The bundle must still carry it as `Contents/Frameworks/libsub.dylib`, where
+# `DynamicLibrary.open('libsub.dylib')` in lib/main.dart finds it. Bundled at
+# its package-relative path instead, it lands in `Frameworks/vendor/lib/`,
+# which the loader never searches and codesign rejects as a malformed bundle.
+# :verify_macos_bundle_test checks where it lands; :verify_macos_app_test
+# checks that the app loads it.
+cc_library(
+    name = "sub_cc",
+    srcs = ["native/sub.c"],
+    hdrs = ["native/sub.h"],
+)
+
+cc_shared_library(
+    name = "sub_built",
+    shared_lib_name = "libsub.dylib",
+    deps = [":sub_cc"],
+)
+
+copy_file(
+    name = "sub",
+    src = ":sub_built",
+    out = "vendor/lib/libsub.dylib",
+)
+
+_APP_DEPS = [
+    "//packages/add_plugin",
+    "@deps//:flutter",
+]
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables: each Dart file is checked against the nearest
+# listed one above it.
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# The app's Dart, as a library, so the analyzer has something to stage.
+# `flutter_application` is a bundle rather than a Dart package and carries no
+# DartInfo, so it cannot be analyzed directly.
+flutter_library(
+    name = "app_lib",
+    package_name = "macos_example",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = _APP_DEPS + [
+        # Supplies `lib/_embedder.yaml`, the only way the analyzer resolves
+        # `dart:ui`. Without it every Flutter import fails to resolve.
+    ],
+)
+
+flutter_application(
+    name = "app_flutter",
+    package_name = "macos_example",
+    main = "lib/main.dart",
+    native_deps = [":sub"],
+    pub_packages = "@deps//packages",
+    # A first-party asset, named in pubspec.yaml, so the dev loop's asset
+    # reload has something real to deliver. asset_reload_e2e_test edits
+    # assets/message.txt while the app runs and asserts the change reaches the
+    # UI. Every app here shares the pubspec, so each lists the file.
+    pubspec_srcs = glob(["assets/**"]),
+    deps = _APP_DEPS,
+)
+
+# An app whose `main` sits outside the package's `lib/` — the shape
+# `flutter run -t test_driver/app.dart` runs. It has no `package:` URI, so the
+# build and the dev loop both name it under the app scheme; hot reload of it,
+# and of the sibling it imports by relative path, is what this pair is for.
+flutter_application(
+    name = "driver_flutter",
+    package_name = "macos_example",
+    srcs = ["test_driver/banner.dart"],
+    main = "test_driver/app.dart",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = glob(["assets/**"]),
+    deps = ["@deps//:flutter"],
+)
+
+flutter_macos_app(
+    name = "driver_app",
+    app_name = "Driver App",
+    application = ":driver_flutter",
+    bundle_id = "com.example.flutterapp.driver",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# =============================================================================
+# Shared macOS targets (used by approaches 2 & 3)
+# =============================================================================
+
+flutter_macos_framework_gen(
+    name = "app_framework",
+    application = ":app_flutter",
+)
+
+flutter_macos_registrant_gen(
+    name = "app_registrant",
+    application = ":app_flutter",
+)
+
+flutter_macos_native_libs_gen(
+    name = "app_native_libs",
+    application = ":app_flutter",
+)
+
+flutter_macos_engine(
+    name = "flutter_engine",
+)
+
+# Shared version and Info.plist for approaches 2 & 3.
+apple_bundle_version(
+    name = "app_version",
+    build_version = "1.0",
+    short_version_string = "1.0",
+    tags = ["manual"],
+    visibility = ["//extensions:__pkg__"],
+)
+
+flutter_macos_info_plist_gen(
+    name = "app_info_plist",
+    app_name = "Flutter App",
+)
+
+# =============================================================================
+# Approach 1: Flutter-generated runner (flutter_macos_app)
+#
+# Recommended for most users. Requires macos/Runner/ from `flutter create`.
+# The macro auto-discovers Swift files, processes XIB (strips
+# customModuleProvider="target"), resolves Xcode plist variables, and wires
+# everything automatically. Fully self-contained — does NOT reuse shared targets.
+# =============================================================================
+
+flutter_macos_app(
+    name = "app",
+    # Capabilities the app needs in *both* configurations. The macro picks
+    # DebugProfile.entitlements for `-c dbg` and Release.entitlements
+    # otherwise, and `flutter create` only writes the network keys into the
+    # debug one — so without this the release bundle is sandboxed with no
+    # network access, silently. Verified from the built bundle's codesign
+    # blob by :verify_macos_entitlements_test.
+    additional_entitlements = ["entitlements/Network.entitlements"],
+    app_name = "Flutter App",
+    application = ":app_flutter",
+    bundle_id = "com.example.flutterapp",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# A second app in the same package. Regression guard: each app's runner
+# compiles into its own Swift module, so two of them can be built in one
+# invocation. Sharing module_name = "Runner" would make both write
+# <pkg>/Runner.swiftmodule and fail analysis with an action conflict.
+flutter_macos_app(
+    name = "app_second",
+    app_name = "Flutter App Second",
+    application = ":app_flutter",
+    bundle_id = "com.example.flutterapp.second",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# An app that ships App Intents. The library goes to `runner_deps` so the runner
+# links it, and to rules_apple's `app_intents`, which only extracts metadata.
+# :verify_macos_app_intents_test finds the intent in the bundle's metadata.
+swift_library(
+    name = "ping_intents",
+    srcs = ["intents/PingIntent.swift"],
+    # rules_apple's `app_intents` aspect refuses a library that does not name
+    # the AppIntents SDK framework.
+    linkopts = ["-Wl,-framework,AppIntents"],
+    module_name = "PingIntents",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_macos_app(
+    name = "app_intents",
+    app_intents = [":ping_intents"],
+    app_name = "Intents App",
+    application = ":app_flutter",
+    bundle_id = "com.example.flutterapp.intents",
+    runner_deps = [":ping_intents"],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# An app with extensions, built in //extensions: a widget extension holding a
+# WidgetKit widget and a Control Center control, and a share extension. Each
+# extension's bundle id starts with the app's, and the app joins the App Group
+# the extensions declare by merging the same entitlements file into its own.
+# :verify_macos_extensions_test checks where each lands, what each declares,
+# and that the whole bundle's signature is valid.
+flutter_macos_app(
+    name = "app_extensions",
+    additional_entitlements = ["//extensions:AppGroup.entitlements"],
+    app_name = "Extensions App",
+    application = ":app_flutter",
+    bundle_id = "com.example.flutterapp.extensions",
+    extensions = [
+        "//extensions:share",
+        "//extensions:widgets",
+    ],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# The same app signed by a team: the app and each extension get the profile
+# from the git-ignored //device package (see device.example/), and the App
+# Group takes the team-prefixed form, which macOS grants to bundles that team
+# signed. Each extension needs a profile of its own; one without is signed ad
+# hoc and loses the group. :verify_macos_team_signing_test checks the result.
+flutter_macos_app(
+    name = "app_extensions_team",
+    additional_entitlements = ["//device:AppGroup.entitlements"],
+    app_name = "Extensions App",
+    application = ":app_flutter",
+    bundle_id = "com.example.flutterapp.extensions",
+    extensions = [
+        "//extensions:share_team",
+        "//extensions:widgets_team",
+    ],
+    provisioning_profile = "//device:profile",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# =============================================================================
+# Approach 2: Bazel-generated runner (flutter_macos_runner_lib_gen)
+#
+# For users without `flutter create` output. Uses template files from
+# rules_flutter. Only needs app_name. User manually wires macos_application.
+# =============================================================================
+
+flutter_macos_menu_xib_gen(
+    name = "bazel_runner_menu_xib",
+    app_name = "Flutter App",
+)
+
+flutter_macos_runner_lib_gen(
+    name = "bazel_runner_lib",
+    engine = ":flutter_engine",
+    module_name = "BazelRunner",
+    registrant = ":app_registrant",
+)
+
+macos_application(
+    name = "app_bazel_runner",
+    additional_contents = {
+        ":app_framework": "Frameworks",
+        ":app_native_libs": "Frameworks",
+    },
+    bundle_id = "com.example.flutterapp.bazelrunner",
+    infoplists = [":app_info_plist"],
+    minimum_os_version = MACOS_MINIMUM_OS_VERSION,
+    resources = [":bazel_runner_menu_xib"],
+    tags = ["manual"],
+    version = ":app_version",
+    deps = [":bazel_runner_lib"],
+)
+
+# =============================================================================
+# Approach 3: Custom runner (manual swift_library)
+#
+# For advanced users who want full control. User writes their own
+# AppDelegate/MainFlutterWindow, creates a swift_library with the registrant
+# from flutter_macos_registrant_gen, and wires into macos_application.
+# =============================================================================
+
+flutter_macos_menu_xib_gen(
+    name = "custom_runner_menu_xib",
+    app_name = "Custom Runner Example",
+)
+
+swift_library(
+    name = "custom_runner_lib",
+    srcs = [
+        "custom_runner/AppDelegate.swift",
+        "custom_runner/MainFlutterWindow.swift",
+        ":app_registrant",
+    ],
+    # Free to be anything: the @objc annotations on AppDelegate and
+    # MainFlutterWindow give them unmangled ObjC class names, so the XIB
+    # resolves them regardless of Swift module.
+    module_name = "CustomRunner",
+    tags = ["manual"],
+    deps = [":flutter_engine"],
+)
+
+macos_application(
+    name = "app_custom_runner",
+    additional_contents = {
+        ":app_framework": "Frameworks",
+        ":app_native_libs": "Frameworks",
+    },
+    bundle_id = "com.example.flutterapp.customrunner",
+    infoplists = [":app_info_plist"],
+    minimum_os_version = MACOS_MINIMUM_OS_VERSION,
+    resources = [":custom_runner_menu_xib"],
+    tags = ["manual"],
+    version = ":app_version",
+    deps = [":custom_runner_lib"],
+)
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+build_test(
+    name = "macos_app_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app"],
+)
+
+# Both apps in one build_test: a per-package module-name collision is an
+# analysis-time action conflict, so it fails here rather than at runtime.
+build_test(
+    name = "macos_two_apps_one_package_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [
+        ":app",
+        ":app_second",
+    ],
+)
+
+build_test(
+    name = "macos_bazel_runner_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_bazel_runner"],
+)
+
+build_test(
+    name = "macos_custom_runner_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":app_custom_runner"],
+)
+
+dart_test(
+    name = "verify_macos_bundle_test",
+    size = "medium",
+    data = [":app"],
+    main = "test/verify_macos_bundle_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# Reads the entitlements blob codesign embedded in the built bundle. Bazel's
+# default fastbuild is not `-c dbg`, so this bundle carries the *release*
+# entitlements — finding the network keys proves additional_entitlements
+# survived into the arm where flutter create grants nothing.
+dart_test(
+    name = "verify_macos_app_intents_test",
+    size = "medium",
+    data = [":app_intents"],
+    main = "test/verify_macos_app_intents_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# Each extension is embedded in Contents/PlugIns/, names its extension point,
+# is sandboxed and shares the app's App Group, and the bundle's signature
+# verifies.
+dart_test(
+    name = "verify_macos_extensions_test",
+    size = "medium",
+    data = [":app_extensions"],
+    main = "test/verify_macos_extensions_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# Every bundle in the team-signed app has one TeamIdentifier, not an ad hoc
+# signature, every App Group is prefixed with it, and the signature verifies.
+# `manual`, like the app: it needs the per-developer //device package, so it
+# has no dart_analysis_test either, which would load that package in a plain
+# `bazel test //...`. Running it applies the analysis aspect.
+dart_test(
+    name = "verify_macos_team_signing_test",
+    size = "medium",
+    data = [":app_extensions_team"],
+    main = "test/verify_macos_team_signing_test.dart",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+dart_test(
+    name = "verify_macos_entitlements_test",
+    size = "medium",
+    data = [":app"],
+    main = "test/verify_macos_entitlements_test.dart",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+dart_test(
+    name = "verify_macos_app_test",
+    size = "medium",
+    data = [":app"],
+    main = "test/verify_macos_app_test.dart",
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+# `manual`, so `bazel test //...` never gives it to the analysis aspect; this
+# checks it anyway.
+dart_analysis_test(
+    name = "verify_macos_app_test_analysis",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":verify_macos_app_test"],
+)
+
+# :app built in Flutter profile mode regardless of the command line, so the
+# profile test below does not depend on how it is invoked.
+profile_build(
+    name = "app_profile",
+    tags = ["manual"],
+    targets = [":app"],
+)
+
+# Launches the profile build and checks it serves a Dart VM service whose
+# isolate carries the profiling extensions and none of the debug-only ones,
+# and whose timeline records frames. A release build serves no VM service.
+dart_test(
+    name = "verify_macos_profile_app_test",
+    size = "medium",
+    data = [":app_profile"],
+    main = "test/verify_macos_profile_app_test.dart",
+    tags = [
+        "exclusive",
+        "manual",
+    ],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+dart_analysis_test(
+    name = "verify_macos_profile_app_test_analysis",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":verify_macos_profile_app_test"],
+)

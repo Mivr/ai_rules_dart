@@ -1,0 +1,4 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: build canary
+    run: bazel build //:canary

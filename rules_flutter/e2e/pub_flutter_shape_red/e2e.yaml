@@ -1,0 +1,12 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: unreadable environment.sdk fetch fails on sdk refusal
+    run: bazel fetch @red_deps//:bad_sdk
+    expect:
+      non_zero: true
+      output_contains: 'bad_sdk in bad_sdk/pubspec.yaml: invalid environment.sdk constraint "3.10"'
+  - name: non-string environment.sdk fetch fails on sdk refusal
+    run: bazel fetch @red_deps//:bad_sdk_type
+    expect:
+      non_zero: true
+      output_contains: 'bad_sdk_type in bad_sdk_type/pubspec.yaml: invalid environment.sdk constraint "3.5"'

@@ -1,0 +1,28 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+
+dart_library(
+    name = "freezed_json",
+    package_name = "freezed_json",
+    srcs = [
+        "lib/src/settings.dart",
+        "lib/src/shape.dart",
+        ":lib/src/settings.freezed.dart",
+        ":lib/src/settings.g.dart",
+        ":lib/src/shape.freezed.dart",
+        ":lib/src/shape.g.dart",
+    ],
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:freezed_annotation"],
+)
+
+dart_build_runner(
+    name = "gen",
+    outs = [
+        "lib/src/settings.freezed.dart",
+        "lib/src/settings.g.dart",
+        "lib/src/shape.freezed.dart",
+        "lib/src/shape.g.dart",
+    ],
+    runner = "@pub_deps//build_runner",
+    deps = ["@pub_deps//:freezed_annotation"],
+)

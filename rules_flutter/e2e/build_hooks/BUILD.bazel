@@ -1,0 +1,78 @@
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_test")
+load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
+
+exports_files(["pubspec.lock"])
+
+# sqlite3, native_add and native_link have build hooks; nothing here names
+# their libraries. Each hook runs once per target platform, and the app's
+# native-assets manifest and bundle come from their outputs.
+_DEPS = [
+    "@deps//:flutter",
+    "@deps//:native_add",
+    "@deps//:native_link",
+    "@deps//:sqlite3",
+]
+
+flutter_application(
+    name = "app_flutter",
+    package_name = "build_hooks",
+    # native_link's link hook runs over the uses a release or profile compile
+    # records, and its data asset is bundled.
+    link_hook_assets = ["package:native_link/factors.json"],
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = _DEPS,
+)
+
+flutter_test(
+    name = "hooks_test",
+    package_name = "build_hooks",
+    size = "small",
+    main = "test/hooks_test.dart",
+    deps = _DEPS + ["@deps//:flutter_test"],
+)
+
+flutter_linux_app(
+    name = "app_linux",
+    application = ":app_flutter",
+    gtk_app_id = "com.example.buildhooks",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# The app's Android side is its stock Android project (android/), built from the pinned Gradle model:
+# `bazel run //:android_pin` writes android_model.json.
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["debug"],
+)
+
+# The debug app for an x86_64 emulator (`//:app_x64` as split APKs, `//:app_x64_apk` as one APK); the
+# hooks run with the NDK's clang for that ABI, and their libraries are packaged under `lib/x86_64/`.
+flutter_android_app(
+    name = "app_x64",
+    abis = ["x86_64"],
+    application = ":app_flutter",
+)
+
+# The three hook libraries are in the APK, for the app's ABI and no other.
+flutter_android_apk_test(
+    name = "app_x64_apk_test",
+    absent_entries = ["lib/arm64-v8a/**"],
+    app = "app_x64",
+    entries = [
+        "lib/x86_64/libflutter.so",
+        "lib/x86_64/libnative_add.so",
+        "lib/x86_64/libnative_link.so",
+        "lib/x86_64/libsqlite3.so",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+build_test(
+    name = "app_linux_build_test",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":app_linux"],
+)

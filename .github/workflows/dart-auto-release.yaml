@@ -1,0 +1,111 @@
+# Continuous delivery of rules_dart: releases each commit on main that Dart CI
+# and Dart Full both passed on, when it carries a `Changelog:` entry that no
+# release of rules_dart has shipped yet.
+#
+# Every completed Dart CI or Dart Full run on main starts this workflow. It
+# releases the run's commit only when both workflows have a passing push or
+# nightly run on it and `release next` finds, among the commits since the
+# newest published release of rules_dart that touch rules_dart/, an entry
+# other than `skip`. The version comes from those commits: a `feat` or
+# breaking (`!`) commit bumps the minor while the major is 0, anything else
+# the patch (rules_dart/tools/release). It then calls dart-tag.yaml with that
+# version and commit, which tags it and calls dart-release.yaml; the release
+# gate finds both proofs on the commit and passes at once. Full runs on every
+# push to main, newest commit wins, so a commit Full skipped is released with
+# the next one it passes.
+#
+# A version by hand (a different bump, a re-release) is "Dart Tag a Release"
+# dispatched on main.
+#
+# Off by default, behind two repository variables: RELEASES_ENABLED (which
+# turns every release job on) and AUTO_RELEASE_ENABLED. rules_flutter's floor
+# on rules_dart is set by a person between the two releases, so an automatic
+# release of either module needs its own decision.
+name: Dart Auto release
+on:
+  workflow_run:
+    workflows: ["Dart CI", "Dart Full matrix"]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  # One decision at a time, never cancelled. The second of CI and Full to
+  # finish on a commit waits here, then finds it tagged and releases nothing.
+  group: auto-release-dart
+  cancel-in-progress: false
+jobs:
+  decide:
+    defaults:
+      run:
+        working-directory: rules_dart
+    name: Decide whether to release
+    if: >-
+      vars.RELEASES_ENABLED == 'true' && vars.AUTO_RELEASE_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          # Every tag and the history between them, for `release next`.
+          fetch-depth: 0
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: CI and Full both passed on the commit
+        id: proof
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          proven=true
+          for wf in dart-ci.yaml dart-full.yaml; do
+            n=$(gh run list --repo "$REPO" --workflow "$wf" --commit "$SHA" --limit 50 --json event,headBranch,conclusion \
+              --jq '[.[] | select(.conclusion == "success" and (.event == "schedule" or (.event == "push" and .headBranch == "main")))] | length')
+            echo "$wf: $n passing push or nightly run(s) on $SHA"
+            [ "$n" -gt 0 ] || proven=false
+          done
+          echo "proven=$proven" >> "$GITHUB_OUTPUT"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        if: steps.proof.outputs.proven == 'true'
+        with:
+          module-root: rules_dart/tools
+          bazelisk-cache: true
+          repository-cache: true
+          cache-save: false
+      - name: Next version
+        id: version
+        if: steps.proof.outputs.proven == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          # The tags that have a published release, drafts left out. A tag the
+          # gate refused is in git and not here: its commits are released with
+          # the next version, which still counts above the refused tag.
+          gh api --paginate "repos/$REPO/releases" --jq '.[] | select(.draft | not) | .tag_name' > "$RUNNER_TEMP/published"
+          version=$(cd tools && bazel run --ui_event_filters=-info --noshow_progress --show_result=0 \
+            //release:release -- next --module=rules_dart --to="$SHA" --published="$RUNNER_TEMP/published")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Release $SHA as: ${version:-nothing to release}"
+  release:
+    name: Tag and release
+    needs: decide
+    if: vars.RELEASES_ENABLED == 'true' && vars.AUTO_RELEASE_ENABLED == 'true' && needs.decide.outputs.version != ''
+    uses: ./.github/workflows/dart-tag.yaml
+    with:
+      version: ${{ needs.decide.outputs.version }}
+      sha: ${{ needs.decide.outputs.sha }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      actions: write

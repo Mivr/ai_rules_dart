@@ -1,0 +1,68 @@
+/// Aggregate code generator, run by `run_binary`.
+///
+/// Interface: one `--input <path>` per source file; the single output is
+/// `--output <path>`.
+///
+/// Reads all source files, finds every class definition across them, and
+/// generates a single registry file listing every model class.
+library;
+
+import 'dart:io';
+
+void main(List<String> args) {
+  final inputPaths = <String>[];
+  String? outputPath;
+
+  for (var i = 0; i + 1 < args.length; i++) {
+    final value = args[i + 1];
+    switch (args[i]) {
+      case '--input':
+        inputPaths.add(value);
+        i++;
+      case '--output':
+        outputPath = value;
+        i++;
+    }
+  }
+
+  if (inputPaths.isEmpty || outputPath == null) {
+    stderr.writeln(
+      'Usage: aggregate_generator --input <file> [--input <file>...] '
+      '--output <file>',
+    );
+    exit(1);
+  }
+
+  final classPattern = RegExp(r'^class\s+(\w+)', multiLine: true);
+  final allClasses = <String>[];
+
+  for (final path in inputPaths) {
+    final source = File(path).readAsStringSync();
+    for (final match in classPattern.allMatches(source)) {
+      allClasses.add(match.group(1)!);
+    }
+  }
+
+  allClasses.sort();
+
+  final buffer = StringBuffer()
+    ..writeln('// GENERATED CODE - DO NOT MODIFY BY HAND')
+    ..writeln(
+      '// Aggregate registry generated from '
+      '${inputPaths.length} source file(s).',
+    )
+    ..writeln()
+    ..writeln('/// All model classes discovered by the aggregate generator.')
+    ..writeln('const List<String> registeredModels = [');
+  for (final cls in allClasses) {
+    buffer.writeln("  '$cls',");
+  }
+  buffer
+    ..writeln('];')
+    ..writeln()
+    ..writeln('/// Number of registered model classes.')
+    ..writeln('const int modelCount = ${allClasses.length};')
+    ..writeln();
+
+  File(outputPath).writeAsStringSync(buffer.toString());
+}

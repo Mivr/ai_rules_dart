@@ -1,0 +1,313 @@
+"Bazel dependencies"
+
+# NOTE: The version field is intentionally omitted. Leaving it unset (the
+# default "") prevents issues when the module is used via non-registry
+# overrides (e.g. https://github.com/bazel-contrib/rules_go/issues/4380).
+# The publish.yaml GitHub Action patches in the release version when
+# submitting to the Bazel Central Registry.
+#
+# That patcher edits the first occurrence of the declaration's opening text in
+# this file, comments included, and does not parse Starlark. Keep that text out
+# of everything above the declaration, and keep this note outside it.
+#
+# For more info, see this Slack thread:
+# https://bazelbuild.slack.com/archives/CA31HN1T3/p1750406404452179
+#
+# NOTE: compatibility_level is omitted (defaults to 0). Bumping it too
+# frequently is discouraged because it's very disruptive: as soon as a module
+# is requested at two different compatibility levels in the dependency tree,
+# users will see an error. Bump it *only* when the breaking change affects most
+# use cases and isn't easy to migrate and/or work around, and *in the same
+# commit* that introduces the incompatible (breaking) change.
+
+module(
+    name = "ai_rules_flutter",
+    bazel_compatibility = [">=9.0.0"],
+    repo_name = "rules_flutter",
+)
+
+# bazel_skylib 1.8.0 is the floor: our macros and ai_rules_dart's BUILD
+# files load `@bazel_skylib//:bzl_library.bzl` (`bzl_library`),
+# `@bazel_skylib//rules:build_test.bzl`, `//rules:common_settings.bzl`,
+# `//rules:expand_template.bzl` and `//rules:write_file.bzl`, and the test
+# suites use `//lib:unittest.bzl`. e2e/min_versions declares this floor;
+# ai_rules_dart itself asks for 1.9.2, so a consumer resolves that
+# higher version through it (see docs/dependencies.md).
+bazel_dep(name = "bazel_skylib", version = "1.8.0")
+
+# package_metadata 0.0.5 is the floor: this module's root BUILD and
+# ai_rules_dart load `@package_metadata//licenses/rules:license.bzl`,
+# `@package_metadata//purl:purl.bzl` (`purl.bazel()`) and
+# `@package_metadata//rules:package_metadata.bzl`. ai_rules_dart
+# asks for 0.0.13, which is the version a consumer resolves through it.
+bazel_dep(name = "package_metadata", version = "0.0.5")
+
+# platforms 1.1.0 is the floor: our `target_compatible_with` constraints and
+# platform definitions use `@platforms//:incompatible`,
+# `@platforms//os:{android,ios,linux,macos,windows}` and
+# `@platforms//cpu:{aarch64,arm64,x86_64}`. No dependency asks for more.
+bazel_dep(name = "platforms", version = "1.1.0")
+
+# rules_cc 0.2.20 is the floor for the opt-in native-asset C++ path: our
+# macros load `@rules_cc//cc:cc_shared_library.bzl`,
+# `@rules_cc//cc:objc_library.bzl`,
+# `@rules_cc//cc/common:cc_shared_library_info.bzl` and the toolchain
+# helpers at `@rules_cc//cc:find_cc_toolchain.bzl`. llvm 0.8.17 asks for
+# 0.2.22 and ai_rules_dart for 0.2.26, so a consumer resolves 0.2.26
+# through those modules; that is their lift, not our floor.
+bazel_dep(name = "rules_cc", version = "0.2.20")
+
+# apple_support 2.2.0 is the floor: our iOS test macros use
+# `@apple_support//constraints:{device,simulator}` and
+# `@apple_support//platforms:ios_arm64`, and MODULE.bazel joins the
+# `@apple_support//crosstool:setup.bzl` `apple_cc_configure_extension`.
+# rules_cc 0.2.26 (through ai_rules_dart) asks for 2.9.1, so a
+# consumer resolves that higher version through rules_cc.
+bazel_dep(name = "apple_support", version = "2.2.0")
+
+# rules_apple 4.5.3 is the minimum supported Apple rule set: consumers may
+# resolve 4.5.3+. Every rules_apple symbol our macros load
+# (ios/macos_application, apple_bundle_version, framework/app-intent imports,
+# and the internal AppleBundleInfo constructor) exists with a compatible
+# signature there; e2e/min_versions pins this exact version and builds every
+# native leg. rules_swift below floors at its compatibility_level 3 release,
+# which 4.5.3 accepts. Both are inherited floors now, not floating pins: MVS
+# selects the maximum of them and every other requester in the graph.
+bazel_dep(name = "rules_apple", version = "4.5.3")
+
+# rules_swift 3.5.0 is the floor, at its `compatibility_level = 3`: it
+# provides `@rules_swift//swift:swift.bzl` (`swift_library`) and the
+# `SwiftInfo`/`swift_interop_info` surface our iOS, macOS and SwiftPM paths
+# load, and rules_apple 4.5.3 requests exactly this compatibility level. A
+# consumer whose own stack asks for 4.x still resolves higher by MVS.
+bazel_dep(name = "rules_swift", version = "3.5.0")
+
+# rules_kotlin 2.3.0 is the floor: an app built from its pinned Gradle model
+# compiles its own and its plugins' Kotlin with `kt_jvm_library`,
+# `kt_kotlinc_options` and `kt_ksp_plugin` (`@rules_kotlin//kotlin:jvm.bzl`,
+# `//kotlin:core.bzl`), on the Kotlin standard library the Gradle model
+# resolved. A Flutter 3.47 app resolves Kotlin 2.4.0, whose metadata the
+# compiler of rules_kotlin 2.2 and older refuses; 2.3.0 is the oldest release
+# that reads it. e2e/min_versions pins it and builds the Android leg.
+bazel_dep(name = "rules_kotlin", version = "2.3.0")
+
+# rules_java 9.0.0 is the floor: the Android model's rules load
+# `@rules_java//java:defs.bzl` (`java_binary`, `java_import`, `java_library`,
+# `java_plugin`, `java_test`) and `@rules_java//java/common:java_info.bzl`
+# (`JavaInfo`), and use the Java toolchain. rules_kotlin 2.3.0 asks for a newer
+# release, which a consumer resolves through it.
+bazel_dep(name = "rules_java", version = "9.0.0")
+
+# Minimum rules_dart with the APIs rules_flutter loads
+# (`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`,
+# `@rules_dart//dart/pub:pub_scc.bzl`, `@rules_dart//dart/pub:yaml.bzl`,
+# `dart_analysis_config(baseline = ...)`).
+# rules_dart lives in this repository, so the floor is the first rules_dart
+# release cut from it that has all of them, and it is raised when rules_flutter
+# starts to load something that only a newer release has. It is published on
+# GitHub as `ai_rules_dart` with `repo_name = "rules_dart"`, so every
+# `@rules_dart//` label keeps working. (A Bazel Central Registry entry for it
+# is pending.)
+# aran's BCR releases (up to 0.7.3) lack them and fail at load with a
+# missing-symbol error, so the floor points at ai_rules_dart and consumers
+# take both modules from their GitHub releases (see README.md).
+# This repo's own builds use the sibling `rules_dart` directory through the
+# local_path_override below, and so do the e2e workspaces: the number here
+# does not change what they build. A release sets the number: `cd
+# rules_dart/tools && bazel run //release:release -- floor set X.Y.Z` writes it
+# here, in the floor table, the docs, the README and the e2e workspaces, and
+# `floor check` fails when they differ (see RELEASING.md). Until the first
+# rules_dart release cut from this repository the number is a placeholder (0.28.3
+# has no `yaml.bzl`), and a consumer that resolves it from the registry fails at
+# load.
+# ai_rules_dart also brings its own higher floors for rules_cc
+# (0.2.26), bazel_skylib (1.9.2), package_metadata (0.0.13) and rules_go
+# (0.64.2); docs/dependencies.md attributes every one of those lifts, and
+# `e2e/min_versions` checks them against the sibling's `MODULE.bazel`.
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+
+bazel_dep(name = "rules_multitool", version = "1.11.1", dev_dependency = True)
+bazel_dep(name = "buildifier_prebuilt", version = "10.1.0", dev_dependency = True)
+bazel_dep(name = "bazelrc-preset.bzl", version = "1.9.2", dev_dependency = True)
+bazel_dep(name = "rules_testing", version = "0.9.0", dev_dependency = True)
+
+# LLVM backs the opt-in xtool Darwin SDK backend (`flutter.darwin_sdk`): the
+# `@flutter_xtool_darwin_sdk` repo symlinks the hermetic LLVM `bin`/`lib` trees
+# for the exec host, and only then — when a bundle is configured, or for this
+# repo's own hermetic-LLVM script tests. The dep stays non-dev because the
+# import below must resolve for every consumer: `use_extension` on llvm's
+# toolchain extension joins llvm's own instance of it (no tags needed here),
+# and `use_repo` imports the per-host prebuilt-toolchain repos into this
+# module's mapping, where the xtool repo rule resolves the one entry it
+# needs. The names mirror the `use_repo` list in llvm's own MODULE.bazel.
+# Plain consumers only pay the module-graph edge (see docs/dependencies.md):
+# no LLVM archive is fetched and no C/C++ toolchain is registered for them.
+# The eight LLVM toolchain registrations below stay dev-only: this repo's own
+# builds need them, consumers never see them.
+# llvm 0.8.17 is the floor: the xtool Darwin SDK path loads
+# `@llvm//extensions:llvm_toolchain_minimal.bzl` and resolves the
+# `llvm-toolchain-minimal-<os>-<cpu>` repos this module imports below, and
+# the repo's own hermetic tests use `@llvm//toolchain:*`. llvm 0.8.17 itself
+# asks for rules_cc 0.2.22, bazel_skylib 1.9.0 and rules_go 0.62.0, but
+# ai_rules_dart asks for even higher versions of all three, so those
+# lifts are attributed there in docs/dependencies.md.
+bazel_dep(name = "llvm", version = "0.8.17")
+
+llvm_toolchain_minimal = use_extension("@llvm//extensions:llvm_toolchain_minimal.bzl", "llvm_toolchain_minimal")
+use_repo(
+    llvm_toolchain_minimal,
+    "llvm-toolchain-minimal-darwin-amd64",
+    "llvm-toolchain-minimal-darwin-arm64",
+    "llvm-toolchain-minimal-linux-amd64",
+    "llvm-toolchain-minimal-linux-arm64",
+    "llvm-toolchain-minimal-windows-amd64",
+    "llvm-toolchain-minimal-windows-arm64",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../rules_dart",
+)
+
+# This repo's own builds stay on the current releases: the public
+# `bazel_dep` versions above are the supported minimums, not the versions CI
+# compiles. `single_version_override` is root-only, so consumers ignore every
+# line below and resolve the floor their own graph selects; the override only
+# keeps this checkout, its `bazel test //flutter/...` and the release gate on
+# today's releases. `e2e/min_versions` is the opposite proof: it declares the
+# floors and pins the ones that can bind exactly (see its MODULE.bazel).
+#
+# BCR's module check evaluates this module as a dependency of its own root,
+# and Bazel applies `single_version_override` only to the root module's
+# resolution. A scratch consumer whose only rules_flutter edge is a
+# `local_path_override` shows the floors (and the documented transitive
+# lifts), not these versions, with `bazel mod graph`; that is the mechanism
+# validated here rather than a BCR-only feature.
+single_version_override(
+    module_name = "bazel_skylib",
+    version = "1.9.2",
+)
+
+single_version_override(
+    module_name = "package_metadata",
+    version = "0.0.13",
+)
+
+single_version_override(
+    module_name = "rules_cc",
+    version = "0.2.26",
+)
+
+single_version_override(
+    module_name = "apple_support",
+    version = "2.9.1",
+)
+
+single_version_override(
+    module_name = "rules_apple",
+    version = "5.2.0",
+)
+
+single_version_override(
+    module_name = "rules_swift",
+    version = "4.1.2",
+)
+
+single_version_override(
+    module_name = "rules_kotlin",
+    version = "2.4.20",
+)
+
+single_version_override(
+    module_name = "rules_java",
+    version = "9.9.0",
+)
+
+single_version_override(
+    module_name = "llvm",
+    version = "0.8.19",
+)
+
+# Hermetic LLVM C++ toolchains for this repo's own builds only. Consumers
+# never see them: e2e workspaces and xtool users register the LLVM toolchains
+# they need in their own root modules. (The xtool Darwin cross-toolchains are
+# separate: `@flutter_xtool_darwin_sdk//:all` below stays registered for
+# everyone, but its toolchains are gated on the opt-in `use_xtool_backend`
+# setting, so they never participate in toolchain resolution otherwise.)
+register_toolchains(
+    "@llvm//toolchain:linux_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:linux_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:linux_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:linux_x86_64_to_linux_x86_64",
+    "@llvm//toolchain:macos_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:macos_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:macos_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:macos_x86_64_to_linux_x86_64",
+    dev_dependency = True,
+)
+
+# Register the apple_cc CC toolchain explicitly so rules_swift's
+# xcode_swift_toolchain resolves to a CC toolchain with a valid apple target
+# triple (rather than the generic rules_cc local_config_cc, whose target_gnu_system_name
+# is "local" and causes "Invalid target triple" in rules_swift autoconfig).
+# apple_support's MODULE.bazel auto-registers these toolchains, but in a deep
+# dep graph with rules_android + rules_cc they can be ordered after the generic
+# local_config_cc; the explicit registration here puts apple_cc first for
+# darwin hosts. e2e workspaces with a leaner dep graph don't need this.
+apple_cc_configure = use_extension(
+    "@apple_support//crosstool:setup.bzl",
+    "apple_cc_configure_extension",
+)
+use_repo(apple_cc_configure, "local_config_apple_cc_toolchains")
+
+register_toolchains("@local_config_apple_cc_toolchains//:all")
+
+flutter = use_extension("//flutter:extensions.bzl", "flutter")
+flutter.toolchain(flutter_version = "3.47.7")
+use_repo(flutter, "flutter_android_engine_arm64", "flutter_android_engine_x64", "flutter_android_headless_runtime", "flutter_chrome_headless_shell", "flutter_dev_root", "flutter_ios_engine", "flutter_ios_engine_profile", "flutter_l10n", "flutter_linux_headless_runtime", "flutter_macos_engine", "flutter_material_fonts", "flutter_pub_hubs", "flutter_sdk_source", "flutter_sky_engine", "flutter_toolchains", "flutter_web_sdk", "flutter_xtool_darwin_sdk")
+
+register_toolchains("@flutter_toolchains//:all")
+
+multitool = use_extension(
+    "@rules_multitool//multitool:extension.bzl",
+    "multitool",
+    dev_dependency = True,
+)
+multitool.hub(lockfile = "//:multitool.lock.json")
+use_repo(multitool, "multitool")
+
+# Pure-Dart pub hubs of rules_flutter's own tools, resolved by rules_dart's pub
+# extension. Hub names are global in that extension, hence the module prefix.
+# Each is isolated (its spokes are `<hub>__<package>` and it pins its own
+# versions, apart from any lock of the consumer) and ships its plan, so no
+# consumer sends a request for these packages. `//tools:pub_plan_test` checks
+# each plan against its lock; regenerate one with
+# `bazel run @rules_dart//dart/pub/plan -- write --lock <pubspec.lock> --out <pub_plan.json>`.
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+
+# Pub dependencies of the tools and the tests (args, boolean_selector,
+# path, yaml, test). The test runners the rules run for users are among them.
+pub.from_lock(
+    name = "rules_flutter_tool_deps",
+    isolated = True,
+    lock = "//tools/tool_deps:pubspec.lock",
+    plan = "//tools/tool_deps:pub_plan.json",
+)
+use_repo(
+    pub,
+    tool_deps = "rules_flutter_tool_deps",
+)
+
+# Root-only (`dev_dependency = True`) registration on `flutter` so the root
+# workspace's repo-contents-cache check on `@@+flutter+tool_deps__*` keeps
+# resolving a `flutter_pub_package` spoke while consumer graphs never see it.
+flutter_dev = use_extension(
+    "//flutter:extensions.bzl",
+    "flutter",
+    dev_dependency = True,
+)
+flutter_dev.pub(
+    name = "tool_deps",
+    lock = "//tools/tool_deps:pubspec.lock",
+    plan = "//tools/tool_deps:pub_plan.json",
+)

@@ -1,0 +1,19 @@
+schema: mivr-e2e-spec/1
+commands:
+  # A link hook runs where hooks run: Linux and Windows.
+  - name: test
+    os: [linux, windows]
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 1
+  # Apple targets refuse a hook that has no Bazel replacement (sqlite3,
+  # webcrypto, objective_c have one), by the package's name. That refusal is
+  # what a Mac must give until build hooks are proven on macOS CI; when they
+  # are, this command goes and `test` above runs everywhere.
+  - name: a link hook is refused on Apple targets, naming the package
+    os: [macos]
+    run: bazel test --test_output=errors //...
+    expect:
+      non_zero: true
+      output_contains:
+        - the link hook of package:glyphs does not run for macos
+        - Only sqlite3, webcrypto and objective_c have a Bazel replacement there

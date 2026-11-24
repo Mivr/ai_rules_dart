@@ -1,0 +1,127 @@
+load("@android_model_glass//:defs.bzl", "flutter_android_apk_test", "flutter_android_app")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+load("@rules_flutter//flutter:ios.bzl", "flutter_ios_app", "flutter_ios_simulator_build_test")
+load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app")
+load("@rules_flutter//flutter:web.bzl", "flutter_web_app", "flutter_web_bundle")
+
+# Draws with //glass_plugin's shaders as a `Paint.shader` and as a
+# `BackdropFilter`, calls its native plugin, and shows one line saying which
+# of the three worked (lib/main.dart). The builds are tested here; running
+# them is a run of the app on that platform.
+
+_DEPS = [
+    "//glass_plugin",
+    "@deps//:flutter",
+]
+
+flutter_application(
+    name = "glass_flutter",
+    package_name = "glass_app",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = _DEPS,
+)
+
+flutter_macos_app(
+    name = "glass_macos",
+    application = ":glass_flutter",
+    bundle_id = "com.example.glassapp",
+    tags = ["manual"],
+)
+
+flutter_ios_app(
+    name = "glass_ios",
+    application = ":glass_flutter",
+    bundle_id = "com.example.glassapp",
+    tags = ["manual"],
+)
+
+# This app's own Android project (glass_app/android) and pin. Its pubspec names //glass_plugin as a
+# path dependency, so the plugin's Android project (../glass_plugin/android) is part of the Gradle
+# build and of the pin; the plugins of the workspace's lock that this app does not depend on are not.
+flutter_android_pin(
+    name = "android_pin",
+    variants = ["debug"],
+)
+
+flutter_android_app(
+    name = "glass_android",
+    application = ":glass_flutter",
+)
+
+flutter_android_apk_test(
+    name = "glass_apk_test",
+    absent_classes = [
+        "Lcom/github/dart_lang/jni/JniPlugin;",
+        "Lcom/llfbandit/record/RecordPlugin;",
+    ],
+    absent_entries = ["lib/*/libdartjni.so"],
+    app = "glass_android",
+    classes = [
+        "Lcom/example/glass_plugin/GlassPlugin;",
+        "Lcom/example/glass_plugin/GlassBootReceiver;",
+        "Lio/flutter/plugins/GeneratedPluginRegistrant;",
+    ],
+    tags = ["android"],
+)
+
+# skwasm: dart2wasm, the macro's renderer.
+flutter_web_app(
+    name = "glass_web",
+    package_name = "glass_app",
+    pub_packages = "@deps//packages",
+    tags = ["manual"],
+    deps = _DEPS,
+)
+
+# CanvasKit: dart2js.
+flutter_web_bundle(
+    name = "glass_web_canvaskit",
+    package_name = "glass_app",
+    compiler = "dart2js",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "pubspec.yaml",
+    pubspec_srcs = glob(["web/**"]),
+    tags = ["manual"],
+    deps = _DEPS,
+)
+
+build_test(
+    name = "glass_build_test",
+    size = "small",
+    targets = [
+        # Compiling the registrant is what proves the workspace plugin's
+        # Kotlin is on its classpath.
+        ":glass_android_apk",
+        ":glass_web",
+        ":glass_web_canvaskit",
+    ],
+)
+
+build_test(
+    name = "glass_macos_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":glass_macos"],
+)
+
+flutter_ios_simulator_build_test(
+    name = "glass_ios_build_test",
+    size = "small",
+    target_compatible_with = ["@platforms//os:macos"],
+    targets = [":glass_ios"],
+)
+
+# The plugin's library manifest reaches the APK: its receiver and the
+# permission it asks for.
+dart_test(
+    name = "verify_glass_apk_test",
+    size = "medium",
+    data = [":glass_android_apk"],
+    main = "test/verify_glass_apk_test.dart",
+    tags = ["android"],
+)

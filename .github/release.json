@@ -1,0 +1,16 @@
+{
+  "rules_dart": {
+    "tag_prefix": "rules_dart-v",
+    "baseline": {
+      "tag": "v0.28.3",
+      "commit": "e7163aab8f9171f54693cd1b99feb7d3cee9602d"
+    }
+  },
+  "rules_flutter": {
+    "tag_prefix": "rules_flutter-v",
+    "baseline": {
+      "tag": "v0.30.2",
+      "commit": "876e263d65ca3eb33e4b05f9b0dc55affc5b3887"
+    }
+  }
+}

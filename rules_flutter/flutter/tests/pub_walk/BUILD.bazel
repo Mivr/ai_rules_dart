@@ -1,0 +1,3 @@
+load(":pub_walk_test.bzl", "pub_walk_test_suite")
+
+pub_walk_test_suite(name = "pub_walk_test")

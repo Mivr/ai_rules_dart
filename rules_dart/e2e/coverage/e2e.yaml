@@ -1,0 +1,12 @@
+schema: mivr-e2e-spec/1
+# `bazel coverage` of the fixture, then its tests. CI also checks the combined
+# report with `bazel run //:lcov_check -- <copy of the report>` and covers the
+# ruleset's own `//dart/runfiles` from the root workspace; the runner cannot
+# hand `lcov_check` an absolute report path, so those two steps stay in CI.
+commands:
+  - name: coverage
+    run: bazel coverage --combined_report=lcov --instrumentation_filter=^// --instrument_test_targets=false //...
+    min_tests_executed: 1
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 1

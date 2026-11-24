@@ -1,0 +1,155 @@
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_library", "dart_test")
+
+exports_files(["pubspec.lock"])
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# The ruleset is named here rather than in `example_test`'s deps: a lint ruleset
+# is not a dependency of the code it lints, and listing it there would carry it
+# into the `DartInfo` of every downstream consumer. Its `include:` resolves by
+# `package:` URI against a project whose package_config covers only the pub hub.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@very_good_analysis"],
+)
+
+# The `main` is under `test/` rather than beside `lib/`, and its only import
+# comes from a pub hub, so the aspect analyzing it shows the staged pub packages
+# and synthesized pubspec are enough for an entrypoint too.
+dart_test(
+    name = "example_test",
+    size = "small",
+    main = "test/example_test.dart",
+    deps = ["@pub_deps//:test"],
+)
+
+dart_library(
+    name = "dup_base",
+    package_name = "dart_test_pkg",
+    srcs = ["lib/dup/shared.dart"],
+    language_version = "3.11",
+)
+
+dart_library(
+    name = "dup_top",
+    package_name = "dart_test_pkg",
+    srcs = [
+        "lib/dup/shared.dart",
+        "lib/dup/top.dart",
+    ],
+    language_version = "3.11",
+    deps = [":dup_base"],
+)
+
+dart_test(
+    name = "dup_nested_test",
+    size = "small",
+    main = "test/dup_nested_test.dart",
+    deps = [
+        ":dup_top",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_library(
+    name = "sib_a",
+    package_name = "dart_test_pkg",
+    srcs = ["lib/sib/common.dart"],
+    language_version = "3.11",
+    # `common.dart` imports `b.dart`, which only `sib_b` lists.
+    tags = ["no-dart-analyze"],
+)
+
+dart_library(
+    name = "sib_b",
+    package_name = "dart_test_pkg",
+    srcs = [
+        "lib/sib/b.dart",
+        "lib/sib/common.dart",
+    ],
+    language_version = "3.11",
+)
+
+# One source listed by two sibling libraries is an analysis error: every debug
+# build is modular, and a module belongs to one target. `//...` skips this
+# target (`manual`); the spec's "sibling shared source is refused" command
+# builds it and asserts the error.
+dart_test(
+    name = "dup_sibling_test",
+    size = "small",
+    main = "test/dup_sibling_test.dart",
+    tags = ["manual"],
+    deps = [
+        ":sib_a",
+        ":sib_b",
+        "@pub_deps//:test",
+    ],
+)
+
+# The sources of a library that cannot compile on its own, as json_serializable's
+# `_advanced_sources` is: `role.dart` declares a part that only `:split` lists.
+# The `:split` wrapper lists the same files and the part, and is what the test
+# reaches. `id.dart` imports `package:path`, which the layering check requires
+# this target to declare itself.
+dart_library(
+    name = "_split_sources",
+    package_name = "dart_test_pkg",
+    srcs = [
+        "lib/split/id.dart",
+        "lib/split/role.dart",
+    ],
+    language_version = "3.11",
+    tags = ["no-dart-analyze"],
+    deps = ["@pub_deps//:path"],
+)
+
+dart_library(
+    name = "split",
+    package_name = "dart_test_pkg",
+    srcs = [
+        "lib/split/id.dart",
+        "lib/split/role.dart",
+        "lib/split/role.part.dart",
+    ],
+    language_version = "3.11",
+    deps = [
+        ":_split_sources",
+        "@pub_deps//:path",
+    ],
+)
+
+dart_test(
+    name = "split_test",
+    size = "small",
+    main = "test/split_test.dart",
+    deps = [
+        ":split",
+        "@pub_deps//:path",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "tags_exclude_test",
+    size = "small",
+    data = ["dart_test.yaml"],
+    exclude_tags = [
+        "ios ? slow : broken",
+        "flaky",
+    ],
+    main = "test/tags_test.dart",
+    deps = ["@pub_deps//:test"],
+)
+
+dart_test(
+    name = "tags_include_test",
+    size = "small",
+    data = ["dart_test.yaml"],
+    include_tags = ["smoke"],
+    main = "test/tags_test.dart",
+    deps = ["@pub_deps//:test"],
+)

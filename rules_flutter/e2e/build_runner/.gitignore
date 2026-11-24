@@ -1,0 +1,5 @@
+/bazel-*
+.bazelrc.user
+.dart_tool/
+# What `dart run build_runner build` writes when the references are made.
+/go_router_pkg/lib/*.g.dart

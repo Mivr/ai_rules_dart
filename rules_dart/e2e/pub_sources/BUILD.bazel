@@ -1,0 +1,15 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+# Every package through the hub, as `package:` URIs resolve for `dart pub get`:
+# a path package of this module, a hosted package and the fork that overrides
+# its dependency.
+dart_test(
+    name = "sources_test",
+    size = "small",
+    main = "test/sources_test.dart",
+    deps = [
+        "@pub_deps//:clock",
+        "@pub_deps//:fake_async",
+        "@pub_deps//:greet",
+    ],
+)

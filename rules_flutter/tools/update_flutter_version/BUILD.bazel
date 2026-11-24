@@ -1,0 +1,42 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+
+dart_binary(
+    name = "update_flutter_version",
+    srcs = [
+        "artifact_list.dart",
+        "pinned_checksums.dart",
+        "shader_flags.dart",
+        "version_update.dart",
+    ],
+    main = "main.dart",
+)
+
+dart_test(
+    name = "shader_flags_test",
+    size = "small",
+    srcs = ["shader_flags.dart"],
+    main = "test/shader_flags_test.dart",
+    deps = ["@tool_deps//:test"],
+)
+
+dart_test(
+    name = "artifact_list_test",
+    size = "small",
+    srcs = [
+        "artifact_list.dart",
+        "pinned_checksums.dart",
+    ],
+    main = "test/artifact_list_test.dart",
+    deps = ["@tool_deps//:test"],
+)
+
+dart_test(
+    name = "version_update_test",
+    size = "small",
+    srcs = [
+        "artifact_list.dart",
+        "version_update.dart",
+    ],
+    main = "test/version_update_test.dart",
+    deps = ["@tool_deps//:test"],
+)

@@ -1,0 +1,77 @@
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# Executables whose `defines` the `executable_defines_test` suite in
+# `//dart/tests` compares: equal sets share every module of the closure, other
+# sets (and none) compile it once more, and a binary that cannot link modules
+# leaves its closure where it was.
+
+package(default_visibility = ["//dart/tests:__pkg__"])
+
+dart_library(
+    name = "env_lib",
+    package_name = "executable_defines_fixture",
+    srcs = ["lib/env_lib.dart"],
+    deps = ["//dart/tests/executable_defines_fixture/base:base_lib"],
+)
+
+[
+    dart_test(
+        name = name,
+        size = "small",
+        defines = defines,
+        main = "main.dart",
+        tags = ["manual"],
+        deps = [":env_lib"],
+    )
+    for name, defines in {
+        # Equal once canonical: one value per key, the last written, by key.
+        "test_a": [
+            "B=2",
+            "A=1",
+        ],
+        "test_a_twin": [
+            "A=1",
+            "B=0",
+            "B=2",
+        ],
+        "test_b": ["A=2"],
+        "test_plain": [],
+    }.items()
+]
+
+dart_binary(
+    name = "kernel_a",
+    compile_mode = "kernel",
+    defines = [
+        "A=1",
+        "B=2",
+    ],
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":env_lib"],
+)
+
+dart_binary(
+    name = "kernel_plain",
+    compile_mode = "kernel",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":env_lib"],
+)
+
+# `exe` from sources: no module is linked, so the `defines` stay on the
+# source compile and the closure keeps its configuration.
+dart_binary(
+    name = "exe_a",
+    defines = ["A=1"],
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":env_lib"],
+)
+
+dart_binary(
+    name = "exe_plain",
+    main = "main.dart",
+    tags = ["manual"],
+    deps = [":env_lib"],
+)

@@ -1,0 +1,3 @@
+# Per-run scratch for run_home_test.sh (RUN_HOME_SCRATCH default). The EXIT
+# trap removes it; this keeps interrupted runs out of git status.
+.scratch/

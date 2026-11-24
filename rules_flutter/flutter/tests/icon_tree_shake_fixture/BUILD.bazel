@@ -1,0 +1,15 @@
+load("//flutter:defs.bzl", "flutter_library")
+
+package(default_visibility = ["//flutter/tests:__subpackages__"])
+
+# A stub `package:flutter` for the web icon tree-shake kernel test
+# (`web_test.bzl`, `_web_conditional_icon_test`).
+flutter_library(
+    name = "flutter_stub",
+    package_name = "flutter",
+    srcs = [
+        "lib/foundation.dart",
+        "lib/material.dart",
+        "lib/src/widgets/icon_data.dart",
+    ],
+)

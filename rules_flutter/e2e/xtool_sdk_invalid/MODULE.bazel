@@ -1,0 +1,34 @@
+"""Xtool red path: opting into flutter.darwin_sdk with a bad path must fail on the path.
+
+This workspace configures a real `flutter.darwin_sdk(path = ...)` tag pointing
+at a bundle that does not exist. CI fetches `@flutter_xtool_darwin_sdk`, expects
+the fetch to fail, and greps the exact missing-path error. The path check runs
+before any LLVM download starts, so the failure proves an opting-in consumer
+with a bad path gets the configuration error rather than an LLVM resolution
+error. It guards the fail-fast ordering in `xtool_darwin_sdk_repo`: moving the
+LLVM symlink above the path check (or breaking the lazy tool-repo wiring) turns
+this red path a different red.
+"""
+
+module(name = "rules_flutter_xtool_sdk_invalid")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+
+# Deliberately missing: the fetch must fail with
+# "configured darwin.artifactbundle path '/nonexistent/darwin.artifactbundle'
+# does not exist".
+flutter.darwin_sdk(path = "/nonexistent/darwin.artifactbundle")
+use_repo(flutter, "flutter_xtool_darwin_sdk")

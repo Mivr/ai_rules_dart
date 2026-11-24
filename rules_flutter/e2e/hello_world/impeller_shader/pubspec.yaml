@@ -1,0 +1,16 @@
+# The project of `//:impeller_shader_test`: an Impeller-only shader, which a
+# web build cannot compile, so it is not named by the root pubspec that the
+# web app shares.
+name: hello_world
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  shaders:
+    - shaders/indexed.frag

@@ -1,0 +1,92 @@
+"""One `dart_package_metadata` declaration, and the ways rules can contradict it.
+
+A `dart_library` points at the one `dart_package_metadata` declaring its package
+instead of repeating the name and language version. These fixtures pin both
+halves of the answer: the declaration reaches the library's `DartInfo`, and
+where the inline attributes are still used, setting both stops the build
+instead of being resolved silently.
+
+Nothing here executes. Every assertion is an `analysistest` or reads a
+provider, so `gen.dart` is never run and `:model_g`'s output is never produced.
+"""
+
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@bazel_skylib//rules:run_binary.bzl", "run_binary")
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_package_metadata")
+load(
+    "//dart/tests:package_identity_test.bzl",
+    "identity_probe",
+    "package_and_inline_conflict_test",
+)
+
+dart_package_metadata(
+    name = "pkg",
+    package_name = "ident_fixture",
+    language_version = "3.11",
+)
+
+# The shape this rule exists for: a library built from a hand-written and a
+# generated source, its identity stated once in `:pkg`.
+
+dart_binary(
+    name = "gen",
+    main = "gen.dart",
+    tags = ["manual"],
+)
+
+run_binary(
+    name = "model_g",
+    srcs = ["lib/model.dart"],
+    outs = ["lib/model.g.dart"],
+    args = [
+        "--input",
+        "$(execpath lib/model.dart)",
+        "--output",
+        "$(execpath lib/model.g.dart)",
+    ],
+    tags = ["manual"],
+    tool = ":gen",
+)
+
+dart_library(
+    name = "ident_fixture",
+    srcs = [
+        "lib/model.dart",
+        ":model_g",
+    ],
+    package = ":pkg",
+    tags = ["manual"],
+)
+
+# The declaration reaches `DartInfo`: a library that names no `language_version`
+# of its own still compiles as 3.11, because `:pkg` said so.
+identity_probe(
+    name = "identity_probe_target",
+    expected_language_version = "3.11",
+    expected_package_name = "ident_fixture",
+    target = ":ident_fixture",
+)
+
+build_test(
+    name = "identity_probe_test",
+    size = "small",
+    targets = [":identity_probe_target"],
+)
+
+# --- contradictions the build must refuse -----------------------------------
+
+# Two ways to state one fact is two ways for it to be wrong, so setting both is
+# refused whether or not they currently agree.
+dart_library(
+    name = "double_declared",
+    package_name = "ident_fixture",
+    srcs = ["lib/model.dart"],
+    package = ":pkg",
+    tags = ["manual"],
+)
+
+package_and_inline_conflict_test(
+    name = "package_and_inline_conflict_test",
+    size = "small",
+    target_under_test = ":double_declared",
+)

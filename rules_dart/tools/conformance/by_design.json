@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "projects": ["*"],
+      "kinds": ["web"],
+      "item": "bootstrap:flutter_bootstrap.js:wasmHashes order",
+      "cause": "differs",
+      "reason": "The rules' asset tool lists directories sorted by path, so the keys of wasmHashes (the renderer's .wasm files) come in the same order on every machine; stock takes its file system's listing order, which differs between machines and file systems. The hashes themselves are compared with the file."
+    }
+  ]
+}

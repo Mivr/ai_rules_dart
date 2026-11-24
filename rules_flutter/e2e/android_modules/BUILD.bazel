@@ -1,0 +1,118 @@
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app", "flutter_android_bundle_test", "flutter_android_sign_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+
+flutter_application(
+    name = "counter",
+    package_name = "counter",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = [
+        "@deps//:cupertino_icons",
+        "@deps//:flutter",
+    ],
+)
+
+# `bazel run //:android_pin` writes android_model.json (Gradle evaluates the build once).
+flutter_android_pin(name = "android_pin")
+
+# `//:app` is the split APKs of a debug build, `//:app_apk` the whole APK.
+flutter_android_app(
+    name = "app",
+    application = ":counter",
+)
+
+# What was built: the classes the three processors generated, each library's own R class, the assets
+# of the app and of a library module, each module's code in its own split.
+flutter_android_apk_test(
+    name = "app_test",
+    absent_entries = ["META-INF/*.kotlin_module"],
+    app = "app",
+    classes = [
+        "Ldev/rdf/ksplib/GreetingJsonAdapter;",
+        "Ldev/rdf/kaptlib/DaggerGarage;",
+        "Ldev/rdf/javalib/DaggerCar;",
+        "Ldev/rdf/ksplib/R$string;",
+        "Ldev/rdf/kaptlib/R;",
+        "Ldev/rdf/counter/R$mipmap;",
+        "Lio/flutter/plugins/GeneratedPluginRegistrant;",
+    ],
+    entries = [
+        "assets/hello.txt",
+        "assets/lib.txt",
+        "assets/flutter_assets/kernel_blob.bin",
+        "lib/x86_64/libflutter.so",
+        "lib/arm64-v8a/libflutter.so",
+    ],
+    split_classes = {
+        "app": "Ldev/rdf/counter/MainActivity;",
+        "base": "Ldev/rdf/ksplib/R$string;",
+        "p_java_lib__debug": "Ldev/rdf/javalib/DaggerCar;",
+        "p_kapt_lib__debug": "Ldev/rdf/kaptlib/DaggerGarage;",
+        "p_ksp_lib__debug": "Ldev/rdf/ksplib/GreetingJsonAdapter;",
+    },
+    split_entries = {
+        "base": "assets/lib.txt",
+        "dart": "assets/flutter_assets/kernel_blob.bin",
+    },
+    splits = [
+        "app",
+        "dart",
+        "p_java_lib__debug",
+        "p_kapt_lib__debug",
+        "p_ksp_lib__debug",
+    ],
+    version_code = 1,
+    version_name = "1.0.0",
+)
+
+# The release build. Its signing configuration is the app's own (`release`, read from
+# android/key.properties by Gradle), so the build leaves the APK and the bundle unsigned and
+# `bazel run //:app_release_sign` (`//:app_release_bundle_sign`) signs them outside the build, with the
+# key from android/key.properties or from the environment. No secret is in the pin or in an action.
+flutter_android_app(
+    name = "app_release",
+    abis = [
+        "arm64-v8a",
+        "x86_64",
+    ],
+    application = ":counter",
+    variant = "release",
+)
+
+# R8 kept what the processors generated and the app reaches, under other names; the release APK and
+# the bundle are unsigned, because the signing configuration is the app's own.
+flutter_android_apk_test(
+    name = "app_release_test",
+    absent_classes = ["Ldev/rdf/kaptlib/DaggerGarage;"],
+    absent_entries = ["assets/flutter_assets/kernel_blob.bin"],
+    app = "app_release",
+    classes = ["Ldev/rdf/counter/MainActivity;"],
+    entries = [
+        "assets/hello.txt",
+        "assets/lib.txt",
+        "lib/arm64-v8a/libapp.so",
+        "lib/x86_64/libapp.so",
+    ],
+    signed = False,
+    version_code = 1,
+    version_name = "1.0.0",
+)
+
+flutter_android_bundle_test(
+    name = "app_release_bundle_test",
+    app = "app_release",
+    entries = [
+        "base/assets/hello.txt",
+        "base/lib/x86_64/libapp.so",
+    ],
+    signed = False,
+)
+
+# `bazel run //:app_release_sign` and `//:app_release_bundle_sign`, run with a key store the test
+# makes (no key is checked in): the APK and the bundle come out signed with that key.
+flutter_android_sign_test(
+    name = "app_release_sign_test",
+    app = "app_release",
+)

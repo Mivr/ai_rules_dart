@@ -1,0 +1,15 @@
+load("//flutter:defs.bzl", "flutter_library")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+
+# A package that ships a build hook, as `flutter.pub()` generates one. Only
+# analysed: the hook action is rules_dart's, run in its own e2e workspaces.
+flutter_library(
+    name = "hook_library",
+    package_name = "hook_library",
+    srcs = ["lib/hook_fixture.dart"],
+    build_hook = "hook/build.dart",
+    hook_srcs = ["hook/build.dart"],
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    visibility = ["//flutter/tests:__subpackages__"],
+)

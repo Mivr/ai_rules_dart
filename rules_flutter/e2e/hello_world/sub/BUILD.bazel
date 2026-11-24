@@ -1,0 +1,25 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+
+flutter_application(
+    name = "sub_app",
+    package_name = "sub_app",
+    srcs = ["lib/main.dart"],
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec_srcs = [
+        ":gen_notice",
+        "assets/notice.txt",
+        "//sub/nested:extra.txt",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//brand",
+        "@deps//:flutter",
+    ],
+)
+
+genrule(
+    name = "gen_notice",
+    outs = ["gen_notice.txt"],
+    cmd = "echo 'generated notice' > $@",
+)

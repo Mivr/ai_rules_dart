@@ -1,0 +1,47 @@
+# The app's extensions: a widget extension that holds a WidgetKit widget and a
+# Control Center control, and a share extension. They are plain Swift; nothing
+# Flutter runs inside an extension. //:app_extensions embeds them.
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load(":defs.bzl", "example_ios_extension")
+
+exports_files(
+    ["AppGroup.entitlements"],
+    visibility = ["//:__pkg__"],
+)
+
+swift_library(
+    name = "widgets_lib",
+    srcs = ["widgets/Widgets.swift"],
+    # rules_apple's `app_intents` aspect refuses a library that does not name
+    # the AppIntents SDK framework.
+    linkopts = ["-Wl,-framework,AppIntents"],
+    module_name = "ExampleWidgets",
+    tags = ["manual"],
+)
+
+example_ios_extension(
+    name = "widgets",
+    # The control's intent runs in the extension, so its metadata goes there.
+    app_intents = [":widgets_lib"],
+    bundle_id = "com.rulesflutter.ios.example.extensions.widgets",
+    infoplists = ["widgets/Info.plist"],
+    # Above the app's 15.0, for the widget's containerBackground. rules_apple
+    # accepts an extension minimum above the app's without comment, and each
+    # bundle records its own; iOS leaves the extension out below it.
+    minimum_os_version = "17.0",
+    deps = [":widgets_lib"],
+)
+
+swift_library(
+    name = "share_lib",
+    srcs = ["share/ShareViewController.swift"],
+    module_name = "ExampleShare",
+    tags = ["manual"],
+)
+
+example_ios_extension(
+    name = "share",
+    bundle_id = "com.rulesflutter.ios.example.extensions.share",
+    infoplists = ["share/Info.plist"],
+    deps = [":share_lib"],
+)

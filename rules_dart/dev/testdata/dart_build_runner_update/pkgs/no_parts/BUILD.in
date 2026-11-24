@@ -1,0 +1,17 @@
+load("@rules_dart//dart:defs.bzl", "dart_build_runner", "dart_library")
+
+dart_build_runner(
+    name = "gen",
+    outs = ["lib/plain.g.dart"],
+    runner = "@pub_deps//build_runner",
+)
+
+dart_library(
+    name = "no_parts",
+    package_name = "no_parts",
+    srcs = [
+        "lib/plain.dart",
+        ":lib/plain.g.dart",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,14 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+
+# A pure-Dart plugin: no native code, only the `dartPluginClass` metadata the
+# generated Dart registrant reads. The registrant calls
+# `DartRegistrationPlugin.registerWith()` before the app's `main()`, so the
+# integration test can observe the Dart-side implementation it installs.
+flutter_plugin(
+    name = "dart_registration_plugin",
+    package_name = "dart_registration_plugin",
+    srcs = ["lib/dart_registration_plugin.dart"],
+    dart_plugin_class = "DartRegistrationPlugin",
+    platforms = ["ios"],
+    visibility = ["//visibility:public"],
+)

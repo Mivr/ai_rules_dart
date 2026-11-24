@@ -1,0 +1,17 @@
+name: hello_plugin
+description: A Dart-only Flutter plugin used as a path dependency.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      linux:
+        dartPluginClass: HelloPluginLinux

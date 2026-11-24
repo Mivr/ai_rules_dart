@@ -1,0 +1,20 @@
+load("//flutter:defs.bzl", "flutter_plugin")
+
+# A Dart-only plugin, in its own Bazel package for its own `lib_root`: a debug program that
+# depends on it generates a plugin registrant.
+flutter_plugin(
+    name = "plugin",
+    package_name = "registrant_twin_plugin",
+    srcs = ["lib/plugin.dart"],
+    dart_plugin_class = "RegistrantTwinPlugin",
+    platforms = [
+        "android",
+        "ios",
+        "linux",
+        "macos",
+        "windows",
+    ],
+    tags = ["manual"],
+    visibility = ["//flutter/tests:__subpackages__"],
+    deps = ["//flutter/tests/registrant_twin_fixture/flutter"],
+)

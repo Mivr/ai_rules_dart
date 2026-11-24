@@ -1,0 +1,382 @@
+"""Repository rule that downloads a single package from a pubspec.lock.
+
+Each hosted package gets its own external repository (spoke), with the hub
+repo providing aliases for backward-compatible `@hub//:pkg` labels.
+
+Also re-exports `make_dart_library_build_content` as a public Starlark
+helper. Other Bazel rule sets (notably rules_flutter's `flutter_pub_package`,
+the `flutter pub get` analog) reuse this helper to emit the same
+`dart_library` shape for non-plugin packages without duplicating the format.
+"""
+
+load("//dart/private:download.bzl", "pinned_download")
+load("//dart/pub/private:build_content.bzl", _PACKAGE_FILES_ATTR_DOC = "PACKAGE_FILES_ATTR_DOC", _make_dart_library_build_content = "make_dart_library_build_content")
+load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
+load("//dart/pub/private:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
+load("//dart/pub/private:pub_hooks.bzl", "PUB_HOOK_REPO_ATTRS", "hook_attrs_block", "hook_settings_of_repo")
+load("//dart/pub/private:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
+load("//dart/pub/private:pub_scc_verify.bzl", "spoke_planned_deps_error")
+load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
+load("//dart/pub/private:pubspec_data.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint")
+load("//dart/pub/private:yaml2json.bzl", "yaml_to_json")
+
+visibility(["//dart/..."])
+
+# Re-export for consumers outside //dart/pub (rules_flutter's
+# `flutter_pub_package`). Loading the private bzl directly would trip
+# buildifier's bzl-visibility check, so we expose it via this public file.
+derive_language_version = _derive_language_version
+make_dart_library_build_content = _make_dart_library_build_content
+
+# Same re-export for the archive header scan: `run_pub_archive_scan` runs the
+# AOT scanner over a fetched archive before extraction, failing a fetch whose
+# tar headers already smuggle a hard link, an escaping symlink, or an
+# escaping entry path.
+run_pub_archive_scan = _run_pub_archive_scan
+
+def pub_lock_package_sha256_error(package_name, version, sha256):
+    """Validates `sha256` for a `pub_lock_package` target.
+
+    Args:
+        package_name: The pub.dev package name.
+        version: The package version string.
+        sha256: Candidate SHA-256 checksum string.
+
+    Returns:
+        An error string when `sha256` is empty or not 64 lowercase hex digits,
+        or None when valid.
+    """
+    return pinned_source_error(
+        "hosted",
+        package_name,
+        version,
+        sha256 = sha256,
+        rule = "pub_lock_package",
+    )
+
+def trim_gzip_trailing_nulls(data):
+    """Strips trailing NUL padding after a `.tar.gz` gzip stream.
+
+    Some pub.dev tarballs (e.g. `nested@1.0.0`) are padded with NUL bytes to a
+    10 KiB tar record boundary past the 8-byte RFC 1952 gzip trailer (4-byte
+    CRC32 + 4-byte little-endian uncompressed `ISIZE`). Bazel's
+    `GzipCompressorInputStream` rejects trailing bytes after the trailer with
+    `Garbage after a valid .gz stream`.
+
+    Because the uncompressed stream is a `.tar` archive (a non-empty multiple
+    of 512 bytes), `ISIZE % 512 == 0`, so `ISIZE[0] == 0` and at least one of
+    `ISIZE[1..3]` is non-zero (for archives < 4 GiB), meaning an unpadded
+    `.tar.gz` ends with at most two NUL bytes.
+
+    Args:
+        data: Raw archive bytes as an ISO-8859-1 Starlark string.
+
+    Returns:
+        The archive bytes with any trailing NUL padding past the gzip trailer
+        removed.
+    """
+    if not data.endswith("\0\0\0\0"):
+        return data
+    stripped = data.rstrip("\0")
+    if len(stripped) < 10:
+        return data
+    b2_zero = stripped[-2:-1] == "\0"
+    b3_zero = stripped[-3:-2] == "\0"
+    if b2_zero and not b3_zero:
+        return stripped + "\0\0"
+    if b3_zero and not b2_zero:
+        if stripped[-4:-3] == "\0" and (hash(stripped[-2:-1]) + hash(stripped[-1:]) * 256) * 256 < len(stripped):
+            return stripped
+        return stripped + "\0"
+    if b2_zero and b3_zero:
+        b = hash(stripped[-1:])
+        if b % 2 != 0 or b * 256 < len(stripped):
+            return stripped + "\0"
+        return stripped + "\0\0"
+    return stripped
+
+def _pub_lock_write_build(ctx, rule_name):
+    """Reads the staged `pubspec.yaml` and writes the spoke `BUILD.bazel`.
+
+    Shared by the hosted and git spokes: both lay out the package's files and
+    then derive the same `dart_library` from its pubspec — its SDK
+    constraint (as the Dart language version) and its build and link hooks.
+    Its dependencies are the `deps` labels the extension computed from the
+    planned names.
+
+    Before writing anything it checks the unfiltered dependency names the
+    fetched pubspec lists against the sorted names planning used (the
+    spoke's `planned_deps` attribute, from the server's listing, a lockfile
+    fact or the archive): planning metadata that drops a real edge would
+    otherwise hide a dependency or a cycle, and one that gains a fake edge
+    would pass silently. A mismatch fails the fetch naming the package, so
+    the failure surfaces here and never as a missing dependency or a target
+    cycle.
+
+    Args:
+      ctx: The repository rule context.
+      rule_name: The spoke rule (`"pub_lock_package"` or
+        `"pub_lock_git_package"`), for diagnostics.
+    """
+    language_version = ""
+    real_deps = []
+    if ctx.path("pubspec.yaml").exists:
+        pubspec_label = ctx.attr.package_name + "/pubspec.yaml"
+        pubspec = yaml_to_json(ctx, ["pubspec.yaml"], [pubspec_label])[0]
+        sdk_err = pubspec_environment_error(pubspec, pubspec_label)
+        if sdk_err:
+            fail(sdk_err)
+        real_deps = sorted(pubspec_deps(pubspec))
+        language_version = _derive_language_version(pubspec_sdk_constraint(pubspec))
+
+    err = spoke_planned_deps_error(rule_name, ctx.name, ctx.attr.package_name, ctx.attr.planned_deps, real_deps)
+    if err:
+        fail(err)
+
+    # A package that builds native code declares a build hook, and one that
+    # trims or bundles assets a link hook: the generated `dart_library` runs
+    # them through the SDK's own hook runner, with the user defines, extra
+    # files and network opt-in the extension gave this spoke.
+    build_content = make_dart_library_build_content(
+        name = ctx.attr.package_name,
+        deps = ctx.attr.deps,
+        language_version = language_version,
+        version = ctx.attr.version,
+        package_files = ctx.attr.package_files,
+        hooks = hook_attrs_block(
+            build_hook = ctx.path("hook/build.dart").exists,
+            link_hook = ctx.path("hook/link.dart").exists,
+            settings = hook_settings_of_repo(ctx.attr),
+            package_name = ctx.attr.package_name,
+            version = ctx.attr.version,
+        ),
+    )
+
+    ctx.file("BUILD.bazel", build_content)
+
+def _url_host(url):
+    """The host of a URL, without scheme, credentials or port."""
+    rest = url.partition("://")[2] or url
+    host = rest.partition("/")[0].rpartition("@")[2]
+    if host.startswith("["):
+        return host.partition("]")[0] + "]"
+    return host.partition(":")[0]
+
+def archive_fetch_error(name, version, url, listing = None):
+    """The failure for a hosted package whose archive could not be downloaded.
+
+    Bazel prints the cause of each failed download (the HTTP status, a
+    checksum that differs) on a WARNING line before this message.
+
+    Args:
+      name: The package name.
+      version: The locked version.
+      url: The archive URL.
+      listing: The listing URL that failed before it, when planning tried one.
+
+    Returns:
+      The message.
+    """
+    tried = "its archive %s" % url
+    if listing:
+        tried = "the server's listing %s or %s" % (listing, tried)
+    return (
+        "pub package \"%s\" %s: could not download %s (Bazel's WARNING above says why). " +
+        "If the server needs a token (`dart pub token add`), give it to Bazel with a credential helper for " +
+        "its host: `--credential_helper=%s=<helper>` in .bazelrc (see docs/pub.md, Private servers). " +
+        "If the server no longer has this version, or serves other bytes than the lock's sha256, run " +
+        "`dart pub get` and commit the lock."
+    ) % (name, version, tried, _url_host(url))
+
+def fetch_pub_lock_archive(ctx):
+    """Downloads, checks and extracts one hosted package into the repository root.
+
+    The fetch half of `pub_lock_package`, shared with rule sets that build a
+    package repository of their own on top of it (rules_flutter's
+    `flutter_pub_package`): it reads the `package_name`, `version`, `sha256`
+    and `url` attributes of `PUB_LOCK_PACKAGE_ATTRS`. The archive is
+    downloaded against its sha256, its trailing gzip padding is trimmed, the
+    header scanner refuses hostile entries before the extractor runs, and the
+    extracted tree's symlinks are checked before anything reads it.
+
+    Args:
+      ctx: The repository rule context.
+    """
+    err = pub_lock_package_sha256_error(
+        ctx.attr.package_name,
+        ctx.attr.version,
+        ctx.attr.sha256,
+    )
+    if err:
+        fail(err)
+
+    url = ctx.attr.url
+
+    # pub.dev serves some tarballs padded with trailing NUL bytes past the
+    # 8-byte RFC 1952 gzip trailer (observed as of 2026-04 on `nested@1.0.0`,
+    # among others). Bazel's built-in `GzipCompressorInputStream` rejects
+    # trailing bytes after the trailer with `Garbage after a valid .gz stream`.
+    #
+    # Download the archive (verifying its sha256), strip any trailing NUL
+    # padding past the gzip trailer, and unpack with `ctx.extract`.
+    result = pinned_download(
+        ctx,
+        url = url,
+        output = "_archive.tar.gz",
+        sha256 = ctx.attr.sha256.strip(),
+        allow_fail = True,
+    )
+    if not result.success:
+        fail(archive_fetch_error(ctx.attr.package_name, ctx.attr.version, url))
+    raw_archive = ctx.read("_archive.tar.gz", watch = "no")
+    trimmed_archive = trim_gzip_trailing_nulls(raw_archive)
+    if trimmed_archive != raw_archive:
+        ctx.delete("_archive.tar.gz")
+        ctx.file("_archive.tar.gz", trimmed_archive, executable = False)
+
+    # Run the AOT header scanner over the archive file before the extractor
+    # trusts it: a hard-link entry, an absolute or package-escaping symlink
+    # entry, or an absolute or climbing entry path fails the fetch here, not
+    # after its links hit the filesystem.
+    _run_pub_archive_scan(ctx, "_archive.tar.gz", ctx.attr.package_name)
+    ctx.extract("_archive.tar.gz")
+    ctx.delete("_archive.tar.gz")
+    _check_package_symlinks(ctx, ctx.attr.package_name)
+
+def _pub_lock_package_impl(ctx):
+    fetch_pub_lock_archive(ctx)
+    _pub_lock_write_build(ctx, "pub_lock_package")
+    return ctx.repo_metadata(reproducible = True)
+
+# The attributes of one hosted package repository: its coordinates, the
+# dependency names planning used, and its own dependency labels. A rule set
+# that adds its own attributes to a package repository starts from these, so
+# both rules read the same planned shape (see `fetch_pub_lock_archive`).
+PUB_LOCK_PACKAGE_ATTRS = {
+    "package_name": attr.string(
+        doc = "The pub.dev package name.",
+        mandatory = True,
+    ),
+    "version": attr.string(
+        doc = "The package version to download.",
+        mandatory = True,
+    ),
+    "sha256": attr.string(
+        doc = "SHA256 hash of the package archive for integrity verification.",
+        mandatory = True,
+    ),
+    "url": attr.string(
+        doc = "The archive URL: the server's `archive_url` for the version, or " +
+              "`<base>/packages/<name>/versions/<version>.tar.gz` when it lists none.",
+        mandatory = True,
+    ),
+    "planned_deps": attr.string_list(
+        doc = "The sorted dependency names planning used for this package (its whole " +
+              "`dependencies:`, unfiltered). The fetch fails when the fetched pubspec " +
+              "lists other names.",
+        default = [],
+    ),
+    "deps": attr.string_list(
+        doc = "Labels of this package's own dependencies: a sibling spoke, the merged " +
+              "repository holding a dependency cycle, or a `pub.package()` repository.",
+        default = [],
+    ),
+    "package_files": attr.string_list(
+        doc = "Applies to this hosted package. " + _PACKAGE_FILES_ATTR_DOC,
+        default = ["pubspec.yaml", "LICENSE*"],
+    ),
+} | PUB_HOOK_REPO_ATTRS
+
+pub_lock_package = repository_rule(
+    implementation = _pub_lock_package_impl,
+    attrs = PUB_LOCK_PACKAGE_ATTRS,
+    doc = "Downloads a single hosted package from a pubspec.lock and generates a BUILD file.",
+)
+
+def _pub_lock_git_package_impl(ctx):
+    err = pinned_source_error(
+        "git",
+        ctx.attr.package_name,
+        ctx.attr.version,
+        resolved_ref = ctx.attr.resolved_ref,
+        rule = "pub_lock_git_package",
+    )
+    if err:
+        fail(err)
+
+    path = ctx.attr.path.strip() if ctx.attr.path != None else "."
+    if path == "":
+        path = "."
+
+    clone_rel = "_git_bare"
+    git_transport_fetch(
+        ctx,
+        ctx.attr.url,
+        clone_rel,
+        ctx.attr.resolved_ref,
+        'pub_lock_git_package "%s"' % ctx.attr.package_name,
+    )
+
+    archive_path = ctx.path("_git_archive.tar")
+    spec = ctx.attr.resolved_ref if path == "." else ctx.attr.resolved_ref + ":" + path
+    git_materialize(
+        ctx,
+        clone_rel,
+        ctx.attr.resolved_ref,
+        archive_path,
+        spec,
+        'pub_lock_git_package "%s"' % ctx.attr.package_name,
+    )
+
+    # `git archive` output is a plain tar: refuse hostile entries from its
+    # headers before the extractor trusts them, the same check as hosted.
+    _run_pub_archive_scan(ctx, archive_path, ctx.attr.package_name)
+    ctx.extract(archive_path)
+    ctx.delete(archive_path)
+    ctx.delete(ctx.path(clone_rel))
+    _check_package_symlinks(ctx, ctx.attr.package_name)
+
+    _pub_lock_write_build(ctx, "pub_lock_git_package")
+    return ctx.repo_metadata(reproducible = True)
+
+pub_lock_git_package = repository_rule(
+    implementation = _pub_lock_git_package_impl,
+    attrs = {
+        "package_name": attr.string(
+            doc = "The pub package name.",
+            mandatory = True,
+        ),
+        "version": attr.string(
+            doc = "The package version.",
+            mandatory = True,
+        ),
+        "url": attr.string(
+            doc = "Git remote URL.",
+            mandatory = True,
+        ),
+        "resolved_ref": attr.string(
+            doc = "Full 40-hex commit SHA to fetch.",
+            mandatory = True,
+        ),
+        "path": attr.string(
+            doc = "Subdirectory inside the git repo holding the package; '.' means repo root.",
+            default = ".",
+        ),
+        "planned_deps": attr.string_list(
+            doc = "The sorted dependency names planning used for this package (its whole " +
+                  "`dependencies:`, unfiltered). The fetch fails when the fetched pubspec " +
+                  "lists other names.",
+            default = [],
+        ),
+        "deps": attr.string_list(
+            doc = "Labels of this package's own dependencies: a sibling spoke, the merged " +
+                  "repository holding a dependency cycle, or a `pub.package()` repository.",
+            default = [],
+        ),
+        "package_files": attr.string_list(
+            doc = "Applies to this git-sourced package. " + _PACKAGE_FILES_ATTR_DOC,
+            default = ["pubspec.yaml", "LICENSE*"],
+        ),
+    } | PUB_HOOK_REPO_ATTRS,
+    doc = "Fetches a single git-sourced package from a pubspec.lock and generates a BUILD file.",
+)

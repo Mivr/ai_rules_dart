@@ -1,0 +1,9 @@
+# dart/ext: the lock of the pub packages rules_dart's own builders use.
+
+exports_files(
+    [
+        "pub_plan.json",
+        "pubspec.lock",
+    ],
+    visibility = ["//visibility:public"],
+)

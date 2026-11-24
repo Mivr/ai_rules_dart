@@ -1,0 +1,53 @@
+# run_home registry: every runnable entry point in the RT37-flutter:02 class.
+#
+# Columns (tab-separated): label, args, policy, mode, reason.
+#   label   Bazel label. `@rules_flutter//...` rows live in the rules repo;
+#           `//...` rows are instances in this workspace.
+#   args    Space-separated args appended after `bazel run <label> --`
+#           (`-` = none).
+#   policy  HOME policy the entry must implement: `caller-home` (keep the
+#           caller's env so PUB_CACHE/creds resolve; the tool CLI takes
+#           `--suppress-analytics` instead) or `private` (run under a fresh
+#           dir that is removed afterwards). `n/a` for not-run rows, which
+#           have no `bazel run` launcher.
+#   mode    `run` (executed under canary HOME dirs by run_home_test.sh) or
+#           `build` (not headless-runnable: built only, with a reason).
+#
+# Enumeration method (run_home_test.sh replays this and fails on any drift):
+# one `bazel query` per line, results unioned:
+#   kind(flutter_sdk_binary, @rules_flutter//dart/...)
+#   kind(flutter_pub, @rules_flutter//flutter/...)
+#   kind(test, //...)
+#   kind(test_suite, //...)
+#   kind(".*_binary rule", //...)
+#   kind(".*_binary rule", @rules_flutter//dart/...)
+#   kind(".*_binary rule", @rules_flutter//flutter/...)
+#   kind(test, @rules_flutter//dart/...)
+#   kind(test, @rules_flutter//flutter/...)
+# Every label the queries return must appear here or in audit.tsv; every
+# row here must still resolve. Bundle/framework/asset rules are not
+# executable and match none of the queries above. //tools/... does not
+# load from a downstream workspace, so its entries are attested in
+# audit.tsv instead of re-enumerated (the script says so when the queries
+# fail, and enforces them when they succeed).
+@rules_flutter//dart:dart	-	private	run	SDK pass-through with no arguments; dartdev runs its front end, so a private HOME keeps telemetry out of the caller's directories
+@rules_flutter//dart:dart	--help	private	run	help flag alone; dartdev runs and may write telemetry, so the launcher uses a private HOME
+@rules_flutter//dart:dart	-h	private	run	short help flag alone; same private-HOME path as --help
+@rules_flutter//dart:dart	--verbose	private	run	verbose flag alone; --suppress-analytics does not stop this form's telemetry, so a private HOME is required
+@rules_flutter//dart:dart	-v	private	run	short verbose flag alone; same private-HOME path
+@rules_flutter//dart:dart	--help --verbose	private	run	help and verbose flags combined; private HOME, unchanged output
+@rules_flutter//dart:dart	--verbose --help	private	run	verbose and help flags combined; private HOME, unchanged output
+@rules_flutter//dart:dart	--version	private	run	version flag alone; private HOME, unchanged output and exit code
+@rules_flutter//dart:dart	--suppress-analytics --verbose	private	run	the reported hole: the flag alone does not stop --verbose telemetry, so a private HOME covers it
+@rules_flutter//dart:dart	help	caller-home	run	help command; the suppression flag is honoured, caller env kept
+@rules_flutter//dart:dart	help pub	caller-home	run	help command with a topic; suppression flag honoured
+@rules_flutter//dart:dart	pub token list	caller-home	run	SDK pass-through; dart CLI takes --suppress-analytics before the command, PUB_CACHE/creds resolve from caller env
+@rules_flutter//dart:dart	--verbose pub token list	caller-home	run	SDK pass-through in command form behind a leading global flag; still suppresses, caller creds resolve
+@rules_flutter//dart:dart	hello.dart	private	run	SDK pass-through in file form; the VM rejects the flag, so a private HOME runs the program unchanged and the gate asserts clean canaries
+@rules_flutter//flutter:pub	token list	caller-home	run	needs caller PUB_CACHE + pub-tokens.json; dart CLI takes --suppress-analytics, writes nothing under HOME
+//:widget_test	-	private	run	flutter_test launcher; flutter_tester spawns under a private HOME
+//:widget_prebuilt_test	-	private	run	same launcher path as flutter_test, prebuilt kernel
+//:app_test_linux	-	private	run	linux integration launcher; app + driver run under a private HOME
+//:app_test_web	-	private	run	web integration launcher (chrome+Xvfb); browser profile under a private HOME
+//:run_home_linux	-	n/a	build	GUI bundle, not executable and needs a display; build-only
+//:run_home_web	-	n/a	build	browser bundle, not executable without a harness; build-only

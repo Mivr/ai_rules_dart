@@ -1,0 +1,2 @@
+# Fetch-only workspace: the cycle-break proof runs through `bazel query` on
+# the hub aliases, so there are no build targets here by design.

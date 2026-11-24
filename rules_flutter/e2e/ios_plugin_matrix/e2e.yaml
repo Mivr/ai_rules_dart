@@ -1,0 +1,115 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test workspace and matrix self-test
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 2
+  - name: the firebase_core iOS side is refused where an Apple build reaches it
+    run: bazel build @deps__firebase_core//:firebase_core_apple_ios_unbuildable
+    expect:
+      non_zero: true
+      output_contains: 'sets no `swift_package_resolved`'
+  - name: the firebase_auth iOS side is refused where an Apple build reaches it
+    run: bazel build @deps__firebase_auth//:firebase_auth_apple_ios_unbuildable
+    expect:
+      non_zero: true
+      output_contains: 'sets no `swift_package_resolved`'
+  - name: the cloud_firestore iOS side is refused where an Apple build reaches it
+    run: bazel build @deps__cloud_firestore//:cloud_firestore_apple_ios_unbuildable
+    expect:
+      non_zero: true
+      output_contains: 'sets no `swift_package_resolved`'
+  - name: the firebase_messaging iOS side is refused where an Apple build reaches it
+    run: bazel build @deps__firebase_messaging//:firebase_messaging_apple_ios_unbuildable
+    expect:
+      non_zero: true
+      output_contains: 'sets no `swift_package_resolved`'
+  - name: query google_maps_flutter_ios spoke
+    run: bazel query @deps__google_maps_flutter_ios//:all
+  - name: the google_sign_in_ios iOS side is refused where an Apple build reaches it
+    run: bazel build @deps__google_sign_in_ios//:google_sign_in_ios_apple_ios_unbuildable
+    expect:
+      non_zero: true
+      output_contains: 'sets no `swift_package_resolved`'
+  - name: the sentry_flutter iOS side is refused where an Apple build reaches it
+    run: bazel build @deps__sentry_flutter//:sentry_flutter_apple_ios_unbuildable
+    expect:
+      non_zero: true
+      output_contains: 'sets no `swift_package_resolved`'
+  - name: query image_picker_ios spoke
+    run: bazel query @deps__image_picker_ios//:all
+  - name: query webview_flutter_wkwebview spoke
+    run: bazel query @deps__webview_flutter_wkwebview//:all
+  - name: query url_launcher_ios spoke
+    run: bazel query @deps__url_launcher_ios//:all
+  - name: query permission_handler_apple spoke
+    run: bazel query @deps__permission_handler_apple//:all
+  - name: query flutter_inappwebview_ios spoke
+    run: bazel query @deps__flutter_inappwebview_ios//:all
+    expect:
+      non_zero: true
+      output_contains: "declares resources ('Storyboards/**/*.storyboard'), which rules_flutter does not build for plugins"
+  - name: query google_mlkit_commons spoke
+    run: bazel query @deps__google_mlkit_commons//:all
+  - name: the stripe_ios iOS side is refused where an Apple build reaches it
+    run: bazel build @deps__stripe_ios//:stripe_ios_apple_ios_unbuildable
+    expect:
+      non_zero: true
+      output_contains: 'sets no `swift_package_resolved`'
+  - name: query pods firebase_core spoke
+    run: bazel query @deps_pods__firebase_core//:all
+    expect:
+      non_zero: true
+      output_contains: 'Flutter plugin "firebase_core" depends on pod "Firebase/CoreOnly" (12.19.3 in @@//:Podfile.lock), which no Bazel target provides. Map it with flutter.pub(ios_pod_deps = {"Firebase/CoreOnly": "<label>"})'
+  - name: query pods firebase_auth spoke
+    run: bazel query @deps_pods__firebase_auth//:all
+    expect:
+      non_zero: true
+      output_contains: 'Flutter plugin "firebase_auth" depends on pod "Firebase/Auth" (12.19.3 in @@//:Podfile.lock), which no Bazel target provides. Map it with flutter.pub(ios_pod_deps = {"Firebase/Auth": "<label>"})'
+  - name: query pods cloud_firestore spoke
+    run: bazel query @deps_pods__cloud_firestore//:all
+    expect:
+      non_zero: true
+      output_contains: 'Flutter plugin "cloud_firestore" depends on pod "Firebase/Firestore" (12.19.3 in @@//:Podfile.lock), which no Bazel target provides. Map it with flutter.pub(ios_pod_deps = {"Firebase/Firestore": "<label>"})'
+  - name: query pods firebase_messaging spoke
+    run: bazel query @deps_pods__firebase_messaging//:all
+    expect:
+      non_zero: true
+      output_contains: 'Flutter plugin "firebase_messaging" depends on pod "Firebase/Messaging" (12.19.3 in @@//:Podfile.lock), which no Bazel target provides. Map it with flutter.pub(ios_pod_deps = {"Firebase/Messaging": "<label>"})'
+  - name: query pods google_maps_flutter_ios spoke
+    run: bazel query @deps_pods__google_maps_flutter_ios//:all
+    expect:
+      non_zero: true
+      output_contains: 'Flutter plugin "google_maps_flutter_ios" depends on pod "GoogleMaps" (10.15.0 in @@//:Podfile.lock), which no Bazel target provides. Map it with flutter.pub(ios_pod_deps = {"GoogleMaps": "<label>"})'
+  - name: query pods google_sign_in_ios spoke
+    run: bazel query @deps_pods__google_sign_in_ios//:all
+    expect:
+      non_zero: true
+      output_contains: 'Flutter plugin "google_sign_in_ios" depends on pod "GoogleSignIn" (9.0.0 in @@//:Podfile.lock), which no Bazel target provides. Map it with flutter.pub(ios_pod_deps = {"GoogleSignIn": "<label>"})'
+  - name: the pods sentry_flutter iOS side is refused where an Apple build reaches it
+    run: bazel build @deps_pods__sentry_flutter//:sentry_flutter_apple_ios_unbuildable
+    expect:
+      non_zero: true
+      output_contains: 'sets no `swift_package_resolved`'
+  - name: query pods image_picker_ios spoke
+    run: bazel query @deps_pods__image_picker_ios//:all
+  - name: query pods webview_flutter_wkwebview spoke
+    run: bazel query @deps_pods__webview_flutter_wkwebview//:all
+  - name: query pods url_launcher_ios spoke
+    run: bazel query @deps_pods__url_launcher_ios//:all
+  - name: query pods permission_handler_apple spoke
+    run: bazel query @deps_pods__permission_handler_apple//:all
+  - name: query pods flutter_inappwebview_ios spoke
+    run: bazel query @deps_pods__flutter_inappwebview_ios//:all
+    expect:
+      non_zero: true
+      output_contains: "declares resources ('Storyboards/**/*.storyboard'), which rules_flutter does not build for plugins"
+  - name: query pods google_mlkit_commons spoke
+    run: bazel query @deps_pods__google_mlkit_commons//:all
+    expect:
+      non_zero: true
+      output_contains: 'Flutter plugin "google_mlkit_commons" depends on pod "MLKitVision" (10.0.0 in @@//:Podfile.lock), which no Bazel target provides. Map it with flutter.pub(ios_pod_deps = {"MLKitVision": "<label>"})'
+  - name: query pods stripe_ios spoke
+    run: bazel query @deps_pods__stripe_ios//:all
+    expect:
+      non_zero: true
+      output_contains: 'Flutter plugin "stripe_ios" depends on pod "Stripe" (26.13.0 in @@//:Podfile.lock), which no Bazel target provides. Map it with flutter.pub(ios_pod_deps = {"Stripe": "<label>"})'

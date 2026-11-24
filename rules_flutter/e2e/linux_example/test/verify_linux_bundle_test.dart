@@ -1,0 +1,140 @@
+/// Verifies the Linux bundle produced by flutter_linux_app has the expected
+/// directory structure.
+///
+/// Runs as a Bazel dart_test with the bundle as data dependency.
+library;
+
+// This script's diagnostics are its product: it reports what it found in
+// the built artifact to the bazel test log, so `print` is its output
+// channel rather than a stray debugging statement.
+// ignore_for_file: avoid_print
+
+import 'dart:io';
+
+void main() {
+  final testSrcDir = Platform.environment['TEST_SRCDIR'];
+  final testWorkspace = Platform.environment['TEST_WORKSPACE'];
+  if (testSrcDir == null || testWorkspace == null) {
+    stderr.writeln('Missing TEST_SRCDIR or TEST_WORKSPACE env vars');
+    exit(1);
+  }
+
+  final bundlePath = '$testSrcDir/$testWorkspace/app';
+  final bundle = Directory(bundlePath);
+
+  if (!bundle.existsSync()) {
+    stderr
+      ..writeln('Bundle directory not found at $bundlePath')
+      ..writeln('Looking for bundle...');
+    _listTree(Directory('$testSrcDir/$testWorkspace'), '');
+    exit(1);
+  }
+
+  var failed = false;
+
+  void check(String description, String path, {bool nonEmpty = false}) {
+    final file = File(path);
+    final isDir = FileSystemEntity.isDirectorySync(path);
+    final exists = isDir || file.existsSync();
+    if (!exists) {
+      stderr.writeln('FAIL: $description — not found: $path');
+      failed = true;
+    } else if (nonEmpty && !isDir && file.lengthSync() == 0) {
+      stderr.writeln('FAIL: $description — file is empty: $path');
+      failed = true;
+    } else {
+      final size = !isDir ? ' (${file.lengthSync()} bytes)' : '';
+      print('OK: $description$size');
+    }
+  }
+
+  // Runner executable.
+  check('Runner binary', '$bundlePath/app', nonEmpty: true);
+
+  // Engine library.
+  check(
+    'libflutter_linux_gtk.so',
+    '$bundlePath/lib/libflutter_linux_gtk.so',
+    nonEmpty: true,
+  );
+
+  // In release mode libapp.so exists; in debug mode data/flutter_assets/kernel_blob.bin exists.
+  final hasAotLib = File('$bundlePath/lib/libapp.so').existsSync();
+  final hasKernelBlob = File(
+    '$bundlePath/data/flutter_assets/kernel_blob.bin',
+  ).existsSync();
+  if (hasAotLib) {
+    check(
+      'AOT snapshot (release)',
+      '$bundlePath/lib/libapp.so',
+      nonEmpty: true,
+    );
+  } else if (hasKernelBlob) {
+    check(
+      'Kernel blob (debug)',
+      '$bundlePath/data/flutter_assets/kernel_blob.bin',
+      nonEmpty: true,
+    );
+  } else {
+    stderr.writeln(
+      'FAIL: Neither lib/libapp.so nor data/flutter_assets/kernel_blob.bin found',
+    );
+    failed = true;
+  }
+
+  // Flutter assets.
+  check('flutter_assets directory', '$bundlePath/data/flutter_assets');
+  check(
+    'AssetManifest.bin',
+    '$bundlePath/data/flutter_assets/AssetManifest.bin',
+  );
+  check(
+    'FontManifest.json',
+    '$bundlePath/data/flutter_assets/FontManifest.json',
+  );
+  check('NOTICES.Z', '$bundlePath/data/flutter_assets/NOTICES.Z');
+  // What `flutter build linux` writes beside them: the Material icons the
+  // pubspec asks for, the framework's shaders, the native assets manifest and
+  // the version file.
+  check(
+    'MaterialIcons-Regular.otf',
+    '$bundlePath/data/flutter_assets/fonts/MaterialIcons-Regular.otf',
+  );
+  check(
+    'shaders/ink_sparkle.frag',
+    '$bundlePath/data/flutter_assets/shaders/ink_sparkle.frag',
+  );
+  check(
+    'NativeAssetsManifest.json',
+    '$bundlePath/data/flutter_assets/NativeAssetsManifest.json',
+  );
+  check('version.json', '$bundlePath/data/flutter_assets/version.json');
+
+  // ICU data.
+  check('icudtl.dat', '$bundlePath/data/icudtl.dat', nonEmpty: true);
+
+  if (failed) {
+    stderr
+      ..writeln()
+      ..writeln('Actual bundle contents:');
+    _listTree(bundle, '');
+    exit(1);
+  }
+
+  print('');
+  print('All Linux bundle verification checks passed.');
+}
+
+void _listTree(Directory dir, String indent) {
+  if (!dir.existsSync()) return;
+  final entries = dir.listSync()..sort((a, b) => a.path.compareTo(b.path));
+  for (final entry in entries) {
+    final name = entry.path.split('/').last;
+    if (entry is Directory) {
+      stderr.writeln('$indent$name/');
+      _listTree(entry, '$indent  ');
+    } else if (entry is File) {
+      stderr.writeln('$indent$name (${entry.lengthSync()} bytes)');
+    }
+  }
+}

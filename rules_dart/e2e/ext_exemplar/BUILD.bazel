@@ -1,0 +1,40 @@
+# Exemplars for native code — package:sqlite3's own build hook and a
+# Bazel-built `dart_code_asset` (`sqlite3_binary`) — plus a pub dependency
+# cycle merged by `dart_package_member` (`pub_cycle`). Code generation is
+# covered by `e2e/build_runner`.
+#
+# Run:      bazel test //...
+# Regen:    bazel run //:gazelle
+
+# gazelle:dart_pub_deps_repo pub_deps
+
+load("@gazelle//:def.bzl", "gazelle", "gazelle_binary")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options")
+
+gazelle_binary(
+    name = "gazelle_bin",
+    languages = ["@rules_dart//gazelle/dart"],
+)
+
+gazelle(
+    name = "gazelle",
+    gazelle = "gazelle_bin",
+)
+
+exports_files(["pubspec.lock"])
+
+# One ruleset shared by every subpackage, which the analyze aspect applies under
+# `//:analysis_config`. The ruleset is named here rather than in any `dart_library`'s `deps`: it is a lint-time
+# input, and listing it as a dependency would carry it into the `DartInfo` of
+# every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    visibility = ["//visibility:public"],
+    deps = ["@very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)

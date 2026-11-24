@@ -1,0 +1,11 @@
+name: riverpod_pkg
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.13.0
+dependencies:
+  riverpod: ^3.5.0
+  riverpod_annotation: ^4.0.8
+dev_dependencies:
+  build_runner: ^2.16.1
+  riverpod_generator: ^4.0.10

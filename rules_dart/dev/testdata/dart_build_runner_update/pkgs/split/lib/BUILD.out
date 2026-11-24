@@ -1,0 +1,9 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "split",
+    package_name = "split",
+    srcs = ["user.dart"],
+    visibility = ["//visibility:public"],
+    deps = ["@pub_deps//:json_annotation"],
+)

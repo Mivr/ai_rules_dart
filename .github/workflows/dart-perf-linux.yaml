@@ -1,0 +1,79 @@
+name: Dart Perf Linux
+# Runs flows of the bench harness (rules_dart/tools/perf) against a ref and
+# uploads the ledger rows. Stock-tool flows need the stock SDKs; this job runs
+# only the rules' side.
+on:
+  workflow_dispatch:
+    inputs:
+      head_ref:
+        description: "Git ref under measurement"
+        required: true
+        type: string
+      flows:
+        description: "Flow selection (see `bench list`), e.g. tag:cheap or dart.,flutter.,-tag:stock"
+        required: false
+        default: "tag:cheap"
+        type: string
+      runs:
+        description: "Runs per flow (at least 5 for a baseline)"
+        required: false
+        default: "5"
+        type: string
+permissions:
+  contents: read
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout bench tooling
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: tools-src
+      - name: Enable and verify Linux user namespaces
+        run: tools-src/rules_dart/.github/scripts/enable_linux_sandbox.sh
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: false
+          disk-cache: false
+          external-cache: false
+          repository-cache: false
+          cache-save: false
+      - name: Configure tooling Bazel version
+        run: |
+          if [ -f tools-src/rules_dart/.bazelversion ]; then
+            cp tools-src/rules_dart/.bazelversion tools-src/rules_dart/tools/.bazelversion
+          fi
+      - name: Checkout rules under measurement
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.head_ref }}
+          path: rules-head
+          fetch-depth: 0
+      - name: Run the bench
+        env:
+          FLOWS: ${{ inputs.flows }}
+          RUNS: ${{ inputs.runs }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/bench-out"
+          (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/tooling-outbase" run //perf:bench -- run \
+            --flows="$FLOWS,-tag:stock,-tag:unavailable" \
+            --runs="$RUNS" \
+            --repo="$GITHUB_WORKSPACE/rules-head" \
+            --scratch="$RUNNER_TEMP/bench" \
+            --out="$GITHUB_WORKSPACE/bench-out/rows.jsonl")
+      - name: Shut down tooling Bazel server
+        if: ${{ always() }}
+        run: |
+          if [ -d tools-src/rules_dart/tools ]; then
+            (cd tools-src/rules_dart/tools && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/tooling-outbase" shutdown) || echo "bazel shutdown failed" >&2
+          fi
+      - name: Upload the rows
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-rows
+          path: bench-out
+          if-no-files-found: error
+          retention-days: 7

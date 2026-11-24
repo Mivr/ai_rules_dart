@@ -1,0 +1,5 @@
+PODS:
+	- firebase_auth (5.1.0):
+	  - Flutter
+
+COCOAPODS: 1.14.3

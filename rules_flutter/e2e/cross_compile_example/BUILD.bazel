@@ -1,0 +1,65 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library")
+load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
+
+exports_files(["pubspec.lock"])
+
+flutter_application(
+    name = "cross_app",
+    package_name = "hello_world",
+    main = "lib/main.dart",
+    deps = [
+        "@deps//:flutter",
+    ],
+)
+
+# Linux bundle — NO target_compatible_with because this workspace
+# cross-compiles from macOS to Linux via the LLVM CC toolchain.
+# Verify with: bazel build :cross_linux
+# (build_test can't be used here because --platforms=linux_x64 prevents
+# test execution on macOS — there's no Linux test toolchain on the host.)
+flutter_linux_app(
+    name = "cross_linux",
+    application = ":cross_app",
+)
+
+# Linux push CI runs `bazel test //...` in this workspace and executes this
+# natively. On macOS it skips itself through `target_compatible_with` (there
+# is no Linux test toolchain on that host), so the macOS cross-compile flow
+# (`bazel build :cross_linux`) is unaffected.
+build_test(
+    name = "cross_linux_build_test",
+    target_compatible_with = ["@platforms//os:linux"],
+    targets = [":cross_linux"],
+)
+
+# The workspace's lint ruleset, bundled with the pub package whose YAML its
+# `include:` resolves against. Named here rather than in a library's `deps`: a
+# lint ruleset is not a dependency of the code it lints, and listing it there
+# carries it into the `DartInfo` of every binary and test downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:very_good_analysis"],
+)
+
+# Every `analysis_options.yaml` in this workspace, for the `dart_analyze`
+# aspect `.bazelrc` enables: each Dart file is checked against the nearest
+# listed one above it.
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Static analysis over this example's Dart. The app rule is a bundle and
+# carries no DartInfo, so the sources are declared once more as a library for
+# the analyzer to stage.
+flutter_library(
+    name = "app_lib",
+    package_name = "hello_world",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "@deps//:flutter",
+    ],
+)

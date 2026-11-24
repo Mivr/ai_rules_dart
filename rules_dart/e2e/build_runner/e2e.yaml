@@ -1,0 +1,30 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 24
+  - name: old_build_runner
+    run: bazel build //errors/old:gen
+    expect:
+      non_zero: true
+      output_contains:
+        - "has build_runner 2.7.0; `dart_build_runner` supports build_runner 2.8.0 and later."
+  - name: no_build_runner
+    run: bazel build //errors/none:gen
+    expect:
+      non_zero: true
+      output_contains:
+        - "has no build_runner, which runs the builders of `dart_build_runner`. Add it as a dev dependency"
+  - name: missing_output
+    run: bazel build //errors/missing:gen
+    expect:
+      non_zero: true
+      output_contains:
+        - "No builder wrote `lib/plain.g.dart` of package errors_missing; `build_runner build` writes no file there either."
+        - "in `outs` because a `part`, `import` or `export` of the package names it"
+  - name: undeclared_glob
+    run: bazel build //errors/glob:gen
+    expect:
+      non_zero: true
+      output_contains:
+        - "which matches `lib/src/service.injectable.json` (generated from `lib/src/service.dart`), and `lib/src/service.dart` is not an input of this target."

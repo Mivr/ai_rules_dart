@@ -1,0 +1,62 @@
+load("//flutter:defs.bzl", "flutter_test")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+load("//flutter/tests:layering_test.bzl", "layering_on_test")
+
+# `package:leaf` reaches the tests only through `mid`. `:bad_test` imports it
+# without declaring it, which the layering check refuses when the target
+# builds; `:good_test` declares it. Both are `manual` because they are only
+# analyzed here (`bazel build --output_groups=_validation` on `:bad_test`
+# fails with the check's message, on `:good_test` it passes); `:fake_test_api`
+# stands in for `package:test_api`, as in `flutter_test_analyze_fixture`.
+flutter_test(
+    name = "bad_test",
+    package_name = "layering_fixture",
+    srcs = ["lib/own.dart"],
+    main = "test/bad_test.dart",
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    deps = [
+        "//flutter/tests/flutter_test_analyze_fixture/fake_test_api",
+        "//flutter/tests/layering_fixture/mid",
+    ],
+)
+
+flutter_test(
+    name = "good_test",
+    package_name = "layering_fixture",
+    srcs = ["lib/own.dart"],
+    main = "test/good_test.dart",
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    deps = [
+        "//flutter/tests/flutter_test_analyze_fixture/fake_test_api",
+        "//flutter/tests/layering_fixture/leaf",
+        "//flutter/tests/layering_fixture/mid",
+    ],
+)
+
+layering_on_test(
+    name = "bad_on_test",
+    size = "small",
+    expect_absent = ["leaf"],
+    expect_direct = ["mid"],
+    expect_srcs = [
+        "flutter/tests/layering_fixture/lib/own.dart",
+        "flutter/tests/layering_fixture/test/bad_test.dart",
+    ],
+    target_under_test = ":bad_test",
+)
+
+layering_on_test(
+    name = "good_on_test",
+    size = "small",
+    expect_direct = [
+        "leaf",
+        "mid",
+    ],
+    expect_srcs = [
+        "flutter/tests/layering_fixture/lib/own.dart",
+        "flutter/tests/layering_fixture/test/good_test.dart",
+    ],
+    target_under_test = ":good_test",
+)
