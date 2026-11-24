@@ -573,38 +573,38 @@ _inspect_rule_kind_aspect = aspect(
 )
 
 def _flutter_test_rule_kind_test_impl(ctx):
-    """`flutter_test` is a first-class rule (`flutter_test rule`), not a wrapper macro."""
+    """A `flutter_test` target has rule kind `flutter_test`.
+
+    `bazel query --output=label_kind`, `kind(flutter_test, ...)` and
+    `native.existing_rules()` report it so. `flutter_test` of `//flutter:defs.bzl`
+    is a legacy macro over the rule of that name (it attaches a package's
+    generated localizations), which keeps the kind.
+    """
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
-    asserts.equals(
-        env,
-        "rule",
-        type(flutter_test),
-        "flutter_test exported by //flutter:defs.bzl must be a rule",
-    )
     asserts.equals(
         env,
         "flutter_test",
         target[_RuleKindInfo].kind,
-        "flutter_test target must have rule kind 'flutter_test'",
+        "a flutter_test target must have rule kind 'flutter_test', as query and native.existing_rules() report it",
     )
     return analysistest.end(env)
 
 def _flutter_library_rule_kind_test_impl(ctx):
-    """`flutter_library` is a first-class rule (`flutter_library rule`), not a wrapper macro."""
+    """A `flutter_library` target has rule kind `flutter_library`.
+
+    `bazel query --output=label_kind`, `kind(flutter_library, ...)` and
+    `native.existing_rules()` report it so. `flutter_library` of `//flutter:defs.bzl`
+    is a legacy macro over the rule of that name (it attaches a package's
+    generated localizations), which keeps the kind.
+    """
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
     asserts.equals(
         env,
-        "rule",
-        type(flutter_library),
-        "flutter_library exported by //flutter:defs.bzl must be a rule",
-    )
-    asserts.equals(
-        env,
         "flutter_library",
         target[_RuleKindInfo].kind,
-        "flutter_library target must have rule kind 'flutter_library'",
+        "a flutter_library target must have rule kind 'flutter_library', as query and native.existing_rules() report it",
     )
     return analysistest.end(env)
 

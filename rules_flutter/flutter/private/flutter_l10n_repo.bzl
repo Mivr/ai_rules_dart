@@ -100,13 +100,14 @@ def _package_boundary(rctx, project_dir, rel_dir):
 # What the generated files import.
 _IMPORTED = ("flutter", "flutter_localizations", "intl")
 
-def _l10n_bzl(rctx, outputs = [], srcs = [], error = "", package = ""):
+def _l10n_bzl(rctx, outputs = [], srcs = [], error = "", package = "", analysis_options = False):
     deps = ["Label(%r)" % ("@%s//:%s" % (rctx.attr.hub, p)) for p in _IMPORTED if p in rctx.attr.hub_packages]
-    return "L10N = struct(\n    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    deps = [%s],\n)\n" % (
+    return "L10N = struct(\n    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    analysis_options = %r,\n    deps = [%s],\n)\n" % (
         outputs,
         srcs,
         error,
         package,
+        analysis_options,
         ", ".join(deps),
     )
 
@@ -187,7 +188,16 @@ def _flutter_l10n_repo_impl(rctx):
     srcs = [prefix + a for a in arbs]
     if header_file:
         srcs.append(_norm(prefix + header_file))
-    rctx.file("l10n.bzl", _l10n_bzl(rctx, outputs = sorted(outputs), srcs = srcs, package = str(spec.get("name", ""))))
+    # `dart format` reads the project's `formatter:` options from it.
+    options = project_dir.get_child("analysis_options.yaml")
+    rctx.watch(options)
+    rctx.file("l10n.bzl", _l10n_bzl(
+        rctx,
+        outputs = sorted(outputs),
+        srcs = srcs,
+        package = str(spec.get("name", "")),
+        analysis_options = options.exists,
+    ))
 
 flutter_l10n_repo = repository_rule(
     implementation = _flutter_l10n_repo_impl,

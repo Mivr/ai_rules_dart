@@ -126,6 +126,9 @@ flutter_gen_l10n = rule(
 )
 
 def _under_lib(value):
+    """Whether a `srcs` entry or `main` names a file under `lib/` of this package."""
+    if type(value) == "Label":
+        return value.repo_name == "" and value.package == native.package_name() and value.name.startswith("lib/")
     return type(value) == "string" and value.startswith("lib/")
 
 def l10n_attach(name, kwargs, l10n, always = False):
@@ -135,9 +138,17 @@ def l10n_attach(name, kwargs, l10n, always = False):
     extension read (`L10N_PROJECTS`), declares once per package the
     `flutter_gen_l10n` target (`_gen_l10n`) and a `flutter_library` of its
     Dart files (`_l10n`, the project's package), and adds that library to the
-    `deps` of a target whose `srcs` or `main` is under `lib/` (of every target
-    when `always`). Copies of the generated files in the source tree, which
-    the stock tool writes there, are left out of `srcs`.
+    `deps` of a target whose `srcs` or `main` is under `lib/`, of a target
+    whose `srcs` is a `select()` (which cannot be read here), and of every
+    target when `always`. Copies of the generated files in the source tree,
+    which the stock tool writes there, are left out of a list `srcs`.
+
+    A package the extension did not read is left alone without reading the
+    package: no `glob`, no `existing_rule`, so a target of such a package can
+    be declared from a symbolic macro. In a package with localizations the
+    per-package targets need `native.existing_rule`, which a symbolic macro
+    cannot call: there Bazel fails with "existing_rule() can only be used
+    while evaluating a BUILD file, a legacy macro, or a rule finalizer".
 
     Args:
       name: The calling target's name, for messages.
@@ -145,19 +156,17 @@ def l10n_attach(name, kwargs, l10n, always = False):
       l10n: The `L10N_PROJECTS` table of `@flutter_l10n//:index.bzl`.
       always: Whether to add the library whatever `srcs` and `main` are.
     """
-    if native.repo_name() or not native.glob(["l10n.yaml"], allow_empty = True):
-        return
-    srcs = kwargs.get("srcs")
-    if not always and not (type(srcs) == "list" and [s for s in srcs if _under_lib(s)]) and not _under_lib(kwargs.get("main")):
+    if native.repo_name():
         return
     package = native.package_name()
     project = l10n.get(package)
     if project == None:
-        fail((
-            "//%s:%s: the package has an l10n.yaml, but it is neither the directory of a `flutter.pub` " +
-            "lock nor a member of its pub workspace nor a `path:` package of one, so its localizations " +
-            "cannot be generated. Declare its lock with `flutter.pub(lock = ...)` in MODULE.bazel."
-        ) % (package, name))
+        return
+    srcs = kwargs.get("srcs")
+    readable = srcs == None or type(srcs) == "list"
+    under_lib = (readable and [s for s in (srcs or []) if _under_lib(s)]) or _under_lib(kwargs.get("main"))
+    if not always and readable and not under_lib:
+        return
     if project.error:
         fail("//%s:%s: %s" % (package, name, project.error))
     if not project.outputs:
@@ -167,7 +176,7 @@ def l10n_attach(name, kwargs, l10n, always = False):
             name = L10N_TARGET,
             pubspec = "pubspec.yaml",
             l10n_yaml = "l10n.yaml",
-            analysis_options = "analysis_options.yaml" if native.glob(["analysis_options.yaml"], allow_empty = True) else None,
+            analysis_options = "analysis_options.yaml" if project.analysis_options else None,
             srcs = project.srcs,
             outputs = project.outputs,
             language_version = kwargs.get("language_version", ""),

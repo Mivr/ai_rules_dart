@@ -128,9 +128,14 @@ def flutter_library(name, **kwargs):
     generates it: the files `l10n.yaml` and the `.arb` files say, at the paths
     they say. A copy of those files in the source tree is left out of `srcs`.
 
+    A legacy macro over the `flutter_library` rule (the kind `bazel query`
+    reports): its arguments are the rule's attributes, listed in the README
+    under `flutter_library`.
+
     Args:
         name: Name of the `flutter_library` target.
-        **kwargs: All other arguments forwarded to the underlying rule.
+        **kwargs: The `flutter_library` rule's attributes (`srcs`, `deps`,
+            `package_name`, `pubspec`, ...), forwarded to it.
     """
     l10n_attach(name, kwargs, L10N_PROJECTS)
     _flutter_library(name = name, **kwargs)
@@ -146,9 +151,14 @@ def flutter_test(name, **kwargs):
     In a package with an `l10n.yaml`, the test depends on what gen-l10n
     writes for the package, as `flutter test` generates it.
 
+    A legacy macro over the `flutter_test` rule (the kind `bazel query`
+    reports): its arguments are the rule's attributes, listed in the README
+    under `flutter_test`.
+
     Args:
         name: Name of the `flutter_test` target.
-        **kwargs: All other arguments forwarded to the underlying rule.
+        **kwargs: The `flutter_test` rule's attributes (`main`, `srcs`,
+            `deps`, `pubspec`, ...), forwarded to it.
     """
     l10n_attach(name, kwargs, L10N_PROJECTS, always = True)
     _flutter_test(name = name, **kwargs)
