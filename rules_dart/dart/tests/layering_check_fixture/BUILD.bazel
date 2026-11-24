@@ -28,10 +28,6 @@ layering_probe(
 layering_action_test(
     name = "leaf_action_test",
     size = "small",
-    expect_absent = [
-        "leaf",
-        "mid",
-    ],
     expect_srcs = ["dart/tests/layering_check_fixture/leaf/lib/leaf.dart"],
     forbid_srcs = ["dart/tests/layering_check_fixture/mid/lib/mid.dart"],
     target_under_test = "//dart/tests/layering_check_fixture/leaf",
@@ -40,7 +36,6 @@ layering_action_test(
 layering_action_test(
     name = "mid_action_test",
     size = "small",
-    expect_direct = ["leaf"],
     expect_srcs = ["dart/tests/layering_check_fixture/mid/lib/mid.dart"],
     forbid_srcs = [
         "dart/tests/layering_check_fixture/leaf/lib/leaf.dart",
@@ -52,8 +47,6 @@ layering_action_test(
 layering_action_test(
     name = "user_action_test",
     size = "small",
-    expect_absent = ["leaf"],
-    expect_direct = ["mid"],
     expect_srcs = ["dart/tests/layering_check_fixture/user/lib/user.dart"],
     forbid_srcs = [
         "dart/tests/layering_check_fixture/leaf/lib/leaf.dart",

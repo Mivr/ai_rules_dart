@@ -58,12 +58,14 @@ dart_wasm_binary(
     visibility = ["//dart/tests/format_fixture:__pkg__"],
 )
 
-# The compile's `package_config.json` covers each entrypoint with the stated
-# version; a web target's staged one does the same.
+# Each entrypoint carries the stated package and version for analysis and the
+# format check; a web target's staged `package_config.json` covers it with the
+# same version.
 [
     package_config_probe_test(
         name = target + "_package_config_test",
         size = "small",
+        config_written = target in ("stated_js", "stated_wasm"),
         expected = [entry],
         expected_language_version = "3.6",
         expected_package_name = "stated",

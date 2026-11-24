@@ -16,26 +16,30 @@ visibility(["//dart/..."])
 def _package_config_probe_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
+    # A web target stages a `package_config.json`, which the stated package's
+    # language version reaches. A VM target compiles through per-module
+    # compiles, which write none: what reaches them is the package record
+    # checked below, which analysis and the format check read.
     content = None
     for action in analysistest.target_actions(env):
         for out in action.outputs.to_list():
             if out.basename.endswith("package_config.json"):
                 content = action.content
-    asserts.true(env, content != None, "expected a package_config.json write action")
     if content == None:
-        return analysistest.end(env)
-    for expected in ctx.attr.expected:
-        asserts.true(
-            env,
-            expected in content,
-            "expected `%s` in the package_config:\n%s" % (expected, content),
-        )
-    for unexpected in ctx.attr.unexpected:
-        asserts.false(
-            env,
-            unexpected in content,
-            "did not expect `%s` in the package_config:\n%s" % (unexpected, content),
-        )
+        asserts.true(env, not ctx.attr.config_written, "expected a package_config.json write action")
+    else:
+        for expected in ctx.attr.expected:
+            asserts.true(
+                env,
+                expected in content,
+                "expected `%s` in the package_config:\n%s" % (expected, content),
+            )
+        for unexpected in ctx.attr.unexpected:
+            asserts.false(
+                env,
+                unexpected in content,
+                "did not expect `%s` in the package_config:\n%s" % (unexpected, content),
+            )
 
     record = own_package_record(target[DartAnalyzableInfo].dart_info)
     if ctx.attr.expected_package_name:
@@ -47,14 +51,13 @@ def _package_config_probe_test_impl(ctx):
         asserts.equals(env, None, record, "an executable stating no package must carry none")
     return analysistest.end(env)
 
-# What an executable's generated `package_config.json` says, and which package
-# record its `DartAnalyzableInfo` carries (none when `expected_package_name` is
-# empty). The expectations describe the whole-program config, which only the
-# whole-program compile writes; a modular test writes its module's config instead,
-# with multi-root URIs, so the probe pins the flag off.
+# Which package record an executable's `DartAnalyzableInfo` carries (none when
+# `expected_package_name` is empty), and, for a target that stages a
+# `package_config.json`, what that config says.
 package_config_probe_test = analysistest.make(
     _package_config_probe_test_impl,
     attrs = {
+        "config_written": attr.bool(doc = "Whether the target writes a `package_config.json` of its own (a web target does; a VM target compiles per module)."),
         "expected": attr.string_list(),
         "unexpected": attr.string_list(),
         "expected_package_name": attr.string(),

@@ -40,7 +40,7 @@ def _kernel_actions(env):
     return [a for a in target[LayeringActionsInfo].actions if a.mnemonic == "DartKernel"]
 
 def _action_test_impl(ctx):
-    """Checks the module compile action's argv and inputs."""
+    """Checks which sources the library's module compile reads."""
     env = analysistest.begin(ctx)
     actions = _check_actions(env)
     asserts.equals(env, 0, len(actions), "libraries register no DartImportCheck actions of their own")
@@ -48,30 +48,20 @@ def _action_test_impl(ctx):
     asserts.equals(env, 1, len(kernel_actions), "one DartKernel action per checked library")
     if len(kernel_actions) != 1:
         return analysistest.end(env)
-    action = kernel_actions[0]
-    argv = action.argv
-    direct = _flag_values(argv, "--direct-package")
-    own = _flag_values(argv, "--own-package")
-    for name in ctx.attr.expect_direct:
-        asserts.true(env, name in direct, "argv names %s as a direct package: %s" % (name, argv))
-    for name in ctx.attr.expect_absent:
-        asserts.true(env, name not in direct, "argv does not name %s as a direct package: %s" % (name, argv))
-    asserts.equals(env, 1, len(own), "argv names the target's own package once: %s" % argv)
-    asserts.true(env, "--check-imports" in argv, "module compile runs with --check-imports: %s" % argv)
-    inputs = [f.short_path for f in action.inputs.to_list()]
+
+    # A module compile reads its own sources and no dependency's: a change in a
+    # dependency's source reaches it through that dependency's compiled module.
+    # That the check refuses a transitive-only import is `e2e/layering_check`'s.
+    inputs = [f.short_path for f in kernel_actions[0].inputs.to_list()]
     for path in ctx.attr.expect_srcs:
         asserts.true(env, path in inputs, "%s is an input" % path)
     for path in ctx.attr.forbid_srcs:
         asserts.true(env, path not in inputs, "%s, a dependency's source, is not an input" % path)
-    tool = [p for p in inputs if "kernel_module" in p]
-    asserts.true(env, len(tool) > 0, "the module compile tool is an input: %s" % inputs)
     return analysistest.end(env)
 
 layering_action_test = analysistest.make(
     _action_test_impl,
     attrs = {
-        "expect_absent": attr.string_list(doc = "Package names argv must not list as direct."),
-        "expect_direct": attr.string_list(doc = "Package names argv must list as direct."),
         "expect_srcs": attr.string_list(doc = "Short paths that must be inputs."),
         "forbid_srcs": attr.string_list(doc = "Short paths that must not be inputs."),
     },
