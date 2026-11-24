@@ -49,10 +49,10 @@
 #     plus the Android leg against every declared dependency floor; the Apple
 #     legs skip themselves via target_compatible_with), and the run_home
 #     hermeticity gate
-#   e2e-linux-android:   integration_android and aar_host, the workspaces that
-#     boot the Android emulator (with KVM), and the Android workspaces that
-#     build from the Gradle model (android_model_red, android_modules,
-#     android_plugins, android_sharedprefs, stock_dev_loop)
+#   e2e-linux-android:   three legs, one runner each: integration_android and
+#     aar_host, which boot the Android emulator (with KVM), and the Android
+#     workspaces that build from the Gradle model (android_model_red,
+#     android_modules, android_plugins, android_sharedprefs, stock_dev_loop)
 #   repo-checks:         `bazel mod tidy` leaves the lockfile unchanged and
 #     //tools/repo_contents_cache (repos marked reproducible are shared through
 #     the repo contents cache)
@@ -986,12 +986,29 @@ jobs:
     defaults:
       run:
         working-directory: rules_flutter
-    name: E2E Linux Android emulator (integration_android, aar_host)
+    name: E2E Linux Android (${{ matrix.leg }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # One leg per runner: the emulator legs lost their runner ("received a
+    # shutdown signal", no log) in 4 of 8 runs at the first emulator test, and
+    # a lost runner now costs one workspace and a rerun of one job. The
+    # Gradle-model workspaces boot no emulator and share a leg.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: integration_android
+            shard: android-integration
+            workspaces: integration_android
+          - leg: aar_host
+            shard: android-aar-host
+            workspaces: aar_host
+          - leg: gradle models
+            shard: android-models
+            workspaces: android_model_red android_modules android_plugins android_sharedprefs stock_dev_loop
     env:
       DISK_CACHE_DIR: ~/.cache/bazel-disk
-      DISK_CACHE_SHARD: linux-android
+      DISK_CACHE_SHARD: linux-${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v7
       - uses: ./rules_flutter/.github/actions/android-ndk
@@ -1007,9 +1024,9 @@ jobs:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
           # The runner was lost ("received a shutdown signal") a few seconds
-          # after the first emulator test started in two runs of
-          # 2026-11-24 (09:31 and 10:14), and a third never left that step
-          # (the cause is inferred, not read from a log). The emulator needs about two cores and 3-4 GB; by
+          # after the first emulator test started in 4 of 8 runs of
+          # 2026-11-24, 3 of 3 before this limit and 1 of 4 after (the cause
+          # is inferred; a lost runner leaves no log). The emulator needs about two cores and 3-4 GB; by
           # default each Bazel server (this one, and the one the e2e runner
           # starts in the workspace) sizes its heap at a quarter of the host
           # and schedules actions as if it owned the machine. Bound both, as
@@ -1034,6 +1051,7 @@ jobs:
           # workspaces before they moved here, until main saves this shard.
           restore-keys: |
             ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+            ff-disk-${{ runner.os }}-linux-android
             ff-disk-${{ runner.os }}-linux-integration-
       - name: Point Bazel at the disk cache
         run: |
@@ -1046,35 +1064,27 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Disk report (before first workspace)
+      - name: Disk report (before the workspaces)
         if: always()
         uses: ./rules_flutter/.github/actions/disk-report
         with:
-          label: before first workspace
-      - name: Run e2e/integration_android
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_android --bazel=bazel
-      - name: Disk report (after e2e/integration_android)
+          label: before the workspaces
+      # The sampler prints host memory, load and the largest processes every
+      # 15 s into this step's log: the only record of a runner that is lost.
+      - name: Run the workspaces (${{ matrix.workspaces }})
+        env:
+          WORKSPACES: ${{ matrix.workspaces }}
+        run: |
+          for ws in $WORKSPACES; do
+            echo "::group::e2e/$ws"
+            .github/scripts/with_resource_sampler.sh bazel run //tools/e2e_runner -- --workspace="e2e/$ws" --bazel=bazel
+            echo "::endgroup::"
+          done
+      - name: Disk report (after the workspaces)
         if: always()
         uses: ./rules_flutter/.github/actions/disk-report
         with:
-          label: after e2e/integration_android
-      - name: Run e2e/aar_host
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/aar_host --bazel=bazel
-      - name: Disk report (after e2e/aar_host)
-        if: always()
-        uses: ./rules_flutter/.github/actions/disk-report
-        with:
-          label: after e2e/aar_host
-      - name: Run e2e/android_model_red
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_model_red --bazel=bazel
-      - name: Run e2e/android_modules
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_modules --bazel=bazel
-      - name: Run e2e/android_plugins
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_plugins --bazel=bazel
-      - name: Run e2e/android_sharedprefs
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/android_sharedprefs --bazel=bazel
-      - name: Run e2e/stock_dev_loop
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/stock_dev_loop --bazel=bazel
+          label: after the workspaces
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
