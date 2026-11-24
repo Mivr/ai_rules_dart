@@ -251,7 +251,9 @@ fails, naming the project and the feature, on: data binding, view binding, Compo
 model binding, prefab; AIDL and shader sources; Java resource directories; a Kotlin compiler plugin
 other than kapt and KSP; a Kotlin compiler argument the rules do not know; annotation processor
 arguments in a Kotlin project; file dependencies (`libs/*.jar`); a shrinker rules file outside the
-app; resource shrinking with `android.r8.optimizedResourceShrinking=false`; and native code built by
+app; resource shrinking with `android.r8.optimizedResourceShrinking=false`; `minifyEnabled` on a
+debuggable build type (AGP runs R8 in its debug mode there; here R8 runs for a build type that is
+not debuggable, and a debuggable build is packaged from per-project dex files); and native code built by
 CMake or ndk-build. For the last, `flutter_android_app(native_built_elsewhere = [":jni"])` says that Bazel builds
 that library on the Dart side.
 

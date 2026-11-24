@@ -259,6 +259,13 @@ def _problems(model, path, p, v):
     for kind, feature in (("aidl", "AIDL sources"), ("shaders", "shader sources"), ("java_resources", "Java resource directories")):
         if v["sources"].get(kind):
             out.append("%s: %s (%s)" % (where, feature, ", ".join(v["sources"][kind])))
+
+    # R8 over a debuggable build (a debug build type with `minifyEnabled true`, which Gradle allows):
+    # AGP runs R8 in its debug mode there. These rules run R8 for a build that is not debuggable and
+    # package a debuggable one from per-project dex files, so they would build it without R8, which
+    # is another app than the stock one.
+    if p["type"] == "application" and v.get("debuggable") and v.get("minify"):
+        out.append("%s: `minifyEnabled` on the debuggable build type `%s` (R8 runs for a build type that is not debuggable; take `minifyEnabled` off this one, or build another variant)" % (where, v["build_type"]))
     kotlin = v.get("kotlin") or {}
     for jar in kotlin.get("plugin_jars", []):
         if not [h for h in _KOTLIN_PLUGIN_JARS_HANDLED if jar.startswith(h)]:
@@ -1197,7 +1204,8 @@ def android_model_app(
     final_profiles = profiles  # the rules in the names of the final dex
 
     # Set by the dex branch below (a build that is not minified), which the split packaging of a
-    # debuggable build reads.
+    # debuggable build reads. A debuggable build is never minified here: `minifyEnabled` on a
+    # debuggable build type is refused above (`_problems`), so the two branches cannot both miss.
     ext, libs, app_dex, r_dex, merge = None, None, None, None, None
     if minified:
         # A release build: the whole program through R8, as AGP's R8 task runs it.

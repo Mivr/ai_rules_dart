@@ -701,6 +701,7 @@
                     },
                     "max_sdk": null,
                     "min_sdk": 24,
+                    "minify": true,
                     "namespace": "dev.rdf.counter",
                     "ndk_abi_filters": [
                         "arm64-v8a",

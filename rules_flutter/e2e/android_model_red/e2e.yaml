@@ -31,6 +31,7 @@ commands:
         - 'project :lib: Kotlin compiler argument -Xsome-flag'
         - 'project :app: file dependency app:android/app/libs/local.jar'
         - 'project :app: native code built by CMake'
+        - 'project :app: `minifyEnabled` on the debuggable build type `debug`'
   - name: a variant the pin does not hold names the ones it has
     run: bazel build --nobuild //variant:app
     expect:
