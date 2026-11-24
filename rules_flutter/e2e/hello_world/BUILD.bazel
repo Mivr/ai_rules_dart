@@ -902,6 +902,11 @@ build_test(
 
 # What was built: the runner activity and the registrant, the engine, the kernel of a debug build
 # in its own split, and the manifest's version from the pubspec.
+#
+# `no-windows-ci` here and on `verify_android_platform_assets_test`: both tests read the APK
+# by a path under the test's runfiles directory (`.\hello_world_android_apk.apk`), and the
+# windows-latest job runs with `--noenable_runfiles`, which leaves no such directory. The APK
+# itself builds there (`:android_build_test`); Android is checked on macOS and Linux.
 flutter_android_apk_test(
     name = "android_apk_test",
     app = "hello_world_android",
@@ -921,6 +926,7 @@ flutter_android_apk_test(
         "app",
         "dart",
     ],
+    tags = ["no-windows-ci"],
 )
 
 # Platform-conditional pub assets: the Android APK must carry the fixture
@@ -937,6 +943,7 @@ dart_test(
         ":hello_world_android_apk",
     ],
     main = "test/verify_android_platform_assets_test.dart",
+    tags = ["no-windows-ci"],
 )
 
 # Runtime verifier for the APK: installs :hello_world_android_apk on a
