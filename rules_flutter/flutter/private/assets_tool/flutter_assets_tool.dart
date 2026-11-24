@@ -278,6 +278,8 @@ Future<int> _run(String command, ArgResults args) async {
           logger.printError('$e');
           if (e is FileSystemException && e.path != null) {
             _describePath(fs, e.path!, logger);
+          } else if (e is io.ProcessException) {
+            _describePath(fs, e.executable, logger);
           }
           if (command != 'gen-l10n') {
             _explainMissingFiles(fs, project, args, logger);

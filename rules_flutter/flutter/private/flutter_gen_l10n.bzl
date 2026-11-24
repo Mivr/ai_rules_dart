@@ -72,7 +72,7 @@ def _flutter_gen_l10n_impl(ctx):
 
     # `format: true` (the default) runs the release's `dart format` on the
     # files, as `Artifact.engineDartBinary` names it.
-    args.add("--sdk", "bin/cache/dart-sdk/bin/dart=" + sdk.dart.path)
+    args.add("--sdk", "bin/cache/dart-sdk/bin/" + sdk.dart.basename + "=" + sdk.dart.path)
     inputs.append(sdk.dart)
 
     args.use_param_file("@%s", use_always = True)

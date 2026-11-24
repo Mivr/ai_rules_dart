@@ -299,7 +299,9 @@ def _icon_tree_shaking(ctx, flutter_sdk_info, mode, app_dill, args, inputs):
     args.add("--app-dill", app_dill.path)
     args.add("--engine", "const_finder=" + flutter_sdk_info.const_finder.path)
     args.add("--engine", "font_subset=" + flutter_sdk_info.font_subset.path)
-    args.add("--sdk", "bin/cache/dart-sdk/bin/dart=" + flutter_sdk_info.dart.path)
+
+    # The tool starts `Artifact.engineDartBinary`: `dart.exe` on Windows.
+    args.add("--sdk", "bin/cache/dart-sdk/bin/" + flutter_sdk_info.dart.basename + "=" + flutter_sdk_info.dart.path)
     inputs.extend([app_dill, flutter_sdk_info.const_finder, flutter_sdk_info.font_subset, flutter_sdk_info.dart])
     return [flutter_sdk_info.dart_vm_files]
 
