@@ -1,0 +1,29 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+load("//flutter:utils.bzl", "flutter_pub_scc_member_target")
+
+# A merged pub dependency cycle, as a merged spoke writes it: `scc_module_a` and
+# `scc_module_b` import each other, so one `dart_library` owns both, and each
+# member's public target stands for it.
+package(default_visibility = ["//flutter/tests:__subpackages__"])
+
+dart_library(
+    name = "merged",
+    members = [
+        "//flutter/tests/scc_module_fixture/a",
+        "//flutter/tests/scc_module_fixture/b",
+    ],
+    tags = ["manual"],
+)
+
+[
+    flutter_pub_scc_member_target(
+        name = "member_" + m,
+        package_name = "scc_module_" + m,
+        library = ":merged",
+        tags = ["manual"],
+    )
+    for m in [
+        "a",
+        "b",
+    ]
+]

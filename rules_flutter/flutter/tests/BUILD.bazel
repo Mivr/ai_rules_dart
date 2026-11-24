@@ -71,6 +71,7 @@ load(":pub_lock_sdks_test.bzl", "pub_lock_sdks_test_suite")
 load(":pub_packages_default_test.bzl", "pub_packages_default_test_suite")
 load(":registrant_twin_test.bzl", "registrant_twin_test_suite")
 load(":repo_metadata_test.bzl", "repo_metadata_test_suite")
+load(":scc_module_test.bzl", "scc_module_test_suite")
 load(":sdk_source_and_ios_engine_repos_test.bzl", "sdk_source_and_ios_engine_repos_test_suite")
 load(":starlark_hygiene_test.bzl", "starlark_hygiene_test_suite")
 load(":starlark_literal_test.bzl", "starlark_literal_test_suite")
@@ -235,6 +236,8 @@ objc_drift_test_suite(name = "objc_drift_test")
 path_package_test_suite(name = "path_package_test")
 
 registrant_twin_test_suite(name = "registrant_twin_test")
+
+scc_module_test_suite(name = "scc_module_test")
 
 kernel_target_modular_test_suite(name = "kernel_target_modular_test")
 

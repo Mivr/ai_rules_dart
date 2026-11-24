@@ -4,6 +4,9 @@ A merged spoke combines strongly connected components of pub packages into a
 single repository. Each `flutter_pub_scc_member_target` exposes the merged
 `DartInfo` (and `DartKernelInfo`), `dart:ui`-aware `DartAnalyzableInfo`, and
 the combined `FlutterInfo` across all cycle members and outside dependencies.
+The merged library is one compilation unit: `flutter_kernel_module_aspect`
+compiles it into one module over every member's sources and package records,
+and a member target, reached through its `library`, is that module.
 """
 
 load("@rules_dart//dart:providers.bzl", "DartInfo", "DartKernelInfo")
@@ -18,8 +21,6 @@ def _flutter_pub_scc_member_target_impl(ctx):
     """Forwards merged Dart providers and combines SCC + outside FlutterInfo."""
     if not ctx.attr.package_name:
         fail("%s: package_name must be non-empty on merged SCC member targets" % ctx.label)
-    if not ctx.attr.srcs_dir:
-        fail("%s: srcs_dir must be non-empty on merged SCC member targets" % ctx.label)
     providers = [
         DefaultInfo(
             files = ctx.attr.library[DefaultInfo].files,
@@ -54,10 +55,6 @@ flutter_pub_scc_member_target = rule(
             default = [],
             providers = [DartInfo],
             doc = "Dependencies leaving the SCC.",
-        ),
-        "srcs_dir": attr.string(
-            default = ".",
-            doc = "Marks multi-package targets opaque to single-package modular Flutter kernel compilation.",
         ),
         "_sky_engine": SKY_ENGINE_ATTR,
     },

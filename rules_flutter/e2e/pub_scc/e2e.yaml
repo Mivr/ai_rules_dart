@@ -6,3 +6,8 @@ commands:
   - name: test all targets
     run: bazel test //... --test_output=errors
     min_tests_executed: 2
+  # A debug build compiles kernel modules: each merged cycle is one module over all its members. The iOS
+  # simulator build is a debug build, so this is the path the Apple bundles job takes.
+  - name: debug app over the merged cycles, and the tests in debug
+    run: bazel test -c dbg //... --test_output=errors
+    min_tests_executed: 2

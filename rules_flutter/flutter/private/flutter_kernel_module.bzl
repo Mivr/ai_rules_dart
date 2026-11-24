@@ -33,6 +33,7 @@ load(
     "library_module_source",
     "no_kernel_module",
     "owned_package_records",
+    "package_of_source",
     _DART_MODULAR_KERNEL_ATTRS = "MODULAR_KERNEL_ATTRS",
 )
 load(
@@ -167,7 +168,7 @@ def _root_owner(owned, lib_root):
             return label
     return None
 
-def _direct_records_reason(label, own_record, rule_deps):
+def _direct_records_reason(label, own_records, rule_deps):
     """Why the target's own record does not join its direct dependencies' records, or None.
 
     A package config names one root per package and at most one root package.
@@ -178,7 +179,7 @@ def _direct_records_reason(label, own_record, rule_deps):
     closure once (`flutter_module_tools`). rules_dart's library modules do the
     same (`lib_owns_compatible`).
     """
-    pairs = [(own_record, str(label))] if own_record != None else []
+    pairs = [(pkg, str(label)) for pkg in own_records]
     for dep in rule_deps:
         if type(dep) == "Target" and DartInfo in dep:
             pairs.extend([(pkg, str(dep.label)) for pkg in owned_package_records(dep[DartInfo])])
@@ -453,28 +454,54 @@ def flutter_kernel_module_action(ctx, tools, module, options):
     return excluded
 
 def _modular_gate_inputs(ctx, target):
-    """The target's Dart metadata and dependency list behind the modular-kernel gate."""
+    """The target's Dart metadata, its own records and sources, and its dependency list behind the modular-kernel gate.
+
+    A `dart_library` merged over a pub dependency cycle (`members`) is one
+    compilation unit: it owns every member's package record and every member's
+    `.dart` files, as rules_dart's module of the same library does
+    (`library_module_inputs`), and its `deps` are the edges leaving the cycle.
+    """
     dart_info = target[DartInfo]
     rule_deps = getattr(ctx.rule.attr, "deps", [])
     if type(rule_deps) != "list":
         rule_deps = [rule_deps]
+    own_record = _own_package_record(dart_info)
+    members = getattr(ctx.rule.attr, "members", None) or []
+    if members:
+        own_records = list(owned_package_records(dart_info))
+        own_srcs = [
+            f
+            for member in members
+            # lint-allow: depset-flatten one cycle member's own files, once, as rules_dart's module of the library reads them
+            for f in member[DefaultInfo].files.to_list()
+            if f.extension == "dart"
+        ]
+    else:
+        own_records = [own_record] if own_record != None else []
+        own_srcs = getattr(ctx.rule.files, "srcs_dir", []) if getattr(ctx.rule.attr, "srcs_dir", None) else getattr(ctx.rule.files, "srcs", [])
     return (
         dart_info,
         dart_info.package_name,
         dart_info.lib_root,
-        _own_package_record(dart_info),
-        getattr(ctx.rule.files, "srcs_dir", []) if getattr(ctx.rule.attr, "srcs_dir", None) else getattr(ctx.rule.files, "srcs", []),
+        own_records,
+        own_srcs,
         rule_deps,
     )
 
-def _opaque_reason(ctx, dart_info, package_name, lib_root, own_record, own_srcs, rule_deps):
+def _opaque_reason(ctx, dart_info, package_name, lib_root, own_records, own_srcs, rule_deps):
     """Why the target compiles no module because its sources cannot be named, or None."""
     srcs_dir = getattr(ctx.rule.attr, "srcs_dir", None)
     if srcs_dir:
         if not (len(own_srcs) == 1 and own_srcs[0].is_directory):
             return "its `srcs_dir` is not one directory (a `dart_source_set`)"
-        if not package_name or own_record == None:
+        if not package_name or not own_records:
             return "it names no Dart package (`package_name`), so its sources have no `package:` URI"
+        return None
+    if getattr(ctx.rule.attr, "members", None):
+        # A merged library names each source by the member package whose `lib/` holds it.
+        for f in own_srcs:
+            if package_of_source(f.short_path, own_records) == None:
+                return "its source %s is in none of its members' `lib/`" % f.short_path
         return None
 
     # A depset is true when it is not empty; asking does not flatten it.
@@ -482,7 +509,7 @@ def _opaque_reason(ctx, dart_info, package_name, lib_root, own_record, own_srcs,
         return "its rule has no `srcs`, so its files are not known at analysis"
     if not own_srcs:
         return None
-    if not package_name or own_record == None:
+    if not package_name or not own_records:
         return "it names no Dart package (`package_name`), so its sources have no `package:` URI"
     prefix = package_lib_prefix(lib_root)
     for f in own_srcs:
@@ -501,7 +528,7 @@ def _collect_dep_mod_infos(rule_deps):
         return [str(dep.label) for dep in rule_deps if type(dep) != "Target" or FlutterKernelModuleInfo not in dep]
     return dep_mod_infos
 
-def _modular_consistency(label, own_record, rule_deps):
+def _modular_consistency(label, own_records, rule_deps):
     """The package records, and why the direct edge cannot share one package config (None when it can).
 
     Returns `(records, reason)`: `records` is the
@@ -517,8 +544,8 @@ def _modular_consistency(label, own_record, rule_deps):
             if type(dep) == "Target" and DartInfo in dep
         ],
     )
-    records = ([own_record] if own_record != None else [], transitive)
-    return records, _direct_records_reason(label, own_record, rule_deps)
+    records = (own_records, transitive)
+    return records, _direct_records_reason(label, own_records, rule_deps)
 
 def _modular_dep_closures(target, dep_kernels, rule_deps, own_srcs):
     """The postorder dep closures and ownership graphs propagated by the aspect."""
@@ -637,24 +664,20 @@ def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
         tools: The kernel tools struct matching `flutter_sdk_info`.
         flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
         spec: struct with the target's module inputs: `target_name`,
-            `package_name`, `lib_root`, `own_srcs` (the target's own source
-            Files), `records` (the package records), `dep_outline_closure`
+            `sources` (the target's own `struct(uri, file)` sources),
+            `records` (the package records), `dep_outline_closure`
             `upstream_excluded` and `frontend_flags`.
         twin: Whether to compile the registrant twin: same inputs, distinct outputs, one more define.
     """
     stem = spec.target_name + (".flutter_registrant" if twin else ".flutter")
     kmod = ctx.actions.declare_directory(stem + ".kmod")
     koutline = ctx.actions.declare_directory(stem + ".koutline")
-    sources = [
-        library_module_source(spec.package_name, spec.lib_root, f)
-        for f in spec.own_srcs
-    ]
     env = module_dart_env(ctx)
     excluded = flutter_kernel_module_action(
         ctx = ctx,
         tools = tools,
         module = struct(
-            sources = sources,
+            sources = spec.sources,
             packages = spec.records,
             dep_kmods = spec.dep_outline_closure,
             output = kmod,
@@ -691,7 +714,7 @@ def _link_flutter_test_base(ctx, target_name, package_name, kmod, dep_closure, b
         base_kmods = depset(direct = [kmod], transitive = [dep_closure])
     return base_dill, base_keys, base_kmods
 
-def _modular_dep_state(label, rule_deps, own_record):
+def _modular_dep_state(label, rule_deps, own_records):
     """The validated dependency kernel state, or why the target compiles no module.
 
     Collects the deps' `FlutterKernelModuleInfo` values and checks the closure
@@ -701,7 +724,7 @@ def _modular_dep_state(label, rule_deps, own_record):
     Args:
         label: The target's label, for the reason.
         rule_deps: The target's dependency Targets.
-        own_record: The `DartPackageInfo` for the target's own package.
+        own_records: The `DartPackageInfo` records of the target's own packages: one, or one per member of a merged cycle.
 
     Returns:
         struct(dep_kernels, records, twins), or
@@ -715,7 +738,7 @@ def _modular_dep_state(label, rule_deps, own_record):
     for k in dep_kernels:
         if not k.modular:
             return getattr(k, "not_modular", None) or "%s compiles no module: a dependency compiles none" % label
-    records, reason = _modular_consistency(label, own_record, rule_deps)
+    records, reason = _modular_consistency(label, own_records, rule_deps)
     if reason != None:
         return "%s compiles no module: %s" % (label, reason)
     return struct(
@@ -733,16 +756,23 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
         flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
         target_name: The target's short name, for output paths.
         package_name: The target's `package:` name.
-        job: struct with the target's module inputs: `own_srcs`, `records`,
+        job: struct with the target's module inputs: `lib_root`, `own_srcs`, `own_records`, `records`,
             `dep_closure`, `dep_outline_closure`, `upstream_excluded`,
             `cross_pkg_srcs`, `owned`, `edges`, `base_dill`, `base_keys`,
             `base_kmods`, `twins` and `frontend_flags`.
     """
+    if not package_name:
+        # A merged cycle names no one package: each source is named by the member package whose `lib/` holds it.
+        root_of = {pkg.package_name: pkg.lib_root for pkg in job.own_records}
+        sources = []
+        for f in job.own_srcs:
+            name = package_of_source(f.short_path, job.own_records)
+            sources.append(library_module_source(name, root_of[name], f))
+    else:
+        sources = [library_module_source(package_name, job.lib_root, f) for f in job.own_srcs]
     spec = struct(
         target_name = target_name,
-        package_name = package_name,
-        lib_root = job.lib_root,
-        own_srcs = job.own_srcs,
+        sources = sources,
         records = job.records,
         dep_outline_closure = job.dep_outline_closure,
         upstream_excluded = job.upstream_excluded,
@@ -826,6 +856,12 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
     if DartInfo not in target or (app and ctx.var["COMPILATION_MODE"] != "dbg"):
         return _no_flutter_kernel_module()
 
+    # A target that stands for a library (a merged pub cycle's member, a pub `test` package) is that library's
+    # module, as in rules_dart's aspect: the library compiles once and every target naming it links the same module.
+    library = getattr(ctx.rule.attr, "library", None)
+    if type(library) == "Target" and FlutterKernelModuleInfo in library:
+        return [library[FlutterKernelModuleInfo]]
+
     flutter_toolchain = ctx.toolchains["@rules_flutter//flutter:toolchain_type"]
     flutter_sdk_info = flutter_toolchain.flutter_sdk_info if flutter_toolchain else None
     if flutter_sdk_info == None or flutter_sdk_info.platform_kernel_dill == None:
@@ -834,12 +870,12 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
     if tools == None:
         return _no_flutter_kernel_module(no_flutter_module_compiler_error(ctx.label, flutter_sdk_info))
 
-    dart_info, package_name, lib_root, own_record, own_srcs, rule_deps = _modular_gate_inputs(ctx, target)
-    opaque = _opaque_reason(ctx, dart_info, package_name, lib_root, own_record, own_srcs, rule_deps)
+    dart_info, package_name, lib_root, own_records, own_srcs, rule_deps = _modular_gate_inputs(ctx, target)
+    opaque = _opaque_reason(ctx, dart_info, package_name, lib_root, own_records, own_srcs, rule_deps)
     if opaque != None:
         return _no_flutter_kernel_module("%s compiles no module: %s" % (ctx.label, opaque))
 
-    dep = _modular_dep_state(ctx.label, rule_deps = rule_deps, own_record = own_record)
+    dep = _modular_dep_state(ctx.label, rule_deps = rule_deps, own_records = own_records)
     if type(dep) == "string":
         return _no_flutter_kernel_module(dep)
 
@@ -878,6 +914,7 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
         job = struct(
             lib_root = lib_root,
             own_srcs = own_srcs,
+            own_records = own_records,
             records = dep.records,
             dep_closure = dep_closure,
             dep_outline_closure = dep_outline_closure,
@@ -905,7 +942,7 @@ def _module_aspect(extra_attrs):
     """
     return aspect(
         implementation = _flutter_kernel_module_aspect_impl,
-        attr_aspects = ["deps"],
+        attr_aspects = ["deps", "library"],
         attrs = KERNEL_MODULE_ATTRS | EXECUTABLE_DEFINES_ATTRS | extra_attrs | {
             "_extra_dart_defines": attr.label(
                 doc = "The //flutter:extra_dart_defines build setting, read for the aspect's module compiles.",
