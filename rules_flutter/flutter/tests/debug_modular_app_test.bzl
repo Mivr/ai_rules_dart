@@ -13,7 +13,11 @@
 - a release build (plain or tracking): one `FlutterKernelCompile`, no link;
 - a tracking app, a plain app and a `flutter_test` over one library in one debug configuration analyse without
   conflicting actions, and so do two `flutter_test` targets whose names differ only in their directory;
-- an app whose `main` its library also lists fails at analysis, naming both targets and the fix.
+- an app (and a `flutter_test`) whose `main` a library in its `deps` lists, the stock layout's `lib/main.dart`
+  globbed into `lib/`, takes `main` from that library: its entry module names `main` by the library's `package:`
+  URI and reads no file of it, and its release build accepts the same targets;
+- `main` in a library the app reaches only through another, and a source other than `main` that the app and its
+  library both list, still fail at analysis, naming both targets.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -196,24 +200,52 @@ def _shared_lib_cases(name):
         tests.append(test)
     return tests
 
+_MAIN_IN_LIB = "flutter/tests/lib/web_fixture_main.dart"
+_MAIN_IN_LIB_URI = "package:main_in_lib/web_fixture_main.dart"
+
 def _main_in_lib_impl(ctx):
+    """The entry names the library's `main` by its `package:` URI and compiles no file of it."""
     env = analysistest.begin(ctx)
-    for want in [
-        "is listed by two targets",
-        ":_main_in_lib_app and ",
-        ":_main_in_lib_lib",
-        "exclude = [\"lib/web_fixture_main.dart\"]",
-        "only `main`",
-    ]:
+    asserts.equals(env, [], _mnemonics(env, "FlutterKernelCompile"), "no FlutterKernelCompile")
+    asserts.equals(env, 1, len(_mnemonics(env, "DartKernelLink")), "one DartKernelLink")
+    entry = _mnemonics(env, "DartKernel")
+    asserts.equals(env, 1, len(entry), "the entry is the target's own module action")
+    for action in entry:
+        argv = action.argv
+        sources = [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--source"]
+        if ctx.attr.app:
+            asserts.true(env, sources and sources[0] == _MAIN_IN_LIB_URI, "the entry point is the library's main: %s" % sources)
+        else:
+            asserts.false(env, _MAIN_IN_LIB_URI in sources, "the bootstrap is the entry point, and imports main: %s" % sources)
+        asserts.false(
+            env,
+            any([f.short_path == _MAIN_IN_LIB or f.short_path.endswith("/" + _MAIN_IN_LIB) for f in action.inputs.to_list()]),
+            "the entry reads no file of main",
+        )
+    links = _link_modules(env)
+    asserts.true(env, any(["_main_in_lib_lib." in m for m in links]), "the library's module is linked: %s" % links)
+    return analysistest.end(env)
+
+_main_in_lib_test = analysistest.make(_main_in_lib_impl, attrs = {"app": attr.bool(default = True)}, config_settings = _DBG)
+
+def _main_in_lib_refused_impl(ctx):
+    env = analysistest.begin(ctx)
+    for want in ctx.attr.messages:
         asserts.expect_failure(env, want)
     return analysistest.end(env)
 
-_main_in_lib_test = analysistest.make(_main_in_lib_impl, expect_failure = True, config_settings = _DBG)
+_main_in_lib_refused_test = analysistest.make(
+    _main_in_lib_refused_impl,
+    attrs = {"messages": attr.string_list()},
+    expect_failure = True,
+    config_settings = _DBG,
+)
 
 def _main_in_lib_cases(name):
-    """An app whose `main` its library also lists, the shape of a stock `lib/main.dart` globbed into `lib/`.
+    """An app whose `main` its library also lists: the shape of a stock `lib/main.dart` globbed into `lib/`.
 
-    Refused, naming the app, the library and the fix.
+    The library owns `main` when it is in the app's own `deps`. Through another library, or with a second
+    source the app lists too, the app is refused, naming both targets.
 
     Args:
         name: The test_suite name.
@@ -224,16 +256,54 @@ def _main_in_lib_cases(name):
     flutter_library(
         name = "_main_in_lib_lib",
         package_name = "main_in_lib",
-        srcs = ["lib/web_fixture_main.dart"],
+        srcs = ["lib/web_fixture_main.dart", "lib/language_version_main.dart"],
         deps = _DEPS,
         tags = ["manual"],
     )
+    flutter_library(
+        name = "_main_in_lib_facade",
+        package_name = "main_in_lib",
+        srcs = ["lib/web_cond_fixture_main.dart"],
+        deps = [":_main_in_lib_lib"],
+        tags = ["manual"],
+    )
+    app = _APP | {"package_name": "main_in_lib", "main": "lib/web_fixture_main.dart"}
+    flutter_application(name = "_main_in_lib_app", **(app | {"deps": [":_main_in_lib_lib"]}))
+    flutter_test(
+        name = "_main_in_lib_flutter_test",
+        package_name = "main_in_lib",
+        main = "lib/web_fixture_main.dart",
+        deps = [":_main_in_lib_lib", "//flutter/tests/flutter_test_analyze_fixture/fake_test_api"],
+        tags = ["manual"],
+    )
+    flutter_application(name = "_main_in_lib_indirect_app", **(app | {"deps": [":_main_in_lib_facade"] + _DEPS}))
     flutter_application(
-        name = "_main_in_lib_app",
-        **(_APP | {"package_name": "main_in_lib", "main": "lib/web_fixture_main.dart", "deps": [":_main_in_lib_lib"] + _DEPS})
+        name = "_main_in_lib_shared_src_app",
+        **(app | {"srcs": ["lib/language_version_main.dart"], "deps": [":_main_in_lib_lib"]})
     )
     _main_in_lib_test(name = name + "_main_in_lib", target_under_test = ":_main_in_lib_app")
-    return [name + "_main_in_lib"]
+    _main_in_lib_test(name = name + "_main_in_lib_flutter_test", target_under_test = ":_main_in_lib_flutter_test", app = False)
+    _release_test(name = name + "_main_in_lib_release", target_under_test = ":_main_in_lib_app")
+    _main_in_lib_refused_test(
+        name = name + "_main_in_lib_indirect",
+        target_under_test = ":_main_in_lib_indirect_app",
+        messages = [
+            "source flutter/tests/lib/web_fixture_main.dart is listed by two targets",
+            ":_main_in_lib_indirect_app and ",
+            ":_main_in_lib_lib: one source belongs to one target",
+            "only when the library is in ",
+        ],
+    )
+    _main_in_lib_refused_test(
+        name = name + "_main_in_lib_shared_src",
+        target_under_test = ":_main_in_lib_shared_src_app",
+        messages = [
+            "source flutter/tests/lib/language_version_main.dart is listed by two targets",
+            ":_main_in_lib_shared_src_app and ",
+            ":_main_in_lib_lib",
+        ],
+    )
+    return [name + "_main_in_lib" + suffix for suffix in ["", "_flutter_test", "_release", "_indirect", "_shared_src"]]
 
 def _same_basename_cases(name):
     """Two `flutter_test` targets whose names differ only in their directory, analysed together.
