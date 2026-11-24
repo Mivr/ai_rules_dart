@@ -11,22 +11,23 @@ library;
 
 import 'dart:io';
 
+import 'package:runfiles/runfiles.dart';
+
 void main() {
-  final testSrcDir = Platform.environment['TEST_SRCDIR'];
-  final testWorkspace = Platform.environment['TEST_WORKSPACE'];
-  if (testSrcDir == null || testWorkspace == null) {
-    stderr.writeln('Missing TEST_SRCDIR or TEST_WORKSPACE env vars');
+  // Resolved through the runfiles library, not by joining TEST_SRCDIR: the
+  // windows-latest job runs with --noenable_runfiles, so no runfiles directory
+  // exists there and only the manifest knows where the bundle is.
+  final String bundlePath;
+  try {
+    bundlePath = Runfiles.create().rlocation('_main/app');
+  } on Object catch (e) {
+    stderr.writeln('The runfiles of this test cannot be read: $e');
     exit(1);
   }
-
-  final bundlePath = '$testSrcDir/$testWorkspace/app';
   final bundle = Directory(bundlePath);
 
   if (!bundle.existsSync()) {
-    stderr
-      ..writeln('Bundle directory not found at $bundlePath')
-      ..writeln('Looking for bundle...');
-    _listTree(Directory('$testSrcDir/$testWorkspace'), '');
+    stderr.writeln('Bundle directory not found at $bundlePath');
     exit(1);
   }
 

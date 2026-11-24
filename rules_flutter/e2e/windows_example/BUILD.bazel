@@ -139,6 +139,7 @@ dart_test(
     data = [":app"],
     main = "test/verify_windows_bundle_test.dart",
     target_compatible_with = ["@platforms//os:windows"],
+    deps = ["@rules_dart//dart/runfiles"],
 )
 
 # The workspace's lint ruleset, bundled with the pub package whose YAML its
