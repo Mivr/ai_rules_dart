@@ -225,6 +225,117 @@ void main() {
 }
 ''';
 
+/// A persistent worker of the module compiler, driven as Bazel drives one:
+/// one request at a time, each answered with its exit code and output.
+/// [log] is what the worker wrote to stderr, which Bazel keeps as the
+/// worker's log.
+class _Worker {
+  new _(this._process) {
+    _process.stdout.listen(_bytes.addAll);
+    _process.stderr.transform(utf8.decoder).listen(_log.write);
+  }
+
+  static Future<_Worker> start() async => _Worker._(
+    await Process.start(_dartaotruntime, [
+      _tool,
+      '--persistent_worker',
+    ], workingDirectory: _ws.path),
+  );
+
+  final Process _process;
+  final List<int> _bytes = [];
+  final StringBuffer _log = StringBuffer();
+
+  String get log => '$_log';
+
+  Future<({int exitCode, String output})> request(List<String> args) async {
+    final int out = args.indexOf('--output');
+    Directory('${_ws.path}/${args[out + 1]}').parent
+        .createSync(recursive: true);
+    final Uint8List payload = encodeWorkRequestForTest(
+      arguments: args,
+      inputs: const {},
+    );
+    _process.stdin
+      ..add(encodeVarintForTest(payload.length))
+      ..add(payload);
+    await _process.stdin.flush();
+    while (true) {
+      final ({int at, int value})? length = _varint(_bytes, 0);
+      if (length != null && _bytes.length >= length.at + length.value) {
+        final List<int> frame = _bytes.sublist(
+          length.at,
+          length.at + length.value,
+        );
+        _bytes.removeRange(0, length.at + length.value);
+        return _response(frame);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
+  Future<int> close() async {
+    await _process.stdin.close();
+    return await _process.exitCode;
+  }
+
+  static ({int at, int value})? _varint(List<int> bytes, int start) {
+    var value = 0;
+    var at = start;
+    for (var shift = 0; at < bytes.length; shift += 7) {
+      final int byte = bytes[at++];
+      value |= (byte & 0x7f) << shift;
+      if (byte < 0x80) return (at: at, value: value);
+    }
+    return null;
+  }
+
+  /// The exit code (field 1) and output (field 2) of a `WorkResponse`.
+  static ({int exitCode, String output}) _response(List<int> frame) {
+    var exitCode = 0;
+    var output = '';
+    var at = 0;
+    while (at < frame.length) {
+      final ({int at, int value}) tag = _varint(frame, at)!;
+      final ({int at, int value}) value = _varint(frame, tag.at)!;
+      at = value.at;
+      if (tag.value & 7 == 2) {
+        if (tag.value >> 3 == 2) {
+          output = utf8.decode(frame.sublist(at, at + value.value));
+        }
+        at += value.value;
+      } else if (tag.value >> 3 == 1) {
+        exitCode = value.value;
+      }
+    }
+    return (exitCode: exitCode, output: output);
+  }
+}
+
+/// A plugin's platform interface, as `package:plugin_platform_interface`
+/// shapes one: the class every implementation extends, with a named token.
+const _pluginInterface = '''
+abstract class PlatformInterface {
+  PlatformInterface({required Object token}) : _token = token;
+
+  final Object _token;
+
+  Object get token => _token;
+}
+''';
+
+/// A package that extends it with a `super(...)` initializer, as every
+/// `*_platform_interface` package does.
+const _pluginPlatform = '''
+import 'package:plugin/plugin.dart';
+
+abstract class CookiePlatform extends PlatformInterface {
+  CookiePlatform() : super(token: _token);
+
+  static final Object _token = Object();
+}
+''';
+
 void _writeClosure() {
   _write('leaf/lib/leaf.dart', _leaf);
   _write('leaf/lib/src/shapes.dart', _shapes);
@@ -533,6 +644,50 @@ void main(List<String> args) {
         _read('out/$name.koutline/outline.dill'),
       );
     }
+  });
+
+  group('a worker that keeps the front end state', () {
+    setUp(() {
+      _write('plugin/lib/plugin.dart', _pluginInterface);
+      _write('platform/lib/platform.dart', _pluginPlatform);
+      // One module in two configurations, as `bazel-out/k8-dbg` and
+      // `bazel-out/k8-dbg-ST-<hash>` hold it in one build: the same
+      // libraries, in outlines under two paths.
+      _compile(_moduleArgs('plugin', out: 'x'));
+      _compile(_moduleArgs('plugin', out: 'y'));
+      _compile(_moduleArgs('platform', deps: ['plugin'], out: 'x'));
+    });
+
+    // The shortest sequence of the crash that `e2e/android_plugins` showed
+    // in a worker (`Null check operator used on a null value` in
+    // `InferenceVisitorImpl.visitInternalSuperInitializer`): each
+    // configuration's outline loaded twice, alternating. The last request
+    // reused the first outline of `x` while the library's references pointed
+    // into the outline of `y` loaded after it.
+    test('compiles a module against one configuration after the other, '
+        'alternating, as by itself', () async {
+      final _Worker worker = await _Worker.start();
+      for (final (int i, String config) in ['y', 'x', 'y', 'x'].indexed) {
+        final ({int exitCode, String output}) result = await worker.request(
+          _moduleArgs(
+            'platform',
+            deps: ['plugin'],
+            out: 'w$i',
+            inputs: {'plugin': '$config/plugin.koutline'},
+          ),
+        );
+        expect(result.exitCode, 0, reason: 'request $i: ${result.output}');
+        for (final String dill in _dills('x/platform.kmod')) {
+          expect(
+            _read('w$i/platform.kmod/$dill'),
+            _read('x/platform.kmod/$dill'),
+            reason: 'request $i, $dill',
+          );
+        }
+      }
+      expect(await worker.close(), 0);
+      expect(worker.log, isNot(contains('module_compiler:')));
+    });
   });
 
   group('a library the target cannot compile', () {
