@@ -9,6 +9,7 @@ compile — so asserting on the generated source is the only way to see it.
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//flutter/private:flutter_test.bzl", "make_bootstrap_content")
+load("//flutter/private:flutter_test_common.bzl", "find_test_config")
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
 visibility(["//flutter/tests/..."])
@@ -74,9 +75,34 @@ def _bootstrap_keeps_its_contract_either_way_test_impl(ctx):
         asserts.true(env, "FLUTTER_TEST_HARNESS_PORT" in result)
     return unittest.end(env)
 
+def _file(path):
+    return struct(dirname = path.rpartition("/")[0], basename = path.rpartition("/")[2], path = path)
+
+def _test_config_is_the_nearest_up_to_the_project_test_impl(ctx):
+    """`flutter_test_config.dart` is found as `flutter test` finds it.
+
+    The one in the test's directory or the nearest above it, never above the
+    project's directory; without one the bootstrap returns the test's main.
+    """
+    env = unittest.begin(ctx)
+    main = _file("app/test/features/a/a_test.dart")
+    near = _file("app/test/features/flutter_test_config.dart")
+    far = _file("app/test/flutter_test_config.dart")
+    above = _file("flutter_test_config.dart")
+    asserts.equals(env, near, find_test_config(main, [far, near, above], "app"))
+    asserts.equals(env, far, find_test_config(main, [far, above], "app"))
+    asserts.equals(env, None, find_test_config(main, [above], "app"))
+    asserts.equals(env, above, find_test_config(main, [above], ""))
+
+    wrapped = make_bootstrap_content(_TEST_IMPORT, test_config_import = "org-dartlang-app:///test/flutter_test_config.dart")
+    asserts.true(env, "import 'org-dartlang-app:///test/flutter_test_config.dart' as test_config;" in wrapped)
+    asserts.true(env, "return () => test_config.testExecutable(_runTestMain);" in wrapped)
+    return unittest.end(env)
+
 _t0_test = unittest.make(_golden_block_present_with_flutter_test_test_impl)
 _t1_test = unittest.make(_golden_block_absent_without_flutter_test_test_impl)
 _t2_test = unittest.make(_bootstrap_keeps_its_contract_either_way_test_impl)
+_t3_test = unittest.make(_test_config_is_the_nearest_up_to_the_project_test_impl)
 
 def flutter_test_bootstrap_test_suite(name):
-    small_unittest_suite(name, _t0_test, _t1_test, _t2_test)
+    small_unittest_suite(name, _t0_test, _t1_test, _t2_test, _t3_test)

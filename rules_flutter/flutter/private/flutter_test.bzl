@@ -89,6 +89,7 @@ load(
 load(
     "//flutter/private:flutter_test_common.bzl",
     _can_bootstrap = "can_bootstrap",
+    _find_test_config = "find_test_config",
     _flutter_test_bootstrap_action = "flutter_test_bootstrap_action",
     _flutter_test_runner = "flutter_test_runner",
     _make_bootstrap_content = "make_bootstrap_content",
@@ -154,7 +155,18 @@ def _flutter_test_sources(ctx, closure):
     bootstrap = ctx.actions.declare_file(ctx.label.name + "_bootstrap.dart")
     entry_point = entry_point_library(ctx.file.main, ctx.attr.deps)
     test_import = entry_point.uri if entry_point != None else app_main_location(ctx.attr.package_name, lib_root, ctx.file.main).uri
-    staged_comparator = _flutter_test_bootstrap_action(ctx, test_import, bootstrap, names = closure.names)
+
+    # The project's `flutter_test_config.dart` nearest the test, which
+    # `flutter test` wraps every test of the directory in.
+    project_dir = ctx.file.pubspec.dirname if ctx.file.pubspec else "/".join([p for p in (ctx.label.workspace_root, ctx.label.package) if p])
+    test_config = _find_test_config(ctx.file.main, ctx.files.srcs, project_dir)
+    staged_comparator = _flutter_test_bootstrap_action(
+        ctx,
+        test_import,
+        bootstrap,
+        names = closure.names,
+        test_config_uri = app_main_location(ctx.attr.package_name, lib_root, test_config).uri if test_config else None,
+    )
 
     packages = closure.packages
 
