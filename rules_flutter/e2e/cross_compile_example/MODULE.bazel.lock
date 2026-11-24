@@ -314,21 +314,18 @@
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
         "bzlTransitiveDigest": "OAtcP3CcxrNt28m7uO7F1OvY7Foc74DDpIhzybR1jwE=",
-        "usagesDigest": "3CalcKFj0ddA5f94DLEIPZMFw8WtpPyhYrMjYTidCrs=",
+        "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
           "FILE:@@ai_rules_flutter+//tools/tool_deps/pubspec.lock 1af5c724131a36c5ebcedf7762ae4b94aa46c5add81cfd16f1d729bc8c5d5bb6",
-          "FILE:@@ai_rules_flutter+//flutter/private/gen_l10n/pubspec.lock e0b93104e8690fc41b26a845be6757a0f8f6d24da9aece4175ba61dc38248c2c",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock 1452d104de06eacf15905878d31e7b7c84bf72114637fee0c87da2c75dcf58da",
           "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 131b54a6760682dea8f631e6a52e48a43555cfb0479ebe5aca1cc647dc36cd7c",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
           "FILE:@@ai_rules_flutter+//tools/tool_deps/pub_plan.json 5d0f63da220be205815fe41bb5fa48d054019eb52f07d09ecdd0f38fe4c63f84",
-          "FILE:@@ai_rules_flutter+//flutter/private/gen_l10n/pub_plan.json 7e78273e4ba44a4884e97ccdb86836e66b941ebbf44c3d87018c70f853384932",
           "FILE:@@ai_rules_dart+//dart/ext/pub_plan.json 9a8318baca7377e3c4307c68140729577b22c816a17f7810980cdb35ca906598",
           "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pub_plan.json f6a39248934c419f51f8672259b7de3991c860fa4ba9c1422608f981cf8868d1",
           "FILE:@@ai_rules_flutter+//tools/tool_deps/pubspec.yaml 72c7d1a27afa6595996bb9e567d77cf00e80136ab864d09c11de1e104def203e",
-          "FILE:@@ai_rules_flutter+//flutter/private/gen_l10n/pubspec.yaml 5ba59fd3adb8845e35c041231d1dd142d87ee9e4c77a595fff2b9d2ac2d15801",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.yaml 169951c2e1973cc403daba2bbd1179e4a73e1f5be390d0572f69531211e5bdee",
           "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 1d4a082706d3df1ae1f7694f5563f22af91dcbcf6be6d5dc8e16487ae54e55b7"
         ],
@@ -2237,276 +2234,6 @@
               ]
             }
           },
-          "rules_flutter_gen_l10n_deps": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_hub.bzl%pub_lock_hub",
-            "attributes": {
-              "hub_name": "rules_flutter_gen_l10n_deps",
-              "spoke_prefix": "rules_flutter_gen_l10n_deps",
-              "packages": [
-                "clock",
-                "collection",
-                "file",
-                "intl",
-                "meta",
-                "path",
-                "platform",
-                "process",
-                "source_span",
-                "stack_trace",
-                "string_scanner",
-                "term_glyph",
-                "yaml"
-              ],
-              "explicit_packages": [],
-              "local_targets": {},
-              "unavailable": {},
-              "scc_targets": {},
-              "package_graph": "{\n  \"configVersion\": 1,\n  \"packages\": [\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"clock\",\n      \"version\": \"1.1.3\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"collection\",\n      \"version\": \"1.19.1\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"file\",\n      \"version\": \"7.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"meta\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"intl\",\n      \"version\": \"0.20.3\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"meta\",\n      \"version\": \"1.18.3\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"path\",\n      \"version\": \"1.9.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"platform\",\n      \"version\": \"3.1.6\"\n    },\n    {\n      \"dependencies\": [\n        \"file\",\n        \"path\",\n        \"platform\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"process\",\n      \"version\": \"5.0.5\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"path\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_span\",\n      \"version\": \"1.10.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stack_trace\",\n      \"version\": \"1.12.1\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"string_scanner\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"term_glyph\",\n      \"version\": \"1.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"yaml\",\n      \"version\": \"3.1.3\"\n    }\n  ],\n  \"roots\": []\n}\n",
-              "build_runner_version": "",
-              "builder_packages": {}
-            }
-          },
-          "rules_flutter_gen_l10n_deps__clock": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "clock",
-              "version": "1.1.3",
-              "sha256": "e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e",
-              "url": "https://pub.dev/api/archives/clock-1.1.3.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__collection": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "collection",
-              "version": "1.19.1",
-              "sha256": "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76",
-              "url": "https://pub.dev/api/archives/collection-1.19.1.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__file": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "file",
-              "version": "7.0.1",
-              "sha256": "a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4",
-              "url": "https://pub.dev/api/archives/file-7.0.1.tar.gz",
-              "planned_deps": [
-                "meta",
-                "path"
-              ],
-              "deps": [
-                "@rules_flutter_gen_l10n_deps__meta//:meta",
-                "@rules_flutter_gen_l10n_deps__path//:path"
-              ],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__intl": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "intl",
-              "version": "0.20.3",
-              "sha256": "1ca20c894b1717686a2319b8548763d812bc0aabdac580420a44c5178c57a867",
-              "url": "https://pub.dev/api/archives/intl-0.20.3.tar.gz",
-              "planned_deps": [
-                "clock",
-                "meta",
-                "path"
-              ],
-              "deps": [
-                "@rules_flutter_gen_l10n_deps__clock//:clock",
-                "@rules_flutter_gen_l10n_deps__meta//:meta",
-                "@rules_flutter_gen_l10n_deps__path//:path"
-              ],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__meta": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "meta",
-              "version": "1.18.3",
-              "sha256": "c82594181e3312f3d0695fc95aaaf7758d75b8d4ae2bbecf223b9fd5109a059d",
-              "url": "https://pub.dev/api/archives/meta-1.18.3.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__path": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "path",
-              "version": "1.9.1",
-              "sha256": "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5",
-              "url": "https://pub.dev/api/archives/path-1.9.1.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__platform": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "platform",
-              "version": "3.1.6",
-              "sha256": "5d6b1b0036a5f331ebc77c850ebc8506cbc1e9416c27e59b439f917a902a4984",
-              "url": "https://pub.dev/api/archives/platform-3.1.6.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__process": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "process",
-              "version": "5.0.5",
-              "sha256": "c6248e4526673988586e8c00bb22a49210c258dc91df5227d5da9748ecf79744",
-              "url": "https://pub.dev/api/archives/process-5.0.5.tar.gz",
-              "planned_deps": [
-                "file",
-                "path",
-                "platform"
-              ],
-              "deps": [
-                "@rules_flutter_gen_l10n_deps__file//:file",
-                "@rules_flutter_gen_l10n_deps__path//:path",
-                "@rules_flutter_gen_l10n_deps__platform//:platform"
-              ],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__source_span": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "source_span",
-              "version": "1.10.2",
-              "sha256": "56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab",
-              "url": "https://pub.dev/api/archives/source_span-1.10.2.tar.gz",
-              "planned_deps": [
-                "collection",
-                "path",
-                "term_glyph"
-              ],
-              "deps": [
-                "@rules_flutter_gen_l10n_deps__collection//:collection",
-                "@rules_flutter_gen_l10n_deps__path//:path",
-                "@rules_flutter_gen_l10n_deps__term_glyph//:term_glyph"
-              ],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__stack_trace": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "stack_trace",
-              "version": "1.12.1",
-              "sha256": "8b27215b45d22309b5cddda1aa2b19bdfec9df0e765f2de506401c071d38d1b1",
-              "url": "https://pub.dev/api/archives/stack_trace-1.12.1.tar.gz",
-              "planned_deps": [
-                "path"
-              ],
-              "deps": [
-                "@rules_flutter_gen_l10n_deps__path//:path"
-              ],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__string_scanner": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "string_scanner",
-              "version": "1.4.1",
-              "sha256": "921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43",
-              "url": "https://pub.dev/api/archives/string_scanner-1.4.1.tar.gz",
-              "planned_deps": [
-                "source_span"
-              ],
-              "deps": [
-                "@rules_flutter_gen_l10n_deps__source_span//:source_span"
-              ],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__term_glyph": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "term_glyph",
-              "version": "1.2.2",
-              "sha256": "7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e",
-              "url": "https://pub.dev/api/archives/term_glyph-1.2.2.tar.gz",
-              "planned_deps": [],
-              "deps": [],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
-          "rules_flutter_gen_l10n_deps__yaml": {
-            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
-            "attributes": {
-              "package_name": "yaml",
-              "version": "3.1.3",
-              "sha256": "b9da305ac7c39faa3f030eccd175340f968459dae4af175130b3fc47e40d76ce",
-              "url": "https://pub.dev/api/archives/yaml-3.1.3.tar.gz",
-              "planned_deps": [
-                "collection",
-                "source_span",
-                "string_scanner"
-              ],
-              "deps": [
-                "@rules_flutter_gen_l10n_deps__collection//:collection",
-                "@rules_flutter_gen_l10n_deps__source_span//:source_span",
-                "@rules_flutter_gen_l10n_deps__string_scanner//:string_scanner"
-              ],
-              "package_files": [
-                "pubspec.yaml",
-                "LICENSE*"
-              ]
-            }
-          },
           "rules_flutter_tool_deps": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_hub.bzl%pub_lock_hub",
             "attributes": {
@@ -3666,7 +3393,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "RYW4IUZNiYK+c7gYc+I1dLE6yG+wyuOIe8+lyxV15So=",
+        "bzlTransitiveDigest": "3543Tuv+6AUVd3vEfrDOwiT1lQlihBEB8/SVDT5jkRA=",
         "usagesDigest": "mazmaYmjBEYckDiMgj5MMUUxYC7I/J1PwTga/T7FlmU=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -3686,7 +3413,8 @@
           "FILE:@@//pubspec.lock f01537635d2fd2fa7586f241282ff796b5bd47908c303b31fc51a28e3eef6550",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "FILE:@@//pubspec.yaml eb4bfd2313d5aafb530c2c20b291e9319aad3eb6edbd8b5e7bcf1946cd50790b",
-          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64"
+          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
+          "FILE:@@//l10n.yaml ENOENT"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -4780,14 +4508,6 @@
               "source_strip_prefix": "flutter-3.47.7/"
             }
           },
-          "flutter_gen_l10n": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_gen_l10n_repo.bzl%flutter_gen_l10n_repo",
-            "attributes": {
-              "flutter_version": "3.47.7",
-              "sdk_source": "@@ai_rules_flutter++flutter+flutter_sdk_source//:BUILD.bazel",
-              "hub_name": "gen_l10n_deps"
-            }
-          },
           "flutter_assets_tool": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_assets_tool_repo.bzl%flutter_assets_tool_repo",
             "attributes": {
@@ -5024,12 +4744,27 @@
               "scc_targets": {},
               "files": {
                 "android/BUILD.bazel": "load(\"@rules_kotlin//kotlin:android.bzl\", \"kt_android_library\")\n\n# Aggregator — re-exports every spoke's `android:lib`. Spokes without\n# Android sources contribute empty libraries (a no-op at link time).\n# `flutter_android_app` does not add it: an app takes only the Android\n# libraries of the plugins its Dart graph reaches. A caller may name it\n# in `deps` to package every plugin in the lock.\n#\n# `exports = [...]` (rather than `deps = [...]`) is required by\n# rules_android: a `kt_android_library` without `srcs` or\n# `resource_files` may not declare `deps` directly — the supported way\n# to forward dependencies is `exports`.\nkt_android_library(\n    name = \"all_android_plugin_libs\",\n    srcs = [],\n    visibility = [\"//visibility:public\"],\n    exports = [\n        \"@deps__characters//android:lib\",\n        \"@deps__collection//android:lib\",\n        \"@deps__flutter//android:lib\",\n        \"@deps__material_color_utilities//android:lib\",\n        \"@deps__meta//android:lib\",\n        \"@deps__vector_math//android:lib\",\n        \"@deps__very_good_analysis//android:lib\",\n    ],\n)\n",
-                "packages/BUILD.bazel": "load(\"@rules_flutter//flutter:defs.bzl\", \"flutter_pub_packages\")\n\nflutter_pub_packages(\n    name = \"packages\",\n    deps = [\n        \"//:characters\",\n        \"//:collection\",\n        \"//:flutter\",\n        \"//:material_color_utilities\",\n        \"//:meta\",\n        \"//:vector_math\",\n        \"//:very_good_analysis\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\n",
+                "packages/BUILD.bazel": "load(\"@rules_flutter//flutter:defs.bzl\", \"flutter_pub_packages\")\n\nflutter_pub_packages(\n    name = \"packages\",\n    package_graph = \"package_graph.json\",\n    deps = [\n        \"//:characters\",\n        \"//:collection\",\n        \"//:flutter\",\n        \"//:material_color_utilities\",\n        \"//:meta\",\n        \"//:vector_math\",\n        \"//:very_good_analysis\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\n",
+                "packages/package_graph.json": "{\n  \"configVersion\": 1,\n  \"packages\": [\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"characters\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"collection\",\n      \"version\": \"1.19.1\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"material_color_utilities\",\n      \"version\": \"0.13.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"meta\",\n      \"version\": \"1.18.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"vector_math\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"very_good_analysis\",\n      \"version\": \"10.3.0\"\n    }\n  ],\n  \"roots\": []\n}\n",
                 "ios_native_deps.json": "{\"ios_pod_deps\":{},\"ios_pod_ignore\":[],\"ios_pods\":{},\"swift_package_product_deps\":{},\"version\":1}",
                 "packages.bzl": "\"\"\"The packages of the `deps` hub, for the Flutter SDK packages' BUILD files.\"\"\"\n\n_PACKAGES = {name: True for name in [\"characters\", \"collection\", \"flutter\", \"material_color_utilities\", \"meta\", \"vector_math\", \"very_good_analysis\"]}\n\ndef hub_deps(names):\n    \"\"\"Labels of the hub's aliases for the names it holds; other names are dropped.\n\n    Args:\n        names: Dependency names from an SDK package's pubspec.\n\n    Returns:\n        The labels, in the order given.\n    \"\"\"\n    return [Label(\"//:\" + name) for name in names if name in _PACKAGES]\n",
                 "pub_packages.json": "{\"packages\":[\"characters\",\"collection\",\"flutter\",\"material_color_utilities\",\"meta\",\"vector_math\",\"very_good_analysis\"],\"scc_targets\":{}}",
                 "swift_package_sha256.json": "{}"
               }
+            }
+          },
+          "flutter_pub_hubs": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_hubs.bzl%flutter_pub_hubs",
+            "attributes": {
+              "hubs": {
+                "deps": "deps"
+              }
+            }
+          },
+          "flutter_l10n": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
+            "attributes": {
+              "projects": {}
             }
           }
         },
