@@ -20,6 +20,12 @@ void main() {
     expect(text.trim(), 'a name with a space');
   });
 
+  test(
+    'is skipped by dart_test.yaml',
+    () => fail('dart_test.yaml was not read'),
+    tags: ['yaml_skipped'],
+  );
+
   test('compiles at the language version of its pubspec', () {
     const _ = 'a variable';
     // Before 3.7 `_` is a variable; from 3.7 on it cannot be read, so this

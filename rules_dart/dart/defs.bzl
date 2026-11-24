@@ -45,7 +45,13 @@ visibility("public")
 # `project_defaults.bzl`); what a target states wins.
 
 def dart_library(name, **kwargs):
-    """A `dart_library`; in a project's package it compiles with the pubspec's language version by default.
+    """The `dart_library` rule, with its project's language version by default.
+
+    In the directory of a project the `pub` extension knows (a `pubspec.yaml`
+    a root-module `pub.from_lock` lock names), `language_version` defaults to
+    the one pub writes for the pubspec (its `environment: sdk:` lower bound),
+    unless the target states `language_version`, `package` or `members`.
+    Elsewhere, and for every other attribute, it is the rule.
 
     Args:
       name: The target's name.
@@ -55,7 +61,13 @@ def dart_library(name, **kwargs):
     _dart_library(name = name, **kwargs)
 
 def dart_binary(name, **kwargs):
-    """A `dart_binary`; in a project's package it is a member of the pubspec's package by default.
+    """The `dart_binary` rule, a member of its project's package by default.
+
+    In a project's directory, `package_name` and `language_version` default to
+    the pubspec's `name` and language version (with `identity_from_pubspec`),
+    unless the target states `package_name`, `language_version` or `package`,
+    or names a `main` or `srcs` of another package. Elsewhere, and for every
+    other attribute, it is the rule.
 
     Args:
       name: The target's name.
@@ -65,10 +77,16 @@ def dart_binary(name, **kwargs):
     _dart_binary(name = name, **kwargs)
 
 def dart_test(name, **kwargs):
-    """A `dart_test`; in a project's package it runs as under `dart test` by default.
+    """The `dart_test` rule, run as `dart test` runs it by default.
 
-    It is a member of the pubspec's package, runs in the project's directory
-    (`pubspec`), and has the files under the project's `test/` as `data`.
+    In a project's directory: `package_name` and `language_version` default as
+    for `dart_binary`; `pubspec` defaults to the project's `pubspec.yaml`, so
+    the test runs in its directory; and `data` gains the project's
+    `dart_test.yaml` and every file under its `test/` that is not Dart source,
+    not hidden, not under `failures/` and not in a directory with a BUILD file
+    of its own. A file there whose name cannot be a label fails the package's
+    tests at analysis, naming it. Elsewhere, and for every other attribute, it
+    is the rule.
 
     Args:
       name: The target's name.

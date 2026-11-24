@@ -41,6 +41,9 @@ EXECUTABLE_PACKAGE_ATTRS = PACKAGE_IDENTITY_ATTRS | {
     "package_name": attr.string(
         doc = "The Dart package this executable is part of. Optional: set it (or `language_version`, or `package`) only to make this target a member of a package rooted at its Bazel package directory, as a `dart_library` there would be; left unset, the target contributes no package and its entrypoint takes the version of the package whose root contains it. Defaults to the last component of the Bazel package path when only `language_version` is set. Must agree with every package in `deps` that shares its name or root. Set this or `package`, not both.",
     ),
+    "identity_from_pubspec": attr.bool(
+        doc = "Whether `package_name` and `language_version` are the `name` and language version of the `pubspec.yaml` in this target's directory, as the `dart_binary` and `dart_test` macros state them for a target of a project's directory. An error about the identity then names the pubspec and what to change. Defaults to `False`; not set by hand.",
+    ),
     "language_version": attr.string(
         doc = "Dart language version of the package this executable is part of, in `<major>.<minor>` form. Emitted as the package's `languageVersion` in the generated `package_config.json`, so the entrypoint compiles, analyzes and is format-checked at it. For an executable whose Bazel package has no `dart_library` to state it. Must equal the version a `dart_library` of the same package states. Set this or `package`, not both.",
     ),
@@ -90,10 +93,18 @@ def _same_name_error(me, name, shown_root, root, same_name, reached_through):
         )
     return None
 
-def _same_root_error(me, name, shown_root, root, dep_packages, reached_through):
+def _same_root_error(me, name, shown_root, root, dep_packages, reached_through, from_pubspec):
     """Error when a dep record names the stated root differently, else None."""
     for p in dep_packages:
         if p.lib_root == root and p.package_name != name:
+            if from_pubspec:
+                return (
+                    ("%s is package \"%s\", the `name` its directory's pubspec.yaml states, but " +
+                     "%s declares the same directory `%s` as package \"%s\". One directory is one " +
+                     "package, and pub names it \"%s\": set `package_name = \"%s\"` on %s (and " +
+                     "import it as `package:%s/`), or state `package_name = \"%s\"` on this target.") %
+                    (me, name, reached_through(p), shown_root, p.package_name, name, name, reached_through(p), name, p.package_name)
+                )
             return (
                 ("%s states package \"%s\", but %s declares the same directory " +
                  "`%s` as package \"%s\". One directory is one package. Name " +
@@ -103,12 +114,20 @@ def _same_root_error(me, name, shown_root, root, dep_packages, reached_through):
             )
     return None
 
-def _version_error(me, name, own, root, dep_packages, reached_through):
+def _version_error(me, name, own, root, dep_packages, reached_through, from_pubspec):
     """Error when a same-package dep record states another version, else None."""
     for p in dep_packages:
         if p.package_name != name or p.lib_root != root:
             continue
         theirs = getattr(p, "language_version", "")
+        if theirs != own.language_version and from_pubspec:
+            return (
+                ("%s is package \"%s\" at language version %s, the version its directory's " +
+                 "pubspec.yaml gives, but %s, the same package, states %s. One package has one " +
+                 "language version: drop `language_version` from %s, which then takes the " +
+                 "pubspec's, or state `language_version = \"%s\"` on this target.") %
+                (me, name, own.language_version, reached_through(p), theirs or "none", reached_through(p), theirs)
+            )
         if theirs != own.language_version:
             return (
                 ("%s states package \"%s\" at language version %s, but %s, " +
@@ -143,7 +162,7 @@ def _nested_root_error(me, name, shown_root, own_paths, root, dep_packages, reac
                 )
     return None
 
-def executable_package_error(label, own, stated_by, own_paths, dep_packages, reached_through):
+def executable_package_error(label, own, stated_by, own_paths, dep_packages, reached_through, from_pubspec = False):
     """Reports a stated executable package that contradicts what its deps say.
 
     The rules, each a pair of statements that can disagree:
@@ -177,6 +196,9 @@ def executable_package_error(label, own, stated_by, own_paths, dep_packages, rea
       dep_packages: Every `DartPackageInfo` its `deps` reach, duplicates kept.
       reached_through: Function from a record to the label of the direct dep
         that supplies it, for messages.
+      from_pubspec: Whether the identity is the pubspec's, as the macros
+        state it (`identity_from_pubspec`); the messages then say what to
+        change.
 
     Returns:
       An error message, or `None`.
@@ -195,11 +217,11 @@ def executable_package_error(label, own, stated_by, own_paths, dep_packages, rea
     if err != None:
         return err
 
-    err = _same_root_error(me, name, shown_root, root, dep_packages, reached_through)
+    err = _same_root_error(me, name, shown_root, root, dep_packages, reached_through, from_pubspec)
     if err != None:
         return err
 
-    err = _version_error(me, name, own, root, dep_packages, reached_through)
+    err = _version_error(me, name, own, root, dep_packages, reached_through, from_pubspec)
     if err != None:
         return err
 
@@ -266,6 +288,8 @@ def executable_package(ctx, own_srcs):
     root = derive_lib_root(ctx.label.workspace_root, ctx.label.package)
     if ctx.attr.package:
         stated_by = "`package = %s`" % ctx.attr.package.label
+    elif ctx.attr.identity_from_pubspec:
+        stated_by = "the macro's default from pubspec.yaml"
     elif identity.package_name:
         stated_by = "`package_name = \"%s\"`" % identity.package_name
     else:
@@ -304,6 +328,7 @@ def executable_package(ctx, own_srcs):
         [f.short_path for f in own_srcs],
         dep_packages,
         _reached_through(ctx.attr.deps),
+        from_pubspec = ctx.attr.identity_from_pubspec,
     )
     if err != None:
         fail(err)

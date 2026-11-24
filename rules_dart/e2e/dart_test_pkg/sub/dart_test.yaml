@@ -1,0 +1,5 @@
+# Read by `package:test` from the directory a test runs in: under `dart test`
+# here, and under the rules, which make it `data` of the package's tests.
+tags:
+  yaml_skipped:
+    skip: "dart_test.yaml skips this tag"

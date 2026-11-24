@@ -149,10 +149,15 @@ restated:
   control character) fails the package's tests at analysis, naming it. A file
   outside `test/` that a test reads is named in `data`. Editing a fixture reruns
   every test of the package.
+- **`dart_test.yaml`.** The project's `dart_test.yaml` is in the test's
+  `data`, and `package:test` reads it from the directory the test runs in, as
+  under `dart test`: its tags, `skip`, `test_on` and presets apply. Its
+  timeouts do not: Bazel's `size`/`timeout` is the limit.
 
-`dart_test.yaml` is not read by the rules. A test that names it in `data` runs
-with it, and `package:test` applies its tags, presets and `test_on`; its
-timeouts give way to Bazel's.
+A binary or test that takes the pubspec's `name` fails the build when a
+library of the same directory states another `package_name`, naming both and
+the pubspec's name: one directory is one package, and pub names it after the
+pubspec.
 
 The runner starts from an app-JIT snapshot, trained on one run of it, so each
 test starts faster than from its kernel. The snapshot is skipped when the exec

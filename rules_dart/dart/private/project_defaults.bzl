@@ -64,6 +64,7 @@ def project_identity(kwargs, project):
         return
     kwargs["package_name"] = project.name
     kwargs["language_version"] = project.language_version
+    kwargs["identity_from_pubspec"] = True
 
 # A helper of the macros, not a macro of its own.
 # buildifier: disable=unnamed-macro
@@ -113,15 +114,25 @@ def project_test_files(kwargs, project, rule_name):
             _unlabelable_fixtures(name = name, files = project.unlabelable, visibility = ["//visibility:private"])
         add_project_files(kwargs, "data", [":" + name])
 
+# A helper of the macros, not a macro of its own.
+# buildifier: disable=unnamed-macro
 def project_test_dir(kwargs, project):
-    """Runs a test in its project's directory: `pubspec` is the project's `pubspec.yaml`.
+    """Runs a test in its project's directory with the project's `dart_test.yaml`.
+
+    `pubspec` is the project's `pubspec.yaml`, and `dart_test.yaml`, when the
+    project has one, is `data`: `package:test` reads it from the directory
+    the test runs in, as under `dart test`.
 
     Args:
       kwargs: The target's arguments; changed in place.
       project: The package's index entry, or None.
     """
-    if project != None and "pubspec" not in kwargs and _local(kwargs.get("main")):
+    if project == None or not _local(kwargs.get("main")):
+        return
+    if "pubspec" not in kwargs:
         kwargs["pubspec"] = "pubspec.yaml"
+    if project.test_yaml:
+        add_project_files(kwargs, "data", [project.test_yaml])
 
 def _unlabelable_fixtures_impl(ctx):
     fail(("{n} file(s) under the project's test/ cannot be Bazel labels, so no test of " +

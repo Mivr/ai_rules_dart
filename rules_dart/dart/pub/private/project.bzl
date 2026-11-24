@@ -9,6 +9,8 @@ project's files, and writes `project.bzl`:
 - `name` and `language_version`: the pubspec's `name`, and the
   `languageVersion` pub writes for it (its `environment: sdk:` lower bound);
 - `license`: `NOTICES`, else `LICENSE`, at the project's root;
+- `test_yaml`: `dart_test.yaml` at the project's root, which `package:test`
+  reads from the directory a test runs in;
 - `test_data`: every file under `test/` that is not Dart source, not hidden,
   not under a `failures/` directory, and in the project's own Bazel package
   (a directory holding a BUILD file is skipped), which a test reads by a
@@ -113,10 +115,10 @@ def project_facts(rctx, project_dir, spec, test_config = None):
         (`flutter_test_config.dart`), listed as `test_configs`; None for none.
 
     Returns:
-      `struct(name, language_version, license, test_data, test_configs, unlabelable)`.
+      `struct(name, language_version, license, test_yaml, test_data, test_configs, unlabelable)`.
     """
     if spec == None:
-        return struct(name = "", language_version = "", license = "", test_data = [], test_configs = [], unlabelable = [])
+        return struct(name = "", language_version = "", license = "", test_yaml = "", test_data = [], test_configs = [], unlabelable = [])
     license = ""
     for name in ("NOTICES", "LICENSE"):
         path = project_dir.get_child(name)
@@ -125,11 +127,14 @@ def project_facts(rctx, project_dir, spec, test_config = None):
             license = name
             break
     tests = _test_files(rctx, project_dir, test_config)
+    test_yaml = project_dir.get_child("dart_test.yaml")
+    rctx.watch(test_yaml)
     name = spec.get("name") if type(spec) == "dict" else None
     return struct(
         name = name if type(name) == "string" else "",
         language_version = pubspec_language_version(spec),
         license = license,
+        test_yaml = "dart_test.yaml" if test_yaml.exists and not test_yaml.is_dir else "",
         test_data = tests.test_data,
         test_configs = tests.test_configs,
         unlabelable = tests.unlabelable,
@@ -145,7 +150,7 @@ def project_bzl(facts, extra = ""):
     Returns:
       The file's text.
     """
-    fields = ["name", "language_version", "license", "test_data", "test_configs", "unlabelable"]
+    fields = ["name", "language_version", "license", "test_yaml", "test_data", "test_configs", "unlabelable"]
     return "PROJECT = struct(\n%s%s)\n" % ("".join(["    %s = %r,\n" % (f, getattr(facts, f)) for f in fields]), extra)
 
 # The BUILD file of a repository holding a `project.bzl`.
