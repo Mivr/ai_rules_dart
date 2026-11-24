@@ -45,6 +45,11 @@
 // time, so the worker is not multiplexed. The state of the last two targets
 // and environments stays loaded. `--max-rss-mb=N` drops all of it when the
 // process holds more than N megabytes after a request.
+//
+// A request whose compile throws (an internal error of the front end, not a
+// diagnostic) is compiled once more from a fresh state, so a build never
+// fails on a state the worker kept; a retry that succeeds is reported on
+// stderr, the worker's log, with the requests that state served before.
 
 import 'dart:async';
 import 'dart:convert';
@@ -143,6 +148,8 @@ class Request {
           refusedLibraries.add(value(++i));
         case '--enable-experiment':
           experiments.add(value(++i));
+        case '--poison-state-for-test':
+          poisonStateForTest = true;
         default:
           final int eq = arg.indexOf('=');
           if (arg.startsWith('-D') && eq > 2) {
@@ -246,6 +253,20 @@ class Request {
 
   /// The `dart:` libraries `//dart:refused_dart_libraries` refuses.
   final Set<String> refusedLibraries = {};
+
+  /// Tests only: the front-end state this request leaves behind throws on
+  /// its next use, as a state that went wrong would.
+  bool poisonStateForTest = false;
+
+  /// What the front end's state is kept by: it starts over when the target
+  /// or the environment changes.
+  String get stateKey => [
+    target,
+    trackWidgetCreation,
+    experiments,
+    for (final String name in defines.keys.toList()..sort())
+      '$name=${defines[name]}',
+  ].join('\n');
 }
 
 Uri _fileUri(String path) => Uri.base.resolveUri(Uri.file(path));
@@ -282,12 +303,32 @@ class Compiler {
   final Map<String, fe.InitializedCompilerState> _states = {};
   static const _maxStates = 2;
 
+  /// The `--output` of each request a kept state served, oldest first, so a
+  /// retry can say what the state had compiled before it went wrong.
+  final Map<String, List<String>> _served = {};
+  static const _maxServed = 200;
+
+  /// The keys of the states a test poisoned (`--poison-state-for-test`).
+  final Set<String> _poisoned = {};
+
+  void _drop(String key) {
+    _states.remove(key);
+    _served.remove(key);
+    _poisoned.remove(key);
+  }
+
   /// The file a `package:` URI names under the request's package config. A
   /// `part` directive may spell its file that way.
   Uri Function(Uri) _fileOf = (Uri uri) => uri;
 
   /// Compiles the module [rawArgs] describe. Returns the exit code, with the
   /// diagnostics in [log] when it is not 0.
+  ///
+  /// A compile that throws anything but a [FormatException] (a request the
+  /// tool refuses) is an internal error, not a diagnostic of the program: the
+  /// state it used is dropped and the request is compiled once more from a
+  /// fresh state. Only when that throws too does the request fail, with both
+  /// traces.
   Future<int> compile(
     List<String> rawArgs,
     Map<String, Uint8List> digests,
@@ -297,29 +338,73 @@ class Compiler {
       final List<String>? args = materializePackageConfig(rawArgs, log);
       if (args == null) return 64;
       final request = Request(args);
+      final String key = request.stateKey;
+      final List<String> served = [...?_served[key]];
+      final first = StringBuffer();
+      final Object error;
+      final StackTrace stack;
+      try {
+        final int code = await _attempt(request, digests, first);
+        log.write(first);
+        if (request.poisonStateForTest) _poisoned.add(key);
+        return code;
+      } on FormatException {
+        rethrow;
+      } catch (e, s) {
+        (error, stack) = (e, s);
+      }
+      _drop(key);
+      final second = StringBuffer();
+      try {
+        final watch = Stopwatch()..start();
+        final int code = await _attempt(request, digests, second);
+        log.write(second);
+        stderr.writeln(
+          '$_tool: an internal error of the front end; the same request '
+          'compiled from a fresh state in ${watch.elapsedMilliseconds} ms '
+          '(exit $code). To reproduce it, replay in one worker the requests '
+          'that state served, oldest first, then this one.\n'
+          '  request: ${request.output}\n'
+          '${[for (final String output in served) '  served before: $output\n'].join()}'
+          '  error: $error\n$stack',
+        );
+        return code;
+      } on FormatException {
+        rethrow;
+      } catch (e, s) {
+        _drop(key);
+        log.writeln(
+          '$_tool: $error\n$stack\n'
+          '$_tool: the same request from a fresh state failed too: $e\n$s',
+        );
+        return 1;
+      }
+    } on FormatException catch (e) {
+      log.writeln('$_tool: ${e.message}');
+      return 64;
+    } finally {
+      final int? budget = maxRssMb;
+      if (budget != null && ProcessInfo.currentRss > budget << 20) {
+        _states.keys.toList().forEach(_drop);
+      }
+    }
+  }
+
+  /// One compile of [request], its diagnostics and the front end's prints in
+  /// [log].
+  Future<int> _attempt(
+    Request request,
+    Map<String, Uint8List> digests,
+    StringBuffer log,
+  ) =>
       // The front end prints when it resets its state. In a worker, stdout
       // is the protocol's channel, so a print goes to the log instead.
-      return await runZoned(
+      runZoned(
         () => _compile(request, digests, log),
         zoneSpecification: ZoneSpecification(
           print: (_, _, _, String line) => log.writeln(line),
         ),
       );
-    } on FormatException catch (e) {
-      log.writeln('$_tool: ${e.message}');
-      return 64;
-    } catch (e, stack) {
-      // The state may hold half of a compile: the next request starts clean.
-      _states.clear();
-      log.writeln('$_tool: $e\n$stack');
-      return 1;
-    } finally {
-      final int? budget = maxRssMb;
-      if (budget != null && ProcessInfo.currentRss > budget << 20) {
-        _states.clear();
-      }
-    }
-  }
 
   List<int> _digest(String path, Map<String, Uint8List> digests) =>
       digests[path] ??
@@ -382,13 +467,17 @@ class Compiler {
       ...r.roots,
     ], files);
     final flags = TargetFlags(trackCreationLocations: r.trackWidgetCreation);
-    final stateKey = [
-      r.target,
-      r.trackWidgetCreation,
-      r.experiments,
-      for (final String name in r.defines.keys.toList()..sort())
-        '$name=${r.defines[name]}',
-    ].join('\n');
+    final String stateKey = r.stateKey;
+    if (_states.containsKey(stateKey)) {
+      if (_poisoned.contains(stateKey)) {
+        throw StateError('the front-end state was poisoned by a test');
+      }
+    } else {
+      _served.remove(stateKey);
+      _poisoned.remove(stateKey);
+    }
+    (_served[stateKey] ??= []).add(r.output!);
+    if (_served[stateKey]!.length > _maxServed) _served[stateKey]!.removeAt(0);
     final sourceSet = r.sources.toSet();
     final leftOut = <Uri, _LeftOut>{};
     var entryPoints = r.entry
@@ -419,8 +508,9 @@ class Compiler {
       );
       _states[stateKey] = state;
       while (_states.length > _maxStates) {
-        _states.remove(_states.keys.first);
+        _drop(_states.keys.first);
       }
+      _keepOneOutlinePerLibrary(state, [platform, ...outlines]);
       state.options.onDiagnostic = (fe.CfeDiagnosticMessage message) {
         fe.printDiagnosticMessage(message, out.writeln);
         if (message.severity == fe.CfeSeverity.error) errors.add(message);
@@ -1077,6 +1167,64 @@ class Compiler {
       })}\n',
     );
   }
+}
+
+/// Keeps the front end's cache of loaded outlines at one outline per library.
+///
+/// Every outline the front end loads binds the shared references of its
+/// libraries (one per class, member and library, by canonical name) to its
+/// own nodes. An older outline of the same library that stays cached then has
+/// nodes its own references no longer reach: a later request that reuses it
+/// builds its dependency's classes from those nodes, while every reference,
+/// such as a dependant's `extends`, reaches the newer outline's. That request
+/// sees two copies of one class, and the front end fails on it (a
+/// `super(...)` whose constructor belongs to neither copy's hierarchy: "Null
+/// check operator used on a null value" in `visitInternalSuperInitializer`;
+/// "No class info for ..." in the class hierarchy).
+///
+/// The front end means to evict the older outline when it loads one that
+/// defines the same library, by the owner it records for each library
+/// (`InitializedCompilerState.workerInputCacheLibs`). But when it evicts one,
+/// it records no owner for the library it loaded
+/// (`initializeIncrementalCompiler` in the SDK's
+/// `pkg/front_end/lib/src/api_unstable/modular_incremental_compilation.dart`,
+/// the same at 3.13.5 and on `main` in November 2026), so the next outline of
+/// that library, loaded from a third URI, evicts nothing. A worker sees one
+/// library under several URIs whenever a build has one module in two
+/// configurations with the same target and environment (`bazel-out/k8-dbg`
+/// and `bazel-out/k8-dbg-ST-<hash>`; a tool's module and the target's), and
+/// Bazel hands such requests to one worker in any order.
+///
+/// So after every initialization: each cached outline that is not an input
+/// of this request and defines a library an input defines is dropped (the
+/// inputs own the references now), and the owner of every cached library is
+/// recorded again from what stays.
+void _keepOneOutlinePerLibrary(
+  fe.InitializedCompilerState state,
+  List<Uri> inputs,
+) {
+  final cache = state.workerInputCache!;
+  final Set<Uri> current = inputs.toSet();
+  final defined = <Uri>{
+    for (final Uri uri in current)
+      if (cache[uri] case final input?)
+        for (final Library library in input.component.libraries)
+          library.importUri,
+  };
+  cache.removeWhere(
+    (Uri uri, input) =>
+        !current.contains(uri) &&
+        input.component.libraries.any(
+          (Library library) => defined.contains(library.importUri),
+        ),
+  );
+  state.workerInputCacheLibs!
+    ..clear()
+    ..addAll({
+      for (final MapEntry(key: Uri uri, value: input) in cache.entries)
+        for (final Library library in input.component.libraries)
+          library.importUri: uri,
+    });
 }
 
 /// The path of a multi-root [file] below its root: the key a module index

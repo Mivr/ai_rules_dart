@@ -688,6 +688,79 @@ void main(List<String> args) {
       expect(await worker.close(), 0);
       expect(worker.log, isNot(contains('module_compiler:')));
     });
+
+    test('compiles a request again from a fresh state when the kept one '
+        'throws, and says so in its log', () async {
+      final _Worker worker = await _Worker.start();
+      final ({int exitCode, String output}) poisoned = await worker.request(
+        _moduleArgs(
+          'platform',
+          deps: ['plugin'],
+          out: 'w0',
+          inputs: {'plugin': 'x/plugin.koutline'},
+          extra: ['--poison-state-for-test'],
+        ),
+      );
+      expect(poisoned.exitCode, 0, reason: poisoned.output);
+      final ({int exitCode, String output}) result = await worker.request(
+        _moduleArgs(
+          'platform',
+          deps: ['plugin'],
+          out: 'w1',
+          inputs: {'plugin': 'x/plugin.koutline'},
+        ),
+      );
+      expect(result.exitCode, 0, reason: result.output);
+      expect(result.output, isNot(contains('poisoned')));
+      for (final String dill in _dills('x/platform.kmod')) {
+        expect(_read('w1/platform.kmod/$dill'), _read('x/platform.kmod/$dill'));
+      }
+      // The state the retry made is a good one: the next request uses it.
+      final ({int exitCode, String output}) next = await worker.request(
+        _moduleArgs(
+          'platform',
+          deps: ['plugin'],
+          out: 'w2',
+          inputs: {'plugin': 'x/plugin.koutline'},
+        ),
+      );
+      expect(next.exitCode, 0, reason: next.output);
+      expect(await worker.close(), 0);
+      final String log = worker.log;
+      expect(log, contains('an internal error of the front end'));
+      expect(log, contains('poisoned by a test'));
+      expect(log, contains('request: w1/platform.kmod'));
+      expect(log, contains('served before: w0/platform.kmod'));
+      expect(
+        'an internal error of the front end'.allMatches(log),
+        hasLength(1),
+      );
+    });
+
+    test('fails a request that throws from a fresh state too, with both '
+        'traces', () async {
+      _write(
+        'bad/plugin.koutline/index.json',
+        '{"version": 2, "outline": "outline.dill", "excluded": []}\n',
+      );
+      _write('bad/plugin.koutline/outline.dill', 'not a kernel file');
+      final _Worker worker = await _Worker.start();
+      final ({int exitCode, String output}) result = await worker.request(
+        _moduleArgs(
+          'platform',
+          deps: ['plugin'],
+          out: 'w0',
+          inputs: {'plugin': 'bad/plugin.koutline'},
+        ),
+      );
+      expect(result.exitCode, 1);
+      expect(
+        result.output,
+        contains('the same request from a fresh state failed too'),
+      );
+      expect(await worker.close(), 0);
+      expect(worker.log, isNot(contains('an internal error of the front end')));
+    });
   });
 
   group('a library the target cannot compile', () {
