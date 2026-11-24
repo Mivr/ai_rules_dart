@@ -68,7 +68,6 @@ FlutterKernelModuleInfo = provider(
     doc = "Modular Flutter kernel info for a DartInfo target.",
     fields = {
         "kernel_info": "DartKernelInfo compiled for the Flutter target and patched SDK.",
-        "product_kernel_info": "DartKernelInfo compiled for the Flutter target and product patched SDK (`-Ddart.vm.product=true`).",
         "registrant_twins": "Depset of `struct(plain, kmod, koutline)` registrant twins in the closure, or None.",
     },
 )
@@ -92,7 +91,7 @@ _TRACK_ATTR = {"track_widget_creation": attr.bool(doc = "Whether the app tracks 
 def _no_flutter_kernel_module(reason = None):
     """The provider of a target that compiles no module, saying why (`DartKernelInfo.not_modular`)."""
     empty = no_kernel_module(reason)
-    return [FlutterKernelModuleInfo(kernel_info = empty, product_kernel_info = empty)]
+    return [FlutterKernelModuleInfo(kernel_info = empty)]
 
 def _own_package_record(info):
     """Returns the `DartPackageInfo` for the package a `DartInfo` itself owns.
@@ -454,7 +453,7 @@ def _collect_dep_mod_infos(rule_deps):
 def _modular_consistency(own_record, rule_deps, dep_kernels):
     """The package records and whether the direct edge agrees on one modular closure.
 
-    Returns `(records, packages_ok, modular)`: `records` is the
+    Returns `(records, modular)`: `records` is the
     `(own_records, transitive)` pair the module's package config is written
     from when the compile runs, with this target's record first (the config
     keeps the first record of a name, as `first_per_package` did over the
@@ -468,9 +467,8 @@ def _modular_consistency(own_record, rule_deps, dep_kernels):
         ],
     )
     records = ([own_record] if own_record != None else [], transitive)
-    packages_ok = _direct_records_compatible(own_record, rule_deps)
-    modular = packages_ok and all([k.modular for k in dep_kernels])
-    return records, packages_ok, modular
+    modular = _direct_records_compatible(own_record, rule_deps) and all([k.modular for k in dep_kernels])
+    return records, modular
 
 def _modular_dep_closures(target, dep_kernels, rule_deps, own_srcs):
     """The postorder dep closures and ownership graphs propagated by the aspect."""
@@ -520,41 +518,16 @@ def _without_base_kmods(dep_closure, base_dill, base_keys, base_kmods):
     # lint-allow: depset-flatten terminal: the test links its closure minus the base, once
     return depset([f for f in dep_closure.to_list() if f not in base], order = "postorder")
 
-def _header_only_module_info(product_modular, dep_product_kernels, closures, base):
+def _header_only_module_info(closures, base):
     """The provider list for a target with no own sources: dep closures only.
 
     Args:
-        product_modular: Whether the product closure agrees on one modular world.
-        dep_product_kernels: The deps' product `DartKernelInfo` values.
         closures: struct with the dep closures: `dep_closure`,
             `dep_outline_closure`, `upstream_excluded`, `cross_pkg_srcs`,
             `owned`, `edges` and `twins`.
         base: struct with the base dill triple seeded by deps: `base_dill`,
             `base_keys` and `base_kmods`.
     """
-    product_kernel_info = (
-        DartKernelInfo(
-            kmod = None,
-            koutline = None,
-            transitive_kmods = depset(
-                order = "postorder",
-                transitive = [k.transitive_kmods for k in dep_product_kernels],
-            ),
-            transitive_koutlines = depset(
-                order = "postorder",
-                transitive = [k.transitive_koutlines for k in dep_product_kernels],
-            ),
-            modular = True,
-            closure_excluded = depset(transitive = [k.closure_excluded for k in dep_product_kernels]),
-            cross_pkg_srcs = closures.cross_pkg_srcs,
-            owned = closures.owned,
-            edges = closures.edges,
-            base_dill = None,
-            base_keys = None,
-            base_kmods = depset(),
-            unseeded_base_kmods = depset(),
-        ) if product_modular else no_kernel_module()
-    )
     return [
         FlutterKernelModuleInfo(
             kernel_info = DartKernelInfo(
@@ -572,7 +545,6 @@ def _header_only_module_info(product_modular, dep_product_kernels, closures, bas
                 base_kmods = base.base_kmods,
                 unseeded_base_kmods = depset(),
             ),
-            product_kernel_info = product_kernel_info,
             registrant_twins = closures.twins,
         ),
     ]
@@ -585,7 +557,7 @@ def _flutter_module_options(env, platform_dill, droppable, frontend_flags, extra
         platform_dill: The platform `.dill` the module compiles against.
         droppable: Whether the module is a dependency module the link may drop.
         frontend_flags: Extra frontend flags (`--track-widget-creation` for a tracking application).
-        extra_defines: Defines after the environment's (the registrant twin's, the product ones).
+        extra_defines: Defines after the environment's (the registrant twin's).
         native_assets: The native-assets mapping an entry embeds, or None.
 
     Returns:
@@ -627,14 +599,13 @@ def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
         library_module_source(spec.package_name, spec.lib_root, f)
         for f in spec.own_srcs
     ]
-    deduped_packages = spec.records
     env = module_dart_env(ctx)
     excluded = flutter_kernel_module_action(
         ctx = ctx,
         tools = tools,
         module = struct(
             sources = sources,
-            packages = deduped_packages,
+            packages = spec.records,
             dep_kmods = spec.dep_outline_closure,
             output = kmod,
             koutline = koutline,
@@ -649,7 +620,7 @@ def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
             [_TWIN_DEFINE] if twin else [],
         ),
     )
-    return kmod, koutline, sources, deduped_packages, env, excluded
+    return kmod, koutline, excluded
 
 def _link_flutter_test_base(ctx, target_name, package_name, kmod, dep_closure, base_dill, base_keys, base_kmods):
     """Seed the `flutter_test` base dill from the debug modules; returns the base triple."""
@@ -669,69 +640,6 @@ def _link_flutter_test_base(ctx, target_name, package_name, kmod, dep_closure, b
         base_kmods = depset(direct = [kmod], transitive = [dep_closure])
     return base_dill, base_keys, base_kmods
 
-def _compile_product_kmod(ctx, tools, flutter_sdk_info, spec):
-    """Compile the product (AOT/profile) `.flutter_product.kmod` directory.
-
-    Args:
-        ctx: The aspect context.
-        tools: The kernel tools struct matching `flutter_sdk_info`.
-        flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
-        spec: struct with the target's module inputs: `target_name`, `sources`
-            (the debug compile's `struct(uri, file)` entries), `deduped_packages`,
-            `env` (the debug compile's environment), `dep_product_kernels`,
-            `cross_pkg_srcs`, `owned` and `edges`.
-    """
-    product_dep_closure = depset(
-        order = "postorder",
-        transitive = [k.transitive_kmods for k in spec.dep_product_kernels],
-    )
-    product_dep_outline_closure = depset(
-        order = "postorder",
-        transitive = [k.transitive_koutlines for k in spec.dep_product_kernels],
-    )
-    product_upstream_excluded = depset(transitive = [k.closure_excluded for k in spec.dep_product_kernels])
-    product_kmod = ctx.actions.declare_directory(spec.target_name + ".flutter_product.kmod")
-    product_koutline = ctx.actions.declare_directory(spec.target_name + ".flutter_product.koutline")
-    product_excluded = flutter_kernel_module_action(
-        ctx = ctx,
-        tools = tools,
-        module = struct(
-            sources = spec.sources,
-            packages = spec.deduped_packages,
-            dep_kmods = product_dep_outline_closure,
-            output = product_kmod,
-            koutline = product_koutline,
-            extra_inputs = None,
-            closure_excluded = product_upstream_excluded,
-        ),
-        options = _flutter_module_options(
-            spec.env,
-            flutter_sdk_info.platform_kernel_dill_product,
-            True,
-            [],
-            ["dart.vm.product=true", "FLUTTER_WEB_USE_SKIA=false", "FLUTTER_WEB_USE_SKWASM=true"],
-        ),
-    )
-    return DartKernelInfo(
-        kmod = product_kmod,
-        koutline = product_koutline,
-        transitive_kmods = depset(order = "postorder", direct = [product_kmod], transitive = [product_dep_closure]),
-        transitive_koutlines = depset(
-            order = "postorder",
-            direct = [product_koutline],
-            transitive = [product_dep_outline_closure],
-        ),
-        modular = True,
-        closure_excluded = depset(direct = [product_excluded], transitive = [product_upstream_excluded]),
-        cross_pkg_srcs = spec.cross_pkg_srcs,
-        owned = spec.owned,
-        edges = spec.edges,
-        base_dill = None,
-        base_keys = None,
-        base_kmods = depset(),
-        unseeded_base_kmods = depset(),
-    )
-
 def _modular_dep_state(label, rule_deps, own_record, flutter_sdk_info):
     """The validated dependency kernel state, or why the target compiles no module.
 
@@ -746,36 +654,28 @@ def _modular_dep_state(label, rule_deps, own_record, flutter_sdk_info):
         flutter_sdk_info: `FlutterSdkInfo` from the active Flutter toolchain.
 
     Returns:
-        struct(dep_kernels, dep_product_kernels, records, product_modular, twins), or
+        struct(dep_kernels, records, twins), or
         a reason string when a dep compiles no module or the closure disagrees.
     """
     dep_mod_infos = _collect_dep_mod_infos(rule_deps)
     if dep_mod_infos and type(dep_mod_infos[0]) == "string":
         return "%s compiles no module: its dependencies %s carry no Flutter kernel module" % (label, ", ".join(dep_mod_infos))
     dep_kernels = [m.kernel_info for m in dep_mod_infos]
-    dep_product_kernels = [m.product_kernel_info for m in dep_mod_infos]
 
     for k in dep_kernels:
         if not k.modular:
             return getattr(k, "not_modular", None) or "%s compiles no module: a dependency compiles none" % label
-    records, packages_ok, modular = _modular_consistency(own_record, rule_deps, dep_kernels)
+    records, modular = _modular_consistency(own_record, rule_deps, dep_kernels)
     if not modular:
         return "%s compiles no module: one package of its closure has two roots, or two packages sit at the workspace root; a package config names one root per package" % label
-    product_modular = (
-        packages_ok and
-        flutter_sdk_info.platform_kernel_dill_product != None and
-        all([k.modular for k in dep_product_kernels])
-    )
     return struct(
         dep_kernels = dep_kernels,
-        dep_product_kernels = dep_product_kernels,
         records = records,
-        product_modular = product_modular,
         twins = depset(transitive = [m.registrant_twins for m in dep_mod_infos if m.registrant_twins != None]),
     )
 
 def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_name, job):
-    """Compiles a target's own debug and product modules and returns the provider list.
+    """Compiles a target's own module (and the SDK `flutter` package's registrant twin) and returns the provider list.
 
     Args:
         ctx: The aspect context.
@@ -784,9 +684,9 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
         target_name: The target's short name, for output paths.
         package_name: The target's `package:` name.
         job: struct with the target's module inputs: `own_srcs`, `records`,
-            `dep_product_kernels`, `dep_closure`, `dep_outline_closure`,
-            `upstream_excluded`, `cross_pkg_srcs`, `owned`, `edges`,
-            `base_dill`, `base_keys`, `base_kmods`, `product_modular`, `twins` and `frontend_flags`.
+            `dep_closure`, `dep_outline_closure`, `upstream_excluded`,
+            `cross_pkg_srcs`, `owned`, `edges`, `base_dill`, `base_keys`,
+            `base_kmods`, `twins` and `frontend_flags`.
     """
     spec = struct(
         target_name = target_name,
@@ -798,7 +698,7 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
         upstream_excluded = job.upstream_excluded,
         frontend_flags = job.frontend_flags,
     )
-    kmod, koutline, sources, deduped_packages, env, excluded = _compile_main_kmod(
+    kmod, koutline, excluded = _compile_main_kmod(
         ctx = ctx,
         tools = tools,
         flutter_sdk_info = flutter_sdk_info,
@@ -806,7 +706,7 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
     )
     twin = None
     if package_name == "flutter":
-        twin_kmod, twin_koutline, _, _, _, twin_excluded = _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, True)
+        twin_kmod, twin_koutline, twin_excluded = _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, True)
         twin = struct(
             plain = kmod,
             kmod = twin_kmod,
@@ -825,25 +725,6 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
         job.base_kmods,
     )
 
-    if job.product_modular:
-        product_kernel_info = _compile_product_kmod(
-            ctx = ctx,
-            tools = tools,
-            flutter_sdk_info = flutter_sdk_info,
-            spec = struct(
-                target_name = target_name,
-                sources = sources,
-                deduped_packages = deduped_packages,
-                env = env,
-                dep_product_kernels = job.dep_product_kernels,
-                cross_pkg_srcs = job.cross_pkg_srcs,
-                owned = job.owned,
-                edges = job.edges,
-            ),
-        )
-    else:
-        product_kernel_info = no_kernel_module()
-
     return [
         FlutterKernelModuleInfo(
             kernel_info = DartKernelInfo(
@@ -861,7 +742,6 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
                 base_kmods = base_kmods,
                 unseeded_base_kmods = depset(),
             ),
-            product_kernel_info = product_kernel_info,
             registrant_twins = depset(direct = [twin] if twin else [], transitive = [job.twins]),
         ),
     ] + ([OutputGroupInfo(flutter_registrant_twin = depset([twin.kmod, twin.koutline, twin.excluded]))] if twin else [])
@@ -922,8 +802,6 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
 
     if not own_srcs:
         return _header_only_module_info(
-            product_modular = dep.product_modular,
-            dep_product_kernels = dep.dep_product_kernels,
             closures = struct(
                 twins = dep.twins,
                 dep_closure = dep_closure,
@@ -950,7 +828,6 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
             lib_root = lib_root,
             own_srcs = own_srcs,
             records = dep.records,
-            dep_product_kernels = dep.dep_product_kernels,
             dep_closure = dep_closure,
             dep_outline_closure = dep_outline_closure,
             upstream_excluded = upstream_excluded,
@@ -960,7 +837,6 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
             base_dill = base_dill,
             base_keys = base_keys,
             base_kmods = base_kmods,
-            product_modular = dep.product_modular,
             twins = dep.twins,
             frontend_flags = [TRACK_WIDGET_CREATION_FLAG] if tracked else [],
         ),

@@ -36,9 +36,9 @@ _inspect_aspect = aspect(
 )
 
 def _compiles(env):
-    """The debug module compiles registered for the target under test."""
+    """The module compiles registered for the target under test."""
     actions = analysistest.target_under_test(env)[_ActionsInfo].actions
-    return [a for a in actions if a.mnemonic == "DartKernel" and "_product" not in _out(a)]
+    return [a for a in actions if a.mnemonic == "DartKernel"]
 
 def _out(action):
     """The `.kmod` directory an action writes."""

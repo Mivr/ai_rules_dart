@@ -1,7 +1,7 @@
 """Tests for the kernel `unused_inputs_list` wiring (`flutter_kernel_module`).
 
-Every Flutter kernel-module compile — the aspect's library modules (debug and
-product) and the test, web, and app entry modules — writes the
+Every Flutter kernel-module compile — the aspect's library modules and the
+test, web, and app entry modules — writes the
 `unused_inputs_list` rules_dart's `kernel_module` tool derives, so Bazel skips
 the compile when only inputs it did not use changed. The fixture
 (`flutter/tests/unused_inputs_fixture`) packs every dependency shape the list

@@ -23,17 +23,16 @@ def _owned_labels(info):
     return [label for (label, _path) in info.owned.to_list()]
 
 def _header_only_info_impl(env, target):
-    """Both kernel infos of a source-less target hold no module and the dependency's owned entry."""
-    info = target[FlutterKernelModuleInfo]
-    for kernel_info in [info.kernel_info, info.product_kernel_info]:
-        env.expect.that_bool(kernel_info.kmod == None).equals(True)
-        env.expect.that_bool(kernel_info.koutline == None).equals(True)
-        env.expect.that_bool(kernel_info.modular).equals(True)
-        paths = _owned_paths(kernel_info)
-        env.expect.that_int(len([p for p in paths if p.endswith("header_only_fixture/lib/leaf.dart")])).equals(1)
-        labels = _owned_labels(kernel_info)
-        env.expect.that_bool(any([label.endswith(":leaf") for label in labels])).equals(True)
-        env.expect.that_bool(any([label.endswith(":header") for label in labels])).equals(False)
+    """The kernel info of a source-less target holds no module and the dependency's owned entry."""
+    kernel_info = target[FlutterKernelModuleInfo].kernel_info
+    env.expect.that_bool(kernel_info.kmod == None).equals(True)
+    env.expect.that_bool(kernel_info.koutline == None).equals(True)
+    env.expect.that_bool(kernel_info.modular).equals(True)
+    paths = _owned_paths(kernel_info)
+    env.expect.that_int(len([p for p in paths if p.endswith("header_only_fixture/lib/leaf.dart")])).equals(1)
+    labels = _owned_labels(kernel_info)
+    env.expect.that_bool(any([label.endswith(":leaf") for label in labels])).equals(True)
+    env.expect.that_bool(any([label.endswith(":header") for label in labels])).equals(False)
 
 def _header_only_info_test(name):
     analysis_test(

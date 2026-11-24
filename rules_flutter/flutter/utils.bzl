@@ -181,8 +181,8 @@ flutter_kernel_compile_tools = _flutter_kernel_compile_tools
 # `flutter_modular_test_kernel` for a complete calling rule.
 flutter_kernel_module_aspect = _flutter_kernel_module_aspect
 
-# The provider the aspect puts on each dependency: the debug and product
-# `DartKernelInfo` module for that target. See `FlutterKernelModuleInfo`.
+# The provider the aspect puts on each dependency: the debug `DartKernelInfo`
+# module for that target. See `FlutterKernelModuleInfo`.
 FlutterKernelModuleInfo = _FlutterKernelModuleInfo
 
 # The attrs a custom modular-kernel rule merges into its own. `deps` (with the
