@@ -595,6 +595,12 @@ bzl_library(
 )
 
 bzl_library(
+    name = "project_defaults",
+    srcs = ["project_defaults.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
     name = "source_set",
     srcs = ["source_set.bzl"],
     visibility = ["//visibility:public"],

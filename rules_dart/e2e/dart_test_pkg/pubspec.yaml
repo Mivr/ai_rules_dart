@@ -1,6 +1,10 @@
 name: dart_test_pkg
 environment:
   sdk: ^3.11.0
+# `sub` is a package of its own in a subdirectory, as most packages of a
+# Bazel repository are.
+workspace:
+  - sub
 dev_dependencies:
   # No older than dart/ext's: this lock shares packages with rules_dart's
   # own, and a version older than rules_dart's fails the build.

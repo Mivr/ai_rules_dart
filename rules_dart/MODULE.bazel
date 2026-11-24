@@ -153,4 +153,4 @@ pub.from_lock(
     lock = "//dart/private/tools/hook_runner:pubspec.lock",
     plan = "//dart/private/tools/hook_runner:pub_plan.json",
 )
-use_repo(pub, "ext_pub_deps", "rules_dart_hook_runner_deps")
+use_repo(pub, "dart_projects", "ext_pub_deps", "rules_dart_hook_runner_deps")

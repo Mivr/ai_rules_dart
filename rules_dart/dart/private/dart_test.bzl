@@ -119,6 +119,9 @@ def _dart_test_impl(ctx):
         env["RULES_DART_INCLUDE_TAGS"] = " && ".join(["(%s)" % t for t in ctx.attr.include_tags])
     if ctx.attr.exclude_tags:
         env["RULES_DART_EXCLUDE_TAGS"] = " || ".join(["(%s)" % t for t in ctx.attr.exclude_tags])
+    if ctx.file.pubspec:
+        # The VM runs in the project's directory, as under `dart test`.
+        env["RULES_DART_TEST_PROJECT_DIR"] = _project_dir(ctx)
     for key, value in ctx.attr.env.items():
         if key.startswith("RULES_DART_"):
             fail("%s: `env` cannot set %s; rules_dart uses the RULES_DART_ prefix to drive the test" % (ctx.label, key))
@@ -144,7 +147,7 @@ def _dart_test_impl(ctx):
     runfiles = ctx.runfiles(
         files = (
             [dill, generated_list, package_roots] + coverage_files + kernel.runtime_libs +
-            runner_files + ctx.files.data
+            runner_files + ctx.files.data + ctx.files.pubspec
         ),
         transitive_files = depset(
             transitive = [
@@ -419,10 +422,15 @@ def _test_runner(ctx, own, dart_sdk_info):
               "the runner that target carries.") % ctx.label)
     return None
 
-def _test_path(ctx):
-    """The test's path as the runner names it.
+def _project_dir(ctx):
+    # The `pubspec`'s directory as a `short_path`, `""` at the root.
+    return ctx.file.pubspec.short_path.rpartition("/")[0]
 
-    That is its `short_path`, with a file from another repository placed under
+def _test_path(ctx):
+    """The test's path as the runner names it, relative to the directory it runs in.
+
+    That is its `short_path`, relative to the `pubspec`'s directory when the
+    test has one, with a file from another repository placed under
     `external/` rather than above the root.
 
     Args:
@@ -432,6 +440,11 @@ def _test_path(ctx):
       The forward-slashed relative path.
     """
     path = ctx.file.main.short_path
+    if getattr(ctx.file, "pubspec", None):
+        project = _project_dir(ctx)
+        if project and not path.startswith(project + "/"):
+            fail("%s: `main` %s is not under the directory of `pubspec` %s, which the test runs in." % (ctx.label, path, ctx.file.pubspec.short_path))
+        return path[len(project) + 1:] if project else path
     return "external/" + path[3:] if path.startswith("../") else path
 
 _BOOTSTRAP = """\
@@ -544,6 +557,15 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
                 "Skip the cases matching any selector listed, where each entry is a " +
                 "complete selector evaluated on its own, passed as the runner's `--exclude-tags`. Defaults to empty."
             ),
+        ),
+        "pubspec": attr.label(
+            doc = (
+                "The project's `pubspec.yaml`. The test runs in its directory, as `dart test` runs a " +
+                "test in its package's, so a file is read by a path relative to the project " +
+                "(`File('test/fixtures/x.json')`). Set by the `dart_test` macro for a test in a " +
+                "project's own package. Without it the test runs in the runfiles root of the main repository."
+            ),
+            allow_single_file = ["pubspec.yaml"],
         ),
         "include_tags": attr.string_list(
             doc = (

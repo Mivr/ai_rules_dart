@@ -209,6 +209,66 @@ void main(List<String> args) {
     expect(await process.exitCode, 0, reason: err);
     expect(out.trim(), 'manifest-data');
   });
+
+  // `dart test` runs a test in its package's directory, so a file is read by
+  // a path relative to the project: the launcher starts the VM in
+  // `RULES_DART_TEST_PROJECT_DIR`, in the runfiles or in their staged copy.
+  test('a test with a project directory runs in it', () async {
+    final String source = args[5];
+    final String rel = source.substring(source.indexOf('/') + 1);
+    final Process process = await start(
+      ['read-cwd', rel.substring(rel.lastIndexOf('/') + 1)],
+      extraEnv: {
+        'RULES_DART_TEST_PROJECT_DIR': rel.substring(0, rel.lastIndexOf('/')),
+      },
+    );
+    final String out = await process.stdout.transform(utf8.decoder).join();
+    final String err = await process.stderr.transform(utf8.decoder).join();
+    expect(await process.exitCode, 0, reason: err);
+    expect(
+      out.trim(),
+      File(Runfiles.create().rlocation(source)).readAsStringSync().trim(),
+    );
+  });
+
+  test('a test with a project directory runs in it when not in place', () async {
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'test_runner_project_',
+    );
+    addTearDown(() => tmp.deleteSync(recursive: true));
+
+    final String fixtureDill = Runfiles.create().rlocation(args[1]);
+    final emptyCwd = Directory('${tmp.path}/empty_cwd')..createSync();
+    final runfilesDir = Directory('${tmp.path}/skeleton.runfiles')
+      ..createSync();
+    final realData = File('${tmp.path}/real_fixture.txt')
+      ..writeAsStringSync('project-data\n');
+    File('${runfilesDir.path}/MANIFEST').writeAsStringSync(
+      '_main/pkg/sub/test/fixture.txt ${realData.path}\n'
+      'dart_sdk/bin/dart ${Platform.resolvedExecutable}\n'
+      '${args[1]} $fixtureDill\n',
+    );
+
+    final Process process = await Process.start(
+      launcher,
+      ['read-cwd', 'test/fixture.txt'],
+      workingDirectory: emptyCwd.path,
+      environment: {
+        'RUNFILES_DIR': runfilesDir.path,
+        'RUNFILES_MANIFEST_FILE': '',
+        'TEST_WORKSPACE': '_main',
+        'TEST_TMPDIR': tmp.path,
+        'RULES_DART_DART': 'dart_sdk/bin/dart',
+        'RULES_DART_DILL': args[1],
+        'RULES_DART_TEST_RUNNER': '',
+        'RULES_DART_TEST_PROJECT_DIR': 'pkg/sub',
+      },
+    );
+    final String out = await process.stdout.transform(utf8.decoder).join();
+    final String err = await process.stderr.transform(utf8.decoder).join();
+    expect(await process.exitCode, 0, reason: err);
+    expect(out.trim(), 'project-data');
+  });
 }
 
 /// Reads [stream] line by line.

@@ -229,8 +229,17 @@ bzl_library(
         "//dart/private:dart_package_metadata",
         "//dart/private:dart_test",
         "//dart/private:dart_web_application",
+        "//dart/private:project_defaults",
         "//dart/private:source_set",
+        "@dart_projects//:index",
     ],
+)
+
+bzl_library(
+    name = "project",
+    srcs = ["project.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["//dart/private:project_defaults"],
 )
 
 bzl_library(

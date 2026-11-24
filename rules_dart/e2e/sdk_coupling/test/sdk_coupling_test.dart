@@ -8,9 +8,9 @@ void main(List<String> args) {
   // The first argument is the `dart` of the `target_dart` registration.
   final runfiles = Runfiles.create();
   final dart = runfiles.rlocation(args.first);
-  final targetSdk = File('${File(dart).parent.parent.path}/version')
-      .readAsStringSync()
-      .trim();
+  final targetSdk = File(
+    '${File(dart).parent.parent.path}/version',
+  ).readAsStringSync().trim();
 
   test('target test runs on target SDK while build tools ran on exec SDK', () {
     expect(Platform.version, startsWith(targetSdk));

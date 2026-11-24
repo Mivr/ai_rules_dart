@@ -122,6 +122,38 @@ not reached only through a helper library: the runner comes with that target.
 A test whose `main` does not use `package:test` runs directly, and fails if
 given a filter, shards or tag selectors, because it has no cases to select.
 
+#### What a test of a project gets by default
+
+A project is a directory with a `pubspec.yaml` that a `pub.from_lock` lock of
+the root module names: the lock's own directory, the members of the pub
+workspace its pubspec declares, and its relative `path:` packages. The
+`dart_library`, `dart_binary` and `dart_test` macros give a target in that
+directory's BUILD file what `dart test` and `dart run` give it, with nothing
+restated:
+
+- **Language version.** A library compiles at the version pub writes for the
+  pubspec (its `environment: sdk:` lower bound). A binary or a test is a member
+  of the pubspec's package (`package_name` and `language_version` from it). A
+  target that states `language_version`, `package_name` or `package` keeps
+  what it states, and a library of the package that states another version
+  than its test fails the build naming both.
+- **Working directory.** A test runs in the project's directory in its
+  runfiles (the `pubspec` attribute, set to the project's `pubspec.yaml`), as
+  `dart test` runs it in the package's, so `File('test/fixtures/x.json')` and
+  `File('pubspec.yaml')` resolve. A test outside a project runs in the runfiles
+  root of the main repository.
+- **Fixtures.** Every file under the project's `test/` that is not Dart source
+  and not hidden is in the test's `data`, a name with a space included. A
+  directory with its own BUILD file is a package of its own and is left out, and
+  so is `failures/`. A file whose name cannot be a label (a `:`, a `\` or a
+  control character) fails the package's tests at analysis, naming it. A file
+  outside `test/` that a test reads is named in `data`. Editing a fixture reruns
+  every test of the package.
+
+`dart_test.yaml` is not read by the rules. A test that names it in `data` runs
+with it, and `package:test` applies its tags, presets and `test_on`; its
+timeouts give way to Bazel's.
+
 The runner starts from an app-JIT snapshot, trained on one run of it, so each
 test starts faster than from its kernel. The snapshot is skipped when the exec
 and target SDKs differ, and on Windows. The training targets a baseline CPU
@@ -539,7 +571,9 @@ This is not `pub.package()`, which fetches a published package from pub.dev;
 
 #### Executables in a package
 
-A `dart_binary`, `dart_test`, `dart_js_binary` or `dart_wasm_binary` belongs to
+A `dart_binary` or `dart_test` in a project's directory is a member of the
+pubspec's package by default (see "What a test of a project gets by default").
+Elsewhere, a `dart_binary`, `dart_test`, `dart_js_binary` or `dart_wasm_binary` belongs to
 no package unless it says so, and usually need not: its entrypoint takes the
 language version of the package whose root directory contains it, as Dart does
 for `bin/` and `test/`. A package with no `dart_library` has nothing to state

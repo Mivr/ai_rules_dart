@@ -3,6 +3,7 @@
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error")
 load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC")
 load("//dart/pub/private:pin_checks.bzl", "lock_package_error")
+load("//dart/pub/private:project.bzl", "register_dart_projects")
 load("//dart/pub/private:pub_emit.bzl", "SPOKE_PREFIX", "instantiate_pub_repos", "pub_repo_specs", "pub_scopes")
 load("//dart/pub/private:pub_hooks.bzl", "HOOK_TAG_ATTRS", "lock_hook_settings")
 load("//dart/pub/private:pub_plan.bzl", "plan_pub_graph", "read_pub_plans")
@@ -677,6 +678,13 @@ def _pub_impl(ctx):
     recorded = {}
     scope_plans = plan_pub_graph(ctx, scopes, recorded, read_pub_plans(ctx, plan_files))
     instantiate_pub_repos(pub_repo_specs(resolution, scope_plans, lock_hook_settings(ctx, lock_tags, SPOKE_PREFIX)))
+
+    # What each project of the root module's locks says about itself, for
+    # the macros of `//dart:defs.bzl`. rules_dart imports it, and only a root
+    # rules_dart names it.
+    register_dart_projects(ctx, lock_tags)
+    if Label("//:MODULE.bazel").repo_name == "":
+        root_repos["dart_projects"] = False
     return _pub_extension_metadata(ctx, root_repos, recorded)
 
 pub = module_extension(

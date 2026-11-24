@@ -569,7 +569,7 @@ package, as pub requires.""",
             doc = "The Dart package name used in `package:` imports. If omitted, defaults to the last component of the Bazel package path. Set this or `package`, not both.",
         ),
         "language_version": attr.string(
-            doc = "Dart language version implied by the package's `environment.sdk` constraint, in `<major>.<minor>` form. Emitted as `languageVersion` in generated `package_config.json` entries. For pub packages this is set automatically by `pub.from_lock()`; for hand-written `dart_library` targets, set it from your workspace's `pubspec.yaml` if you want analyzer behaviour to match.",
+            doc = "Dart language version implied by the package's `environment.sdk` constraint, in `<major>.<minor>` form. Emitted as `languageVersion` in generated `package_config.json` entries. For pub packages this is set automatically by `pub.from_lock()`, and the `dart_library` macro sets it from the pubspec of a project whose directory holds the target; elsewhere, set it from your `pubspec.yaml` if you want analyzer behaviour to match.",
         ),
         "version": attr.string(
             doc = "The package's own version, as resolved by pub (e.g. `2.2.0`). Set automatically by `pub.package()` / `pub.from_lock()`; leave it empty on hand-written targets, which have no resolved version to state. Its only use is agreement checking: when one package name arrives twice — two pub hubs each supplying `ffi`, say — a build whose two records name different versions would otherwise compile against whichever came first in dependency order, silently ignoring the other. Two *known*, differing versions fail the build; an empty one never conflicts.",

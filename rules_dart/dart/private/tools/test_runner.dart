@@ -48,6 +48,12 @@ import 'test_runner_workspace.dart' as staging;
 /// a collection that fails or is partial fails the run (see
 /// `test_runner_coverage.dart`).
 ///
+/// A test with `RULES_DART_TEST_PROJECT_DIR` (the directory of its
+/// `pubspec`, relative to the workspace) runs in that directory of its
+/// runfiles, as `dart test` runs a test in its package's directory; every
+/// path the launcher hands the VM is absolute. Without it the test runs in
+/// the runfiles root of the main repository.
+///
 /// The VM writes straight to this process's stdio rather than through it, so a
 /// test that hangs until Bazel kills it still leaves what it printed in
 /// test.log, and the launcher exits with the VM even if the test leaked a
@@ -213,7 +219,7 @@ Future<int> _runDirectly(
   // runfiles are not usable in place, the workspace laid out from the manifest.
   final Directory scratch = Directory(
     env['TEST_TMPDIR'] ?? Directory.systemTemp.path,
-  ).createTempSync('dart_test.');
+  ).absolute.createTempSync('dart_test.');
   if (!inPlace) {
     staging.materializeWorkspace(
       manifest: File(manifest!).readAsLinesSync(),
@@ -242,7 +248,7 @@ Future<int> _runDirectly(
       dill,
       ..._withoutSeedFlags(args),
     ],
-    workingDirectory: inPlace ? null : scratch.path,
+    workingDirectory: _runDirectory(inPlace ? null : scratch.path, env),
     environment: childEnv.isEmpty ? null : childEnv,
     includeParentEnvironment: false,
     mode: ProcessStartMode.inheritStdio,
@@ -305,15 +311,16 @@ Future<int> _runUnderRunner({
   }
   final Directory tmp = Directory(
     env['TEST_TMPDIR'] ?? Directory.systemTemp.path,
-  ).createTempSync('dart_test.');
+  ).absolute.createTempSync('dart_test.');
   final _Precompiled pre = _precompiledWithPackageConfig(
     source: source,
     tmp: tmp,
     json: _packageConfigText(workspace.manifest, workspace.workspace),
   );
+  final String project = env['RULES_DART_TEST_PROJECT_DIR'] ?? '';
   final bool inPlace = _stageSuiteWorkspace(
     testSource: source.testSource,
-    testPath: source.testPath,
+    testPath: project.isEmpty ? source.testPath : '$project/${source.testPath}',
     manifest: workspace.manifest,
     workspace: workspace.workspace,
     tmp: tmp,
@@ -334,7 +341,7 @@ Future<int> _runUnderRunner({
         seed: launcherArgs.seed,
       ),
     ],
-    workingDirectory: inPlace ? null : tmp.path,
+    workingDirectory: _runDirectory(inPlace ? null : tmp.path, env),
     environment: {
       ...withoutRulesDartControls(env),
       ..._childRunfilesEnv(env, workspace.manifest),
@@ -371,6 +378,17 @@ Future<int> _runUnderRunner({
   return session == null ? code : await session.finish(code);
 }
 
+/// The directory the VM runs in: [base] (the workspace's runfiles, `null` for
+/// this process's own directory), or the test's project directory in it.
+String? _runDirectory(String? base, Map<String, String> env) {
+  final String project = env['RULES_DART_TEST_PROJECT_DIR'] ?? '';
+  if (project.isEmpty) return base;
+  return [
+    base ?? Directory.current.path,
+    ...project.split('/'),
+  ].join(Platform.pathSeparator);
+}
+
 /// Whether the dill is laid out where the runner loads it from.
 ///
 /// Reports the layout problem and returns false when it is not.
@@ -383,8 +401,8 @@ bool _isRunnableLayout({
   // — which is where `dart_test` put the dill, so it is loaded in place — and
   // reads the test's source at `<path>` relative to its working directory for
   // its annotations. The suite runs as an isolate inside the runner, so the
-  // runner's working directory is the test's: Bazel's contract makes that the
-  // runfiles workspace root, where `data` is found by workspace-relative path.
+  // runner's working directory is the test's: its project's directory in the
+  // runfiles, or the runfiles workspace root for a test without one.
   // Only where runfiles cannot hold the source at that relative path (Windows
   // or `--noenable_runfiles` has only a manifest) is the workspace's runfiles
   // laid out in a scratch directory from the manifest, to run in.

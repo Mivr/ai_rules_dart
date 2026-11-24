@@ -2,7 +2,7 @@ schema: mivr-e2e-spec/1
 commands:
   - name: test
     run: bazel test --test_output=errors //...
-    min_tests_executed: 4
+    min_tests_executed: 6
   - name: sibling shared source is refused
     run: bazel build //:dup_sibling_test
     expect:

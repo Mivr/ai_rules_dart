@@ -20,6 +20,7 @@ Load this file from your BUILD files to access the following rules:
 - `dart_link_hook`: Runs packages' `hook/link.dart` over a `dart_binary`'s recorded uses and collects the data assets they emit.
 """
 
+load("@dart_projects//:index.bzl", "PROJECTS")
 load("//dart:providers.bzl", _DartCodeAssetInfo = "DartCodeAssetInfo")
 load("//dart/build_runner/private:build_runner.bzl", _build_runner_sdk_summary = "build_runner_sdk_summary", _dart_build_runner = "dart_build_runner")
 load("//dart/private:dart_analysis_options.bzl", _dart_analysis_options = "dart_analysis_options")
@@ -35,16 +36,53 @@ load("//dart/private:dart_package_member.bzl", _dart_package_member = "dart_pack
 load("//dart/private:dart_package_metadata.bzl", _dart_package_metadata = "dart_package_metadata")
 load("//dart/private:dart_test.bzl", _dart_test = "dart_test")
 load("//dart/private:dart_web_application.bzl", _dart_js_binary = "dart_js_binary", _dart_wasm_binary = "dart_wasm_binary")
+load("//dart/private:project_defaults.bzl", "project_identity", "project_language_version", "project_of", "project_test_dir", "project_test_files")
 load("//dart/private:source_set.bzl", _dart_source_set = "dart_source_set")
 
 visibility("public")
 
-dart_library = _dart_library
+# The project defaults of a target in a project's own package (see
+# `project_defaults.bzl`); what a target states wins.
+
+def dart_library(name, **kwargs):
+    """A `dart_library`; in a project's package it compiles with the pubspec's language version by default.
+
+    Args:
+      name: The target's name.
+      **kwargs: The `dart_library` rule's attributes.
+    """
+    project_language_version(kwargs, project_of(PROJECTS))
+    _dart_library(name = name, **kwargs)
+
+def dart_binary(name, **kwargs):
+    """A `dart_binary`; in a project's package it is a member of the pubspec's package by default.
+
+    Args:
+      name: The target's name.
+      **kwargs: The `dart_binary` rule's attributes.
+    """
+    project_identity(kwargs, project_of(PROJECTS))
+    _dart_binary(name = name, **kwargs)
+
+def dart_test(name, **kwargs):
+    """A `dart_test`; in a project's package it runs as under `dart test` by default.
+
+    It is a member of the pubspec's package, runs in the project's directory
+    (`pubspec`), and has the files under the project's `test/` as `data`.
+
+    Args:
+      name: The target's name.
+      **kwargs: The `dart_test` rule's attributes.
+    """
+    project = project_of(PROJECTS)
+    project_identity(kwargs, project)
+    project_test_dir(kwargs, project)
+    project_test_files(kwargs, project, "dart_test")
+    _dart_test(name = name, **kwargs)
+
 dart_package_member = _dart_package_member
 dart_package_metadata = _dart_package_metadata
 dart_source_set = _dart_source_set
-dart_binary = _dart_binary
-dart_test = _dart_test
 dart_analysis_options = _dart_analysis_options
 dart_analysis_config = _dart_analysis_config
 dart_analysis_test = _dart_analysis_test

@@ -1,0 +1,9 @@
+name: dart_test_sub
+publish_to: none
+resolution: workspace
+# Below 3.7, where `_` is an ordinary variable: the test compiles only at this
+# package's own language version.
+environment:
+  sdk: ^3.6.0
+dev_dependencies:
+  test: ^1.33.0
