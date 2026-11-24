@@ -111,3 +111,4 @@ e2e/drive_ios:ios_dart_side_build_test	build_test over the portable Dart side of
 e2e/drive_ios:ios_dart_analysis_test	dart_analysis_test over e2e/drive_ios Dart sources; run by e2e/drive_ios, no CLI spawn
 e2e/drive_ios:drive_pass_test	flutter_drive_test on the iOS simulator; needs macOS, Xcode and a simulator runtime, run by e2e/drive_ios
 e2e/drive_ios:drive_fail_test	red-twin flutter_drive_test whose driver exits 1; needs macOS, Xcode and a simulator runtime, run by e2e/drive_ios
+@rules_flutter//flutter/private/android_model/testing:host_paths_test	Java unit test of a path function (pure JDK); starts no program and writes no file
