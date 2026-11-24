@@ -190,7 +190,7 @@ Three attributes deserve a note:
 
 - `package_name` must match the `name:` field in `pubspec.yaml`. Hot reload and code generation both rely on it.
 - `pubspec_srcs` lists the files `pubspec.yaml` names: its assets, fonts and shaders. The pubspec says what the bundle holds, as it does for `flutter build`, including the Material icon font when it sets `uses-material-design: true`. See [Assets](#assets).
-- The package config the bundle reads is the one `pub get` writes: every package of the lock of the `flutter.pub` hub that `deps` come from, so `NOTICES` holds the dev dependencies' licences too, as stock's does. `pub_packages` (`@<hub>//packages`) overrides it. An app with no package from a hub gets the packages of `deps`; then a regular dependency the pubspec names that `deps` do not reach fails the build, naming the target and the package to add to `deps`.
+- The package config the bundle reads is the one `pub get` writes: every package of the project's lock: the `flutter.pub` hub whose lock is in the target's package or the nearest enclosing one, or else the hub the first of `deps` from one comes from, so `NOTICES` holds the dev dependencies' licences too, as stock's does. `pub_packages` (`@<hub>//packages`) overrides it. An app with no package from a hub gets the packages of `deps`; then a regular dependency the pubspec names that `deps` do not reach fails the build, naming the target and the package to add to `deps`.
 
 Build it, or run it with hot reload:
 
@@ -1469,7 +1469,7 @@ flutter_application(
 | `deps` | `dart_library` or `flutter_library` targets. |
 | `pubspec` | The app's `pubspec.yaml`, which says what the asset bundle holds. Its directory is the project directory. Defaults to the package's `pubspec.yaml`. See [Assets](docs/assets.md). |
 | `pubspec_srcs` | The files the pubspec names: assets, fonts, shaders, and `l10n.yaml` with the files it names. A named file that is not listed fails the build, naming it. |
-| `pub_packages` | Every package of the lock, `@<hub>//packages` (a `flutter_pub_packages` target), for the package config the bundle reads, as `pub get` writes it. By default the `packages` of the `flutter.pub` hub the first of `deps` from one belongs to; hubs declared with the same `lock` (an iOS plugin mode's twin) share the first one's. |
+| `pub_packages` | Every package of the lock, `@<hub>//packages` (a `flutter_pub_packages` target), for the package config the bundle reads, as `pub get` writes it. By default the `packages` of the `flutter.pub` hub whose lock is in the target's package, or else in the nearest enclosing package (a pub workspace member), or else of the hub the first of `deps` from one belongs to. Hubs declared with the same `lock` (an iOS plugin mode's twin) give the first one's; a package holding two different locks leaves it to the first dependency. |
 | `asset_transformers` | The executables run for the pubspec's asset `transformers`, each mapped to the package name the pubspec gives: `{":binary": "package"}`. |
 | `build_name`, `build_number` | `--build-name` and `--build-number`; by default the pubspec's `version`. They reach `version.json`. |
 | `flavor` | The application flavor, e.g. `"dev"` or `"prod"`. Sets `FLUTTER_APP_FLAVOR` and bundles the pubspec's assets for that flavor, as `flutter build --flavor` does. Default `""` (no flavor). |

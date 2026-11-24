@@ -17,6 +17,7 @@ load(":compile_api_test.bzl", "compile_api_test_suite")
 load(":cpp_client_wrapper_test.bzl", "cpp_client_wrapper_test_suite")
 load(":custom_kernel_defines_test.bzl", "custom_kernel_defines_test_suite")
 load(":debug_modular_app_test.bzl", "debug_modular_app_test_suite")
+load(":pub_packages_default_test.bzl", "pub_packages_default_test_suite")
 load(":stock_dev_files_test.bzl", "stock_dev_files_test_suite")
 load(":define_flagfiles_test.bzl", "define_flagfiles_test_suite")
 load(":defines_config_test.bzl", "defines_config_test_suite")
@@ -285,6 +286,8 @@ profile_mode_test_suite(name = "profile_mode_test")
 app_entrypoint_test_suite(name = "app_entrypoint_test")
 
 agent_uris_test_suite(name = "agent_uris_test")
+
+pub_packages_default_test_suite(name = "pub_packages_default_test")
 
 apple_objc_deps_test_suite(name = "apple_objc_deps_test")
 

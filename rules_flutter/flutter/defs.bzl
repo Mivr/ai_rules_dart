@@ -49,7 +49,7 @@ artifacts:
 
 load("//flutter/private:flutter_aot_target.bzl", _flutter_aot_target = "flutter_aot_target")
 load("//flutter/private:flutter_application.bzl", _flutter_application = "flutter_application")
-load("//flutter/private:flutter_bundle.bzl", _flutter_pub_packages = "flutter_pub_packages")
+load("//flutter/private:flutter_bundle.bzl", "project_pub_packages", _flutter_pub_packages = "flutter_pub_packages")
 load("//flutter/private:flutter_defines_files.bzl", _dart_defines = "dart_defines")
 load("@flutter_l10n//:index.bzl", "L10N_PROJECTS")
 load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach")
@@ -107,6 +107,7 @@ def flutter_application(name, package_name = "", defines_files = None, define_fl
     if "pubspec" not in kwargs and native.glob(["pubspec.yaml"], allow_empty = True):
         kwargs["pubspec"] = "pubspec.yaml"
     l10n_attach(name, kwargs, L10N_PROJECTS)
+    project_pub_packages(kwargs)
     _flutter_application(
         name = name,
         package_name = package_name or name,
@@ -161,4 +162,5 @@ def flutter_test(name, **kwargs):
             `deps`, `pubspec`, ...), forwarded to it.
     """
     l10n_attach(name, kwargs, L10N_PROJECTS, always = True)
+    project_pub_packages(kwargs)
     _flutter_test(name = name, **kwargs)

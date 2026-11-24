@@ -319,6 +319,7 @@ bzl_library(
     srcs = ["web.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        "//flutter/private:flutter_bundle",
         "//flutter/private:flutter_gen_l10n",
         "//flutter/private:flutter_integration_test",
         "//flutter/private:flutter_web_application",

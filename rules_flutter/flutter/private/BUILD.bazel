@@ -504,6 +504,7 @@ bzl_library(
     deps = [
         ":app_entrypoint",
         ":common",
+        ":flutter_bundle",
         ":flutter_gen_l10n",
         ":flutter_integration_test_android",
         ":flutter_integration_test_bootstrap",

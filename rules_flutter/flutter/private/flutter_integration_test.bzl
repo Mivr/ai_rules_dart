@@ -64,6 +64,7 @@ load(
     "//flutter/private:common.bzl",
     "FLUTTER_DEPS_DOC",
 )
+load("//flutter/private:flutter_bundle.bzl", "project_pub_packages")
 load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach")
 load(
     "//flutter/private:flutter_integration_test_android.bzl",
@@ -277,6 +278,7 @@ def flutter_integration_test(
     merged_deps = l10n["deps"]
     if type(l10n["srcs"]) == "list":
         kwargs["srcs"] = l10n["srcs"]
+    project_pub_packages(kwargs)
 
     if platform == "android":
         declare_android_integration_test(

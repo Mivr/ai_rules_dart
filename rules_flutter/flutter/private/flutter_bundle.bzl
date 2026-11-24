@@ -23,7 +23,7 @@ rerun it.
 
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load("@rules_dart//dart:utils.bzl", "dart_info_no_package")
-load("@flutter_pub_hubs//:hubs.bzl", "PUB_HUBS")
+load("@flutter_pub_hubs//:hubs.bzl", "PUB_HUBS", "PUB_HUBS_BY_PACKAGE")
 load("//flutter/private:flutter_assets_tool.bzl", "flutter_assets_tool_of")
 
 visibility(["//flutter/..."])
@@ -35,13 +35,60 @@ FlutterPubPackagesInfo = provider(
     },
 )
 
-def _hub_packages_of(deps):
-    """The `packages` target of the `flutter.pub` hub the first of `deps` from one belongs to."""
+def hub_packages_of_deps(hubs, deps):
+    """The `packages` target of the hub the first of `deps` from one belongs to, or None.
+
+    Args:
+      hubs: `PUB_HUBS`: each hub's canonical repository name, to its `packages`.
+      deps: The target's `deps` labels.
+
+    Returns:
+      A `Label`, or None.
+    """
     for dep in deps:
-        packages = PUB_HUBS.get(dep.repo_name)
+        packages = hubs.get(dep.repo_name)
         if packages:
             return packages
     return None
+
+def _hub_packages_of(deps):
+    return hub_packages_of_deps(PUB_HUBS, deps)
+
+def hub_packages_of_package(by_package, package):
+    """The `packages` of the hub whose lock is in `package` or the nearest enclosing package.
+
+    Args:
+      by_package: `PUB_HUBS_BY_PACKAGE`: each package holding a hub's lock, to
+        that hub's `packages` (None: two different locks).
+      package: The target's package, `native.package_name()`.
+
+    Returns:
+      A `Label`, or None when no package on the way holds a lock, or the
+      nearest one holds two different locks (then the first dependency's
+      hub applies).
+    """
+    parts = package.split("/") if package else []
+    for i in range(len(parts), -1, -1):
+        candidate = "/".join(parts[:i])
+        if candidate in by_package:
+            return by_package[candidate]
+    return None
+
+def project_pub_packages(kwargs):
+    """Sets `pub_packages` to the hub of the project's lock, unless it is set.
+
+    For the app, test and web macros: the hub whose lock is in the target's
+    package or the nearest enclosing one (`hub_packages_of_package`). Without
+    one the rule's default, the first dependency's hub, applies.
+
+    Args:
+      kwargs: The target's arguments; changed in place.
+    """
+    if "pub_packages" in kwargs or native.repo_name():
+        return
+    packages = hub_packages_of_package(PUB_HUBS_BY_PACKAGE, native.package_name())
+    if packages:
+        kwargs["pub_packages"] = packages
 
 BUNDLE_ATTRS = {
     "pubspec": attr.label(
@@ -59,9 +106,10 @@ BUNDLE_ATTRS = {
     "pub_packages": attr.label(
         doc = "Every package of the lock (`@<hub>//packages`), so the package config " +
               "the tool reads lists dev dependencies too, as `pub get` writes it: " +
-              "`NOTICES` holds their licences. By default the `packages` of the " +
-              "`flutter.pub` hub the first of `deps` that comes from one belongs to; " +
-              "without a hub, the packages of `deps`.",
+              "`NOTICES` holds their licences. By default (set by the macros) the `packages` " +
+              "of the `flutter.pub` hub whose lock is in the target's package or the nearest " +
+              "enclosing one; failing that, of the hub the first of `deps` that comes from " +
+              "one belongs to; without a hub, the packages of `deps`.",
         providers = [DartInfo],
         # Only the packages' files are read, and they do not depend on the
         # configuration; in the app's own (say Android) configuration a package
