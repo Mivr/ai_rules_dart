@@ -463,6 +463,22 @@ jobs:
           module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached }}
+          # The runner was lost ("lost communication with the server") in step
+          # `bazel test //...` of a cold run of this job (Full dispatch
+          # 45504522390), and the sampler of the passing run on main
+          # (45487105020) shows how close that is: used memory 13.6 GB of
+          # 16, swap climbing to 7.8 GB in the 9 minutes the step took, still
+          # rising when it ended. Bazel sizes its heap at a quarter of the
+          # host and schedules actions as if it owned the machine, while the
+          # example's four APK builds (debug, profile, release, release plain)
+          # run dex and R8 workers of about 1.3 GB each. The same bounds
+          # fixed `integration_android` in flutter-ci.yaml's e2e-linux-android;
+          # there is no emulator here, so no `--local_test_jobs=1`.
+          # Scheduling limits only: action keys are unchanged.
+          bazelrc: |
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=2
+            build --local_resources=memory=HOST_RAM*.3
       - name: Restore disk cache
         if: github.event_name != 'schedule' && !inputs.uncached
         continue-on-error: true
@@ -515,7 +531,9 @@ jobs:
           failed=""
           for ws in $WORKSPACES; do
             echo "::group::e2e/$ws"
-            if (cd "e2e/$ws" && bazel test //... --test_output=errors); then
+            # At most two persistent worker JVMs at a time (the default is four
+            # of each mnemonic): see the bazelrc input of setup-bazel above.
+            if (cd "e2e/$ws" && bazel test //... --test_output=errors --worker_max_instances=2); then
               echo "PASS e2e/$ws"
             else
               echo "FAIL e2e/$ws"
