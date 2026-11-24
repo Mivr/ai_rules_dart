@@ -35,15 +35,39 @@ flutter_application(
     ],
 )
 
-# The same test `flutter test` runs.
+# The same test `flutter test` runs. Both tests are wrapped in
+# `test/flutter_test_config.dart`, as `flutter test` wraps them.
+TEST_CONFIG = [
+    "test/config_marker.dart",
+    "test/flutter_test_config.dart",
+]
+
 flutter_test(
     name = "widget_test",
     package_name = "counter",
     size = "small",
+    srcs = TEST_CONFIG,
     main = "test/widget_test.dart",
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//packages/counter_lib",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+    ],
+)
+
+# What a test reads of the project, as under `flutter test`: the files under
+# `test/` (its `data` by default), `flutter_test_config.dart`, and, through the
+# bundle of the pubspec, a `NOTICES` holding the project's own `LICENSE`.
+flutter_test(
+    name = "project_files_test",
+    package_name = "counter",
+    size = "small",
+    srcs = TEST_CONFIG,
+    main = "test/project_files_test.dart",
+    pubspec = "pubspec.yaml",
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
         "@deps//:flutter",
         "@deps//:flutter_test",
     ],
