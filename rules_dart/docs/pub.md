@@ -346,6 +346,14 @@ hook reads, at least the hook) and, as needed, `hook_data`,
 `hook_user_defines` and `hook_network`. A native library Bazel builds itself
 is bound with `dart_code_asset` instead.
 
+On Windows, with Bazel's MSVC toolchain (or clang-cl), a hook gets the
+toolchain's `cl.exe`, `link.exe` and `lib.exe` as they are, and as its
+Developer Command Prompt (`c_compiler.windows.developer_command_prompt`) a
+generated script that sets the `INCLUDE`, `LIB` and `PATH` Bazel gives its
+own compile and link actions; `package:native_toolchain_c` runs it once per
+hook. A toolchain without those variables gets no script, and the hook runs
+the `vcvars` script of the Visual Studio its `cl.exe` belongs to.
+
 What does not work: a hook that needs a tool the C toolchain does not have
 (CMake, `cargo`) fails in its own action, naming it; hooks get no assets from
 other hooks' outputs (`assetsForBuild`); and a package inside a merged pub

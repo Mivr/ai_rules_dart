@@ -12,7 +12,8 @@
 //   hook_runner compile  --dart <dart> --record ... --script <path> --out <dill>
 //   hook_runner build    --dart <dart> --package <name> --hook-kernel <dill>
 //                        --record <name|root|languageVersion>... --target-os <os>
-//                        --target-arch <arch> [--cc <clang> --ar <ar> --ld <ld>]
+//                        --target-arch <arch> [--cc <clang> --ar <ar> --ld <ld>
+//                        [--developer-prompt <bat>]]
 //                        [--user-defines <json> --pubspec <path>] --out <dir>
 //   hook_runner link     ... --build-assets <dir>... [--recorded-uses <json>]
 //                        [--declare <name>=<file>...] --out <dir>
@@ -34,6 +35,7 @@ import 'package:hooks_runner/hooks_runner.dart';
 import 'package:logging/logging.dart';
 import 'package:package_config/package_config.dart';
 
+import 'hook_c_compiler.dart';
 import 'hook_file_system.dart';
 
 Future<void> main(List<String> arguments) async {
@@ -80,6 +82,7 @@ ArgParser _hookParser() => ArgParser()
   ..addOption('cc')
   ..addOption('ar')
   ..addOption('ld')
+  ..addOption('developer-prompt')
   ..addOption('path', defaultsTo: '/nonexistent')
   ..addMultiOption('env', splitCommas: false)
   ..addOption('user-defines')
@@ -333,7 +336,6 @@ CodeAssetExtension _codeAssetExtension(
   String Function(String) abs,
 ) {
   final os = OS.fromString(args['target-os'] as String);
-  final cc = args['cc'] as String?;
   final androidApi = args['android-api'] as String?;
   final iosSdk = args['ios-sdk'] as String?;
   final macosVersion = args['macos-version'] as String?;
@@ -353,13 +355,14 @@ CodeAssetExtension _codeAssetExtension(
     macOS: macosVersion == null
         ? null
         : MacOSCodeConfig(targetVersion: int.parse(macosVersion)),
-    cCompiler: cc == null
-        ? null
-        : CCompilerConfig(
-            compiler: Uri.file(abs(cc)),
-            linker: Uri.file(abs(args['ld'] as String)),
-            archiver: Uri.file(abs(args['ar'] as String)),
-          ),
+    cCompiler: cCompilerConfig(
+      targetOS: os,
+      cc: args['cc'] as String?,
+      ld: args['ld'] as String?,
+      ar: args['ar'] as String?,
+      developerPrompt: args['developer-prompt'] as String?,
+      absolute: abs,
+    ),
   );
 }
 

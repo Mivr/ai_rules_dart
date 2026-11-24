@@ -16,7 +16,10 @@ exports_files(
 # naming it from libraries with one makes no cycle.
 dart_binary(
     name = "hook_runner",
-    srcs = ["hook_file_system.dart"],
+    srcs = [
+        "hook_c_compiler.dart",
+        "hook_file_system.dart",
+    ],
     code_assets_from_deps = False,
     compile_mode = "aot-snapshot",
     main = "hook_runner.dart",
@@ -47,6 +50,20 @@ dart_test(
     deps = [
         "@ext_pub_deps//:file",
         "@ext_pub_deps//:path",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The C compiler part of a hook's input for each target OS, Windows's
+# Developer Command Prompt included, validated as the runner validates it.
+dart_test(
+    name = "hook_c_compiler_test",
+    size = "small",
+    srcs = ["hook_c_compiler.dart"],
+    main = "hook_c_compiler_test.dart",
+    deps = [
+        "@ext_pub_deps//:code_assets",
+        "@ext_pub_deps//:hooks",
         "@ext_pub_deps//:test",
     ],
 )

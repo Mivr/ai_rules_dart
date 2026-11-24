@@ -186,15 +186,65 @@ def _wrapper(ctx, name, body):
     ctx.actions.write(f, "#!/bin/sh\n" + body, is_executable = True)
     return f
 
+# What a hook's MSVC environment script leaves out of the toolchain's
+# environment: the hook runner gives each hook its own temp directory.
+_MSVC_PROMPT_SKIP = ("TEMP", "TMP")
+
+def is_msvc_toolchain(compiler, cc):
+    """Whether a C toolchain is MSVC's or clang-cl, which need MSVC's environment.
+
+    Args:
+      compiler: The toolchain's `compiler` identifier (`msvc-cl` for Bazel's
+        MSVC toolchain, `clang-cl`).
+      cc: The path of its C compiler.
+
+    Returns:
+      True for `cl.exe` and `clang-cl.exe`, which `package:native_toolchain_c`
+      recognises by that suffix.
+    """
+    return compiler in ("msvc-cl", "clang-cl") or cc.lower().endswith("cl.exe")
+
+def msvc_developer_prompt(env):
+    """The batch file a hook gets as its Developer Command Prompt on Windows.
+
+    `package:code_assets` has no environment for the C compiler; on Windows
+    it names a script (`c_compiler.windows.developer_command_prompt`) that
+    `package:native_toolchain_c` runs once and whose changes to the
+    environment it gives every compiler, linker and archiver call. This one
+    sets the environment Bazel's toolchain gives its own actions (`INCLUDE`,
+    `LIB`, `PATH`, from `cc_common.get_environment_variables`).
+
+    Args:
+      env: dict of the toolchain's environment for compiling and linking.
+
+    Returns:
+      The script's text, or None when [env] lacks `INCLUDE` or `LIB` (a
+      toolchain without rules_cc's `msvc_env` features): then
+      `native_toolchain_c` runs the `vcvars` script of the Visual Studio its
+      `cl.exe` belongs to.
+    """
+    if "INCLUDE" not in env or "LIB" not in env:
+        return None
+    lines = ["@echo off"]
+    for name in sorted(env):
+        if name.upper() in _MSVC_PROMPT_SKIP:
+            continue
+
+        # `%` expands in a batch file; `set "NAME=value"` quotes the rest.
+        lines.append('set "%s=%s"' % (name, env[name].replace("%", "%%")))
+    return "\r\n".join(lines) + "\r\n"
+
 def _toolchain_tools(ctx, cc_toolchain, target):
     """The compiler, archiver and linker a hook gets in its input.
 
     `package:native_toolchain_c` recognises a tool by its file name (a
     compiler must end in `clang` or contain `-gcc`, an archiver end in `ar`, a
-    linker in `ld`), and computes an Android sysroot from the compiler's own
-    directory. So the NDK's `clang` is passed as it is, and any other
-    toolchain gets three generated tools with those names that run the
-    toolchain's own tools with its flags.
+    linker in `ld`; on Windows `cl.exe`, `lib.exe` and `link.exe`), and
+    computes an Android sysroot from the compiler's own directory. So the
+    NDK's `clang` is passed as it is, MSVC's tools (and clang-cl's) are passed
+    as they are with a Developer Command Prompt script holding the
+    toolchain's environment, and any other toolchain gets three generated
+    tools with those names that run the toolchain's own tools with its flags.
 
     Args:
       ctx: The rule context.
@@ -202,8 +252,9 @@ def _toolchain_tools(ctx, cc_toolchain, target):
       target: The `hook_target` struct.
 
     Returns:
-      `struct(cc, ar, ld, files)`: exec-root-relative paths and the Files the
-      action needs besides the toolchain's own.
+      `struct(cc, ar, ld, files, developer_prompt)`: exec-root-relative (or,
+      for MSVC, absolute) paths, the Files the action needs besides the
+      toolchain's own, and the Developer Command Prompt script or None.
     """
     features = cc_common.configure_features(
         ctx = ctx,
@@ -216,23 +267,39 @@ def _toolchain_tools(ctx, cc_toolchain, target):
     ld = cc_common.get_tool_for_action(feature_configuration = features, action_name = "c++-link-dynamic-library")
     if target.os == "android" and cc.endswith("/clang"):
         base = cc.rpartition("/")[0]
-        return struct(cc = cc, ar = base + "/llvm-ar", ld = base + "/ld.lld", files = [])
+        return struct(cc = cc, ar = base + "/llvm-ar", ld = base + "/ld.lld", files = [], developer_prompt = None)
+    compile_variables = cc_common.create_compile_variables(
+        feature_configuration = features,
+        cc_toolchain = cc_toolchain,
+    )
+    link_variables = cc_common.create_link_variables(
+        feature_configuration = features,
+        cc_toolchain = cc_toolchain,
+        is_linking_dynamic_library = True,
+    )
+    if is_msvc_toolchain(cc_toolchain.compiler, cc):
+        env = {}
+        for action, variables in (("c-compile", compile_variables), ("c++-link-dynamic-library", link_variables)):
+            env.update(cc_common.get_environment_variables(
+                feature_configuration = features,
+                action_name = action,
+                variables = variables,
+            ))
+        text = msvc_developer_prompt(env)
+        if text == None:
+            return struct(cc = cc, ar = ar, ld = ld, files = [], developer_prompt = None)
+        prompt = ctx.actions.declare_file("%s.hook_tools/msvc_env.bat" % ctx.label.name)
+        ctx.actions.write(prompt, text)
+        return struct(cc = cc, ar = ar, ld = ld, files = [prompt], developer_prompt = prompt)
     compile_flags = cc_common.get_memory_inefficient_command_line(
         feature_configuration = features,
         action_name = "c-compile",
-        variables = cc_common.create_compile_variables(
-            feature_configuration = features,
-            cc_toolchain = cc_toolchain,
-        ),
+        variables = compile_variables,
     )
     link_flags = cc_common.get_memory_inefficient_command_line(
         feature_configuration = features,
         action_name = "c++-link-dynamic-library",
-        variables = cc_common.create_link_variables(
-            feature_configuration = features,
-            cc_toolchain = cc_toolchain,
-            is_linking_dynamic_library = True,
-        ),
+        variables = link_variables,
     )
 
     # The toolchain's flags name exec-root-relative paths, and the hook runs in
@@ -266,7 +333,7 @@ exec '{cc}' {cflags} {lflags} "$@" -Wl,--undefined-version{strip}
     ))
     ar_tool = _wrapper(ctx, "ar", "cd \"$BAZEL_EXECROOT\" || exit 1\nexec '%s' \"$@\"\n" % ar)
     ld_tool = _wrapper(ctx, "ld", "cd \"$BAZEL_EXECROOT\" || exit 1\nexec '%s' \"$@\"\n" % ld)
-    return struct(cc = clang.path, ar = ar_tool.path, ld = ld_tool.path, files = [clang, ar_tool, ld_tool])
+    return struct(cc = clang.path, ar = ar_tool.path, ld = ld_tool.path, files = [clang, ar_tool, ld_tool], developer_prompt = None)
 
 def _record_arg(pkg):
     return "%s|%s|%s" % (pkg.package_name, pkg.lib_root, getattr(pkg, "language_version", ""))
@@ -492,6 +559,8 @@ def register_hook_actions(ctx, hooks, package, dep_infos):
         args.add("--cc", tools.cc)
         args.add("--ar", tools.ar)
         args.add("--ld", tools.ld)
+        if tools.developer_prompt != None:
+            args.add("--developer-prompt", tools.developer_prompt)
         tool_files = tools.files
         toolchain_files = [cc_toolchain.all_files]
     if target.os in ("ios", "macos"):

@@ -18,6 +18,7 @@ load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
 load(":analyzer_summary_tool_test.bzl", "analyzer_summary_tool_test_suite")
 load(":aot_tools_test.bzl", "aot_tools_test_suite")
 load(":architecture_invariants_test.bzl", "architecture_invariants_test_suite")
+load(":build_hooks_test.bzl", "build_hooks_test_suite")
 load(":closure_facts_test.bzl", "closure_facts_test_suite")
 load(":code_asset_test.bzl", "code_asset_test_suite")
 load(":common_test.bzl", "common_test_suite")
@@ -85,6 +86,8 @@ toolchains_test_suite(name = "toolchains_test")
 toolchain_selection_test_suite(name = "toolchain_selection_test")
 
 common_test_suite(name = "common_test")
+
+build_hooks_test_suite(name = "build_hooks_test")
 
 dart_binary_test_suite(name = "dart_binary_test")
 
