@@ -1,17 +1,5 @@
 schema: mivr-e2e-spec/1
 commands:
-  - name: malformed flutter.assets fetch fails on shape refusal
-    run: bazel fetch @red_deps//:bad_shape
-    expect:
-      non_zero: true
-      output_contains: 'Expected "assets" to be a list'
-  - name: invalid font weight fetch fails on weight refusal
-    run: bazel fetch @red_deps//:bad_font
-    expect:
-      non_zero: true
-      output_contains:
-        - for font -> weight
-        - 'flutter.pub spoke for "bad_font": pubspec.yaml: asset "fonts[0]": Invalid value 150 ((int))'
   - name: unreadable environment.sdk fetch fails on sdk refusal
     run: bazel fetch @red_deps//:bad_sdk
     expect:

@@ -1,4 +1,3 @@
-# Fetch-only workspace: the shape red paths (`bazel fetch @red_deps//:bad_shape`,
-# `@red_deps//:bad_font`, `@red_deps//:bad_sdk` and
+# Fetch-only workspace: the shape red paths (`bazel fetch @red_deps//:bad_sdk` and
 # `@red_deps//:bad_sdk_type`) are driven by CI, which expects each fetch to
 # fail on its malformed pubspec. There are no build targets here by design.

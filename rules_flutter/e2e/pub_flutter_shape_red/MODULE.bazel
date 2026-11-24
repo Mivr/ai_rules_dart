@@ -1,16 +1,14 @@
 """Pubspec-shape red path: malformed pubspecs must fail the fetch.
 
-The `bad_shape` path package declares `assets: assets/a.png` (a string where
-flutter_tools requires a list), and the `bad_font` path package declares a
-font `weight: 150` (outside the accepted 100..900). The `bad_sdk` path
-package declares `environment.sdk: "3.10"` (a string pub_semver refuses),
-and the `bad_sdk_type` path package declares a non-string
-`environment.sdk: 3.5`. CI fetches each spoke, expects each fetch to fail,
-and greps the exact refusal. They guard the fail-closed projections in
-`flutter_pubspec.bzl` and `flutter_pub_package.bzl`: a projection that
-skipped a shape or derived a default language version for a bad constraint
-would bundle the package with a green build, so only these red paths would
-turn red.
+The `bad_sdk` path package declares `environment.sdk: "3.10"` (a string
+pub_semver refuses), and the `bad_sdk_type` path package declares a
+non-string `environment.sdk: 3.5`. The spec fetches each spoke, expects
+each fetch to fail, and checks the exact refusal. They guard the
+fail-closed projection in `flutter_pub_package.bzl`: a projection that
+derived a default language version for a bad constraint would bundle the
+package with a green build, so only these red paths would turn red.
+Malformed `flutter.assets` and font weights are no longer refused at fetch:
+the Flutter tool's own asset code reads them while bundling an app.
 """
 
 module(name = "rules_flutter_pub_shape_red")
