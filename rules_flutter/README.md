@@ -1586,15 +1586,35 @@ Bazel's test protocol applies, as it does to `dart_test`:
 - **Tags.** `include_tags` runs only tests matching every one of these `package:test` tag selectors (library, group or test level), as `flutter test --tags` intersects them; each entry is a boolean selector (`a && b`, `a || b`, `!a`, parentheses), and several entries — or comma-separated values in one entry — all have to match. `exclude_tags` skips tests matching any of them, as `flutter test --exclude-tags` unions them, and wins over `include_tags`. An attribute selection that matches no test fails the target, so a misspelled tag is a failure rather than an empty pass; a `--test_env=FLUTTER_TEST_TAGS=...` (or `FLUTTER_TEST_EXCLUDE_TAGS`) selection that matches nothing still passes with a note. A `--test_env=...` value at run time overrides the attribute. A `@Tags` on the test entrypoint itself is extracted at build time and always honoured, reaching every test through the suite's root group; a `@Tags` on a file the entrypoint imports stays invisible, as under `flutter test`.
 - **Results.** Each case is reported in the `test.xml` Bazel collects, so CI shows cases rather than one pass or fail per target.
 
+#### Files a test reads
+
+`flutter test` runs a test in the project's directory with the whole project readable, so a test opens `File('test/fixtures/user.json')` or compares against `goldens/x.png` by a path relative to it. Under Bazel a test sees only its inputs, which is what makes a cached pass mean something, so:
+
+- **Files under `test/` are `data` by default.** For a `flutter_test` in the Bazel package of a project the `flutter` extension knows (the directory of a `flutter.pub` lock, a member of its pub workspace, or one of its `path:` packages), every file under the project's `test/` that is not Dart source and not hidden, and is in that package, is `data` of the test with nothing in the BUILD file: JSON fixtures, goldens, text files. A directory of `test/` holding a BUILD file is a package of its own and is left out, and so are `failures/` directories (where stock writes golden diffs). The cost: every test of the package depends on every fixture, so editing one fixture reruns all of the package's tests; adding or removing a file under `test/` refetches the project's index repository, and a BUILD file is loaded again only when the list of fixtures changes.
+- **Other project files go in `data`.** A test that reads the Android manifest, an `.arb` file or anything else outside `test/` names it:
+
+  ```starlark
+  flutter_test(
+      name = "manifest_test",
+      main = "test/manifest_test.dart",
+      data = ["android/app/src/main/AndroidManifest.xml"],
+      deps = ["@deps//:flutter_test"],
+  )
+  ```
+
+  Forget it and the test fails as the Dart VM reports a missing file, `PathNotFoundException: Cannot open file, path = 'android/app/src/main/AndroidManifest.xml'`; the runner does not add a hint, since it would have to read the test's output to know.
+
+The test runs in the runfiles directory of the main repository, so these paths resolve as under `flutter test` for a project at the root of the workspace. A project in a subdirectory reads them under the subdirectory's path.
+
 #### Golden files
 
-Goldens must be listed in `data`, or the test cannot see them:
+Goldens under the project's `test/` are `data` by default (above). A golden elsewhere, or in a package the extension does not know, must be listed in `data`, or the test cannot see it:
 
 ```starlark
 flutter_test(
     name = "widget_test",
     main = "test/widget_test.dart",
-    data = glob(["test/goldens/**"]),
+    data = glob(["goldens/**"]),
     deps = ["@deps//:flutter", "@deps//:flutter_test"],
 )
 ```

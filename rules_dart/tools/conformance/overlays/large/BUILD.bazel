@@ -88,6 +88,19 @@ flutter_web_app(
     deps = [":wger"],
 )
 
+# Project files outside `test/` that a test reads by a path relative to the
+# project (the files under `test/` are its `data` by default).
+TEST_DATA = {
+    "test/core/l10n_plural_test.dart": ["lib/l10n/app_en.arb"],
+    "test/features/health/health_manifest_test.dart": [
+        "android/app/src/main/AndroidManifest.xml",
+        "android/app/src/main/res/xml/backup_rules.xml",
+        "android/app/src/main/res/xml/data_extraction_rules.xml",
+        "ios/Runner/AppDelegate.swift",
+        "ios/Runner/Info.plist",
+    ],
+}
+
 [
     flutter_test(
         name = test[len("test/"):-len(".dart")],
@@ -100,6 +113,7 @@ flutter_web_app(
             ],
             exclude = ["test/**/*_test.dart"],
         ),
+        data = TEST_DATA.get(test, []),
         main = test,
         pubspec = "pubspec.yaml",
         pubspec_srcs = PUBSPEC_SRCS,

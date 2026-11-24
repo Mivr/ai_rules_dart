@@ -154,6 +154,42 @@ def project_language_version(kwargs, l10n):
     if version:
         kwargs["language_version"] = version
 
+def _add_project_files(kwargs, attr, files):
+    """Appends `files` (package-relative names) to `kwargs[attr]`, skipping those it names already."""
+    if not files:
+        return
+    value = kwargs.get(attr, [])
+    if type(value) == "list":
+        named = {native.package_relative_label(v) if type(v) == "string" else v: True for v in value}
+        files = [f for f in files if native.package_relative_label(f) not in named]
+        if files:
+            kwargs[attr] = value + files
+    else:
+        kwargs[attr] = value + files
+
+# A helper of the macros that sets an argument, not a macro of its own.
+# buildifier: disable=unnamed-macro
+def project_test_data(kwargs, l10n):
+    """Adds the fixtures of the project's test tree to a test's `data`.
+
+    `flutter test` runs a test with the project readable, and a test reads its
+    fixtures by a path relative to the project: `test/fixtures/x.json`, the
+    goldens next to it. For a test in a project's package (`L10N_PROJECTS`),
+    every file under `test/` that is not Dart source and not hidden, and is in
+    that package, is `data` by default. A fixture edit reruns every test of
+    the package. Files outside `test/` that a test reads (`lib/l10n/*.arb`, a
+    platform manifest) are named in `data`.
+
+    Args:
+      kwargs: The target's arguments; changed in place.
+      l10n: The `L10N_PROJECTS` table of `@flutter_l10n//:index.bzl`.
+    """
+    if native.repo_name():
+        return
+    project = l10n.get(native.package_name())
+    if project != None:
+        _add_project_files(kwargs, "data", getattr(project, "test_data", []))
+
 def language_version_default(kwargs, project):
     """The language version a target takes from its project, or None to leave its arguments alone.
 

@@ -10,8 +10,8 @@
 // its pass path passes, and that its diffs land somewhere a developer can
 // still read after the sandbox is gone.
 //
-// The paired negative lives in `golden_undeclared_test.dart`: the same PNG, on
-// disk at the same path, with no `data` entry.
+// The paired negative lives in `golden_undeclared/golden_undeclared_test.dart`:
+// the same PNG, on disk next to that test but outside `test/`, so not `data`.
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -84,8 +84,8 @@ void main() {
       'where Bazel archives them', (tester) async {
     await tester.pumpWidget(_subject);
 
-    // The discriminator against `golden_undeclared_test.dart`: same PNG, same
-    // path, but declared in `data` here. "Pixel test failed" means the
+    // The discriminator against `golden_undeclared_test.dart`: same PNG, but
+    // declared in `data` here (by default, being under `test/`). "Pixel test failed" means the
     // comparator found and decoded it; "non-existent file" would mean it never
     // arrived in runfiles.
     //
