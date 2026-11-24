@@ -48,6 +48,7 @@ load(":ios_plugin_deps_test.bzl", "ios_plugin_deps_test_suite")
 load(":ios_split_debug_assets_test.bzl", "ios_split_debug_assets_test_suite")
 load(":ios_test.bzl", "ios_apple_plugin_test_suite", "ios_test_suite")
 load(":kernel_target_modular_test.bzl", "kernel_target_modular_test_suite")
+load(":l10n_hub_test.bzl", "l10n_hub_test_suite")
 load(":language_version_test.bzl", "language_version_test_suite")
 load(":linux_integration_runner_test.bzl", "linux_integration_runner_test_suite")
 load(":linux_runner_defines_test.bzl", "linux_runner_defines_test_suite")
@@ -290,6 +291,8 @@ app_entrypoint_test_suite(name = "app_entrypoint_test")
 agent_uris_test_suite(name = "agent_uris_test")
 
 pub_packages_default_test_suite(name = "pub_packages_default_test")
+
+l10n_hub_test_suite(name = "l10n_hub_test")
 
 apple_objc_deps_test_suite(name = "apple_objc_deps_test")
 

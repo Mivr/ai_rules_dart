@@ -101,16 +101,22 @@ def _package_boundary(project_dir, rel_dir):
 # What the generated files import.
 _IMPORTED = ("flutter", "flutter_localizations", "intl")
 
+def _hub_deps(rctx, hub):
+    return "[%s]" % ", ".join(["Label(%r)" % ("@%s//:%s" % (hub, p)) for p in _IMPORTED if p in rctx.attr.hub_packages])
+
 def _l10n_bzl(rctx, language_version, outputs = [], srcs = [], error = "", package = "", analysis_options = False):
-    deps = ["Label(%r)" % ("@%s//:%s" % (rctx.attr.hub, p)) for p in _IMPORTED if p in rctx.attr.hub_packages]
-    return "L10N = struct(\n    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    analysis_options = %r,\n    language_version = %r,\n    deps = [%s],\n)\n" % (
+    # `hubs`: each hub of the project's lock, in declaration order, as its
+    # canonical repository name and the packages the generated files import
+    # from it; a target takes the one its own `deps` come from (`l10n_attach`).
+    hubs = ["(Label(%r).repo_name, %s)" % ("@%s//:flutter" % hub, _hub_deps(rctx, hub)) for hub in rctx.attr.hubs]
+    return "L10N = struct(\n    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    analysis_options = %r,\n    language_version = %r,\n    hubs = [%s],\n)\n" % (
         outputs,
         srcs,
         error,
         package,
         analysis_options,
         language_version,
-        ", ".join(deps),
+        ", ".join(hubs),
     )
 
 def pubspec_language_version(spec):
@@ -232,8 +238,8 @@ flutter_l10n_repo = repository_rule(
         "project": attr.string(
             doc = "The project's directory, relative to the main repository's root.",
         ),
-        "hub": attr.string(
-            doc = "The `flutter.pub` hub of the project's lock, whose packages the generated files import.",
+        "hubs": attr.string_list(
+            doc = "The `flutter.pub` hubs of the project's lock, in declaration order, whose packages the generated files import.",
         ),
         "hub_packages": attr.string_list(
             doc = "Which of `flutter`, `flutter_localizations` and `intl` the lock holds.",
@@ -308,6 +314,21 @@ def _workspace_members(module_ctx, root, projects):
                 members.append((_norm((rel + "/" if rel else "") + member), rel))
     return members
 
+def add_project_hub(hubs, project, hub):
+    """Adds `hub` to the project's hubs, after the ones declared before it.
+
+    The first one is the project's default, as for `PUB_HUBS`: the first hub
+    declared with the lock.
+
+    Args:
+      hubs: Each project's list of hub structs; changed in place.
+      project: The project's directory.
+      hub: The hub, a struct with `name` and `packages`.
+    """
+    own = hubs.setdefault(project, [])
+    if hub.name not in [h.name for h in own]:
+        own.append(hub)
+
 def register_l10n_repos(module_ctx, pub_yaml):
     """Declares a `flutter_l10n_repo` per project with an `l10n.yaml`, and `flutter_l10n`.
 
@@ -331,7 +352,7 @@ def register_l10n_repos(module_ctx, pub_yaml):
             is_root[project] = True
             packages = pub_yaml.get(str(lock), {}).get("packages")
             hub = struct(name = tag.name, packages = [p for p in _IMPORTED if type(packages) == "dict" and p in packages])
-            hubs[project] = hub
+            add_project_hub(hubs, project, hub)
             for name, info in (packages if type(packages) == "dict" else {}).items():
                 desc = info.get("description") if type(info) == "dict" and info.get("source") == "path" else None
                 entry = desc.get("path") if type(desc) == "dict" else None
@@ -339,7 +360,7 @@ def register_l10n_repos(module_ctx, pub_yaml):
                     continue
                 path = workspace_relative_lock_path("", name, lock, entry)
                 is_root.setdefault(path, False)
-                hubs.setdefault(path, hub)
+                add_project_hub(hubs, path, hub)
     projects = {}
     if root != None:
         for member, owner in _workspace_members(module_ctx, root, sorted([p for p in is_root if is_root[p]])):
@@ -354,7 +375,7 @@ def register_l10n_repos(module_ctx, pub_yaml):
                     name = projects[project],
                     project = project,
                     is_root = is_root[project],
-                    hub = hubs[project].name,
-                    hub_packages = hubs[project].packages,
+                    hubs = [h.name for h in hubs[project]],
+                    hub_packages = hubs[project][0].packages,
                 )
     flutter_l10n_index(name = "flutter_l10n", projects = projects)

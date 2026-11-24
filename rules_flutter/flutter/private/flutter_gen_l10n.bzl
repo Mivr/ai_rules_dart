@@ -219,15 +219,45 @@ def l10n_attach(name, kwargs, l10n, always = False):
             language_version = kwargs.get("language_version", ""),
             visibility = ["//visibility:private"],
         )
+    deps = kwargs.get("deps")
+    labels = [native.package_relative_label(d) if type(d) == "string" else d for d in deps] if type(deps) == "list" else []
+    library, library_deps = l10n_library_of(project, labels)
+    if not native.existing_rule(library):
         flutter_library(
-            name = L10N_LIBRARY,
+            name = library,
             package_name = project.package,
             srcs = [":" + L10N_TARGET],
             language_version = kwargs.get("language_version", ""),
-            deps = project.deps,
+            deps = library_deps,
             visibility = ["//visibility:private"],
         )
     if type(srcs) == "list":
         generated = {rel: True for rel in project.outputs}
         kwargs["srcs"] = [s for s in srcs if s not in generated]
-    kwargs["deps"] = kwargs.get("deps", []) + [":" + L10N_LIBRARY]
+    kwargs["deps"] = kwargs.get("deps", []) + [":" + library]
+
+def l10n_library_of(project, deps):
+    """The library of the generated files a target takes, and its `deps`.
+
+    A project's lock can have several hubs (an iOS plugin mode's twins). The
+    generated files import `flutter`, `flutter_localizations` and `intl` from
+    the hub the target's own `deps` come from, so the target's closure has
+    one copy of each: `_l10n` for the first hub declared with the lock (and
+    for a target none of whose `deps` names a hub, or whose `deps` is a
+    `select()`), `_l10n_<i>` for the hub declared `i`-th after it.
+
+    Args:
+      project: The package's entry of `L10N_PROJECTS`.
+      deps: The target's `deps`, as labels.
+
+    Returns:
+      `(name, deps)` of the library.
+    """
+    index = {project.hubs[i][0]: i for i in range(len(project.hubs))}
+    chosen = 0
+    for label in deps:
+        if type(label) == "Label" and label.repo_name in index:
+            chosen = index[label.repo_name]
+            break
+    name = L10N_LIBRARY if chosen == 0 else "%s_%d" % (L10N_LIBRARY, chosen)
+    return name, (project.hubs[chosen][1] if project.hubs else [])
