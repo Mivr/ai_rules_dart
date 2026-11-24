@@ -147,6 +147,11 @@ def _android_abi_platform_test_impl(ctx):
 
     asserts.equals(
         env,
+        Label("//flutter/platforms:android_arm"),
+        android_platform_for_abi("armeabi-v7a"),
+    )
+    asserts.equals(
+        env,
         Label("//flutter/platforms:android_arm64"),
         android_platform_for_abi("arm64-v8a"),
     )
@@ -162,6 +167,7 @@ def _android_abi_elf_machine_test_impl(ctx):
     """Each ABI maps to its ELF e_machine value."""
     env = unittest.begin(ctx)
 
+    asserts.equals(env, 40, android_elf_machine_for_abi("armeabi-v7a"))  # EM_ARM
     asserts.equals(env, 183, android_elf_machine_for_abi("arm64-v8a"))  # EM_AARCH64
     asserts.equals(env, 62, android_elf_machine_for_abi("x86_64"))  # EM_X86_64
 
@@ -171,7 +177,7 @@ def _android_abi_table_complete_test_impl(ctx):
     """The ABI table covers exactly the supported cross-compile ABIs."""
     env = unittest.begin(ctx)
 
-    asserts.equals(env, ["arm64-v8a", "x86_64"], sorted(ANDROID_ABIS.keys()))
+    asserts.equals(env, ["arm64-v8a", "armeabi-v7a", "x86_64"], sorted(ANDROID_ABIS.keys()))
 
     return unittest.end(env)
 

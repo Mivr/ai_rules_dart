@@ -234,7 +234,7 @@ picks the mode from its flag.""",
             values = ["", "debug", "profile", "release"],
         ),
         "android_abi": attr.string(
-            doc = """Android ABI to build for ("arm64-v8a" or "x86_64").
+            doc = """Android ABI to build for ("armeabi-v7a", "arm64-v8a" or "x86_64").
 
 Single source of truth for the target platform: the rule transitions itself
 and the application to the matching //flutter/platforms target, so native
@@ -281,6 +281,10 @@ def _aar_manifest(ctx):
     )
     return manifest
 
+# The ABIs with a pinned engine jar for `engine_maven` (see `_ANDROID_ENGINE_JAR_ARCHS` in
+# //flutter:repositories.bzl).
+_AAR_ABIS = ["arm64-v8a", "x86_64"]
+
 def _aar_engine_jar(android_abi):
     """Selects the pinned release engine `flutter.jar` for `android_abi`."""
     if android_abi == "x86_64":
@@ -290,7 +294,7 @@ def _aar_engine_jar(android_abi):
 def _flutter_android_aar_impl(ctx):
     """Packs the module's AOT library, assets and manifest into `<name>.aar`."""
     abi = ctx.attr.android_abi
-    if abi not in ANDROID_ABIS:
+    if abi not in _AAR_ABIS:
         fail((
             "flutter_android_aar {}: invalid value in 'android_abi' attribute: " +
             "has to be one of 'arm64-v8a' or 'x86_64' instead of '{}'. " +
@@ -299,7 +303,7 @@ def _flutter_android_aar_impl(ctx):
             ctx.label,
             abi,
             abi,
-            ", ".join(ANDROID_ABIS.keys()),
+            ", ".join(_AAR_ABIS),
         ))
     app_info = ctx.attr.application[FlutterApplicationInfo]
     if ctx.var.get("COMPILATION_MODE") == "dbg" or not app_info.aot_output:

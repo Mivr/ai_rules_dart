@@ -101,8 +101,14 @@ const artifactSections = [
     ],
   ),
   // The gen_snapshot that runs on the build host and targets Android. Flutter
-  // publishes x64 hosts only; arm64 hosts run the x64 binary.
+  // publishes x64 hosts only; arm64 hosts run the x64 binary. 32-bit ARM
+  // (android-arm) has these rows and no engine jar row: an app built from its
+  // Gradle model takes the engine from the pin, and only the AOT compiler of
+  // the ABI comes from here.
   ArtifactSection('Android cross-compile gen_snapshot (release)', [
+    'android-arm-release/darwin-x64.zip',
+    'android-arm-release/linux-x64.zip',
+    'android-arm-release/windows-x64.zip',
     'android-arm64-release/darwin-x64.zip',
     'android-arm64-release/linux-x64.zip',
     'android-arm64-release/windows-x64.zip',
@@ -111,6 +117,9 @@ const artifactSections = [
     'android-x64-release/windows-x64.zip',
   ]),
   ArtifactSection('Android cross-compile gen_snapshot (profile)', [
+    'android-arm-profile/darwin-x64.zip',
+    'android-arm-profile/linux-x64.zip',
+    'android-arm-profile/windows-x64.zip',
     'android-arm64-profile/darwin-x64.zip',
     'android-arm64-profile/linux-x64.zip',
     'android-arm64-profile/windows-x64.zip',

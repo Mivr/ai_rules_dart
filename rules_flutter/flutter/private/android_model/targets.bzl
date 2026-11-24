@@ -45,7 +45,7 @@ _TOOL_SOURCES = ["Aar.java", "AndroidTool.java", "Apk.java", "Bundle.java", "Dex
 
 # ABIs the Dart side can build native code for (the AOT library of a profile or release build, FFI
 # libraries, code assets).
-_DART_ABIS = ["arm64-v8a", "x86_64"]
+_DART_ABIS = ["armeabi-v7a", "arm64-v8a", "x86_64"]
 
 # What Flutter's Gradle plugin adds to versionCode per ABI with `--split-per-abi`.
 _ABI_VERSION_CODE = {"armeabi-v7a": 1, "arm64-v8a": 2, "x86_64": 4}

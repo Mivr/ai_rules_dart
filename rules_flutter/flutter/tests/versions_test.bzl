@@ -123,9 +123,11 @@ def _downloaded_artifact_paths():
             paths.append(desktop_engine_artifact_path(os, arch, mode))
     for mode in modes:
         paths.append(ios_engine_artifact_path(mode))
-    for android_arch in ["arm64", "x64"]:
-        # The engine jar is fetched for `flutter_android_aar` only, in release mode.
-        paths.append(android_engine_artifact_path(android_arch, "release"))
+    for android_arch in ["arm", "arm64", "x64"]:
+        # The engine jar is fetched for `flutter_android_aar` only, in release mode, and not for
+        # 32-bit ARM, which has the AOT compiler alone.
+        if android_arch != "arm":
+            paths.append(android_engine_artifact_path(android_arch, "release"))
         for mode in ["profile", "release"]:
             for cross_host in ["darwin-x64", "linux-x64", "windows-x64"]:
                 paths.append(gen_snapshot_cross_artifact_path("android-" + android_arch, mode, cross_host))

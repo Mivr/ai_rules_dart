@@ -4,6 +4,15 @@
 #   bazel build //my_app --platforms=@rules_flutter//flutter/platforms:android_arm64
 
 platform(
+    name = "android_arm",
+    constraint_values = [
+        "@platforms//os:android",
+        "@platforms//cpu:armv7",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+platform(
     name = "android_arm64",
     constraint_values = [
         "@platforms//os:android",

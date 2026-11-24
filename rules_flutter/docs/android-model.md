@@ -123,14 +123,13 @@ flutter_android_app(
     name = "app_release",
     application = ":counter",
     variant = "release",
-    abis = ["arm64-v8a", "x86_64"],
     split_per_abi = True,
 )
 ```
 
 `bazel build //:app_release_apk` is what `flutter build apk --release` gives; with `split_per_abi`,
-`//:app_release_apk_arm64_v8a` and `//:app_release_apk_x86_64` are what `--split-per-abi` gives, with
-Flutter's version codes (`1000 * <ABI number> + versionCode`). `//:app_release_mapping` is the mapping
+`//:app_release_apk_armeabi_v7a`, `//:app_release_apk_arm64_v8a` and `//:app_release_apk_x86_64` are
+what `--split-per-abi` gives, with Flutter's version codes (`1000 * <ABI number> + versionCode`). `//:app_release_mapping` is the mapping
 file that retraces a stack trace of that build.
 
 | Step | As the stock build | Actions |
@@ -142,10 +141,11 @@ file that retraces a stack trace of that build.
 | Baseline profiles | those of the app (`src/main/baseline-prof.txt`) and of the AARs merged, rewritten by R8 and L8, compiled into `assets/dexopt/` | `RdfArtProfile` |
 | Without `minifyEnabled` | D8 in release mode, no shrinking | `RdfDex`, `RdfDexMerge` |
 
-A profile or release build carries the Dart program as machine code, so it is built for the ABIs the
-rules have an AOT compiler for: `arm64-v8a` and `x86_64`. A stock app asks for `armeabi-v7a` too; say
-`abis = ["arm64-v8a", "x86_64"]`, or the build fails and tells you to. A release build has no split
-APKs (R8 works on the whole program); `//:app_release` is the APK.
+A profile or release build carries the Dart program as machine code, one AOT library per ABI. The
+ABIs are the Gradle project's, which for a stock app are the three of `flutter build apk`:
+`armeabi-v7a`, `arm64-v8a` and `x86_64`; `abis = ["arm64-v8a"]` builds fewer. An ABI the Flutter SDK
+has no AOT compiler for (`x86`, `riscv64`) fails the build, which says to set `abis`. A release build
+has no split APKs (R8 works on the whole program); `//:app_release` is the APK.
 
 ### App bundles
 

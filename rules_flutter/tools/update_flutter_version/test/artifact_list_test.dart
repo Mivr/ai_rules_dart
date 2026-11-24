@@ -48,6 +48,7 @@ void main() {
           'ios-profile/artifacts.zip',
           'android-arm64-profile/linux-x64.zip',
           'android-x64-profile/windows-x64.zip',
+          'android-arm-profile/linux-x64.zip',
         ]),
       );
     });
@@ -59,6 +60,7 @@ void main() {
           'android-arm64-release/artifacts.zip',
           'android-x64-release/artifacts.zip',
           'android-arm64-release/darwin-x64.zip',
+          'android-arm-release/darwin-x64.zip',
           'linux-arm64-release/linux-arm64-flutter-gtk.zip',
           'linux-arm64-debug/linux-arm64-flutter-gtk.zip',
         ]),

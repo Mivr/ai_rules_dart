@@ -25,6 +25,7 @@ ANDROID_TARGET_SDK_VERSION = "35"
 
 # Android ABI directory name for each engine architecture this ruleset builds.
 ANDROID_ABI_FOR_ARCH = {
+    "arm": "armeabi-v7a",
     "arm64": "arm64-v8a",
     "x64": "x86_64",
 }

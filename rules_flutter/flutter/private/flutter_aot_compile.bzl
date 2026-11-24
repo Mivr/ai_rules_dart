@@ -383,7 +383,22 @@ def flutter_aot_gen_snapshot_flags(ctx, strip):
 
     return extra_flags, extra_outputs, debug_info_output, obfuscation_map_output, strip
 
-def flutter_aot_elf_action(ctx, gen_snapshot, kernel_dill, output, strip = True, extra_flags = [], extra_outputs = []):
+# What stock `flutter` adds for 32-bit ARM Android (`AOTSnapshotter.build`): the soft-float calling
+# convention of the armeabi-v7a ABI, and no integer division instructions, which some ARMv7 cores lack.
+_ANDROID_ARM_FLAGS = ["--no-sim-use-hardfp", "--no-use-integer-division"]
+
+def is_android_arm(flutter_sdk_info):
+    """Whether the resolved toolchain targets 32-bit ARM Android (`armeabi-v7a`).
+
+    Args:
+        flutter_sdk_info: The resolved Flutter SDK info.
+
+    Returns:
+        True for the `android-arm` cross toolchain.
+    """
+    return flutter_sdk_info.target_os == "android" and flutter_sdk_info.target_arch == "arm"
+
+def flutter_aot_elf_action(ctx, gen_snapshot, kernel_dill, output, strip = True, extra_flags = [], extra_outputs = [], android_arm = False):
     """AOT compile to ELF shared library. Used for Android, Linux, Windows.
 
     Args:
@@ -394,6 +409,7 @@ def flutter_aot_elf_action(ctx, gen_snapshot, kernel_dill, output, strip = True,
         strip: Whether to pass `--strip` to gen_snapshot. Defaults to True.
         extra_flags: Additional gen_snapshot flags appended before the kernel input. Defaults to none.
         extra_outputs: Additional output Files the action declares, such as debug info. Defaults to none.
+        android_arm: Whether the target is 32-bit ARM Android, which takes two more flags as in stock.
     """
     _flutter_aot_action(
         ctx = ctx,
@@ -404,7 +420,7 @@ def flutter_aot_elf_action(ctx, gen_snapshot, kernel_dill, output, strip = True,
             snapshot_kind = "app-aot-elf",
             output_flag = "--elf",
             strip = strip,
-            extra_flags = extra_flags,
+            extra_flags = (_ANDROID_ARM_FLAGS if android_arm else []) + extra_flags,
             extra_outputs = extra_outputs,
             mnemonic = "FlutterAotElf",
         ),

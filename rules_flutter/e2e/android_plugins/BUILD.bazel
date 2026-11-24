@@ -36,13 +36,10 @@ flutter_android_app(
 )
 
 # The release build: R8, resource shrinking, the AOT library per ABI; `//:app_release_apk` is the whole
-# APK, `//:app_release_apk_arm64_v8a` and `//:app_release_apk_x86_64` are what `--split-per-abi` gives.
+# APK, `//:app_release_apk_armeabi_v7a`, `//:app_release_apk_arm64_v8a` and `//:app_release_apk_x86_64` are
+# what `--split-per-abi` gives. The ABIs are the model's: the three of a stock release build.
 flutter_android_app(
     name = "app_release",
-    abis = [
-        "arm64-v8a",
-        "x86_64",
-    ],
     application = ":counter",
     native_built_elsewhere = [":jni"],
     split_per_abi = True,
@@ -52,10 +49,6 @@ flutter_android_app(
 # The profile build: the AOT library with the profile engine.
 flutter_android_app(
     name = "app_profile",
-    abis = [
-        "arm64-v8a",
-        "x86_64",
-    ],
     application = ":counter",
     native_built_elsewhere = [":jni"],
     variant = "profile",
@@ -132,7 +125,8 @@ flutter_android_apk_test(
 )
 
 # What the release build holds: the app's entry points under their own names and the rest renamed or
-# removed by R8, the resources shrunk, the AOT library per ABI and no kernel, the baseline profile.
+# removed by R8, the resources shrunk, the AOT library for each of the three ABIs of a stock release
+# build and no kernel, the baseline profile.
 flutter_android_apk_test(
     name = "app_release_test",
     absent_classes = [
@@ -143,7 +137,7 @@ flutter_android_apk_test(
     ],
     absent_entries = [
         "assets/flutter_assets/kernel_blob.bin",
-        "lib/armeabi-v7a/**",
+        "lib/x86/**",
         "META-INF/*.kotlin_module",
     ],
     app = "app_release",
@@ -155,6 +149,8 @@ flutter_android_apk_test(
         "Lj$/time/Instant;",
     ],
     entries = [
+        "lib/armeabi-v7a/libapp.so",
+        "lib/armeabi-v7a/libflutter.so",
         "lib/arm64-v8a/libapp.so",
         "lib/arm64-v8a/libflutter.so",
         "lib/x86_64/libapp.so",
@@ -169,6 +165,23 @@ flutter_android_apk_test(
 )
 
 # `split_per_abi`: one ABI's libraries, and Flutter's version code for the ABI.
+flutter_android_apk_test(
+    name = "app_release_armeabi_v7a_test",
+    abi = "armeabi-v7a",
+    absent_entries = [
+        "lib/arm64-v8a/**",
+        "lib/x86_64/**",
+    ],
+    app = "app_release",
+    entries = [
+        "lib/armeabi-v7a/libapp.so",
+        "lib/armeabi-v7a/libdartjni.so",
+        "lib/armeabi-v7a/libflutter.so",
+    ],
+    version_code = 1001,
+    version_name = "1.0.0",
+)
+
 flutter_android_apk_test(
     name = "app_release_x86_64_test",
     abi = "x86_64",
@@ -192,6 +205,7 @@ flutter_android_apk_test(
         "Lio/flutter/plugins/urllauncher/BuildConfig;",
     ],
     entries = [
+        "lib/armeabi-v7a/libapp.so",
         "lib/arm64-v8a/libapp.so",
         "lib/x86_64/libapp.so",
     ],
@@ -210,6 +224,7 @@ flutter_android_bundle_test(
     app = "app_release",
     entries = [
         "base/dex/classes2.dex",
+        "base/lib/armeabi-v7a/libapp.so",
         "base/lib/arm64-v8a/libapp.so",
         "base/lib/x86_64/libflutter.so",
         "base/assets/flutter_assets/AssetManifest.bin",

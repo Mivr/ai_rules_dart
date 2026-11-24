@@ -78,6 +78,9 @@ flutter.version(
         "android-arm64-release/artifacts.zip": "8426a3b6f60ba5b5ba1b9684cbfc131df513ffd79f297e3bb29d33cba62c2b7f",
         "android-x64-release/artifacts.zip": "ccb68395a57aff336eceadd4e3b7ba1b0480cd15c252757d1b5ef0203d43e319",
         # Android cross-compile gen_snapshot (release)
+        "android-arm-release/darwin-x64.zip": "7d6dbd418fa29d136ae81db00e4d7a62b504d84ba8dab69271486a12d1fab2cd",
+        "android-arm-release/linux-x64.zip": "670bfb4c6750a124aa81005c2ea0a8e60b0c29963a71e5ad9e9dc7badc5e7987",
+        "android-arm-release/windows-x64.zip": "e2e5fed77bba2b37b4985c771495dd4fb0230f9757ec8eb3530bf2c66f247797",
         "android-arm64-release/darwin-x64.zip": "5535e11ad8a7d2d48d9f20766660d4d909ec37ab96f90b84c29080de682ae937",
         "android-arm64-release/linux-x64.zip": "d3732a35d2e5b2e0b7d8d6bb431cedc2fb657583e225317a5a90e7409a09059f",
         "android-arm64-release/windows-x64.zip": "ccbd558835d1bfb10af3ba85024e6380628f3eb464d4c1246e7ade468aebe7de",
@@ -85,6 +88,9 @@ flutter.version(
         "android-x64-release/linux-x64.zip": "45ca1e6a2ab71e5f1a3d9acbf64d5e548c70029015ecd1d47d55a69fe045f379",
         "android-x64-release/windows-x64.zip": "b0647c5294d8b5f709bfa700638de34e66a5620a2dc92f6c1045d8b52f6664da",
         # Android cross-compile gen_snapshot (profile)
+        "android-arm-profile/darwin-x64.zip": "457e51250976fae2fcc32a13686dc2b965ce9c076d540189b9fc55be0f9b5c5a",
+        "android-arm-profile/linux-x64.zip": "ca0980e662ec7ad74db92eeae2fe2c17e735599e9a910ef34181495a3c14b8f1",
+        "android-arm-profile/windows-x64.zip": "eb20fb88f7ff73c30792a8153fef445d9128b3eaacd323acfffbd85c64f17ca6",
         "android-arm64-profile/darwin-x64.zip": "c33703650e5324d7b86e3600eae9e327dfe716dd9cc913ed588e10615e917e69",
         "android-arm64-profile/linux-x64.zip": "6ae4344406634996b3f83f691d4c10e6e6045e54adef7eae230f20ef0dd7739f",
         "android-arm64-profile/windows-x64.zip": "e42d0c7d782f13091376b09786411db784e25ce1f01672b8f3d353c07c7fcc77",

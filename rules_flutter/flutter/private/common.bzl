@@ -622,6 +622,10 @@ def compute_desktop_bundle_copies(artifacts, libs):
 # mapping each ABI to the Bazel platform Android rules transition to and the
 # ELF e_machine value native libraries packaged for that ABI must carry.
 ANDROID_ABIS = {
+    "armeabi-v7a": struct(
+        platform = Label("//flutter/platforms:android_arm"),
+        elf_machine = 40,  # EM_ARM
+    ),
     "arm64-v8a": struct(
         platform = Label("//flutter/platforms:android_arm64"),
         elf_machine = 183,  # EM_AARCH64
@@ -645,7 +649,7 @@ def android_platform_for_abi(abi):
     """The Bazel platform label Android rules build for, given an ABI.
 
     Args:
-        abi: Android ABI string ("arm64-v8a" or "x86_64").
+        abi: Android ABI string ("armeabi-v7a", "arm64-v8a" or "x86_64").
 
     Returns:
         A Label for the platform under //flutter/platforms.
@@ -656,7 +660,7 @@ def android_elf_machine_for_abi(abi):
     """The ELF e_machine value native libraries must have for an ABI.
 
     Args:
-        abi: Android ABI string ("arm64-v8a" or "x86_64").
+        abi: Android ABI string ("armeabi-v7a", "arm64-v8a" or "x86_64").
 
     Returns:
         The e_machine value as an int (e.g. 183 for EM_AARCH64).

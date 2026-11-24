@@ -68,6 +68,12 @@ HOST_PLATFORMS = {
 # For each (host, target) pair, a toolchain is registered that runs on the
 # host and produces output for the target.
 TARGET_PLATFORMS = {
+    "android-arm": struct(
+        compatible_with = [
+            "@platforms//os:android",
+            "@platforms//cpu:armv7",
+        ],
+    ),
     "android-arm64": struct(
         compatible_with = [
             "@platforms//os:android",
@@ -108,11 +114,11 @@ DESKTOP_CROSS_PAIRS = {
 
 # Which (host, target) cross-compilation pairs are supported.
 CROSS_COMPILATION_PAIRS = {
-    "darwin-arm64": ["android-arm64", "android-x64", "ios-arm64", "ios-x64"],
-    "darwin-x64": ["android-arm64", "android-x64", "ios-arm64", "ios-x64"],
-    "linux-x64": ["android-arm64", "android-x64", "ios-arm64", "ios-x64"],
-    "linux-arm64": ["android-arm64", "android-x64", "ios-arm64", "ios-x64"],
-    "windows-x64": ["android-arm64", "android-x64"],
+    "darwin-arm64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "darwin-x64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "linux-x64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "linux-arm64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "windows-x64": ["android-arm", "android-arm64", "android-x64"],
 }
 
 # Which (host, target) cross-compilation pairs have a target-compatible AOT
@@ -120,11 +126,11 @@ CROSS_COMPILATION_PAIRS = {
 # Apple AOT snapshots (ios-*, darwin-*) may only be produced by a Darwin-target
 # gen_snapshot, which Flutter publishes only for macOS hosts (darwin-*).
 AOT_CROSS_COMPILATION_PAIRS = {
-    "darwin-arm64": ["android-arm64", "android-x64", "ios-arm64", "ios-x64"],
-    "darwin-x64": ["android-arm64", "android-x64", "ios-arm64", "ios-x64"],
-    "linux-x64": ["android-arm64", "android-x64"],
-    "linux-arm64": ["android-arm64", "android-x64"],
-    "windows-x64": ["android-arm64", "android-x64"],
+    "darwin-arm64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "darwin-x64": ["android-arm", "android-arm64", "android-x64", "ios-arm64", "ios-x64"],
+    "linux-x64": ["android-arm", "android-arm64", "android-x64"],
+    "linux-arm64": ["android-arm", "android-arm64", "android-x64"],
+    "windows-x64": ["android-arm", "android-arm64", "android-x64"],
 }
 
 def supports_aot_cross_compilation(host_platform, target_platform):

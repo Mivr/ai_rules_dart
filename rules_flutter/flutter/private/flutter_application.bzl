@@ -19,7 +19,7 @@ load("@rules_dart//dart:utils.bzl", "DartDefinesInfo", "MODULAR_KERNEL_ATTRS", "
 load("//flutter:providers.bzl", "FlutterApplicationInfo", "FlutterInfo")
 load("//flutter/private:common.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "FLUTTER_APPLICATION_ATTRS", "FLUTTER_DEPS_DOC", "PLATFORM_CONSTRAINT_ATTRS", "check_hook_errors", "collect_native_libs", "declare_flutter_assets_dir", "detect_target_platform", "flutter_build_mode", "flutter_compile_kernel", "make_kernel_inputs", "make_kernel_target", "resolve_flutter_sdk_info")
 load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle")
-load("//flutter/private:flutter_aot_compile.bzl", "flutter_aot_elf_action", "flutter_aot_gen_snapshot_flags", "flutter_aot_macho_action", "macho_snapshot_options")
+load("//flutter/private:flutter_aot_compile.bzl", "flutter_aot_elf_action", "flutter_aot_gen_snapshot_flags", "flutter_aot_macho_action", "is_android_arm", "macho_snapshot_options")
 load("//flutter/private:flutter_defines_files.bzl", "DART_DEFINES_DOC", "app_defines_transition", "effective_flavor")
 load("//flutter/private:flutter_info.bzl", "collect_flutter_plugin_deps")
 load("//flutter/private:flutter_kernel_module.bzl", "flutter_app_kernel_module_aspect")
@@ -151,6 +151,7 @@ def _compile_application_aot(ctx, flutter_sdk_info, is_debug, is_ios, is_macos, 
             strip = strip,
             extra_flags = extra_flags,
             extra_outputs = extra_outputs,
+            android_arm = is_android_arm(flutter_sdk_info),
         )
     return struct(
         aot_output = aot_output,

@@ -25,6 +25,9 @@ properties every public path must keep:
 - A negated `--no-obfuscate` / `--no-dwarf-stack-traces` that contradicts
   `obfuscate` / `split_debug_info` fails analysis; without the attribute
   the negated flag is still accepted.
+- A 32-bit ARM Android snapshot takes `--no-sim-use-hardfp` and
+  `--no-use-integer-division`, as stock `flutter` passes them; no other
+  target does.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -242,6 +245,22 @@ def _application_no_map_test_impl(ctx):
     asserts.equals(env, None, tut[FlutterApplicationInfo].obfuscation_map, "obfuscation_map must be None without obfuscate")
     return analysistest.end(env)
 
+_ARM_FLAGS = ["--no-sim-use-hardfp", "--no-use-integer-division"]
+
+def _android_arm_flags_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    argv = _aot_argv(env)
+    for flag in _ARM_FLAGS:
+        asserts.equals(env, 1, _count(argv, flag), "expected exactly one %s for armeabi-v7a, got %s" % (flag, argv))
+    return analysistest.end(env)
+
+def _android_arm64_flags_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    argv = _aot_argv(env)
+    for flag in _ARM_FLAGS:
+        asserts.equals(env, 0, _count(argv, flag), "%s is for armeabi-v7a only, got %s" % (flag, argv))
+    return analysistest.end(env)
+
 _FASTBUILD = {
     "//command_line_option:compilation_mode": "fastbuild",
     str(Label("//flutter:profile")): False,
@@ -257,6 +276,14 @@ _OPT = {
 _obfuscate_strips_test = analysistest.make(
     _obfuscate_strips_test_impl,
     config_settings = _FASTBUILD,
+)
+_android_arm_flags_test = analysistest.make(
+    _android_arm_flags_test_impl,
+    config_settings = _OPT | {"//command_line_option:platforms": str(Label("//flutter/platforms:android_arm"))},
+)
+_android_arm64_flags_test = analysistest.make(
+    _android_arm64_flags_test_impl,
+    config_settings = _OPT | {"//command_line_option:platforms": str(Label("//flutter/platforms:android_arm64"))},
 )
 _obfuscate_dedup_test = analysistest.make(
     _obfuscate_dedup_test_impl,
@@ -530,6 +557,16 @@ def aot_flags_test_suite(name):
         target_under_test = ":_flags_obf_target",
         target_compatible_with = HOST_COMPATIBLE,
     )
+    _android_arm_flags_test(
+        name = name + "_android_arm",
+        target_under_test = ":_flags_obf_target",
+        target_compatible_with = HOST_COMPATIBLE,
+    )
+    _android_arm64_flags_test(
+        name = name + "_android_arm64",
+        target_under_test = ":_flags_obf_target",
+        target_compatible_with = HOST_COMPATIBLE,
+    )
     _obfuscate_dedup_test(
         name = name + "_obfuscate_dedup",
         target_under_test = ":_flags_obf_dup_target",
@@ -643,6 +680,8 @@ def aot_flags_test_suite(name):
         name = name,
         tests = [
             ":" + name + "_obfuscate_strips",
+            ":" + name + "_android_arm",
+            ":" + name + "_android_arm64",
             ":" + name + "_obfuscate_dedup",
             ":" + name + "_split_debug",
             ":" + name + "_obfuscate_split_debug",

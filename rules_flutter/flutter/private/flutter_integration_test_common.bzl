@@ -45,6 +45,7 @@ load(
 load(
     "//flutter/private:flutter_aot_compile.bzl",
     "flutter_aot_elf_action",
+    "is_android_arm",
 )
 load("//flutter/private:flutter_bundle.bzl", "BUNDLE_ATTRS", "flutter_bundle")
 load(
@@ -420,6 +421,7 @@ def integration_test_aot(ctx, flutter_sdk_info, kernel_dill, is_debug, strip):
         kernel_dill = kernel_dill,
         output = aot_output,
         strip = strip,
+        android_arm = is_android_arm(flutter_sdk_info),
     )
     return aot_output
 

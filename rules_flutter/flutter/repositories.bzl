@@ -126,6 +126,11 @@ def _lazy_repo_file_aliases(os_name, exe_suffix, user_repo_name, platform, repos
 
     return "\n\n".join(blocks)
 
+# The architectures with a `flutter_android_engine_<arch>` repository (the engine jar
+# `flutter_android_aar` hands out). 32-bit ARM has none: an app built from its Gradle model takes
+# the engine of every ABI from the pin, and only the AOT compiler of the ABI comes from these rules.
+_ANDROID_ENGINE_JAR_ARCHS = ["arm64", "x64"]
+
 def _flutter_engine_artifacts_local_impl(repository_ctx):
     """Sources the core host artifacts out of a pre-extracted local SDK.
 
@@ -1483,7 +1488,7 @@ def _register_download_android_repos(name, flutter_version, engine_revision, eng
             if not target_platform.startswith("android-"):
                 continue
             android_arch = target_platform.split("-")[1]
-            if android_arch in android_engine_repos_created:
+            if android_arch in android_engine_repos_created or android_arch not in _ANDROID_ENGINE_JAR_ARCHS:
                 continue
             android_engine_repos_created[android_arch] = True
 
@@ -1770,7 +1775,7 @@ def _register_local_android_repos(name, local_path):
             if not target_platform.startswith("android-"):
                 continue
             android_arch = target_platform.split("-")[1]
-            if android_arch in android_engine_repos_created:
+            if android_arch in android_engine_repos_created or android_arch not in _ANDROID_ENGINE_JAR_ARCHS:
                 continue
             android_engine_repos_created[android_arch] = True
 
