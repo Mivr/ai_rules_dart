@@ -83,7 +83,7 @@ load(":model.bzl", "MODEL")
 
 package(default_visibility = ["//visibility:public"])
 
-pod_targets(MODEL)
+pod_targets(name = "pods", model = MODEL)
 """)
 
 pod_source = repository_rule(

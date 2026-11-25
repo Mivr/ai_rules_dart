@@ -1,0 +1,252 @@
+# Spike T17a (S9), phase 2: what needs a Mac. Not for merge.
+#
+# Phase 1 ran on Linux: CocoaPods in a Ruby container wrote `apple_model.json`, and Bazel
+# analysed the targets generated from it. This job proves the rest on a macOS runner, in stages
+# that each leave a report, so that a failure in one says something about the others:
+#
+#   A  stock: `flutter build ios --simulator --debug` of the same app; `pod install` writes
+#      Podfile.lock, compared with the one the Linux container wrote; the pin step run again on
+#      macOS, compared byte for byte with the committed model (a pin must not depend on its host)
+#   B  every pod library of the model compiles for the simulator (one line per pod)
+#   C  the app links in both shapes: all pods static in the app binary, and one dynamic framework
+#      per pod
+#   D  both apps and the stock app launch on a simulator and print the same line per plugin
+#   E  the bundles are compared with the stock bundle (files, frameworks, privacy manifests)
+#   F  edit loops: a Swift edit in the app and in one plugin, in both shapes, with the actions
+#      that ran, against Xcode on the same edits
+#
+# Run it by hand (`workflow_dispatch`) or by pushing the spike branch.
+name: Flutter S9 Apple model spike
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - task/T17a-apple-model-spike
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-s9-apple-model-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  s9:
+    name: S9 pods from the CocoaPods model (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 120
+    env:
+      FLUTTER_VERSION: 3.47.7
+      COCOAPODS_VERSION: 1.16.2
+      SIM: --ios_multi_cpus=sim_arm64 -c dbg
+      WS: rules_flutter/e2e/s9_pods
+    defaults:
+      run:
+        shell: bash
+        working-directory: rules_flutter/e2e/s9_pods
+    steps:
+      - uses: actions/checkout@v7
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          module-root: rules_flutter/e2e/s9_pods
+          repository-cache: true
+      - name: Tools on this runner
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          {
+            sw_vers
+            xcodebuild -version
+            ruby --version
+            bazel --version
+          } | tee "$RUNNER_TEMP/out/tools.txt"
+
+      # ---------------------------------------------------------------- A: stock, and the pin on macOS
+      - name: A1 stock Flutter and CocoaPods
+        run: |
+          git clone --quiet --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+          gem install cocoapods -v "$COCOAPODS_VERSION" --no-document --install-dir "$RUNNER_TEMP/gems"
+          echo "GEM_HOME=$RUNNER_TEMP/gems" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/gems/bin" >> "$GITHUB_PATH"
+      - name: A2 stock build for the simulator
+        run: |
+          cp -R . "$RUNNER_TEMP/stock"
+          cd "$RUNNER_TEMP/stock"
+          rm -rf bazel-* MODULE.bazel* BUILD.bazel linux_analysis
+          flutter precache --ios
+          flutter pub get
+          /usr/bin/time -p flutter build ios --simulator --debug 2>&1 | tee "$RUNNER_TEMP/out/stock-build.log"
+          pod --version
+      - name: A3 Podfile.lock of macOS against the one the Linux container wrote
+        continue-on-error: true
+        run: diff -u ios/Podfile.lock "$RUNNER_TEMP/stock/ios/Podfile.lock" | tee "$RUNNER_TEMP/out/podfile-lock.diff"
+      - name: A4 the pin step on macOS gives the committed model
+        continue-on-error: true
+        run: |
+          export PUB_CACHE="${PUB_CACHE:-$HOME/.pub-cache}" FLUTTER_ROOT="$RUNNER_TEMP/flutter" RDF_PIN_CACHE="$RUNNER_TEMP/pin-cache"
+          pin="$GITHUB_WORKSPACE/rules_flutter/flutter/private/apple_model/tools/pin.rb"
+          /usr/bin/time -p ruby "$pin" "$RUNNER_TEMP/stock/ios" "$RUNNER_TEMP/out/apple_model.macos.json"
+          /usr/bin/time -p ruby "$pin" "$RUNNER_TEMP/stock/ios" "$RUNNER_TEMP/out/apple_model.macos.2.json"
+          cmp "$RUNNER_TEMP/out/apple_model.macos.json" "$RUNNER_TEMP/out/apple_model.macos.2.json"
+          diff <(jq -S . apple_model.json) <(jq -S . "$RUNNER_TEMP/out/apple_model.macos.json") > "$RUNNER_TEMP/out/model-linux-macos.diff" || true
+          wc -l "$RUNNER_TEMP/out/model-linux-macos.diff"
+          head -100 "$RUNNER_TEMP/out/model-linux-macos.diff"
+          cmp apple_model.json "$RUNNER_TEMP/out/apple_model.macos.json"
+
+      # ---------------------------------------------------------------- B: every pod compiles
+      - name: B every pod library of the model, for the simulator
+        continue-on-error: true
+        run: |
+          pods=$(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model//:all) except filter("\.framework$", @apple_model//:all)' 2>/dev/null)
+          # shellcheck disable=SC2086
+          /usr/bin/time -p bazel build -c dbg --platforms=@apple_support//platforms:ios_sim_arm64 --keep_going \
+            --build_event_json_file="$RUNNER_TEMP/out/pods.bep.json" $pods 2>&1 | tee "$RUNNER_TEMP/out/pods-build.log" | tail -150
+          jq -r 'select(.id.targetCompleted) | [(if .completed.success then "ok    " else "FAILED" end), .id.targetCompleted.label] | join(" ")' \
+            "$RUNNER_TEMP/out/pods.bep.json" | sort -u | tee "$RUNNER_TEMP/out/pods-result.txt"
+          ! grep -q '^FAILED' "$RUNNER_TEMP/out/pods-result.txt"
+
+      # ---------------------------------------------------------------- C: the app links
+      - name: C1 the app, every pod static in the app binary
+        continue-on-error: true
+        run: |
+          # shellcheck disable=SC2086
+          /usr/bin/time -p bazel build $SIM //:app 2>&1 | tee "$RUNNER_TEMP/out/app-build.log" | tail -80
+          test -f bazel-bin/app.ipa
+      - name: C2 the app, one dynamic framework per pod
+        continue-on-error: true
+        run: |
+          # shellcheck disable=SC2086
+          /usr/bin/time -p bazel build $SIM //:app_frameworks 2>&1 | tee "$RUNNER_TEMP/out/app-frameworks-build.log" | tail -80
+          test -f bazel-bin/app_frameworks.ipa
+
+      # ---------------------------------------------------------------- D: launch
+      - name: D launch stock and both Bazel apps on a simulator
+        continue-on-error: true
+        run: |
+          udid=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | test("^iPhone"))][0].udid')
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          launch() { # launch <name> <.app directory>: the plugin lines the app prints
+            xcrun simctl uninstall "$udid" dev.rdf.s9app || true
+            xcrun simctl install "$udid" "$2"
+            xcrun simctl launch --console-pty "$udid" dev.rdf.s9app > "$RUNNER_TEMP/out/launch-$1.log" 2>&1 &
+            for _ in $(seq 1 90); do
+              grep -q 'rdf-s9 done' "$RUNNER_TEMP/out/launch-$1.log" && break
+              sleep 2
+            done
+            xcrun simctl terminate "$udid" dev.rdf.s9app || true
+            grep -o 'rdf-s9 .*' "$RUNNER_TEMP/out/launch-$1.log" | tee "$RUNNER_TEMP/out/plugins-$1.txt"
+            grep -q 'rdf-s9 done' "$RUNNER_TEMP/out/plugins-$1.txt"
+          }
+          status=0
+          launch stock "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" || status=1
+          for shape in app app_frameworks; do
+            if [ -f "bazel-bin/$shape.ipa" ]; then
+              rm -rf "$RUNNER_TEMP/$shape" && unzip -q "bazel-bin/$shape.ipa" -d "$RUNNER_TEMP/$shape"
+              launch "$shape" "$RUNNER_TEMP/$shape/Payload/$shape.app" || status=1
+              diff "$RUNNER_TEMP/out/plugins-stock.txt" "$RUNNER_TEMP/out/plugins-$shape.txt" || status=1
+            else
+              echo "no bazel-bin/$shape.ipa"
+              status=1
+            fi
+          done
+          xcrun simctl shutdown "$udid" || true
+          exit "$status"
+
+      # ---------------------------------------------------------------- E: bundles against stock
+      - name: E the bundles against the stock bundle
+        continue-on-error: true
+        run: |
+          listing() { # listing <.app directory>: one line per file, Mach-O files by what they link
+            (cd "$1" && find . -type f | LC_ALL=C sort | while read -r f; do
+              if file -b "$f" | grep -q 'Mach-O'; then
+                echo "$f macho $(otool -L "$f" | tail -n +2 | awk '{print $1}' | LC_ALL=C sort | tr '\n' ' ')"
+              else
+                echo "$f $(shasum -a 256 "$f" | cut -d' ' -f1)"
+              fi
+            done)
+          }
+          listing "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" > "$RUNNER_TEMP/out/bundle-stock.txt"
+          for shape in app app_frameworks; do
+            [ -d "$RUNNER_TEMP/$shape/Payload/$shape.app" ] || continue
+            listing "$RUNNER_TEMP/$shape/Payload/$shape.app" > "$RUNNER_TEMP/out/bundle-$shape.txt"
+            echo "== $shape: files only in stock (<) or only in the Bazel bundle (>)"
+            diff <(cut -d' ' -f1 "$RUNNER_TEMP/out/bundle-stock.txt") <(cut -d' ' -f1 "$RUNNER_TEMP/out/bundle-$shape.txt") | grep '^[<>]' | tee "$RUNNER_TEMP/out/bundle-$shape.names.diff" | head -200
+            echo "== $shape: files in both with other contents"
+            join <(LC_ALL=C sort "$RUNNER_TEMP/out/bundle-stock.txt" | sed 's/ /\t/') <(LC_ALL=C sort "$RUNNER_TEMP/out/bundle-$shape.txt" | sed 's/ /\t/') -t "$(printf '\t')" \
+              | awk -F'\t' '$2 != $3 {print $1}' | tee "$RUNNER_TEMP/out/bundle-$shape.contents.diff" | head -200
+            echo "== $shape: privacy manifests"
+            grep -c 'PrivacyInfo.xcprivacy' "$RUNNER_TEMP/out/bundle-stock.txt" "$RUNNER_TEMP/out/bundle-$shape.txt" || true
+          done
+
+      # ---------------------------------------------------------------- F: edit loops
+      - name: F edit loops, Bazel
+        continue-on-error: true
+        run: |
+          plugin=$(ls -d "$(bazel info output_base)"/external/*apple_model__pub_url_launcher_ios | head -1)
+          now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
+          round() { # round <label> <target>: wall seconds and the native actions that ran
+            local log="$RUNNER_TEMP/out/exec-$1.json" start end
+            start=$(now)
+            # shellcheck disable=SC2086
+            bazel build $SIM --execution_log_json_file="$log" "$2" > "$RUNNER_TEMP/out/edit-$1.log" 2>&1 || echo "$1: build failed"
+            end=$(now)
+            echo "$1 seconds=$(echo "$end - $start" | bc) actions=$(jq -r '.mnemonic' "$log" | LC_ALL=C sort | uniq -c | tr -s ' \n' ' ')" | tee -a "$RUNNER_TEMP/out/edit-loops.txt"
+          }
+          for shape in app app_frameworks; do
+            round "$shape-warm" "//:$shape"
+            round "$shape-nothing" "//:$shape"
+            for n in 1 2 3; do
+              echo "func rdfEdit${shape}${n}() {}" >> ios/Runner/AppDelegate.swift
+              round "$shape-app-swift-$n" "//:$shape"
+            done
+            for n in 1 2 3; do
+              echo "func rdfEdit${shape}${n}() {}" >> "$(find "$plugin/r/" -name 'URLLauncherPlugin.swift' | head -1)"
+              round "$shape-plugin-swift-$n" "//:$shape"
+            done
+          done
+          git checkout -- ios/Runner/AppDelegate.swift
+      - name: F edit loops, Xcode on the same edits
+        continue-on-error: true
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
+          round() {
+            local start end
+            start=$(now)
+            flutter build ios --simulator --debug > "$RUNNER_TEMP/out/stock-edit-$1.log" 2>&1 || echo "$1: build failed"
+            end=$(now)
+            echo "stock-$1 seconds=$(echo "$end - $start" | bc)" | tee -a "$RUNNER_TEMP/out/edit-loops.txt"
+          }
+          round nothing
+          for n in 1 2 3; do
+            echo "func rdfEditStock${n}() {}" >> ios/Runner/AppDelegate.swift
+            round "app-swift-$n"
+          done
+          for n in 1 2 3; do
+            echo "func rdfEditStock${n}() {}" >> "$(find -L ios/.symlinks/plugins/url_launcher_ios/ios -name 'URLLauncherPlugin.swift' | head -1)"
+            round "plugin-swift-$n"
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '### S9 on macOS'
+            echo '```'
+            cat "$RUNNER_TEMP/out/tools.txt" 2>/dev/null
+            echo "--- pods"
+            cat "$RUNNER_TEMP/out/pods-result.txt" 2>/dev/null
+            echo "--- plugins (stock | app | app_frameworks)"
+            paste "$RUNNER_TEMP"/out/plugins-*.txt 2>/dev/null
+            echo "--- edit loops"
+            cat "$RUNNER_TEMP/out/edit-loops.txt" 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: s9-apple-model
+          path: ${{ runner.temp }}/out
+          retention-days: 14

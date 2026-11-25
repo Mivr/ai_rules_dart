@@ -196,7 +196,7 @@ def _pod(name, pod, model):
         weak_sdk_frameworks = pod["weak_frameworks"],
         sdk_dylibs = pod["libraries"],
     )
-    system = ["-Wl,-framework," + f for f in pod["frameworks"]] + ["-Wl,-weak_framework," + f for f in pod["weak_frameworks"]] + ["-l" + l for l in pod["libraries"]]
+    system = ["-Wl,-framework," + f for f in pod["frameworks"]] + ["-Wl,-weak_framework," + f for f in pod["weak_frameworks"]] + ["-l" + lib for lib in pod["libraries"]]
 
     if swift_srcs and (clang_srcs or non_arc or public):
         # The macro hands its extra arguments to the Swift half too, so language standards go to
@@ -278,11 +278,12 @@ def _pod(name, pod, model):
 def _bundle_id(module):
     return "".join([c if c.isalnum() else "-" for c in module.elems()])
 
-def pod_targets(model):
+def pod_targets(name, model):
     """Declares the targets of every pod of one source repository.
 
     Args:
+        name: Unused; a macro has a name.
         model: `MODEL` of the repository's `model.bzl`.
     """
-    for name, pod in model["pods"].items():
-        _pod(name, pod, model)
+    for pod_name, pod in model["pods"].items():
+        _pod(pod_name, pod, model)
