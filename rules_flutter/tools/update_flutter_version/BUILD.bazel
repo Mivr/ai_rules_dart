@@ -4,19 +4,12 @@ dart_binary(
     name = "update_flutter_version",
     srcs = [
         "artifact_list.dart",
+        "assets_tool_pin.dart",
         "pinned_checksums.dart",
-        "shader_flags.dart",
         "version_update.dart",
     ],
     main = "main.dart",
-)
-
-dart_test(
-    name = "shader_flags_test",
-    size = "small",
-    srcs = ["shader_flags.dart"],
-    main = "test/shader_flags_test.dart",
-    deps = ["@tool_deps//:test"],
+    deps = ["@tool_deps//:yaml"],
 )
 
 dart_test(
@@ -28,6 +21,17 @@ dart_test(
     ],
     main = "test/artifact_list_test.dart",
     deps = ["@tool_deps//:test"],
+)
+
+dart_test(
+    name = "assets_tool_pin_test",
+    size = "small",
+    srcs = ["assets_tool_pin.dart"],
+    main = "test/assets_tool_pin_test.dart",
+    deps = [
+        "@tool_deps//:test",
+        "@tool_deps//:yaml",
+    ],
 )
 
 dart_test(

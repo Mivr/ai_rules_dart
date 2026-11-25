@@ -19,39 +19,69 @@ git -C references/flutter tag -l '[0-9]*' | grep -v pre | sort -V | tail -5
 
 The latest tag is the current stable release.
 
-**What a bump touches**: one table file, the default and three README places.
+**What a bump touches**: two table files, the default, three README places and
+the apps' own files.
 The rules list only the current stable Flutter: the new release replaces the
 earlier ones, and a patch replaces its minor's earlier rows.
 
 - `flutter/private/versions.bzl` — `FLUTTER_VERSIONS` and `ARTIFACT_CHECKSUMS`
+- `flutter/private/flutter_assets_tool_versions.bzl` — the pin of the asset tool's
+  source closure (the hosted packages the release's `flutter_tools` reaches, by
+  hash, and its path packages). `update_flutter_version` prints the row when
+  `FLUTTER_SDK_DIR` names the release's stock SDK (the archive, extracted)
 - The Dart SDK the release carries: read `dart-sdk/version` in the release's own
   Dart SDK archive (`dart-sdk-linux-x64.zip`), not from a table. That Dart
   version needs rows in `rules_dart`'s `dart/private/versions.bzl` and
   `dart/private/module_compiler_versions.bzl`: one run of
   `bazel run //dart/private/tools:update_cross_sdk_versions -- <dart version>` in
   `rules_dart` writes both (see its `docs/CHORES.md`). A Flutter release whose
-  Dart SDK has no module compiler cannot compile debug modules
+  Dart SDK has no module compiler cannot compile debug modules. Drop the old
+  Dart version only after the Flutter tool has run (below): the old default
+  Flutter needs it to build
 - `MODULE.bazel` — `flutter_version` in the `flutter.toolchain()` call. This is
   the default: the `e2e/*` and `e2e/_overlay_tests/*` workspaces name no version
   and inherit it, and tests take the newest version in `FLUTTER_VERSIONS`
 - `README.md` — the Flutter version in the Requirements table, the
   `MODULE.bazel` snippet under Getting started, and the `FlutterSdkInfo.version`
   example under Providers
+- Every Flutter app's `pubspec.lock`: the release's packages pin versions of
+  their own dependencies, so `flutter pub get --enforce-lockfile` fails in a
+  workspace whose lock was made with the previous release. Run `flutter pub get`
+  with the new stock SDK in each (and `git checkout` the `analysis_options.yaml`
+  it rewrites)
+- Every Android app: the `com.android.application` and
+  `org.jetbrains.kotlin.android` versions of `android/settings.gradle(.kts)` must
+  be at least the release's floors (`errorAGPVersion`, `errorKGPVersion` in its
+  `DependencyVersionChecker.kt`), and each `android_model.json` is written again
+  (`bazel run //:android_pin`, after `flutter pub get`): it names the engine of the
+  release it was pinned with. `e2e/aar_host` and `e2e/digest_mismatch` name the
+  engine revision themselves
+- `e2e/smoke` registers a custom release (`3.50.10`) with a copy of the stock
+  artifact table: copy `ARTIFACT_CHECKSUMS` of the new release into its
+  `MODULE.bazel`, and its engine revision and source checksum, and set the
+  `fake_sdk` files to the release
 
-`e2e/smoke` names `3.47.70`, a custom release it registers itself, which is not
-in the table; a bump leaves it alone.
+`flutter.pub` apps, the module compiler and the asset tool use the release's own
+`flutter_tools` and Dart, so a change in either shows as a build failure of the
+tool, not as a different output: read the failure for the stock change.
 
 **Procedure**:
 
 1. Fetch tags and identify the latest stable version (see above)
-2. Run `bazel run //tools/update_flutter_version -- <new-version>` (requires Flutter reference
-   repo at `references/flutter` with tags fetched; it computes every checksum
-   the release needs in one run)
-3. Copy the printed snippets into `flutter/private/versions.bzl`, replacing the
-   minor's earlier rows in both dicts
-4. Add the release's Dart SDK to `rules_dart` as above, then update
+2. Download and extract the release's stock archive (`releases_linux.json` has
+   its checksum) beside the older one
+3. Run `FLUTTER_REPO=<clone> FLUTTER_SDK_DIR=<extracted archive> bazel run
+   //tools/update_flutter_version -- <new-version>` (requires a Flutter reference
+   repo with the tag; it computes every checksum the release needs in one run)
+4. Copy the printed snippets into `flutter/private/versions.bzl` and
+   `flutter/private/flutter_assets_tool_versions.bzl`, replacing the minor's
+   earlier rows in both
+5. Add the release's Dart SDK to `rules_dart` as above, then update
    `flutter_version` in `MODULE.bazel` and the README places
-5. Regenerate lock files
+6. Fix the compile errors of the asset tool (`bazel build @flutter_toolchains//...`
+   shows them): it follows the release's `flutter_tools` API
+7. Re-lock and re-pin the apps as above
+8. Regenerate lock files
 
 **Verification**: `bazel test //flutter/tests:all` and `cd e2e/smoke && bazel test //...`
 

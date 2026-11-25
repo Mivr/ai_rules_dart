@@ -13,12 +13,15 @@
 ///      Exits non-zero if any artifact fails, after printing the snippet with
 ///      MISSING in its place.
 ///   3. Prints the Starlark snippet to add to versions.bzl
+///   4. With FLUTTER_SDK_DIR (the release's stock SDK, extracted), also prints
+///      the asset tool's source pin row: the hosted packages the tool compiled
+///      against that SDK's flutter_tools reads, with their checksums
 library;
 
 import 'dart:io';
 
+import 'assets_tool_pin.dart';
 import 'pinned_checksums.dart';
-import 'shader_flags.dart';
 import 'version_update.dart';
 
 Future<void> main(List<String> args) async {
@@ -70,8 +73,6 @@ Future<void> main(List<String> args) async {
     request.workspaceDir,
   );
 
-  _checkShaderFlags(version, request.flutterRepo, request.workspaceDir);
-
   if (failures.isNotEmpty) {
     stderr.write(renderFailuresReport(failures));
     exitCode = 1;
@@ -86,35 +87,26 @@ Future<void> main(List<String> args) async {
       checksums: checksums,
     ),
   );
-}
 
-/// Compares `SHADER_PLATFORM_FLAGS` with the runtime stages flutter_tools at
-/// [version] compiles shaders for, and says which platforms moved.
-void _checkShaderFlags(String version, String flutterRepo, String workspace) {
-  print('');
-  print('Checking shader compile flags...');
-  const toolsPath =
-      'packages/flutter_tools/lib/src/build_system/tools/shader_compiler.dart';
-  final ProcessResult shown = Process.runSync('git', [
-    'show',
-    '$version:$toolsPath',
-  ], workingDirectory: flutterRepo);
-  if (shown.exitCode != 0) {
-    print('  Could not read $toolsPath at $version: ${shown.stderr}');
-    return;
-  }
-  const bzlPath = 'flutter/private/flutter_shader_compile.bzl';
-  final List<String> mismatches = shaderFlagMismatches(
-    flutterToolsShaderFlags(shown.stdout as String),
-    rulesShaderFlags(File('$workspace/$bzlPath').readAsStringSync()),
-  );
-  if (mismatches.isEmpty) {
-    print('  SHADER_PLATFORM_FLAGS matches flutter_tools.');
-    return;
-  }
-  print('  WARNING: SHADER_PLATFORM_FLAGS in $bzlPath differs from');
-  print('  flutter_tools at $version. Update it to match:');
-  for (final line in mismatches) {
-    print('    $line');
+  final String? flutterSdk = Platform.environment['FLUTTER_SDK_DIR'];
+  if (flutterSdk == null) {
+    stdout.writeln(
+      '\nThe pin row of the asset tool is not printed: set FLUTTER_SDK_DIR to '
+      'the Flutter SDK of the release (the stock archive, extracted) to print it.',
+    );
+  } else {
+    stdout.writeln(
+      '\n=== Add to FLUTTER_ASSETS_TOOL_SOURCES in '
+      'flutter/private/flutter_assets_tool_versions.bzl ===\n',
+    );
+    stdout.write(
+      await readAssetsToolPin(
+        version: version,
+        flutterSdk: flutterSdk,
+        assetsToolMain:
+            '${request.workspaceDir}/flutter/private/assets_tool/'
+            'flutter_assets_tool.dart',
+      ),
+    );
   }
 }
