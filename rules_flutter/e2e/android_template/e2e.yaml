@@ -1,0 +1,7 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test all targets
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 6
+  - name: the module as an AAR
+    run: bazel build -c opt //:module_aar
