@@ -40,7 +40,6 @@ jobs:
       FLUTTER_VERSION: 3.47.7
       COCOAPODS_VERSION: 1.16.2
       SIM: --ios_multi_cpus=sim_arm64 -c dbg
-      WS: rules_flutter/e2e/s9_pods
     defaults:
       run:
         shell: bash
@@ -143,7 +142,7 @@ jobs:
           launch stock "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" || status=1
           for shape in app app_frameworks; do
             if [ -f "bazel-bin/$shape.ipa" ]; then
-              rm -rf "$RUNNER_TEMP/$shape" && unzip -q "bazel-bin/$shape.ipa" -d "$RUNNER_TEMP/$shape"
+              rm -rf "${RUNNER_TEMP:?}/$shape" && unzip -q "bazel-bin/$shape.ipa" -d "$RUNNER_TEMP/$shape"
               launch "$shape" "$RUNNER_TEMP/$shape/Payload/$shape.app" || status=1
               diff "$RUNNER_TEMP/out/plugins-stock.txt" "$RUNNER_TEMP/out/plugins-$shape.txt" || status=1
             else
@@ -184,7 +183,7 @@ jobs:
       - name: F edit loops, Bazel
         continue-on-error: true
         run: |
-          plugin=$(ls -d "$(bazel info output_base)"/external/*apple_model__pub_url_launcher_ios | head -1)
+          plugin=$(find "$(bazel info output_base)/external" -maxdepth 1 -name '*apple_model__pub_url_launcher_ios' | head -1)
           now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
           round() { # round <label> <target>: wall seconds and the native actions that ran
             local log="$RUNNER_TEMP/out/exec-$1.json" start end
