@@ -13,7 +13,6 @@ PATCHED_SDK_PRODUCT_FILES = [
 
 FONT_SUBSET_BASE_FILES = [
     "font-subset-tools/LICENSE.font_subset.md",
-    "font-subset-tools/const_finder.dart.snapshot",
 ]
 
 MATERIAL_FONTS_FILES = [

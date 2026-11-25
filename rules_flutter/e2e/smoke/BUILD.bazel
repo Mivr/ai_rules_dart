@@ -141,7 +141,7 @@ consumer_caller(
 )
 
 # A root-registered custom release resolves exactly like a stock one. Only
-# the Linux toolchain is checked: the engine revision is 3.47.7's, so every
+# the Linux toolchain is checked: the engine revision is 3.50.1's, so every
 # fetched byte is cache-shared with the stock toolchain above. The
 # dart_sdk_files target forces the host repo fetch, so its engine artifacts
 # are checksum-verified against the merged custom table.
@@ -222,9 +222,9 @@ build_test(
         "@local_dev_root//:flutter_plugins_dart",
         "@local_patched_sdk_product//:patched_sdk_product",
         "@local_material_fonts//:material-fonts/MaterialIcons-Regular.otf",
-        "@local_font_subset_linux-x64//:font-subset-tools/const_finder.dart.snapshot",
-        "@local_font_subset_darwin-arm64//:font-subset-tools/const_finder.dart.snapshot",
-        "@local_font_subset_windows-x64//:font-subset-tools/const_finder.dart.snapshot",
+        "@local_font_subset_linux-x64//:font-subset-tools/font-subset",
+        "@local_font_subset_darwin-arm64//:font-subset-tools/font-subset",
+        "@local_font_subset_windows-x64//:font-subset-tools/font-subset.exe",
     ],
 )
 

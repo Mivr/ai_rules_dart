@@ -328,11 +328,13 @@ def _flutter_application_impl(ctx):
     # it, so the ordering costs nothing.
     flutter_assets = declare_flutter_assets_dir(ctx)
 
-    # Link hooks run over the uses the AOT compile records, so only a
-    # release or profile build has any: a JIT compile tree-shakes nothing and
-    # records nothing, and a debug build runs no hook and bundles no asset.
+    # Link hooks and the icon tree shaker run over the uses the AOT compile
+    # records, so only a release or profile build has any: a JIT compile
+    # tree-shakes nothing and records nothing, and a debug build runs no hook
+    # and bundles no asset.
     run_link_hooks = bool(ctx.attr.link_hook_assets) and not is_debug
-    recorded_uses = ctx.actions.declare_file(ctx.label.name + ".recorded_uses.json") if run_link_hooks else None
+    shake_icons = ctx.attr.tree_shake_icons and not is_debug
+    recorded_uses = ctx.actions.declare_file(ctx.label.name + ".recorded_uses.json") if run_link_hooks or shake_icons else None
 
     # Step 1: Kernel compilation (mode-aware: debug uses debug dill, no AOT).
     compilation = _compile_application_kernel(
@@ -370,7 +372,7 @@ def _flutter_application_impl(ctx):
     # Step 3: the asset bundle, written by the Flutter tool's own code from
     # the pubspec. The link hooks' data assets are bundled under
     # `packages/<package>/<name>`. Only a release or profile build reads the
-    # kernel, to shake icon fonts.
+    # recorded uses, to shake icon fonts.
     flutter_bundle(
         ctx,
         flutter_sdk_info,
@@ -378,7 +380,7 @@ def _flutter_application_impl(ctx):
         target_platform = platform.target_platform,
         mode = flutter_build_mode(ctx),
         flavor = effective_flavor(ctx) or None,
-        app_dill = None if is_debug else compilation.kernel_dill,
+        recorded_uses = recorded_uses if shake_icons else None,
         data_assets = transitive_data_assets,
         native_assets_manifest = assets.manifest_file,
     )

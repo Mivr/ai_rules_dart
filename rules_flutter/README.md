@@ -46,7 +46,7 @@ If `flutter build` works for you, here is what Bazel adds:
 
 | Platform | What you need |
 |---|---|
-| All | Bazel 9 or newer. The rules download Flutter 3.47.7 themselves. |
+| All | Bazel 9 or newer. The rules download Flutter 3.50.1 themselves. |
 | macOS | Xcode, for `rules_apple` and `rules_swift`. |
 | iOS | Xcode. The simulator needs no signing identity. A physical device does; see [Running on an iOS device](#running-on-an-ios-device). |
 | Android | The Android SDK and NDK, with `ANDROID_HOME` and `ANDROID_NDK_HOME` set. See [Android](#android). |
@@ -77,7 +77,7 @@ archive_override(
 )
 
 flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
-flutter.toolchain(flutter_version = "3.47.7")
+flutter.toolchain(flutter_version = "3.50.1")
 flutter.pub(
     name = "deps",
     lock = "//:pubspec.lock",
@@ -2049,7 +2049,7 @@ A few things to know:
 
 ### Providers
 
-**`FlutterSdkInfo`** comes from the toolchain and carries the engine binaries and SDK files a custom rule needs. Core host fields live directly on `@rules_flutter//flutter:toolchain_type`; lazy-fetched fields (`gen_snapshot`, `platform_kernel_dill_product`, `const_finder`, `font_subset`, `engine_library`, `linux_sysroot`, `material_icons_font`) live on optional sub-toolchains so builds only download the repositories they use. Use `resolve_flutter_sdk_info(ctx)` with `FLUTTER_OPTIONAL_TOOLCHAINS` (from `@rules_flutter//flutter:providers.bzl` or `@rules_flutter//flutter:toolchain.bzl`) to merge them:
+**`FlutterSdkInfo`** comes from the toolchain and carries the engine binaries and SDK files a custom rule needs. Core host fields live directly on `@rules_flutter//flutter:toolchain_type`; lazy-fetched fields (`gen_snapshot`, `platform_kernel_dill_product`, `font_subset`, `engine_library`, `linux_sysroot`, `material_icons_font`) live on optional sub-toolchains so builds only download the repositories they use. Use `resolve_flutter_sdk_info(ctx)` with `FLUTTER_OPTIONAL_TOOLCHAINS` (from `@rules_flutter//flutter:providers.bzl` or `@rules_flutter//flutter:toolchain.bzl`) to merge them:
 
 ```starlark
 load("@rules_flutter//flutter:providers.bzl", "FLUTTER_OPTIONAL_TOOLCHAINS", "resolve_flutter_sdk_info")
@@ -2060,7 +2060,7 @@ sdk = resolve_flutter_sdk_info(ctx)
 
 | Field | Type | Description |
 |---|---|---|
-| `version` | `str` | The Flutter SDK version, for example `"3.47.7"`. |
+| `version` | `str` | The Flutter SDK version, for example `"3.50.1"`. |
 | `engine_revision` | `str` | The engine commit hash. |
 | `dart` | `File` | Deprecated. The `dart` executable from the bundled Dart SDK; prefer `@rules_dart//dart:exec_tools_toolchain_type`. |
 | `dartaotruntime` | `File` | The runtime for AOT snapshots. |
@@ -2077,7 +2077,6 @@ sdk = resolve_flutter_sdk_info(ctx)
 | `dart2js_files` | `depset[File]` | Minimal Dart SDK files needed for `dart compile js` (`bin/dart`, `bin/dartvm`, `bin/snapshots/dart2js.dart.snapshot`). |
 | `engine_library` | `Target` or `None` | The platform engine runtime library. `None` for mobile and web (resolved via `@rules_flutter//flutter:desktop_engine_toolchain_type`). |
 | `linux_sysroot` | `Target` or `None` | The Chromium sysroot filegroup for Linux GTK3 builds (resolved via `@rules_flutter//flutter:desktop_engine_toolchain_type`). |
-| `const_finder` | `File` or `None` | `const_finder.dart.snapshot`, for icon tree shaking (resolved via `@rules_flutter//flutter:product_tools_toolchain_type`). |
 | `font_subset` | `File` or `None` | The `font-subset` binary (resolved via `@rules_flutter//flutter:product_tools_toolchain_type`). |
 | `material_icons_font` | `File` or `None` | `MaterialIcons-Regular.otf` (resolved via `@rules_flutter//flutter:material_icons_toolchain_type`). |
 | `assets_tool` | `FlutterAssetsToolInfo` or `None` | The asset tool of this release, compiled against its `package:flutter_tools`, which writes every asset bundle. See [Assets](docs/assets.md). |

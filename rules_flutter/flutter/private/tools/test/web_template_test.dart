@@ -20,7 +20,6 @@ void main() {
         final List<String> args = buildDart2JsSnapshotArgs(
           forwardArgs: [
             '--packages=/tmp/rewritten/package_config.json',
-            '--cfe-only',
             '-Ddart.vm.product=true',
             '-o',
             'out.dill',
@@ -221,78 +220,6 @@ void main() {
         expect(infoContent, contains('"compilationDuration": 0'));
         expect(infoContent, contains('"toJsonDuration": 0'));
         expect(infoContent, contains('"dumpInfoDuration": 0'));
-      },
-    );
-  });
-
-  group('scrubDart2JsFile', () {
-    test(
-      'normalizes only its own depfile, leaving a concurrent sibling untouched',
-      () {
-        // The base and canvaskit icon kernels compile concurrently into the
-        // same `bin` dir, each with a private temp dir. A directory-wide scrub
-        // is a read-modify-write of the sibling's depfile with only this
-        // action's temp paths known: a scrub that read the sibling's file
-        // while raw and wrote it back after the sibling's own scrub overwrote
-        // the normalized file with a sorted-but-still-raw copy, and the
-        // declared output differed per strategy (P-web-icon-dill-paths). The
-        // `--cfe-only` path therefore scrubs exactly its own depfile.
-        final fakeCwd = Directory('${_tmp.path}/execroot/_main')
-          ..createSync(recursive: true);
-        final binDir = Directory(
-          '${fakeCwd.path}/bazel-out/k8-fastbuild/bin',
-        )..createSync(recursive: true);
-
-        const relPkgPath =
-            'bazel-out/k8-fastbuild/bin/web_app.package_config.json';
-        final origPkgFile = File('${fakeCwd.path}/$relPkgPath')
-          ..createSync(recursive: true)
-          ..writeAsStringSync('{"configVersion":2,"packages":[]}');
-
-        final ownTmp = '${_tmp.path}/rules_flutter_dart2js_cfe_own';
-        final ownPkgUri = Uri.file('$ownTmp/package_config.json').toString();
-        final siblingTmp = '${_tmp.path}/rules_flutter_dart2js_cfe_sibling';
-        final siblingPkgUri = Uri.file('$siblingTmp/package_config.json')
-            .toString();
-
-        final ownDeps =
-            File(
-              '${binDir.path}/web_app_icon_tree_shaking.dill.deps',
-            )..writeAsStringSync(
-              'org-dartlang-app:///pkg/lib/main.dart\n'
-              '$ownPkgUri\n'
-              'org-dartlang-sdk:///lib/core/core.dart\n',
-            );
-        final siblingDeps =
-            File(
-              '${binDir.path}/web_app_icon_tree_shaking_canvaskit.dill.deps',
-            )..writeAsStringSync(
-              'org-dartlang-app:///pkg/lib/main.dart\n'
-              '$siblingPkgUri\n'
-              'org-dartlang-sdk:///lib/core/core.dart\n',
-            );
-        final String siblingBefore = siblingDeps.readAsStringSync();
-
-        scrubDart2JsFile(
-          ownDeps,
-          cwdPath: fakeCwd.path,
-          tmpDirPath: ownTmp,
-          packagesPath: origPkgFile.path,
-          rewrittenPkgPath: '$ownTmp/package_config.json',
-        );
-
-        expect(
-          ownDeps.readAsStringSync().split('\n').where((l) => l.isNotEmpty),
-          equals([
-            'org-dartlang-app:///pkg/lib/main.dart',
-            'org-dartlang-app:///web_app.package_config.json',
-            'org-dartlang-sdk:///lib/core/core.dart',
-          ]),
-        );
-        // The sibling's raw depfile is byte-identical: this scrub never
-        // touched a file its action does not own.
-        expect(siblingDeps.readAsStringSync(), equals(siblingBefore));
-        expect(siblingDeps.readAsStringSync(), contains(siblingPkgUri));
       },
     );
   });

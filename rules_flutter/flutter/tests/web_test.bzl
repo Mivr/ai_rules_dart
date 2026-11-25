@@ -594,24 +594,13 @@ _js_flags_test = analysistest.make(
 def _experiments_test_impl(ctx):
     """An experiment reaches every step that parses the source.
 
-    Read from `-c opt`, which is the only configuration where the icon
-    tree-shake kernel compile exists at all — and that compile is the one a
-    web-only implementation forgets, because both real compilers would have
-    accepted the code without it.
+    Read from `-c opt`, where the compile also records the uses the icon tree
+    shaker reads.
     """
     env = analysistest.begin(ctx)
     flag = "--enable-experiment=test-experiment"
     for mnemonic in ["FlutterDart2Wasm", "FlutterDart2JS"]:
         _assert_argv(env, _action(env, mnemonic), present = [flag])
-
-    kernels = [
-        a
-        for a in analysistest.target_actions(env)
-        if a.mnemonic == "FlutterDart2JSCFE"
-    ]
-    asserts.equals(env, 1, len(kernels), "expected the icon tree-shake kernel compile")
-    if kernels:
-        _assert_argv(env, kernels[0], present = [flag, "--cfe-only"])
     return analysistest.end(env)
 
 _experiments_test = analysistest.make(
@@ -623,55 +612,35 @@ _experiments_test = analysistest.make(
 )
 
 def _web_conditional_icon_test_impl(ctx):
-    """The icon tree-shake kernel compiles with the web compiler so platform-conditional imports resolve to the web branch.
+    """The icon tree shaker reads the uses the shipped compilers record, not those of a second compile.
 
     `package:cond_icons` exports `icon_vm.dart` normally and `icon_web.dart`
     when `dart.library.js_interop` is available. The web compilers take the
-    web branch; a `--target flutter` kernel against the VM platform takes the
-    VM branch, so const_finder misses the web icon. Asserted here as the
-    action shape that guarantees the resolution: a `dart compile js
-    --cfe-only` kernel (the same frontend upstream runs to produce the
-    `app.dill` const_finder reads), with the web platform binaries and
-    libraries spec, and both branches' files among the inputs (so editing
-    the web branch re-runs the compile instead of hitting a stale disk-cache
-    entry keyed only on the VM-resolved digest).
+    web branch, so the dart2js compile that ships the program is the one that
+    sees the web icon: it writes its uses (`--write-resources`), and there is
+    no other compile of the program for icons. Both branches' files are among
+    its inputs, so editing the web branch re-runs it.
     """
     env = analysistest.begin(ctx)
-    kernels = [
-        a
-        for a in analysistest.target_actions(env)
-        if a.mnemonic == "FlutterDart2JSCFE"
-    ]
-    asserts.true(env, len(kernels) > 0, "expected at least one icon tree-shake kernel compile")
-    for k in kernels:
-        _assert_argv(
-            env,
-            k,
-            present = [
-                "--cfe-only",
-                "-Ddart.vm.product=true",
-            ],
-            absent_substrings = [
-                "/flutter_patched_sdk",
-                "/flutter_patched_sdk_product/platform_strong.dill",
-            ],
-        )
-        input_paths = [f.path for f in k.inputs.to_list()]
-        asserts.true(
-            env,
-            any(["dart2js_platform.dill" in p for p in input_paths]),
-            "web icon kernel must compile against the web platform dill: %s" % input_paths,
-        )
-        asserts.true(
-            env,
-            any(["cond_icons/lib/src/icon_web.dart" in p for p in input_paths]),
-            "web icon kernel must take the web branch file as an input: %s" % input_paths,
-        )
-        asserts.true(
-            env,
-            any(["cond_icons/lib/src/icon_vm.dart" in p for p in input_paths]),
-            "web icon kernel must take the VM branch file as an input: %s" % input_paths,
-        )
+    asserts.equals(
+        env,
+        [],
+        [a.mnemonic for a in analysistest.target_actions(env) if a.mnemonic.endswith("CFE")],
+        "no second compile of the program is made for icons",
+    )
+    js = _action(env, "FlutterDart2JS")
+    _assert_argv(env, js, present = ["--write-resources", "-Ddart.vm.product=true"])
+    input_paths = [f.path for f in js.inputs.to_list()]
+    asserts.true(
+        env,
+        any(["cond_icons/lib/src/icon_web.dart" in p for p in input_paths]),
+        "the web compile must take the web branch file as an input: %s" % input_paths,
+    )
+    asserts.true(
+        env,
+        any(["cond_icons/lib/src/icon_vm.dart" in p for p in input_paths]),
+        "the web compile must take the VM branch file as an input: %s" % input_paths,
+    )
     return analysistest.end(env)
 
 _web_conditional_icon_test = analysistest.make(
@@ -1437,6 +1406,7 @@ def _probe_request(ctx, dart, main_dart, package_config, output_dir):
             web_compile_inputs = [],
             web_guard_tool = None,
             enable_experiments = [],
+            record_uses = False,
         ),
         struct(
             optimization_level = "auto",

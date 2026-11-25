@@ -45,9 +45,7 @@ load("//flutter/private:flutter_kernel_module.bzl", "MODULAR_KERNEL_ATTRS", "flu
 load(
     "//flutter/private:flutter_web_compile.bzl",
     "flutter_dart2js_action",
-    "flutter_dart2js_cfe_action",
     "flutter_dart2wasm_action",
-    "make_dart2js_cfe_request",
     "make_dart2js_request",
     "make_dart2wasm_request",
     "web_build_mode",
@@ -263,6 +261,7 @@ def _web_compile_wasm(ctx, compile):
     """
     output_wasm = ctx.actions.declare_file(ctx.label.name + "_wasm/main.dart.wasm")
     output_mjs = ctx.actions.declare_file(ctx.label.name + "_wasm/main.dart.mjs")
+    output_recorded_uses = ctx.actions.declare_file(ctx.label.name + "_wasm/recorded_uses_wasm.json") if compile.record_uses else None
     output_wasm_map = None
     if ctx.attr.source_maps:
         output_wasm_map = ctx.actions.declare_file(ctx.label.name + "_wasm/main.dart.wasm.map")
@@ -272,6 +271,7 @@ def _web_compile_wasm(ctx, compile):
         output_wasm,
         output_mjs,
         output_wasm_map,
+        output_recorded_uses,
     ))
 
     # Fallback: dart2js (always canvaskit renderer) — tree artifact for deferred loading
@@ -283,6 +283,8 @@ def _web_compile_wasm(ctx, compile):
         output_js_fallback_dir,
     ))
     compile_outputs = [output_wasm, output_mjs]
+    if output_recorded_uses != None:
+        compile_outputs.append(output_recorded_uses)
     compile_copies = [
         {"src": output_wasm.path, "dst": "main.dart.wasm"},
         {"src": output_mjs.path, "dst": "main.dart.mjs"},
@@ -334,43 +336,6 @@ def _web_compile_program(ctx, compile):
         dart2js_dirs = dart2js_dirs,
     )
 
-def _web_tree_shake_kernels(ctx, compile, shipped_renderers):
-    """Compiles one icon tree-shake kernel per shipped renderer.
-
-    The icon tree-shake kernel must see the web program the dart2js and
-    dart2wasm compilers build: conditional imports guarded by
-    `dart.library.js_interop`/`dart.library.html` resolve from the
-    platform's `dart.library.*` environment. Compiling with
-    `--target flutter` against the VM `platform_strong.dill` resolves
-    them to the VM branch while the web compilers take the web branch,
-    so the tree-shaken font lacks glyphs the shipped bundle draws.
-    Compile here with `dart compile js --cfe-only`, which is what
-    upstream runs to produce the `app.dill` const_finder reads: the
-    kernel resolves web conditionals the way the shipped compilers do,
-    and `dart:js_interop`/`dart:ui_web` type-check against the real web
-    libraries instead of VM stubs. One dill per shipped renderer, with
-    that renderer's defines, merged downstream by const_finder. The
-    compile takes the same sources as the shipped programs, so editing
-    a web-branch file re-runs it instead of hitting a stale disk-cache
-    entry.
-
-    Returns:
-      The kernel dills, one per renderer.
-    """
-    kernel_dills = []
-    for idx, r in enumerate(shipped_renderers):
-        dill_suffix = "_icon_tree_shaking.dill" if idx == 0 else ("_icon_tree_shaking_%s.dill" % r)
-        dill_out = ctx.actions.declare_file(ctx.label.name + dill_suffix)
-        deps_out = ctx.actions.declare_file(ctx.label.name + dill_suffix + ".deps")
-        flutter_dart2js_cfe_action(ctx, make_dart2js_cfe_request(
-            compile,
-            r,
-            dill_out,
-            deps_out,
-        ))
-        kernel_dills.append(dill_out)
-    return kernel_dills
-
 def _web_native_module_files(ctx):
     """Lists the declared native modules' library files."""
     return [
@@ -388,7 +353,7 @@ def _web_write_bundle(ctx, flutter_sdk_info, program, build):
         flutter_sdk_info: The resolved Flutter SDK.
         program: The `_web_compile_program` struct (`compile_outputs`,
             `dart2js_dirs`).
-        build: `struct(mode, app_dill, renderer, dev_bootstrap)`.
+        build: `struct(mode, renderer, dev_bootstrap)`.
 
     Returns:
       An `(output_dir, output_groups)` tuple. The dump-info JSON is an
@@ -407,7 +372,7 @@ def _web_write_bundle(ctx, flutter_sdk_info, program, build):
         web_build = program.compile_outputs + program.dart2js_dirs,
         # lint-allow: depset-flatten only flutter.js and the renderer are picked out of the web SDK's files by path, which Args cannot do for inputs
         web_sdk_files = ctx.attr._web_sdk[DefaultInfo].files.to_list() if ctx.attr._web_sdk else [],
-        app_dill = build.app_dill,
+        shake_icons = ctx.attr.tree_shake_icons and build.mode != "debug",
         base_href = ctx.attr.base_href if ctx.attr.base_href != "/" else None,
         static_assets_url = ctx.attr.static_assets_url if ctx.attr.static_assets_url != "/" else None,
         pwa_strategy = None if ctx.attr.pwa else "none",
@@ -577,8 +542,7 @@ def _flutter_web_bundle_impl(ctx):
 
     flutter_sdk_info = resolve_flutter_sdk_info(ctx)
 
-    # Merged once for all compile actions below (dart2wasm, dart2js, icon
-    # tree-shake kernel).
+    # Merged once for all compile actions below (dart2wasm, dart2js).
     user_defines = merge_dart_defines(ctx)
     user_defines = user_defines + web_canvaskit_url_defines(user_defines, flutter_sdk_info.engine_revision, ctx.attr.use_local_canvaskit)
 
@@ -622,6 +586,7 @@ def _flutter_web_bundle_impl(ctx):
         web_compile_inputs = web_compile_tool_inputs(flutter_sdk_info.dart_vm_files),
         web_guard_tool = ctx.executable._web_guard_tool,
         enable_experiments = ctx.attr.enable_experiments,
+        record_uses = ctx.attr.tree_shake_icons and not is_debug,
     )
     program = _web_compile_program(ctx, compile)
 
@@ -630,14 +595,10 @@ def _flutter_web_bundle_impl(ctx):
     # assets the pubspec names, the project's `web/` files, the templated
     # `index.html` and `flutter_bootstrap.js`, `flutter.js`, the renderer and
     # the service worker. In release and profile the icon fonts are shaken
-    # against a kernel of the program, as the tool compiles one for dart2js.
-    app_dill = None
-    if ctx.attr.tree_shake_icons and not is_debug:
-        app_dill = _web_tree_shake_kernels(ctx, compile, [compile.renderer])[0]
+    # against the uses the compilers recorded of the program.
     dev_bootstrap_js = ctx.actions.declare_file(ctx.label.name + "_dev_flutter_bootstrap.js") if is_debug else None
     output_dir, output_groups = _web_write_bundle(ctx, flutter_sdk_info, program, struct(
         mode = mode,
-        app_dill = app_dill,
         renderer = renderer,
         dev_bootstrap = dev_bootstrap_js,
     ))
@@ -913,7 +874,7 @@ build knows which served file is a native module.
         ),
         "_ddc_dart_sdk_js": attr.label(
             doc = "Prebuilt `dart_sdk.js` staged as a debug output for the DDC dev loop.",
-            default = Label("@flutter_web_sdk//:web-sdk/kernel/ddcLibraryBundle-canvaskit/dart_sdk.js"),
+            default = Label("@flutter_web_sdk//:web-sdk/kernel/ddc/canary/dart_sdk.js"),
             allow_single_file = True,
             cfg = "exec",
         ),

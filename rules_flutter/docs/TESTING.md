@@ -217,7 +217,7 @@ cd e2e/windows_example && bazel test //...  # Windows-only (target_compatible_wi
 
 | Workspace | Key tests |
 |-----------|-----------|
-| smoke | Toolchain resolution for all platforms; custom-release (`3.47.70`) toolchain with checksum-verified fetch; offline (`local_path`) toolchain from the checked-in `fake_sdk` tree |
+| smoke | Toolchain resolution for all platforms; custom-release (`3.50.10`) toolchain with checksum-verified fetch; offline (`local_path`) toolchain from the checked-in `fake_sdk` tree |
 | hello_world | Kernel, AOT, application, and per-platform bundle builds; flutter_test |
 | codegen | Per-file and aggregate custom generators (`dart_binary` + `run_binary`), generated code in dependency packages, hot-reload-with-codegen |
 | build_runner | `dart_build_runner` over a Flutter package (go_router_builder) with a `sky_engine` SDK summary; each generated file diffed against stock `build_runner` output |

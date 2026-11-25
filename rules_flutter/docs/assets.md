@@ -79,8 +79,10 @@ hand-written `flutter_library` lists them itself.
 - Every mode: the pubspec and the files it names, each package's pubspec and
   licence, the framework's shaders, the Material icons font, and `impellerc`
   with its include files. A Dart edit does not rerun it.
-- Release and profile: also the app's kernel, `const_finder` and
-  `font-subset`, to shake icon fonts (`tree_shake_icons`, on by default).
+- Release and profile: also the uses the compilers recorded of the program
+  (the AOT compile's `recorded_uses.json`; on web the dart2js and dart2wasm
+  outputs) and `font-subset`, to shake icon fonts (`tree_shake_icons`, on by
+  default).
 - Web: also the compiled program and the web SDK's `flutter.js` and renderer.
 
 ## Differences from `flutter build`

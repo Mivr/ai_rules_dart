@@ -172,34 +172,34 @@ def _application_opt_inputs_test_impl(ctx):
     return analysistest.end(env)
 
 def _application_opt_bundle_inputs_test_impl(ctx):
-    """In `-c opt` the bundle shakes icons, so it reads the app's kernel and the shaking tools."""
+    """In `-c opt` the bundle shakes icons, so it reads what the AOT compile recorded of the app's uses and the font tool."""
     env = analysistest.begin(ctx)
     _assert_some_path_contains(
         env,
         _input_paths(_find_action(env, ["FlutterAssets"])),
-        [".dill", "const_finder", "font-subset"],
+        ["recorded_uses.json", "font-subset"],
         "release FlutterAssets",
     )
     return analysistest.end(env)
 
 def _application_dbg_bundle_inputs_test_impl(ctx):
-    """In `-c dbg` the bundle never reads the app's kernel, so a Dart edit does not rerun it."""
+    """In `-c dbg` the bundle never reads the app's kernel or recorded uses, so a Dart edit does not rerun it."""
     env = analysistest.begin(ctx)
     _assert_no_path_contains(
         env,
         _input_paths(_find_action(env, ["FlutterAssets"])),
-        [".dill", "const_finder", "font-subset"],
+        [".dill", "recorded_uses.json", "font-subset"],
         "debug FlutterAssets",
     )
     return analysistest.end(env)
 
 def _application_no_tree_shake_icons_test_impl(ctx):
-    """When `tree_shake_icons = False`, the bundle reads neither the kernel nor the font tools."""
+    """When `tree_shake_icons = False`, the bundle reads neither the recorded uses nor the font tool."""
     env = analysistest.begin(ctx)
     _assert_no_path_contains(
         env,
         _input_paths(_find_action(env, ["FlutterAssets"])),
-        [".dill", "const_finder", "font-subset"],
+        [".dill", "recorded_uses.json", "font-subset"],
         "tree_shake_icons=False FlutterAssets",
     )
     return analysistest.end(env)
@@ -454,12 +454,9 @@ def _assert_web_guarded(env, action, context):
     )
 
 def _web_guard_inputs_test_impl(ctx):
-    """`FlutterDart2Wasm`, `FlutterDart2JS` and (where present) `FlutterDart2JSCFE` are guarded."""
+    """`FlutterDart2Wasm` and `FlutterDart2JS` are guarded."""
     env = analysistest.begin(ctx)
-    mnemonics = ["FlutterDart2Wasm", "FlutterDart2JS"]
-    if ctx.attr.expect_cfe:
-        mnemonics.append("FlutterDart2JSCFE")
-    for mnemonic in mnemonics:
+    for mnemonic in ["FlutterDart2Wasm", "FlutterDart2JS"]:
         actions = [a for a in analysistest.target_actions(env) if a.mnemonic == mnemonic]
         asserts.true(
             env,
@@ -470,10 +467,7 @@ def _web_guard_inputs_test_impl(ctx):
             _assert_web_guarded(env, action, mnemonic)
     return analysistest.end(env)
 
-_web_guard_inputs_test = analysistest.make(
-    _web_guard_inputs_test_impl,
-    attrs = {"expect_cfe": attr.bool(default = True)},
-)
+_web_guard_inputs_test = analysistest.make(_web_guard_inputs_test_impl)
 
 def _pub_runfiles_test_impl(ctx):
     """`//flutter:pub` runfiles carry `dartdev`, not the full Dart/patched SDK."""
@@ -498,7 +492,7 @@ def _pub_runfiles_test_impl(ctx):
             "/patched-sdk/",
             "/dart-sdk/lib/",
             "dartdevc",
-            "analysis_server",
+            "snapshots/analysis_server",
         ],
         "flutter_pub runfiles",
     )
@@ -746,13 +740,13 @@ def _reverse_toolchain_flutter_test_impl(ctx):
     return analysistest.end(env)
 
 def _reverse_toolchain_application_opt_fonts_test_impl(ctx):
-    """When `@rules_dart`'s SDK resolves first, icon tree-shaking still uses Flutter's `dart-sdk/`."""
+    """When `@rules_dart`'s SDK resolves first, icon tree-shaking reads no Dart SDK."""
     env = analysistest.begin(ctx)
     asset_paths = _input_paths(_find_action(env, ["FlutterAssets"]))
     _assert_some_path_contains(
         env,
         asset_paths,
-        ["const_finder", "font-subset", "/dart-sdk/bin/dart"],
+        ["font-subset"],
         "reverse-toolchain release FlutterAssets",
     )
     _assert_no_path_contains(
@@ -802,17 +796,15 @@ _generated_tool_file = rule(
 )
 
 def _exec_font_subset_toolchain_test_impl(ctx):
-    """App rules resolve `const_finder` and `font_subset` in `exec` config from their own toolchain, independent of `deps`."""
+    """App rules resolve `font_subset` in `exec` config from their own toolchain, independent of `deps`."""
     env = analysistest.begin(ctx)
     asset_paths = _input_paths(_find_action(env, ["FlutterAssets", "FlutterWebBundle"]))
     _assert_some_path_contains(
         env,
         asset_paths,
-        ["exec_const_finder.dart.snapshot", "exec_font_subset"],
+        ["exec_font_subset"],
         "exec-configured font_subset_toolchain bundle",
     )
-    for p in [p for p in asset_paths if p.endswith("exec_const_finder.dart.snapshot")]:
-        asserts.true(env, "-exec-" in p, "expected const_finder tool %r in exec cfg" % p)
     for p in [p for p in asset_paths if p.endswith("exec_font_subset")]:
         asserts.true(env, "-exec-" in p, "expected font-subset tool %r in exec cfg" % p)
     return analysistest.end(env)
@@ -942,18 +934,12 @@ def _setup_fixtures():
         toolchain_type = "@rules_dart//dart:toolchain_type",
     )
     _generated_tool_file(
-        name = "_generated_exec_const_finder",
-        filename = "exec_const_finder.dart.snapshot",
-        tags = ["manual"],
-    )
-    _generated_tool_file(
         name = "_generated_exec_font_subset",
         filename = "exec_font_subset",
         tags = ["manual"],
     )
     flutter_font_subset_toolchain(
         name = "_exec_font_subset_tc",
-        const_finder = ":_generated_exec_const_finder",
         font_subset = ":_generated_exec_font_subset",
         tags = ["manual"],
     )
@@ -1209,7 +1195,6 @@ def action_inputs_test_suite(name):
     _web_guard_inputs_test(
         name = name + "_web_guard",
         target_under_test = ":_inputs_web_bundle",
-        expect_cfe = False,
     )
     _web_guard_inputs_test(
         name = name + "_web_guard_fonts",

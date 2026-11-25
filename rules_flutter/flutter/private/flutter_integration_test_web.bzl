@@ -229,6 +229,7 @@ def _web_integration_test_compile(ctx, setup, entrypoint):
         web_compile_inputs = web_compile_tool_inputs(setup.sdk.dart_vm_files),
         web_guard_tool = ctx.executable._web_guard_tool,
         enable_experiments = ctx.attr.enable_experiments,
+        record_uses = False,
     )
     compile_outputs = []
     compile_copies = []

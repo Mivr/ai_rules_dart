@@ -58,7 +58,7 @@ flutter_material_fonts_repo = repository_rule(
 
 flutter_font_subset_repo = repository_rule(
     flutter_font_subset_repo_impl,
-    doc = "Lazily downloads font-subset tools (const_finder.dart.snapshot + font-subset binary).",
+    doc = "Lazily downloads font-subset tools (the font-subset binary).",
     attrs = FLUTTER_FONT_SUBSET_REPO_ATTRS,
 )
 
@@ -761,7 +761,6 @@ flutter_assets_tool(
 
 flutter_toolchain(
     name = "flutter_toolchain",
-    const_finder = ":font-subset-tools/const_finder.dart.snapshot",
     dart = "dart-sdk/bin/{dart_bin}",
     dart_sdk = ":dart_sdk_files",
     dart_vm_files = ":dart_vm_files",
@@ -805,7 +804,6 @@ flutter_product_tools_toolchain(
 
 flutter_font_subset_toolchain(
     name = "font_subset_toolchain",
-    const_finder = ":font-subset-tools/const_finder.dart.snapshot",
     font_subset = ":font-subset-tools/font-subset{exe_suffix}",
     visibility = ["//visibility:public"],
 )

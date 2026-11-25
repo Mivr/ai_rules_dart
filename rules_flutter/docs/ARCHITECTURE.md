@@ -114,7 +114,7 @@ Flutter SDK a toolchain supplies: `dart`, `dartaotruntime`, `frontend_server`,
 shader library and `assets_tool`, the asset tool (section 3).
 `flutter/toolchain.bzl:52` builds it in `flutter_toolchain`.
 
-Some fields live on optional sub-toolchains (`gen_snapshot`, `const_finder`,
+Some fields live on optional sub-toolchains (`gen_snapshot`,
 `font_subset`, `linux_sysroot` and others). Read those through
 `resolve_flutter_sdk_info(ctx)` (`flutter/providers.bzl:180`) and declare the
 sub-toolchain types it needs; `FLUTTER_OPTIONAL_TOOLCHAINS`
@@ -214,9 +214,11 @@ app around the compiled program from the project's `web/` directory.
 The tool forms every key, compiles shaders with the release's `impellerc`, and
 writes `AssetManifest.bin`, `FontManifest.json` and `NOTICES.Z` as
 `flutter build` does. A file the pubspec names that is not an input fails the
-action, naming it. A debug build does not read the app's kernel, so a Dart
-edit does not rerun the action; release and profile read it to shake icon
-fonts (`_icon_tree_shaking`, `flutter/private/flutter_bundle.bzl:173`).
+action, naming it. A debug build does not read what the compilers record, so a
+Dart edit does not rerun the action; release and profile read the uses the AOT
+compile (`--recorded-uses`) or dart2js and dart2wasm record, to shake icon
+fonts (`_icon_tree_shaking`, `flutter/private/flutter_bundle.bzl`), as the
+release's own icon tree shaker does.
 
 ## 4. Kernel compilation and platform packaging
 

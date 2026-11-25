@@ -32,9 +32,9 @@ fetches it only on reference, so the pin is not yet a problem — but the analyz
 targets that consume it cannot land until rules_dart ships that attribute and
 MODULE.bazel moves to it.
 
-`sky_engine.zip` trims seven SDK-internal part files whose `part` directives
+`sky_engine.zip` trims eight SDK-internal part files whose `part` directives
 remain in the shipped sources (`lib/_http/http.dart` still names
-`embedder_config.dart` and `http_testing.dart`, and likewise for
+`embedder_config.dart`, `http_testing.dart` and `websocket_profiler.dart`, and likewise for
 `lib/_interceptors/interceptors.dart`, `lib/developer/developer.dart` and
 `lib/internal/internal.dart`). Neither the compiler nor the analyzer reads
 those libraries (`dart:_http` and friends resolve from the Dart SDK), so
@@ -111,6 +111,7 @@ _TRIMMED_PART_STUB = """\
 _TRIMMED_PARTS = [
     "lib/_http/embedder_config.dart",
     "lib/_http/http_testing.dart",
+    "lib/_http/websocket_profiler.dart",
     "lib/_interceptors/js_array.dart",
     "lib/_interceptors/js_number.dart",
     "lib/_interceptors/js_string.dart",

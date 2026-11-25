@@ -65,7 +65,7 @@ ArgParser get _parser => ArgParser()
   // `<path under the Flutter root>=<file>`: SDK files at fixed places
   // (the Dart SDK, the material fonts, the framework's shaders, the web SDK).
   ..addMultiOption('sdk', splitCommas: false)
-  // `<impellerc|const_finder|font_subset>=<file>`: engine tools, placed where
+  // `<impellerc|font_subset>=<file>`: engine tools, placed where
   // the tool's own `Artifacts` looks for them on this host.
   ..addMultiOption('engine', splitCommas: false)
   // `<path under shader_lib/>=<file>`: impellerc's include files.
@@ -105,7 +105,8 @@ ArgParser get _parser => ArgParser()
   ..addOption('platform', defaultsTo: 'android')
   ..addOption('mode', defaultsTo: 'debug')
   ..addOption('flavor')
-  ..addOption('app-dill')
+  // What the AOT compile recorded of the app's uses, for the icon tree shaker.
+  ..addOption('recorded-uses')
   ..addOption('native-assets-manifest')
   ..addFlag('tree-shake-icons')
   ..addFlag('deferred-components')
@@ -357,7 +358,6 @@ void _stageFlutterRoot(
       .createSync(recursive: true);
   final engine = <String, String>{
     'impellerc': artifacts.getHostArtifact(HostArtifact.impellerc).path,
-    'const_finder': artifacts.getArtifactPath(Artifact.constFinder),
     'font_subset': artifacts.getArtifactPath(Artifact.fontSubset),
   };
   _pairs(args.multiOption('engine')).forEach((String name, String file) {
@@ -631,13 +631,14 @@ Environment _environment({
   return environment;
 }
 
-/// The app's kernel, where the icon tree shaker reads it.
-void _placeAppDill(Environment environment, ArgResults args) {
-  final String? appDill = args.option('app-dill');
-  if (appDill != null) {
+/// The AOT compile's recorded uses, where the icon tree shaker reads them:
+/// the name `KernelSnapshot` writes.
+void _placeRecordedUses(Environment environment, ArgResults args) {
+  final String? file = args.option('recorded-uses');
+  if (file != null) {
     environment.fileSystem
-        .file(_abs(appDill))
-        .copySync(environment.buildDir.childFile('app.dill').path);
+        .file(_abs(file))
+        .copySync(environment.buildDir.childFile('recorded_uses.json').path);
   }
 }
 
@@ -646,14 +647,14 @@ void _placeAppDill(Environment environment, ArgResults args) {
 /// plus the files each platform target passes as additional content.
 Future<void> _assets(Environment environment, ArgResults args) async {
   final FileSystem fs = environment.fileSystem;
-  final TargetPlatform targetPlatform = getTargetPlatformForName(
+  final TargetPlatform targetPlatform = TargetPlatform.fromName(
     args.option('platform')!,
   );
   final buildMode = BuildMode.fromCliName(args.option('mode')!);
   if (targetPlatform == TargetPlatform.tester) {
     return _testerAssets(environment, args, buildMode);
   }
-  _placeAppDill(environment, args);
+  _placeRecordedUses(environment, args);
   final String? nativeAssets = args.option('native-assets-manifest');
   await copyAssets(
     environment,
@@ -689,9 +690,6 @@ Future<void> _testerAssets(
   ArgResults args,
   BuildMode buildMode,
 ) async {
-  if (args.option('native-assets-manifest') != null) {
-    throw ArgumentError('a tester bundle takes no native assets manifest');
-  }
   final AssetBundle bundle = AssetBundleFactory.defaultInstance(
     logger: environment.logger,
     fileSystem: environment.fileSystem,
@@ -721,7 +719,18 @@ Future<void> _testerAssets(
     logger: environment.logger,
     projectDir: environment.projectDir,
     buildMode: buildMode,
+    platform: environment.platform,
   );
+  // As `flutter test` copies it beside the bundle: flutter_tester resolves
+  // `@Native` assets through the manifest in its assets directory.
+  final String? nativeAssets = args.option('native-assets-manifest');
+  if (nativeAssets != null) {
+    environment.fileSystem
+        .file(_abs(nativeAssets))
+        .copySync(
+          environment.outputDir.childFile('NativeAssetsManifest.json').path,
+        );
+  }
 }
 
 /// The link hooks' data assets, as the tool's hook runner reports them.
@@ -765,7 +774,6 @@ Future<void> _web(Environment environment, ArgResults args) async {
       'one; list its files in pubspec_srcs.',
     );
   }
-  _placeAppDill(environment, args);
   for (final String path in args.multiOption('web-build').map(_abs)) {
     final FileSystemEntity entity = fs.isDirectorySync(path)
         ? fs.directory(path)
@@ -783,6 +791,16 @@ Future<void> _web(Environment environment, ArgResults args) async {
         )..parent.createSync(recursive: true)).path,
       );
     }
+  }
+  // As `WebReleaseBundle`'s compile target does after dart2js: the uses the
+  // compiler wrote are the shaker's `recorded_uses_js.json`.
+  final File resources = environment.buildDir.childFile(
+    'main.dart.js.resources.json',
+  );
+  if (resources.existsSync()) {
+    resources.renameSync(
+      environment.buildDir.childFile('recorded_uses_js.json').path,
+    );
   }
   final bool wasm = args.flag('wasm');
   final String? rendererName = args.option('renderer');
