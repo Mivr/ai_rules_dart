@@ -70,6 +70,11 @@ jobs:
     env:
       MODULE: ${{ inputs.module }}
       PLATFORM: ${{ matrix.platform }}
+      # Git Bash on Windows rewrites an argument that looks like a path, and
+      # turned `//release:release` into `/release:release` (the first
+      # rehearsal's windows-x64 job: "invalid package name '/release'").
+      # dart-ci.yaml sets the same on its Windows `bazel run //...` lines.
+      MSYS2_ARG_CONV_EXCL: "*"
     steps:
       - uses: actions/checkout@v7
         with:
