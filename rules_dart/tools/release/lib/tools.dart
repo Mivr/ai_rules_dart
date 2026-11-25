@@ -299,7 +299,13 @@ String scannerAssetName(String tag, String platform) =>
 /// [FormatException] for a sidecar of another module, an unknown platform,
 /// a platform listed twice, or an archive whose checksum is not the
 /// sidecar's.
-({Map<String, Object?> table, List<String> absent}) toolsTable({
+({
+  Map<String, Object?> table,
+  List<String> absent,
+  List<String> differed,
+  List<String> missing,
+})
+toolsTable({
   required ToolSet set,
   required String tag,
   required String download,
@@ -310,6 +316,7 @@ String scannerAssetName(String tag, String platform) =>
   final scannerTable = <String, Object?>{};
   final seen = <String>{};
   final absent = <String>[];
+  final differed = <String>[];
   final sorted = archives.keys.toList()
     ..sort((a, b) => a.platform.compareTo(b.platform));
   for (final s in sorted) {
@@ -327,6 +334,7 @@ String scannerAssetName(String tag, String platform) =>
     final List<int>? bytes = archives[s];
     if (s.sha256 == null) {
       absent.add('${s.platform}: ${s.problems.join('; ')}');
+      differed.add(s.platform);
       continue;
     }
     if (bytes == null || sha256.convert(bytes).toString() != s.sha256) {
@@ -359,5 +367,34 @@ String scannerAssetName(String tag, String platform) =>
       if (scannerTable.isNotEmpty) 'pub_scanner': scannerTable,
     },
     absent: absent,
+    differed: differed,
+    missing: [
+      for (final p in platforms)
+        if (!seen.contains(p)) p,
+    ],
   );
+}
+
+/// The one line the release notes carry about the prebuilt tools: what ships
+/// and where the tools are built from source, without the hashes of the
+/// builds that differed (those stay in the sidecar and in the job's log).
+String toolsNote({
+  required Map<String, Object?> table,
+  required List<String> differed,
+  required List<String> missing,
+}) {
+  final shipped = <String>[
+    for (final MapEntry<String, Object?> v
+        in (table['tools']! as Map<String, Object?>).entries)
+      for (final String platform in (v.value! as Map<String, Object?>).keys)
+        '$platform (${v.key})',
+  ];
+  final source = <String>[
+    if (differed.isNotEmpty)
+      '${differed.join(', ')} (two builds of the tools differed there)',
+    if (missing.isNotEmpty)
+      '${missing.join(', ')} (no tools were uploaded there)',
+  ];
+  return 'Prebuilt tools: ${shipped.isEmpty ? 'none' : shipped.join(', ')}.'
+      '${source.isEmpty ? '' : ' Built from source: ${source.join('; ')}.'}';
 }

@@ -465,6 +465,20 @@ void main() {
         },
       });
       expect(result.absent, ['windows-x64: files/x: a != b']);
+      expect(result.differed, ['windows-x64']);
+      expect(result.missing, ['linux-arm64', 'macos-arm64', 'macos-x64']);
+      // The notes: no hashes, the platforms by why they build from source.
+      expect(
+        toolsNote(
+          table: result.table,
+          differed: result.differed,
+          missing: result.missing,
+        ),
+        'Prebuilt tools: linux-x64 (3.13.5). Built from source: '
+        'windows-x64 (two builds of the tools differed there); '
+        'linux-arm64, macos-arm64, macos-x64 '
+        '(no tools were uploaded there).',
+      );
       expect(
         Sidecar.parse(sidecar('linux-x64', digest).encode()).sha256,
         digest,

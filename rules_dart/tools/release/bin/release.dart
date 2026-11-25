@@ -453,15 +453,16 @@ void _toolsTable(ToolSet set, Map<String, String> options) {
   File(_option(options, 'table')).writeAsStringSync(
     '${const JsonEncoder.withIndent('  ').convert(result.table)}\n',
   );
-  final shipped = <String>[
-    for (final MapEntry<String, Object?> v
-        in (result.table['tools']! as Map<String, Object?>).entries)
-      for (final String platform in (v.value! as Map<String, Object?>).keys)
-        '$platform (${v.key})',
-  ];
+  // What differed stays in the job's log; the notes get one readable line.
+  for (final line in result.absent) {
+    stderr.writeln('release: built from source on $line');
+  }
   stdout.writeln(
-    'Prebuilt tools: ${shipped.isEmpty ? 'none' : shipped.join(', ')}.'
-    '${result.absent.isEmpty ? '' : ' Built from source on: ${result.absent.join('; ')}.'}',
+    toolsNote(
+      table: result.table,
+      differed: result.differed,
+      missing: result.missing,
+    ),
   );
 }
 
