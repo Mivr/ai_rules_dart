@@ -44,25 +44,34 @@ runs:
     # sets `--downloader_config` replaces it (Bazel 9.3 keeps the last one), so
     # the e2e and CI steps that pass their own config mean what they did. Not
     # verified on a runner before the first CI run that logs it: that
-    # `/etc/bazel.bazelrc` (and `%ProgramData%\bazel.bazelrc`) is read.
+    # `/etc/bazel.bazelrc` and `%ProgramData%\bazel.bazelrc` are read; the log of
+    # every Bazel run lists them (`--announce_rc` is in the file).
     - shell: bash
       env:
         MAVEN_MIRROR: ${{ inputs.maven_mirror }}
       run: |
         if [ "$MAVEN_MIRROR" != true ]; then exit 0; fi
         cfg="$GITHUB_ACTION_PATH/maven-mirror.cfg"
-        line_for() { echo "common --downloader_config=$1"; }
+        # `--announce_rc` makes every Bazel run of the job log the rc files it
+        # read, this one and the option it gives, so a log shows the config in use.
+        add_line() { grep -qxF "$2" "$1" 2>/dev/null || echo "$2" >>"$1"; }
         if [ "$RUNNER_OS" = Windows ]; then
-          # Forward slashes: a backslash is an escape in an rc file.
-          line="$(line_for "$(cygpath -m "$cfg")")"
-          rc="$PROGRAMDATA/bazel.bazelrc"
-          if ! grep -qxF "$line" "$rc" 2>/dev/null; then echo "$line" >>"$rc"; fi
+          # Forward slashes: a backslash is an escape in an rc file. Git Bash
+          # spells the variable `ProgramData`; `PROGRAMDATA` is empty there.
+          rc="$(cygpath -u "${ProgramData:-C:\\ProgramData}")/bazel.bazelrc"
+          add_line "$rc" "common --announce_rc"
+          add_line "$rc" "common --downloader_config=$(cygpath -m "$cfg")"
         else
-          line="$(line_for "$cfg")"
           rc=/etc/bazel.bazelrc
-          if ! grep -qxF "$line" "$rc" 2>/dev/null; then echo "$line" | sudo tee -a "$rc" >/dev/null; fi
+          tmp="$(mktemp)"
+          if [ -f "$rc" ]; then cp "$rc" "$tmp"; fi
+          add_line "$tmp" "common --announce_rc"
+          add_line "$tmp" "common --downloader_config=$cfg"
+          sudo cp "$tmp" "$rc"
+          rm -f "$tmp"
         fi
-        echo "Bazel will try Google's mirror of Maven Central too: $rc has: $line"
+        echo "Bazel will try Google's mirror of Maven Central too; $rc holds:"
+        cat "$rc"
     - shell: bash
       env:
         NDK_VERSION: ${{ inputs.version }}
