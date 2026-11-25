@@ -308,11 +308,14 @@ void main() {
         File('${real.path}${sep}data.txt').writeAsStringSync('plain');
         File('${real.path}${sep}two words.txt').writeAsStringSync('spaced');
         File('${real.path}${sep}back.txt').writeAsStringSync('backslash');
+        // Bazel writes real paths with forward slashes, also on Windows; in
+        // an escaped line a backslash would itself have to be written `\b`.
+        final String fwd = real.path.replaceAll(r'\', '/');
         final manifest = File('${tmp.path}${sep}MANIFEST')
           ..writeAsStringSync(
             '_main/data.txt ${real.path}${sep}data.txt\n'
-            ' _main/dir/two\\swords.txt ${real.path}${sep}two words.txt\n'
-            ' _main/dir/back\\bslash.txt ${real.path}${sep}back.txt\n'
+            ' _main/dir/two\\swords.txt $fwd/two words.txt\n'
+            ' _main/dir/back\\bslash.txt $fwd/back.txt\n'
             'malformed-line-without-a-space\n',
           );
 

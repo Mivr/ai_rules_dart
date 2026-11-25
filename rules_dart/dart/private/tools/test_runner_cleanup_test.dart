@@ -91,9 +91,11 @@ void main() {
       final Directory into = Directory.systemTemp.createTempSync('tr_into');
       addTearDown(() => into.deleteSync(recursive: true));
       File('${real.path}/two words.txt').writeAsStringSync('spaced');
+      // Bazel writes real paths with forward slashes, also on Windows.
+      final String fwd = real.path.replaceAll(r'\', '/');
       final line =
           r' ws/test/fixtures/two\swords.txt '
-          '${real.path}/two words.txt';
+          '$fwd/two words.txt';
       materializeWorkspace(manifest: [line], workspace: 'ws', into: into.path);
       expect(
         File('${into.path}/test/fixtures/two words.txt').readAsStringSync(),
@@ -158,10 +160,11 @@ void main() {
       final Directory dir = Directory.systemTemp.createTempSync('tr_inplace');
       addTearDown(() => dir.deleteSync(recursive: true));
       final real = File('${dir.path}/two words.txt')..writeAsStringSync('data');
+      final String fwd = real.path.replaceAll(r'\', '/');
       final manifest = File('${dir.path}/MANIFEST')
         ..writeAsStringSync(
           r' ws/two\swords.txt '
-          '${real.path}\n',
+          '$fwd\n',
         );
       expect(
         workspaceInPlace(manifest: manifest.path, workspace: 'ws'),
