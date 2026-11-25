@@ -315,7 +315,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "sRjKGfk9IxEBvlaaBqmdmpgjxfDYqPFofBk7I50bLsA=",
+        "bzlTransitiveDigest": "Q4g26yTc84wS0lfgsbQkt7ZOu+eAwlsXGH0AROpxRao=",
         "usagesDigest": "fvrBsIE0DMH2kbKDrg0OwQ5CuH42hlcVdfcp91mG0tk=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4797,7 +4797,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "91u0RRjoslRglet8u3nLVsRXs6uYqD8TsIeWXRoKNdY=",
+        "bzlTransitiveDigest": "MhXWEv27L4Ozy2VW5KafowzLMPQ8r/rUO5dYyv6nMFo=",
         "usagesDigest": "o2ySKCpvp6KiOP/yD3+Eqmn091uq4v30o1OeWqm8RnQ=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_projects ai_rules_dart++pub+dart_projects",
@@ -4817,11 +4817,23 @@
           "REPO_MAPPING:rules_cc++compatibility_proxy+cc_compatibility_proxy,rules_cc rules_cc+",
           "FILE:@@//go_router_pkg/pubspec.lock 08818233624319a3261670d8515d4c638242664817fc3dfd63c451ebcf87d017",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
+          "ENV:RULES_DART_TOOLS \\0",
+          "FILE:@@ai_rules_flutter+//flutter/private/prebuilt_tools.json 61468467448a94c5c6ced36d05894d7ba2e2f7501ca84270a30da1cd18a3c713",
           "FILE:@@//go_router_pkg/pubspec.yaml 7c97921c553f210b552c66552f2c3b973bb125366e04031bccf516ed842feea8",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
           "FILE:@@//go_router_pkg/test ENOENT"
         ],
         "generatedRepoSpecs": {
+          "rules_flutter_tools": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:prebuilt_tools.bzl%flutter_tools_hub_repo",
+            "attributes": {
+              "flutter_version": "3.50.1",
+              "platforms": [],
+              "sources": {
+                "android_bundle": "'@@ai_rules_flutter+//flutter/private/tools:android_bundle'"
+              }
+            }
+          },
           "flutter_dev_root": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_dev_root_repo.bzl%flutter_dev_root_repo",
             "attributes": {
@@ -4866,7 +4878,8 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_darwin-arm64_profile": {
@@ -4925,7 +4938,8 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_darwin-x64_profile": {
@@ -4984,7 +4998,8 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_linux-x64_profile": {
@@ -5030,7 +5045,8 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_linux-arm64_profile": {
@@ -5076,7 +5092,8 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_windows-x64_profile": {
