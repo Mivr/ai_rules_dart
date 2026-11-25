@@ -316,8 +316,6 @@ def _rdf_r8_impl(ctx):
         args.add("--debuggable")
     if not ctx.attr.minify:
         args.add("--no-minify")
-    if ctx.attr.final_res_ids:
-        args.add("--final-res-ids")
     if not ctx.attr.full_mode:
         args.add("--no-full-mode")
     if not ctx.attr.strict_keep_rules:
@@ -392,7 +390,6 @@ rdf_r8 = rule(
         "deps": attr.label_list(providers = [JavaInfo], doc = "Libraries whose own jars are program input."),
         "desugared_lib_config": attr.label(allow_single_file = True),
         "excludes": attr.string_list(),
-        "final_res_ids": attr.bool(doc = "The R classes' fields are final (android.nonFinalResIds=false)."),
         "full_mode": attr.bool(default = True, doc = "android.enableR8.fullMode."),
         "jars": attr.label_list(allow_files = [".jar"], doc = "Program jars."),
         "java_resource_deps": attr.label_list(providers = [JavaInfo]),
