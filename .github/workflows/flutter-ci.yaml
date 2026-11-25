@@ -66,7 +66,8 @@
 # to run twice (matrix plus standalone job); now each runs once.
 #
 # CACHES: one repository cache per OS from setup-bazel (shared by every Bazel
-# job; downloads are content-addressed), plus one Bazel disk cache per OS per
+# job; downloads are content-addressed; the jobs that build an Android pin share
+# an entry of their own that is also keyed on the pins), plus one Bazel disk cache per OS per
 # shard managed below with actions/cache. setup-bazel's own disk cache never
 # re-saves an unchanged key, so a run that rebuilds actions would lose them;
 # instead each shard restores the newest entry under its prefix and, on main
@@ -134,6 +135,15 @@ env:
     - rules_flutter/MODULE.bazel.lock
     - rules_flutter/e2e/*/MODULE.bazel
     - rules_flutter/flutter/private/versions.bzl
+  # The jobs that build an Android pin (`android_model.json`) key their repository cache on the pins
+  # as well, so a new pin starts a new entry that a main push saves; the Maven artifacts of a pin are
+  # then in the cache the next jobs restore.
+  BAZEL_ANDROID_REPOSITORY_CACHE_KEY_FILES: |
+    - rules_flutter/MODULE.bazel
+    - rules_flutter/MODULE.bazel.lock
+    - rules_flutter/e2e/*/MODULE.bazel
+    - rules_flutter/flutter/private/versions.bzl
+    - rules_flutter/e2e/**/android_model.json
 jobs:
   # An experiment, not a gate: do build hooks run on a Mac? The Apple refusal of
   # a hook, the replacements of sqlite3 and webcrypto and the objective_c
@@ -691,7 +701,7 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           module-root: rules_flutter
-          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          repository-cache: ${{ env.BAZEL_ANDROID_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
         if: github.event_name != 'schedule' && !inputs.uncached
@@ -808,7 +818,7 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           module-root: rules_flutter
-          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          repository-cache: ${{ env.BAZEL_ANDROID_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
         if: github.event_name != 'schedule' && !inputs.uncached
@@ -961,7 +971,7 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           module-root: rules_flutter
-          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          repository-cache: ${{ env.BAZEL_ANDROID_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
       - name: Restore disk cache
         if: github.event_name != 'schedule' && !inputs.uncached
@@ -1082,7 +1092,7 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           module-root: rules_flutter
-          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          repository-cache: ${{ env.BAZEL_ANDROID_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
           # The runner was lost ("received a shutdown signal") a few seconds
           # after the first emulator test started in 4 of 8 runs of
