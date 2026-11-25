@@ -130,10 +130,16 @@ def _pod(name, pod, model):
     # Resources. A bundle of the podspec is a bundle target; a privacy manifest is a file inside one.
     resources = []
     for bundle, info in pod["resource_bundles"].items():
+        # A ready-made bundle inside the podspec's bundle stays a directory of its own.
+        nested = []
+        for path in [f for f in info["files"] if f.endswith(".bundle/")]:
+            target = "%s.bundle.%s.%s" % (name, bundle, path.rstrip("/").rsplit("/", 1)[-1])
+            apple_bundle_import(name = target, bundle_imports = _files(root, [path]))
+            nested.append(":" + target)
         apple_resource_bundle(
             name = "%s.bundle.%s" % (name, bundle),
             bundle_name = bundle,
-            resources = _files(root, info["files"]),
+            resources = _files(root, [f for f in info["files"] if not f.endswith(".bundle/")]) + nested,
         )
         resources.append(":%s.bundle.%s" % (name, bundle))
     loose = [r for r in pod["resources"] if not r.endswith(".bundle/")]
@@ -182,14 +188,14 @@ def _pod(name, pod, model):
     if pod.get("generated_prefix_header"):
         private.append("gen/%s-prefix.h" % name)
         clang_copts.extend(["-include", "%s/gen/%s-prefix.h" % (here, name)])
-    swift_interop_hint(name = name + ".hint", module_name = module)
+    module_map = root + "/" + pod["module_map"] if pod.get("module_map") else None
+    swift_interop_hint(name = name + ".hint", module_name = module, module_map = module_map)
     tags = ["rdf-unsupported=" + u for u in unsupported]
     link = dict(
         sdk_frameworks = pod["frameworks"],
         weak_sdk_frameworks = pod["weak_frameworks"],
         sdk_dylibs = pod["libraries"],
     )
-    module_map = root + "/" + pod["module_map"] if pod.get("module_map") else None
     system = ["-Wl,-framework," + f for f in pod["frameworks"]] + ["-Wl,-weak_framework," + f for f in pod["weak_frameworks"]] + ["-l" + l for l in pod["libraries"]]
 
     if swift_srcs and (clang_srcs or non_arc or public):
@@ -224,6 +230,7 @@ def _pod(name, pod, model):
             srcs = swift_srcs,
             module_name = module,
             copts = swift_copts,
+            generates_header = True,
             generated_header_name = module + "-Swift.h",
             alwayslink = True,
             linkopts = system,
@@ -242,7 +249,8 @@ def _pod(name, pod, model):
             cxxopts = cxxopts,
             conlyopts = conlyopts,
             defines = defines,
-            module_name = module,
+            # The pod's own module map names the module; rules_cc takes one or the other.
+            module_name = None if module_map else module,
             module_map = module_map,
             enable_modules = True,
             alwayslink = True,
@@ -261,7 +269,7 @@ def _pod(name, pod, model):
             bundle_id = "org.cocoapods." + _bundle_id(module),
             families = ["iphone", "ipad"],
             infoplists = ["@rules_flutter//flutter/private/apple_model:framework-Info.plist"],
-            minimum_os_version = pod["platform"]["deployment_target"],
+            minimum_os_version = model["min_os"],
             deps = [":" + name],
             frameworks = [model["labels"][d] + ".framework" for d in pod["dependencies"] if model["built"].get(d)],
             tags = ["manual"],

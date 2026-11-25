@@ -35,3 +35,11 @@ register_toolchains("@flutter_toolchains//:all")
 apple_model = use_extension("@rules_flutter//flutter/private/apple_model:extension.bzl", "apple_model")
 apple_model.pin(model = "//:apple_model.json")
 use_repo(apple_model, "apple_model")
+
+# The pods of the fourteen-plugin matrix (Firestore's C++ closure, Stripe), for analysis only:
+# no app in this workspace uses them.
+apple_model.pin(
+    name = "apple_model_m14",
+    model = "//:apple_model_m14.json",
+)
+use_repo(apple_model, "apple_model_m14")

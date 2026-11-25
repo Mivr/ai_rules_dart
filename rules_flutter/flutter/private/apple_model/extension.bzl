@@ -161,6 +161,10 @@ def _apple_model_impl(mctx):
             labels = {}
             roots = {}
             built = {name: bool(pod["build"]["should_build"]) for name, pod in model["pods"].items()}
+
+            # One deployment target for every pod of the app, the user target's: Flutter's podhelper
+            # makes pods below it inherit it, and one value means one compile of each library.
+            min_os = [t["platform"]["deployment_target"] for t in model["aggregate_targets"].values() if t["user_targets"]][0]
             for name, pod in model["pods"].items():
                 if pod["source"].get("path", "").startswith("app:"):
                     labels[name] = "@%s//:%s" % (tag.name, name)
@@ -174,7 +178,7 @@ def _apple_model_impl(mctx):
                 pod_source(
                     name = repo,
                     fetch = json.encode(group.fetch),
-                    spec = json.encode({"pods": group.pods, "labels": labels, "roots": roots, "built": built}),
+                    spec = json.encode({"pods": group.pods, "labels": labels, "roots": roots, "built": built, "min_os": min_os}),
                     **group.git
                 )
             aggregates = {name: target["pods"]["*"] if "*" in target["pods"] else target["pods"]["Debug"] for name, target in model["aggregate_targets"].items()}

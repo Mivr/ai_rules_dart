@@ -244,6 +244,12 @@ def plugin_apple_libs_arg(name, apple_macos_srcs_dirs, apple_ios_srcs_dirs):
     if not (apple_macos_srcs_dirs or apple_ios_srcs_dirs):
         return ""
 
+    # SPIKE T17a (S9), not for merge: the edge from a plugin's Dart target to the Apple library the
+    # podspec and Package.swift readers generate is cut, for iOS and macOS. The app takes its
+    # plugins' native code from the pinned CocoaPods model instead (flutter/private/apple_model).
+    if True:
+        return ""
+
     # Branch labels compose the classified package name with fixed
     # suffixes; nothing walked or declared reaches them unquoted.
     macos_branch = '            ":{name}_apple_macos",'.format(name = name) if apple_macos_srcs_dirs else ""

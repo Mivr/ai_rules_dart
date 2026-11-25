@@ -1,0 +1,25 @@
+# Spike T17a (S9): lets a Linux host analyse the Apple target graph, and nothing more.
+#
+# No Xcode is installed here, so Bazel finds no Xcode version and rules_swift's Xcode toolchain
+# refuses to analyse. This package declares a version to analyse against. No action that needs it
+# can run on Linux: the toolchains only execute on a macOS execution platform. See `.bazelrc`
+# (`--config=linux_analysis`).
+load("@apple_support//xcode:xcode_config.bzl", "xcode_config")
+load("@apple_support//xcode:xcode_version.bzl", "xcode_version")
+
+xcode_version(
+    name = "xcode_26_1",
+    default_ios_sdk_version = "26.1",
+    default_macos_sdk_version = "26.1",
+    default_tvos_sdk_version = "26.1",
+    default_visionos_sdk_version = "26.1",
+    default_watchos_sdk_version = "26.1",
+    version = "26.1.0.17B55",
+)
+
+xcode_config(
+    name = "xcodes",
+    default = ":xcode_26_1",
+    versions = [":xcode_26_1"],
+    visibility = ["//visibility:public"],
+)

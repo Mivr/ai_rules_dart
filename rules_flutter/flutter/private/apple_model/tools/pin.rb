@@ -184,6 +184,11 @@ pods = installer.pod_targets.sort_by(&:name).to_h do |pt|
   root = sandbox.pod_dir(pt.pod_name)
   local = sandbox.local?(pt.pod_name)
   rel = ->(path) { Pathname(path).relative_path_from(root).to_s }
+
+  # Paths of the Pods project resolve the `.symlinks` of a local pod; these compare resolved paths.
+  real_root = root.realpath
+  inside = ->(path) { Pathname(path).exist? && Pathname(path).realpath.to_s.start_with?(real_root.to_s + '/') }
+  rel_real = ->(path) { Pathname(path).realpath.relative_path_from(real_root).to_s }
   accessors = pt.file_accessors.select { |fa| fa.spec.library_specification? }
   consumers = accessors.map(&:spec_consumer)
   union = ->(&block) { accessors.flat_map(&block).uniq.map(&rel).sort }
@@ -206,8 +211,13 @@ pods = installer.pod_targets.sort_by(&:name).to_h do |pt|
       path = build_file.file_ref.real_path
       # ARC is carried by `non_arc_sources`; what is left is the pod's own flags, as words.
       key = (Shellwords.split(value).uniq - ['-fno-objc-arc', '$(inherited)']).join(' ')
-      (flags[key] ||= []) << rel.call(path) if !key.empty? && path.to_s.start_with?(root.to_s + '/')
+      (flags[key] ||= []) << rel_real.call(path) if !key.empty? && inside.call(path)
     end
+  end
+
+  if native.respond_to?(:source_build_phase)
+    compiled = native.source_build_phase.files_references.map(&:real_path).select(&inside).map(&rel_real).sort
+    warn "rdf pin: #{pt.name}: the Pods project compiles #{compiled.size} files, the file accessors list #{sources.size}" if compiled != sources
   end
 
   xcframeworks = pt.xcframeworks.values.flatten.uniq(&:path).sort_by { |x| x.path.to_s }.map do |xc|
@@ -220,11 +230,21 @@ pods = installer.pod_targets.sort_by(&:name).to_h do |pt|
       end }
   end
 
+  marked = ->(path) { (inside.call(path) ? rel_real.call(path) : rel.call(path)) + (Pathname(path).directory? ? '/' : '') }
   bundles = accessors.flat_map { |fa| fa.resource_bundles.to_a }.group_by(&:first).sort.to_h do |name, pairs|
-    files = pairs.flat_map(&:last).uniq.map { |path| rel.call(path) + (path.directory? ? '/' : '') }.sort
-    [name, { 'files' => files, 'settings' => target_settings(project_targets["#{pt.label}-#{name}"]) }.compact]
+    # What the bundle's target copies in the Pods project: CocoaPods has already dropped what lies
+    # inside an asset catalog or a localization directory it lists as a whole.
+    bundle_target = project_targets["#{pt.label}-#{name}"]
+    paths = if bundle_target
+              bundle_target.resources_build_phase.files_references.flat_map do |ref|
+                ref.is_a?(Xcodeproj::Project::Object::PBXVariantGroup) ? ref.children.map(&:real_path) : [ref.real_path]
+              end
+            else
+              pairs.flat_map(&:last)
+            end
+    [name, { 'files' => paths.uniq.map(&marked).sort, 'settings' => target_settings(bundle_target) }.compact]
   end
-  resources = accessors.flat_map(&:resources).uniq.map { |path| rel.call(path) + (path.directory? ? '/' : '') }.sort
+  resources = accessors.flat_map(&:resources).uniq.map(&marked).sort
   privacy = (resources + bundles.values.flat_map { |b| b['files'] }).select { |f| f.end_with?('.xcprivacy') }.uniq
 
   spec = pt.root_spec

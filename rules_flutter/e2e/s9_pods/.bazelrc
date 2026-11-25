@@ -4,3 +4,9 @@ common --tool_java_language_version=25
 common --tool_java_runtime_version=remotejdk_25
 
 try-import %workspace%/.bazelrc.user
+
+# Analysis of the Apple graph on Linux (`build --nobuild`, `aquery`): a macOS execution platform so
+# that the Apple toolchains resolve, and a declared Xcode version. Nothing built this way can run.
+common:linux_analysis --extra_execution_platforms=@apple_support//platforms:macos_arm64
+common:linux_analysis --platforms=@apple_support//platforms:ios_sim_arm64
+common:linux_analysis --xcode_version_config=//linux_analysis:xcodes
