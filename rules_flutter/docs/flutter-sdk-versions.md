@@ -13,6 +13,31 @@ fails the fetch naming the artifact and the version instead of accepting
 whatever bytes the server returns. Nothing is ever fetched without a recorded
 sha256.
 
+## Release lines
+
+The tables list two stable lines: 3.50.1, the default, and 3.47.7, the previous
+line, for apps that have not migrated (`flutter.toolchain(flutter_version =
+"3.47.7")`). Where stock builds differently from one line to the next, the
+rules follow the line of the SDK they build with, and
+`flutter/private/sdk_lines.bzl` is the one place that says how:
+`FLUTTER_SDK_LINES` has an entry per line, each field naming the stock change
+it follows. The toolchain puts the entry in `FlutterSdkInfo.line`; repository
+rules call `flutter_sdk_line(version)`.
+
+| Entry | 3.50 | 3.47 | Stock change |
+|---|---|---|---|
+| `icon_tree_shaker` | `recorded_uses`: the compilers record the icons used | `const_finder`: `const_finder.dart.snapshot` reads the app's kernel (web: a `dart compile js --cfe-only` kernel) | #190225, #191702 |
+| `ddc_dart_sdk_js` | `kernel/ddc/canary/dart_sdk.js` | `kernel/ddcLibraryBundle-canvaskit/dart_sdk.js` | #193193 |
+| `assets_tool_api` | `api_3_50` | `api_3_47` | `TargetPlatform.fromName`, `writeBundle(platform:)` |
+| `test_bundle_native_assets_manifest` | yes | no | #192800 |
+| `android_gradle_plugin` (oldest the apps use, template) | 9.1.1, 9.3.1 | 9.1.0, 9.1.0 | `templateAndroidGradlePluginVersion`; the floors stay stock's |
+
+A line is a release's `<major>.<minor>`: every patch, a custom release and a
+local SDK take their line's entry by the version they carry, and a version
+between two lines takes the older one's. `e2e/previous_line` is a project
+stock 3.47.7 made, built and shipped on that line; `rules_dart`'s
+`e2e/previous_sdk` does the same for Dart 3.13.5.
+
 ## Root-pin-wins selection
 
 Each module in the build graph may request `flutter.toolchain(flutter_version

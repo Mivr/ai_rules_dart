@@ -46,7 +46,7 @@ If `flutter build` works for you, here is what Bazel adds:
 
 | Platform | What you need |
 |---|---|
-| All | Bazel 9 or newer. The rules download Flutter 3.50.1 themselves. |
+| All | Bazel 9 or newer. The rules download Flutter 3.50.1 themselves, or 3.47.7, the previous stable line, with `flutter.toolchain(flutter_version = "3.47.7")` (see [Flutter SDK versions](docs/flutter-sdk-versions.md#release-lines)). |
 | macOS | Xcode, for `rules_apple` and `rules_swift`. |
 | iOS | Xcode. The simulator needs no signing identity. A physical device does; see [Running on an iOS device](#running-on-an-ios-device). |
 | Android | The Android SDK and NDK, with `ANDROID_HOME` and `ANDROID_NDK_HOME` set. See [Android](#android). |

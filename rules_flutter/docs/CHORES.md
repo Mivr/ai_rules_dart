@@ -21,8 +21,12 @@ The latest tag is the current stable release.
 
 **What a bump touches**: two table files, the default, three README places and
 the apps' own files.
-The rules list only the current stable Flutter: the new release replaces the
-earlier ones, and a patch replaces its minor's earlier rows.
+The rules list the current stable line and the previous one (today 3.50 and
+3.47: customers that have not migrated stay on the previous line). A patch
+replaces its minor's earlier rows. A new minor does not drop the oldest listed
+line by itself: a line is dropped only on the owner's word, and then its rows,
+its `FLUTTER_SDK_LINES` entry, the `assets_tool/api_<line>` directory it alone
+names, and its `e2e/previous_line` workspace move to the line that stays.
 
 - `flutter/private/versions.bzl` — `FLUTTER_VERSIONS` and `ARTIFACT_CHECKSUMS`
 - `flutter/private/flutter_assets_tool_versions.bzl` — the pin of the asset tool's
@@ -36,8 +40,17 @@ earlier ones, and a patch replaces its minor's earlier rows.
   `bazel run //dart/private/tools:update_cross_sdk_versions -- <dart version>` in
   `rules_dart` writes both (see its `docs/CHORES.md`). A Flutter release whose
   Dart SDK has no module compiler cannot compile debug modules. Drop the old
-  Dart version only after the Flutter tool has run (below): the old default
-  Flutter needs it to build
+  Dart version only with its Flutter line: every listed Flutter needs its own
+  Dart's rows to build
+- `flutter/private/sdk_lines.bzl` — a new minor that changes how stock builds
+  (the icon shaker's input, a path in an archive, a `flutter_tools` call of the
+  asset tool) gets its own `FLUTTER_SDK_LINES` entry, naming the stock change;
+  rules read the entry from `FlutterSdkInfo.line` and compare no versions. Its
+  `android_gradle_plugin` pair is the release's template AGP
+  (`templateAndroidGradlePluginVersion` in `gradle_utils.dart`) and the oldest
+  the apps use. A new `assets_tool_api` value is a copy of the newest
+  `flutter/private/assets_tool/api_<line>/assets_tool_api.dart` fixed for the
+  release's API, listed in `_apis` of `flutter_assets_tool.bzl`
 - `MODULE.bazel` — `flutter_version` in the `flutter.toolchain()` call. This is
   the default: the `e2e/*` and `e2e/_overlay_tests/*` workspaces name no version
   and inherit it, and tests take the newest version in `FLUTTER_VERSIONS`
@@ -79,11 +92,15 @@ tool, not as a different output: read the failure for the stock change.
 5. Add the release's Dart SDK to `rules_dart` as above, then update
    `flutter_version` in `MODULE.bazel` and the README places
 6. Fix the compile errors of the asset tool (`bazel build @flutter_toolchains//...`
-   shows them): it follows the release's `flutter_tools` API
+   shows them): it follows the release's `flutter_tools` API. Calls that differ
+   by line go in the line's `assets_tool_api.dart`, the rest stays shared; the
+   asset tool of every listed release must still compile
 7. Re-lock and re-pin the apps as above
 8. Regenerate lock files
 
 **Verification**: `bazel test //flutter/tests:all` and `cd e2e/smoke && bazel test //...`
+on the default, `bazel test //...` with the previous line's version as the
+`MODULE.bazel` default (not committed), and `cd e2e/previous_line && bazel test //...`
 
 ---
 
