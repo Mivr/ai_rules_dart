@@ -1,0 +1,43 @@
+load(
+    "@rules_dart//dart:defs.bzl",
+    "dart_analysis_config",
+    "dart_analysis_options",
+    "dart_binary",
+    "dart_library",
+    "dart_test",
+)
+
+exports_files(["pubspec.lock"])
+
+dart_library(
+    name = "previous_sdk",
+    srcs = ["lib/previous_sdk.dart"],
+    deps = ["@pub_deps//:path"],
+)
+
+dart_binary(
+    name = "app",
+    main = "bin/main.dart",
+    deps = [":previous_sdk"],
+)
+
+dart_test(
+    name = "previous_sdk_test",
+    size = "small",
+    main = "test/previous_sdk_test.dart",
+    deps = [
+        ":previous_sdk",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
