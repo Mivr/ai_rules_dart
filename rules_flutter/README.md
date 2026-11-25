@@ -89,6 +89,8 @@ register_toolchains("@flutter_toolchains//:all")
 
 Keep the `ai_rules_dart` override in your root `MODULE.bazel` at or above the floor that rules_flutter's `MODULE.bazel` names in its `bazel_dep` on `ai_rules_dart`: an older one fails to load, on the first `@rules_dart` file it lacks. The release notes name the `rules_dart` release that is the floor. A Bazel Central Registry entry, when there is one, makes the `archive_override` blocks unnecessary.
 
+Keep the root's `register_toolchains("@flutter_toolchains//:all")`: it makes the Dart SDK your Flutter release bundles the one that runs the rules' own tools, whatever order the `bazel_dep` lines are in, while a workspace without it that names `ai_rules_dart` before `ai_rules_flutter` runs them on rules_dart's standalone Dart SDK, which it downloads besides (a slower first build, still correct).
+
 `flutter.toolchain` downloads the Flutter SDK and engine. `flutter.pub` reads your `pubspec.lock` and creates a repository, here named `deps`, with one target per package: `@deps//:flutter`, `@deps//:flutter_test`, `@deps//:collection`, and so on. See [Pub packages](#pub-packages).
 
 Some platforms need one more repository from the same extension. Add it to `use_repo` when you build for that platform:
