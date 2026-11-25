@@ -251,6 +251,12 @@ pods = installer.pod_targets.sort_by(&:name).to_h do |pt|
   attribute = ->(name) { consumers.flat_map { |c| Array(c.send(name)) }.uniq }
   merged = ->(name) { consumers.map { |c| c.send(name) }.reduce({}) { |a, b| a.merge(b) { |_, x, y| x == y ? x : "#{x} #{y}" } } }
 
+  target_words = lambda do |target|
+    next {} unless target
+    common = target.build_configurations.map(&:build_settings).reduce { |a, b| a.select { |k, v| b[k] == v } }
+    sorted(common.slice('GCC_PREPROCESSOR_DEFINITIONS', 'OTHER_CFLAGS', 'OTHER_SWIFT_FLAGS', 'SWIFT_ACTIVE_COMPILATION_CONDITIONS')
+                 .transform_values { |v| (v.is_a?(Array) ? v : Shellwords.split(v.to_s)) - ['$(inherited)'] }.reject { |_, v| v.empty? })
+  end
   words = ->(settings) { sorted(settings.transform_values { |v| Shellwords.split(v.to_s) - ['$(inherited)'] }) }
 
   source = if local
@@ -303,7 +309,9 @@ pods = installer.pod_targets.sort_by(&:name).to_h do |pt|
     'pod_target_xcconfig' => sorted(merged.call(:pod_target_xcconfig)),
     'user_target_xcconfig' => sorted(merged.call(:user_target_xcconfig)),
     # The pod author's own settings, split into words by Ruby's shell rules; `${PODS_ROOT}` and the like stay.
-    'flags' => { 'pod' => words.call(merged.call(:pod_target_xcconfig)), 'user' => words.call(merged.call(:user_target_xcconfig)) },
+    # `target` is what the Pods project sets on the pod's target, which is where a Podfile's post_install writes.
+    'flags' => { 'pod' => words.call(merged.call(:pod_target_xcconfig)), 'user' => words.call(merged.call(:user_target_xcconfig)),
+                 'target' => target_words.call(native) },
     'xcconfig' => settings_by_name(pt.build_settings.to_h { |name, settings| [name.to_s, sorted(settings.xcconfig.to_hash)] }),
     'build_settings' => target_settings(native),
     'dependencies' => pt.dependent_targets.map(&:name).sort,

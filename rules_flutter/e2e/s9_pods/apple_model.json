@@ -426,6 +426,8 @@
             "YES"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -810,6 +812,8 @@
             "${PODS_TARGET_SRCROOT}"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -1138,6 +1142,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
           "HEADER_SEARCH_PATHS": [
             "${PODS_ROOT}/Firebase/CoreOnly/Sources"
@@ -1372,6 +1378,8 @@
           "OTHER_CFLAGS": [
             "-fno-autolink"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -1674,6 +1682,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -1927,6 +1937,8 @@
           "HEADER_SEARCH_PATHS": [
             "${PODS_TARGET_SRCROOT}"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -2252,6 +2264,8 @@
           "HEADER_SEARCH_PATHS": [
             "${PODS_TARGET_SRCROOT}"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -2607,6 +2621,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -2796,6 +2812,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -3034,6 +3052,8 @@
           "DEFINES_MODULE": [
             "YES"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -3330,6 +3350,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -3716,6 +3738,8 @@
             "${PODS_TARGET_SRCROOT}/"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -4077,6 +4101,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -4363,6 +4389,8 @@
           "HEADER_SEARCH_PATHS": [
             "${PODS_TARGET_SRCROOT}"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -4773,6 +4801,8 @@
             "${PODS_TARGET_SRCROOT}"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -5102,6 +5132,8 @@
             "YES"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -5410,6 +5442,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -5657,6 +5691,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -5908,6 +5944,8 @@
             "LIBRARY_VERSION=\"5.2.0\"",
             "LIBRARY_NAME=\"flutter-fire-core\""
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -6164,6 +6202,8 @@
             "LIBRARY_VERSION=\"17.1.0\"",
             "LIBRARY_NAME=\"flutter-fire-fcm\""
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -6433,6 +6473,8 @@
             "$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)/",
             "$(SDKROOT)/usr/lib/swift"
           ]
+        },
+        "target": {
         },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
@@ -6805,6 +6847,8 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
+        "target": {
+        },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -7087,6 +7131,8 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
+        "target": {
+        },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -7339,6 +7385,8 @@
             "PB_NO_PACKED_STRUCTS=1",
             "PB_ENABLE_MALLOC=1"
           ]
+        },
+        "target": {
         },
         "user": {
           "GCC_PREPROCESSOR_DEFINITIONS": [
@@ -7629,6 +7677,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -7953,6 +8003,8 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
+        "target": {
+        },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -8231,6 +8283,8 @@
             "$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)/",
             "$(SDKROOT)/usr/lib/swift"
           ]
+        },
+        "target": {
         },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [

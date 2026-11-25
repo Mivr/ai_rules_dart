@@ -503,6 +503,8 @@
             "YES"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -886,6 +888,8 @@
           "HEADER_SEARCH_PATHS": [
             "${PODS_TARGET_SRCROOT}"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -1516,6 +1520,8 @@
           "USE_HEADERMAP": [
             "NO"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -3251,6 +3257,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
           "HEADER_SEARCH_PATHS": [
             "${PODS_ROOT}/Firebase/CoreOnly/Sources"
@@ -3477,6 +3485,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -3694,6 +3704,8 @@
           "OTHER_SWIFT_FLAGS": [
 
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -4108,6 +4120,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -4318,6 +4332,8 @@
           "OTHER_CFLAGS": [
             "-fno-autolink"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -4620,6 +4636,8 @@
             "YES"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -4877,6 +4895,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -5123,6 +5143,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -5793,6 +5815,8 @@
             "${PODS_TARGET_SRCROOT}/Firestore/Protos/nanopb",
             "${PODS_TARGET_SRCROOT}/Firestore/third_party/re2"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -6626,6 +6650,8 @@
             "${PODS_TARGET_SRCROOT}"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -6950,6 +6976,8 @@
           "HEADER_SEARCH_PATHS": [
             "${PODS_TARGET_SRCROOT}"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -7326,6 +7354,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -7503,6 +7533,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -7693,6 +7725,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -7931,6 +7965,8 @@
           "DEFINES_MODULE": [
             "YES"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -8227,6 +8263,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -8613,6 +8651,8 @@
             "${PODS_TARGET_SRCROOT}/"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -8974,6 +9014,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -9260,6 +9302,8 @@
           "HEADER_SEARCH_PATHS": [
             "${PODS_TARGET_SRCROOT}"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -9670,6 +9714,8 @@
             "${PODS_TARGET_SRCROOT}"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -9999,6 +10045,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -10227,6 +10275,8 @@
           "DEFINES_MODULE": [
             "YES"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -10536,6 +10586,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -10784,6 +10836,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -10997,6 +11051,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -11241,6 +11297,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -11472,6 +11530,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -11838,6 +11898,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -12313,6 +12375,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -12534,6 +12598,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -12752,6 +12818,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -13421,6 +13489,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -14392,6 +14462,8 @@
       "flags": {
         "pod": {
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -14721,6 +14793,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -15225,6 +15299,8 @@
           "USE_HEADERMAP": [
             "NO"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -16951,6 +17027,8 @@
             "YES"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -17211,6 +17289,8 @@
             "LIBRARY_NAME=\"flutter-fire-auth\""
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -17459,6 +17539,8 @@
             "LIBRARY_VERSION=\"5.2.0\"",
             "LIBRARY_NAME=\"flutter-fire-core\""
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -17715,6 +17797,8 @@
             "LIBRARY_VERSION=\"17.1.0\"",
             "LIBRARY_NAME=\"flutter-fire-fcm\""
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -17987,6 +18071,8 @@
           "VALID_ARCHS[sdk=iphonesimulator*]": [
             "x86_64"
           ]
+        },
+        "target": {
         },
         "user": {
           "LIBRARY_SEARCH_PATHS": [
@@ -18440,6 +18526,8 @@
           "USE_HEADERMAP": [
             "NO"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -25301,6 +25389,8 @@
           "USE_HEADERMAP": [
             "NO"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -32725,6 +32815,8 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
+        "target": {
+        },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -33096,6 +33188,8 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
+        "target": {
+        },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -33378,6 +33472,8 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
+        "target": {
+        },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -33643,6 +33739,8 @@
             "-Wno-conditional-uninitialized",
             "-Wno-deprecated-declarations"
           ]
+        },
+        "target": {
         },
         "user": {
         }
@@ -34137,6 +34235,8 @@
             "PB_ENABLE_MALLOC=1"
           ]
         },
+        "target": {
+        },
         "user": {
           "GCC_PREPROCESSOR_DEFINITIONS": [
             "PB_FIELD_32BIT=1",
@@ -34428,6 +34528,8 @@
             "YES"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -34686,6 +34788,8 @@
       },
       "flags": {
         "pod": {
+        },
+        "target": {
         },
         "user": {
         }
@@ -35018,6 +35122,8 @@
             "i386"
           ]
         },
+        "target": {
+        },
         "user": {
         }
       },
@@ -35322,6 +35428,8 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
+        "target": {
+        },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -35600,6 +35708,8 @@
             "$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)/",
             "$(SDKROOT)/usr/lib/swift"
           ]
+        },
+        "target": {
         },
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [

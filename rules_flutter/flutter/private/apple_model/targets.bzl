@@ -103,6 +103,16 @@ def _pod(name, pod, model):
             swift_copts.extend(["-D" + w for w in words])
         elif key not in _NO_EFFECT and not key.startswith("CLANG_WARN_") and "[" not in key:
             unsupported.append("setting " + key)
+    for key, words in pod["flags"]["target"].items():
+        # Set on the pod's target in the Pods project: a Podfile's post_install writes here.
+        if key == "GCC_PREPROCESSOR_DEFINITIONS":
+            clang_copts.extend(["-D" + w for w in words])
+        elif key == "OTHER_CFLAGS":
+            clang_copts.extend(words)
+        elif key == "OTHER_SWIFT_FLAGS":
+            swift_copts.extend(words)
+        elif key == "SWIFT_ACTIVE_COMPILATION_CONDITIONS":
+            swift_copts.extend(["-D" + w for w in words])
     groups = pod["compiler_flags_by_file"]
     if len(groups) == 1 and len(groups.values()[0]) == len(clang_srcs) + len(non_arc):
         clang_copts.extend(groups.keys()[0].split(" "))
