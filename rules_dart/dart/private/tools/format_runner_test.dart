@@ -54,60 +54,60 @@ void main(List<String> args) {
   test(
     'resolveFormatMode matches Starlark gate across SDKs and language versions',
     () {
-      final FormatMode mLatest3135 = resolveFormatMode('3.13.5', 'latest');
-      expect(mLatest3135.inProcess, isTrue);
-      expect(mLatest3135.languageVersion, '3.13');
-      expect(mLatest3135.parsedLanguageVersion, Version(3, 13, 0));
-      expect(mLatest3135.sdkLanguageVersion, Version(3, 13, 0));
+      final FormatMode mLatest3141 = resolveFormatMode('3.14.1', 'latest');
+      expect(mLatest3141.inProcess, isTrue);
+      expect(mLatest3141.languageVersion, '3.14');
+      expect(mLatest3141.parsedLanguageVersion, Version(3, 14, 0));
+      expect(mLatest3141.sdkLanguageVersion, Version(3, 14, 0));
 
-      final FormatMode mEmpty3134 = resolveFormatMode('3.13.4', '');
-      expect(mEmpty3134.inProcess, isTrue);
-      expect(mEmpty3134.languageVersion, '3.13');
-      expect(mEmpty3134.parsedLanguageVersion, Version(3, 13, 0));
+      final FormatMode mEmpty3140 = resolveFormatMode('3.14.0', '');
+      expect(mEmpty3140.inProcess, isTrue);
+      expect(mEmpty3140.languageVersion, '3.14');
+      expect(mEmpty3140.parsedLanguageVersion, Version(3, 14, 0));
 
-      final FormatMode mShort = resolveFormatMode('3.13.5', '3.6');
+      final FormatMode mShort = resolveFormatMode('3.14.1', '3.6');
       expect(mShort.inProcess, isTrue);
       expect(mShort.languageVersion, '3.6');
       expect(mShort.parsedLanguageVersion, Version(3, 6, 0));
 
-      final FormatMode mMin = resolveFormatMode('3.13.4', '2.12');
+      final FormatMode mMin = resolveFormatMode('3.14.0', '2.12');
       expect(mMin.inProcess, isTrue);
       expect(mMin.languageVersion, '2.12');
 
-      final FormatMode mMax2x = resolveFormatMode('3.13.5', '2.19');
+      final FormatMode mMax2x = resolveFormatMode('3.14.1', '2.19');
       expect(mMax2x.inProcess, isTrue);
       expect(mMax2x.languageVersion, '2.19');
 
       // Out-of-range or non-existent language versions fall back to CLI.
-      final FormatMode mInvalid2x = resolveFormatMode('3.13.5', '2.20');
+      final FormatMode mInvalid2x = resolveFormatMode('3.14.1', '2.20');
       expect(mInvalid2x.inProcess, isFalse);
       expect(mInvalid2x.languageVersion, '2.20');
       expect(mInvalid2x.parsedLanguageVersion, isNull);
 
-      final FormatMode mPreNullSafety = resolveFormatMode('3.13.5', '2.11');
+      final FormatMode mPreNullSafety = resolveFormatMode('3.14.1', '2.11');
       expect(mPreNullSafety.inProcess, isFalse);
       expect(mPreNullSafety.languageVersion, '2.11');
 
-      final FormatMode mFutureLv = resolveFormatMode('3.13.5', '3.14');
+      final FormatMode mFutureLv = resolveFormatMode('3.14.1', '3.15');
       expect(mFutureLv.inProcess, isFalse);
-      expect(mFutureLv.languageVersion, '3.14');
+      expect(mFutureLv.languageVersion, '3.15');
 
       // Other SDK versions fall back to the SDK's own dart format CLI and map
-      // `latest` to the SDK's `<major>.<minor>`, never 3.14.
-      final FormatMode mOldPatch = resolveFormatMode('3.13.3', 'latest');
-      expect(mOldPatch.inProcess, isFalse);
-      expect(mOldPatch.languageVersion, '3.13');
+      // `latest` to the SDK's `<major>.<minor>`, never 3.15.
+      final FormatMode mPrevious = resolveFormatMode('3.13.5', 'latest');
+      expect(mPrevious.inProcess, isFalse);
+      expect(mPrevious.languageVersion, '3.13');
 
       final FormatMode mSdk311 = resolveFormatMode('3.11.0', 'latest');
       expect(mSdk311.inProcess, isFalse);
       expect(mSdk311.languageVersion, '3.11');
 
-      final FormatMode mSdk314 = resolveFormatMode(
-        '3.14.0-100.0.dev',
+      final FormatMode mSdk315 = resolveFormatMode(
+        '3.15.0-100.0.dev',
         'latest',
       );
-      expect(mSdk314.inProcess, isFalse);
-      expect(mSdk314.languageVersion, '3.14');
+      expect(mSdk315.inProcess, isFalse);
+      expect(mSdk315.languageVersion, '3.15');
     },
   );
 

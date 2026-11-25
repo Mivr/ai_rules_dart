@@ -81,8 +81,8 @@ Future<void> _runPersistentWorker() async {
 /// vendored `package:dart_style`, and the minimum patch within that series.
 /// Mirrors `FORMATTER_SDK_SERIES` and `FORMATTER_MIN_SDK_PATCH` in
 /// `dart/private/dart_analyze_aspect.bzl`.
-const formatterSdkSeries = (3, 13);
-const formatterMinSdkPatch = 4;
+const formatterSdkSeries = (3, 14);
+const formatterMinSdkPatch = 0;
 const formatterMinLanguageVersion = (2, 12);
 const formatterMax2xMinor = 19;
 

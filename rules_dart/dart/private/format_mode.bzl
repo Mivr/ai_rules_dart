@@ -14,8 +14,8 @@ visibility(["//dart/..."])
 # the target's language version is outside `FORMATTER_MIN_LANGUAGE_VERSION` ..
 # `<sdk_major>.<sdk_minor>`, `DartFormat` declares `compile_files` and
 # `format_runner` invokes the SDK's own `dart format` CLI.
-FORMATTER_SDK_SERIES = (3, 13)
-FORMATTER_MIN_SDK_PATCH = 4
+FORMATTER_SDK_SERIES = (3, 14)
+FORMATTER_MIN_SDK_PATCH = 0
 FORMATTER_MIN_LANGUAGE_VERSION = (2, 12)
 FORMATTER_MAX_2X_MINOR = 19
 
@@ -23,7 +23,7 @@ def _parse_sdk_version(version):
     """Returns `(major, minor, patch)` of an SDK version string, or None.
 
     Args:
-      version: The toolchain's SDK version string, such as `"3.13.5"` or
+      version: The toolchain's SDK version string, such as `"3.14.1"` or
         `"3.14.0-100.0.dev"`.
 
     Returns:
@@ -69,7 +69,7 @@ def resolve_format_mode(sdk_version, language_version):
     `package:dart_style`'s `latestLanguageVersion`.
 
     Args:
-      sdk_version: The toolchain's `DartSdkInfo.version` (e.g. `"3.13.5"`).
+      sdk_version: The toolchain's `DartSdkInfo.version` (e.g. `"3.14.1"`).
       language_version: The target's package language version (`""`, `"latest"`,
         or `"<major>.<minor>"`).
 

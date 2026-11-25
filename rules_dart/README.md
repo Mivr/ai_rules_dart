@@ -805,7 +805,7 @@ staged sources with zero `--summary` flags. Flutter targets resolve `dart:ui` vi
 Turning the flag off therefore no longer runs the SDK's own `dart analyze`: it
 runs the pinned `package:analyzer` and the vendored linter, the same as with the
 flag on, so both modes report the same diagnostics. They can differ from stock
-`dart analyze`; a lint rule the SDK lacks (on SDK 3.13.5, `unnecessary_this_alias`)
+`dart analyze`; a lint rule the SDK lacks
 is accepted rather than reported as `undefined_lint`.
 
 Stock SDK `dart analyze` via `analyze_runner` is used only as fallback in these

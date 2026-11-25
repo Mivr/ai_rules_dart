@@ -18,7 +18,7 @@ DartSdkInfo = provider(
     fields = {
         "dart": "File: The `dart` executable.",
         "sdk_root": "Target: The root directory of the SDK, containing `lib/` and `bin/`.",
-        "version": "str: The SDK version string (e.g. `3.13.5`).",
+        "version": "str: The SDK version string (e.g. `3.14.1`).",
         "tool_files": "depset[File]: All files needed to run the SDK. Pass as a `transitive` entry to action inputs / `ctx.runfiles(transitive_files = ...)`; flatten only to inspect paths.",
         "compile_files": "depset[File]: The SDK files `dart compile`, `gen_kernel` and `dart format` read. A subset of `tool_files`; equal to it when the toolchain names none.",
         "runtime_files": "depset[File]: The SDK files a test needs at run time to run a compiled kernel. A subset of `tool_files`; equal to it when the toolchain names none.",
@@ -300,7 +300,7 @@ dart_toolchain = rule(
             doc = "A filegroup of the SDK files `dart analyze`, `dart fix` and the analyzer-summary tool read; a subset of `sdk_root`. Leave unset to use all of `sdk_root` for those actions too.",
         ),
         "version": attr.string(
-            doc = "The SDK version string (e.g. `3.13.5`).",
+            doc = "The SDK version string (e.g. `3.14.1`).",
             mandatory = True,
         ),
         "target_os": attr.string(
@@ -502,7 +502,7 @@ def declare_dart_sdk_toolchains(
     """Declares SDK filegroups and `dart_toolchain` targets over an extracted Dart SDK.
 
     Args:
-        version: The Dart SDK version string (e.g. `3.13.5`).
+        version: The Dart SDK version string (e.g. `3.14.1`).
         dart: Label or repo-relative path of the `dart` executable (e.g. `bin/dart`
             or `dart-sdk/bin/dart`).
         prefix: Path prefix inside the package where the Dart SDK lives (e.g. `""`

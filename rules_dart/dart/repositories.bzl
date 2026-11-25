@@ -30,7 +30,7 @@ _ATTRS = {
         default = "",
     ),
     "dart_version": attr.string(
-        doc = "The Dart SDK version to download (e.g. `3.13.5`). Must be a version listed in `versions.bzl`.",
+        doc = "The Dart SDK version to download (e.g. `3.14.1`). Must be a version listed in `versions.bzl`.",
         mandatory = True,
         values = TOOL_VERSIONS.keys(),
     ),
@@ -113,7 +113,7 @@ dart_repositories = repository_rule(
 _CROSS_DOC = "Fetch the cross-compilation SDK artifacts (gen_snapshot and dartaotruntime) for a given version, host platform, and target platform"
 _CROSS_ATTRS = {
     "dart_version": attr.string(
-        doc = "The Dart SDK version to download (e.g. `3.13.5`). Must be a version listed in `versions.bzl`.",
+        doc = "The Dart SDK version to download (e.g. `3.14.1`). Must be a version listed in `versions.bzl`.",
         mandatory = True,
         values = TOOL_VERSIONS.keys(),
     ),

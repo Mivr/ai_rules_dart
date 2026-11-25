@@ -131,7 +131,7 @@ format_action_test(
     name = "in_process_format_action_test",
     size = "small",
     expect_compile_files = False,
-    expected_language_version = "3.13",
+    expected_language_version = "3.14",
     target_under_test = ":mixed",
 )
 
