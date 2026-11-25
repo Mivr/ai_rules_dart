@@ -889,6 +889,8 @@ jobs:
         run: bazel run //tools/e2e_runner -- --workspace=e2e/build_runner --bazel=bazel
       - name: Run e2e/pub_sources
         run: bazel run //tools/e2e_runner -- --workspace=e2e/pub_sources --bazel=bazel
+      - name: Run e2e/pubspec_assets
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/pubspec_assets --bazel=bazel
       # The runner builds in a temp copy, so build in the tree here for the
       # check below to see writes through the dirlinks.
       - name: Build e2e/dual_hub in tree
@@ -1068,7 +1070,7 @@ jobs:
             workspaces: aar_host
           - leg: gradle models
             shard: android-models
-            workspaces: android_model_red android_modules android_plugins android_sharedprefs stock_dev_loop
+            workspaces: android_model_red android_modules android_plugins android_sharedprefs android_template stock_dev_loop
     env:
       DISK_CACHE_DIR: ~/.cache/bazel-disk
       DISK_CACHE_SHARD: linux-${{ matrix.shard }}
