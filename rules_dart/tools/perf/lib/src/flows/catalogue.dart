@@ -120,6 +120,27 @@ WorkspaceFn _stockCopy(String from, {String? name}) => (c) async {
 };
 
 /// A corpus project with its conformance overlay, for the rules.
+/// The first build of one counter target in debug: no cache but the download
+/// cache, the output base expunged.
+BazelFlow _firstCounter(String kind, String target, {bool android = false}) {
+  final id = 'first.counter.$kind.rules';
+  return BazelFlow(
+    id: id,
+    tool: 'rules_flutter',
+    corpus: 'counter',
+    flow: 'first_build_$kind',
+    state: 'no_cache',
+    tags: {'heavy', 'corpus', if (android) 'android'},
+    workspace: _corpusRules('counter', android: android),
+    command: const ['build', '-c', 'dbg'],
+    targets: [target],
+    clean: true,
+    cleanArgs: const ['--disk_cache=', '--repo_contents_cache='],
+    extraPrepare: (c, ws, run) =>
+        c.bazelIn(ws, id).must(['clean', '--expunge']),
+  );
+}
+
 WorkspaceFn _corpusRules(String project, {bool android = false}) => (c) async {
   final corpus = c.options['corpus'] ?? '/work/rdf/corpus/apps';
   final dir = '${c.scratch}/ws/corpus_$project';
@@ -775,6 +796,10 @@ List<Flow> catalogue() {
             .must(['clean', '--expunge']),
       ),
     )
+    // The same first build of the corpus counter app's debug APK and debug
+    // Linux app: the Flutter rows of the first-build decision record (S15).
+    ..add(_firstCounter('apk', '//:apk', android: true))
+    ..add(_firstCounter('linux', '//:linux'))
     // A web edit of the corpus counter app: the dart2js bundle again after a
     // body edit, against stock `flutter build web` after the same edit.
     ..add(
