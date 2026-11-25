@@ -3,3 +3,6 @@ commands:
   - name: test all targets
     run: bazel test //... --test_output=errors
     min_tests_executed: 4
+  - name: an empty manifest still bundles the link hook's data asset (Flutter 3.50)
+    run: bazel test -c opt //:empty_manifest_bundle_test --test_output=errors
+    min_tests_executed: 1

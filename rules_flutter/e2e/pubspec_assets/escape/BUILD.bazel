@@ -1,0 +1,18 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+
+exports_files(["pubspec.lock"])
+
+# Its dependency `escaping` names a licence outside its package, which the
+# Flutter tool refuses when it bundles (`e2e.yaml` expects the failure).
+flutter_application(
+    name = "escape_app",
+    package_name = "escape",
+    main = "lib/main.dart",
+    pub_packages = "@escape_deps//packages",
+    pubspec = "pubspec.yaml",
+    tags = ["manual"],
+    deps = [
+        "@escape_deps//:escaping",
+        "@escape_deps//:flutter",
+    ],
+)
