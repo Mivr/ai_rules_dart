@@ -256,6 +256,14 @@ jobs:
             scope: apple
             shard: none
             cache-save: false
+          # The previous stable line (Flutter 3.47.7, Dart 3.13.5): the darwin
+          # archives of that line are fetched only here. Like every `all` leg
+          # it leaves its Android targets to Linux (ci.yaml's
+          # e2e-linux-android), so the widget test and the release web build run.
+          - workspace: previous_line
+            scope: all
+            shard: none
+            cache-save: false
     env:
       DISK_CACHE_DIR: ~/.cache/bazel-disk
     steps:

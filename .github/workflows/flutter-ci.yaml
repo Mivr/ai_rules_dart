@@ -52,11 +52,15 @@
 #   e2e-linux-android:   three legs, one runner each: integration_android and
 #     aar_host, which boot the Android emulator (with KVM), and the Android
 #     workspaces that build from the Gradle model (android_model_red,
-#     android_modules, android_plugins, android_sharedprefs, stock_dev_loop)
+#     android_modules, android_plugins, android_sharedprefs, android_template,
+#     stock_dev_loop) and previous_line, the previous stable line (Flutter
+#     3.47.7): its widget test, web build, debug and release APKs and Linux
+#     bundle
 #   repo-checks:         `bazel mod tidy` leaves the lockfile unchanged and
 #     //tools/repo_contents_cache (repos marked reproducible are shared through
 #     the repo contents cache)
-#   e2e-windows:         hello_world and windows_example (Windows)
+#   e2e-windows:         hello_world and windows_example (Windows), and previous_line's
+#     widget test and web build (its Android targets stay on Linux, as hello_world's)
 # android_example runs in full.yaml (nightly) only: its APK + Kotlin actions
 # would make a push job the longest one.
 # plugin_example runs in full.yaml only: every target it can build under
@@ -1095,7 +1099,7 @@ jobs:
             workspaces: aar_host
           - leg: gradle models
             shard: android-models
-            workspaces: android_model_red android_modules android_plugins android_sharedprefs android_template stock_dev_loop
+            workspaces: android_model_red android_modules android_plugins android_sharedprefs android_template previous_line stock_dev_loop
     env:
       DISK_CACHE_DIR: ~/.cache/bazel-disk
       DISK_CACHE_SHARD: linux-${{ matrix.shard }}
@@ -1493,6 +1497,15 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: rules_flutter/e2e/windows_example
         run: bazel --output_user_root=C:/b test //... --keep_going --test_output=errors
+      # The previous stable line (Flutter 3.47.7, Dart 3.13.5): its Windows
+      # archives are fetched only here. The widget test and the release web
+      # build run; its Android targets (a debug and a release APK) and the Linux
+      # bundle build on Linux in `e2e-linux-android`, and the APK build's JVM
+      # does not fit this runner (see the hello_world step above).
+      - name: bazel test //:widget_test //:web (e2e/previous_line)
+        if: ${{ !cancelled() }}
+        working-directory: rules_flutter/e2e/previous_line
+        run: bazel --output_user_root=C:/b test //:widget_test //:web --keep_going --test_output=errors
       - name: Report cache sizes
         if: always()
         shell: bash
