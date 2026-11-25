@@ -60,17 +60,36 @@ jobs:
         # this through dart-tag.yaml, github.sha is main's head, not the tagged
         # commit.
         run: bash .github/workflows/release_gate.sh "$TAG" "$(gh api "repos/$REPO/commits/$TAG" --jq .sha)"
-  release:
+  # The prebuilt tools of rules_dart (see prebuilt-tools.yaml, which the CI
+  # rehearsal calls too): on each host platform the SDK tables list, its own
+  # runner builds the tool set twice from the tag and uploads it only when the
+  # two builds agree byte for byte. A job that fails fails the release, which
+  # needs this call: a platform may be absent, never wrong. The reusable
+  # release workflow's build job downloads the artifacts, and release_prep.sh
+  # writes the table into the module's archive.
+  tools:
     if: vars.RELEASES_ENABLED == 'true'
     needs: gate
+    uses: ./.github/workflows/prebuilt-tools.yaml
+    with:
+      module: rules_dart
+      ref: ${{ inputs.tag_name || github.ref_name }}
+      rehearse: false
+  release:
+    if: vars.RELEASES_ENABLED == 'true'
+    needs: [gate, tools]
     # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
     # workflow. The gate job above carries its own timeout.
     #
     # The reusable workflow checks out the tag at the repository root, runs
     # `bazel_test_command` there and then the root's
     # .github/workflows/release_prep.sh with the tag, which reads the module
-    # from the tag's prefix and builds the archive of rules_dart/ only. It
-    # uploads the files, attests them and creates the GitHub release.
+    # from the tag's prefix and builds the archive of rules_dart/ only, with
+    # the prebuilt-tools table, beside the archives of the `tools` jobs
+    # (`rules_dart-v<version>-tools-<dart>-<platform>.tar.gz` and
+    # `rules_dart-v<version>-pub_scanner-<platform>.tar.gz`, matched by
+    # `release_files`). It uploads the files, attests them and creates the
+    # GitHub release.
     uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@1d798ff015ed0696433e01e2c3ccbb2abefadad7 # v7.7.0
     with:
       release_files: rules_dart-v*.tar.gz

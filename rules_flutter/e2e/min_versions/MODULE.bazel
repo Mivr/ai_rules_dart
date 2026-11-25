@@ -118,12 +118,12 @@ flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
 # vector_math). Regenerated with the pinned toolchain's own Dart SDK plus a
 # FLUTTER_ROOT assembled from the framework packages the toolchain already
 # materializes (packages/flutter, packages/sky_engine) and
-# bin/cache/flutter.version.json stamped 3.47.7/Dart 3.13.5:
+# bin/cache/flutter.version.json stamped 3.50.1/Dart 3.14.0:
 #   FLUTTER_ROOT=<root> PUB_CACHE=<scratch> dart pub get
 # then copied here. Every hosted entry carries a sha256; the two `sdk`
 # entries resolve against the pinned toolchain, not the network. The lock
 # records no `flutter:` sdk floor (only `flutter pub` writes one), so the
-# extension's newer-resolver check is skipped — the build against 3.47.7
+# extension's newer-resolver check is skipped — the build against 3.50.1
 # itself is the proof.
 flutter.pub(
     name = "deps",

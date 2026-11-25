@@ -86,6 +86,32 @@ fail_entry() {
   printf '%s\n' "$out" | tail -8 | sed 's/^/  | /'
 }
 
+# --- 0. a source archive: no prebuilt-tools table, every tool from source ---
+# `git archive` leaves the checkout's empty table out (`.gitattributes`); only
+# `release_prep.sh` adds a release's. The `dart` extension must read no table
+# as an empty one: no prebuilt archive repository, and the build compiles
+# rules_dart's own tools from source.
+source_case='source archive: no prebuilt-tools table, tools built from source'
+if [[ -e "$ARCHIVE_DIR/dart/private/prebuilt_tools.json" ]]; then
+  note_fail "$source_case" "the archive holds dart/private/prebuilt_tools.json"
+else
+  code=0
+  out="$(run_bazel build //:bin_exe </dev/null 2>&1)" || code=$?
+  if [[ $code -ne 0 ]]; then
+    fail_entry "$source_case" "building //:bin_exe failed, exited $code"
+  else
+    code=0
+    out="$(run_bazel mod show_extension @rules_dart//dart:extensions.bzl%dart </dev/null 2>&1)" || code=$?
+    if [[ $code -ne 0 ]]; then
+      fail_entry "$source_case" "bazel mod show_extension failed, exited $code"
+    elif grep -q 'rules_dart_tools_[0-9]' <<<"$out"; then
+      fail_entry "$source_case" "the extension made a prebuilt archive repository"
+    else
+      note_pass "$source_case"
+    fi
+  fi
+fi
+
 # --- 1. enumeration: the registry must match `bazel query` exactly ---
 # A failing query must fail the test with its stderr, so each result goes
 # through a variable rather than a process substitution that hides the status.

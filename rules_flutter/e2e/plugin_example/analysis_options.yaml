@@ -17,3 +17,10 @@ formatter:
   # broken one — so the `trailing_commas: preserve` that very_good_analysis
   # sets never actually reaches the formatter unless it is restated here.
   trailing_commas: preserve
+
+analyzer:
+  errors:
+    # Flutter 3.50 deprecates `package:flutter/material.dart` and `cupertino.dart` in
+    # favour of the `material_ui` and `cupertino_ui` packages. This workspace tests
+    # the rules, not that migration.
+    deprecated_member_use: ignore

@@ -27,6 +27,36 @@ flutter_application(
     deps = _DEPS,
 )
 
+# The same link hook under an empty manifest (its project has no `flutter:`
+# section): the tool still bundles the data asset. A release build runs the
+# link hook, so `e2e.yaml` runs the test with `-c opt`.
+flutter_application(
+    name = "empty_manifest_app",
+    package_name = "build_hooks",
+    link_hook_assets = ["package:native_link/factors.json"],
+    main = "empty_manifest/lib/main.dart",
+    pub_packages = "@deps//packages",
+    pubspec = "empty_manifest/pubspec.yaml",
+    tags = ["manual"],
+    deps = [
+        "@deps//:flutter",
+        "@deps//:native_link",
+    ],
+)
+
+flutter_test(
+    name = "empty_manifest_bundle_test",
+    package_name = "build_hooks",
+    size = "small",
+    data = [":empty_manifest_app"],
+    main = "test/empty_manifest_bundle_test.dart",
+    tags = ["manual"],
+    deps = [
+        "@deps//:flutter_test",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
 flutter_test(
     name = "hooks_test",
     package_name = "build_hooks",

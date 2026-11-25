@@ -130,7 +130,7 @@ bzl_library(
         "//flutter/private:flutter_plugin",
         "//flutter/private:flutter_prebuilt_test",
         "//flutter/private:flutter_test",
-        "@flutter_l10n//:index",
+        "@flutter_projects//:index",
     ],
 )
 
@@ -168,6 +168,7 @@ bzl_library(
         "//flutter/private:flutter_pub_tag",
         "//flutter/private:flutter_pubspec",
         "//flutter/private:flutter_sdk_package",
+        "//flutter/private:prebuilt_tools",
         "//flutter/private:pub_lock_sdks",
         "//flutter/private:swiftpm_package",
         "//flutter/private:swiftpm_resolved",
@@ -324,7 +325,7 @@ bzl_library(
         "//flutter/private:flutter_integration_test",
         "//flutter/private:flutter_web_application",
         "@bazel_skylib//rules:expand_template",
-        "@flutter_l10n//:index",
+        "@flutter_projects//:index",
     ],
 )
 

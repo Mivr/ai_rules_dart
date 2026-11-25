@@ -331,13 +331,14 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "KrY5dyiGK0mSCtycUhBmmLOUtyuf1HyRPB4SfUbAB5w=",
-        "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
+        "bzlTransitiveDigest": "Q4g26yTc84wS0lfgsbQkt7ZOu+eAwlsXGH0AROpxRao=",
+        "usagesDigest": "I4uMT7H/6XmAwIIljYIoZBqHKNwjNJNvXMVs7sd5vns=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
           "FILE:@@ai_rules_flutter+//tools/tool_deps/pubspec.lock 1af5c724131a36c5ebcedf7762ae4b94aa46c5add81cfd16f1d729bc8c5d5bb6",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock 1452d104de06eacf15905878d31e7b7c84bf72114637fee0c87da2c75dcf58da",
-          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 131b54a6760682dea8f631e6a52e48a43555cfb0479ebe5aca1cc647dc36cd7c",
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 49944eadf70335ddae7a92ae02da09a2aef79e5823c87c67a002c565b9918592",
+          "FILE:@@//pubspec.lock 5522a27212d2ee789982fd87fc3b6da76d5120c8a3895bd647fb22da48e1435b",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
           "FILE:@@ai_rules_flutter+//tools/tool_deps/pub_plan.json 5d0f63da220be205815fe41bb5fa48d054019eb52f07d09ecdd0f38fe4c63f84",
@@ -345,7 +346,9 @@
           "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pub_plan.json f6a39248934c419f51f8672259b7de3991c860fa4ba9c1422608f981cf8868d1",
           "FILE:@@ai_rules_flutter+//tools/tool_deps/pubspec.yaml 72c7d1a27afa6595996bb9e567d77cf00e80136ab864d09c11de1e104def203e",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.yaml 169951c2e1973cc403daba2bbd1179e4a73e1f5be390d0572f69531211e5bdee",
-          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 1d4a082706d3df1ae1f7694f5563f22af91dcbcf6be6d5dc8e16487ae54e55b7"
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 523cb61075895694e4dbfbe023728a430db65a9a58fc37ee3fbde83a4349c4a4",
+          "FILE:@@//pubspec.yaml b943cfcb4d4abec74f7ac206f5b952f23e40a9c330ee1c477632223904f914c2",
+          "FILE:@@//pure_dart/pubspec.yaml 3b971b1259cb027e446d9c3dc8f79aa3be1af4d77286855ae9af121078bcca21"
         ],
         "generatedRepoSpecs": {
           "ext_pub_deps": {
@@ -3399,6 +3402,27 @@
                 "LICENSE*"
               ]
             }
+          },
+          "dart_project_root": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": ""
+            }
+          },
+          "dart_project_pure_dart": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pure_dart"
+            }
+          },
+          "dart_projects": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%project_index",
+            "attributes": {
+              "projects": {
+                "": "dart_project_root",
+                "pure_dart": "dart_project_pure_dart"
+              }
+            }
           }
         },
         "moduleExtensionMetadata": {
@@ -3411,9 +3435,10 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "RAtHLS5ecvRepnfXAr3h8L7++A5hM+JfIjKeTMWslEg=",
-        "usagesDigest": "gp15IlLyUYpLTeeH6jFZJ3ThuiNBWr6aOqk9s3b+A1g=",
+        "bzlTransitiveDigest": "Z1Ue9+kiHbNJO1FYpMXmq2ItrfbO4A/IJ6699L3S0jA=",
+        "usagesDigest": "Og1wQVbkTq0Nn5zITrFD6QHRWmw/0xeD9xsJ/8+oOcA=",
         "recordedInputs": [
+          "REPO_MAPPING:ai_rules_dart+,dart_projects ai_rules_dart++pub+dart_projects",
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
           "REPO_MAPPING:ai_rules_flutter+,rules_cc rules_cc+",
           "REPO_MAPPING:ai_rules_flutter+,rules_dart ai_rules_dart+",
@@ -3428,27 +3453,43 @@
           "REPO_MAPPING:rules_cc+,platforms platforms",
           "REPO_MAPPING:rules_cc+,rules_cc rules_cc+",
           "REPO_MAPPING:rules_cc++compatibility_proxy+cc_compatibility_proxy,rules_cc rules_cc+",
-          "FILE:@@//pubspec.lock 52b5b8446323c8fded9be5e6e55bafdd9bd1d438aea9e6a5272410c7f5d22ae7",
+          "FILE:@@//pubspec.lock 5522a27212d2ee789982fd87fc3b6da76d5120c8a3895bd647fb22da48e1435b",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
-          "FILE:@@//pubspec.yaml 8b94a7612a6725223edc76f0cab08bd9bd93c4e32813a67e0b0a0132d4bbbcc3",
-          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64"
+          "ENV:RULES_DART_TOOLS \\0",
+          "FILE:@@ai_rules_flutter+//flutter/private/prebuilt_tools.json 61468467448a94c5c6ced36d05894d7ba2e2f7501ca84270a30da1cd18a3c713",
+          "FILE:@@//pubspec.yaml b943cfcb4d4abec74f7ac206f5b952f23e40a9c330ee1c477632223904f914c2",
+          "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
+          "FILE:@@//pure_dart/pubspec.yaml 3b971b1259cb027e446d9c3dc8f79aa3be1af4d77286855ae9af121078bcca21",
+          "FILE:@@//test DIR",
+          "FILE:@@//pure_dart/test DIR",
+          "FILE:@@ai_rules_dart++pub+dart_projects//projects.json 652b79ca2b81edfe2cf9ec65009696647b8ff914782568973fc8abb96e247f71"
         ],
         "generatedRepoSpecs": {
+          "rules_flutter_tools": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:prebuilt_tools.bzl%flutter_tools_hub_repo",
+            "attributes": {
+              "flutter_version": "3.50.1",
+              "platforms": [],
+              "sources": {
+                "android_bundle": "'@@ai_rules_flutter+//flutter/private/tools:android_bundle'"
+              }
+            }
+          },
           "flutter_dev_root": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_dev_root_repo.bzl%flutter_dev_root_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "sha256": "3bf237d76744f452aee98fc21962c6fc1481345e474c04e6ebdac8eb436364a8",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "sha256": "3178a2bda6f8138c0c0018de15f0fd9f2d65a4ff9f5c444b19353e316892db39",
               "source_url": "",
-              "source_strip_prefix": "flutter-3.47.7/"
+              "source_strip_prefix": "flutter-3.50.1/"
             }
           },
           "flutter_patched_sdk_product": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_patched_sdk_product_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "sha256": "8b2ad98bd8c2f86e647da5c3863de0ffb34dc00887a005c8074971ebd76e4454",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "sha256": "8af7e44890f905b8d4b4cac894f6f937ddab3b48aa40eee59c41f2fde941e6cd",
               "engine_base_url": ""
             }
           },
@@ -3462,11 +3503,11 @@
           "flutter_darwin-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_engine_artifacts",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "dart_sdk_sha256": "3f1caca0b6e7a7769d187b87070729ff8f5289fd62d743bf2948aa8066acfac9",
-              "host_tools_sha256": "8e4841ce55daa7b14b654598dfc5a993e23bca26d8137d4a65daa6b749cf87b3",
-              "patched_sdk_sha256": "e80fa5e63f51751507627456294bef28419c4facd09c33f7f49a7b4d986846f3",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "dart_sdk_sha256": "65e69eecaf330c307955b6138de0539c13726719be9ddc6af8b3babf95eb1a7f",
+              "host_tools_sha256": "0890ca45210e7b43ab430ed4529952119583bdfa8418507abb847699661f4676",
+              "patched_sdk_sha256": "6a323c81b94ef16fa6bc0d051768aa0b4e7c2f24356b58f491752623f4a063a0",
               "engine_base_url": "",
               "platform": "darwin-arm64",
               "sysroot_repo_name": "",
@@ -3478,20 +3519,21 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_darwin-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "darwin-x64-profile/FlutterMacOS.framework.zip": "engine",
                 "darwin-arm64-profile/artifacts.zip": "host-tools"
               },
               "sha256s": {
-                "darwin-x64-profile/FlutterMacOS.framework.zip": "642da26528a4ba473d4eea1f9fecc0ccda081285c3dd6a1012c17eb203bbc764",
-                "darwin-arm64-profile/artifacts.zip": "8d4c46733adc813726f0513ed4dada394212fe698e0a4bc5b8e07aada9341e8f"
+                "darwin-x64-profile/FlutterMacOS.framework.zip": "9d7ff2dc170cdbad38513b5b3b2067943a76898d85247924c10f79d0b84d2ffa",
+                "darwin-arm64-profile/artifacts.zip": "9d2289e781025b81d0f633e522e0e863fd1060b1f8830c50f362e0a32dad97b3"
               },
               "engine_base_url": "",
               "macos_framework_dirs": [
@@ -3503,29 +3545,29 @@
           "flutter_font_subset_darwin-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_font_subset_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "platform": "darwin-arm64",
-              "sha256": "7faae0617c15428c5270814a802eff42e9d429ac23330bb994af9f572199eb5c",
+              "sha256": "f2e6e66757ac6aea2b08e41f03c22a18463e250ea6112c1335a3bcac634dffdf",
               "engine_base_url": ""
             }
           },
           "flutter_host_tools_release_darwin-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_host_tools_release_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "platform": "darwin-arm64",
-              "sha256": "5310478029371e4c29f2a9d2a92cce1c22420e85f881d74d0ad35186a9bdb1c5",
+              "sha256": "2bcbf258e9011b8a85d84db27cc6533b667359c264ce4c6bd46b648fd6a9e026",
               "engine_base_url": ""
             }
           },
           "flutter_darwin-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_engine_artifacts",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "dart_sdk_sha256": "d94b939f5a7da931afe0016263cbaa91483500af1ab50a06ae3e66bbda3a621f",
-              "host_tools_sha256": "db730491dc12cb6856cb91f191d852b29ff1716943b3cba61bc1e7f01a4397f3",
-              "patched_sdk_sha256": "e80fa5e63f51751507627456294bef28419c4facd09c33f7f49a7b4d986846f3",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "dart_sdk_sha256": "173041b6ab643b0c6cf462f57ee7f39558591c484b5402b10e751a7ffca9ee97",
+              "host_tools_sha256": "eb29e4af2ad1c2514abf3c1cbe07f9225bb0c6d85867dcce8bd92a6f9d7ecf35",
+              "patched_sdk_sha256": "6a323c81b94ef16fa6bc0d051768aa0b4e7c2f24356b58f491752623f4a063a0",
               "engine_base_url": "",
               "platform": "darwin-x64",
               "sysroot_repo_name": "",
@@ -3537,20 +3579,21 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_darwin-x64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "darwin-x64-profile/FlutterMacOS.framework.zip": "engine",
                 "darwin-x64-profile/artifacts.zip": "host-tools"
               },
               "sha256s": {
-                "darwin-x64-profile/FlutterMacOS.framework.zip": "642da26528a4ba473d4eea1f9fecc0ccda081285c3dd6a1012c17eb203bbc764",
-                "darwin-x64-profile/artifacts.zip": "b15902457e0a21a05c5f9dc92f9dd942709e7dca119030cf31cfb838adfc2786"
+                "darwin-x64-profile/FlutterMacOS.framework.zip": "9d7ff2dc170cdbad38513b5b3b2067943a76898d85247924c10f79d0b84d2ffa",
+                "darwin-x64-profile/artifacts.zip": "1dce39e5a562d5f32c4fe3a4f713b9a6ec6d7b513bdc6bd4b08bbdba5328c910"
               },
               "engine_base_url": "",
               "macos_framework_dirs": [
@@ -3562,29 +3605,29 @@
           "flutter_font_subset_darwin-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_font_subset_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "platform": "darwin-x64",
-              "sha256": "79fffbe02276158c4780de1f091bc824f128ba10f97f6d39d8c432592bfa5aea",
+              "sha256": "416c9615a567b4a3ce677c38801e13693d8d21b4c170f8d979ba18dc17447442",
               "engine_base_url": ""
             }
           },
           "flutter_host_tools_release_darwin-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_host_tools_release_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "platform": "darwin-x64",
-              "sha256": "a0f05e79bebeea629bc3184be75111ead66da87b4e511cf9e30411c18a8cc28c",
+              "sha256": "7d17f2a269544d8d1d79cb7cc58ad870563707516477248de776562590951f39",
               "engine_base_url": ""
             }
           },
           "flutter_linux-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_engine_artifacts",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "dart_sdk_sha256": "37968cb9f0c2705e623dd0a39a1e753e8e8cbdf4876dd38f20f4ada4eb71127c",
-              "host_tools_sha256": "1a716b779bc669def11c0ebac97d5400efa201824419fe67397802ffe5cdb756",
-              "patched_sdk_sha256": "e80fa5e63f51751507627456294bef28419c4facd09c33f7f49a7b4d986846f3",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "dart_sdk_sha256": "62886210d58c796a161d8021b5d307272dfc37c13a11ba656c9af2d16b9e73f6",
+              "host_tools_sha256": "572f5ac049fb8adb21a442329eeaa866328971792f28c20302fa8a99bea583d8",
+              "patched_sdk_sha256": "6a323c81b94ef16fa6bc0d051768aa0b4e7c2f24356b58f491752623f4a063a0",
               "engine_base_url": "",
               "platform": "linux-x64",
               "sysroot_repo_name": "flutter_linux_sysroot_x64",
@@ -3596,18 +3639,19 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_linux-x64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "linux-x64-profile/linux-x64-flutter-gtk.zip": "engine"
               },
               "sha256s": {
-                "linux-x64-profile/linux-x64-flutter-gtk.zip": "853bee7a69edf5931f02121086118bd8dbfe01d081192c6d6cae232b1abede47"
+                "linux-x64-profile/linux-x64-flutter-gtk.zip": "9949f8e366c7c8cf4d9a50fade6607f3f32c8de7b03e79cca0b33968a09de3c5"
               },
               "engine_base_url": "",
               "macos_framework_dirs": [],
@@ -3617,20 +3661,20 @@
           "flutter_font_subset_linux-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_font_subset_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "platform": "linux-x64",
-              "sha256": "40d6f128c855542430a0b2736cde1fe43a52966cc6d8b9d2634123adab8ac50b",
+              "sha256": "c799b8949f71040914258cd55115ed8ec55b186eb0ddfcb7b6d579b57a66660a",
               "engine_base_url": ""
             }
           },
           "flutter_linux-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_engine_artifacts",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "dart_sdk_sha256": "fae969baffbfe18c17efcb5124f3668baa886db19a80851a51f1fdb20074649a",
-              "host_tools_sha256": "5fafe5f569b813973f43bb994f83d576635c8fff725896bc668378fa16c9c7f0",
-              "patched_sdk_sha256": "e80fa5e63f51751507627456294bef28419c4facd09c33f7f49a7b4d986846f3",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "dart_sdk_sha256": "9a6920b2da35b060fe3cbc6fd003a6266bd4604bbd79e336596e438d6d38f59f",
+              "host_tools_sha256": "582b16eea225eca160b5ae0eca6867c719e8ae388e098f3addb5863c82beac8d",
+              "patched_sdk_sha256": "6a323c81b94ef16fa6bc0d051768aa0b4e7c2f24356b58f491752623f4a063a0",
               "engine_base_url": "",
               "platform": "linux-arm64",
               "sysroot_repo_name": "flutter_linux_sysroot_arm64",
@@ -3642,18 +3686,19 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_linux-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "linux-arm64-profile/linux-arm64-flutter-gtk.zip": "engine"
               },
               "sha256s": {
-                "linux-arm64-profile/linux-arm64-flutter-gtk.zip": "36786676639ed85ddfb2d4a7cb67ad11479a3f257059781619f5385f3560a947"
+                "linux-arm64-profile/linux-arm64-flutter-gtk.zip": "0e9c988064ad6c432cacc226925d8d5491242bbbefe4384bc885867ffd0de0da"
               },
               "engine_base_url": "",
               "macos_framework_dirs": [],
@@ -3663,20 +3708,20 @@
           "flutter_font_subset_linux-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_font_subset_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "platform": "linux-arm64",
-              "sha256": "5fe95bc7c187eb78917fc00e789dc1f90da79ee5ede5b5e38d2670b74fe37fa0",
+              "sha256": "b8b62eef4405aaca4f013468c2de3d3105df2f95cebdbbf1a3283bfb80df76e8",
               "engine_base_url": ""
             }
           },
           "flutter_windows-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_engine_artifacts",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "dart_sdk_sha256": "3d3f755fd953cf1f405c0cc636382910510e3b8fc4e002d71d3fec9179a5c8e4",
-              "host_tools_sha256": "7ac01f5118ee863a95d496315e7a2a3eeb7644bf4e90868fa3774acb28547e9c",
-              "patched_sdk_sha256": "e80fa5e63f51751507627456294bef28419c4facd09c33f7f49a7b4d986846f3",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "dart_sdk_sha256": "290689e7268a179107739b69300e2aff9de152d8a6966d660b02e33e1a6ebcd3",
+              "host_tools_sha256": "114ee9563f7faa96bd352ae9cc94f3ce8dc6c0a1e56bdae38653cfd26e91f8e0",
+              "patched_sdk_sha256": "6a323c81b94ef16fa6bc0d051768aa0b4e7c2f24356b58f491752623f4a063a0",
               "engine_base_url": "",
               "platform": "windows-x64",
               "sysroot_repo_name": "",
@@ -3688,18 +3733,19 @@
                 "@@ai_rules_flutter++flutter+flutter_linux-x64//:dart-sdk/bin/dartvm": "linux-x64",
                 "@@ai_rules_flutter++flutter+flutter_linux-arm64//:dart-sdk/bin/dartvm": "linux-arm64",
                 "@@ai_rules_flutter++flutter+flutter_windows-x64//:dart-sdk/bin/dartvm.exe": "windows-x64"
-              }
+              },
+              "prebuilt_tools_repo": ""
             }
           },
           "flutter_windows-x64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "windows-x64-profile/windows-x64-flutter.zip": "engine"
               },
               "sha256s": {
-                "windows-x64-profile/windows-x64-flutter.zip": "97d266959e496fbc4616acf45bb3fa017e1eb6c4efc159eb07e92caf39d2d9c0"
+                "windows-x64-profile/windows-x64-flutter.zip": "cd2668fb67328c8699f0b80be4821a745f10e454ad1a1e32b10c2e475d2382dc"
               },
               "engine_base_url": "",
               "macos_framework_dirs": [],
@@ -3709,21 +3755,21 @@
           "flutter_font_subset_windows-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter:repositories.bzl%flutter_font_subset_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "platform": "windows-x64",
-              "sha256": "37d7ea347fafa129f68dc2f7f85c9599b8fbdc5ab23bd562d06b58a89894885c",
+              "sha256": "186d67b4ece7b23080a6a398b2a22ce9e4867fe60fa3b9d717f68d273d200bd4",
               "engine_base_url": ""
             }
           },
           "flutter_cross_darwin-arm64_android-arm_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm-profile/darwin-x64.zip": ""
               },
               "sha256s": {
-                "android-arm-profile/darwin-x64.zip": "457e51250976fae2fcc32a13686dc2b965ce9c076d540189b9fc55be0f9b5c5a"
+                "android-arm-profile/darwin-x64.zip": "bae6a51e5cf34b3557483548b1eac3e355f843e2be9473e3e4cf16d2c4472fa1"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -3732,12 +3778,12 @@
           "flutter_cross_darwin-arm64_android-arm": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-arm64",
               "target_platform": "android-arm",
               "host_repo_name": "flutter_darwin-arm64",
-              "gen_snapshot_sha256": "7d6dbd418fa29d136ae81db00e4d7a62b504d84ba8dab69271486a12d1fab2cd",
+              "gen_snapshot_sha256": "78a145e2866e52fd17d06e5ee1ea5405dda4a7a8297bc52947fa1e9b654e4dae",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_darwin-arm64_android-arm_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -3746,12 +3792,12 @@
           "flutter_cross_darwin-arm64_android-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm64-profile/darwin-x64.zip": ""
               },
               "sha256s": {
-                "android-arm64-profile/darwin-x64.zip": "c33703650e5324d7b86e3600eae9e327dfe716dd9cc913ed588e10615e917e69"
+                "android-arm64-profile/darwin-x64.zip": "83b5282dce0e163b1cae91ae45a9942e7313b00e95155918602b11b8bc4f2f2e"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -3760,12 +3806,12 @@
           "flutter_cross_darwin-arm64_android-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-arm64",
               "target_platform": "android-arm64",
               "host_repo_name": "flutter_darwin-arm64",
-              "gen_snapshot_sha256": "5535e11ad8a7d2d48d9f20766660d4d909ec37ab96f90b84c29080de682ae937",
+              "gen_snapshot_sha256": "d2fd32edb01fa45de34c80fe425a1e7f118b8ae2ac53b6e106cc0c7534fe6a52",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_darwin-arm64_android-arm64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -3774,12 +3820,12 @@
           "flutter_cross_darwin-arm64_android-x64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-x64-profile/darwin-x64.zip": ""
               },
               "sha256s": {
-                "android-x64-profile/darwin-x64.zip": "cdf7ce362005c14e6f75b6a92942ef694dc372b7e1033258372647e1daad52b0"
+                "android-x64-profile/darwin-x64.zip": "a93133be9463cf4af928ec70c358f9847c5a66e3bbcd8e62715512f24a6385ae"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -3788,12 +3834,12 @@
           "flutter_cross_darwin-arm64_android-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-arm64",
               "target_platform": "android-x64",
               "host_repo_name": "flutter_darwin-arm64",
-              "gen_snapshot_sha256": "1098ae2bbbcab296b188ddce475ac9ce7f876940b4fd32235049b8920f39cfa7",
+              "gen_snapshot_sha256": "551def834153dde8c1b7d8d10936e9ee45112b0e061835f8a79f59014187502d",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_darwin-arm64_android-x64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -3802,8 +3848,8 @@
           "flutter_cross_darwin-arm64_ios-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-arm64",
               "target_platform": "ios-arm64",
               "host_repo_name": "flutter_darwin-arm64",
@@ -3816,8 +3862,8 @@
           "flutter_cross_darwin-arm64_ios-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-arm64",
               "target_platform": "ios-x64",
               "host_repo_name": "flutter_darwin-arm64",
@@ -3830,12 +3876,12 @@
           "flutter_cross_darwin-x64_android-arm_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm-profile/darwin-x64.zip": ""
               },
               "sha256s": {
-                "android-arm-profile/darwin-x64.zip": "457e51250976fae2fcc32a13686dc2b965ce9c076d540189b9fc55be0f9b5c5a"
+                "android-arm-profile/darwin-x64.zip": "bae6a51e5cf34b3557483548b1eac3e355f843e2be9473e3e4cf16d2c4472fa1"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -3844,12 +3890,12 @@
           "flutter_cross_darwin-x64_android-arm": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-x64",
               "target_platform": "android-arm",
               "host_repo_name": "flutter_darwin-x64",
-              "gen_snapshot_sha256": "7d6dbd418fa29d136ae81db00e4d7a62b504d84ba8dab69271486a12d1fab2cd",
+              "gen_snapshot_sha256": "78a145e2866e52fd17d06e5ee1ea5405dda4a7a8297bc52947fa1e9b654e4dae",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_darwin-x64_android-arm_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -3858,12 +3904,12 @@
           "flutter_cross_darwin-x64_android-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm64-profile/darwin-x64.zip": ""
               },
               "sha256s": {
-                "android-arm64-profile/darwin-x64.zip": "c33703650e5324d7b86e3600eae9e327dfe716dd9cc913ed588e10615e917e69"
+                "android-arm64-profile/darwin-x64.zip": "83b5282dce0e163b1cae91ae45a9942e7313b00e95155918602b11b8bc4f2f2e"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -3872,12 +3918,12 @@
           "flutter_cross_darwin-x64_android-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-x64",
               "target_platform": "android-arm64",
               "host_repo_name": "flutter_darwin-x64",
-              "gen_snapshot_sha256": "5535e11ad8a7d2d48d9f20766660d4d909ec37ab96f90b84c29080de682ae937",
+              "gen_snapshot_sha256": "d2fd32edb01fa45de34c80fe425a1e7f118b8ae2ac53b6e106cc0c7534fe6a52",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_darwin-x64_android-arm64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -3886,12 +3932,12 @@
           "flutter_cross_darwin-x64_android-x64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-x64-profile/darwin-x64.zip": ""
               },
               "sha256s": {
-                "android-x64-profile/darwin-x64.zip": "cdf7ce362005c14e6f75b6a92942ef694dc372b7e1033258372647e1daad52b0"
+                "android-x64-profile/darwin-x64.zip": "a93133be9463cf4af928ec70c358f9847c5a66e3bbcd8e62715512f24a6385ae"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -3900,12 +3946,12 @@
           "flutter_cross_darwin-x64_android-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-x64",
               "target_platform": "android-x64",
               "host_repo_name": "flutter_darwin-x64",
-              "gen_snapshot_sha256": "1098ae2bbbcab296b188ddce475ac9ce7f876940b4fd32235049b8920f39cfa7",
+              "gen_snapshot_sha256": "551def834153dde8c1b7d8d10936e9ee45112b0e061835f8a79f59014187502d",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_darwin-x64_android-x64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -3914,8 +3960,8 @@
           "flutter_cross_darwin-x64_ios-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-x64",
               "target_platform": "ios-arm64",
               "host_repo_name": "flutter_darwin-x64",
@@ -3928,8 +3974,8 @@
           "flutter_cross_darwin-x64_ios-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-x64",
               "target_platform": "ios-x64",
               "host_repo_name": "flutter_darwin-x64",
@@ -3942,12 +3988,12 @@
           "flutter_cross_linux-x64_android-arm_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm-profile/linux-x64.zip": ""
               },
               "sha256s": {
-                "android-arm-profile/linux-x64.zip": "ca0980e662ec7ad74db92eeae2fe2c17e735599e9a910ef34181495a3c14b8f1"
+                "android-arm-profile/linux-x64.zip": "5c26f4ce5e87dca87e080cb9eca1aab4bdf2298163ec54cada741284131bf5d8"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -3956,12 +4002,12 @@
           "flutter_cross_linux-x64_android-arm": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-x64",
               "target_platform": "android-arm",
               "host_repo_name": "flutter_linux-x64",
-              "gen_snapshot_sha256": "670bfb4c6750a124aa81005c2ea0a8e60b0c29963a71e5ad9e9dc7badc5e7987",
+              "gen_snapshot_sha256": "e0b585369b442906482b9b8e494d072874a1af2dffa2ba66e2975af369475260",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_linux-x64_android-arm_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -3970,12 +4016,12 @@
           "flutter_cross_linux-x64_android-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm64-profile/linux-x64.zip": ""
               },
               "sha256s": {
-                "android-arm64-profile/linux-x64.zip": "6ae4344406634996b3f83f691d4c10e6e6045e54adef7eae230f20ef0dd7739f"
+                "android-arm64-profile/linux-x64.zip": "192ca80ddb15c3c114ce1c230c8a7cd41c24611a020ee731ee837886acf9c8e3"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -3984,12 +4030,12 @@
           "flutter_cross_linux-x64_android-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-x64",
               "target_platform": "android-arm64",
               "host_repo_name": "flutter_linux-x64",
-              "gen_snapshot_sha256": "d3732a35d2e5b2e0b7d8d6bb431cedc2fb657583e225317a5a90e7409a09059f",
+              "gen_snapshot_sha256": "6223eac23b0d02457644edf54344d50d1d6b5148958347ef14688bc4a915ee18",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_linux-x64_android-arm64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -3998,12 +4044,12 @@
           "flutter_cross_linux-x64_android-x64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-x64-profile/linux-x64.zip": ""
               },
               "sha256s": {
-                "android-x64-profile/linux-x64.zip": "56bf134a195b7dc9c94e374313d0c719c98d1fc2bcd03b0290e5c121af43f3a7"
+                "android-x64-profile/linux-x64.zip": "0895892ff6fc283362c76d8ed579bc38c28ec02f18719c00283fcd425b49bcf3"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -4012,12 +4058,12 @@
           "flutter_cross_linux-x64_android-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-x64",
               "target_platform": "android-x64",
               "host_repo_name": "flutter_linux-x64",
-              "gen_snapshot_sha256": "45ca1e6a2ab71e5f1a3d9acbf64d5e548c70029015ecd1d47d55a69fe045f379",
+              "gen_snapshot_sha256": "c8749fc9e2cb1e23e9b07105ff2b18cbd7840c1e9e35210fa5e72938bd97899d",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_linux-x64_android-x64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -4026,8 +4072,8 @@
           "flutter_cross_linux-x64_ios-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-x64",
               "target_platform": "ios-arm64",
               "host_repo_name": "flutter_linux-x64",
@@ -4040,8 +4086,8 @@
           "flutter_cross_linux-x64_ios-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-x64",
               "target_platform": "ios-x64",
               "host_repo_name": "flutter_linux-x64",
@@ -4054,12 +4100,12 @@
           "flutter_cross_linux-arm64_android-arm_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm-profile/linux-x64.zip": ""
               },
               "sha256s": {
-                "android-arm-profile/linux-x64.zip": "ca0980e662ec7ad74db92eeae2fe2c17e735599e9a910ef34181495a3c14b8f1"
+                "android-arm-profile/linux-x64.zip": "5c26f4ce5e87dca87e080cb9eca1aab4bdf2298163ec54cada741284131bf5d8"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -4068,12 +4114,12 @@
           "flutter_cross_linux-arm64_android-arm": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-arm64",
               "target_platform": "android-arm",
               "host_repo_name": "flutter_linux-arm64",
-              "gen_snapshot_sha256": "670bfb4c6750a124aa81005c2ea0a8e60b0c29963a71e5ad9e9dc7badc5e7987",
+              "gen_snapshot_sha256": "e0b585369b442906482b9b8e494d072874a1af2dffa2ba66e2975af369475260",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_linux-arm64_android-arm_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -4082,12 +4128,12 @@
           "flutter_cross_linux-arm64_android-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm64-profile/linux-x64.zip": ""
               },
               "sha256s": {
-                "android-arm64-profile/linux-x64.zip": "6ae4344406634996b3f83f691d4c10e6e6045e54adef7eae230f20ef0dd7739f"
+                "android-arm64-profile/linux-x64.zip": "192ca80ddb15c3c114ce1c230c8a7cd41c24611a020ee731ee837886acf9c8e3"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -4096,12 +4142,12 @@
           "flutter_cross_linux-arm64_android-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-arm64",
               "target_platform": "android-arm64",
               "host_repo_name": "flutter_linux-arm64",
-              "gen_snapshot_sha256": "d3732a35d2e5b2e0b7d8d6bb431cedc2fb657583e225317a5a90e7409a09059f",
+              "gen_snapshot_sha256": "6223eac23b0d02457644edf54344d50d1d6b5148958347ef14688bc4a915ee18",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_linux-arm64_android-arm64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -4110,12 +4156,12 @@
           "flutter_cross_linux-arm64_android-x64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-x64-profile/linux-x64.zip": ""
               },
               "sha256s": {
-                "android-x64-profile/linux-x64.zip": "56bf134a195b7dc9c94e374313d0c719c98d1fc2bcd03b0290e5c121af43f3a7"
+                "android-x64-profile/linux-x64.zip": "0895892ff6fc283362c76d8ed579bc38c28ec02f18719c00283fcd425b49bcf3"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -4124,12 +4170,12 @@
           "flutter_cross_linux-arm64_android-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-arm64",
               "target_platform": "android-x64",
               "host_repo_name": "flutter_linux-arm64",
-              "gen_snapshot_sha256": "45ca1e6a2ab71e5f1a3d9acbf64d5e548c70029015ecd1d47d55a69fe045f379",
+              "gen_snapshot_sha256": "c8749fc9e2cb1e23e9b07105ff2b18cbd7840c1e9e35210fa5e72938bd97899d",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_linux-arm64_android-x64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -4138,8 +4184,8 @@
           "flutter_cross_linux-arm64_ios-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-arm64",
               "target_platform": "ios-arm64",
               "host_repo_name": "flutter_linux-arm64",
@@ -4152,8 +4198,8 @@
           "flutter_cross_linux-arm64_ios-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-arm64",
               "target_platform": "ios-x64",
               "host_repo_name": "flutter_linux-arm64",
@@ -4166,12 +4212,12 @@
           "flutter_cross_windows-x64_android-arm_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm-profile/windows-x64.zip": ""
               },
               "sha256s": {
-                "android-arm-profile/windows-x64.zip": "eb20fb88f7ff73c30792a8153fef445d9128b3eaacd323acfffbd85c64f17ca6"
+                "android-arm-profile/windows-x64.zip": "9b47bcae85053dcfe11b4b3d9bacf71993264b27332216b148bcd8f83ead31ab"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -4180,12 +4226,12 @@
           "flutter_cross_windows-x64_android-arm": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "windows-x64",
               "target_platform": "android-arm",
               "host_repo_name": "flutter_windows-x64",
-              "gen_snapshot_sha256": "e2e5fed77bba2b37b4985c771495dd4fb0230f9757ec8eb3530bf2c66f247797",
+              "gen_snapshot_sha256": "5bd37a5f9dfdcc95ddd7e6d291feb03c608e5cf7ea28727558e64473c3d8f1b5",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_windows-x64_android-arm_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -4194,12 +4240,12 @@
           "flutter_cross_windows-x64_android-arm64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-arm64-profile/windows-x64.zip": ""
               },
               "sha256s": {
-                "android-arm64-profile/windows-x64.zip": "e42d0c7d782f13091376b09786411db784e25ce1f01672b8f3d353c07c7fcc77"
+                "android-arm64-profile/windows-x64.zip": "3fa9b3bcd9fb02a1b2c423762d405feb25cb05f4fa6b9896a9ca0d2173182d84"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -4208,12 +4254,12 @@
           "flutter_cross_windows-x64_android-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "windows-x64",
               "target_platform": "android-arm64",
               "host_repo_name": "flutter_windows-x64",
-              "gen_snapshot_sha256": "ccbd558835d1bfb10af3ba85024e6380628f3eb464d4c1246e7ade468aebe7de",
+              "gen_snapshot_sha256": "f8a0c78cc328febdd341141017135f925167d85c51692b750d933a0c24845e44",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_windows-x64_android-arm64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -4222,12 +4268,12 @@
           "flutter_cross_windows-x64_android-x64_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "downloads": {
                 "android-x64-profile/windows-x64.zip": ""
               },
               "sha256s": {
-                "android-x64-profile/windows-x64.zip": "d2c5660110ff4b6d42e9c20be219a26a85d20652fc8721f4abf951628643fdcf"
+                "android-x64-profile/windows-x64.zip": "0cf0798bf12dfc098325a3e5ef8617389a2020b0facdc5edd299d7efdaa36d61"
               },
               "engine_base_url": "",
               "build_file_content": "exports_files([\"gen_snapshot\"], visibility = [\"//visibility:public\"])\n"
@@ -4236,12 +4282,12 @@
           "flutter_cross_windows-x64_android-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_cross_repo.bzl%flutter_cross_compilation_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "windows-x64",
               "target_platform": "android-x64",
               "host_repo_name": "flutter_windows-x64",
-              "gen_snapshot_sha256": "b0647c5294d8b5f709bfa700638de34e66a5620a2dc92f6c1045d8b52f6664da",
+              "gen_snapshot_sha256": "a334cb8a787aa2ebfb5ace9973e4276f5712153f470d82e707d31b1241949282",
               "gen_snapshot_label": "",
               "profile_gen_snapshot_label": "@flutter_cross_windows-x64_android-x64_profile//:gen_snapshot",
               "engine_base_url": ""
@@ -4264,10 +4310,10 @@
           "flutter_desktop_engine_darwin-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_engine_repo.bzl%flutter_desktop_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "target_os": "macos",
               "target_arch": "x64",
-              "sha256": "22d87831f02f0ea87f3073264c8e0dec6e482cac1625fcd0928af680accfc37d",
+              "sha256": "e5dd5a680cf667aa84de62e5689b72479a47bc72da75198958126fc746196a6e",
               "cpp_client_wrapper_sha256": "",
               "engine_base_url": ""
             }
@@ -4275,11 +4321,11 @@
           "flutter_desktop_engine_darwin-x64_debug": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_engine_repo.bzl%flutter_desktop_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "target_os": "macos",
               "target_arch": "x64",
               "mode": "debug",
-              "sha256": "083ad6be5e72d8c92e39e2e02a1c894320dea9b9eaa696c0b4f70ed62cc6a9e8",
+              "sha256": "501d102bfb194e220b8501c7a56996993201ce4c01e8f9d260106da44ea83e73",
               "cpp_client_wrapper_sha256": "",
               "engine_base_url": ""
             }
@@ -4287,10 +4333,10 @@
           "flutter_desktop_engine_linux-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_engine_repo.bzl%flutter_desktop_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "target_os": "linux",
               "target_arch": "x64",
-              "sha256": "a6da7b0d57c82519d7b901462344676fe089068caca336466dcf3e1c270e9aa8",
+              "sha256": "aac268d6421af245e9ce03f371e846ad2e6b6aa8a91333a2f9a78a8c119ac54d",
               "cpp_client_wrapper_sha256": "",
               "engine_base_url": ""
             }
@@ -4298,11 +4344,11 @@
           "flutter_desktop_engine_linux-x64_debug": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_engine_repo.bzl%flutter_desktop_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "target_os": "linux",
               "target_arch": "x64",
               "mode": "debug",
-              "sha256": "e1ed3d3ccc0d42d1dc58fa141dc83c4be511e5a2a1cbe0319c2aa8ae6afeadc4",
+              "sha256": "b1d5701aac2944005b96872e768201d5ceb7e3f90d99acd34e827f5db8fd62de",
               "cpp_client_wrapper_sha256": "",
               "engine_base_url": ""
             }
@@ -4310,10 +4356,10 @@
           "flutter_desktop_engine_linux-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_engine_repo.bzl%flutter_desktop_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "target_os": "linux",
               "target_arch": "arm64",
-              "sha256": "3e2ce4e3d39370ae5a221eccfeaee9cc12c7fc38c6531e224141c1a8e76b658b",
+              "sha256": "32ce5d6870cae0fe1f5ca6f2011246ec3aeb8279e2557a07fa1f34613df36830",
               "cpp_client_wrapper_sha256": "",
               "engine_base_url": ""
             }
@@ -4321,11 +4367,11 @@
           "flutter_desktop_engine_linux-arm64_debug": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_engine_repo.bzl%flutter_desktop_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "target_os": "linux",
               "target_arch": "arm64",
               "mode": "debug",
-              "sha256": "678af4d1384aa3c27f413920c9dcb3cd49a44d8168fd3b35fa7c6a5e2f00c4d8",
+              "sha256": "890acb6770d1170fc2517f3c090cf4cc2965dfe78f1e4fcef90aa86bf3e572a6",
               "cpp_client_wrapper_sha256": "",
               "engine_base_url": ""
             }
@@ -4333,31 +4379,31 @@
           "flutter_desktop_engine_windows-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_engine_repo.bzl%flutter_desktop_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "target_os": "windows",
               "target_arch": "x64",
-              "sha256": "81dbfcd5d81056fddaa57f620d68067be98e8e0ec307369b9ab2df23e8882847",
-              "cpp_client_wrapper_sha256": "e0b05eaad8f85efa3614d06c64447ccedde0828f690593fd3b1919598639829b",
+              "sha256": "e83516fbb24ac63df68c7a422e2dcce66d6e741ceb5c0ce3d6c293fe814ed50b",
+              "cpp_client_wrapper_sha256": "6e9f434b0d37e0be667f0db608c7fb5e1156a78ce891f14956e50d572ccbdd3a",
               "engine_base_url": ""
             }
           },
           "flutter_desktop_engine_windows-x64_debug": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_engine_repo.bzl%flutter_desktop_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "target_os": "windows",
               "target_arch": "x64",
               "mode": "debug",
-              "sha256": "ae6952439ba6c1f646d524c1838111c64fdb471f9c38f502bc678fa450e71a53",
-              "cpp_client_wrapper_sha256": "e0b05eaad8f85efa3614d06c64447ccedde0828f690593fd3b1919598639829b",
+              "sha256": "0a9da230f4da91156fed08bf81774fb4d47c7ffb70395be262be6f13dd43f2b8",
+              "cpp_client_wrapper_sha256": "6e9f434b0d37e0be667f0db608c7fb5e1156a78ce891f14956e50d572ccbdd3a",
               "engine_base_url": ""
             }
           },
           "flutter_desktop_cross_darwin-arm64_linux-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-arm64",
               "target_platform": "linux-x64",
               "host_repo_name": "flutter_darwin-arm64",
@@ -4369,8 +4415,8 @@
           "flutter_desktop_cross_darwin-arm64_windows-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-arm64",
               "target_platform": "windows-x64",
               "host_repo_name": "flutter_darwin-arm64",
@@ -4382,8 +4428,8 @@
           "flutter_desktop_cross_darwin-x64_linux-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-x64",
               "target_platform": "linux-x64",
               "host_repo_name": "flutter_darwin-x64",
@@ -4395,8 +4441,8 @@
           "flutter_desktop_cross_darwin-x64_windows-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "darwin-x64",
               "target_platform": "windows-x64",
               "host_repo_name": "flutter_darwin-x64",
@@ -4408,8 +4454,8 @@
           "flutter_desktop_cross_linux-x64_darwin-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-x64",
               "target_platform": "darwin-arm64",
               "host_repo_name": "flutter_linux-x64",
@@ -4421,8 +4467,8 @@
           "flutter_desktop_cross_linux-x64_darwin-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-x64",
               "target_platform": "darwin-x64",
               "host_repo_name": "flutter_linux-x64",
@@ -4434,8 +4480,8 @@
           "flutter_desktop_cross_linux-x64_windows-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-x64",
               "target_platform": "windows-x64",
               "host_repo_name": "flutter_linux-x64",
@@ -4447,8 +4493,8 @@
           "flutter_desktop_cross_linux-arm64_darwin-arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-arm64",
               "target_platform": "darwin-arm64",
               "host_repo_name": "flutter_linux-arm64",
@@ -4460,8 +4506,8 @@
           "flutter_desktop_cross_linux-arm64_darwin-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-arm64",
               "target_platform": "darwin-x64",
               "host_repo_name": "flutter_linux-arm64",
@@ -4473,8 +4519,8 @@
           "flutter_desktop_cross_linux-arm64_windows-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "linux-arm64",
               "target_platform": "windows-x64",
               "host_repo_name": "flutter_linux-arm64",
@@ -4486,8 +4532,8 @@
           "flutter_desktop_cross_windows-x64_darwin-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "windows-x64",
               "target_platform": "darwin-x64",
               "host_repo_name": "flutter_windows-x64",
@@ -4499,8 +4545,8 @@
           "flutter_desktop_cross_windows-x64_linux-x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_desktop_cross_repo.bzl%flutter_desktop_cross_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "flutter_version": "3.50.1",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "host_platform": "windows-x64",
               "target_platform": "linux-x64",
               "host_repo_name": "flutter_windows-x64",
@@ -4512,8 +4558,8 @@
           "flutter_web_sdk": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_web_sdk_repo.bzl%flutter_web_sdk_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "sha256": "20800952ee0ab5f854b850ef5023e0fe8c4369c960d4c80df8d856b59f0e992d",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "sha256": "7bfc93650dbd9fa8bda7cd5acd021db41fa19039921ab269dcf5e3885e2e53cc",
               "engine_base_url": "",
               "user_repository_name": "flutter",
               "host_sdks": {
@@ -4528,36 +4574,36 @@
           "flutter_sky_engine": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_sky_engine_repo.bzl%flutter_sky_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
-              "sha256": "fc383f9dcdca07b3cbba96d42ddf20af23a950ffa2eced170a93bdfd31263cc2",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "sha256": "f6b0f1151d651ef6eb6c16d1e19aeb99f94ddfb4f119165506a464d650c41075",
               "engine_base_url": ""
             }
           },
           "flutter_android_engine_arm64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_android_engine_repo.bzl%flutter_android_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "engine_base_url": "",
               "android_arch": "arm64",
-              "release_sha256": "8426a3b6f60ba5b5ba1b9684cbfc131df513ffd79f297e3bb29d33cba62c2b7f"
+              "release_sha256": "2aadae8404231c22f3a1e5bf0e0788092dadaff5c63cbb19023fdd418cbe7dcc"
             }
           },
           "flutter_android_engine_x64": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_android_engine_repo.bzl%flutter_android_engine_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "engine_base_url": "",
               "android_arch": "x64",
-              "release_sha256": "ccb68395a57aff336eceadd4e3b7ba1b0480cd15c252757d1b5ef0203d43e319"
+              "release_sha256": "faa4e426b971bc04c709c66471f9200130dc29d3ac9c43bd629ce071bcce4ecd"
             }
           },
           "flutter_ios_engine_release": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_ios_engine_repo.bzl%flutter_ios_engine_mode_repo",
             "attributes": {
               "mode": "release",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "engine_base_url": "",
-              "sha256": "3e3e5a772ca311074aaca857dba5cc1f253f3568242debcf07840c75b897584f",
+              "sha256": "4d19dd0b70bcdcaa32be0981194b9c42a07bb76fab2ba05f31253b2297281cbb",
               "local_path": ""
             }
           },
@@ -4565,9 +4611,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_ios_engine_repo.bzl%flutter_ios_engine_mode_repo",
             "attributes": {
               "mode": "debug",
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "engine_base_url": "",
-              "sha256": "536f7df16f472b13d58354da464b47191b44215660a797d217fe8eaf557a8f58",
+              "sha256": "9988179d2335df418371a8bb68c4b386dc0a279b6759ea36935da0101d6b9928",
               "local_path": ""
             }
           },
@@ -4581,13 +4627,13 @@
           "flutter_ios_engine_profile": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_profile_repo.bzl%flutter_profile_repo",
             "attributes": {
-              "engine_revision": "deb287481e3ce9468f3434937ced4240a70539ca",
+              "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
               "engine_base_url": "",
               "downloads": {
                 "ios-profile/artifacts.zip": ""
               },
               "sha256s": {
-                "ios-profile/artifacts.zip": "b6459899c53709470e52315c5ae1aede2363fb694c4de282c6f8c4e769a7ad58"
+                "ios-profile/artifacts.zip": "dc977f6f9080ced2e7f2672f880e8fbb1b1e27d7a01982c611e15843b913f005"
               },
               "build_file_content": "filegroup(\n    name = \"Flutter_xcframework\",\n    srcs = glob([\"Flutter.xcframework/**\"]),\n    visibility = [\"//visibility:public\"],\n)\n\nexports_files([\"gen_snapshot_arm64\"], visibility = [\"//visibility:public\"])\n"
             }
@@ -4629,16 +4675,16 @@
           "flutter_sdk_source": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_sdk_package.bzl%flutter_sdk_source_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
-              "sha256": "3bf237d76744f452aee98fc21962c6fc1481345e474c04e6ebdac8eb436364a8",
+              "flutter_version": "3.50.1",
+              "sha256": "3178a2bda6f8138c0c0018de15f0fd9f2d65a4ff9f5c444b19353e316892db39",
               "source_url": "",
-              "source_strip_prefix": "flutter-3.47.7/"
+              "source_strip_prefix": "flutter-3.50.1/"
             }
           },
           "flutter_assets_tool": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_assets_tool_repo.bzl%flutter_assets_tool_repo",
             "attributes": {
-              "flutter_version": "3.47.7",
+              "flutter_version": "3.50.1",
               "sdk_source": "@@ai_rules_flutter++flutter+flutter_sdk_source//:BUILD.bazel"
             }
           },
@@ -4646,16 +4692,14 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "_fe_analyzer_shared",
-              "version": "93.0.0",
-              "sha256": "8d7ff3948166b8ec5da0fbb5962000926b8e02f2ed9b3e51d1738905fbd4c98d",
-              "url": "https://pub.dev/api/archives/_fe_analyzer_shared-93.0.0.tar.gz",
+              "version": "111.0.0",
+              "sha256": "1c5591cc6f252d5f440d96ab87c03e43504be552a3fa49d7cb7563f04c51fb0a",
+              "url": "https://pub.dev/api/archives/_fe_analyzer_shared-111.0.0.tar.gz",
               "planned_deps": [
-                "meta",
-                "source_span"
+                "meta"
               ],
               "deps": [
-                "@deps//:meta",
-                "@deps//:source_span"
+                "@deps//:meta"
               ],
               "hub_name": "deps",
               "cycle_deps": {},
@@ -4672,9 +4716,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "analyzer",
-              "version": "10.0.1",
-              "sha256": "de7148ed2fcec579b19f122c1800933dfa028f6d9fd38a152b04b1516cec120b",
-              "url": "https://pub.dev/api/archives/analyzer-10.0.1.tar.gz",
+              "version": "14.7.0",
+              "sha256": "6c39bd5486a310e56217bed7cb1691377959f31be4227e41750107db7e6dd55c",
+              "url": "https://pub.dev/api/archives/analyzer-14.7.0.tar.gz",
               "planned_deps": [
                 "_fe_analyzer_shared",
                 "collection",
@@ -4836,9 +4880,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "clock",
-              "version": "1.1.2",
-              "sha256": "fddb70d9b5277016c77a80201021d40a2247104d9f4aa7bab7157b7e3f05b84b",
-              "url": "https://pub.dev/api/archives/clock-1.1.2.tar.gz",
+              "version": "1.1.3",
+              "sha256": "e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e",
+              "url": "https://pub.dev/api/archives/clock-1.1.3.tar.gz",
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
@@ -5178,9 +5222,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "intl",
-              "version": "0.20.2",
-              "sha256": "3df61194eb431efc39c4ceba583b95633a403f46c9fd341e550ce0bfa50e9aa5",
-              "url": "https://pub.dev/api/archives/intl-0.20.2.tar.gz",
+              "version": "0.20.3",
+              "sha256": "1ca20c894b1717686a2319b8548763d812bc0aabdac580420a44c5178c57a867",
+              "url": "https://pub.dev/api/archives/intl-0.20.3.tar.gz",
               "planned_deps": [
                 "clock",
                 "meta",
@@ -5322,6 +5366,30 @@
               "pubspec_lock": "@@//:pubspec.lock"
             }
           },
+          "deps__listen": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
+            "attributes": {
+              "package_name": "listen",
+              "version": "1.0.1",
+              "sha256": "47501a08016a43fcad79252439d723f50f14f88fa7bfd8a177e0a417e5c9e1f2",
+              "url": "https://pub.dev/api/archives/listen-1.0.1.tar.gz",
+              "planned_deps": [
+                "meta"
+              ],
+              "deps": [
+                "@deps//:meta"
+              ],
+              "hub_name": "deps",
+              "cycle_deps": {},
+              "hub_packages": "@@ai_rules_flutter++flutter+deps//:pub_packages.json",
+              "plugin_defines": [],
+              "overlay_roots": [
+                "@@ai_rules_flutter+//ext:BUILD.bazel"
+              ],
+              "ios_native_deps": "@@ai_rules_flutter++flutter+deps//:ios_native_deps.json",
+              "pubspec_lock": "@@//:pubspec.lock"
+            }
+          },
           "deps__logging": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
@@ -5346,9 +5414,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "matcher",
-              "version": "0.12.19",
-              "sha256": "dc0b7dc7651697ea4ff3e69ef44b0407ea32c487a39fff6a4004fa585e901861",
-              "url": "https://pub.dev/api/archives/matcher-0.12.19.tar.gz",
+              "version": "0.12.20",
+              "sha256": "31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd",
+              "url": "https://pub.dev/api/archives/matcher-0.12.20.tar.gz",
               "planned_deps": [
                 "async",
                 "meta",
@@ -5402,9 +5470,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "meta",
-              "version": "1.18.0",
-              "sha256": "1741988757a65eb6b36abe716829688cf01910bbf91c34354ff7ec1c3de2b349",
-              "url": "https://pub.dev/api/archives/meta-1.18.0.tar.gz",
+              "version": "1.19.0",
+              "sha256": "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9",
+              "url": "https://pub.dev/api/archives/meta-1.19.0.tar.gz",
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
@@ -5758,9 +5826,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "stack_trace",
-              "version": "1.12.1",
-              "sha256": "8b27215b45d22309b5cddda1aa2b19bdfec9df0e765f2de506401c071d38d1b1",
-              "url": "https://pub.dev/api/archives/stack_trace-1.12.1.tar.gz",
+              "version": "1.12.2",
+              "sha256": "277654b3034d17ac6f9f1cb5595db011b1d5d41e8806866db28e0abaa101c490",
+              "url": "https://pub.dev/api/archives/stack_trace-1.12.2.tar.gz",
               "planned_deps": [
                 "path"
               ],
@@ -5850,9 +5918,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "test",
-              "version": "1.31.0",
-              "sha256": "8d9ceddbab833f180fbefed08afa76d7c03513dfdba87ffcec2718b02bbcbf20",
-              "url": "https://pub.dev/api/archives/test-1.31.0.tar.gz",
+              "version": "1.32.0",
+              "sha256": "de5d145b0afff7921e5e788a880f52d7e5f3ae24068a202f6fd3b58e4ba26323",
+              "url": "https://pub.dev/api/archives/test-1.32.0.tar.gz",
               "planned_deps": [
                 "analyzer",
                 "async",
@@ -5922,9 +5990,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "test_api",
-              "version": "0.7.11",
-              "sha256": "949a932224383300f01be9221c39180316445ecb8e7547f70a41a35bf421fb9e",
-              "url": "https://pub.dev/api/archives/test_api-0.7.11.tar.gz",
+              "version": "0.7.14",
+              "sha256": "0a10344e901e5b2e63819567951cb6a06673ed6b84f40462188ff5a0c41f371f",
+              "url": "https://pub.dev/api/archives/test_api-0.7.14.tar.gz",
               "planned_deps": [
                 "async",
                 "boolean_selector",
@@ -5962,9 +6030,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "test_core",
-              "version": "0.6.17",
-              "sha256": "1991d4cfe85d5043241acac92962c3977c8d2f2add1ee73130c7b286417d1d34",
-              "url": "https://pub.dev/api/archives/test_core-0.6.17.tar.gz",
+              "version": "0.6.20",
+              "sha256": "80f3fb49087454e07e7e07c67578cfdd156c8c3a5227d8b3f47c7b2d019c2e93",
+              "url": "https://pub.dev/api/archives/test_core-0.6.20.tar.gz",
               "planned_deps": [
                 "analyzer",
                 "args",
@@ -6050,9 +6118,9 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_pub_package.bzl%flutter_pub_package",
             "attributes": {
               "package_name": "vector_math",
-              "version": "2.2.0",
-              "sha256": "d530bd74fea330e6e364cda7a85019c434070188383e1cd8d9777ee586914c5b",
-              "url": "https://pub.dev/api/archives/vector_math-2.2.0.tar.gz",
+              "version": "2.4.4",
+              "sha256": "fa49e1674cb84acb900141714e6c6e1f9ae099827c24d141430ff6819db4e1bc",
+              "url": "https://pub.dev/api/archives/vector_math-2.4.4.tar.gz",
               "planned_deps": [],
               "deps": [],
               "hub_name": "deps",
@@ -6264,7 +6332,7 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_sdk_package.bzl%flutter_sdk_package",
             "attributes": {
               "package_name": "flutter",
-              "flutter_version": "3.47.7",
+              "flutter_version": "3.50.1",
               "local_path": "",
               "sdk_source": "@@ai_rules_flutter++flutter+flutter_sdk_source//:BUILD.bazel",
               "hub_name": "deps"
@@ -6274,7 +6342,7 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_sdk_package.bzl%flutter_sdk_package",
             "attributes": {
               "package_name": "flutter_localizations",
-              "flutter_version": "3.47.7",
+              "flutter_version": "3.50.1",
               "local_path": "",
               "sdk_source": "@@ai_rules_flutter++flutter+flutter_sdk_source//:BUILD.bazel",
               "hub_name": "deps"
@@ -6284,7 +6352,7 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_sdk_package.bzl%flutter_sdk_package",
             "attributes": {
               "package_name": "flutter_test",
-              "flutter_version": "3.47.7",
+              "flutter_version": "3.50.1",
               "local_path": "",
               "sdk_source": "@@ai_rules_flutter++flutter+flutter_sdk_source//:BUILD.bazel",
               "hub_name": "deps"
@@ -6324,6 +6392,7 @@
                 "leak_tracker",
                 "leak_tracker_flutter_testing",
                 "leak_tracker_testing",
+                "listen",
                 "logging",
                 "matcher",
                 "material_color_utilities",
@@ -6361,11 +6430,11 @@
               ],
               "scc_targets": {},
               "files": {
-                "packages/BUILD.bazel": "load(\"@rules_flutter//flutter:defs.bzl\", \"flutter_pub_packages\")\n\nflutter_pub_packages(\n    name = \"packages\",\n    package_graph = \"package_graph.json\",\n    deps = [\n        \"//:_fe_analyzer_shared\",\n        \"//:analyzer\",\n        \"//:args\",\n        \"//:async\",\n        \"//:boolean_selector\",\n        \"//:characters\",\n        \"//:cli_config\",\n        \"//:clock\",\n        \"//:collection\",\n        \"//:convert\",\n        \"//:coverage\",\n        \"//:crypto\",\n        \"//:cupertino_icons\",\n        \"//:fake_async\",\n        \"//:file\",\n        \"//:flutter\",\n        \"//:flutter_localizations\",\n        \"//:flutter_localized_locales\",\n        \"//:flutter_test\",\n        \"//:frontend_server_client\",\n        \"//:glob\",\n        \"//:http_multi_server\",\n        \"//:http_parser\",\n        \"//:intl\",\n        \"//:io\",\n        \"//:leak_tracker\",\n        \"//:leak_tracker_flutter_testing\",\n        \"//:leak_tracker_testing\",\n        \"//:logging\",\n        \"//:matcher\",\n        \"//:material_color_utilities\",\n        \"//:meta\",\n        \"//:mime\",\n        \"//:node_preamble\",\n        \"//:package_config\",\n        \"//:path\",\n        \"//:pool\",\n        \"//:pub_semver\",\n        \"//:shelf\",\n        \"//:shelf_packages_handler\",\n        \"//:shelf_static\",\n        \"//:shelf_web_socket\",\n        \"//:source_map_stack_trace\",\n        \"//:source_maps\",\n        \"//:source_span\",\n        \"//:stack_trace\",\n        \"//:stream_channel\",\n        \"//:string_scanner\",\n        \"//:term_glyph\",\n        \"//:test\",\n        \"//:test_api\",\n        \"//:test_core\",\n        \"//:typed_data\",\n        \"//:vector_math\",\n        \"//:very_good_analysis\",\n        \"//:vm_service\",\n        \"//:watcher\",\n        \"//:web\",\n        \"//:web_socket\",\n        \"//:web_socket_channel\",\n        \"//:webkit_inspection_protocol\",\n        \"//:yaml\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\n",
-                "packages/package_graph.json": "{\n  \"configVersion\": 1,\n  \"packages\": [\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"_fe_analyzer_shared\",\n      \"version\": \"93.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"_fe_analyzer_shared\",\n        \"collection\",\n        \"convert\",\n        \"crypto\",\n        \"glob\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"pub_semver\",\n        \"source_span\",\n        \"watcher\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"analyzer\",\n      \"version\": \"10.0.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"args\",\n      \"version\": \"2.7.0\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"async\",\n      \"version\": \"2.13.1\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"boolean_selector\",\n      \"version\": \"2.1.2\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"characters\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"cli_config\",\n      \"version\": \"0.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"clock\",\n      \"version\": \"1.1.2\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"collection\",\n      \"version\": \"1.19.1\"\n    },\n    {\n      \"dependencies\": [\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"convert\",\n      \"version\": \"3.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"cli_config\",\n        \"glob\",\n        \"logging\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"source_maps\",\n        \"stack_trace\",\n        \"vm_service\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"coverage\",\n      \"version\": \"1.15.0\"\n    },\n    {\n      \"dependencies\": [\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"crypto\",\n      \"version\": \"3.0.7\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"cupertino_icons\",\n      \"version\": \"1.0.9\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"fake_async\",\n      \"version\": \"1.3.3\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"file\",\n      \"version\": \"7.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"flutter\",\n        \"intl\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"flutter_localized_locales\",\n      \"version\": \"2.0.5\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"frontend_server_client\",\n      \"version\": \"4.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"file\",\n        \"path\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"glob\",\n      \"version\": \"2.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"async\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"http_multi_server\",\n      \"version\": \"3.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\",\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"http_parser\",\n      \"version\": \"4.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"meta\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"intl\",\n      \"version\": \"0.20.2\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"io\",\n      \"version\": \"1.0.5\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"collection\",\n        \"meta\",\n        \"path\",\n        \"vm_service\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"leak_tracker\",\n      \"version\": \"11.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"flutter\",\n        \"leak_tracker\",\n        \"leak_tracker_testing\",\n        \"matcher\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"leak_tracker_flutter_testing\",\n      \"version\": \"3.0.10\"\n    },\n    {\n      \"dependencies\": [\n        \"leak_tracker\",\n        \"matcher\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"leak_tracker_testing\",\n      \"version\": \"3.0.2\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"logging\",\n      \"version\": \"1.3.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"meta\",\n        \"stack_trace\",\n        \"term_glyph\",\n        \"test_api\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"matcher\",\n      \"version\": \"0.12.19\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"material_color_utilities\",\n      \"version\": \"0.13.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"meta\",\n      \"version\": \"1.18.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"mime\",\n      \"version\": \"2.0.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"node_preamble\",\n      \"version\": \"2.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"package_config\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"path\",\n      \"version\": \"1.9.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"stack_trace\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"pool\",\n      \"version\": \"1.5.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"pub_semver\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"http_parser\",\n        \"path\",\n        \"stack_trace\",\n        \"stream_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf\",\n      \"version\": \"1.4.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\",\n        \"shelf\",\n        \"shelf_static\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_packages_handler\",\n      \"version\": \"3.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"convert\",\n        \"http_parser\",\n        \"mime\",\n        \"path\",\n        \"shelf\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_static\",\n      \"version\": \"1.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"shelf\",\n        \"stream_channel\",\n        \"web_socket_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_web_socket\",\n      \"version\": \"3.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"path\",\n        \"source_maps\",\n        \"stack_trace\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_map_stack_trace\",\n      \"version\": \"2.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_maps\",\n      \"version\": \"0.10.13\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"path\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_span\",\n      \"version\": \"1.10.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stack_trace\",\n      \"version\": \"1.12.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stream_channel\",\n      \"version\": \"2.1.4\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"string_scanner\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"term_glyph\",\n      \"version\": \"1.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"analyzer\",\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"coverage\",\n        \"http_multi_server\",\n        \"io\",\n        \"matcher\",\n        \"node_preamble\",\n        \"package_config\",\n        \"path\",\n        \"pool\",\n        \"shelf\",\n        \"shelf_packages_handler\",\n        \"shelf_static\",\n        \"shelf_web_socket\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"test_api\",\n        \"test_core\",\n        \"typed_data\",\n        \"web_socket_channel\",\n        \"webkit_inspection_protocol\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test\",\n      \"version\": \"1.31.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"meta\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"string_scanner\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test_api\",\n      \"version\": \"0.7.11\"\n    },\n    {\n      \"dependencies\": [\n        \"analyzer\",\n        \"args\",\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"coverage\",\n        \"frontend_server_client\",\n        \"glob\",\n        \"io\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"pool\",\n        \"source_map_stack_trace\",\n        \"source_maps\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"test_api\",\n        \"vm_service\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test_core\",\n      \"version\": \"0.6.17\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"typed_data\",\n      \"version\": \"1.4.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"vector_math\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"very_good_analysis\",\n      \"version\": \"10.3.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"vm_service\",\n      \"version\": \"15.2.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"watcher\",\n      \"version\": \"1.2.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"web\",\n      \"version\": \"1.1.1\"\n    },\n    {\n      \"dependencies\": [\n        \"web\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"web_socket\",\n      \"version\": \"1.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"crypto\",\n        \"stream_channel\",\n        \"web\",\n        \"web_socket\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"web_socket_channel\",\n      \"version\": \"3.0.3\"\n    },\n    {\n      \"dependencies\": [\n        \"logging\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"webkit_inspection_protocol\",\n      \"version\": \"1.2.1\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"yaml\",\n      \"version\": \"3.1.3\"\n    }\n  ],\n  \"roots\": []\n}\n",
+                "packages/BUILD.bazel": "load(\"@rules_flutter//flutter:defs.bzl\", \"flutter_pub_packages\")\n\nflutter_pub_packages(\n    name = \"packages\",\n    package_graph = \"package_graph.json\",\n    deps = [\n        \"//:_fe_analyzer_shared\",\n        \"//:analyzer\",\n        \"//:args\",\n        \"//:async\",\n        \"//:boolean_selector\",\n        \"//:characters\",\n        \"//:cli_config\",\n        \"//:clock\",\n        \"//:collection\",\n        \"//:convert\",\n        \"//:coverage\",\n        \"//:crypto\",\n        \"//:cupertino_icons\",\n        \"//:fake_async\",\n        \"//:file\",\n        \"//:flutter\",\n        \"//:flutter_localizations\",\n        \"//:flutter_localized_locales\",\n        \"//:flutter_test\",\n        \"//:frontend_server_client\",\n        \"//:glob\",\n        \"//:http_multi_server\",\n        \"//:http_parser\",\n        \"//:intl\",\n        \"//:io\",\n        \"//:leak_tracker\",\n        \"//:leak_tracker_flutter_testing\",\n        \"//:leak_tracker_testing\",\n        \"//:listen\",\n        \"//:logging\",\n        \"//:matcher\",\n        \"//:material_color_utilities\",\n        \"//:meta\",\n        \"//:mime\",\n        \"//:node_preamble\",\n        \"//:package_config\",\n        \"//:path\",\n        \"//:pool\",\n        \"//:pub_semver\",\n        \"//:shelf\",\n        \"//:shelf_packages_handler\",\n        \"//:shelf_static\",\n        \"//:shelf_web_socket\",\n        \"//:source_map_stack_trace\",\n        \"//:source_maps\",\n        \"//:source_span\",\n        \"//:stack_trace\",\n        \"//:stream_channel\",\n        \"//:string_scanner\",\n        \"//:term_glyph\",\n        \"//:test\",\n        \"//:test_api\",\n        \"//:test_core\",\n        \"//:typed_data\",\n        \"//:vector_math\",\n        \"//:very_good_analysis\",\n        \"//:vm_service\",\n        \"//:watcher\",\n        \"//:web\",\n        \"//:web_socket\",\n        \"//:web_socket_channel\",\n        \"//:webkit_inspection_protocol\",\n        \"//:yaml\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\n",
+                "packages/package_graph.json": "{\n  \"configVersion\": 1,\n  \"packages\": [\n    {\n      \"dependencies\": [\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"_fe_analyzer_shared\",\n      \"version\": \"111.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"_fe_analyzer_shared\",\n        \"collection\",\n        \"convert\",\n        \"crypto\",\n        \"glob\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"pub_semver\",\n        \"source_span\",\n        \"watcher\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"analyzer\",\n      \"version\": \"14.7.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"args\",\n      \"version\": \"2.7.0\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"async\",\n      \"version\": \"2.13.1\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"boolean_selector\",\n      \"version\": \"2.1.2\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"characters\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"cli_config\",\n      \"version\": \"0.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"clock\",\n      \"version\": \"1.1.3\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"collection\",\n      \"version\": \"1.19.1\"\n    },\n    {\n      \"dependencies\": [\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"convert\",\n      \"version\": \"3.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"args\",\n        \"cli_config\",\n        \"glob\",\n        \"logging\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"source_maps\",\n        \"stack_trace\",\n        \"vm_service\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"coverage\",\n      \"version\": \"1.15.0\"\n    },\n    {\n      \"dependencies\": [\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"crypto\",\n      \"version\": \"3.0.7\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"cupertino_icons\",\n      \"version\": \"1.0.9\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"fake_async\",\n      \"version\": \"1.3.3\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"file\",\n      \"version\": \"7.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"flutter\",\n        \"intl\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"flutter_localized_locales\",\n      \"version\": \"2.0.5\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"frontend_server_client\",\n      \"version\": \"4.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"file\",\n        \"path\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"glob\",\n      \"version\": \"2.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"async\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"http_multi_server\",\n      \"version\": \"3.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\",\n        \"typed_data\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"http_parser\",\n      \"version\": \"4.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"meta\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"intl\",\n      \"version\": \"0.20.3\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\",\n        \"path\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"io\",\n      \"version\": \"1.0.5\"\n    },\n    {\n      \"dependencies\": [\n        \"clock\",\n        \"collection\",\n        \"meta\",\n        \"path\",\n        \"vm_service\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"leak_tracker\",\n      \"version\": \"11.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"flutter\",\n        \"leak_tracker\",\n        \"leak_tracker_testing\",\n        \"matcher\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"leak_tracker_flutter_testing\",\n      \"version\": \"3.0.10\"\n    },\n    {\n      \"dependencies\": [\n        \"leak_tracker\",\n        \"matcher\",\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"leak_tracker_testing\",\n      \"version\": \"3.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"meta\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"listen\",\n      \"version\": \"1.0.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"logging\",\n      \"version\": \"1.3.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"meta\",\n        \"stack_trace\",\n        \"term_glyph\",\n        \"test_api\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"matcher\",\n      \"version\": \"0.12.20\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"material_color_utilities\",\n      \"version\": \"0.13.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"meta\",\n      \"version\": \"1.19.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"mime\",\n      \"version\": \"2.0.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"node_preamble\",\n      \"version\": \"2.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"package_config\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"path\",\n      \"version\": \"1.9.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"stack_trace\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"pool\",\n      \"version\": \"1.5.2\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"pub_semver\",\n      \"version\": \"2.2.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"collection\",\n        \"http_parser\",\n        \"path\",\n        \"stack_trace\",\n        \"stream_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf\",\n      \"version\": \"1.4.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\",\n        \"shelf\",\n        \"shelf_static\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_packages_handler\",\n      \"version\": \"3.0.2\"\n    },\n    {\n      \"dependencies\": [\n        \"convert\",\n        \"http_parser\",\n        \"mime\",\n        \"path\",\n        \"shelf\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_static\",\n      \"version\": \"1.1.3\"\n    },\n    {\n      \"dependencies\": [\n        \"shelf\",\n        \"stream_channel\",\n        \"web_socket_channel\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"shelf_web_socket\",\n      \"version\": \"3.0.0\"\n    },\n    {\n      \"dependencies\": [\n        \"path\",\n        \"source_maps\",\n        \"stack_trace\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_map_stack_trace\",\n      \"version\": \"2.1.2\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_maps\",\n      \"version\": \"0.10.13\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"path\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"source_span\",\n      \"version\": \"1.10.2\"\n    },\n    {\n      \"dependencies\": [\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stack_trace\",\n      \"version\": \"1.12.2\"\n    },\n    {\n      \"dependencies\": [\n        \"async\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"stream_channel\",\n      \"version\": \"2.1.4\"\n    },\n    {\n      \"dependencies\": [\n        \"source_span\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"string_scanner\",\n      \"version\": \"1.4.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"term_glyph\",\n      \"version\": \"1.2.2\"\n    },\n    {\n      \"dependencies\": [\n        \"analyzer\",\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"coverage\",\n        \"http_multi_server\",\n        \"io\",\n        \"matcher\",\n        \"node_preamble\",\n        \"package_config\",\n        \"path\",\n        \"pool\",\n        \"shelf\",\n        \"shelf_packages_handler\",\n        \"shelf_static\",\n        \"shelf_web_socket\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"test_api\",\n        \"test_core\",\n        \"typed_data\",\n        \"web_socket_channel\",\n        \"webkit_inspection_protocol\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test\",\n      \"version\": \"1.32.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"meta\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"string_scanner\",\n        \"term_glyph\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test_api\",\n      \"version\": \"0.7.14\"\n    },\n    {\n      \"dependencies\": [\n        \"analyzer\",\n        \"args\",\n        \"async\",\n        \"boolean_selector\",\n        \"collection\",\n        \"coverage\",\n        \"frontend_server_client\",\n        \"glob\",\n        \"io\",\n        \"meta\",\n        \"package_config\",\n        \"path\",\n        \"pool\",\n        \"source_map_stack_trace\",\n        \"source_maps\",\n        \"source_span\",\n        \"stack_trace\",\n        \"stream_channel\",\n        \"test_api\",\n        \"vm_service\",\n        \"yaml\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"test_core\",\n      \"version\": \"0.6.20\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"typed_data\",\n      \"version\": \"1.4.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"vector_math\",\n      \"version\": \"2.4.4\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"very_good_analysis\",\n      \"version\": \"10.3.0\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"vm_service\",\n      \"version\": \"15.2.0\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"path\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"watcher\",\n      \"version\": \"1.2.1\"\n    },\n    {\n      \"dependencies\": [],\n      \"devDependencies\": [],\n      \"name\": \"web\",\n      \"version\": \"1.1.1\"\n    },\n    {\n      \"dependencies\": [\n        \"web\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"web_socket\",\n      \"version\": \"1.0.1\"\n    },\n    {\n      \"dependencies\": [\n        \"async\",\n        \"crypto\",\n        \"stream_channel\",\n        \"web\",\n        \"web_socket\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"web_socket_channel\",\n      \"version\": \"3.0.3\"\n    },\n    {\n      \"dependencies\": [\n        \"logging\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"webkit_inspection_protocol\",\n      \"version\": \"1.2.1\"\n    },\n    {\n      \"dependencies\": [\n        \"collection\",\n        \"source_span\",\n        \"string_scanner\"\n      ],\n      \"devDependencies\": [],\n      \"name\": \"yaml\",\n      \"version\": \"3.1.3\"\n    }\n  ],\n  \"roots\": []\n}\n",
                 "ios_native_deps.json": "{\"ios_pod_deps\":{},\"ios_pod_ignore\":[],\"ios_pods\":{},\"swift_package_product_deps\":{},\"version\":1}",
-                "packages.bzl": "\"\"\"The packages of the `deps` hub, for the Flutter SDK packages' BUILD files.\"\"\"\n\n_PACKAGES = {name: True for name in [\"_fe_analyzer_shared\", \"analyzer\", \"args\", \"async\", \"boolean_selector\", \"characters\", \"cli_config\", \"clock\", \"collection\", \"convert\", \"coverage\", \"crypto\", \"cupertino_icons\", \"fake_async\", \"file\", \"flutter\", \"flutter_localizations\", \"flutter_localized_locales\", \"flutter_test\", \"frontend_server_client\", \"glob\", \"http_multi_server\", \"http_parser\", \"intl\", \"io\", \"leak_tracker\", \"leak_tracker_flutter_testing\", \"leak_tracker_testing\", \"logging\", \"matcher\", \"material_color_utilities\", \"meta\", \"mime\", \"node_preamble\", \"package_config\", \"path\", \"pool\", \"pub_semver\", \"shelf\", \"shelf_packages_handler\", \"shelf_static\", \"shelf_web_socket\", \"source_map_stack_trace\", \"source_maps\", \"source_span\", \"stack_trace\", \"stream_channel\", \"string_scanner\", \"term_glyph\", \"test\", \"test_api\", \"test_core\", \"typed_data\", \"vector_math\", \"very_good_analysis\", \"vm_service\", \"watcher\", \"web\", \"web_socket\", \"web_socket_channel\", \"webkit_inspection_protocol\", \"yaml\"]}\n\ndef hub_deps(names):\n    \"\"\"Labels of the hub's aliases for the names it holds; other names are dropped.\n\n    Args:\n        names: Dependency names from an SDK package's pubspec.\n\n    Returns:\n        The labels, in the order given.\n    \"\"\"\n    return [Label(\"//:\" + name) for name in names if name in _PACKAGES]\n",
-                "pub_packages.json": "{\"packages\":[\"_fe_analyzer_shared\",\"analyzer\",\"args\",\"async\",\"boolean_selector\",\"characters\",\"cli_config\",\"clock\",\"collection\",\"convert\",\"coverage\",\"crypto\",\"cupertino_icons\",\"fake_async\",\"file\",\"flutter\",\"flutter_localizations\",\"flutter_localized_locales\",\"flutter_test\",\"frontend_server_client\",\"glob\",\"http_multi_server\",\"http_parser\",\"intl\",\"io\",\"leak_tracker\",\"leak_tracker_flutter_testing\",\"leak_tracker_testing\",\"logging\",\"matcher\",\"material_color_utilities\",\"meta\",\"mime\",\"node_preamble\",\"package_config\",\"path\",\"pool\",\"pub_semver\",\"shelf\",\"shelf_packages_handler\",\"shelf_static\",\"shelf_web_socket\",\"source_map_stack_trace\",\"source_maps\",\"source_span\",\"stack_trace\",\"stream_channel\",\"string_scanner\",\"term_glyph\",\"test\",\"test_api\",\"test_core\",\"typed_data\",\"vector_math\",\"very_good_analysis\",\"vm_service\",\"watcher\",\"web\",\"web_socket\",\"web_socket_channel\",\"webkit_inspection_protocol\",\"yaml\"],\"scc_targets\":{}}",
+                "packages.bzl": "\"\"\"The packages of the `deps` hub, for the Flutter SDK packages' BUILD files.\"\"\"\n\n_PACKAGES = {name: True for name in [\"_fe_analyzer_shared\", \"analyzer\", \"args\", \"async\", \"boolean_selector\", \"characters\", \"cli_config\", \"clock\", \"collection\", \"convert\", \"coverage\", \"crypto\", \"cupertino_icons\", \"fake_async\", \"file\", \"flutter\", \"flutter_localizations\", \"flutter_localized_locales\", \"flutter_test\", \"frontend_server_client\", \"glob\", \"http_multi_server\", \"http_parser\", \"intl\", \"io\", \"leak_tracker\", \"leak_tracker_flutter_testing\", \"leak_tracker_testing\", \"listen\", \"logging\", \"matcher\", \"material_color_utilities\", \"meta\", \"mime\", \"node_preamble\", \"package_config\", \"path\", \"pool\", \"pub_semver\", \"shelf\", \"shelf_packages_handler\", \"shelf_static\", \"shelf_web_socket\", \"source_map_stack_trace\", \"source_maps\", \"source_span\", \"stack_trace\", \"stream_channel\", \"string_scanner\", \"term_glyph\", \"test\", \"test_api\", \"test_core\", \"typed_data\", \"vector_math\", \"very_good_analysis\", \"vm_service\", \"watcher\", \"web\", \"web_socket\", \"web_socket_channel\", \"webkit_inspection_protocol\", \"yaml\"]}\n\ndef hub_deps(names):\n    \"\"\"Labels of the hub's aliases for the names it holds; other names are dropped.\n\n    Args:\n        names: Dependency names from an SDK package's pubspec.\n\n    Returns:\n        The labels, in the order given.\n    \"\"\"\n    return [Label(\"//:\" + name) for name in names if name in _PACKAGES]\n",
+                "pub_packages.json": "{\"packages\":[\"_fe_analyzer_shared\",\"analyzer\",\"args\",\"async\",\"boolean_selector\",\"characters\",\"cli_config\",\"clock\",\"collection\",\"convert\",\"coverage\",\"crypto\",\"cupertino_icons\",\"fake_async\",\"file\",\"flutter\",\"flutter_localizations\",\"flutter_localized_locales\",\"flutter_test\",\"frontend_server_client\",\"glob\",\"http_multi_server\",\"http_parser\",\"intl\",\"io\",\"leak_tracker\",\"leak_tracker_flutter_testing\",\"leak_tracker_testing\",\"listen\",\"logging\",\"matcher\",\"material_color_utilities\",\"meta\",\"mime\",\"node_preamble\",\"package_config\",\"path\",\"pool\",\"pub_semver\",\"shelf\",\"shelf_packages_handler\",\"shelf_static\",\"shelf_web_socket\",\"source_map_stack_trace\",\"source_maps\",\"source_span\",\"stack_trace\",\"stream_channel\",\"string_scanner\",\"term_glyph\",\"test\",\"test_api\",\"test_core\",\"typed_data\",\"vector_math\",\"very_good_analysis\",\"vm_service\",\"watcher\",\"web\",\"web_socket\",\"web_socket_channel\",\"webkit_inspection_protocol\",\"yaml\"],\"scc_targets\":{}}",
                 "swift_package_sha256.json": "{}"
               }
             }
@@ -6381,7 +6450,7 @@
               }
             }
           },
-          "flutter_l10n_root": {
+          "flutter_project_root": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
             "attributes": {
               "project": "",
@@ -6396,11 +6465,27 @@
               ]
             }
           },
-          "flutter_l10n": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
+          "flutter_project_pure_dart": {
+            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
+            "attributes": {
+              "project": "pure_dart",
+              "is_root": true,
+              "hubs": [
+                "deps"
+              ],
+              "hub_packages": [
+                "flutter",
+                "flutter_localizations",
+                "intl"
+              ]
+            }
+          },
+          "flutter_projects": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%project_index",
             "attributes": {
               "projects": {
-                "": "flutter_l10n_root"
+                "": "flutter_project_root",
+                "pure_dart": "flutter_project_pure_dart"
               }
             }
           }
@@ -6698,16 +6783,15 @@
   },
   "facts": {
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
-      "pub.plan.v1/hosted/_fe_analyzer_shared/93.0.0/8d7ff3948166b8ec5da0fbb5962000926b8e02f2ed9b3e51d1738905fbd4c98d/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/_fe_analyzer_shared-93.0.0.tar.gz",
+      "pub.plan.v1/hosted/_fe_analyzer_shared/111.0.0/1c5591cc6f252d5f440d96ab87c03e43504be552a3fa49d7cb7563f04c51fb0a/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/_fe_analyzer_shared-111.0.0.tar.gz",
         "deps": [
-          "meta",
-          "source_span"
+          "meta"
         ],
-        "sdk": "^3.9.0"
+        "sdk": "^3.13.0"
       },
-      "pub.plan.v1/hosted/analyzer/10.0.1/de7148ed2fcec579b19f122c1800933dfa028f6d9fd38a152b04b1516cec120b/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/analyzer-10.0.1.tar.gz",
+      "pub.plan.v1/hosted/analyzer/14.7.0/6c39bd5486a310e56217bed7cb1691377959f31be4227e41750107db7e6dd55c/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/analyzer-14.7.0.tar.gz",
         "deps": [
           "_fe_analyzer_shared",
           "collection",
@@ -6722,7 +6806,7 @@
           "watcher",
           "yaml"
         ],
-        "sdk": "^3.9.0"
+        "sdk": "^3.13.0"
       },
       "pub.plan.v1/hosted/args/2.7.0/d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04/https://pub.dev": {
         "archive_url": "https://pub.dev/api/archives/args-2.7.0.tar.gz",
@@ -6758,8 +6842,8 @@
         ],
         "sdk": "^3.0.0"
       },
-      "pub.plan.v1/hosted/clock/1.1.2/fddb70d9b5277016c77a80201021d40a2247104d9f4aa7bab7157b7e3f05b84b/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/clock-1.1.2.tar.gz",
+      "pub.plan.v1/hosted/clock/1.1.3/e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/clock-1.1.3.tar.gz",
         "deps": [],
         "sdk": "^3.4.0"
       },
@@ -6864,14 +6948,14 @@
         ],
         "sdk": "^3.4.0"
       },
-      "pub.plan.v1/hosted/intl/0.20.2/3df61194eb431efc39c4ceba583b95633a403f46c9fd341e550ce0bfa50e9aa5/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/intl-0.20.2.tar.gz",
+      "pub.plan.v1/hosted/intl/0.20.3/1ca20c894b1717686a2319b8548763d812bc0aabdac580420a44c5178c57a867/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/intl-0.20.3.tar.gz",
         "deps": [
           "clock",
           "meta",
           "path"
         ],
-        "sdk": "^3.3.0"
+        "sdk": "^3.9.0"
       },
       "pub.plan.v1/hosted/io/1.0.5/dfd5a80599cf0165756e3181807ed3e77daf6dd4137caaad72d0b7931597650b/https://pub.dev": {
         "archive_url": "https://pub.dev/api/archives/io-1.0.5.tar.gz",
@@ -6913,13 +6997,20 @@
         ],
         "sdk": "^3.2.0"
       },
+      "pub.plan.v1/hosted/listen/1.0.1/47501a08016a43fcad79252439d723f50f14f88fa7bfd8a177e0a417e5c9e1f2/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/listen-1.0.1.tar.gz",
+        "deps": [
+          "meta"
+        ],
+        "sdk": "^3.10.0"
+      },
       "pub.plan.v1/hosted/logging/1.3.0/c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61/https://pub.dev": {
         "archive_url": "https://pub.dev/api/archives/logging-1.3.0.tar.gz",
         "deps": [],
         "sdk": "^3.4.0"
       },
-      "pub.plan.v1/hosted/matcher/0.12.19/dc0b7dc7651697ea4ff3e69ef44b0407ea32c487a39fff6a4004fa585e901861/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/matcher-0.12.19.tar.gz",
+      "pub.plan.v1/hosted/matcher/0.12.20/31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/matcher-0.12.20.tar.gz",
         "deps": [
           "async",
           "meta",
@@ -6927,7 +7018,7 @@
           "term_glyph",
           "test_api"
         ],
-        "sdk": "^3.7.0"
+        "sdk": "^3.10.0"
       },
       "pub.plan.v1/hosted/material_color_utilities/0.13.0/9c337007e82b1889149c82ed242ed1cb24a66044e30979c44912381e9be4c48b/https://pub.dev": {
         "archive_url": "https://pub.dev/api/archives/material_color_utilities-0.13.0.tar.gz",
@@ -6936,8 +7027,8 @@
         ],
         "sdk": "^3.5.0"
       },
-      "pub.plan.v1/hosted/meta/1.18.0/1741988757a65eb6b36abe716829688cf01910bbf91c34354ff7ec1c3de2b349/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/meta-1.18.0.tar.gz",
+      "pub.plan.v1/hosted/meta/1.19.0/307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/meta-1.19.0.tar.gz",
         "deps": [],
         "sdk": "^3.5.0"
       },
@@ -7044,8 +7135,8 @@
         ],
         "sdk": "^3.1.0"
       },
-      "pub.plan.v1/hosted/stack_trace/1.12.1/8b27215b45d22309b5cddda1aa2b19bdfec9df0e765f2de506401c071d38d1b1/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/stack_trace-1.12.1.tar.gz",
+      "pub.plan.v1/hosted/stack_trace/1.12.2/277654b3034d17ac6f9f1cb5595db011b1d5d41e8806866db28e0abaa101c490/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/stack_trace-1.12.2.tar.gz",
         "deps": [
           "path"
         ],
@@ -7070,8 +7161,8 @@
         "deps": [],
         "sdk": "^3.1.0"
       },
-      "pub.plan.v1/hosted/test/1.31.0/8d9ceddbab833f180fbefed08afa76d7c03513dfdba87ffcec2718b02bbcbf20/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/test-1.31.0.tar.gz",
+      "pub.plan.v1/hosted/test/1.32.0/de5d145b0afff7921e5e788a880f52d7e5f3ae24068a202f6fd3b58e4ba26323/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/test-1.32.0.tar.gz",
         "deps": [
           "analyzer",
           "async",
@@ -7099,10 +7190,10 @@
           "webkit_inspection_protocol",
           "yaml"
         ],
-        "sdk": "^3.7.0"
+        "sdk": "^3.11.0"
       },
-      "pub.plan.v1/hosted/test_api/0.7.11/949a932224383300f01be9221c39180316445ecb8e7547f70a41a35bf421fb9e/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/test_api-0.7.11.tar.gz",
+      "pub.plan.v1/hosted/test_api/0.7.14/0a10344e901e5b2e63819567951cb6a06673ed6b84f40462188ff5a0c41f371f/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/test_api-0.7.14.tar.gz",
         "deps": [
           "async",
           "boolean_selector",
@@ -7114,10 +7205,10 @@
           "string_scanner",
           "term_glyph"
         ],
-        "sdk": "^3.7.0"
+        "sdk": "^3.11.0"
       },
-      "pub.plan.v1/hosted/test_core/0.6.17/1991d4cfe85d5043241acac92962c3977c8d2f2add1ee73130c7b286417d1d34/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/test_core-0.6.17.tar.gz",
+      "pub.plan.v1/hosted/test_core/0.6.20/80f3fb49087454e07e7e07c67578cfdd156c8c3a5227d8b3f47c7b2d019c2e93/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/test_core-0.6.20.tar.gz",
         "deps": [
           "analyzer",
           "args",
@@ -7141,7 +7232,7 @@
           "vm_service",
           "yaml"
         ],
-        "sdk": "^3.7.0"
+        "sdk": "^3.11.0"
       },
       "pub.plan.v1/hosted/typed_data/1.4.0/f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006/https://pub.dev": {
         "archive_url": "https://pub.dev/api/archives/typed_data-1.4.0.tar.gz",
@@ -7150,10 +7241,10 @@
         ],
         "sdk": "^3.5.0"
       },
-      "pub.plan.v1/hosted/vector_math/2.2.0/d530bd74fea330e6e364cda7a85019c434070188383e1cd8d9777ee586914c5b/https://pub.dev": {
-        "archive_url": "https://pub.dev/api/archives/vector_math-2.2.0.tar.gz",
+      "pub.plan.v1/hosted/vector_math/2.4.4/fa49e1674cb84acb900141714e6c6e1f9ae099827c24d141430ff6819db4e1bc/https://pub.dev": {
+        "archive_url": "https://pub.dev/api/archives/vector_math-2.4.4.tar.gz",
         "deps": [],
-        "sdk": "^3.1.0"
+        "sdk": "^3.10.0"
       },
       "pub.plan.v1/hosted/very_good_analysis/10.3.0/481af67ab5877af20325251dc215a4ebac7666a1c8cf09198ffd457bc612b33d/https://pub.dev": {
         "archive_url": "https://pub.dev/api/archives/very_good_analysis-10.3.0.tar.gz",

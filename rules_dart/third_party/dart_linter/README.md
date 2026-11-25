@@ -11,9 +11,11 @@ This is the commit that published `package:analyzer` 14.5.0. Its `pkg/linter`
 compiles against that exact analyzer tree, which is why it is used here rather
 than the SDK 3.13.5 tag.
 
-Difference from `dart analyze` in SDK 3.13.5: this copy registers 270 rules
-(the 267 rules in 3.13.5 plus `analyzer_to_be_deprecated_use`,
-`future_sync_value`, and `unnecessary_this_alias`).
+Difference from `dart analyze` in SDK 3.14.1: none in the rule list. `registerLintRules`
+of this copy and of `pkg/linter` at the 3.14.1 tag make the same 269 `registerLintRule` calls
+(compared by name). The SDK's analyzer is 14.6.0-dev there and this copy comes from the 14.5.0
+publish commit, so a rule's own code can still differ in a detail; `dart_pkg`'s analysis in the
+conformance harness is what shows it.
 
 ## Why it is vendored
 

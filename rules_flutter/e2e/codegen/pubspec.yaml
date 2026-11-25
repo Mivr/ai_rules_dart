@@ -1,6 +1,9 @@
 name: codegen_e2e
 publish_to: none
 
+workspace:
+  - pure_dart
+
 environment:
   sdk: ^3.13.0
 

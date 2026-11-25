@@ -30,7 +30,7 @@ const _kernelEntry = 'assets/flutter_assets/kernel_blob.bin';
 /// The constructor parameter the widget-creation transformer adds, as written
 /// in `_creationLocationParameterName` of the Dart SDK's
 /// `pkg/kernel/lib/transformations/track_widget_constructor_locations.dart`
-/// (the Dart revision Flutter 3.47.7's engine pins).
+/// (the Dart revision Flutter 3.50.1's engine pins).
 const _marker = r'$creationLocationd_0dea112b090073317d4';
 
 /// The word the framework's inspector declares, present with or without the

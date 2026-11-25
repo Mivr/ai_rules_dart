@@ -95,6 +95,8 @@ env:
     - rules_flutter/MODULE.bazel.lock
     - rules_flutter/e2e/*/MODULE.bazel
     - rules_flutter/flutter/private/versions.bzl
+    # The Android pins: a new pin starts a new entry, which a main push saves.
+    - rules_flutter/e2e/**/android_model.json
 jobs:
   # The nightly run skips both macOS jobs on a commit a main push run already
   # passed: the macOS slots are the scarce ones, and that run proved the same

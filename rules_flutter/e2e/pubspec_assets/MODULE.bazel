@@ -1,0 +1,37 @@
+"""What the Flutter tool's own asset code decides, under the rules as under `flutter build`.
+
+The root app names a directory of another package (`packages/licensed/images/`),
+which the tool reads from that package's `lib/` through the package config,
+and bundles a dependency's additional licence. `//escape` is a second project
+with its own lock, whose dependency declares a licence path outside its
+package: the tool refuses it, as Flutter 3.50 does.
+"""
+
+module(name = "pubspec_assets_e2e")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
+bazel_dep(name = "platforms", version = "1.1.0")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+flutter.pub(
+    name = "escape_deps",
+    lock = "//escape:pubspec.lock",
+)
+use_repo(flutter, "deps", "escape_deps", "flutter_toolchains")
+
+register_toolchains("@flutter_toolchains//:all")

@@ -1,0 +1,6 @@
+# A project of rules_dart's own index (a dev `pub.from_lock` in MODULE.bazel):
+# its targets get the macros' defaults, which project_defaults_test.bzl checks.
+name: project_fixture
+publish_to: none
+environment:
+  sdk: ^3.6.0

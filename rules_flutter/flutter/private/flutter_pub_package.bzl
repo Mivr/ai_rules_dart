@@ -32,8 +32,7 @@ load("@rules_dart//dart/pub:pub_scc.bzl", "spoke_planned_deps_error")
 load("@rules_dart//dart/pub:yaml.bzl", "pubspec_deps", "pubspec_environment_error", "pubspec_sdk_constraint", "yaml_to_json")
 load("//flutter/private:flutter_pub_plugin_defines.bzl", "check_plugin_defines", "plugin_defines_attr")
 load("//flutter/private:flutter_pub_plugin_deps.bzl", "check_plugin_native_deps")
-load("//flutter/private:flutter_pubspec.bzl", "parse_flutter_assets_block", "parse_flutter_plugin_block")
-load(":asset_uri.bzl", "normalize_spoke_asset_block")
+load("//flutter/private:flutter_pubspec.bzl", "parse_flutter_plugin_block", "pubspec_file_roots")
 load(
     ":flutter_pub_apple.bzl",
     _detect_apple_plugin_sources = "detect_apple_plugin_sources",
@@ -810,10 +809,10 @@ def read_spoke_pubspec_data(ctx, path = "pubspec.yaml", label = None):
 def _read_spoke_pubspec(ctx, data = None):
     """Projects the extracted `pubspec.yaml` into spoke inputs.
 
-    Returns `struct(raw_deps, language_version, plugin_block, asset_block)`:
-    the unfiltered dependency names, the derived language version, and the
-    parsed `flutter.plugin` / `flutter` asset blocks (absent-pubspec defaults
-    when no pubspec was extracted).
+    Returns `struct(raw_deps, language_version, plugin_block, roots)`: the
+    unfiltered dependency names, the derived language version, the parsed
+    `flutter.plugin` block and where the files the `flutter:` section names
+    live (absent-pubspec defaults when no pubspec was extracted).
 
     Args:
         ctx: The spoke's repository context.
@@ -822,13 +821,7 @@ def _read_spoke_pubspec(ctx, data = None):
     """
     raw_deps, language_version = [], ""
     plugin_block = struct(present = False, platforms = {}, implements = "", ffi_plugin = False)
-    asset_block = struct(
-        fonts = [],
-        assets = [],
-        shaders = [],
-        uses_material_design = False,
-        asset_errors = [],
-    )
+    roots = pubspec_file_roots({})
     if data == None:
         data = read_spoke_pubspec_data(ctx) if ctx.path("pubspec.yaml").exists else None
     if data != None:
@@ -838,28 +831,26 @@ def _read_spoke_pubspec(ctx, data = None):
         raw_deps = sorted(pubspec_deps(data))
         language_version = derive_language_version(pubspec_sdk_constraint(data))
         plugin_block = parse_flutter_plugin_block(data)
-        asset_block = parse_flutter_assets_block(data)
+        roots = pubspec_file_roots(data)
     return struct(
         raw_deps = raw_deps,
         language_version = language_version,
         plugin_block = plugin_block,
-        asset_block = asset_block,
+        roots = roots,
     )
 
-def _spoke_asset_inputs(ctx, package_name, asset_block):
+def _spoke_asset_inputs(roots):
     """What the spoke lists for the files its pubspec names.
 
-    Every entry is normalized through `asset_uri.bzl` first, so the patterns
-    name the decoded files. Whether a named file exists, and how it is
-    bundled, is the Flutter tool's to say when an app bundles the package.
+    The directories those files live in, from `pubspec_file_roots`. Whether a
+    named file exists, what it means and how it is bundled is the Flutter
+    tool's to say when an app bundles the package.
 
     Returns `struct(data_patterns, has_contributions)`.
     """
-    _ = ctx  # @unused
-    normalized = normalize_spoke_asset_block(package_name, asset_block)
     return struct(
-        data_patterns = _spoke_data_patterns(normalized, package_name),
-        has_contributions = bool(asset_block.fonts) or bool(asset_block.assets) or bool(asset_block.shaders),
+        data_patterns = _spoke_data_patterns(roots),
+        has_contributions = roots.whole or bool(roots.dirs) or bool(roots.files),
     )
 
 def _detect_desktop_plugin_sources(ctx, package_name, plugin_block):
@@ -1097,7 +1088,7 @@ def link_path_package(ctx, read_pubspec = None):
     link_spoke_contents(
         ctx,
         src,
-        normalize_spoke_asset_block(package_name, parse_flutter_assets_block(pubspec or {})),
+        pubspec_file_roots(pubspec or {}),
         path_spoke_platform_dirs(parse_flutter_plugin_block(pubspec or {})),
         scope,
     )
@@ -1133,7 +1124,7 @@ def _verify_spoke_deps(ctx, pubspec):
         fail(planned_err)
     return list(ctx.attr.deps)
 
-def spoke_dep_labels(deps, asset_block):
+def spoke_dep_labels(deps):
     """The spoke's dependency labels: its planned ones.
 
     The Material icons a pubspec asks for with `uses-material-design` are
@@ -1142,12 +1133,10 @@ def spoke_dep_labels(deps, asset_block):
 
     Args:
         deps: The planned dependency labels.
-        asset_block: The parsed `flutter` asset block (unused).
 
     Returns:
         The labels.
     """
-    _ = asset_block  # @unused
     return deps
 
 def _generate_spoke(ctx, pubspec_data = None):
@@ -1157,11 +1146,11 @@ def _generate_spoke(ctx, pubspec_data = None):
     side is built from its pinned Gradle model.
     """
     pubspec = _read_spoke_pubspec(ctx, pubspec_data)
-    dep_labels = spoke_dep_labels(_verify_spoke_deps(ctx, pubspec), pubspec.asset_block)
+    dep_labels = spoke_dep_labels(_verify_spoke_deps(ctx, pubspec))
 
     # Pre-compute the pub-asset attr inputs once. Used by either branch
     # below (plugin vs library).
-    assets = _spoke_asset_inputs(ctx, ctx.attr.package_name, pubspec.asset_block)
+    assets = _spoke_asset_inputs(pubspec.roots)
 
     # Try overlays first (user-supplied roots win over the bundled
     # `@rules_flutter//ext/` tree). On match, the overlay replaces

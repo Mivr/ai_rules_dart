@@ -3,6 +3,7 @@ load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
 load("//dart/private:module_compiler_tools.bzl", "module_compiler_tools")
+load("//dart/private:prebuilt_tools.bzl", "SNAPSHOT_TOOLS", "dart_prebuilt_tool_set")
 load("//dart/private:versions.bzl", "TOOL_VERSIONS")
 
 dart_binary(
@@ -336,7 +337,10 @@ dart_binary(
     code_assets_from_deps = False,
     compile_mode = "exe",
     main = "test_runner.dart",
-    visibility = ["//dart:__subpackages__"],
+    visibility = [
+        "//dart:__subpackages__",
+        "@rules_dart_tools//:__pkg__",
+    ],
     deps = [
         "//dart/runfiles",
         "@ext_pub_deps//:coverage",
@@ -656,7 +660,10 @@ dart_binary(
     # Run by `dartaotruntime` as a raw snapshot, like `kernel_link`.
     snapshot_launcher = False,
     use_compile_wrapper = False,
-    visibility = ["//dart:__subpackages__"],
+    visibility = [
+        "//dart:__subpackages__",
+        "@rules_dart_tools//:__pkg__",
+    ],
 )
 
 # The launch of the compile wrapper, loaded by `dart_binary.bzl` and `dart_compile.bzl`.
@@ -705,7 +712,10 @@ dart_binary(
     modular_kernel = False,
     # `dartaotruntime` runs the raw snapshot, so it must stay the executable.
     snapshot_launcher = False,
-    visibility = ["//dart:__subpackages__"],
+    visibility = [
+        "//dart:__subpackages__",
+        "@rules_dart_tools//:__pkg__",
+    ],
 )
 
 # The `link_modules` check (see `link_check.dart`): refuses `dart:mirrors` and
@@ -1070,6 +1080,36 @@ dart_test(
         "@ext_pub_deps//:test",
     ],
 )
+
+# What a release prebuilds on each platform (`release tools`, see
+# `//dart/private:prebuilt_tools.bzl`): the tools in the exec configuration a
+# consumer builds them in, and the exec SDK's module compiler.
+dart_prebuilt_tool_set(
+    name = "prebuilt_set",
+    pub_scanner = select({
+        "@platforms//os:windows": "@dart_pub_scanner//:scanner.exe",
+        "//conditions:default": "@dart_pub_scanner//:scanner",
+    }),
+    tools = [
+        ":compile_wrapper",
+        ":import_check",
+        ":kernel_launcher",
+        ":kernel_link",
+        ":test_runner",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# The sources of the AOT snapshot tools (`SNAPSHOT_TOOLS`), for rules_flutter's
+# prebuilt set, which builds them with the Dart SDK a Flutter release bundles.
+[
+    alias(
+        name = name + "_source",
+        actual = ":" + name,
+        visibility = ["//visibility:public"],
+    )
+    for name in SNAPSHOT_TOOLS
+]
 
 exports_files(
     ["BUILD.bazel"],

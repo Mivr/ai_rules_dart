@@ -90,6 +90,10 @@ ext.rdfKnownPlugins = [
   'org.jetbrains.kotlin.gradle.plugin.KotlinBaseApiPlugin',
   'org.jetbrains.kotlin.gradle.internal.Kapt3GradleSubplugin',
   'org.jetbrains.kotlin.gradle.scripting.internal.ScriptingGradleSubplugin',
+  // Kotlin 2.4.20 applies it to every project. Its `apply` registers one build service that reports
+  // build metrics (`BuildMetricsService.registerIfAbsent`) and nothing else: no task, no source, no
+  // dependency (read in the plugin's bytecode; the template app's release dex equals the stock one).
+  'org.jetbrains.kotlin.gradle.plugin.BuildMetricsPlugin',
   'com.google.devtools.ksp.gradle.KspGradleSubplugin',
   'com.google.devtools.ksp.gradle.KspAATransformPlugin',
   'com.google.gms.googleservices.GoogleServicesPlugin',

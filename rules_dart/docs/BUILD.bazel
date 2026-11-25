@@ -4,11 +4,14 @@ load("//dart:defs.bzl", "dart_test")
 
 _DOC_EXTRACTS = [
     ":dart_analyze.doc_extract",
+    ":dart_binary_rule.doc_extract",
     ":dart_defs.doc_extract",
     ":dart_extensions.doc_extract",
     ":dart_import_check.doc_extract",
+    ":dart_library_rule.doc_extract",
     ":dart_providers.doc_extract",
     ":dart_repositories.doc_extract",
+    ":dart_test_rule.doc_extract",
     ":dart_toolchain.doc_extract",
     ":dart_utils.doc_extract",
     ":pub_defs.doc_extract",
@@ -40,6 +43,30 @@ starlark_doc_extract(
     name = "dart_defs.doc_extract",
     src = "//dart:defs.bzl",
     deps = ["//dart:defs"],
+)
+
+# `dart_library`, `dart_binary` and `dart_test` in `//dart:defs.bzl` are
+# macros that set the defaults of a project's targets; their attributes are
+# those of the rules they wrap, extracted here.
+starlark_doc_extract(
+    name = "dart_binary_rule.doc_extract",
+    src = "//dart/private:dart_binary.bzl",
+    symbol_names = ["dart_binary"],
+    deps = ["//dart/private:dart_binary"],
+)
+
+starlark_doc_extract(
+    name = "dart_library_rule.doc_extract",
+    src = "//dart/private:dart_library.bzl",
+    symbol_names = ["dart_library"],
+    deps = ["//dart/private:dart_library"],
+)
+
+starlark_doc_extract(
+    name = "dart_test_rule.doc_extract",
+    src = "//dart/private:dart_test.bzl",
+    symbol_names = ["dart_test"],
+    deps = ["//dart/private:dart_test"],
 )
 
 starlark_doc_extract(
@@ -151,8 +178,8 @@ _DECLARED_EXTRACTS = [
 ]
 
 _ = (
-    None if len(_DECLARED_EXTRACTS) == 19 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
-        "expected 19 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
+    None if len(_DECLARED_EXTRACTS) == 22 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
+        "expected 22 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
             len(_DECLARED_EXTRACTS),
         ),
     )

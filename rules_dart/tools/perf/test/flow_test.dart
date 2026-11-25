@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -78,15 +79,17 @@ final class _Fake extends Flow {
   Future<void> tearDown(Ctx c) async => calls.add('tearDown');
 }
 
-Ctx _ctx(String proc, {double noisy = 8}) => Ctx(
-  repo: '/repo',
-  scratch: Directory.systemTemp.createTempSync('scratch').path,
-  bazel: const ['bazel'],
-  stockEnv: const {},
-  runs: 5,
-  noisyLoad: noisy,
-  host: Host(procRoot: proc),
-);
+Ctx _ctx(String proc, {double noisy = 8, Duration settle = Duration.zero}) =>
+    Ctx(
+      repo: '/repo',
+      scratch: Directory.systemTemp.createTempSync('scratch').path,
+      bazel: const ['bazel'],
+      stockEnv: const {},
+      runs: 5,
+      noisyLoad: noisy,
+      settle: settle,
+      host: Host(procRoot: proc),
+    );
 
 void main() {
   group('adding a dependency', () {
@@ -209,6 +212,19 @@ packages:
       ]);
     },
   );
+
+  test('a run waits for the load its own preparation left to settle', () async {
+    // The load is above the threshold until a second after the start.
+    Timer(const Duration(milliseconds: 1200), () {
+      File('${proc.path}/loadavg').writeAsStringSync('1.0 1 1 1/1 1\n');
+    });
+    final row = await measureFlow(
+      _Fake([1, 1, 1, 1, 1]),
+      _ctx(proc.path, noisy: 2, settle: const Duration(seconds: 10)),
+    );
+    expect(row.noisy, isFalse);
+    expect(row.load1, everyElement(1.0));
+  });
 
   test('a run above the load threshold makes the row noisy', () async {
     final row = await measureFlow(

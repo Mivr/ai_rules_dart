@@ -12,6 +12,12 @@ bzl_library(
 )
 
 bzl_library(
+    name = "maven",
+    srcs = ["maven.bzl"],
+    visibility = ["//flutter:__subpackages__"],
+)
+
+bzl_library(
     name = "names",
     srcs = ["names.bzl"],
     visibility = ["//flutter:__subpackages__"],
@@ -22,6 +28,7 @@ bzl_library(
     srcs = ["extension.bzl"],
     visibility = ["//flutter:__subpackages__"],
     deps = [
+        ":maven",
         ":names",
         "//flutter/private:download",
         "@rules_dart//dart/pub:yaml",

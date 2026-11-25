@@ -84,7 +84,7 @@ register_toolchains(
 )
 
 dart = use_extension("//dart:extensions.bzl", "dart")
-dart.toolchain(dart_version = "3.13.5")
+dart.toolchain(dart_version = "3.14.1")
 
 # Besides the scanner, the pinned `yaml2json` the pub rules read pubspec files with
 # (`dart_yaml2json`), the hub naming each pinned SDK version's module compiler
@@ -109,6 +109,7 @@ use_repo(
     "dart_toolchains",
     "dart_windows-x64",
     "dart_yaml2json",
+    "rules_dart_tools",
 )
 
 register_toolchains("@dart_toolchains//:all")
@@ -153,4 +154,17 @@ pub.from_lock(
     lock = "//dart/private/tools/hook_runner:pubspec.lock",
     plan = "//dart/private/tools/hook_runner:pub_plan.json",
 )
-use_repo(pub, "ext_pub_deps", "rules_dart_hook_runner_deps")
+use_repo(pub, "dart_projects", "ext_pub_deps", "rules_dart_hook_runner_deps")
+
+# A project of rules_dart's own index, whose targets the macros' defaults are
+# tested on (`//dart/tests/project_fixture`). Its lock names no package.
+pub_dev = use_extension("//dart/pub:extensions.bzl", "pub", dev_dependency = True)
+pub_dev.from_lock(
+    name = "rules_dart_project_fixture_deps",
+    isolated = True,
+    lock = "//dart/tests/project_fixture:pubspec.lock",
+)
+use_repo(pub_dev, "rules_dart_project_fixture_deps")
+
+# The same lock named by `project` as well: one index entry, not a conflict.
+pub_dev.project(lock = "//dart/tests/project_fixture:pubspec.lock")

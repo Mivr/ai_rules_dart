@@ -29,7 +29,7 @@ was done and not why.
 ```
 Changelog: `flutter_ios_extension` builds iOS app extensions
 Changelog: `flutter_dev run` passes `--flavor` on to the stock tool
-Changelog: Default Dart SDK is 3.13.4
+Changelog: Default Dart SDK is 3.14.1
 Changelog: Removed `flutter_app.foo`; use `bar`
 ```
 

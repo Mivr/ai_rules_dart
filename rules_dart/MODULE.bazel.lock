@@ -239,18 +239,20 @@
   "moduleExtensions": {
     "//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "KrY5dyiGK0mSCtycUhBmmLOUtyuf1HyRPB4SfUbAB5w=",
-        "usagesDigest": "FtNE2kO2ReC0eR14hY9m+UoTiS0rWeK/5AoPs/jd+XE=",
+        "bzlTransitiveDigest": "Q4g26yTc84wS0lfgsbQkt7ZOu+eAwlsXGH0AROpxRao=",
+        "usagesDigest": "XoTFQqUpydRuXR7XWm6TcgImZ/Sjf4DAU3ub6EVUoL4=",
         "recordedInputs": [
           "REPO_MAPPING:,dart_pub_scanner +dart+dart_pub_scanner",
           "FILE:@@//dart/ext/pubspec.lock 1452d104de06eacf15905878d31e7b7c84bf72114637fee0c87da2c75dcf58da",
-          "FILE:@@//dart/private/tools/hook_runner/pubspec.lock 131b54a6760682dea8f631e6a52e48a43555cfb0479ebe5aca1cc647dc36cd7c",
+          "FILE:@@//dart/private/tools/hook_runner/pubspec.lock 49944eadf70335ddae7a92ae02da09a2aef79e5823c87c67a002c565b9918592",
+          "FILE:@@//dart/tests/project_fixture/pubspec.lock 5bbf0e6325a3c6ce3a450dd2322645f20b5ba8c795e3d4b2763a5cb2aff4f21f",
           "REPO_MAPPING:,dart_yaml2json +dart+dart_yaml2json",
           "REPO_MAPPING:,dart_linux-x64 +dart+dart_linux-x64",
           "FILE:@@//dart/ext/pub_plan.json 9a8318baca7377e3c4307c68140729577b22c816a17f7810980cdb35ca906598",
           "FILE:@@//dart/private/tools/hook_runner/pub_plan.json f6a39248934c419f51f8672259b7de3991c860fa4ba9c1422608f981cf8868d1",
           "FILE:@@//dart/ext/pubspec.yaml 169951c2e1973cc403daba2bbd1179e4a73e1f5be390d0572f69531211e5bdee",
-          "FILE:@@//dart/private/tools/hook_runner/pubspec.yaml 1d4a082706d3df1ae1f7694f5563f22af91dcbcf6be6d5dc8e16487ae54e55b7"
+          "FILE:@@//dart/private/tools/hook_runner/pubspec.yaml 523cb61075895694e4dbfbe023728a430db65a9a58fc37ee3fbde83a4349c4a4",
+          "FILE:@@//dart/tests/project_fixture/pubspec.yaml 0343c3e97dab2305fe1d1a833f6dfefe6414207eecf676d872a2454ebeaae813"
         ],
         "generatedRepoSpecs": {
           "ext_pub_deps": {
@@ -2156,14 +2158,60 @@
                 "LICENSE*"
               ]
             }
+          },
+          "rules_dart_project_fixture_deps": {
+            "repoRuleId": "@@//dart/pub/private:pub_lock_hub.bzl%pub_lock_hub",
+            "attributes": {
+              "hub_name": "rules_dart_project_fixture_deps",
+              "spoke_prefix": "rules_dart_project_fixture_deps",
+              "packages": [],
+              "explicit_packages": [],
+              "local_targets": {},
+              "unavailable": {},
+              "scc_targets": {},
+              "package_graph": "{\n  \"configVersion\": 1,\n  \"packages\": [],\n  \"roots\": []\n}\n",
+              "build_runner_version": "",
+              "builder_packages": {}
+            }
+          },
+          "dart_project_dart_ext": {
+            "repoRuleId": "@@//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "dart/ext"
+            }
+          },
+          "dart_project_dart_private_tools_hook_runner": {
+            "repoRuleId": "@@//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "dart/private/tools/hook_runner"
+            }
+          },
+          "dart_project_dart_tests_project_fixture": {
+            "repoRuleId": "@@//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "dart/tests/project_fixture"
+            }
+          },
+          "dart_projects": {
+            "repoRuleId": "@@//dart/pub/private:project.bzl%project_index",
+            "attributes": {
+              "projects": {
+                "dart/ext": "dart_project_dart_ext",
+                "dart/private/tools/hook_runner": "dart_project_dart_private_tools_hook_runner",
+                "dart/tests/project_fixture": "dart_project_dart_tests_project_fixture"
+              }
+            }
           }
         },
         "moduleExtensionMetadata": {
           "explicitRootModuleDirectDeps": [
             "ext_pub_deps",
-            "rules_dart_hook_runner_deps"
+            "rules_dart_hook_runner_deps",
+            "dart_projects"
           ],
-          "explicitRootModuleDirectDevDeps": [],
+          "explicitRootModuleDirectDevDeps": [
+            "rules_dart_project_fixture_deps"
+          ],
           "useAllRepos": "NO",
           "reproducible": false
         }

@@ -37,10 +37,10 @@ sky = use_repo_rule(
 
 sky(
     name = "red_sky_engine",
-    # Engine revision of Flutter 3.47.7 (see flutter/private/versions.bzl).
+    # Engine revision of Flutter 3.50.1 (see flutter/private/versions.bzl).
     # Must name a revision whose artifacts still exist, so the fetch reaches
     # the checksum comparison instead of failing on a 404.
-    engine_revision = "deb287481e3ce9468f3434937ced4240a70539ca",
+    engine_revision = "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
     # Deliberately wrong: the fetch must fail with
     # "Checksum was <actual> but wanted <this>".
     sha256 = "0000000000000000000000000000000000000000000000000000000000000000",

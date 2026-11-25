@@ -289,21 +289,22 @@ def _common_args(ctx, tool, flutter_sdk_info, mode, flavor, args, inputs, extra_
         tools.append(run)
     return package_files, tools
 
-def _icon_tree_shaking(ctx, flutter_sdk_info, mode, app_dill, args, inputs):
-    """Shakes the icon fonts as `flutter build` does: release and profile, from the kernel."""
-    if mode == "debug" or not app_dill or not getattr(ctx.attr, "tree_shake_icons", False):
-        return []
-    if not flutter_sdk_info.const_finder or not flutter_sdk_info.font_subset:
-        fail("%s: `tree_shake_icons` is set, but the Flutter toolchain has no `const_finder` or `font-subset` for the execution platform." % ctx.label)
-    args.add("--tree-shake-icons")
-    args.add("--app-dill", app_dill.path)
-    args.add("--engine", "const_finder=" + flutter_sdk_info.const_finder.path)
-    args.add("--engine", "font_subset=" + flutter_sdk_info.font_subset.path)
+def _icon_tree_shaking(ctx, flutter_sdk_info, mode, shake, recorded_uses, args, inputs):
+    """Shakes the icon fonts as `flutter build` does: release and profile, from the compilers' recorded uses.
 
-    # The tool starts `Artifact.engineDartBinary`: `dart.exe` on Windows.
-    args.add("--sdk", "bin/cache/dart-sdk/bin/" + flutter_sdk_info.dart.basename + "=" + flutter_sdk_info.dart.path)
-    inputs.extend([app_dill, flutter_sdk_info.const_finder, flutter_sdk_info.font_subset, flutter_sdk_info.dart])
-    return [flutter_sdk_info.dart_vm_files]
+    `recorded_uses` is the file a native AOT compile wrote; a web compile's
+    reach the tool in `web_build`.
+    """
+    if mode == "debug" or not shake or not getattr(ctx.attr, "tree_shake_icons", False):
+        return
+    if not flutter_sdk_info.font_subset:
+        fail("%s: `tree_shake_icons` is set, but the Flutter toolchain has no `font-subset` for the execution platform." % ctx.label)
+    args.add("--tree-shake-icons")
+    if recorded_uses:
+        args.add("--recorded-uses", recorded_uses.path)
+        inputs.append(recorded_uses)
+    args.add("--engine", "font_subset=" + flutter_sdk_info.font_subset.path)
+    inputs.append(flutter_sdk_info.font_subset)
 
 def _run_tool(ctx, tool, command, args, inputs, transitive, tools, outputs, mnemonic, progress):
     args.use_param_file("@%s", use_always = True)
@@ -330,7 +331,7 @@ def flutter_bundle(
         target_platform,
         mode,
         flavor = None,
-        app_dill = None,
+        recorded_uses = None,
         data_assets = None,
         native_assets_manifest = None,
         deferred_components = False):
@@ -343,8 +344,9 @@ def flutter_bundle(
       target_platform: `android`, `ios`, `linux`, `macos`, `windows` or `tester`.
       mode: `debug`, `profile` or `release`.
       flavor: The flavor, or None.
-      app_dill: The app's kernel, which the icon tree shaker reads in release
-        and profile; unused in debug.
+      recorded_uses: The File the AOT compile recorded the app's uses to,
+        which the icon tree shaker reads in release and profile; unused in
+        debug.
       data_assets: depset of `FlutterDataAssetInfo`: the link hooks' data
         assets, bundled at `packages/<package>/<name>`.
       native_assets_manifest: The `NativeAssetsManifest.json` to bundle, or None.
@@ -361,7 +363,8 @@ def flutter_bundle(
     args.add("--out", output_dir.path)
     args.add("--platform", _TOOL_PLATFORMS[target_platform])
     package_files, tools = _common_args(ctx, tool, flutter_sdk_info, mode, flavor, args, inputs)
-    transitive = [package_files] + _icon_tree_shaking(ctx, flutter_sdk_info, mode, app_dill, args, inputs)
+    transitive = [package_files]
+    _icon_tree_shaking(ctx, flutter_sdk_info, mode, recorded_uses != None, recorded_uses, args, inputs)
     if data_assets:
         # lint-allow: depset-flatten each hook data asset's file is an input and its package and name an argument; a link hook yields a handful
         for entry in data_assets.to_list():
@@ -394,7 +397,7 @@ def flutter_web_bundle(
         web_build,
         web_sdk_files,
         flavor = None,
-        app_dill = None,
+        shake_icons = False,
         base_href = None,
         static_assets_url = None,
         pwa_strategy = None,
@@ -418,7 +421,8 @@ def flutter_web_bundle(
       web_sdk_files: The Flutter web SDK's files (`flutter_js/flutter.js`,
         `canvaskit/...`).
       flavor: The flavor, or None.
-      app_dill: The app's kernel, for icon tree shaking in release.
+      shake_icons: Whether the icon fonts are shaken in release and profile,
+        from the uses the web compilers recorded (they are among `web_build`).
       base_href: `--base-href`, or None.
       static_assets_url: `--static-assets-url`, or None.
       pwa_strategy: `--pwa-strategy`, or None.
@@ -462,7 +466,8 @@ def flutter_web_bundle(
         args.add("--dev-bootstrap", dev_bootstrap.path)
         outputs.append(dev_bootstrap)
     package_files, tools = _common_args(ctx, tool, flutter_sdk_info, mode, flavor, args, inputs, extra_project_files)
-    transitive = [package_files] + _icon_tree_shaking(ctx, flutter_sdk_info, mode, app_dill, args, inputs)
+    transitive = [package_files]
+    _icon_tree_shaking(ctx, flutter_sdk_info, mode, shake_icons, None, args, inputs)
     args.add("--sdk", "packages/flutter_tools/lib/src/web/file_generators/js/flutter_service_worker.js=" + tool.service_worker.path)
     inputs.append(tool.service_worker)
     for f in web_sdk_files:

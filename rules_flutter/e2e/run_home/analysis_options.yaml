@@ -1,1 +1,8 @@
 include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  errors:
+    # Flutter 3.50 deprecates `package:flutter/material.dart` and `cupertino.dart` in
+    # favour of the `material_ui` and `cupertino_ui` packages. This workspace tests
+    # the rules, not that migration.
+    deprecated_member_use: ignore

@@ -229,8 +229,17 @@ bzl_library(
         "//dart/private:dart_package_metadata",
         "//dart/private:dart_test",
         "//dart/private:dart_web_application",
+        "//dart/private:project_defaults",
         "//dart/private:source_set",
+        "@dart_projects//:index",
     ],
+)
+
+bzl_library(
+    name = "project",
+    srcs = ["project.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["//dart/private:project_defaults"],
 )
 
 bzl_library(
@@ -240,6 +249,7 @@ bzl_library(
     deps = [
         ":repositories",
         "//dart/private:module_compiler_repo",
+        "//dart/private:prebuilt_tools",
         "//dart/private:toolchain_selection",
         "//dart/pub:pub_scanner",
         "//dart/pub/private:yaml2json",
@@ -258,6 +268,13 @@ bzl_library(
 )
 
 bzl_library(
+    name = "prebuilt_tools",
+    srcs = ["prebuilt_tools.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["//dart/private:prebuilt_tools"],
+)
+
+bzl_library(
     name = "providers",
     srcs = ["providers.bzl"],
     visibility = ["//visibility:public"],
@@ -269,8 +286,10 @@ bzl_library(
     srcs = ["toolchain.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":providers",
         "//dart/private:module_compiler",
         "//dart/private:module_compiler_versions",
+        "//dart/private:prebuilt_tools",
     ],
 )
 
@@ -302,13 +321,13 @@ bzl_library(
 # `executable_import_check` (see `import_check.bzl`).
 alias(
     name = "import_check",
-    actual = "//dart/private/tools:import_check",
+    actual = "@rules_dart_tools//:import_check",
     visibility = ["//visibility:public"],
 )
 
 alias(
     name = "kernel_link",
-    actual = "//dart/private/tools:kernel_link",
+    actual = "@rules_dart_tools//:kernel_link",
     visibility = ["//visibility:public"],
 )
 

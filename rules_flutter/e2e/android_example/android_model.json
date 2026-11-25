@@ -672,28 +672,28 @@
                 "https://dl.google.com/dl/android/maven2/androidx/window/window/1.2.0/window-1.2.0.aar"
             ]
         },
-        "com/android/tools/analytics-library/protos/32.1.0/protos-32.1.0.jar": {
-            "coordinate": "com.android.tools.analytics-library:protos:32.1.0",
+        "com/android/tools/analytics-library/protos/32.1.1/protos-32.1.1.jar": {
+            "coordinate": "com.android.tools.analytics-library:protos:32.1.1",
             "sha256": "b2fa8773cfba157b70f76685227ad465db5ce2e2d4ba61b12444e42ba4ee2da1",
             "size": 10110081,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/analytics-library/protos/32.1.0/protos-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/analytics-library/protos/32.1.1/protos-32.1.1.jar"
             ]
         },
-        "com/android/tools/analytics-library/shared/32.1.0/shared-32.1.0.jar": {
-            "coordinate": "com.android.tools.analytics-library:shared:32.1.0",
+        "com/android/tools/analytics-library/shared/32.1.1/shared-32.1.1.jar": {
+            "coordinate": "com.android.tools.analytics-library:shared:32.1.1",
             "sha256": "d82051937b390056af6dadc242923e2cd7794bdee217d276501f8aee151af446",
             "size": 128420,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/analytics-library/shared/32.1.0/shared-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/analytics-library/shared/32.1.1/shared-32.1.1.jar"
             ]
         },
-        "com/android/tools/annotations/32.1.0/annotations-32.1.0.jar": {
-            "coordinate": "com.android.tools:annotations:32.1.0",
+        "com/android/tools/annotations/32.1.1/annotations-32.1.1.jar": {
+            "coordinate": "com.android.tools:annotations:32.1.1",
             "sha256": "3b4bb9620c17d19e5bd91ac1988080553573b4c3b739fdd92416f42f2daf3e78",
             "size": 10680,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/annotations/32.1.0/annotations-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/annotations/32.1.1/annotations-32.1.1.jar"
             ]
         },
         "com/android/tools/build/aapt2-proto/7.3.0-alpha07-8248216/aapt2-proto-7.3.0-alpha07-8248216.jar": {
@@ -704,60 +704,60 @@
                 "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2-proto/7.3.0-alpha07-8248216/aapt2-proto-7.3.0-alpha07-8248216.jar"
             ]
         },
-        "com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar": {
-            "coordinate": "com.android.tools.build:aapt2-proto:9.1.0-14792394",
+        "com/android/tools/build/aapt2-proto/9.1.1-14792394/aapt2-proto-9.1.1-14792394.jar": {
+            "coordinate": "com.android.tools.build:aapt2-proto:9.1.1-14792394",
             "sha256": "2335bab7fd8269ee98d3843410c4a5553d31dd71f9a22f49b21a676d3139c882",
             "size": 721157,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2-proto/9.1.1-14792394/aapt2-proto-9.1.1-14792394.jar"
             ]
         },
-        "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar": {
-            "coordinate": "com.android.tools.build:aapt2:9.1.0-14792394",
+        "com/android/tools/build/aapt2/9.1.1-14792394/aapt2-9.1.1-14792394-linux.jar": {
+            "coordinate": "com.android.tools.build:aapt2:9.1.1-14792394",
             "sha256": "e7ae17af6e4093c771243e82d66462353de87befaac206bfb43e557ac1c34440",
             "size": 2331128,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/9.1.1-14792394/aapt2-9.1.1-14792394-linux.jar"
             ]
         },
-        "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-osx.jar": {
-            "coordinate": "com.android.tools.build:aapt2:9.1.0-14792394",
+        "com/android/tools/build/aapt2/9.1.1-14792394/aapt2-9.1.1-14792394-osx.jar": {
+            "coordinate": "com.android.tools.build:aapt2:9.1.1-14792394",
             "sha256": "b58cb80ac24aa343d02316fa50a662e2710b2f9ea14fc7da6d08d9cd801cafa3",
             "size": 4383242,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-osx.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/9.1.1-14792394/aapt2-9.1.1-14792394-osx.jar"
             ]
         },
-        "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-windows.jar": {
-            "coordinate": "com.android.tools.build:aapt2:9.1.0-14792394",
+        "com/android/tools/build/aapt2/9.1.1-14792394/aapt2-9.1.1-14792394-windows.jar": {
+            "coordinate": "com.android.tools.build:aapt2:9.1.1-14792394",
             "sha256": "e27e3c895bfb9698c956d5e35c514570a0f084874c081d95a690181a606dbe10",
             "size": 2116862,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-windows.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aapt2/9.1.1-14792394/aapt2-9.1.1-14792394-windows.jar"
             ]
         },
-        "com/android/tools/build/aaptcompiler/9.1.0/aaptcompiler-9.1.0.jar": {
-            "coordinate": "com.android.tools.build:aaptcompiler:9.1.0",
+        "com/android/tools/build/aaptcompiler/9.1.1/aaptcompiler-9.1.1.jar": {
+            "coordinate": "com.android.tools.build:aaptcompiler:9.1.1",
             "sha256": "05a74fd429ff802c42309a54fba9a4397bd3385793260f4bcb1fc7ad43ebba7f",
             "size": 493982,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aaptcompiler/9.1.0/aaptcompiler-9.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/aaptcompiler/9.1.1/aaptcompiler-9.1.1.jar"
             ]
         },
-        "com/android/tools/build/apksig/9.1.0/apksig-9.1.0.jar": {
-            "coordinate": "com.android.tools.build:apksig:9.1.0",
+        "com/android/tools/build/apksig/9.1.1/apksig-9.1.1.jar": {
+            "coordinate": "com.android.tools.build:apksig:9.1.1",
             "sha256": "562cd0a88890960d2ece48e116c61f12872222f1dcc306890799382bc019b201",
             "size": 506620,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/build/apksig/9.1.0/apksig-9.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/apksig/9.1.1/apksig-9.1.1.jar"
             ]
         },
-        "com/android/tools/build/builder/9.1.0/builder-9.1.0.jar": {
-            "coordinate": "com.android.tools.build:builder:9.1.0",
-            "sha256": "0670034adae63a4fabc25d42c1173d11b4e083021ff95c4bcee6f9e3945f9ae9",
-            "size": 15839059,
+        "com/android/tools/build/builder/9.1.1/builder-9.1.1.jar": {
+            "coordinate": "com.android.tools.build:builder:9.1.1",
+            "sha256": "58b9067413a9e18e5ad85e46b5ec72f24a106458372d403b035a673007f03242",
+            "size": 15839058,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/build/builder/9.1.0/builder-9.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/builder/9.1.1/builder-9.1.1.jar"
             ]
         },
         "com/android/tools/build/bundletool/1.18.3/bundletool-1.18.3.jar": {
@@ -768,52 +768,52 @@
                 "https://dl.google.com/dl/android/maven2/com/android/tools/build/bundletool/1.18.3/bundletool-1.18.3.jar"
             ]
         },
-        "com/android/tools/build/gradle/9.1.0/gradle-9.1.0.jar": {
-            "coordinate": "com.android.tools.build:gradle:9.1.0",
-            "sha256": "74b47a2a57349371273fb0893f61977a68dc40d5fb5e012a71d9e00c76ad728d",
-            "size": 12671948,
+        "com/android/tools/build/gradle/9.1.1/gradle-9.1.1.jar": {
+            "coordinate": "com.android.tools.build:gradle:9.1.1",
+            "sha256": "15faaba5c8ddf63e8d5972c98d9de691678d542fa5eca40e9b7e87e5e8e83e64",
+            "size": 12672006,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/9.1.0/gradle-9.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/9.1.1/gradle-9.1.1.jar"
             ]
         },
-        "com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar": {
-            "coordinate": "com.android.tools.build:manifest-merger:32.1.0",
-            "sha256": "ab66e82f8656f884e13559deb7137c744db499c42cc27e71f9057a62d6984324",
-            "size": 267239,
+        "com/android/tools/build/manifest-merger/32.1.1/manifest-merger-32.1.1.jar": {
+            "coordinate": "com.android.tools.build:manifest-merger:32.1.1",
+            "sha256": "d47df6c863a89c5b33a1ca2227e2e68697dfa886937ef1494729762992cc4b0b",
+            "size": 267399,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/build/manifest-merger/32.1.1/manifest-merger-32.1.1.jar"
             ]
         },
-        "com/android/tools/common/32.1.0/common-32.1.0.jar": {
-            "coordinate": "com.android.tools:common:32.1.0",
-            "sha256": "2fce68ff4ffb953aa84d1d9ab12e7f935e335b979bbc8e552986eb2c0b46294a",
-            "size": 595404,
+        "com/android/tools/common/32.1.1/common-32.1.1.jar": {
+            "coordinate": "com.android.tools:common:32.1.1",
+            "sha256": "d13d75672501dc73687999346fe21092c544d3398f4e5d28ae2ff9b2c253311d",
+            "size": 595534,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/common/32.1.0/common-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/common/32.1.1/common-32.1.1.jar"
             ]
         },
-        "com/android/tools/ddms/ddmlib/32.1.0/ddmlib-32.1.0.jar": {
-            "coordinate": "com.android.tools.ddms:ddmlib:32.1.0",
+        "com/android/tools/ddms/ddmlib/32.1.1/ddmlib-32.1.1.jar": {
+            "coordinate": "com.android.tools.ddms:ddmlib:32.1.1",
             "sha256": "0db6316457073eaa41422a106737672559e7ce0e703427ee09bf99459e007b7f",
             "size": 683153,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/ddms/ddmlib/32.1.0/ddmlib-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/ddms/ddmlib/32.1.1/ddmlib-32.1.1.jar"
             ]
         },
-        "com/android/tools/dvlib/32.1.0/dvlib-32.1.0.jar": {
-            "coordinate": "com.android.tools:dvlib:32.1.0",
+        "com/android/tools/dvlib/32.1.1/dvlib-32.1.1.jar": {
+            "coordinate": "com.android.tools:dvlib:32.1.1",
             "sha256": "8abf798174efbf6bc282ee5c7791182e73712ccf98de053f8a8a7fb9a36b8542",
             "size": 68121,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/dvlib/32.1.0/dvlib-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/dvlib/32.1.1/dvlib-32.1.1.jar"
             ]
         },
-        "com/android/tools/layoutlib/layoutlib-api/32.1.0/layoutlib-api-32.1.0.jar": {
-            "coordinate": "com.android.tools.layoutlib:layoutlib-api:32.1.0",
+        "com/android/tools/layoutlib/layoutlib-api/32.1.1/layoutlib-api-32.1.1.jar": {
+            "coordinate": "com.android.tools.layoutlib:layoutlib-api:32.1.1",
             "sha256": "1b37af4dc07dda96ecddae553a97d3053402db2c4b420ab937ab41c4e2597f51",
             "size": 122402,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-api/32.1.0/layoutlib-api-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/layoutlib/layoutlib-api/32.1.1/layoutlib-api-32.1.1.jar"
             ]
         },
         "com/android/tools/r8/9.1.31/r8-9.1.31.jar": {
@@ -824,28 +824,28 @@
                 "https://dl.google.com/dl/android/maven2/com/android/tools/r8/9.1.31/r8-9.1.31.jar"
             ]
         },
-        "com/android/tools/repository/32.1.0/repository-32.1.0.jar": {
-            "coordinate": "com.android.tools:repository:32.1.0",
+        "com/android/tools/repository/32.1.1/repository-32.1.1.jar": {
+            "coordinate": "com.android.tools:repository:32.1.1",
             "sha256": "ef3691e582cd8f9901502b679bb8f709a095cecb44b64fffdcb266a03df6b690",
             "size": 267516,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/repository/32.1.0/repository-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/repository/32.1.1/repository-32.1.1.jar"
             ]
         },
-        "com/android/tools/sdk-common/32.1.0/sdk-common-32.1.0.jar": {
-            "coordinate": "com.android.tools:sdk-common:32.1.0",
+        "com/android/tools/sdk-common/32.1.1/sdk-common-32.1.1.jar": {
+            "coordinate": "com.android.tools:sdk-common:32.1.1",
             "sha256": "0a0513fac4388e0ff2d61a92b5b3ffb435f97fcce4b557a4455f3e217d012b32",
             "size": 1806017,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/sdk-common/32.1.0/sdk-common-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/sdk-common/32.1.1/sdk-common-32.1.1.jar"
             ]
         },
-        "com/android/tools/sdklib/32.1.0/sdklib-32.1.0.jar": {
-            "coordinate": "com.android.tools:sdklib:32.1.0",
+        "com/android/tools/sdklib/32.1.1/sdklib-32.1.1.jar": {
+            "coordinate": "com.android.tools:sdklib:32.1.1",
             "sha256": "99924e2f3e78070429da20e40050779e564db6efc00bee03841574dbc7475c5e",
             "size": 1795950,
             "urls": [
-                "https://dl.google.com/dl/android/maven2/com/android/tools/sdklib/32.1.0/sdklib-32.1.0.jar"
+                "https://dl.google.com/dl/android/maven2/com/android/tools/sdklib/32.1.1/sdklib-32.1.1.jar"
             ]
         },
         "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar": {
@@ -1063,131 +1063,131 @@
                 "https://repo.maven.apache.org/maven2/commons-logging/commons-logging/1.2/commons-logging-1.2.jar"
             ]
         },
-        "io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:arm64_v8a_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+        "io/flutter/arm64_v8a_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:arm64_v8a_debug:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
             "native_libs": [
                 "lib/arm64-v8a/libVkLayer_khronos_validation.so",
                 "lib/arm64-v8a/libflutter.so"
             ],
-            "sha256": "e58ef2523b336de488f6d19df27a63c032cfe6c09e1d55c26b6a4f22dc735695",
-            "size": 180591679,
+            "sha256": "a1bd1f28b951b2df75f19fea4f01e6c5d8a5a21a8a6ff8640cecfa8dadf431d3",
+            "size": 190763530,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/arm64_v8a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:arm64_v8a_profile:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+        "io/flutter/arm64_v8a_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:arm64_v8a_profile:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
             "native_libs": [
                 "lib/arm64-v8a/libflutter.so",
                 "lib/arm64-v8a/libvmservice_snapshot.so"
             ],
-            "sha256": "fccf3c5eb43e3387f3e2b1dd72cf55cea2232f79c96514f0a98ba0bac0cee5ba",
-            "size": 45337718,
+            "sha256": "fb11b8723bec021bed00a29cee62c0cb7cb20321b646e27310ef81f101736fea",
+            "size": 46461741,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/arm64_v8a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:arm64_v8a_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+        "io/flutter/arm64_v8a_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:arm64_v8a_release:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
             "native_libs": [
                 "lib/arm64-v8a/libflutter.so"
             ],
-            "sha256": "d940eba5aca3b58c785ef7f093cb351c871e1410c6b122c7eb1b31a9ca18225f",
-            "size": 42168220,
+            "sha256": "cc4a9cb646284cd2fd08c9eaf13839e7181d944cacc5743956e21c3696db90a6",
+            "size": 43170078,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/arm64_v8a_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:armeabi_v7a_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+        "io/flutter/armeabi_v7a_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:armeabi_v7a_debug:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
             "native_libs": [
                 "lib/armeabi-v7a/libflutter.so"
             ],
-            "sha256": "19a46f3af532f4d67214ba8591d941a16e12238061230cd28c7d8985321767c2",
-            "size": 114678094,
+            "sha256": "214879b9ec67ea59de205f34c0d9953c1830f7441068772ab347152d25f55c7c",
+            "size": 116571395,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/armeabi_v7a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:armeabi_v7a_profile:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+        "io/flutter/armeabi_v7a_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:armeabi_v7a_profile:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
             "native_libs": [
                 "lib/armeabi-v7a/libflutter.so",
                 "lib/armeabi-v7a/libvmservice_snapshot.so"
             ],
-            "sha256": "40cc1b562598dd448ee5a70bd42b85fb21123ed663438811ccd0a0449e669bae",
-            "size": 44494012,
+            "sha256": "977a3d676e3d4a3cd444796bfbaddfdaf006961d32253281ee5de5dd15201348",
+            "size": 45014458,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/armeabi_v7a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:armeabi_v7a_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+        "io/flutter/armeabi_v7a_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:armeabi_v7a_release:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
             "native_libs": [
                 "lib/armeabi-v7a/libflutter.so"
             ],
-            "sha256": "3909e6467c1fe6202bbf64f377f158171d6b83a86d9cbc39f67f748b217e55ad",
-            "size": 41264533,
+            "sha256": "bed5ccf603d8e6e1b24de41b6ad1b761fd91d34e63c7ef6d889be13dfcaa8d62",
+            "size": 41711550,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/armeabi_v7a_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:flutter_embedding_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
-            "sha256": "dc61d3cce023b28d0da84817bff4edcc6a72f9e8cfba93063e117292af855708",
-            "size": 1589924,
+        "io/flutter/flutter_embedding_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:flutter_embedding_debug:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+            "sha256": "1ef71782040c4abeee093c88fb0410414ac8fbf65a7e874f2c647c14f402dccd",
+            "size": 1625649,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:flutter_embedding_profile:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
-            "sha256": "8edb4e4d1430959fecb100438da02ddc3c6a52846780882995b476b1d1f0ae36",
-            "size": 1584153,
+        "io/flutter/flutter_embedding_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:flutter_embedding_profile:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+            "sha256": "5eb711a2950c6314e3c7bb05efa3799bf09e8b65ed421a495357e90ab9d09db1",
+            "size": 1619878,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:flutter_embedding_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
-            "sha256": "395504a17bbc944fb69089792a70bff1bc281d302fe736341220957bddf39b6a",
-            "size": 1584072,
+        "io/flutter/flutter_embedding_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:flutter_embedding_release:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+            "sha256": "80e643a0636f8e1fc7269cfc6ae573bdc8e3941251e72b4dce30d6dcd14d4c5b",
+            "size": 1618548,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/flutter_embedding_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:x86_64_debug:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+        "io/flutter/x86_64_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:x86_64_debug:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
             "native_libs": [
                 "lib/x86_64/libflutter.so"
             ],
-            "sha256": "4b7b223efcf023dc3b91d736c429b6be9821fe92798dc40e28c807075b32c7bf",
-            "size": 119914282,
+            "sha256": "8323843848b5ad3ff416940946b3c7d73299204760403c093e303382978a1ba0",
+            "size": 121787917,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/x86_64_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:x86_64_profile:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+        "io/flutter/x86_64_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:x86_64_profile:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
             "native_libs": [
                 "lib/x86_64/libflutter.so",
                 "lib/x86_64/libvmservice_snapshot.so"
             ],
-            "sha256": "dee981868c773a7554b7f89f61f156d0eddfebe318a7300dbe6e96da1c7e4d94",
-            "size": 45670948,
+            "sha256": "e02df503eb77eb74038a650f2a366690a4e191cbdc2c43f0de20e43a40234fff",
+            "size": 46200730,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
-        "io/flutter/x86_64_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar": {
-            "coordinate": "io.flutter:x86_64_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+        "io/flutter/x86_64_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar": {
+            "coordinate": "io.flutter:x86_64_release:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
             "native_libs": [
                 "lib/x86_64/libflutter.so"
             ],
-            "sha256": "75b8ec46ceb0a3813a78efd4dc631b188a2e507c6f10655c217d4ac761320347",
-            "size": 42484349,
+            "sha256": "47e4b5745f6aab2b6c004cbd2a5c74d49478ac7493489e5965a0783b713a40f9",
+            "size": 42919988,
             "urls": [
-                "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                "https://storage.googleapis.com/download.flutter.io/io/flutter/x86_64_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
             ]
         },
         "jakarta/activation/jakarta.activation-api/1.2.1/jakarta.activation-api-1.2.1.jar": {
@@ -1398,12 +1398,12 @@
                 "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.2.10/kotlin-stdlib-2.2.10.jar"
             ]
         },
-        "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar": {
-            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:2.4.0",
-            "sha256": "ccb14ff83fabcb11458b798dbc9824748ccdffeec79c9aba789e6ed1cda86b1c",
-            "size": 1841929,
+        "org/jetbrains/kotlin/kotlin-stdlib/2.4.10/kotlin-stdlib-2.4.10.jar": {
+            "coordinate": "org.jetbrains.kotlin:kotlin-stdlib:2.4.10",
+            "sha256": "4ec0293bc3751423b203f1d8493251c57c42e73eb6377a6b8560d0974ff0a6df",
+            "size": 1841933,
             "urls": [
-                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar"
+                "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/2.4.10/kotlin-stdlib-2.4.10.jar"
             ]
         },
         "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar": {
@@ -1480,8 +1480,71 @@
         }
     },
     "classpaths": {
-        "cp_225c23a8356c": [
-            "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+        "cp_03c523d36fa9": [
+            "io/flutter/flutter_embedding_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
+            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
+            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
+            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
+            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
+            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
+            "androidx/core/core/1.13.1/core-1.13.1.aar",
+            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
+            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
+            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
+            "androidx/window/window/1.2.0/window-1.2.0.aar",
+            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
+            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
+            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
+            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
+            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
+            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
+            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
+            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
+            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.10/kotlin-stdlib-2.4.10.jar",
+            "io/flutter/armeabi_v7a_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+            "io/flutter/arm64_v8a_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+            "io/flutter/x86_64_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
+            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
+            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
+            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
+            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
+            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
+        ],
+        "cp_4479ad2763c2": {
+            "base": "cp_03c523d36fa9",
+            "edits": [
+                [
+                    0,
+                    1,
+                    [
+                        "io/flutter/flutter_embedding_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
+                    ]
+                ],
+                [
+                    31,
+                    3,
+                    [
+                        "io/flutter/armeabi_v7a_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+                        "io/flutter/arm64_v8a_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+                        "io/flutter/x86_64_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
+                    ]
+                ]
+            ]
+        },
+        "cp_745321dcf959": [
+            "io/flutter/flutter_embedding_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
             "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
             "androidx/window/window/1.2.0/window-1.2.0.aar",
             "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
@@ -1518,137 +1581,74 @@
             "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
             "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
             "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
-            "io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-            "io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-            "io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
+            "org/jetbrains/kotlin/kotlin-stdlib/2.4.10/kotlin-stdlib-2.4.10.jar",
+            "io/flutter/armeabi_v7a_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+            "io/flutter/arm64_v8a_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+            "io/flutter/x86_64_profile/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_profile-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
             "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
             "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
             "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
             "com/google/guava/listenablefuture/1.0/listenablefuture-1.0.jar"
         ],
-        "cp_8882c76a201e": [
-            "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-            "androidx/fragment/fragment/1.7.1/fragment-1.7.1.aar",
-            "androidx/activity/activity/1.8.1/activity-1.8.1.aar",
-            "androidx/loader/loader/1.0.0/loader-1.0.0.aar",
-            "androidx/lifecycle/lifecycle-livedata-core-ktx/2.7.0/lifecycle-livedata-core-ktx-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-livedata/2.7.0/lifecycle-livedata-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-viewmodel/2.7.0/lifecycle-viewmodel-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-livedata-core/2.7.0/lifecycle-livedata-core-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-viewmodel-savedstate/2.7.0/lifecycle-viewmodel-savedstate-2.7.0.aar",
-            "androidx/core/core-ktx/1.2.0/core-ktx-1.2.0.aar",
-            "androidx/viewpager/viewpager/1.0.0/viewpager-1.0.0.aar",
-            "androidx/customview/customview/1.0.0/customview-1.0.0.aar",
-            "androidx/core/core/1.13.1/core-1.13.1.aar",
-            "androidx/lifecycle/lifecycle-runtime/2.7.0/lifecycle-runtime-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-process/2.7.0/lifecycle-process-2.7.0.aar",
-            "androidx/lifecycle/lifecycle-common-java8/2.7.0/lifecycle-common-java8-2.7.0.jar",
-            "androidx/lifecycle/lifecycle-common/2.7.0/lifecycle-common-2.7.0.jar",
-            "androidx/window/window/1.2.0/window-1.2.0.aar",
-            "androidx/window/window-java/1.2.0/window-java-1.2.0.aar",
-            "androidx/annotation/annotation-experimental/1.4.0/annotation-experimental-1.4.0.aar",
-            "androidx/savedstate/savedstate/1.2.1/savedstate-1.2.1.aar",
-            "androidx/arch/core/core-runtime/2.2.0/core-runtime-2.2.0.aar",
-            "androidx/arch/core/core-common/2.2.0/core-common-2.2.0.jar",
-            "androidx/versionedparcelable/versionedparcelable/1.1.1/versionedparcelable-1.1.1.aar",
-            "androidx/collection/collection/1.1.0/collection-1.1.0.jar",
-            "androidx/annotation/annotation-jvm/1.8.1/annotation-jvm-1.8.1.jar",
-            "org/jetbrains/kotlinx/kotlinx-coroutines-android/1.7.1/kotlinx-coroutines-android-1.7.1.jar",
-            "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.7.1/kotlinx-coroutines-core-jvm-1.7.1.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib-jdk8/1.8.20/kotlin-stdlib-jdk8-1.8.20.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib-jdk7/1.8.20/kotlin-stdlib-jdk7-1.8.20.jar",
-            "org/jetbrains/kotlin/kotlin-stdlib/2.4.0/kotlin-stdlib-2.4.0.jar",
-            "io/flutter/armeabi_v7a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-            "io/flutter/arm64_v8a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-            "io/flutter/x86_64_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-            "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
-            "androidx/tracing/tracing/1.2.0/tracing-1.2.0.aar",
-            "com/getkeepsafe/relinker/relinker/1.4.5/relinker-1.4.5.aar",
-            "androidx/exifinterface/exifinterface/1.4.1/exifinterface-1.4.1.aar",
-            "androidx/startup/startup-runtime/1.1.1/startup-runtime-1.1.1.aar",
-            "org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar"
-        ],
-        "cp_8e6bc2e71207": {
-            "base": "cp_8882c76a201e",
+        "cp_cbf3c69ae15f": {
+            "base": "cp_745321dcf959",
             "edits": [
                 [
                     0,
                     1,
                     [
-                        "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
-                    ]
-                ],
-                [
-                    31,
-                    3,
-                    [
-                        "io/flutter/armeabi_v7a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-                        "io/flutter/arm64_v8a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-                        "io/flutter/x86_64_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
-                    ]
-                ]
-            ]
-        },
-        "cp_d4755531a8af": {
-            "base": "cp_225c23a8356c",
-            "edits": [
-                [
-                    0,
-                    1,
-                    [
-                        "io/flutter/flutter_embedding_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                        "io/flutter/flutter_embedding_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
                     ]
                 ],
                 [
                     38,
                     3,
                     [
-                        "io/flutter/armeabi_v7a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-                        "io/flutter/arm64_v8a_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-                        "io/flutter/x86_64_profile/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_profile-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                        "io/flutter/armeabi_v7a_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+                        "io/flutter/arm64_v8a_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+                        "io/flutter/x86_64_debug/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_debug-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
                     ]
                 ]
             ]
         },
-        "cp_f1619c0733eb": {
-            "base": "cp_8882c76a201e",
+        "cp_f149ed6bfcf6": {
+            "base": "cp_03c523d36fa9",
             "edits": [
                 [
                     0,
                     1,
                     [
-                        "io/flutter/flutter_embedding_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                        "io/flutter/flutter_embedding_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
                     ]
                 ],
                 [
                     31,
                     3,
                     [
-                        "io/flutter/armeabi_v7a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-                        "io/flutter/arm64_v8a_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-                        "io/flutter/x86_64_debug/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_debug-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                        "io/flutter/armeabi_v7a_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+                        "io/flutter/arm64_v8a_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+                        "io/flutter/x86_64_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
                     ]
                 ]
             ]
         },
-        "cp_fe9d4d6e0e8c": {
-            "base": "cp_225c23a8356c",
+        "cp_f288d2bb5be3": {
+            "base": "cp_745321dcf959",
             "edits": [
                 [
                     0,
                     1,
                     [
-                        "io/flutter/flutter_embedding_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/flutter_embedding_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                        "io/flutter/flutter_embedding_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/flutter_embedding_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
                     ]
                 ],
                 [
                     38,
                     3,
                     [
-                        "io/flutter/armeabi_v7a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/armeabi_v7a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-                        "io/flutter/arm64_v8a_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/arm64_v8a_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar",
-                        "io/flutter/x86_64_release/1.0.0-deb287481e3ce9468f3434937ced4240a70539ca/x86_64_release-1.0.0-deb287481e3ce9468f3434937ced4240a70539ca.jar"
+                        "io/flutter/armeabi_v7a_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/armeabi_v7a_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+                        "io/flutter/arm64_v8a_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/arm64_v8a_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar",
+                        "io/flutter/x86_64_release/1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7/x86_64_release-1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7.jar"
                     ]
                 ]
             ]
@@ -1662,7 +1662,7 @@
         "android/build.gradle.kts": "6a26dba2cb8dfba1e74f540b0d17a89d96c1301d3c3bfda14348bed257fddcba",
         "android/gradle.properties": "0f82b18017fba6bb5ce3aa4b2d1a00c9382fc8aae7b1d9326e44b18abd66d80b",
         "android/gradle/wrapper/gradle-wrapper.properties": "b690d26223576fe4e63889fad9a00df81945cb870b9476cc5a563152a1a88a74",
-        "android/settings.gradle.kts": "016759283e88ade6eba92910583feeef88b962839b957aa414296afd2952d122"
+        "android/settings.gradle.kts": "153d4c0e67181f58c34d0f7694c46f6d9da7774e365c4dcb4f070c42643d54a3"
     },
     "proguard_texts": {
         "flutter_proguard_rules.pro": "# Build the ephemeral app in a module project.\n# Prevents: Warning: library class <plugin-package> depends on program class io.flutter.plugin.**\n# This is due to plugins (libraries) depending on the embedding (the program jar)\n-dontwarn io.flutter.plugin.**\n\n# The android.** package is provided by the OS at runtime.\n-dontwarn android.**\n\n# In some cases, R8 is incorrectly stripping plugin classes. Keep\n# all implementations of FlutterPlugin until we can determine\n# why this is the case.\n# See https://github.com/flutter/flutter/issues/154580.\n-if class * implements io.flutter.embedding.engine.plugins.FlutterPlugin\n-keep,allowshrinking,allowobfuscation class <1>\n",
@@ -1777,7 +1777,7 @@
                             "**.[xX][mM][fF]"
                         ]
                     },
-                    "compile": "cp_f1619c0733eb",
+                    "compile": "cp_03c523d36fa9",
                     "consumer_proguard_files": [
 
                     ],
@@ -1899,7 +1899,7 @@
                     "res_values": {
 
                     },
-                    "runtime": "cp_225c23a8356c",
+                    "runtime": "cp_cbf3c69ae15f",
                     "shrink_resources": false,
                     "signing": {
                         "name": "debug"
@@ -1997,7 +1997,7 @@
                             "**.[xX][mM][fF]"
                         ]
                     },
-                    "compile": "cp_8e6bc2e71207",
+                    "compile": "cp_4479ad2763c2",
                     "consumer_proguard_files": [
 
                     ],
@@ -2119,7 +2119,7 @@
                     "res_values": {
 
                     },
-                    "runtime": "cp_d4755531a8af",
+                    "runtime": "cp_745321dcf959",
                     "shrink_resources": false,
                     "signing": {
                         "name": "debug"
@@ -2180,9 +2180,9 @@
                         "dependencies": {
                             "libraries": [
                                 [
-                                    "org.jetbrains.kotlin:kotlin-stdlib:2.4.0",
+                                    "org.jetbrains.kotlin:kotlin-stdlib:2.4.10",
                                     1,
-                                    "ccb14ff83fabcb11458b798dbc9824748ccdffeec79c9aba789e6ed1cda86b1c"
+                                    "4ec0293bc3751423b203f1d8493251c57c42e73eb6377a6b8560d0974ff0a6df"
                                 ],
                                 [
                                     "org.jetbrains:annotations:23.0.0",
@@ -2200,14 +2200,14 @@
                                     "af1ec40c3b951afdcc0c2a0173c7b81763c5281c2d5bafbf0a8544a24c5dcc0c"
                                 ],
                                 [
-                                    "org.jetbrains.kotlin:kotlin-stdlib-common:2.4.0",
+                                    "org.jetbrains.kotlin:kotlin-stdlib-common:2.4.10",
                                     1,
                                     ""
                                 ],
                                 [
-                                    "io.flutter:flutter_embedding_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+                                    "io.flutter:flutter_embedding_release:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
                                     2,
-                                    "395504a17bbc944fb69089792a70bff1bc281d302fe736341220957bddf39b6a"
+                                    "80e643a0636f8e1fc7269cfc6ae573bdc8e3941251e72b4dce30d6dcd14d4c5b"
                                 ],
                                 [
                                     "androidx.lifecycle:lifecycle-common:2.7.0",
@@ -2410,19 +2410,19 @@
                                     "1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab"
                                 ],
                                 [
-                                    "io.flutter:armeabi_v7a_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+                                    "io.flutter:armeabi_v7a_release:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
                                     2,
-                                    "3909e6467c1fe6202bbf64f377f158171d6b83a86d9cbc39f67f748b217e55ad"
+                                    "bed5ccf603d8e6e1b24de41b6ad1b761fd91d34e63c7ef6d889be13dfcaa8d62"
                                 ],
                                 [
-                                    "io.flutter:arm64_v8a_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+                                    "io.flutter:arm64_v8a_release:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
                                     2,
-                                    "d940eba5aca3b58c785ef7f093cb351c871e1410c6b122c7eb1b31a9ca18225f"
+                                    "cc4a9cb646284cd2fd08c9eaf13839e7181d944cacc5743956e21c3696db90a6"
                                 ],
                                 [
-                                    "io.flutter:x86_64_release:1.0.0-deb287481e3ce9468f3434937ced4240a70539ca",
+                                    "io.flutter:x86_64_release:1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7",
                                     2,
-                                    "75b8ec46ceb0a3813a78efd4dc631b188a2e507c6f10655c217d4ac761320347"
+                                    "47e4b5745f6aab2b6c004cbd2a5c74d49478ac7493489e5965a0783b713a40f9"
                                 ]
                             ],
                             "library_dependencies": [
@@ -2923,7 +2923,7 @@
                             "**.[xX][mM][fF]"
                         ]
                     },
-                    "compile": "cp_8882c76a201e",
+                    "compile": "cp_f149ed6bfcf6",
                     "consumer_proguard_files": [
 
                     ],
@@ -3046,7 +3046,7 @@
                     "res_values": {
 
                     },
-                    "runtime": "cp_fe9d4d6e0e8c",
+                    "runtime": "cp_f288d2bb5be3",
                     "shrink_resources": true,
                     "signing": {
                         "name": "debug"
@@ -3109,16 +3109,16 @@
     "schema": 4,
     "tool_classpaths": {
         "aapt2_linux": [
-            "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-linux.jar"
+            "com/android/tools/build/aapt2/9.1.1-14792394/aapt2-9.1.1-14792394-linux.jar"
         ],
         "aapt2_osx": [
-            "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-osx.jar"
+            "com/android/tools/build/aapt2/9.1.1-14792394/aapt2-9.1.1-14792394-osx.jar"
         ],
         "aapt2_windows": [
-            "com/android/tools/build/aapt2/9.1.0-14792394/aapt2-9.1.0-14792394-windows.jar"
+            "com/android/tools/build/aapt2/9.1.1-14792394/aapt2-9.1.1-14792394-windows.jar"
         ],
         "apksig": [
-            "com/android/tools/build/apksig/9.1.0/apksig-9.1.0.jar"
+            "com/android/tools/build/apksig/9.1.1/apksig-9.1.1.jar"
         ],
         "bundletool": [
             "com/android/tools/build/bundletool/1.18.3/bundletool-1.18.3.jar",
@@ -3140,22 +3140,22 @@
             "com/google/code/gson/gson/2.8.9/gson-2.8.9.jar"
         ],
         "manifest_merger": [
-            "com/android/tools/build/manifest-merger/32.1.0/manifest-merger-32.1.0.jar",
-            "com/android/tools/sdk-common/32.1.0/sdk-common-32.1.0.jar",
-            "com/android/tools/sdklib/32.1.0/sdklib-32.1.0.jar",
-            "com/android/tools/repository/32.1.0/repository-32.1.0.jar",
-            "com/android/tools/dvlib/32.1.0/dvlib-32.1.0.jar",
-            "com/android/tools/layoutlib/layoutlib-api/32.1.0/layoutlib-api-32.1.0.jar",
-            "com/android/tools/analytics-library/shared/32.1.0/shared-32.1.0.jar",
-            "com/android/tools/ddms/ddmlib/32.1.0/ddmlib-32.1.0.jar",
-            "com/android/tools/common/32.1.0/common-32.1.0.jar",
+            "com/android/tools/build/manifest-merger/32.1.1/manifest-merger-32.1.1.jar",
+            "com/android/tools/sdk-common/32.1.1/sdk-common-32.1.1.jar",
+            "com/android/tools/sdklib/32.1.1/sdklib-32.1.1.jar",
+            "com/android/tools/repository/32.1.1/repository-32.1.1.jar",
+            "com/android/tools/dvlib/32.1.1/dvlib-32.1.1.jar",
+            "com/android/tools/layoutlib/layoutlib-api/32.1.1/layoutlib-api-32.1.1.jar",
+            "com/android/tools/analytics-library/shared/32.1.1/shared-32.1.1.jar",
+            "com/android/tools/ddms/ddmlib/32.1.1/ddmlib-32.1.1.jar",
+            "com/android/tools/common/32.1.1/common-32.1.1.jar",
             "com/google/code/gson/gson/2.11.0/gson-2.11.0.jar",
             "org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.2.10/kotlin-stdlib-jdk8-2.2.10.jar",
             "org/jetbrains/kotlin/kotlin-reflect/2.2.10/kotlin-reflect-2.2.10.jar",
             "org/jetbrains/kotlin/kotlin-stdlib-jdk7/2.2.10/kotlin-stdlib-jdk7-2.2.10.jar",
             "org/jetbrains/kotlinx/kotlinx-coroutines-core-jvm/1.9.0/kotlinx-coroutines-core-jvm-1.9.0.jar",
             "org/jetbrains/kotlin/kotlin-stdlib/2.2.10/kotlin-stdlib-2.2.10.jar",
-            "com/android/tools/annotations/32.1.0/annotations-32.1.0.jar",
+            "com/android/tools/annotations/32.1.1/annotations-32.1.1.jar",
             "com/google/jimfs/jimfs/1.1/jimfs-1.1.jar",
             "com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar",
             "net/java/dev/jna/jna-platform/5.6.0/jna-platform-5.6.0.jar",
@@ -3164,8 +3164,8 @@
             "org/apache/httpcomponents/httpclient/4.5.6/httpclient-4.5.6.jar",
             "org/apache/httpcomponents/httpcore/4.4.16/httpcore-4.4.16.jar",
             "org/glassfish/jaxb/jaxb-runtime/2.3.2/jaxb-runtime-2.3.2.jar",
-            "com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar",
-            "com/android/tools/analytics-library/protos/32.1.0/protos-32.1.0.jar",
+            "com/android/tools/build/aapt2-proto/9.1.1-14792394/aapt2-proto-9.1.1-14792394.jar",
+            "com/android/tools/analytics-library/protos/32.1.1/protos-32.1.1.jar",
             "com/google/protobuf/protobuf-java/3.25.5/protobuf-java-3.25.5.jar",
             "javax/inject/javax.inject/1/javax.inject-1.jar",
             "net/sf/kxml/kxml2/2.3.0/kxml2-2.3.0.jar",
@@ -3192,28 +3192,28 @@
             "commons-logging/commons-logging/1.2/commons-logging-1.2.jar"
         ],
         "profgen": [
-            "com/android/tools/build/gradle/9.1.0/gradle-9.1.0.jar"
+            "com/android/tools/build/gradle/9.1.1/gradle-9.1.1.jar"
         ],
         "r8": [
             "com/android/tools/r8/9.1.31/r8-9.1.31.jar"
         ],
         "r_class_writer": [
-            "com/android/tools/build/builder/9.1.0/builder-9.1.0.jar",
+            "com/android/tools/build/builder/9.1.1/builder-9.1.1.jar",
             "org/ow2/asm/asm-commons/9.9/asm-commons-9.9.jar",
             "org/ow2/asm/asm-tree/9.9/asm-tree-9.9.jar",
             "org/ow2/asm/asm/9.9/asm-9.9.jar"
         ],
         "resource_compiler": [
-            "com/android/tools/build/aaptcompiler/9.1.0/aaptcompiler-9.1.0.jar",
-            "com/android/tools/build/aapt2-proto/9.1.0-14792394/aapt2-proto-9.1.0-14792394.jar",
-            "com/android/tools/layoutlib/layoutlib-api/32.1.0/layoutlib-api-32.1.0.jar",
-            "com/android/tools/common/32.1.0/common-32.1.0.jar",
+            "com/android/tools/build/aaptcompiler/9.1.1/aaptcompiler-9.1.1.jar",
+            "com/android/tools/build/aapt2-proto/9.1.1-14792394/aapt2-proto-9.1.1-14792394.jar",
+            "com/android/tools/layoutlib/layoutlib-api/32.1.1/layoutlib-api-32.1.1.jar",
+            "com/android/tools/common/32.1.1/common-32.1.1.jar",
             "com/google/protobuf/protobuf-java/3.25.5/protobuf-java-3.25.5.jar",
             "com/google/guava/guava/33.3.1-jre/guava-33.3.1-jre.jar",
             "org/jetbrains/kotlin/kotlin-stdlib-jdk8/2.2.10/kotlin-stdlib-jdk8-2.2.10.jar",
             "org/jetbrains/kotlin/kotlin-stdlib-jdk7/2.2.10/kotlin-stdlib-jdk7-2.2.10.jar",
             "org/jetbrains/kotlin/kotlin-stdlib/2.2.10/kotlin-stdlib-2.2.10.jar",
-            "com/android/tools/annotations/32.1.0/annotations-32.1.0.jar",
+            "com/android/tools/annotations/32.1.1/annotations-32.1.1.jar",
             "net/sf/kxml/kxml2/2.3.0/kxml2-2.3.0.jar",
             "org/jetbrains/annotations/23.0.0/annotations-23.0.0.jar",
             "net/java/dev/jna/jna-platform/5.6.0/jna-platform-5.6.0.jar",
@@ -3227,12 +3227,12 @@
         ]
     },
     "tools": {
-        "aapt2": "9.1.0-14792394",
-        "agp": "9.1.0",
-        "agp_tools_base": "32.1.0",
+        "aapt2": "9.1.1-14792394",
+        "agp": "9.1.1",
+        "agp_tools_base": "32.1.1",
         "bundletool": "1.18.3",
         "gradle": "9.3.1",
-        "kotlin": "2.4.0",
+        "kotlin": "2.4.10",
         "r8": "9.1.31"
     }
 }

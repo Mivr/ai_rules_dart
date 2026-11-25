@@ -34,9 +34,20 @@ MODULE_COMPILER_SDK_PACKAGES = [
 ]
 
 MODULE_COMPILER_SOURCES = {
-    "3.13.5": struct(
-        sha256 = "2da077bf89f3a14ae5a741728549371d87013265df49b8cace6475bd9ffc59e3",
-        revision = "04bcd1036cdc799ac6564988f159ee454d42c822",
+    "3.14.1": struct(
+        sha256 = "eb16c29569bc8ebe9e88add7387cbc2d7dcfb0e0edec855b8b758575c0a7c4cc",
+        revision = "c8a0db5978a68d4037f7e5294ffc79867935c8c2",
+        language_versions = {
+            "_fe_analyzer_shared": "3.11",
+            "build_integration": "3.13",
+            "front_end": "3.13",
+            "kernel": "3.13",
+            "vm": "3.12",
+        },
+    ),
+    "3.14.0": struct(
+        sha256 = "f9cdd43f4c05d7f8cbd1caea31e3505d1f81c489d008c063c7bc028364844f65",
+        revision = "fa8c1270c374c1346931583a17c3b7f278d3822d",
         language_versions = {
             "_fe_analyzer_shared": "3.11",
             "build_integration": "3.13",

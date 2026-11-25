@@ -224,10 +224,11 @@ def _flutter_test_kernel(ctx, flutter_sdk_info, sources, native_assets):
         base_dill = base_dill,
     )
 
-def _flutter_test_assets(ctx, flutter_sdk_info):
+def _flutter_test_assets(ctx, flutter_sdk_info, native_assets):
     # The test's `flutter_assets/`, as `flutter test` builds it: what the
     # pubspec names, for flutter_tester (its shaders compiled for it, SkSL for
-    # Skia and Vulkan for Impeller). A debug bundle never reads the kernel.
+    # Skia and Vulkan for Impeller). A debug bundle never reads the kernel. The
+    # code assets' manifest goes beside it, where flutter_tester looks for it.
     flutter_assets = declare_flutter_assets_dir(ctx)
     flutter_bundle(
         ctx,
@@ -235,6 +236,7 @@ def _flutter_test_assets(ctx, flutter_sdk_info):
         flutter_assets,
         target_platform = "tester",
         mode = "debug",
+        native_assets_manifest = native_assets.manifest if native_assets.any else None,
     )
     return flutter_assets
 
@@ -404,7 +406,7 @@ def _flutter_test_impl(ctx):
     artifacts = struct(
         kernel_dill = kernel.kernel_dill,
         base_dill = kernel.base_dill,
-        flutter_assets = _flutter_test_assets(ctx, flutter_sdk_info),
+        flutter_assets = _flutter_test_assets(ctx, flutter_sdk_info, native_assets),
     )
     runner = _flutter_test_run(ctx, artifacts, native_assets)
     return _flutter_test_providers(ctx, sources, artifacts, runner)

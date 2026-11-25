@@ -62,12 +62,16 @@ def pinned_download(ctx, *, sha256, **kwargs):
         **kwargs: Passed through to `ctx.download` (`url`, `output`, ...).
 
     Returns:
-        Whatever `ctx.download` returns.
+        Whatever `ctx.download` returns. With `allow_fail = True` a fetch that no URL
+        answered returns `struct(success = False)` for the caller to report; a file whose
+        bytes hash differently from `sha256` still fails here.
     """
     url = _describe_url(kwargs)
     _check_no_smuggled_digest(kwargs, url, "pinned_download")
     _check_pinned_sha256(sha256, url, "pinned_download")
     result = ctx.download(sha256 = sha256, **kwargs)
+    if kwargs.get("allow_fail") and not result.success:
+        return result
     if result.sha256 != sha256:
         fail((
             "pinned_download: checksum mismatch fetching '{url}': " +

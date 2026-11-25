@@ -2,7 +2,9 @@
 
 `flutter_assets_tool_repo` stages, for one Flutter version:
 
-- `packages/flutter_tools/lib/`, copied out of the release's one shared source
+- `packages/flutter_tools/lib/`, and the `lib/` of the path packages it
+  depends on (`packages/flutter_tools/packages/*`, named by the pin's
+  `source_packages`), copied out of the release's one shared source
   extraction (`flutter_sdk_source_repo`, pinned by `source_sha256`), or out of
   a local SDK;
 - the framework's own shaders, `packages/flutter/lib/src/*/shaders/*.frag`,
@@ -65,6 +67,13 @@ flutter_assets_tool_sources(
     for rel in _FRAMEWORK_SHADER_DIRS:
         _copy_tree(repository_ctx, source_root, rel, "the framework shaders")
     packages = {"flutter_tools": "packages/flutter_tools|" + pin.flutter_tools_language_version}
+
+    # The path packages `flutter_tools` depends on, which live in its own
+    # directory of the source tree.
+    for name, language_version in pin.source_packages.items():
+        root = "packages/flutter_tools/packages/" + name
+        _copy_tree(repository_ctx, source_root, root + "/lib", "the " + name + " sources")
+        packages[name] = "%s|%s" % (root, language_version)
     for name, package in pin.packages.items():
         pinned_download_and_extract(
             repository_ctx,
@@ -85,7 +94,7 @@ load("@rules_flutter//flutter:toolchain.bzl", "flutter_assets_tool_sources")
 
 flutter_assets_tool_sources(
     name = "sources",
-    srcs = glob(["packages/flutter_tools/lib/**/*.dart", "pub/*/lib/**/*.dart"]),
+    srcs = glob(["packages/flutter_tools/lib/**/*.dart", "packages/flutter_tools/packages/*/lib/**/*.dart", "pub/*/lib/**/*.dart"]),
     framework_shaders = glob(["packages/flutter/lib/src/*/shaders/*.frag"]),
     packages = {packages},
     service_worker = "packages/flutter_tools/lib/src/web/file_generators/js/flutter_service_worker.js",

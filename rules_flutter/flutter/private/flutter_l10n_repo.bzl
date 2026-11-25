@@ -1,14 +1,16 @@
-"""What gen-l10n writes for each project of the main repository, known before analysis.
+"""The Flutter project index: rules_dart's project facts, and what gen-l10n writes, known before analysis.
 
-The `flutter` module extension calls `register_l10n_repos`: for every
-`flutter.pub` lock of the root module it takes the lock's directory, the
-members of the pub workspace that directory's `pubspec.yaml` declares, and the
-lock's `path:` packages, and declares a `flutter_l10n_repo` for each of them
-that has an `l10n.yaml`. Each reads `l10n.yaml`, the project's `pubspec.yaml`
-and the `.arb` files of `arb-dir` through the pinned `yaml2json`, and writes
-`l10n.bzl`: the files gen-l10n will write, by path under the project, and the
-files it reads. `@flutter_l10n//:index.bzl` gathers them by Bazel package for
-`flutter_library` and `flutter_application` (`flutter_gen_l10n.bzl`).
+The `flutter` module extension calls `register_l10n_repos`: for every project
+the root module's `flutter.pub` locks name (rules_dart's `project_dirs`: each
+lock's directory, the members of the pub workspace its `pubspec.yaml`
+declares, and the lock's `path:` packages) it declares a `flutter_l10n_repo`,
+which writes `project.bzl`. That holds rules_dart's facts (`project_facts`:
+the pubspec's name and language version, the licence file, the fixtures of
+the test tree, unlabelable files) with the `flutter_test_config.dart` files as
+`test_configs`, and, for a project with an `l10n.yaml`, the files gen-l10n
+will write, by path under the project, and the files it reads, through the
+pinned `yaml2json`. `@flutter_projects//:index.bzl` gathers them by Bazel
+package for the macros (`flutter_gen_l10n.bzl`).
 
 The names follow the Flutter tool: `output-dir` (by default `arb-dir`, by
 default `lib/l10n`) holds `output-localization-file` (by default
@@ -20,24 +22,15 @@ follow as script, region and variants (`app_en`, `app_pt_BR`, `app_zh_Hant`).
 The tool's own parser decides at build time; the action fails, naming the file,
 when the two disagree, and `@@locale` settles it.
 
-The repository is fetched again when `l10n.yaml`, `pubspec.yaml` or anything in
-`arb-dir` changes. Its `l10n.bzl` changes only when the names do, so an edit
-to the text of an `.arb` file reruns the action and nothing else.
-
-`l10n.bzl` also names two kinds of project files the macros add by default:
-the project's licence file (`NOTICES`, else `LICENSE`, as the tool's
-`LicenseCollector` looks for it), which `NOTICES` holds for the project's own
-package; and the fixtures of the test tree, every file under `test/` that is
-not Dart source and is in the project's own Bazel package, which a
-`flutter_test` reads at run time as `flutter test` lets it. Adding or removing
-a file under `test/` fetches the repository again; `l10n.bzl` changes only
-when the list of fixtures does, and an edit to a fixture's content changes
-nothing here.
+The repository is fetched again when `l10n.yaml`, `pubspec.yaml`, anything in
+`arb-dir` or a listing under `test/` changes. Its `project.bzl` changes only
+when the names do, so an edit to the text of an `.arb` file or a fixture
+reruns the actions that read it and nothing else.
 """
 
-load("@rules_dart//dart/pub:pub_lock_package.bzl", "derive_language_version")
-load("@rules_dart//dart/pub:yaml.bzl", "yaml_to_json", "yaml_to_json_or_error")
-load("//flutter/private:flutter_pub_path.bzl", "is_absolute_lock_path", "is_relative_path_dependency", "workspace_relative_lock_path")
+load("@rules_dart//dart/pub:project.bzl", "DART_PROJECTS_JSON", "PROJECT_BUILD", "project_bzl", "project_dirs", "project_facts", "project_index", "project_repo_name")
+load("@rules_dart//dart/pub:yaml.bzl", "lock_packages_or_error", "yaml_to_json", "yaml_to_json_or_error")
+load("//flutter/private:flutter_pub_path.bzl", "is_absolute_lock_path")
 
 visibility(["//flutter/..."])
 
@@ -114,123 +107,23 @@ _IMPORTED = ("flutter", "flutter_localizations", "intl")
 def _hub_deps(rctx, hub):
     return "[%s]" % ", ".join(["Label(%r)" % ("@%s//:%s" % (hub, p)) for p in _IMPORTED if p in rctx.attr.hub_packages])
 
-def _l10n_bzl(rctx, language_version, outputs = [], srcs = [], error = "", package = "", analysis_options = False, files = None):
+# The file `flutter test` wraps the tests of its directory and below in.
+_TEST_CONFIG = "flutter_test_config.dart"
+
+def _project_bzl(rctx, facts, outputs = [], srcs = [], error = "", package = "", analysis_options = False):
+    # rules_dart's project facts, and what gen-l10n writes and reads.
     # `hubs`: each hub of the project's lock, in declaration order, as its
     # canonical repository name and the packages the generated files import
     # from it; a target takes the one its own `deps` come from (`l10n_attach`).
-    # `license`, `test_data`, `test_configs` and `unlabelable`: the project
-    # files the macros add by default, and the ones they cannot
-    # (`_project_files`).
     hubs = ["(Label(%r).repo_name, %s)" % ("@%s//:flutter" % hub, _hub_deps(rctx, hub)) for hub in rctx.attr.hubs]
-    files = files or struct(license = "", test_data = [], test_configs = [], unlabelable = [])
-    return "L10N = struct(\n    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    analysis_options = %r,\n    language_version = %r,\n    hubs = [%s],\n    license = %r,\n    test_data = %r,\n    test_configs = %r,\n    unlabelable = %r,\n)\n" % (
+    return project_bzl(facts, "    outputs = %r,\n    srcs = %r,\n    error = %r,\n    package = %r,\n    analysis_options = %r,\n    hubs = [%s],\n" % (
         outputs,
         srcs,
         error,
         package,
         analysis_options,
-        language_version,
         ", ".join(hubs),
-        files.license,
-        files.test_data,
-        files.test_configs,
-        files.unlabelable,
-    )
-
-# Directories under `test/` whose files are not fixtures: the stock golden
-# comparator writes its failure images to `failures/` next to the test.
-_NOT_FIXTURE_DIRS = ("failures",)
-
-# What a Bazel target name cannot hold, besides a character below a space and
-# DEL: `glob` returns such a file all the same, and the package then fails to
-# load ("invalid label"), every target of it.
-_NOT_IN_LABEL = (":", "\\", "\177")
-
-def _labelable(name):
-    return not [c for c in name.elems() if c < " " or c in _NOT_IN_LABEL]
-
-def _printable(name):
-    # As Bazel's own message spells a character a label cannot hold. A
-    # control character's `repr` (`\x01`) is not a Starlark escape.
-    return "".join(["<?>" if c < " " or c == "\177" else c for c in name.elems()])
-
-def _test_data(rctx, project_dir):
-    """The files under `test/` a test of the project's package reads by default.
-
-    Every file that is not Dart source, not hidden (a name starting with `.`),
-    and in the project's own Bazel package: a directory holding a BUILD file
-    is a package of its own, and its files are not listed. Each directory's
-    listing is watched, so adding or removing a file fetches the repository
-    again.
-
-    Returns:
-      `struct(test_data, test_configs, unlabelable)`: those files; the
-      `flutter_test_config.dart` files among the Dart sources (the project
-      root's included), which `flutter test` wraps the tests of their
-      directory in; and the files that cannot be a label (a `:`, a `\\`, a
-      control character in the name), with their names made printable.
-    """
-    configs = []
-    top = project_dir.get_child("flutter_test_config.dart")
-    rctx.watch(top)
-    if top.exists and not top.is_dir:
-        configs.append("flutter_test_config.dart")
-    root = rctx.path(str(project_dir) + "/test")
-    rctx.watch(root)
-    if not root.exists or not root.is_dir:
-        return struct(test_data = [], test_configs = configs, unlabelable = [])
-    found = []
-    unlabelable = []
-    queue = [("test", root)]
-    for _ in range(1000000):
-        if not queue:
-            break
-        rel, directory = queue.pop()
-        if [b for b in _BUILD_FILES if directory.get_child(b).exists]:
-            continue
-        for entry in directory.readdir():
-            name = entry.basename
-            if name.startswith("."):
-                continue
-            if entry.is_dir:
-                if name not in _NOT_FIXTURE_DIRS:
-                    queue.append((rel + "/" + name, entry))
-            elif not _labelable(rel + "/" + name):
-                unlabelable.append(_printable(rel + "/" + name))
-            elif name == "flutter_test_config.dart":
-                configs.append(rel + "/" + name)
-            elif not name.endswith(".dart"):
-                found.append(rel + "/" + name)
-    return struct(test_data = sorted(found), test_configs = sorted(configs), unlabelable = sorted(unlabelable))
-
-def _project_files(rctx, project_dir):
-    """The project files the macros add to a target by default: the licence file and the test fixtures."""
-    license = ""
-    for name in ("NOTICES", "LICENSE"):
-        path = project_dir.get_child(name)
-        rctx.watch(path)
-        if path.exists and not path.is_dir:
-            license = name
-            break
-    tests = _test_data(rctx, project_dir)
-    return struct(license = license, test_data = tests.test_data, test_configs = tests.test_configs, unlabelable = tests.unlabelable)
-
-def pubspec_language_version(spec):
-    """The `languageVersion` pub writes for the project: its `environment: sdk:` lower bound.
-
-    pub's `LanguageVersion.fromSdkConstraint`, as rules_dart's
-    `derive_language_version` mirrors it (2.7 for a missing or unbounded
-    constraint).
-
-    Args:
-      spec: The project's decoded `pubspec.yaml`.
-
-    Returns:
-      A `<major>.<minor>` language version.
-    """
-    environment = spec.get("environment") if type(spec) == "dict" else None
-    sdk = environment.get("sdk") if type(environment) == "dict" else None
-    return derive_language_version(sdk if type(sdk) == "string" else "")
+    ))
 
 def _flutter_l10n_repo_impl(rctx):
     project_dir = rctx.workspace_root
@@ -240,24 +133,23 @@ def _flutter_l10n_repo_impl(rctx):
     pubspec = project_dir.get_child("pubspec.yaml")
     rctx.watch(l10n)
     rctx.watch(pubspec)
-    rctx.file("BUILD.bazel", "")
+    rctx.file("BUILD.bazel", PROJECT_BUILD)
     if not pubspec.exists:
-        rctx.file("l10n.bzl", _l10n_bzl(rctx, ""))
+        rctx.file("project.bzl", _project_bzl(rctx, project_facts(rctx, project_dir, None)))
         return
-    files = _project_files(rctx, project_dir)
     shown = (rctx.attr.project + "/" if rctx.attr.project else "") + "l10n.yaml"
     if not l10n.exists:
         spec = yaml_to_json(rctx, [pubspec], [shown[:-len("l10n.yaml")] + "pubspec.yaml"])[0]
-        rctx.file("l10n.bzl", _l10n_bzl(rctx, pubspec_language_version(spec), files = files))
+        rctx.file("project.bzl", _project_bzl(rctx, project_facts(rctx, project_dir, spec, _TEST_CONFIG)))
         return
     config, spec = yaml_to_json(rctx, [l10n, pubspec], [shown, shown[:-len("l10n.yaml")] + "pubspec.yaml"])
-    language_version = pubspec_language_version(spec)
+    facts = project_facts(rctx, project_dir, spec, _TEST_CONFIG)
     flutter = spec.get("flutter")
     generate = type(flutter) == "dict" and flutter.get("generate") == True
     if not generate and not rctx.attr.is_root:
         # A dependency's localizations are its own: the tool generates only
         # the project it builds and the members of its workspace.
-        rctx.file("l10n.bzl", _l10n_bzl(rctx, language_version, files = files))
+        rctx.file("project.bzl", _project_bzl(rctx, facts))
         return
 
     arb_dir = _option(config, "arb-dir", "lib/l10n")
@@ -268,18 +160,18 @@ def _flutter_l10n_repo_impl(rctx):
     if arb_dir == None or output_dir == None or output_file == None:
         # A value of the wrong type. The action still runs, so the tool
         # reports it in its own words.
-        rctx.file("l10n.bzl", _l10n_bzl(rctx, language_version, outputs = ["lib/l10n/app_localizations.dart"], package = str(spec.get("name", "")), files = files))
+        rctx.file("project.bzl", _project_bzl(rctx, facts, outputs = ["lib/l10n/app_localizations.dart"], package = str(spec.get("name", ""))))
         return
     for what, rel in (("arb-dir", arb_dir), ("output-dir", output_dir)):
         if rel.startswith("..") or is_absolute_lock_path(rel):
-            rctx.file("l10n.bzl", _l10n_bzl(rctx, language_version, error = "l10n.yaml: `%s: %s` is outside the project; Bazel builds a project's localizations inside it." % (what, rel), files = files))
+            rctx.file("project.bzl", _project_bzl(rctx, facts, error = "l10n.yaml: `%s: %s` is outside the project; Bazel builds a project's localizations inside it." % (what, rel)))
             return
         boundary = _package_boundary(project_dir, rel)
         if boundary:
-            rctx.file("l10n.bzl", _l10n_bzl(rctx, language_version, error = (
+            rctx.file("project.bzl", _project_bzl(rctx, facts, error = (
                 "l10n.yaml: `%s: %s` is inside %s, which holds a BUILD file and so is a Bazel package of its own; " +
                 "gen-l10n reads and writes the project's own package. Remove that BUILD file."
-            ) % (what, rel, boundary), files = files))
+            ) % (what, rel, boundary)))
             return
 
     arb_path = project_dir.get_child(arb_dir) if arb_dir else project_dir
@@ -319,14 +211,13 @@ def _flutter_l10n_repo_impl(rctx):
     # `dart format` reads the project's `formatter:` options from it.
     options = project_dir.get_child("analysis_options.yaml")
     rctx.watch(options)
-    rctx.file("l10n.bzl", _l10n_bzl(
+    rctx.file("project.bzl", _project_bzl(
         rctx,
-        language_version,
+        facts,
         outputs = sorted(outputs),
         srcs = srcs,
         package = str(spec.get("name", "")),
         analysis_options = options.exists,
-        files = files,
     ))
 
 flutter_l10n_repo = repository_rule(
@@ -348,70 +239,6 @@ flutter_l10n_repo = repository_rule(
     },
 )
 
-def _flutter_l10n_index_impl(rctx):
-    loads = []
-    entries = []
-    for i, package in enumerate(sorted(rctx.attr.projects)):
-        loads.append('load("@%s//:l10n.bzl", _p%d = "L10N")' % (rctx.attr.projects[package], i))
-        entries.append("    %r: _p%d," % (package, i))
-    rctx.file("index.bzl", "\n".join([
-        '"""The localizations of each project of the main repository, by Bazel package (see rules_flutter\'s flutter_l10n_repo.bzl)."""',
-        "",
-    ] + loads + [
-        "",
-        "L10N_PROJECTS = {",
-    ] + entries + ["}", ""]))
-    rctx.file("BUILD.bazel", """\
-load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
-
-bzl_library(
-    name = "index",
-    srcs = ["index.bzl"],
-    visibility = ["//visibility:public"],
-)
-""")
-
-flutter_l10n_index = repository_rule(
-    implementation = _flutter_l10n_index_impl,
-    doc = "`index.bzl`: every project's `l10n.bzl`, by Bazel package.",
-    attrs = {
-        "projects": attr.string_dict(
-            doc = "Bazel package of the main repository to the name of its `flutter_l10n_repo`.",
-        ),
-    },
-)
-
-def _lock_dir(lock):
-    """The lock file's directory, relative to the main repository's root."""
-    parts = [lock.package] if lock.package else []
-    head = lock.name.rpartition("/")[0]
-    if head:
-        parts.append(head)
-    return "/".join(parts)
-
-def _repo_name(project):
-    return "flutter_l10n_" + ("".join([c if c.isalnum() else "_" for c in project.elems()]) if project else "root")
-
-def _child(root, rel, name):
-    return root.get_child(rel + "/" + name if rel else name)
-
-def _workspace_members(module_ctx, root, projects):
-    """The member directories of the pub workspaces the projects' pubspecs declare, each with its project."""
-    specs = [_child(root, p, "pubspec.yaml") for p in projects]
-    for spec in specs:
-        module_ctx.watch(spec)
-    present = [i for i in range(len(specs)) if specs[i].exists]
-    decoded = yaml_to_json_or_error(module_ctx, [specs[i] for i in present])
-    members = []
-    for k in range(len(present)):
-        data = decoded.data[k] if decoded.data != None else {}
-        entries = data.get("workspace") if type(data) == "dict" else None
-        for member in entries if type(entries) == "list" else []:
-            if type(member) == "string" and member and "*" not in member and not is_absolute_lock_path(member):
-                rel = projects[present[k]]
-                members.append((_norm((rel + "/" if rel else "") + member), rel))
-    return members
-
 def add_project_hub(hubs, project, hub):
     """Adds `hub` to the project's hubs, after the ones declared before it.
 
@@ -427,53 +254,65 @@ def add_project_hub(hubs, project, hub):
     if hub.name not in [h.name for h in own]:
         own.append(hub)
 
+def _uses_flutter(spec):
+    for key in ("dependencies", "dev_dependencies"):
+        deps = spec.get(key) if type(spec) == "dict" else None
+        for dep in deps.values() if type(deps) == "dict" else []:
+            if type(dep) == "dict" and dep.get("sdk") == "flutter":
+                return True
+    return False
+
+def _check_dart_projects(module_ctx, found, tags):
+    """Fails naming the `pub.project` tag for a pure-Dart project with a `test/` that `@dart_projects` lacks.
+
+    Its `dart_test` comes from rules_dart, whose macros read only
+    `@dart_projects`. `@dart_projects` is read only when such a project exists.
+    """
+    root = module_ctx.path(Label("@@//:MODULE.bazel")).dirname
+    dirs = list(found)
+    tests = [root.get_child(p + "/test" if p else "test") for p in dirs]
+    for path in tests:
+        module_ctx.watch(path)
+    dirs = [dirs[i] for i in range(len(dirs)) if tests[i].exists]
+    specs = yaml_to_json_or_error(module_ctx, [root.get_child(p + "/pubspec.yaml" if p else "pubspec.yaml") for p in dirs]).data or []
+    dart = [dirs[i] for i in range(len(specs)) if not _uses_flutter(specs[i])]
+    known = json.decode(module_ctx.read(DART_PROJECTS_JSON)) if dart else []
+    missing = {}
+    for p in dart:
+        if p not in known:
+            lock = tags[found[p].locks[0]].lock
+            missing.setdefault("//%s:%s" % (lock.package, lock.name), []).append("//" + p)
+    if missing:
+        fail("".join([
+            "flutter.pub: the lock %s names the pure-Dart package %s (no Flutter SDK dependency, a test/ directory), which rules_dart's macros do not know: its dart_test would run outside its package's directory, without its test fixtures and at the default language version. Add to MODULE.bazel:\n\n" % (lock, ", ".join(pkgs)) +
+            '    pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")\n' +
+            '    pub.project(lock = "%s")\n\n' % lock
+            for lock, pkgs in sorted(missing.items())
+        ]))
+
 def register_l10n_repos(module_ctx, pub_yaml):
-    """Declares a `flutter_l10n_repo` per project with an `l10n.yaml`, and `flutter_l10n`.
+    """Declares a `flutter_l10n_repo` per project of the root module's locks, and `flutter_projects`.
 
     Args:
       module_ctx: The `flutter` extension's context.
       pub_yaml: Each `flutter.pub` tag's decoded lock, by label string.
     """
-    is_root = {}
-    hubs = {}
-    root = None
-    for mod in module_ctx.modules:
-        if not mod.is_root:
-            continue
-        for tag in mod.tags.pub:
-            lock = tag.lock
-            project = _lock_dir(lock)
-            if root == None:
-                root = module_ctx.path(lock).dirname
-                for _ in project.split("/") if project else []:
-                    root = root.dirname
-            is_root[project] = True
-            packages = pub_yaml.get(str(lock), {}).get("packages")
-            hub = struct(name = tag.name, packages = [p for p in _IMPORTED if type(packages) == "dict" and p in packages])
-            add_project_hub(hubs, project, hub)
-            for name, info in (packages if type(packages) == "dict" else {}).items():
-                desc = info.get("description") if type(info) == "dict" and info.get("source") == "path" else None
-                entry = desc.get("path") if type(desc) == "dict" else None
-                if type(entry) != "string" or not entry or is_absolute_lock_path(entry) or not is_relative_path_dependency(desc.get("relative", False)):
-                    continue
-                path = workspace_relative_lock_path("", name, lock, entry)
-                is_root.setdefault(path, False)
-                add_project_hub(hubs, path, hub)
+    tags = [tag for mod in module_ctx.modules if mod.is_root for tag in mod.tags.pub]
+    locks = [(tag.lock, lock_packages_or_error(pub_yaml.get(str(tag.lock), {})).packages) for tag in tags]
+    found_dirs = project_dirs(module_ctx, locks)
+    _check_dart_projects(module_ctx, found_dirs, tags)
     projects = {}
-    if root != None:
-        for member, owner in _workspace_members(module_ctx, root, sorted([p for p in is_root if is_root[p]])):
-            is_root[member] = True
-            hubs[member] = hubs[owner]
-        for project in sorted(is_root):
-            pubspec = _child(root, project, "pubspec.yaml")
-            module_ctx.watch(pubspec)
-            if pubspec.exists:
-                projects[project] = _repo_name(project)
-                flutter_l10n_repo(
-                    name = projects[project],
-                    project = project,
-                    is_root = is_root[project],
-                    hubs = [h.name for h in hubs[project]],
-                    hub_packages = hubs[project][0].packages,
-                )
-    flutter_l10n_index(name = "flutter_l10n", projects = projects)
+    for project, found in found_dirs.items():
+        hubs = {}
+        for i in found.locks:
+            packages = locks[i][1] or {}
+            add_project_hub(hubs, project, struct(name = tags[i].name, packages = [p for p in _IMPORTED if p in packages]))
+        projects[project] = project_repo_name("flutter_project_", project)
+        flutter_l10n_repo(
+            name = projects[project],
+            project = project,
+            is_root = found.is_root,
+            hubs = [h.name for h in hubs[project]],
+            hub_packages = hubs[project][0].packages,
+        )
+    project_index(name = "flutter_projects", projects = projects)

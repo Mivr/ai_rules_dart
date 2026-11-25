@@ -1,0 +1,29 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+
+exports_files(["pubspec.lock"])
+
+flutter_application(
+    name = "app",
+    package_name = "pubspec_assets",
+    main = "lib/main.dart",
+    pub_packages = "@deps//packages",
+    deps = [
+        "@deps//:flutter",
+        "@deps//:licensed",
+    ],
+)
+
+# What the bundle holds: the directory the app names in package `licensed`,
+# and that package's additional licence in NOTICES, as `flutter build bundle`
+# writes them with Flutter 3.50.
+dart_test(
+    name = "bundle_test",
+    size = "small",
+    data = [":app"],
+    main = "test/bundle_test.dart",
+    deps = [
+        "@deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)

@@ -60,9 +60,24 @@ jobs:
         # this through flutter-tag.yaml, github.sha is main's head, not the tagged
         # commit.
         run: bash .github/workflows/release_gate.sh "$TAG" "$(gh api "repos/$REPO/commits/$TAG" --jq .sha)"
-  release:
+  # The prebuilt tools of rules_flutter (see prebuilt-tools.yaml, which the CI
+  # rehearsal calls too): on each host platform the SDK tables list, its own
+  # runner builds the tool set twice from the tag and uploads it only when the
+  # two builds agree byte for byte. A job that fails fails the release, which
+  # needs this call: a platform may be absent, never wrong. The reusable
+  # release workflow's build job downloads the artifacts, and release_prep.sh
+  # writes the table into the module's archive.
+  tools:
     if: vars.RELEASES_ENABLED == 'true'
     needs: gate
+    uses: ./.github/workflows/prebuilt-tools.yaml
+    with:
+      module: rules_flutter
+      ref: ${{ inputs.tag_name || github.ref_name }}
+      rehearse: false
+  release:
+    if: vars.RELEASES_ENABLED == 'true'
+    needs: [gate, tools]
     # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
     # workflow. The gate job above carries its own timeout.
     #

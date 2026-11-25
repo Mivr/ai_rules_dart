@@ -1,4 +1,4 @@
-"""Unit tests for flutter_pubspec.bzl projections.
+"""Unit tests for flutter_pubspec.bzl's plain data.
 
 Each fixture is a pubspec as `yaml_to_json` decodes it: booleans stay
 booleans, empty values are None and every other scalar is its source text.
@@ -7,9 +7,9 @@ booleans, empty values are None and every other scalar is its source text.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load(
     "//flutter/private:flutter_pubspec.bzl",
-    "parse_flutter_assets_block",
     "parse_flutter_block",
     "parse_flutter_plugin_block",
+    "pubspec_file_roots",
 )
 load("//flutter/tests:test_suite.bzl", "small_unittest_suite")
 
@@ -245,139 +245,61 @@ def _empty_pubspec_test_impl(ctx):
     return unittest.end(env)
 
 # ---------------------------------------------------------------------------
-# parse_flutter_assets_block
+# pubspec_file_roots
 # ---------------------------------------------------------------------------
 
-def _cupertino_fonts_test_impl(ctx):
+# The `flutter.licenses` key (a name buildifier reads as a rule attribute).
+_LICENSES = "licenses"
+
+def _roots(flutter):
+    return pubspec_file_roots({"name": "example", "flutter": flutter})
+
+def _font_and_dir_roots_test_impl(ctx):
     env = unittest.begin(ctx)
-    result = parse_flutter_assets_block(_CUPERTINO_ICONS_PUBSPEC)
-    asserts.equals(env, 1, len(result.fonts))
-    asserts.equals(env, "CupertinoIcons", result.fonts[0].family)
-    asserts.equals(env, 1, len(result.fonts[0].fonts))
-    asserts.equals(env, "assets/CupertinoIcons.ttf", result.fonts[0].fonts[0].asset)
-    asserts.equals(env, None, result.fonts[0].fonts[0].weight)
-    asserts.equals(env, None, result.fonts[0].fonts[0].style)
-    asserts.equals(env, [], result.assets)
-    asserts.equals(env, [], result.shaders)
-    asserts.equals(env, False, result.uses_material_design)
+    asserts.equals(env, struct(dirs = ["assets"], files = [], whole = False), pubspec_file_roots(_CUPERTINO_ICONS_PUBSPEC))
+    asserts.equals(env, struct(dirs = ["fonts"], files = [], whole = False), pubspec_file_roots(_FONT_WITH_VARIANTS_PUBSPEC))
+    asserts.equals(env, struct(dirs = ["data"], files = [], whole = False), pubspec_file_roots(_LOCALES_PUBSPEC))
+    asserts.equals(env, struct(dirs = ["assets"], files = [], whole = False), pubspec_file_roots(_MAP_FORM_ASSETS_PUBSPEC))
+    asserts.equals(env, struct(dirs = ["shaders"], files = [], whole = False), pubspec_file_roots(_MATERIAL_AND_SHADERS_PUBSPEC))
     return unittest.end(env)
 
-def _font_variants_test_impl(ctx):
+def _nested_and_top_level_roots_test_impl(ctx):
     env = unittest.begin(ctx)
-    result = parse_flutter_assets_block(_FONT_WITH_VARIANTS_PUBSPEC)
-    asserts.equals(env, 1, len(result.fonts))
-    family = result.fonts[0]
-    asserts.equals(env, "Roboto", family.family)
-    asserts.equals(env, 3, len(family.fonts))
 
-    asserts.equals(env, "fonts/Roboto-Regular.ttf", family.fonts[0].asset)
-    asserts.equals(env, None, family.fonts[0].weight)
-    asserts.equals(env, None, family.fonts[0].style)
+    # The leading plain directories; a top-level file by its name.
+    asserts.equals(env, struct(dirs = ["a/b", "a/b/2.0x", "c"], files = ["NOTICE.txt", "x.png"], whole = False), _roots({
+        "assets": ["a/b/x.png", "x.png", "c/", {"path": "a/b/2.0x/y.png"}],
+        _LICENSES: ["NOTICE.txt"],
+    }))
 
-    asserts.equals(env, "fonts/Roboto-Bold.ttf", family.fonts[1].asset)
-    asserts.equals(env, 700, family.fonts[1].weight)
-    asserts.equals(env, None, family.fonts[1].style)
+    # A query, fragment or dot segment ends the directories it names.
+    asserts.equals(env, struct(dirs = ["a"], files = [], whole = False), _roots({"assets": [{"path": "a/b?.png"}, "a/./c.png"]}))
 
-    asserts.equals(env, "fonts/Roboto-Italic.ttf", family.fonts[2].asset)
-    asserts.equals(env, 400, family.fonts[2].weight)
-    asserts.equals(env, "italic", family.fonts[2].style)
+    # Deferred components' assets count.
+    asserts.equals(env, struct(dirs = ["d"], files = [], whole = False), _roots({
+        "deferred-components": [{"name": "c", "assets": ["d/e.png"]}],
+    }))
     return unittest.end(env)
 
-def _string_assets_test_impl(ctx):
+def _whole_package_roots_test_impl(ctx):
     env = unittest.begin(ctx)
-    result = parse_flutter_assets_block(_LOCALES_PUBSPEC)
-    asserts.equals(env, 1, len(result.assets))
-    asserts.equals(env, "data/", result.assets[0].path)
-    asserts.equals(env, False, result.assets[0].is_map)
-    asserts.equals(env, [], result.assets[0].flavors)
-    asserts.equals(env, [], result.assets[0].platforms)
+    whole = struct(dirs = [], files = [], whole = True)
+    for entry in ["../secret.txt", "a/../../x", "a/%2E%2E/x", "a/b%20c.png", "a\\b.png", "./a.png", "/abs.png"]:
+        asserts.equals(env, whole, _roots({"assets": [entry]}), entry)
+    asserts.equals(env, whole, _roots({_LICENSES: ["../LICENSE"]}))
+
+    # A shader at the root includes the root's files.
+    asserts.equals(env, whole, _roots({"shaders": ["ripple.frag"]}))
     return unittest.end(env)
 
-def _map_assets_test_impl(ctx):
+def _malformed_section_names_nothing_test_impl(ctx):
     env = unittest.begin(ctx)
-    result = parse_flutter_assets_block(_MAP_FORM_ASSETS_PUBSPEC)
-    asserts.equals(env, 2, len(result.assets))
 
-    asserts.equals(env, "assets/foo.png", result.assets[0].path)
-    asserts.equals(env, True, result.assets[0].is_map)
-    asserts.equals(env, ["prod"], result.assets[0].flavors)
-    asserts.equals(env, ["ios", "android"], result.assets[0].platforms)
-
-    asserts.equals(env, "assets/bar.png", result.assets[1].path)
-    asserts.equals(env, False, result.assets[1].is_map)
-    asserts.equals(env, [], result.assets[1].flavors)
-    asserts.equals(env, [], result.assets[1].platforms)
-    return unittest.end(env)
-
-def _shaders_and_material_test_impl(ctx):
-    env = unittest.begin(ctx)
-    result = parse_flutter_assets_block(_MATERIAL_AND_SHADERS_PUBSPEC)
-    asserts.equals(env, True, result.uses_material_design)
-    asserts.equals(env, 1, len(result.shaders))
-    asserts.equals(env, "shaders/ink_sparkle.frag", result.shaders[0].path)
-    asserts.equals(env, False, result.shaders[0].is_map)
-    return unittest.end(env)
-
-def _empty_flutter_block_test_impl(ctx):
-    env = unittest.begin(ctx)
-    result = parse_flutter_assets_block({"name": "foo"})
-    asserts.equals(env, [], result.fonts)
-    asserts.equals(env, [], result.assets)
-    asserts.equals(env, [], result.shaders)
-    asserts.equals(env, False, result.uses_material_design)
-    return unittest.end(env)
-
-# ---------------------------------------------------------------------------
-# flutter.plugin validation (parse_flutter_assets_block refusals)
-# ---------------------------------------------------------------------------
-
-_EMPTY_PLUGIN_MAP_PUBSPEC = {"name": "empty_plugin_pkg", "flutter": {"plugin": {}}}
-
-def _empty_plugin_map_refused_test_impl(ctx):
-    """An empty `plugin:` map fails naming the missing `platforms` key."""
-    env = unittest.begin(ctx)
-    result = parse_flutter_assets_block(_EMPTY_PLUGIN_MAP_PUBSPEC)
-    asserts.equals(env, 1, len(result.asset_errors))
-    problem = result.asset_errors[0]
-    asserts.equals(env, "plugin", problem.key)
-    asserts.true(
-        env,
-        "Cannot find the `flutter.plugin.platforms` key" in problem.detail,
-        problem.detail,
-    )
-    return unittest.end(env)
-
-_BAD_ANDROID_PLUGINCLASS_PUBSPEC = {
-    "name": "bad_android_pkg",
-    "flutter": {"plugin": {"platforms": {"android": {"pluginClass": "5"}}}},
-}
-
-def _bad_android_pluginclass_refused_test_impl(ctx):
-    """A non-identifier android `pluginClass` fails naming the platform."""
-    env = unittest.begin(ctx)
-    result = parse_flutter_assets_block(_BAD_ANDROID_PLUGINCLASS_PUBSPEC)
-    asserts.equals(env, 1, len(result.asset_errors))
-    problem = result.asset_errors[0]
-    asserts.equals(env, "plugin", problem.key)
-    asserts.true(
-        env,
-        "Invalid \"android\" plugin specification." in problem.detail,
-        problem.detail,
-    )
-    return unittest.end(env)
-
-def _umbrella_plugin_loads_test_impl(ctx):
-    """A federated umbrella plugin parses with no refusals."""
-    env = unittest.begin(ctx)
-    result = parse_flutter_assets_block(_PATH_PROVIDER_PUBSPEC)
-    asserts.equals(env, [], result.asset_errors)
-    return unittest.end(env)
-
-def _monolithic_plugin_loads_test_impl(ctx):
-    """A monolithic multi-platform plugin parses with no refusals."""
-    env = unittest.begin(ctx)
-    result = parse_flutter_assets_block(_PACKAGE_INFO_PLUS_PUBSPEC)
-    asserts.equals(env, [], result.asset_errors)
+    # The tool reports a malformed section; nothing is named here.
+    none = struct(dirs = [], files = [], whole = False)
+    asserts.equals(env, none, pubspec_file_roots({"name": "foo"}))
+    asserts.equals(env, none, _roots({"assets": "assets/a.txt", "fonts": [{"family": "F", "fonts": "x"}]}))
+    asserts.equals(env, none, pubspec_file_roots({"name": "foo", "flutter": "yes"}))
     return unittest.end(env)
 
 # ---------------------------------------------------------------------------
@@ -399,17 +321,11 @@ _t2_test = unittest.make(_monolithic_plugin_test_impl)
 _t3_test = unittest.make(_impl_with_filename_test_impl)
 _t4_test = unittest.make(_no_plugin_block_test_impl)
 _t5_test = unittest.make(_empty_pubspec_test_impl)
-_t6_test = unittest.make(_cupertino_fonts_test_impl)
-_t7_test = unittest.make(_font_variants_test_impl)
-_t8_test = unittest.make(_string_assets_test_impl)
-_t9_test = unittest.make(_map_assets_test_impl)
-_t10_test = unittest.make(_shaders_and_material_test_impl)
-_t11_test = unittest.make(_empty_flutter_block_test_impl)
+_t6_test = unittest.make(_font_and_dir_roots_test_impl)
+_t7_test = unittest.make(_nested_and_top_level_roots_test_impl)
+_t8_test = unittest.make(_whole_package_roots_test_impl)
+_t9_test = unittest.make(_malformed_section_names_nothing_test_impl)
 _t12_test = unittest.make(_parse_flutter_block_test_impl)
-_t14_test = unittest.make(_empty_plugin_map_refused_test_impl)
-_t15_test = unittest.make(_bad_android_pluginclass_refused_test_impl)
-_t16_test = unittest.make(_umbrella_plugin_loads_test_impl)
-_t17_test = unittest.make(_monolithic_plugin_loads_test_impl)
 _t18_test = unittest.make(_non_mapping_plugin_test_impl)
 
 def flutter_pubspec_test_suite(name):
@@ -425,12 +341,6 @@ def flutter_pubspec_test_suite(name):
         _t7_test,
         _t8_test,
         _t9_test,
-        _t10_test,
-        _t11_test,
         _t12_test,
-        _t14_test,
-        _t15_test,
-        _t16_test,
-        _t17_test,
         _t18_test,
     )

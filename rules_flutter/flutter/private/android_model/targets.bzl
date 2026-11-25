@@ -1240,7 +1240,6 @@ def android_model_app(
             libraries = [_boot(hub, p)],
             configs = rules,
             min_sdk = min_sdk,
-            final_res_ids = p.get("non_final_res_ids") == False,
             full_mode = r8_flags.get("full_mode") != False,
             strict_keep_rules = r8_flags.get("strict_full_mode_for_keep_rules") != False,
             desugared_lib_config = (hub + "desugar_config") if v.get("core_library_desugaring") else None,

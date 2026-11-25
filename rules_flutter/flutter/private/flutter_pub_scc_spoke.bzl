@@ -30,10 +30,6 @@ load(
     "pubspec_sdk_constraint",
     "yaml_to_json",
 )
-load(
-    "//flutter/private:asset_uri.bzl",
-    "normalize_spoke_asset_block",
-)
 load("//flutter/private:download.bzl", "pinned_download")
 load(
     "//flutter/private:flutter_pub_apple.bzl",
@@ -85,8 +81,8 @@ load(
 )
 load(
     "//flutter/private:flutter_pubspec.bzl",
-    "parse_flutter_assets_block",
     "parse_flutter_plugin_block",
+    "pubspec_file_roots",
 )
 
 visibility(["//flutter/..."])
@@ -146,7 +142,7 @@ def _link_path_scc_contents(ctx, member, name, linked, pubspec):
     link_spoke_contents(
         ctx,
         linked.src,
-        normalize_spoke_asset_block(name, parse_flutter_assets_block(pubspec)),
+        pubspec_file_roots(pubspec),
         path_spoke_platform_dirs(parse_flutter_plugin_block(pubspec)),
         linked.scope,
     )
@@ -304,11 +300,11 @@ def _member_target_aliases(name, member_build):
             )
     return aliases
 
-def _emit_single_member_build(ctx, name, p, plugin_block, asset_block):
+def _emit_single_member_build(ctx, name, p, plugin_block):
     """Writes `<name>/BUILD.bazel` for one member."""
     mctx = _member_spoke_ctx(ctx, name)
     hooks = _detect_member_hooks(ctx, name)
-    assets = spoke_asset_inputs(mctx, name, asset_block)
+    assets = spoke_asset_inputs(pubspec_file_roots(p.pubspec))
     overlay_content = resolve_overlay_roots(
         mctx,
         ctx.attr.overlay_roots,
@@ -372,26 +368,19 @@ def _emit_single_member_build(ctx, name, p, plugin_block, asset_block):
 
 def _emit_scc_member_builds(ctx, member_names, parsed):
     """Emits per-member BUILD files and collects root aliases."""
-    uses_material = False
     apple_aliases = []
-
     for name in member_names:
         p = parsed[name]
-        asset_block = parse_flutter_assets_block(p.pubspec)
-        if asset_block and hasattr(asset_block, "uses_material_design") and asset_block.uses_material_design:
-            uses_material = True
         plugin_block = parse_flutter_plugin_block(p.pubspec)
-        apple_aliases.extend(_emit_single_member_build(ctx, name, p, plugin_block, asset_block))
+        apple_aliases.extend(_emit_single_member_build(ctx, name, p, plugin_block))
+    return apple_aliases
 
-    return apple_aliases, uses_material
-
-def _emit_scc_root_build(ctx, member_names, apple_aliases, uses_material):
+def _emit_scc_root_build(ctx, member_names, apple_aliases):
     """Writes the root `BUILD.bazel` file for the merged SCC spoke repository.
 
     Its dependencies are the extension's: every member's planned dependency
     outside the cycle, as the hub's alias, plus `flutter` when the lock pins it.
     """
-    _ = uses_material  # @unused: the app's asset tool bundles the Material icons.
     outside_list = list(ctx.attr.deps)
 
     ctx.file("BUILD.bazel", make_scc_merged_spoke_build_content(
@@ -407,8 +396,8 @@ def _flutter_pub_scc_package_impl(ctx):
     pubspecs = _stage_scc_members(ctx, members)
     parsed, _ = _parse_and_verify_scc_members(ctx, members, pubspecs)
     member_names = sorted(parsed.keys())
-    apple_aliases, uses_material = _emit_scc_member_builds(ctx, member_names, parsed)
-    _emit_scc_root_build(ctx, member_names, apple_aliases, uses_material)
+    apple_aliases = _emit_scc_member_builds(ctx, member_names, parsed)
+    _emit_scc_root_build(ctx, member_names, apple_aliases)
 
 flutter_pub_scc_package = repository_rule(
     implementation = _flutter_pub_scc_package_impl,

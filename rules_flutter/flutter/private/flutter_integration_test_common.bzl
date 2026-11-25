@@ -354,7 +354,21 @@ def _integration_test_kernel_flags(ctx, mode, aot):
         frontend_flags = frontend_flags,
     )
 
-def integration_test_kernel(ctx, flutter_sdk_info, sources, native_assets, aot, mode):
+def integration_test_recorded_uses(ctx, is_debug):
+    """Declares the file the AOT compile records its uses to, when icons are shaken.
+
+    Args:
+        ctx: The rule context of the rule implementation that calls this helper.
+        is_debug: Whether the build is debug.
+
+    Returns:
+        The declared File, or None when no icon font is shaken.
+    """
+    if is_debug or not getattr(ctx.attr, "tree_shake_icons", False):
+        return None
+    return ctx.actions.declare_file(ctx.label.name + ".recorded_uses.json")
+
+def integration_test_kernel(ctx, flutter_sdk_info, sources, native_assets, aot, mode, recorded_uses = None):
     """Runs the kernel compile the dart:io test rules share.
 
     Args:
@@ -365,6 +379,7 @@ def integration_test_kernel(ctx, flutter_sdk_info, sources, native_assets, aot, 
         native_assets: The `integration_test_native_assets` struct.
         aot: Whether the build is AOT (non-debug).
         mode: The build mode.
+        recorded_uses: The File the compile records its uses to, or None.
 
     Returns:
         The compiled kernel `.dill` File.
@@ -388,7 +403,7 @@ def integration_test_kernel(ctx, flutter_sdk_info, sources, native_assets, aot, 
             native_assets_manifest = native_assets.manifest,
             dart_plugin_registrant_uri = sources.registrant_location.uri if sources.registrant_location else None,
         ),
-        flutter_kernel_outputs(output = kernel_dill),
+        flutter_kernel_outputs(output = kernel_dill, recorded_uses = recorded_uses),
         flutter_kernel_options(
             aot = aot,
             defines = flags.defines,
@@ -425,17 +440,19 @@ def integration_test_aot(ctx, flutter_sdk_info, kernel_dill, is_debug, strip):
     )
     return aot_output
 
-def integration_test_assets(ctx, flutter_sdk_info, target_platform, kernel_dill, is_debug, data_assets):
+def integration_test_assets(ctx, flutter_sdk_info, target_platform, recorded_uses, is_debug, native_assets):
     """Builds the `flutter_assets/` tree from the app's pubspec.
 
     Args:
         ctx: The rule context of the rule implementation that calls this helper.
         flutter_sdk_info: The resolved Flutter SDK info.
         target_platform: The bundle's platform.
-        kernel_dill: The compiled kernel File, or None for web; read only to
-            shake icons in a release or profile build.
+        recorded_uses: The File the AOT compile recorded its uses to, or None;
+            read only to shake icons in a release or profile build.
         is_debug: Whether the build is debug.
-        data_assets: The transitive data-asset depset, or None.
+        native_assets: The `integration_test_native_assets` struct: its data
+            assets are bundled, and its manifest is what the engine resolves
+            `@Native` assets through.
 
     Returns:
         The declared `flutter_assets` directory.
@@ -449,8 +466,9 @@ def integration_test_assets(ctx, flutter_sdk_info, target_platform, kernel_dill,
         target_platform = target_platform,
         mode = "debug" if is_debug else ("profile" if getattr(ctx.attr, "profile", False) else "release"),
         flavor = flavor,
-        app_dill = None if is_debug else kernel_dill,
-        data_assets = data_assets,
+        recorded_uses = recorded_uses,
+        data_assets = native_assets.data_assets,
+        native_assets_manifest = native_assets.manifest if native_assets.any else None,
     )
     return flutter_assets
 

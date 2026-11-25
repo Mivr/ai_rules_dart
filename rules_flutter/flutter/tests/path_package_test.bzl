@@ -217,8 +217,8 @@ def _make_mock_link_ctx(tree, path_value = "platform_assets", package_name = "pl
 
 _SCOPED_PUBSPEC = {"name": "mypkg", "flutter": {"assets": ["assets/any.txt", "assets/dir/"]}}
 
-# A package exercising every scoping rule: declared and undeclared assets, a
-# nested user BUILD file, an example app with its own build output and
+# A package exercising every scoping rule: a declared asset and its
+# directory (which links whole, as the tool reads it), a nested user BUILD file, an example app with its own build output and
 # `.plugin_symlinks` cycle, tool state, a dot-directory, an (undeclared,
 # non-plugin) android tree, and an undeclared top-level file.
 _SCOPED_CONTENTS = {
@@ -262,6 +262,7 @@ _SCOPED_CONTENTS = {
 _SCOPED_LINKED = [
     "assets/any.txt",
     "assets/dir/one.txt",
+    "assets/other.txt",
     "lib/mypkg.dart",
     "pubspec.yaml",
 ]
@@ -275,6 +276,8 @@ _SCOPED_WATCHED = [
     "/workspace/mypkg/assets/dir",
     "/workspace/mypkg/assets/dir/BUILD.bazel",
     "/workspace/mypkg/assets/dir/one.txt",
+    "/workspace/mypkg/assets/icons",
+    "/workspace/mypkg/assets/other.txt",
     "/workspace/mypkg/hook/build.dart",
     "/workspace/mypkg/hook/link.dart",
     "/workspace/mypkg/lib",
@@ -286,7 +289,7 @@ def _link_scopes_to_the_pubspec_plan_test_impl(ctx):
     """The spoke links the pubspec plan — nothing it does not read or expose.
 
     `example/` (with its `build/` output and `.plugin_symlinks` cycle),
-    `build/`, `.dart_tool/`, dot-directories, undeclared files, the
+    `build/`, `.dart_tool/`, dot-directories, undeclared top-level files, the
     non-plugin `android/` tree, and user BUILD files stay out; skipped
     subtrees are not even watched, while the nested BUILD file is watched
     (appearing content refetches) but not linked.
@@ -814,11 +817,11 @@ def _lib_and_asset_dir_skip_names_link_test_impl(ctx):
 lib_and_asset_dir_skip_names_link_test = unittest.make(_lib_and_asset_dir_skip_names_link_test_impl)
 
 def _missing_declared_paths_are_watched_test_impl(ctx):
-    """A declared path is watched before testing whether it exists.
+    """A declared path's directory is watched before testing whether it exists.
 
-    A declared asset file and a declared asset directory that are both
-    missing at fetch time stay unlinked but watched, so creating either
-    later refetches the spoke instead of leaving its files silently
+    The directory of a declared asset file and a declared asset directory,
+    both missing at fetch time, stay unlinked but watched, so creating
+    either later refetches the spoke instead of leaving its files silently
     missing.
     """
     env = unittest.begin(ctx)
@@ -836,7 +839,6 @@ def _missing_declared_paths_are_watched_test_impl(ctx):
     asserts.equals(env, ["lib/latepkg.dart", "pubspec.yaml"], names)
     for seen in [
         "/workspace/latepkg/assets",
-        "/workspace/latepkg/assets/late.txt",
         "/workspace/latepkg/assets/missing_dir",
     ]:
         asserts.true(env, seen in mock.watched, "{} must be watched, got {}".format(seen, sorted(mock.watched)))
@@ -1203,41 +1205,18 @@ def _path_spoke_platform_dirs_test_impl(ctx):
 
 path_spoke_platform_dirs_test = unittest.make(_path_spoke_platform_dirs_test_impl)
 
-def _scoped_shader_includes_block_test_impl(ctx):
-    """Include globs cover the declared shaders' own dirs — never `**`."""
+def _data_patterns_follow_the_roots_test_impl(ctx):
+    """A spoke lists the directories its pubspec names files in, a top-level file with its variants, or everything."""
     env = unittest.begin(ctx)
-    block = spoke_data_patterns(struct(
-        assets = [],
-        fonts = [],
-        shaders = [struct(path = p) for p in ["shaders/glow.frag", "shaders/deep/ocean.vert", "ripple.frag"]],
-    ))
-    asserts.true(env, "shaders/**/*.glsl" in block, block)
-    asserts.true(env, "shaders/**/*.frag" in block, block)
-    asserts.true(env, "shaders/**/*.vert" in block, block)
-    asserts.true(env, "shaders/deep/**/*.glsl" in block, block)
-    asserts.true(env, "*.glsl" in block, block)
-    asserts.false(env, "**/*.glsl" in block, block)
+    asserts.equals(
+        env,
+        ["*/x.png", "LICENSE*", "NOTICES", "a/b/**", "fonts/**", "pubspec.yaml", "x.png"],
+        spoke_data_patterns(struct(dirs = ["a/b", "fonts"], files = ["x.png"], whole = False)),
+    )
+    asserts.equals(env, ["**"], spoke_data_patterns(struct(dirs = [], files = [], whole = True)))
     return unittest.end(env)
 
-scoped_shader_includes_block_test = unittest.make(_scoped_shader_includes_block_test_impl)
-
-def _own_package_spelling_test_impl(ctx):
-    """`packages/<own name>/x` is also read from `lib/x`; another package's is not listed."""
-    env = unittest.begin(ctx)
-    block = spoke_data_patterns(struct(
-        assets = [struct(path = "packages/material_ui/icons/a.png"), struct(path = "packages/other/b.png")],
-        fonts = [],
-        shaders = [struct(path = "packages/material_ui/shaders/ink_sparkle.frag")],
-    ), "material_ui")
-    asserts.true(env, "lib/shaders/ink_sparkle.frag" in block, block)
-    asserts.true(env, "lib/shaders/**/*.glsl" in block, block)
-    asserts.true(env, "lib/icons/a.png" in block, block)
-    asserts.true(env, "lib/icons/*/a.png" in block, block)
-    asserts.false(env, "lib/b.png" in block, block)
-    asserts.false(env, "packages/other/b.png" in block, block)
-    return unittest.end(env)
-
-own_package_spelling_test = unittest.make(_own_package_spelling_test_impl)
+data_patterns_follow_the_roots_test = unittest.make(_data_patterns_follow_the_roots_test_impl)
 
 def _skipped_dirs_test_impl(ctx):
     """Build output, tool state, the example app, and dot-dirs never link."""
@@ -1391,7 +1370,7 @@ def path_package_test_suite(name):
         non_plugin_package_links_no_android_test,
         outside_workspace_is_refused_test,
         overlapping_entries_link_once_test,
-        own_package_spelling_test,
+        data_patterns_follow_the_roots_test,
         padded_identity_links_test,
         path_spoke_platform_dirs_test,
         plugin_platform_dir_is_mirrored_not_symlinked_test,
@@ -1400,7 +1379,6 @@ def path_package_test_suite(name):
         pubspec_mismatch_is_refused_test,
         relative_marker_decides_test,
         root_lock_needs_no_refusal_test,
-        scoped_shader_includes_block_test,
         skipped_dirs_test,
         skips_stop_at_mirror_root_test,
         unversioned_identity_links_test,

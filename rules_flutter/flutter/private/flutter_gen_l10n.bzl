@@ -24,6 +24,7 @@ It checks what the tool wrote against the declared names and fails, naming the
 difference, when they disagree.
 """
 
+load("@rules_dart//dart:project.bzl", "add_project_files", "project_test_files")
 load("//flutter/private:flutter_assets_tool.bzl", "flutter_assets_tool_of")
 load("//flutter/private:flutter_library.bzl", "flutter_library")
 
@@ -138,7 +139,7 @@ def _under_lib(value):
 def project_language_version(kwargs, l10n):
     """Sets `language_version` to the one pub writes for the package's project, unless it is set.
 
-    The project index (`L10N_PROJECTS`) holds, for each project of the main
+    The project index (`PROJECTS`) holds, for each project of the main
     repository the `flutter` extension read, the `languageVersion` `pub get`
     writes for it: its pubspec's `environment: sdk:` lower bound. A target
     in that package compiles with it, as stock does, with nothing in the
@@ -146,26 +147,13 @@ def project_language_version(kwargs, l10n):
 
     Args:
       kwargs: The target's arguments; changed in place.
-      l10n: The `L10N_PROJECTS` table of `@flutter_l10n//:index.bzl`.
+      l10n: The `PROJECTS` table of `@flutter_projects//:index.bzl`.
     """
     if native.repo_name():
         return
     version = language_version_default(kwargs, l10n.get(native.package_name()))
     if version:
         kwargs["language_version"] = version
-
-def _add_project_files(kwargs, attr, files):
-    """Appends `files` (package-relative names) to `kwargs[attr]`, skipping those it names already."""
-    if not files:
-        return
-    value = kwargs.get(attr, [])
-    if type(value) == "list":
-        named = {native.package_relative_label(v) if type(v) == "string" else v: True for v in value}
-        files = [f for f in files if native.package_relative_label(f) not in named]
-        if files:
-            kwargs[attr] = value + files
-    else:
-        kwargs[attr] = value + files
 
 # A helper of the macros that sets an argument, not a macro of its own.
 # buildifier: disable=unnamed-macro
@@ -174,13 +162,13 @@ def project_license(kwargs, l10n):
 
     The tool's `LicenseCollector` reads a `NOTICES` or `LICENSE` file at the
     root of every package of the package config, the project's own included.
-    For a target in a project's package (`L10N_PROJECTS`) that has one and
+    For a target in a project's package (`PROJECTS`) that has one and
     whose `pubspec` is that package's `pubspec.yaml`, the file is staged with
     the files the pubspec names.
 
     Args:
       kwargs: The target's arguments; changed in place.
-      l10n: The `L10N_PROJECTS` table of `@flutter_l10n//:index.bzl`.
+      l10n: The `PROJECTS` table of `@flutter_projects//:index.bzl`.
     """
     pubspec = kwargs.get("pubspec")
     if native.repo_name() or type(pubspec) not in ("string", "Label"):
@@ -190,54 +178,37 @@ def project_license(kwargs, l10n):
     project = l10n.get(native.package_name())
     license = getattr(project, "license", "") if project != None else ""
     if license:
-        _add_project_files(kwargs, "pubspec_srcs", [license])
+        add_project_files(kwargs, "pubspec_srcs", [license])
 
 # A helper of the macros that sets an argument, not a macro of its own.
 # buildifier: disable=unnamed-macro
 def project_test_data(kwargs, l10n):
     """Adds the fixtures of the project's test tree to a test's `data`, and its `flutter_test_config.dart` to `srcs`.
 
-    `flutter test` runs a test with the project readable, and a test reads its
-    fixtures by a path relative to the project: `test/fixtures/x.json`, the
-    goldens next to it. For a test in a project's package (`L10N_PROJECTS`),
-    every file under `test/` that is not Dart source and not hidden, and is in
-    that package, is `data` by default. A fixture edit reruns every test of
-    the package. Files outside `test/` that a test reads (`lib/l10n/*.arb`, a
-    platform manifest) are named in `data`.
+    The fixtures are rules_dart's default (`project_test_files`): every file
+    under `test/` that is not Dart source and not hidden, and is in the
+    project's package. Files outside `test/` that a test reads
+    (`lib/l10n/*.arb`, a platform manifest) are named in `data`.
 
     `flutter test` also wraps a test in the `flutter_test_config.dart` nearest
     its `main`, in its directory or above up to the project's: that file joins
     `srcs` when `srcs` names none of the project's. What the config imports is
     named in `srcs` as any other source.
 
-    A file under `test/` whose name cannot be a label (a `:`, a `\\` or a
-    control character in it) cannot be `data`: the tests of the package then
-    fail at analysis, naming those files, as one error.
-
     Args:
       kwargs: The target's arguments; changed in place.
-      l10n: The `L10N_PROJECTS` table of `@flutter_l10n//:index.bzl`.
+      l10n: The `PROJECTS` table of `@flutter_projects//:index.bzl`.
     """
     if native.repo_name():
         return
     project = l10n.get(native.package_name())
     if project == None:
         return
-    _add_project_files(kwargs, "data", getattr(project, "test_data", []))
-    config = _nearest_test_config(kwargs.get("main"), getattr(project, "test_configs", []))
+    project_test_files(kwargs, project, "flutter_test")
+    config = _nearest_test_config(kwargs.get("main"), project.test_configs)
     srcs = kwargs.get("srcs", [])
     if config and not (type(srcs) == "list" and [s for s in srcs if type(s) == "string" and s.rpartition(":")[2].rpartition("/")[2] == "flutter_test_config.dart"]):
-        _add_project_files(kwargs, "srcs", [config])
-    unlabelable = getattr(project, "unlabelable", [])
-    if unlabelable:
-        name = "flutter_test_unlabelable_fixtures"
-        if not native.existing_rule(name):
-            _unlabelable_fixtures(
-                name = name,
-                files = unlabelable,
-                visibility = ["//visibility:private"],
-            )
-        _add_project_files(kwargs, "data", [":" + name])
+        add_project_files(kwargs, "srcs", [config])
 
 def _nearest_test_config(main, configs):
     """The config of `configs` (package-relative paths) nearest `main`, or None."""
@@ -253,30 +224,12 @@ def _nearest_test_config(main, configs):
         directory = directory.rpartition("/")[0]
     return None
 
-def _unlabelable_fixtures_impl(ctx):
-    fail(("{n} file(s) under the project's test/ cannot be Bazel labels, so no flutter_test of " +
-          "package //{pkg} has them as data: {files}. A target name cannot hold ':', '\\' or a control " +
-          "character. Rename them, or move them into a directory with a BUILD file of its own, " +
-          "whose files the default leaves out.").format(
-        n = len(ctx.attr.files),
-        pkg = ctx.label.package,
-        files = ", ".join(["'%s'" % f for f in ctx.attr.files]),
-    ))
-
-# The tests of a package whose `test/` holds a file no label can name depend
-# on this target, which fails at analysis naming the files: one error for the
-# package, rather than every target of it failing to load.
-_unlabelable_fixtures = rule(
-    implementation = _unlabelable_fixtures_impl,
-    attrs = {"files": attr.string_list()},
-)
-
 def language_version_default(kwargs, project):
     """The language version a target takes from its project, or None to leave its arguments alone.
 
     Args:
       kwargs: The target's arguments.
-      project: The package's entry of `L10N_PROJECTS`, or None.
+      project: The package's entry of `PROJECTS`, or None.
 
     Returns:
       The project's language version when `kwargs` states none, else None.
@@ -289,7 +242,7 @@ def l10n_attach(name, kwargs, l10n, always = False):
     """Gives a target in a project with an `l10n.yaml` what gen-l10n writes.
 
     In a package of the main repository whose `l10n.yaml` the `flutter`
-    extension read (`L10N_PROJECTS`), declares once per package the
+    extension read (`PROJECTS`), declares once per package the
     `flutter_gen_l10n` target (`_gen_l10n`) and a `flutter_library` of its
     Dart files (`_l10n`, the project's package), and adds that library to the
     `deps` of a target whose `srcs` or `main` is under `lib/`, of a target
@@ -307,7 +260,7 @@ def l10n_attach(name, kwargs, l10n, always = False):
     Args:
       name: The calling target's name, for messages.
       kwargs: The calling target's arguments; changed in place.
-      l10n: The `L10N_PROJECTS` table of `@flutter_l10n//:index.bzl`.
+      l10n: The `PROJECTS` table of `@flutter_projects//:index.bzl`.
       always: Whether to add the library whatever `srcs` and `main` are.
     """
     if native.repo_name():
@@ -364,7 +317,7 @@ def l10n_library_of(project, deps):
     `select()`), `_l10n_<i>` for the hub declared `i`-th after it.
 
     Args:
-      project: The package's entry of `L10N_PROJECTS`.
+      project: The package's entry of `PROJECTS`.
       deps: The target's `deps`, as labels.
 
     Returns:

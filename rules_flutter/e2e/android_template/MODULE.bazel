@@ -1,0 +1,40 @@
+"""E2e test: the app `flutter create` makes, at the Android versions its template names.
+
+`android/` is what `flutter create --platforms=android` of the pinned Flutter release wrote, untouched:
+its Android Gradle plugin, Kotlin and Gradle versions are the newest a user starts from (the other
+Android workspaces are on the floor the Flutter tool accepts). `android_model.json` is written by
+`bazel run //:android_pin` and checked in. The build takes `android.jar` and the NDK's `llvm-strip`
+from the Android SDK: `ANDROID_HOME`, passed with `--repo_env`.
+"""
+
+module(name = "rules_flutter_android_template")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_toolchains")
+
+register_toolchains("@flutter_toolchains//:all")
+
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
+
+register_toolchains("@android_model//:kotlin_toolchain")

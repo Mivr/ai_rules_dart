@@ -1,0 +1,166 @@
+"""E2e: the app of `flutter create`, built in every kind a stock build has.
+
+Debug, profile and release APKs, the APKs of `--split-per-abi`, an app bundle and an AAR, from the
+Android project the template wrote (see MODULE.bazel).
+"""
+
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app", "flutter_android_bundle_test")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_aar", "flutter_android_pin")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library", "flutter_test")
+
+exports_files(["pubspec.lock"])
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:flutter_lints"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+flutter_library(
+    name = "lib",
+    package_name = "android_template",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "@deps//:cupertino_icons",
+        "@deps//:flutter",
+        "@deps//:material_ui",
+    ],
+)
+
+flutter_application(
+    name = "app",
+    package_name = "android_template",
+    main = "lib/main.dart",
+    deps = [":lib"],
+)
+
+flutter_test(
+    name = "widget_test",
+    package_name = "android_template",
+    main = "test/widget_test.dart",
+    pubspec = "pubspec.yaml",
+    deps = [
+        ":lib",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+        "@deps//:material_ui",
+    ],
+)
+
+# `bazel run //:android_pin` writes android_model.json (Gradle evaluates the build once).
+flutter_android_pin(name = "android_pin")
+
+# `flutter build apk --debug`: `//:android_apk` (`//:android` is the same app as split APKs).
+flutter_android_app(
+    name = "android",
+    application = ":app",
+)
+
+# `flutter build apk --profile`.
+flutter_android_app(
+    name = "android_profile",
+    application = ":app",
+    variant = "profile",
+)
+
+# `flutter build apk --release` (`//:android_release_apk`), `--split-per-abi`
+# (`//:android_release_apk_arm64_v8a`, ...) and `flutter build appbundle` (`//:android_release_bundle`).
+flutter_android_app(
+    name = "android_release",
+    application = ":app",
+    split_per_abi = True,
+    variant = "release",
+)
+
+# `flutter build aar`: the module as an AAR, built with `-c opt` (e2e.yaml).
+flutter_android_aar(
+    name = "module_aar",
+    package_name = "dev.rdf.android_template.module",
+    android_abi = "arm64-v8a",
+    application = ":app",
+    tags = ["manual"],
+)
+
+flutter_android_apk_test(
+    name = "android_test",
+    app = "android",
+    classes = [
+        "Ldev/rdf/android_template/MainActivity;",
+        "Lio/flutter/plugins/GeneratedPluginRegistrant;",
+    ],
+    entries = [
+        "assets/flutter_assets/kernel_blob.bin",
+        "lib/arm64-v8a/libflutter.so",
+    ],
+    version_code = 1,
+    version_name = "1.0.0",
+)
+
+flutter_android_apk_test(
+    name = "android_profile_test",
+    absent_entries = ["assets/flutter_assets/kernel_blob.bin"],
+    app = "android_profile",
+    entries = [
+        "lib/armeabi-v7a/libapp.so",
+        "lib/arm64-v8a/libapp.so",
+        "lib/x86_64/libapp.so",
+    ],
+    version_code = 1,
+    version_name = "1.0.0",
+)
+
+# R8 ran: the entry point keeps its name and the rest of the embedding is renamed or removed.
+flutter_android_apk_test(
+    name = "android_release_test",
+    absent_classes = ["Lio/flutter/embedding/android/FlutterActivity;"],
+    absent_entries = ["assets/flutter_assets/kernel_blob.bin"],
+    app = "android_release",
+    classes = ["Ldev/rdf/android_template/MainActivity;"],
+    entries = [
+        "lib/armeabi-v7a/libapp.so",
+        "lib/arm64-v8a/libapp.so",
+        "lib/x86_64/libapp.so",
+    ],
+    version_code = 1,
+    version_name = "1.0.0",
+)
+
+flutter_android_apk_test(
+    name = "android_release_arm64_v8a_test",
+    abi = "arm64-v8a",
+    absent_entries = [
+        "lib/armeabi-v7a/**",
+        "lib/x86_64/**",
+    ],
+    app = "android_release",
+    entries = ["lib/arm64-v8a/libapp.so"],
+    version_code = 2001,
+    version_name = "1.0.0",
+)
+
+flutter_android_bundle_test(
+    name = "android_release_bundle_test",
+    app = "android_release",
+    entries = [
+        "base/lib/arm64-v8a/libapp.so",
+        "BUNDLE-METADATA/com.android.tools.build.libraries/dependencies.pb",
+        "BUNDLE-METADATA/com.android.tools.build.obfuscation/proguard.map",
+    ],
+)
+
+build_test(
+    name = "android_build_test",
+    size = "small",
+    targets = [
+        ":android",
+        ":android_release_apk_armeabi_v7a",
+        ":android_release_apk_x86_64",
+    ],
+)

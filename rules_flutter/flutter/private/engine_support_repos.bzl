@@ -164,13 +164,6 @@ def flutter_font_subset_repo_impl(repository_ctx):
         # Per host OS family, not per Bazel platform: macOS is always
         # `darwin-x64` (see `host_engine_cache_dir`).
         host_dir = "bin/cache/artifacts/engine/" + host_engine_cache_dir(repository_ctx.attr.platform)
-        link_local_file(
-            repository_ctx,
-            sdk,
-            host_dir + "/const_finder.dart.snapshot",
-            "font-subset-tools/const_finder.dart.snapshot",
-            "font-subset const_finder",
-        )
         binary = "font-subset.exe" if repository_ctx.attr.platform.startswith("windows") else "font-subset"
         link_local_file(
             repository_ctx,

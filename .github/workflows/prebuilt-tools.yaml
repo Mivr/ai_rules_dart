@@ -1,0 +1,194 @@
+# The prebuilt tools of a module (rules_dart/dart/private/prebuilt_tools.bzl and
+# its rules_flutter counterpart), as one reusable workflow that the release and
+# a rehearsal both call, so the two cannot drift.
+#
+# `build`: on each host platform the SDK tables list, that platform's own
+# runner builds the module's tool set twice from `ref`, in two consumer
+# workspaces with no cache, and uploads the archives only when the two builds
+# agree byte for byte (`release tools build`, rules_dart/tools/release). A
+# platform whose builds differ uploads only the sidecar saying so, and the
+# release builds its tools from source there. The step that ends each job
+# prints whether the builds were byte-equal and the sizes.
+#
+# Called by dart-release.yaml and flutter-release.yaml (`rehearse: false`): a
+# job that fails fails the release. Called by dart-ci.yaml and flutter-ci.yaml
+# on a dispatch with `prebuilt_tools` (`rehearse: true`): nothing here fails the
+# run, and `rehearse-release-prep` runs release_prep.sh on what the jobs
+# uploaded, on a scratch tag that exists only in that job's clone. A rehearsal
+# pushes no tag and creates no release or attestation.
+name: Prebuilt tools
+on:
+  workflow_call:
+    inputs:
+      module:
+        description: "`rules_dart` or `rules_flutter`: whose tool set is built"
+        required: true
+        type: string
+      ref:
+        description: The tag (a release) or commit (a rehearsal) to build from
+        required: true
+        type: string
+      rehearse:
+        description: Rehearsal, not a release; no job fails the run, and the release_prep.sh job runs
+        required: false
+        default: false
+        type: boolean
+permissions:
+  contents: read
+jobs:
+  build:
+    name: tools (${{ matrix.platform }})
+    strategy:
+      # Every platform runs to its end, so one attempt shows every platform's
+      # problem instead of the first one's. In a release, `release` needs all
+      # of them: a platform whose two builds differ ships no tools and is
+      # simply absent from the table (its job passes), but a job that fails (a
+      # build error, a runner that cannot build) fails this workflow's call,
+      # and `release`, which needs it, is skipped: no archive, no attestation,
+      # no GitHub release. The tag stays pushed; "Re-run failed jobs" of the
+      # run builds the failed platforms again and keeps the gate's result.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-latest
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos-arm64
+            runner: macos-latest
+          - platform: macos-x64
+            runner: macos-15-intel
+          - platform: windows-x64
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    # A rehearsal never turns the run red; a release does.
+    continue-on-error: ${{ inputs.rehearse }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      MODULE: ${{ inputs.module }}
+      PLATFORM: ${{ matrix.platform }}
+      # Git Bash on Windows rewrites an argument that looks like a path, and
+      # turned `//release:release` into `/release:release` (the first
+      # rehearsal's windows-x64 job: "invalid package name '/release'").
+      # dart-ci.yaml sets the same on its Windows `bazel run //...` lines.
+      MSYS2_ARG_CONV_EXCL: "*"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+      - name: Build the tool set twice and compare
+        # The release tool lives in rules_dart/tools; the set it builds is the
+        # module's, from this checkout.
+        working-directory: rules_dart/tools
+        run: >-
+          bazel run //release:release -- tools build --module="$MODULE"
+          --platform="$PLATFORM" --out="$RUNNER_TEMP/prebuilt-tools"
+          --work="$RUNNER_TEMP/prebuilt-tools-work"
+      # The line that says, per platform, what this job made. It runs after a
+      # failed build too, and says so.
+      - name: Say whether the builds were byte-equal, and the sizes
+        if: ${{ !cancelled() }}
+        run: |
+          out="$RUNNER_TEMP/prebuilt-tools"
+          side="$out/tools-$PLATFORM.json"
+          if [[ ! -f "$side" ]]; then
+            verdict="the build failed (no sidecar)"; tools=-; scanner=-
+          elif grep -q '"sha256": "' "$side"; then
+            verdict="byte-equal"
+            tools=$(wc -c <"$out/tools-$PLATFORM.tar.gz" | tr -d ' ')
+            scanner=-
+            [[ -f "$out/pub_scanner-$PLATFORM.tar.gz" ]] &&
+              scanner=$(wc -c <"$out/pub_scanner-$PLATFORM.tar.gz" | tr -d ' ')
+          else
+            verdict="the two builds differ; this platform ships no tools"
+            tools=-; scanner=-
+            sed -n '/"problems"/,$p' "$side"
+          fi
+          line="prebuilt tools: $MODULE $PLATFORM: $verdict; tools archive $tools bytes; scanner archive $scanner bytes"
+          echo "$line"
+          {
+            echo '| module | platform | builds | tools archive bytes | scanner archive bytes |'
+            echo '|---|---|---|---|---|'
+            echo "| $MODULE | $PLATFORM | $verdict | $tools | $scanner |"
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: prebuilt-tools-${{ inputs.module }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/prebuilt-tools/
+          if-no-files-found: error
+  # A rehearsal of what the release's `build` job does with the uploads. The
+  # steps repeat those of bazel-contrib's release_ruleset.yaml (the pinned
+  # checkout, setup-bazel and download-artifact calls, then release_prep.sh at
+  # the repository root), which a reusable workflow cannot be called for in
+  # part: keep them in step with the pin of release_ruleset.yaml in
+  # dart-release.yaml and flutter-release.yaml.
+  rehearse-release-prep:
+    name: release_prep.sh on the uploads (scratch tag, nothing published)
+    if: ${{ !cancelled() && inputs.rehearse }}
+    needs: build
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      MODULE: ${{ inputs.module }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+      # No inputs, as in release_ruleset.yaml: every artifact of the run, each
+      # in a directory of its own named after it.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Where the artifacts arrived
+        run: |
+          ls -d prebuilt-tools-*/ || true
+          find prebuilt-tools-* -type f -exec ls -l {} + || true
+      - name: release_prep.sh on a scratch tag
+        run: |
+          # The tag exists only in this job's clone and is never pushed. It
+          # names a version no release has, so nothing it writes can be
+          # mistaken for one.
+          tag="${MODULE}-v99.99.99"
+          git tag "$tag" HEAD
+          .github/workflows/release_prep.sh "$tag" >release_notes.txt
+      - name: What the script made
+        run: |
+          tag="${MODULE}-v99.99.99"
+          echo "files the release would upload (release_files: ${MODULE}-v*.tar.gz):"
+          ls -l "${MODULE}"-v*.tar.gz
+          echo
+          echo "the table inside the archive:"
+          table=dart/private/prebuilt_tools.json
+          [[ "$MODULE" == rules_flutter ]] && table=flutter/private/prebuilt_tools.json
+          tar xzOf "${tag}.tar.gz" "${MODULE}-99.99.99/$table"
+          echo
+          echo "the line the notes carry for it:"
+          grep -i 'prebuilt' release_notes.txt || echo "(none)"
+          {
+            echo "### release_prep.sh on a scratch tag ($MODULE)"
+            echo
+            echo "The URLs in the table name assets that exist only after a release; nothing was published."
+            echo
+            echo '| module | platform | builds | tools archive bytes | scanner archive bytes |'
+            echo '|---|---|---|---|---|'
+            for side in prebuilt-tools-"${MODULE}"-*/tools-*.json; do
+              dir=$(dirname "$side"); platform=$(basename "$side" .json); platform=${platform#tools-}
+              if grep -q '"sha256": "' "$side"; then
+                tools=$(wc -c <"$dir/tools-$platform.tar.gz" | tr -d ' ')
+                scanner=-
+                [[ -f "$dir/pub_scanner-$platform.tar.gz" ]] &&
+                  scanner=$(wc -c <"$dir/pub_scanner-$platform.tar.gz" | tr -d ' ')
+                echo "| $MODULE | $platform | byte-equal | $tools | $scanner |"
+              else
+                echo "| $MODULE | $platform | the two builds differ | - | - |"
+              fi
+            done
+          } >>"$GITHUB_STEP_SUMMARY"

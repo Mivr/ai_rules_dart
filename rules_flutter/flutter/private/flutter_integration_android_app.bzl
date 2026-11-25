@@ -24,7 +24,7 @@ load(
 
 visibility(["//flutter/..."])
 
-def android_integration_app_kernel(ctx, setup, sources, native_assets):
+def android_integration_app_kernel(ctx, setup, sources, native_assets, recorded_uses = None):
     """Compiles the Android integration-test app kernel, including `defines_files`.
 
     Args:
@@ -32,16 +32,17 @@ def android_integration_app_kernel(ctx, setup, sources, native_assets):
       setup: The `_android_integration_app_setup` struct.
       sources: The `_android_integration_app_sources` struct.
       native_assets: The `integration_test_native_assets` struct.
+      recorded_uses: The File the compile records its uses to, or None.
 
     Returns:
       The compiled kernel `.dill` File.
     """
     if not ctx.files.defines_files:
-        return integration_test_kernel(ctx, setup.sdk, sources, native_assets, setup.aot, setup.mode)
+        return integration_test_kernel(ctx, setup.sdk, sources, native_assets, setup.aot, setup.mode, recorded_uses)
     is_release_aot = setup.aot and setup.mode == "release"
     platform_dill = setup.sdk.platform_kernel_dill_product if is_release_aot else setup.sdk.platform_kernel_dill
     if platform_dill == None:
-        return integration_test_kernel(ctx, setup.sdk, sources, native_assets, setup.aot, setup.mode)
+        return integration_test_kernel(ctx, setup.sdk, sources, native_assets, setup.aot, setup.mode, recorded_uses)
     user_defines = merge_dart_defines(ctx)
     flagfiles = collect_define_flagfiles(ctx, user_defines)
     defines = list(user_defines)
@@ -77,7 +78,7 @@ def android_integration_app_kernel(ctx, setup, sources, native_assets):
         ctx,
         tools,
         kernel_sources,
-        flutter_kernel_outputs(output = dill),
+        flutter_kernel_outputs(output = dill, recorded_uses = recorded_uses),
         options,
         flutter_kernel_dills(),
     )

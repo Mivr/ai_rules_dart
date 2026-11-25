@@ -1,0 +1,11 @@
+schema: mivr-e2e-spec/1
+# The Flutter tool's own asset code decides, as `flutter build bundle` does with Flutter 3.50.
+commands:
+  - name: a packages/<name>/ directory and a dependency's licence are bundled
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 1
+  - name: a dependency's licence path outside its package is refused
+    run: bazel build //escape:escape_app
+    expect:
+      non_zero: true
+      output_contains: Package "escaping" specified a license path "../outside.txt" that escapes its package directory.

@@ -1,7 +1,7 @@
 """Unit tests for dart_binary.bzl helpers and rule kinds."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
-load("//dart:defs.bzl", "dart_binary", "dart_test")
+load("//dart:defs.bzl", "dart_binary")
 load("//dart:providers.bzl", "DartCompileInfo", "DartTestRunnerSnapshotInfo")
 load("//dart/private:dart_binary.bzl", "binary_output_basename", "is_tool_bin_path")
 load("//dart/private:dart_compile.bzl", "compile_quiet_flags")
@@ -25,8 +25,6 @@ _rule_kind_aspect = aspect(
 def _rule_kind_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
-    asserts.equals(env, "rule", type(dart_binary), "dart_binary in //dart:defs.bzl is a rule")
-    asserts.equals(env, "rule", type(dart_test), "dart_test in //dart:defs.bzl is a rule")
     asserts.equals(env, ctx.attr.expected_kind, target[_RuleKindInfo].kind)
     if DartCompileInfo in target:
         asserts.true(

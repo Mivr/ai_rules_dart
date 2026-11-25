@@ -1,0 +1,11 @@
+name: licensed
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  # A licence besides LICENSE, collected into the app's NOTICES.
+  licenses:
+    - EXTRA_LICENSE

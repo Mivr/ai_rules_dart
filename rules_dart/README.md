@@ -29,7 +29,7 @@ archive_override(
 )
 
 dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
-dart.toolchain(dart_version = "3.13.5")
+dart.toolchain(dart_version = "3.14.1")
 use_repo(dart, "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")
@@ -121,6 +121,57 @@ own runner, built from that same package, so Bazel's test features work:
 not reached only through a helper library: the runner comes with that target.
 A test whose `main` does not use `package:test` runs directly, and fails if
 given a filter, shards or tag selectors, because it has no cases to select.
+
+#### What a test of a project gets by default
+
+A project is a directory with a `pubspec.yaml` that a `pub.from_lock` or
+`pub.project` lock of the root module names: the lock's own directory, the members of the pub
+workspace its pubspec declares, and its relative `path:` packages. The
+`dart_library`, `dart_binary` and `dart_test` macros give a target in that
+directory's BUILD file what `dart test` and `dart run` give it, with nothing
+restated:
+
+- **Language version.** A library compiles at the version pub writes for the
+  pubspec (its `environment: sdk:` lower bound). A binary or a test is a member
+  of the pubspec's package (`package_name` and `language_version` from it). A
+  target that states `language_version`, `package_name` or `package` keeps
+  what it states, and a library of the package that states another version
+  than its test fails the build naming both.
+- **Working directory.** A test runs in the project's directory in its
+  runfiles (the `pubspec` attribute, set to the project's `pubspec.yaml`), as
+  `dart test` runs it in the package's, so `File('test/fixtures/x.json')` and
+  `File('pubspec.yaml')` resolve. A test outside a project runs in the runfiles
+  root of the main repository.
+- **Fixtures.** Every file under the project's `test/` that is not Dart source
+  and not hidden is in the test's `data`, a name with a space included. A
+  directory with its own BUILD file is a package of its own and is left out, and
+  so is `failures/`. A file whose name cannot be a label (a `:`, a `\` or a
+  control character) fails the package's tests at analysis, naming it. A file
+  outside `test/` that a test reads is named in `data`. Editing a fixture reruns
+  every test of the package.
+- **`dart_test.yaml`.** The project's `dart_test.yaml` is in the test's
+  `data`, and `package:test` reads it from the directory the test runs in, as
+  under `dart test`: its tags, `skip`, `test_on` and presets apply. Its
+  timeouts do not: Bazel's `size`/`timeout` is the limit.
+
+Tests are declared in the project's own package, the BUILD file beside its
+`pubspec.yaml`: a test in a BUILD file below it, such as `test/BUILD.bazel`,
+gets none of these defaults.
+
+A lock that another rule set resolves, such as rules_flutter's `flutter.pub`,
+is named to these macros with `pub.project`, which indexes the lock's projects
+and declares no hub, no package and no fetch. A lock that a `from_lock` tag
+reads too names its projects once.
+
+```starlark
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.project(lock = "//app:pubspec.lock")
+```
+
+A binary or test that takes the pubspec's `name` fails the build when a
+library of the same directory states another `package_name`, naming both and
+the pubspec's name: one directory is one package, and pub names it after the
+pubspec.
 
 The runner starts from an app-JIT snapshot, trained on one run of it, so each
 test starts faster than from its kernel. The snapshot is skipped when the exec
@@ -539,7 +590,9 @@ This is not `pub.package()`, which fetches a published package from pub.dev;
 
 #### Executables in a package
 
-A `dart_binary`, `dart_test`, `dart_js_binary` or `dart_wasm_binary` belongs to
+A `dart_binary` or `dart_test` in a project's directory is a member of the
+pubspec's package by default (see "What a test of a project gets by default").
+Elsewhere, a `dart_binary`, `dart_test`, `dart_js_binary` or `dart_wasm_binary` belongs to
 no package unless it says so, and usually need not: its entrypoint takes the
 language version of the package whose root directory contains it, as Dart does
 for `bin/` and `test/`. A package with no `dart_library` has nothing to state
@@ -752,7 +805,7 @@ staged sources with zero `--summary` flags. Flutter targets resolve `dart:ui` vi
 Turning the flag off therefore no longer runs the SDK's own `dart analyze`: it
 runs the pinned `package:analyzer` and the vendored linter, the same as with the
 flag on, so both modes report the same diagnostics. They can differ from stock
-`dart analyze`; a lint rule the SDK lacks (on SDK 3.13.5, `unnecessary_this_alias`)
+`dart analyze`; a lint rule the SDK lacks
 is accepted rather than reported as `undefined_lint`.
 
 Stock SDK `dart analyze` via `analyze_runner` is used only as fallback in these

@@ -1,5 +1,4 @@
-/// Guards a Flutter web compile (dart2js, dart2wasm, or the `--cfe-only`
-/// icon kernel) and then runs it.
+/// Guards a Flutter web compile (dart2js or dart2wasm) and then runs it.
 ///
 /// Before the compiler runs, every declared source's directives are checked
 /// against the declared inputs (`directive_guard.dart`): a directive that
@@ -46,8 +45,7 @@ Future<void> main(List<String> argv) async {
 /// (`--declared-inputs <manifest>`): the manifest lists one exec-root-relative
 /// path per line — the declared sources, then a `# allowed-reads` marker, then
 /// the other declared files the compiler may read — written by the
-/// `flutter_dart2js_action`,
-/// `flutter_dart2wasm_action` and `flutter_dart2js_cfe_action` helpers. The
+/// `flutter_dart2wasm_action` and `flutter_dart2js_action` helpers. The
 /// `.dart` sources' directives are refused before the compiler runs when they
 /// name an undeclared file; a source that cannot be read as text fails closed
 /// for the same reason. The `--multi-root` values in the compiler's own

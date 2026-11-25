@@ -99,18 +99,6 @@ bzl_library(
 )
 
 bzl_library(
-    name = "asset_uri",
-    srcs = ["asset_uri.bzl"],
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
-    name = "asset_variant",
-    srcs = ["asset_variant.bzl"],
-    visibility = ["//visibility:public"],
-)
-
-bzl_library(
     name = "build_settings",
     srcs = ["build_settings.bzl"],
     visibility = ["//visibility:public"],
@@ -145,7 +133,6 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":app_entrypoint",
-        ":asset_uri",
         ":flutter_compile",
         ":flutter_defines_files",
         ":flutter_info",
@@ -428,6 +415,7 @@ bzl_library(
     deps = [
         ":flutter_assets_tool",
         ":flutter_library",
+        "@rules_dart//dart:project",
     ],
 )
 
@@ -447,6 +435,18 @@ bzl_library(
     name = "flutter_assets_tool",
     srcs = ["flutter_assets_tool.bzl"],
     visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "prebuilt_tools",
+    srcs = ["prebuilt_tools.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":download",
+        ":toolchains_repo",
+        "@rules_dart//dart:prebuilt_tools",
+        "@rules_dart//dart:providers",
+    ],
 )
 
 bzl_library(
@@ -480,7 +480,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":flutter_pub_path",
-        "@rules_dart//dart/pub:pub_lock_package",
+        "@rules_dart//dart/pub:project",
         "@rules_dart//dart/pub:yaml",
     ],
 )
@@ -522,7 +522,7 @@ bzl_library(
         ":flutter_integration_test_ios",
         ":flutter_integration_test_linux",
         ":flutter_integration_test_web",
-        "@flutter_l10n//:index",
+        "@flutter_projects//:index",
         "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",
     ],
@@ -744,7 +744,6 @@ bzl_library(
     srcs = ["flutter_library.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":asset_uri",
         ":flutter_info",
         ":flutter_kernel_tools",
         "//flutter:providers",
@@ -831,12 +830,6 @@ bzl_library(
         ":plugin_registrant",
         "//flutter:providers",
     ],
-)
-
-bzl_library(
-    name = "flutter_manifest_validate",
-    srcs = ["flutter_manifest_validate.bzl"],
-    visibility = ["//visibility:public"],
 )
 
 bzl_library(
@@ -1136,7 +1129,6 @@ bzl_library(
     srcs = ["flutter_pub_package.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":asset_uri",
         ":flutter_pub_apple",
         ":flutter_pub_apple_local",
         ":flutter_pub_git",
@@ -1207,7 +1199,6 @@ bzl_library(
     srcs = ["flutter_pub_scc_spoke.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":asset_uri",
         ":download",
         ":flutter_pub_apple",
         ":flutter_pub_apple_local",
@@ -1265,9 +1256,6 @@ bzl_library(
     name = "flutter_pubspec",
     srcs = ["flutter_pubspec.bzl"],
     visibility = ["//visibility:public"],
-    deps = [
-        ":flutter_manifest_validate",
-    ],
 )
 
 bzl_library(

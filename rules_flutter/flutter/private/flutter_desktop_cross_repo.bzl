@@ -77,7 +77,6 @@ load(
 
 flutter_toolchain(
     name = "flutter_toolchain",
-    const_finder = "@{host_repo_name}//:font-subset-tools/const_finder.dart.snapshot",
     dart = "@{host_repo_name}//:dart-sdk/bin/{dart_bin}",
     dart_sdk = "@{host_repo_name}//:dart_sdk_files",
     dart_vm_files = "@{host_repo_name}//:dart_vm_files",

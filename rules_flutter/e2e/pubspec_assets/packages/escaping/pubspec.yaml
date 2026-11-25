@@ -1,0 +1,11 @@
+name: escaping
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+flutter:
+  # Outside the package: Flutter 3.50 refuses it.
+  licenses:
+    - ../outside.txt

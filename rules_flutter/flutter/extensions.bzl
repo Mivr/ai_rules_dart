@@ -52,6 +52,7 @@ load("//flutter/private:flutter_pub_plugin_deps.bzl", "ios_plugin_deps_lock_erro
 load("//flutter/private:flutter_pub_scc_spoke.bzl", "flutter_pub_scc_package")
 load("//flutter/private:flutter_pub_tag.bzl", "flutter_pub_tag", "validate_swift_package_product_deps")
 load("//flutter/private:flutter_sdk_package.bzl", "declare_sdk_source", "declare_sdk_spokes", "flutter_sdk_local_source_repo")
+load("//flutter/private:prebuilt_tools.bzl", "flutter_prebuilt_tools")
 load("//flutter/private:pub_lock_sdks.bzl", "hosted_package_sha256", "lock_flutter_constraint", "version_below_lower_bound")
 load("//flutter/private:swiftpm_package.bzl", "swiftpm_package")
 load("//flutter/private:swiftpm_resolved.bzl", "check_swiftpm_config_present", "check_swiftpm_dicts", "classify_swiftpm_pin", "pub_spoke_swiftpm_attrs", "read_swiftpm_pins", "swiftpm_spoke_attrs")
@@ -350,7 +351,7 @@ def _register_local_toolchain(name, local_path, lock_flutter_constraints, darwin
     )
     return struct(version = "", local_path = local_path, source_label = "")
 
-def _register_download_toolchain(name, selected, merged, darwin_sdk, llvm_tool_repos):
+def _register_download_toolchain(name, selected, merged, darwin_sdk, llvm_tool_repos, prebuilt_tools):
     """Registers one downloaded toolchain and its asset tool repo."""
     if selected not in merged.versions:
         fail(unknown_version_message(selected))
@@ -371,6 +372,7 @@ def _register_download_toolchain(name, selected, merged, darwin_sdk, llvm_tool_r
         darwin_sdk_sha256 = darwin_sdk.sha256,
         darwin_sdk_swift_toolchain_path = darwin_sdk.swift_toolchain_path,
         darwin_sdk_llvm_tool_repos = llvm_tool_repos,
+        prebuilt_tools = prebuilt_tools,
     )
 
     # One extraction of the release's source tarball, shared by every SDK
@@ -392,12 +394,24 @@ def _register_download_toolchain(name, selected, merged, darwin_sdk, llvm_tool_r
 
 def _register_all_toolchains(module_ctx, registrations, merged, lock_flutter_constraints, darwin_sdk):
     """Registers every requested toolchain; returns name → selected info."""
-    selected_info = {}
+    sources = {}
     for name, requests in registrations.items():
         source = select_toolchain_source(name, requests)
         if source.note:
             # buildifier: disable=print
             print("NOTE: " + source.note)
+        sources[name] = source
+
+    # The release's prebuilt tools (`//flutter/private:prebuilt_tools.bzl`):
+    # the hub offers the default toolchain's, and each downloaded toolchain
+    # of a listed version takes its archives.
+    default = sources.get(_DEFAULT_NAME)
+    prebuilt = flutter_prebuilt_tools(
+        module_ctx,
+        default.version if default != None and not default.local_path else "",
+    )
+    selected_info = {}
+    for name, source in sources.items():
         llvm_tool_repos = _llvm_tool_repos_for_modules(
             modules = module_ctx.modules,
             sdk_configured = darwin_sdk.configured,
@@ -411,7 +425,7 @@ def _register_all_toolchains(module_ctx, registrations, merged, lock_flutter_con
                 llvm_tool_repos,
             )
             continue
-        selected_info[name] = _register_download_toolchain(name, source.version, merged, darwin_sdk, llvm_tool_repos)
+        selected_info[name] = _register_download_toolchain(name, source.version, merged, darwin_sdk, llvm_tool_repos, prebuilt.get(source.version, {}))
     return selected_info
 
 def _check_pub_flutter_floor(lock_data, toolchain_info, pub_tag):

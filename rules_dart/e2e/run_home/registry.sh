@@ -79,6 +79,10 @@ RUN_HOME_ENTRIES=(
   '@rules_dart//dart/private:analyzer_summary_tool||caller-home|nonzero'
   '@rules_dart//dart:import_check||caller-home|nonzero'
   '@rules_dart//dart:kernel_link||caller-home|nonzero'
+  # the AOT snapshot tools' sources, for rules_flutter's prebuilt set
+  '@rules_dart//dart/private/tools:compile_wrapper_source||caller-home|nonzero'
+  '@rules_dart//dart/private/tools:import_check_source||caller-home|nonzero'
+  '@rules_dart//dart/private/tools:kernel_link_source||caller-home|nonzero'
   # --- public but not runnable: `bazel run` must refuse each one ---
   '@rules_dart//dart/private:analyzer_sdk_summary_input||n/a|refuse'
   '@rules_dart//dart/guard:directive_guard||n/a|refuse'

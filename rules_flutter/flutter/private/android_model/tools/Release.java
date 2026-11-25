@@ -1,37 +1,68 @@
-// A release build's code and resources, with AGP's own drivers.
+// A release build's code and resources, through the API that R8 publishes.
 //
-//   r8   the whole program through R8 as AGP's R8 task runs it: `R8Tool.runR8` of AGP's builder
-//        library, with the inputs that task gives it (read from an input dump of the stock build of AGP
-//        9.1.0): the class jars as program, the merged Java resources, android.jar with the platform's
-//        optional libraries and the lambda stubs as library, the compile-only jars as classpath, the
-//        rule files of the app, of the library projects and of the Maven artifacts, the linked
+//   r8   the whole program through R8 as AGP's R8 task runs it. The command is built with
+//        `R8Command.builder()` and carries what AGP's own driver (`R8Tool.runR8` of its builder
+//        library, read in AGP 9.1.1 and 9.3.1) puts on it for an app without feature modules: the
+//        class jars as program, the merged Java resources as data, android.jar with the platform's
+//        optional libraries and the lambda stubs as library, the compile-only jars as classpath,
+//        the rule files of the app, of the library projects and of the Maven artifacts, the linked
 //        resources in proto format (shrunk in the same run) and the baseline profile (rewritten).
 //   l8   (in Dexing) calls `shrunkL8` here for a build that shrinks: the desugared library reduced to
 //        what the app's final dex uses, as AGP's L8DexWorkAction does it (trace references, then L8).
+//
+// Nothing here names a class of AGP's builder library: its configuration classes change from one
+// AGP to the next (9.3 gave `ResourceShrinkingConfig` and `ProguardConfig` other constructors), and
+// the tool is compiled against the R8 the pin names. What AGP 9.3 adds to the command and this
+// tool does not: an origin for every rule file (only diagnostics name it) and two reports of R8's
+// rule analysis (files in Gradle's build directory that no step reads).
 package rules_flutter.android;
 
-import com.android.builder.dexing.KeepRulesConfig;
-import com.android.builder.dexing.L8OutputMode;
-import com.android.builder.dexing.L8Tool;
-import com.android.builder.dexing.MainDexListConfig;
-import com.android.builder.dexing.ProguardConfig;
-import com.android.builder.dexing.ProguardOutputFiles;
-import com.android.builder.dexing.R8OutputType;
-import com.android.builder.dexing.R8Tool;
-import com.android.builder.dexing.ResourceShrinkingConfig;
-import com.android.builder.dexing.ToolConfig;
-import com.android.builder.dexing.TraceReferenceToolKt;
-import com.android.ide.common.blame.Message;
-import com.android.ide.common.blame.MessageReceiver;
+import com.android.tools.r8.AndroidResourceInput;
+import com.android.tools.r8.AndroidResourceProvider;
+import com.android.tools.r8.ArchiveProgramResourceProvider;
+import com.android.tools.r8.ArchiveProtoAndroidResourceConsumer;
+import com.android.tools.r8.ArchiveProtoAndroidResourceProvider;
+import com.android.tools.r8.AssertionsConfiguration;
+import com.android.tools.r8.BaseCompilerCommand;
+import com.android.tools.r8.ClassFileConsumer;
+import com.android.tools.r8.CompilationMode;
+import com.android.tools.r8.DataDirectoryResource;
+import com.android.tools.r8.DataEntryResource;
+import com.android.tools.r8.DataResourceConsumer;
+import com.android.tools.r8.DataResourceProvider;
+import com.android.tools.r8.Diagnostic;
+import com.android.tools.r8.DiagnosticsHandler;
+import com.android.tools.r8.DexIndexedConsumer;
+import com.android.tools.r8.L8;
+import com.android.tools.r8.L8Command;
+import com.android.tools.r8.ProgramResource;
+import com.android.tools.r8.ProgramResourceProvider;
+import com.android.tools.r8.R8;
+import com.android.tools.r8.R8Command;
+import com.android.tools.r8.ResourcePath;
+import com.android.tools.r8.StringConsumer;
+import com.android.tools.r8.TextInputStream;
+import com.android.tools.r8.TextOutputStream;
+import com.android.tools.r8.origin.Origin;
+import com.android.tools.r8.origin.PathOrigin;
+import com.android.tools.r8.profile.art.ArtProfileBuilder;
+import com.android.tools.r8.profile.art.ArtProfileConsumer;
+import com.android.tools.r8.profile.art.ArtProfileProvider;
+import com.android.tools.r8.tracereferences.TraceReferences;
+import com.android.tools.r8.tracereferences.TraceReferencesCommand;
+import com.android.tools.r8.tracereferences.TraceReferencesKeepRules;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintStream;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
@@ -42,6 +73,7 @@ import java.util.TreeSet;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 final class Release {
   private static List<Path> paths(List<String> names) {
@@ -123,8 +155,203 @@ final class Release {
     return out;
   }
 
+  /** R8's errors, collected; its warnings and notes are about library code and not the user's to fix. */
+  private static final class Problems implements DiagnosticsHandler {
+    final List<String> errors = new ArrayList<>();
+
+    @Override
+    public synchronized void error(Diagnostic d) {
+      String where = d.getOrigin() == null || d.getOrigin() == Origin.unknown() ? "" : d.getOrigin() + ": ";
+      errors.add(where + d.getDiagnosticMessage());
+    }
+
+    @Override
+    public void warning(Diagnostic d) {}
+
+    @Override
+    public void info(Diagnostic d) {}
+  }
+
+  /** Whether a Java resource is a shrinker rule file a jar carries: R8 gets those as rule files, not as data. */
+  private static boolean embeddedRule(String name) {
+    String n = name.toLowerCase(java.util.Locale.US);
+    return n.startsWith("meta-inf/proguard/") || n.startsWith("/meta-inf/proguard/")
+        || n.startsWith("meta-inf/com.android.tools/") || n.startsWith("/meta-inf/com.android.tools/");
+  }
+
+  /** The merged Java resources as data of the program: R8 rewrites what names classes (service files). */
+  private static final class JavaResources implements ProgramResourceProvider, DataResourceProvider, AutoCloseable {
+    private final Path jar;
+    private final ZipFile zip;
+
+    JavaResources(Path jar) throws IOException {
+      this.jar = jar;
+      this.zip = new ZipFile(jar.toFile());
+    }
+
+    @Override
+    public Collection<ProgramResource> getProgramResources() {
+      return List.of();
+    }
+
+    @Override
+    public DataResourceProvider getDataResourceProvider() {
+      return this;
+    }
+
+    @Override
+    public void accept(DataResourceProvider.Visitor visitor) {
+      for (Enumeration<? extends ZipEntry> e = zip.entries(); e.hasMoreElements();) {
+        ZipEntry entry = e.nextElement();
+        if (entry.isDirectory()) {
+          visitor.visit(DataDirectoryResource.fromZip(zip, entry));
+        } else if (!entry.getName().endsWith(".class") && !embeddedRule(entry.getName())) {
+          visitor.visit(DataEntryResource.fromZip(zip, entry));
+        }
+      }
+    }
+
+    @Override
+    public void close() throws IOException {
+      zip.close();
+    }
+  }
+
+  /** The Java resources R8 gives back, as a jar. */
+  private static final class JavaResourcesOut implements DataResourceConsumer, AutoCloseable {
+    private final Path jar;
+    private ZipOutputStream out;
+
+    JavaResourcesOut(Path jar) {
+      this.jar = jar;
+    }
+
+    private void put(String name, byte[] content) throws IOException {
+      if (out == null) out = new ZipOutputStream(Files.newOutputStream(jar));
+      ZipEntry entry = new ZipEntry(name);
+      entry.setTime(0);
+      out.putNextEntry(entry);
+      if (content != null) out.write(content);
+      out.closeEntry();
+    }
+
+    @Override
+    public synchronized void accept(DataDirectoryResource directory, DiagnosticsHandler handler) {
+      try {
+        put(directory.getName() + "/", null);
+      } catch (IOException e) {
+        throw new java.io.UncheckedIOException(e);
+      }
+    }
+
+    @Override
+    public synchronized void accept(DataEntryResource file, DiagnosticsHandler handler) {
+      try (InputStream in = file.getByteStream()) {
+        put(file.getName(), in.readAllBytes());
+      } catch (IOException | com.android.tools.r8.ResourceException e) {
+        throw new RuntimeException(e);
+      }
+    }
+
+    @Override
+    public void finished(DiagnosticsHandler handler) {}
+
+    @Override
+    public synchronized void close() throws IOException {
+      if (out != null) out.close();
+    }
+  }
+
+  /** A keep-rules XML file of the resources (`tools:keep`), which R8's resource shrinker reads. */
+  private static final class KeepRulesXml implements AndroidResourceInput {
+    private final Path file;
+
+    KeepRulesXml(Path file) {
+      this.file = file;
+    }
+
+    @Override
+    public Origin getOrigin() {
+      return new PathOrigin(file);
+    }
+
+    @Override
+    public ResourcePath getPath() {
+      return () -> file.toString();
+    }
+
+    @Override
+    public AndroidResourceInput.Kind getKind() {
+      return AndroidResourceInput.Kind.KEEP_RULE_FILE;
+    }
+
+    @Override
+    public InputStream getByteStream() {
+      try {
+        return new java.io.ByteArrayInputStream(Files.readAllBytes(file));
+      } catch (IOException e) {
+        throw new java.io.UncheckedIOException(e);
+      }
+    }
+  }
+
+  /** A baseline profile in its text form for R8 or L8 to rewrite, and where the rewritten one goes. */
+  private static void rewriteProfile(BaseCompilerCommand.Builder<?, ?> builder, Path in, Path out) {
+    ArtProfileProvider provider = new ArtProfileProvider() {
+      @Override
+      public void getArtProfile(ArtProfileBuilder profile) {
+        profile.addHumanReadableArtProfile(
+            new TextInputStream() {
+              @Override
+              public InputStream getInputStream() {
+                try {
+                  return Files.newInputStream(in);
+                } catch (IOException e) {
+                  throw new java.io.UncheckedIOException(e);
+                }
+              }
+
+              @Override
+              public Charset getCharset() {
+                return StandardCharsets.UTF_8;
+              }
+            },
+            parser -> {});
+      }
+
+      @Override
+      public Origin getOrigin() {
+        return new PathOrigin(in);
+      }
+    };
+    ArtProfileConsumer consumer = new ArtProfileConsumer() {
+      @Override
+      public TextOutputStream getHumanReadableArtProfileConsumer() {
+        return new TextOutputStream() {
+          @Override
+          public OutputStream getOutputStream() {
+            try {
+              return Files.newOutputStream(out);
+            } catch (IOException e) {
+              throw new java.io.UncheckedIOException(e);
+            }
+          }
+
+          @Override
+          public Charset getCharset() {
+            return StandardCharsets.UTF_8;
+          }
+        };
+      }
+
+      @Override
+      public void finished(DiagnosticsHandler handler) {}
+    };
+    builder.addArtProfileForRewriting(provider, consumer);
+  }
+
   static int r8(List<String> args, PrintStream err) throws Exception {
-    AndroidTool.Args a = new AndroidTool.Args(args, List.of("--debuggable", "--no-minify", "--final-res-ids", "--no-full-mode", "--legacy-keep-rules"));
+    AndroidTool.Args a = new AndroidTool.Args(args, List.of("--debuggable", "--no-minify", "--no-full-mode", "--legacy-keep-rules"));
     Path dexOut = Paths.get(a.one("--out-dex")).toAbsolutePath();
     Path work = Files.createTempDirectory(dexOut.getParent(), "r8");
     try {
@@ -151,77 +378,106 @@ final class Release {
 
       Path dexDir = Files.createDirectories(work.resolve("dex"));
       Path javaResOut = Paths.get(a.one("--out-java-res")).toAbsolutePath();
-      ProguardOutputFiles reports = new ProguardOutputFiles(
-          Paths.get(a.one("--out-mapping")).toAbsolutePath(),
-          work.resolve("mapping.prt"),
-          Paths.get(a.one("--out-seeds")).toAbsolutePath(),
-          Paths.get(a.one("--out-usage")).toAbsolutePath(),
-          Paths.get(a.one("--out-config")).toAbsolutePath(),
-          work.resolve("missing_rules.txt"));
-      // AGP's R8Task: tree shaking and minification on, desugaring on, dex output; full mode and,
-      // since AGP 9, keep rules read strictly (a kept class does not keep its default constructor),
-      // unless the app's Gradle properties say otherwise.
-      ToolConfig tool = new ToolConfig(
-          minApi,
-          a.has("--debuggable"),
-          /* disableTreeShaking */ false,
-          /* disableMinification */ a.has("--no-minify"),
-          /* disableDesugaring */ false,
-          /* fullMode */ !a.has("--no-full-mode"),
-          /* strictFullModeForKeepRules */ !a.has("--legacy-keep-rules"),
-          /* isolatedSplits */ Boolean.FALSE,
-          R8OutputType.DEX,
-          /* mainDexListDisallowed */ true);
+      Path mapping = Paths.get(a.one("--out-mapping")).toAbsolutePath();
+      Path metadata = Paths.get(a.one("--out-metadata")).toAbsolutePath();
 
-      ResourceShrinkingConfig shrink = null;
+      Problems problems = new Problems();
+      R8Command.Builder b = R8Command.builder(problems);
+      b.setBuildMetadataConsumer(record -> {
+        try {
+          Files.writeString(metadata, record.toJson(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+          throw new java.io.UncheckedIOException(e);
+        }
+      });
+      // AGP's R8Task for an app: dex output for the app's minSdk (native multidex, so no main dex
+      // list), desugaring on, tree shaking on, minification unless the rules say otherwise; full
+      // mode and, since AGP 9, keep rules read strictly (a kept class does not keep its default
+      // constructor), unless the app's Gradle properties say otherwise.
+      b.setMinApiLevel(minApi);
+      if (a.has("--desugared-lib-config")) {
+        b.addSpecialLibraryConfiguration(Files.readString(Paths.get(a.one("--desugared-lib-config")), StandardCharsets.UTF_8));
+      }
+      if (a.has("--debuggable")) b.addAssertionsConfiguration(AssertionsConfiguration.Builder::compileTimeEnableAllAssertions);
+      b.addProguardConfigurationFiles(configs);
+      Files.createDirectories(mapping.getParent());
+      b.setProguardMapOutputPath(mapping);
+      b.setPartitionMapOutputPath(work.resolve("mapping.prt"));
+      b.setProguardSeedsConsumer(new StringConsumer.FileConsumer(Paths.get(a.one("--out-seeds")).toAbsolutePath()));
+      b.setProguardUsageConsumer(new StringConsumer.FileConsumer(Paths.get(a.one("--out-usage")).toAbsolutePath()));
+      b.setProguardConfigurationConsumer(new StringConsumer.FileConsumer(Paths.get(a.one("--out-config")).toAbsolutePath()));
+      b.setMode(a.has("--debuggable") ? CompilationMode.DEBUG : CompilationMode.RELEASE);
+      b.setDisableTreeShaking(false);
+      b.setDisableMinification(a.has("--no-minify"));
+      b.setDisableDesugaring(false);
+      b.setEnableVerboseSyntheticNames(true);
+      b.setProguardCompatibility(a.has("--no-full-mode"));
+      b.enableLegacyFullModeForKeepRules(a.has("--legacy-keep-rules"));
+      b.setEnableIsolatedSplits(false);
+      b.setEnableExperimentalMissingLibraryApiModeling(true);
+      for (Path jar : paths(a.all("--program"))) b.addProgramResourceProvider(ArchiveProgramResourceProvider.fromArchive(jar));
+      b.addLibraryFiles(paths(a.all("--lib")));
+      b.addClasspathFiles(paths(a.all("--classpath")));
+      if (hasProfile) rewriteProfile(b, profileIn, profileOut);
+
       if (a.has("--resources")) {
-        // The resource source files, for the keep rules XML files carry (`tools:keep`): AGP walks
-        // the merged resource directory; here the directories of the libraries' own files.
-        Set<File> dirs = new LinkedHashSet<>();
+        // Resource shrinking in the same run, as AGP sets it up: each linked resource archive (proto
+        // format) with the file its shrunk form goes to, and the keep rules XML files carry
+        // (`tools:keep`), which AGP takes from the merged resource directory; here from the
+        // directories of the libraries' own files.
+        List<File> linked = files(a.all("--resources"));
+        List<File> shrunk = files(a.all("--out-resources"));
+        for (int i = 0; i < linked.size(); i++) {
+          Path in = linked.get(i).toPath();
+          Path out = shrunk.get(i).toPath();
+          b.addFeatureSplit(split -> split
+              .setAndroidResourceProvider(new ArchiveProtoAndroidResourceProvider(in))
+              .setAndroidResourceConsumer(new ArchiveProtoAndroidResourceConsumer(out))
+              .setProgramConsumer(DexIndexedConsumer.emptyConsumer())
+              .build());
+        }
+        Set<Path> dirs = new LinkedHashSet<>();
         for (String f : a.all("--res-file")) {
           if (!f.endsWith(".xml")) continue;
-          File parent = new File(f).getAbsoluteFile().getParentFile();
+          Path parent = Paths.get(f).toAbsolutePath().getParent();
           if (parent != null) dirs.add(parent);
         }
-        shrink = new ResourceShrinkingConfig(
-            files(a.all("--resources")),
-            new ArrayList<>(dirs),
-            List.of(),
-            /* optimizedShrinking */ true,
-            /* nonFinalResIds */ !a.has("--final-res-ids"),
-            new File(a.one("--out-resources-log")).getAbsoluteFile(),
-            files(a.all("--out-resources")),
-            null);
+        List<AndroidResourceInput> keepRules = new ArrayList<>();
+        for (Path dir : dirs) {
+          try (Stream<Path> walk = Files.walk(dir)) {
+            for (Path f : walk.filter(p -> Files.isRegularFile(p) && p.toString().endsWith(".xml")).sorted().toList()) keepRules.add(new KeepRulesXml(f));
+          }
+        }
+        b.setAndroidResourceProvider(new AndroidResourceProvider() {
+          @Override
+          public Collection<AndroidResourceInput> getAndroidResources() {
+            return keepRules;
+          }
+        });
+        b.setAndroidResourceConsumer((output, handler) -> {});
+        Path log = Paths.get(a.one("--out-resources-log")).toAbsolutePath();
+        b.setResourceShrinkerConfiguration(shrinker -> shrinker
+            .enableOptimizedShrinkingWithR8()
+            .setDebugConsumer(new StringConsumer.FileConsumer(log))
+            .build());
       }
 
-      List<String> problems = new ArrayList<>();
-      MessageReceiver receiver = message -> {
-        if (message.getKind() == Message.Kind.ERROR) problems.add(message.getText());
-      };
-      R8Tool.runR8(
-          paths(a.all("--program")),
-          dexDir,
-          javaResIn,
-          javaResOut,
-          paths(a.all("--lib")),
-          paths(a.all("--classpath")),
-          tool,
-          new ProguardConfig(configs, null, List.of(), reports),
-          new MainDexListConfig(List.of(), List.of(), List.of(), null),
-          shrink,
-          receiver,
-          List.of(),
-          List.of(),
-          null,
-          null,
-          a.has("--desugared-lib-config") ? Files.readString(Paths.get(a.one("--desugared-lib-config")), StandardCharsets.UTF_8) : null,
-          hasProfile ? profileIn : null,
-          hasProfile ? profileOut : null,
-          null,
-          Paths.get(a.one("--out-metadata")).toAbsolutePath(),
-          null,
-          null);
-      for (String p : problems) err.println(p);
+      boolean failed = false;
+      try (JavaResources javaRes = new JavaResources(javaResIn); JavaResourcesOut javaResWriter = new JavaResourcesOut(javaResOut)) {
+        b.addProgramResourceProvider(javaRes);
+        b.setProgramConsumer(new DexIndexedConsumer.ForwardingConsumer(new DexIndexedConsumer.DirectoryConsumer(dexDir)) {
+          @Override
+          public DataResourceConsumer getDataResourceConsumer() {
+            return javaResWriter;
+          }
+        });
+        R8.run(b.build());
+      } catch (com.android.tools.r8.CompilationFailedException e) {
+        failed = true;
+        if (problems.errors.isEmpty()) problems.errors.add(String.valueOf(e.getCause() != null ? e.getCause() : e));
+      }
+      for (String p : problems.errors) err.println(p);
+      if (failed) return 1;
 
       // The dex files as one archive, in order.
       try (Apk.ZipWriter z = new Apk.ZipWriter(dexOut)) {
@@ -325,7 +581,7 @@ final class Release {
    */
   static void shrunkL8(List<Path> jars, String config, List<Path> boot, int minApi, boolean debuggable, List<Path> appDex, Path mapping, Path mappingOut, Path profileIn, Path profileOut, Path outDir, Path work, PrintStream err) throws Exception {
     Path classes = Files.createDirectories(work.resolve("desugared"));
-    L8Tool.runL8(jars, classes, config, boot, minApi, new KeepRulesConfig(List.of(), List.of()), debuggable, L8OutputMode.ClassFile, null, null, null, null);
+    runL8(jars, config, boot, minApi, debuggable, new ClassFileConsumer.ArchiveConsumer(classes.resolve("desugared-desugar-lib.jar")), null, null, null, null, null);
     List<Path> desugared = new ArrayList<>();
     try (Stream<Path> s = Files.list(classes)) {
       s.filter(p -> p.getFileName().toString().endsWith(".jar")).sorted().forEach(desugared::add);
@@ -346,7 +602,12 @@ final class Release {
       }
     }
     Path keep = work.resolve("keep_rules.txt");
-    TraceReferenceToolKt.runTraceReferenceTool(boot, desugared, dexFiles, keep);
+    TraceReferences.run(TraceReferencesCommand.builder()
+        .setConsumer(TraceReferencesKeepRules.builder().setAllowObfuscation(false).setOutputConsumer(new StringConsumer.FileConsumer(keep)).build())
+        .addLibraryFiles(boot)
+        .addTargetFiles(desugared)
+        .addSourceFiles(dexFiles)
+        .build());
     Path expanded = null;
     if (profileIn != null && Files.size(profileIn) > 0) {
       expanded = work.resolve("l8-baseline-prof.txt");
@@ -354,9 +615,68 @@ final class Release {
       for (Path p : desugared) paths.add(p.toString());
       expandProfile(profileIn, expanded, paths, err);
     }
-    L8Tool.runL8(jars, outDir, config, boot, minApi, new KeepRulesConfig(List.of(keep), List.of()), debuggable, L8OutputMode.DexIndexed,
+    runL8(jars, config, boot, minApi, debuggable, new DexIndexedConsumer.DirectoryConsumer(outDir), keep,
         expanded, expanded != null ? profileOut : null, mapping, mappingOut);
     if (mappingOut != null && !Files.exists(mappingOut)) Files.copy(mapping, mappingOut);
     if (profileOut != null && !Files.exists(profileOut)) Files.write(profileOut, new byte[0]);
+  }
+
+  /** The id R8 gave its mapping file (`# pg_map_id: <id>` in the header), or null. */
+  private static String mapId(Path mapping) throws IOException {
+    try (java.io.BufferedReader reader = Files.newBufferedReader(mapping, StandardCharsets.UTF_8)) {
+      for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+        String t = line.trim();
+        if (t.startsWith("# pg_map_id:")) return t.substring(t.indexOf(':') + 1).trim();
+        if (!t.isEmpty() && !t.startsWith("#")) return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * One L8 run as AGP's driver (`L8Tool.runL8`) sets it up: the library's jars with its
+   * configuration, the keep rules of what the app uses, the profile to rewrite; with the app's
+   * mapping file, the library's dex stamped with the mapping's id and the library's own mapping
+   * appended to a copy of the app's.
+   */
+  private static void runL8(List<Path> jars, String config, List<Path> boot, int minApi, boolean debuggable, com.android.tools.r8.ProgramConsumer out,
+      Path keepRules, Path profileIn, Path profileOut, Path mapping, Path mappingOut) throws Exception {
+    L8Command.Builder b = L8Command.builder();
+    b.addProgramFiles(jars);
+    b.addSpecialLibraryConfiguration(config);
+    b.addLibraryFiles(boot);
+    if (profileIn != null && Files.exists(profileIn) && profileOut != null) rewriteProfile(b, profileIn, profileOut);
+    if (mapping != null && Files.exists(mapping)) {
+      String id = mapId(mapping);
+      if (id != null) b.addProguardConfiguration(List.of("-keepattributes SourceFile", "-renamesourcefileattribute \"r8-map-id-" + id + "\""), Origin.unknown());
+    }
+    Path ownMapping = mappingOut != null ? Files.createTempFile(mappingOut.toAbsolutePath().getParent(), "l8_map", ".txt") : null;
+    try {
+      if (ownMapping != null) b.setProguardMapOutputPath(ownMapping);
+      b.setMinApiLevel(minApi);
+      b.setMode(debuggable ? CompilationMode.DEBUG : CompilationMode.RELEASE);
+      b.setProgramConsumer(out);
+      if (keepRules != null) b.addProguardConfigurationFiles(List.of(keepRules));
+      L8.run(b.build());
+      if (mappingOut == null) return;
+      if (mapping != null && Files.exists(mapping)) {
+        // The bytes, not the file: a copy would be read-only as the input is, and the next step appends.
+        Files.write(mappingOut, Files.readAllBytes(mapping));
+      } else {
+        Files.write(mappingOut, new byte[0]);
+      }
+      if (Files.exists(ownMapping)) {
+        StringBuilder text = new StringBuilder("\n# L8 Desugaring Mapping\n");
+        boolean header = true;
+        for (String line : Files.readAllLines(ownMapping, StandardCharsets.UTF_8)) {
+          if (header && line.startsWith("#")) continue;
+          header = false;
+          text.append(line).append("\n");
+        }
+        Files.writeString(mappingOut, text, StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND);
+      }
+    } finally {
+      if (ownMapping != null) Files.deleteIfExists(ownMapping);
+    }
   }
 }

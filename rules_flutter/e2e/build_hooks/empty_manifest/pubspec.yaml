@@ -1,0 +1,13 @@
+# The project of `//:empty_manifest_app`: no `flutter:` section, so the
+# manifest is empty, and its one asset is the link hook's data asset, which
+# Flutter 3.50 bundles all the same (3.47 bundled nothing). Resolved by the
+# workspace's root pubspec; this one only names the project.
+name: build_hooks
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  native_link:
+    path: ../native_link

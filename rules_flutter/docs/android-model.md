@@ -118,6 +118,41 @@ app's Gradle file takes them from Flutter (`flutter.versionCode`, `flutter.versi
 a marker and the build reads `pubspec.yaml`, so a version bump needs no new pin. Where the Gradle file
 sets its own values, those are used. A flavor's `versionNameSuffix` is kept.
 
+## Where the Maven artifacts come from
+
+The pin records, for each artifact, its sha256 and the address of the repository Gradle took it from.
+The sha256 decides what is accepted; the addresses are where Bazel asks, in order. For an artifact of
+Maven Central (`repo.maven.apache.org` or `repo1.maven.org`) the rules add Google's mirror of Central
+(`maven-central.storage-download.googleapis.com/maven2`) after the address in the pin, so a Central
+that refuses a download (`429 Too Many Requests` when many jobs behind one address fetch at once, or
+an outage) does not fail the build: Bazel retries the address (eight attempts, about 13 seconds of
+backoff in all, and it does not read `Retry-After`) and then asks the mirror. Gradle gives up on a
+repository after three attempts and does not ask another. The mirror serves the same files: every
+Maven Central artifact of the e2e pins has its pinned sha256 there. Nothing is added to the pin or the
+lockfile; the second address is derived when the build loads. Artifacts of Google's Maven and of the
+Flutter engine's repository are fetched from their one address.
+
+An artifact that no address gives fails with its coordinate and sha256, the addresses tried and the
+answer of each (as `WARNING` lines above the error).
+
+To add, replace or remove an address, use what Bazel already has. A downloader config rewrites the
+address a rule asks for, whichever rule asks, and several `rewrite` lines for one address give several
+addresses, in the order written:
+
+```
+# downloader.cfg: ask the company's mirror first, then Maven Central and Google's mirror as before.
+rewrite repo.maven.apache.org/maven2/(.*) maven.example.com/central/$1
+rewrite repo.maven.apache.org/maven2/(.*) repo.maven.apache.org/maven2/$1
+```
+
+with `common --downloader_config=downloader.cfg` in `.bazelrc`. A line that matches replaces the
+address it matches, so keep the second line to keep the original as a fallback. `block
+maven-central.storage-download.googleapis.com` in the same file keeps the build from asking Google's
+mirror (a build that may reach no other host than the company's). `--distdir=<dir>` names a directory
+of files named as in the addresses (`kotlin-stdlib-2.4.0.jar`); a file there with the pinned sha256 is
+used without any request. Bazel's repository cache (`--repository_cache`) serves a download by its
+sha256, so a CI that keeps it between jobs asks no server for an artifact it has had before.
+
 ## Variants and flavors
 
 The pin records every variant of the app (`debug`, `profile`, `release`, and with flavors `devDebug`,
@@ -149,7 +184,7 @@ file that retraces a stack trace of that build.
 | Step | As the stock build | Actions |
 |---|---|---|
 | The Dart program | one AOT library per ABI, `lib/<abi>/libapp.so`; `flutter_assets` without the kernel | the Dart side's AOT compile |
-| Code | R8 over the whole program when the build type says `minifyEnabled` (Flutter's default for release): AGP's own driver and R8 by hash, full mode, with the rules of the app (AGP's default file and the Flutter tool's rules, carried in the pin; the app's own files), of the plugin projects (`consumerProguardFiles`) and of the Maven artifacts (`proguard.txt` of an AAR, `META-INF/com.android.tools/r8*` or `META-INF/proguard` of a jar) | `RdfR8` |
+| Code | R8 over the whole program when the build type says `minifyEnabled` (Flutter's default for release): R8 by hash, with the command AGP's own driver builds (through the API R8 publishes), full mode, with the rules of the app (AGP's default file and the Flutter tool's rules, carried in the pin; the app's own files), of the plugin projects (`consumerProguardFiles`) and of the Maven artifacts (`proguard.txt` of an AAR, `META-INF/com.android.tools/r8*` or `META-INF/proguard` of a jar) | `RdfR8` |
 | Resources | linked to the proto format, shrunk by R8 in the same run when the build type says `shrinkResources`, converted and optimized (`aapt2 optimize --shorten-resource-paths`) | `RdfAapt2Link`, `RdfAapt2Convert`, `RdfAapt2Optimize` |
 | Core library desugaring | the desugared library shrunk to what the app's final dex uses | `RdfL8` |
 | Baseline profiles | those of the app (`src/main/baseline-prof.txt`) and of the AARs merged, rewritten by R8 and L8, compiled into `assets/dexopt/` | `RdfArtProfile` |
@@ -277,6 +312,26 @@ an app built with `split_per_abi`. `flutter_android_bundle_test` does the same f
 a key store in the test, runs `<app>_sign` and `<app>_bundle_sign` with that key in their
 environment, and checks that the APK has a v2 signature with the key's certificate and that the
 bundle verifies as a jar signed with it. No key is checked in.
+
+## Android Gradle plugin versions
+
+The build's tools are compiled, in the pin's repository, against the libraries of the Android Gradle
+plugin the pin names, so an app is built with its own plugin's R8, aapt2, manifest merger and
+bundletool. Two versions are built and tested in this repository: 9.1.1, the oldest that Flutter
+3.50 accepts, and 9.3.1, the one its `flutter create` template names (`e2e/android_template` is that
+app, untouched). R8, D8, L8 and trace references are driven through the API R8 publishes
+(`R8Command`, `D8Command`, `L8Command`, `TraceReferencesCommand`), which holds from one version to
+the next. The resource compiler, the manifest merger, the R class writer, the baseline profile
+compiler and the dependency report are classes of the plugin itself, which a later version can change.
+
+A pin with a plugin outside 9.1.1 to 9.3.1 is built all the same, and Bazel prints, when it reads the
+pin:
+
+```
+android_model: //:android_model.json was pinned with Android Gradle plugin 9.4.0. The build tools of
+these rules are compiled against the libraries of the plugin the pin names, and are tested with 9.1.1
+to 9.3.1. It may just work; if `tool_lib` does not compile or a tool fails, this is the reason: ...
+```
 
 ## Hosts
 

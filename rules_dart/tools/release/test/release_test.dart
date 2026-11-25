@@ -1,10 +1,14 @@
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:crypto/crypto.dart';
 
 import 'package:path/path.dart' as p;
 import 'package:release/floor.dart';
 import 'package:release/git.dart';
 import 'package:release/modules.dart';
 import 'package:release/release.dart';
+import 'package:release/tools.dart';
 import 'package:test/test.dart';
 
 const dartSha = 'e7163aab8f9171f54693cd1b99feb7d3cee9602d';
@@ -363,6 +367,223 @@ void main() {
       );
       expect(both.first.entries, ['Both modules']);
     }, skip: hasGit ? false : 'git is not on PATH');
+  });
+
+  group('tools', () {
+    final ToolSet set = toolSets['rules_dart']!;
+    final SetFiles files = {
+      'tools.json': utf8.encode('{"dart_version": "3.13.5"}'),
+      'files/module_compiler.aot': [1, 2, 3],
+      'files/test_runner': List<int>.generate(700, (i) => i % 251),
+    };
+
+    test('a consumer workspace takes the modules from the checkout', () {
+      final String module = consumerModule(toolSets['rules_flutter']!, '/r');
+      expect(module, contains('repo_name = "rules_dart"'));
+      expect(
+        module,
+        contains('module_name = "ai_rules_flutter", path = "/r/rules_flutter"'),
+      );
+    });
+
+    test('each consumer workspace has an output base of its own', () {
+      final List<String> one = consumerBazelArgs('/w', 1, ['build', '//x']);
+      final List<String> two = consumerBazelArgs('/w', 2, ['build', '//x']);
+      expect(one, ['--output_base=/w/output_base-1', 'build', '//x']);
+      expect(two, ['--output_base=/w/output_base-2', 'build', '//x']);
+      // A Windows work directory is written with forward slashes.
+      expect(consumerBazelArgs(r'D:\a\_temp/work', 1, ['shutdown']), [
+        r'--output_base=D:/a/_temp/work/output_base-1',
+        'shutdown',
+      ]);
+    });
+
+    test('two builds that agree have no differences', () {
+      expect(differences(files, Map.of(files)), isEmpty);
+      final other = Map.of(files)..['files/module_compiler.aot'] = [1, 2, 4];
+      other.remove('files/test_runner');
+      expect(differences(files, other), [
+        startsWith('files/module_compiler.aot: '),
+        'files/test_runner: only in build 1',
+      ]);
+    });
+
+    test('the archive is the same bytes for the same files', () async {
+      final List<int> a = tarGz(files);
+      expect(tarGz(Map.fromEntries(files.entries.toList().reversed)), a);
+      final Directory dir = Directory.systemTemp.createTempSync('tools_test_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final archive = File(p.join(dir.path, 'a.tar.gz'))..writeAsBytesSync(a);
+      final ProcessResult r = await Process.run('tar', [
+        '-xzf',
+        archive.path,
+        '-C',
+        dir.path,
+      ]);
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+      for (final MapEntry<String, List<int>> e in files.entries) {
+        expect(File(p.join(dir.path, e.key)).readAsBytesSync(), e.value);
+      }
+      if (!Platform.isWindows) {
+        final FileStat runner = File(p.join(dir.path, 'files/test_runner'))
+            .statSync();
+        expect(runner.mode & 0x49, 0x49, reason: 'executable');
+      }
+    });
+
+    Sidecar sidecar(String platform, String? digest) => Sidecar(
+      module: 'rules_dart',
+      platform: platform,
+      version: '3.13.5',
+      sha256: digest,
+      problems: digest == null ? ['files/x: a != b'] : [],
+    );
+
+    test('the table lists what shipped, and says what did not', () {
+      final List<int> archive = tarGz(files);
+      final String digest = sha256.convert(archive).toString();
+      final result = toolsTable(
+        set: set,
+        tag: 'rules_dart-v0.30.0',
+        download: 'https://example.test/d',
+        archives: {
+          sidecar('linux-x64', digest): archive,
+          sidecar('windows-x64', null): null,
+        },
+      );
+      expect(result.table, {
+        'release': 'rules_dart-v0.30.0',
+        'tools': {
+          '3.13.5': {
+            'linux-x64': {
+              'url':
+                  'https://example.test/d/rules_dart-v0.30.0/'
+                  'rules_dart-v0.30.0-tools-3.13.5-linux-x64.tar.gz',
+              'sha256': digest,
+            },
+          },
+        },
+      });
+      expect(result.absent, ['windows-x64: files/x: a != b']);
+      expect(result.differed, ['windows-x64']);
+      expect(result.missing, ['linux-arm64', 'macos-arm64', 'macos-x64']);
+      // The notes: no hashes, the platforms by why they build from source.
+      expect(
+        toolsNote(
+          table: result.table,
+          differed: result.differed,
+          missing: result.missing,
+        ),
+        'Prebuilt tools: linux-x64 (3.13.5). Built from source: '
+        'windows-x64 (two builds of the tools differed there); '
+        'linux-arm64, macos-arm64, macos-x64 '
+        '(no tools were uploaded there).',
+      );
+      expect(
+        Sidecar.parse(sidecar('linux-x64', digest).encode()).sha256,
+        digest,
+      );
+    });
+
+    test('a wrong archive, a twice-listed or unknown platform is refused', () {
+      final List<int> archive = tarGz(files);
+      final String digest = sha256.convert(archive).toString();
+      Map<String, Object?> table(Map<Sidecar, List<int>?> archives) =>
+          toolsTable(
+            set: set,
+            tag: 't',
+            download: 'd',
+            archives: archives,
+          ).table;
+      expect(
+        () => table({
+          sidecar('linux-x64', digest): [0],
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => table({sidecar('linux-x64', digest): null}),
+        throwsFormatException,
+      );
+      expect(
+        () => table({
+          sidecar('linux-x64', digest): archive,
+          sidecar('linux-x64', null): null,
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => table({sidecar('plan9-x64', digest): archive}),
+        throwsFormatException,
+      );
+    });
+
+    test('the pub scanner ships as its own archive and table entry', () {
+      final split = splitSet({
+        ...files,
+        'pub_scanner/scanner': [7],
+        'pub_scanner/dartaotruntime': [8],
+      });
+      expect(split.tools.keys, unorderedEquals(files.keys));
+      expect(split.scanner, {
+        'scanner': [7],
+        'dartaotruntime': [8],
+      });
+      expect(splitSet(files).scanner, isEmpty);
+      final List<int> archive = tarGz(split.tools);
+      final List<int> scanner = tarGz(split.scanner);
+      final String digest = sha256.convert(archive).toString();
+      final String scannerDigest = sha256.convert(scanner).toString();
+      final s = Sidecar(
+        module: 'rules_dart',
+        platform: 'linux-x64',
+        version: '3.13.5',
+        sha256: digest,
+        problems: const [],
+        pubScannerSha256: scannerDigest,
+      );
+      expect(Sidecar.parse(s.encode()).pubScannerSha256, scannerDigest);
+      expect(
+        Sidecar.parse(sidecar('linux-x64', digest).encode()).pubScannerSha256,
+        isNull,
+      );
+      final result = toolsTable(
+        set: set,
+        tag: 'rules_dart-v0.30.0',
+        download: 'https://example.test/d',
+        archives: {s: archive},
+        scanners: {s: scanner},
+      );
+      expect(result.table['pub_scanner'], {
+        'linux-x64': {
+          'url':
+              'https://example.test/d/rules_dart-v0.30.0/'
+              'rules_dart-v0.30.0-pub_scanner-linux-x64.tar.gz',
+          'sha256': scannerDigest,
+        },
+      });
+      expect(
+        () => toolsTable(
+          set: set,
+          tag: 't',
+          download: 'd',
+          archives: {s: archive},
+          scanners: {
+            s: [0],
+          },
+        ),
+        throwsFormatException,
+      );
+      expect(
+        toolsTable(
+          set: set,
+          tag: 't',
+          download: 'd',
+          archives: {sidecar('linux-x64', digest): archive},
+        ).table.containsKey('pub_scanner'),
+        isFalse,
+      );
+    });
   });
 }
 

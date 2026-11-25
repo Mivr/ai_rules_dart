@@ -13,7 +13,8 @@ holds the plugin sources (the pub archives, by the hash pub recorded) and the ge
 
 load("@rules_dart//dart/pub:yaml.bzl", "yaml_to_json")
 load("//flutter/private:download.bzl", "pinned_download", "pinned_download_and_extract")
-load(":names.bzl", "SCHEMA", "artifact_repo")
+load(":maven.bzl", "maven_urls", "unavailable")
+load(":names.bzl", "AGP_TESTED", "SCHEMA", "agp_tested", "artifact_repo")
 
 # Without a usable pin the hub still loads, so that `bazel run //:android_pin` can run in the package
 # that calls `flutter_android_app`; the app's targets fail when they are built, with the reason.
@@ -40,7 +41,9 @@ def _shown(label):
 def _maven_artifact_impl(ctx):
     f = ctx.attr.file
     if f.endswith(".aar"):
-        pinned_download_and_extract(ctx, url = ctx.attr.urls, sha256 = ctx.attr.sha256, output = "aar", type = "zip")
+        got = pinned_download_and_extract(ctx, url = ctx.attr.urls, sha256 = ctx.attr.sha256, output = "aar", type = "zip", allow_fail = True)
+        if not got.success:
+            fail(unavailable(ctx.attr.coordinate, f, ctx.attr.sha256, ctx.attr.urls))
         jars = (["aar/classes.jar"] if ctx.attr.aar_classes else []) + ["aar/" + j for j in ctx.attr.aar_libs]
 
         # The symbol list is optional in an AAR; the rules read it by label, so it always exists here.
@@ -54,7 +57,9 @@ filegroup(name = "native_libs", srcs = glob(["aar/jni/**/*.so"], allow_empty = T
 exports_files(glob(["aar/*"], exclude_directories = 1))
 """.format(jars = repr(jars)))
     else:
-        pinned_download(ctx, url = ctx.attr.urls, sha256 = ctx.attr.sha256, output = "file/" + f, executable = False)
+        got = pinned_download(ctx, url = ctx.attr.urls, sha256 = ctx.attr.sha256, output = "file/" + f, executable = False, allow_fail = True)
+        if not got.success:
+            fail(unavailable(ctx.attr.coordinate, f, ctx.attr.sha256, ctx.attr.urls))
         extra = ""
         if ctx.attr.extract:
             ctx.extract("file/" + f, output = "x", type = "zip")
@@ -69,11 +74,12 @@ filegroup(name = "jar", srcs = ["file/{f}"])
 {extra}""".format(f = f, extra = extra))
 
 maven_artifact = repository_rule(
-    doc = "One Maven artifact of the pin, by its sha256.",
+    doc = "One Maven artifact of the pin, by its sha256, from the first of `urls` that has it.",
     implementation = _maven_artifact_impl,
     attrs = {
         "aar_classes": attr.bool(),
         "aar_libs": attr.string_list(),
+        "coordinate": attr.string(doc = "The artifact as Gradle names it, for the error of a fetch that fails."),
         "executables": attr.string_list(),
         "exports": attr.string_list(),
         "extract": attr.bool(),
@@ -176,6 +182,16 @@ def _hub_impl(ctx):
     if model.get("schema") != SCHEMA:
         _stub(ctx, "old pin", "%s has schema %s and these rules read schema %s. Pin again: `%s`." % (_shown(ctx.attr.model), model.get("schema"), SCHEMA, pin))
         return
+
+    # An Android Gradle plugin outside the tested range is built all the same; if a tool then fails
+    # to compile against that version's libraries, the user has read why.
+    agp = (model.get("tools") or {}).get("agp") or ""
+    if agp and not agp_tested(agp):
+        # buildifier: disable=print
+        print(("android_model: %s was pinned with Android Gradle plugin %s. The build tools of these rules are compiled against " +
+               "the libraries of the plugin the pin names, and are tested with %s to %s. It may just work; if `tool_lib` does not " +
+               "compile or a tool fails, this is the reason: use a version in that range, or a release of these rules that names yours.") %
+              (_shown(ctx.attr.model), agp, AGP_TESTED[0], AGP_TESTED[1]))
 
     sdk = ctx.getenv("ANDROID_HOME") or ctx.getenv("ANDROID_SDK_ROOT")
     if not sdk:
@@ -322,8 +338,9 @@ def _android_model_impl(mctx):
         is_desugar_config = a["coordinate"].startswith("com.android.tools:desugar_jdk_libs_configuration:")
         maven_artifact(
             name = artifact_repo(key),
-            urls = a["urls"],
+            urls = maven_urls(a["urls"]),
             sha256 = a["sha256"],
+            coordinate = a["coordinate"],
             file = key.rsplit("/", 1)[1],
             aar_classes = bool(aar and aar["classes"]),
             aar_libs = aar["libs"] if aar else [],

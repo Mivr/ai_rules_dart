@@ -254,7 +254,7 @@ agree.""",
         ),
         "_android_bundle_tool": attr.label(
             doc = "Tool that builds the Android application bundle from the compiled outputs.",
-            default = Label("//flutter/private/tools:android_bundle"),
+            default = Label("@rules_flutter_tools//:android_bundle"),
             executable = True,
             cfg = "exec",
         ),
@@ -381,7 +381,7 @@ and `application` to the matching `//flutter/platforms` target, packages
         ),
         "_android_bundle_tool": attr.label(
             doc = "Tool that writes the archive.",
-            default = Label("//flutter/private/tools:android_bundle"),
+            default = Label("@rules_flutter_tools//:android_bundle"),
             executable = True,
             cfg = "exec",
         ),

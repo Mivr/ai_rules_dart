@@ -167,6 +167,17 @@ bzl_library(
 )
 
 bzl_library(
+    name = "project",
+    srcs = ["project.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":language_version",
+        ":pub_sources",
+        ":yaml2json",
+    ],
+)
+
+bzl_library(
     name = "pub_workspace",
     srcs = ["pub_workspace.bzl"],
     visibility = ["//visibility:public"],
@@ -192,6 +203,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":pub_scanner_sdk",
+        "//dart/private:prebuilt_tools",
     ],
 )
 

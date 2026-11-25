@@ -34,3 +34,7 @@ android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_mo
 ]
 
 use_repo(android_model, "red_nopin", "red_schema", "red_stale", "red_unsupported", "red_variant")
+
+# Maven artifacts whose first address refuses: mirror_cases.bzl.
+mirror = use_extension("//:mirror_cases.bzl", "mirror")
+use_repo(mirror, "every_address_refuses", "other_bytes", "second_address_answers")

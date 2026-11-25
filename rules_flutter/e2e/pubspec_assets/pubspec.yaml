@@ -1,0 +1,16 @@
+name: pubspec_assets
+publish_to: none
+environment:
+  sdk: ^3.13.0
+dependencies:
+  flutter:
+    sdk: flutter
+  licensed:
+    path: packages/licensed
+dev_dependencies:
+  test: ^1.30.0
+flutter:
+  assets:
+    # Not a directory of this project: Flutter 3.50 reads it from `lib/images/`
+    # of package `licensed`, through the package config.
+    - packages/licensed/images/

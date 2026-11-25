@@ -219,8 +219,7 @@ def web_experiment_flags(enable_experiments):
 # `optimization_level`, `minify` and `strip_wasm`; `js_options` holds
 # `optimization_level`, `minify`, `native_null_assertions`,
 # `frequency_based_minification`, `dump_info` and `source_maps`). `req` is the
-# union the `flutter_dart2js_action`, `flutter_dart2js_cfe_action` and
-# `flutter_dart2wasm_action` entry points take: every `compile` field plus
+# union the `flutter_dart2js_action` and `flutter_dart2wasm_action` entry points take: every `compile` field plus
 # `flutter_sdk_files`, the option fields and the outputs. Each action reads
 # only its own subset; the fields it ignores are always present but never
 # read, so every request has the same total shape whatever compiles it.
@@ -242,6 +241,8 @@ def web_experiment_flags(enable_experiments):
 #   web_compile_inputs: Additional input Files the wrapper needs.
 #   web_guard_tool: Optional `web_guard` executable File, or None.
 #   enable_experiments: Dart language experiments to enable.
+#   record_uses: Whether the compile records the program's uses, which the
+#       icon tree shaker reads (a release or profile build that shakes icons).
 
 def web_sdk_files_for_dart2js(web_sdk):
     """Selects the `libraries*.json` files a dart2js compile resolves against.
@@ -287,7 +288,7 @@ def web_compile_tool_inputs(dart_vm_files):
         if f.basename in ("dartvm", "dartvm.exe")
     ]
 
-def make_dart2wasm_request(compile, options, output_wasm, output_mjs, output_source_map):
+def make_dart2wasm_request(compile, options, output_wasm, output_mjs, output_source_map, output_recorded_uses = None):
     """Builds the dart2wasm compile request from the gathered values.
 
     Args:
@@ -298,6 +299,8 @@ def make_dart2wasm_request(compile, options, output_wasm, output_mjs, output_sou
         output_mjs: Output .mjs File (JS support runtime).
         output_source_map: Output .wasm.map File, or None to disable source
             maps. Must sit at `<output_wasm>.map` (dart2wasm writes it there).
+        output_recorded_uses: Output File dart2wasm records the program's uses
+            to, for the icon tree shaker, or None.
 
     Returns:
         The `req` struct `flutter_dart2wasm_action` takes.
@@ -329,9 +332,9 @@ def make_dart2wasm_request(compile, options, output_wasm, output_mjs, output_sou
         output_wasm = output_wasm,
         output_mjs = output_mjs,
         output_source_map = output_source_map,
+        output_recorded_uses = output_recorded_uses,
+        write_resources = False,
         output_dir = None,
-        output_dill = None,
-        output_deps = None,
         web_compile_tool = compile.web_compile_tool,
         web_compile_inputs = compile.web_compile_inputs,
         web_guard_tool = compile.web_guard_tool,
@@ -376,58 +379,9 @@ def make_dart2js_request(compile, options, renderer, output_dir):
         output_wasm = None,
         output_mjs = None,
         output_source_map = None,
+        output_recorded_uses = None,
+        write_resources = compile.record_uses,
         output_dir = output_dir,
-        output_dill = None,
-        output_deps = None,
-        web_compile_tool = compile.web_compile_tool,
-        web_compile_inputs = compile.web_compile_inputs,
-        web_guard_tool = compile.web_guard_tool,
-    )
-
-def make_dart2js_cfe_request(compile, renderer, output_dill, output_deps):
-    """Builds the icon tree-shake kernel request from the gathered values.
-
-    Runs with the frontend defaults (`-O` and minification on "auto", null
-    assertions and frequency_based_minification on), matching what the shipped
-    dart2js program resolves the platform-conditional imports against.
-
-    Args:
-        compile: The `compile` struct the rule implementation gathered.
-        renderer: Web renderer for this kernel's defines ("canvaskit" or
-            "skwasm").
-        output_dill: Output kernel .dill File (`-o`). dart2js also writes
-            `<dill>.deps` beside it, declared as `output_deps`.
-        output_deps: Output depfile File (`<dill>.deps`).
-
-    Returns:
-        The `req` struct `flutter_dart2js_cfe_action` takes.
-    """
-    return struct(
-        dart = compile.dart,
-        flutter_sdk_files = compile.flutter_sdk_info.dart2js_files,
-        dart2wasm_platform_dill = None,
-        dart2js_platform_dill = compile.dart2js_platform_dill,
-        web_sdk_files = compile.web_sdk_files,
-        main_dart = compile.main_dart,
-        srcs = compile.srcs,
-        package_config = compile.package_config,
-        mode = compile.mode,
-        optimization_level = "auto",
-        minify = "auto",
-        strip_wasm = True,
-        native_null_assertions = True,
-        frequency_based_minification = True,
-        enable_experiments = compile.enable_experiments,
-        dump_info = False,
-        source_maps = False,
-        defines = compile.defines,
-        renderer = renderer,
-        output_wasm = None,
-        output_mjs = None,
-        output_source_map = None,
-        output_dir = None,
-        output_dill = output_dill,
-        output_deps = output_deps,
         web_compile_tool = compile.web_compile_tool,
         web_compile_inputs = compile.web_compile_inputs,
         web_guard_tool = compile.web_guard_tool,
@@ -628,6 +582,8 @@ def flutter_dart2wasm_action(ctx, req):
     for d in req.defines:
         args.add("-D" + d)
 
+    if req.output_recorded_uses != None:
+        args.add("--recorded-uses=" + req.output_recorded_uses.path)
     args.add("-o", req.output_wasm)
     args.add(req.main_dart)
 
@@ -637,6 +593,8 @@ def flutter_dart2wasm_action(ctx, req):
     outputs = [req.output_wasm, req.output_mjs]
     if req.output_source_map != None:
         outputs.append(req.output_source_map)
+    if req.output_recorded_uses != None:
+        outputs.append(req.output_recorded_uses)
     _web_guarded_run(
         ctx,
         args,
@@ -653,12 +611,11 @@ def flutter_dart2wasm_action(ctx, req):
     )
 
 def _dart2js_common_args(args, req):
-    """Append the flags `dart2js` and its `--cfe-only` frontend share.
+    """Append the flags of a `dart2js` compile.
 
     Args:
         args: The `ctx.actions.args()` the compile runs with, mutated.
-        req: The `req` struct `make_dart2js_request` (or
-            `make_dart2js_cfe_request`) built.
+        req: The `req` struct `make_dart2js_request` built.
     """
     args.add("--platform-binaries=" + req.dart2js_platform_dill.dirname)
     args.add("--libraries-spec=" + _web_libraries_spec(req.web_sdk_files, req.dart2js_platform_dill))
@@ -717,6 +674,11 @@ def flutter_dart2js_action(ctx, req):
     if not req.source_maps:
         args.add("--no-source-maps")
 
+    # The uses the icon tree shaker reads, written beside the program as
+    # `main.dart.js.resources.json`.
+    if req.write_resources:
+        args.add("--write-resources")
+
     # Mode defines and flags — matching `flutter build web` per build mode.
     _dart2js_mode_args(args, req.mode)
     if req.renderer == "canvaskit":
@@ -744,66 +706,5 @@ def flutter_dart2js_action(ctx, req):
             mnemonic = "FlutterDart2JS",
             progress_message = "Compiling Flutter to JavaScript %s" % ctx.label,
             env_dir = req.output_dir.path,
-        ),
-    )
-
-def flutter_dart2js_cfe_action(ctx, req):
-    """Compiles Dart to a kernel dill with dart2js's frontend for icon tree-shaking.
-
-    Runs `dart compile js --cfe-only`, the same frontend upstream runs to
-    produce the `app.dill` const_finder reads on web builds. The kernel
-    resolves platform-conditional imports (`if (dart.library.js_interop)`)
-    to the web branch, as the shipped dart2js/dart2wasm programs do, and
-    type-checks `dart:js_interop`/`dart:ui_web` against the real web
-    libraries. One dill is compiled per shipped renderer (with that
-    renderer's defines); const_finder unions the code points across them.
-
-    Args:
-        ctx: The rule context of the rule implementation that calls this helper.
-        req: The `req` struct `make_dart2js_cfe_request` built.
-    """
-    transitive_inputs = [req.flutter_sdk_files, depset(req.web_sdk_files)]
-    read_set = _web_read_set(
-        ctx,
-        req,
-        req.output_dill.dirname.split("/")[-1] + "." + req.output_dill.basename,
-        req.dart2js_platform_dill,
-        transitive_inputs,
-    )
-
-    args = _web_base_args(ctx, req, read_set, "js")
-
-    _dart2js_common_args(args, req)
-
-    _dart2js_mode_args(args, req.mode)
-    if req.renderer == "canvaskit":
-        args.add("-DFLUTTER_WEB_USE_SKIA=true")
-        args.add("-DFLUTTER_WEB_USE_SKWASM=false")
-    elif req.renderer == "skwasm":
-        args.add("-DFLUTTER_WEB_USE_SKIA=false")
-        args.add("-DFLUTTER_WEB_USE_SKWASM=true")
-    for d in req.defines:
-        args.add("-D" + d)
-
-    # Frontend-only: emit the kernel const_finder reads, not JavaScript.
-    args.add("--cfe-only")
-    args.add("-o", req.output_dill)
-    args.add(req.main_dart)
-
-    direct_inputs = _web_compile_direct_inputs(req, req.dart2js_platform_dill)
-    if req.web_compile_tool != None:
-        direct_inputs.append(req.web_compile_tool)
-    _web_guarded_run(
-        ctx,
-        args,
-        req,
-        struct(
-            read_set = read_set,
-            direct_inputs = direct_inputs,
-            transitive_inputs = transitive_inputs,
-            outputs = [req.output_dill, req.output_deps],
-            mnemonic = "FlutterDart2JSCFE",
-            progress_message = "Compiling Flutter web icon kernel %s" % ctx.label,
-            env_dir = req.output_dill.dirname,
         ),
     )

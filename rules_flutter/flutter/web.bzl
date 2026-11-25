@@ -37,7 +37,7 @@ uses dart2wasm/dart2js which consume Dart source directly, so the compilation
 pipeline is structurally different from AOT platforms.
 """
 
-load("@flutter_l10n//:index.bzl", "L10N_PROJECTS")
+load("@flutter_projects//:index.bzl", "PROJECTS")
 load("//flutter/private:flutter_bundle.bzl", "project_pub_packages")
 load("//flutter/private:flutter_gen_l10n.bzl", "l10n_attach", "project_language_version", "project_license")
 load("//flutter/private:flutter_integration_test.bzl", _flutter_integration_test = "flutter_integration_test")
@@ -115,18 +115,18 @@ def flutter_web_app(
     """
     if "pubspec" not in kwargs and native.glob(["pubspec.yaml"], allow_empty = True):
         kwargs["pubspec"] = "pubspec.yaml"
-    project_license(kwargs, L10N_PROJECTS)
+    project_license(kwargs, PROJECTS)
     srcs = list(kwargs.pop("pubspec_srcs", []))
     for f in native.glob(["web/**"], allow_empty = True):
         if f not in srcs:
             srcs.append(f)
-    project_language_version(kwargs, L10N_PROJECTS)
+    project_language_version(kwargs, PROJECTS)
     l10n = {"deps": deps, "main": main}
     if "srcs" in kwargs:
         l10n["srcs"] = kwargs["srcs"]
     if "language_version" in kwargs:
         l10n["language_version"] = kwargs["language_version"]
-    l10n_attach(name, l10n, L10N_PROJECTS)
+    l10n_attach(name, l10n, PROJECTS)
     if "srcs" in l10n:
         kwargs["srcs"] = l10n["srcs"]
     project_pub_packages(kwargs)

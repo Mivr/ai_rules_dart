@@ -288,6 +288,58 @@ void main() {
     );
 
     test(
+      'reads a manifest line whose runfiles path has a space or a backslash',
+      () async {
+        final String sep = Platform.pathSeparator;
+        final exeName = Platform.isWindows
+            ? 'create_probe.exe'
+            : 'create_probe';
+        final Directory tmp = Directory.systemTemp.createTempSync(
+          'runfiles_manifest_escapes',
+        );
+        addTearDown(() => tmp.deleteSync(recursive: true));
+
+        final String probeExe = Runfiles.create().rlocation(
+          '_main/dart/runfiles/$exeName',
+        );
+        // Bazel writes a runfiles path with a space, a newline or a backslash
+        // as ` <path> <real path>`, with `\s`, `\n` and `\b` for them.
+        final real = Directory('${tmp.path}${sep}real dir')..createSync();
+        File('${real.path}${sep}data.txt').writeAsStringSync('plain');
+        File('${real.path}${sep}two words.txt').writeAsStringSync('spaced');
+        File('${real.path}${sep}back.txt').writeAsStringSync('backslash');
+        // Bazel writes real paths with forward slashes, also on Windows; in
+        // an escaped line a backslash would itself have to be written `\b`.
+        final String fwd = real.path.replaceAll(r'\', '/');
+        final manifest = File('${tmp.path}${sep}MANIFEST')
+          ..writeAsStringSync(
+            '_main/data.txt ${real.path}${sep}data.txt\n'
+            ' _main/dir/two\\swords.txt $fwd/two words.txt\n'
+            ' _main/dir/back\\bslash.txt $fwd/back.txt\n'
+            'malformed-line-without-a-space\n',
+          );
+
+        final Process process = await Process.start(
+          probeExe,
+          const ['_main/dir/two words.txt', r'_main/dir/back\slash.txt'],
+          environment: (Map.of(Platform.environment)
+            ..['RUNFILES_MANIFEST_FILE'] = manifest.path
+            ..remove('RUNFILES_DIR')),
+          includeParentEnvironment: false,
+        );
+        addTearDown(process.kill);
+        await process.stdin.close();
+        final List<String> out = await process.stdout
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .toList();
+        final String err = await process.stderr.transform(utf8.decoder).join();
+        expect(await process.exitCode, 0, reason: err);
+        expect(out, ['ready', 'plain', 'spaced', 'backslash']);
+      },
+    );
+
+    test(
       'kernel launcher propagates discovered runfiles to child VM',
       () async {
         final String sep = Platform.pathSeparator;

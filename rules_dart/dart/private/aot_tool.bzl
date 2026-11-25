@@ -37,6 +37,19 @@ def aot_tool_launch(ctx, attr_name, dart_sdk_info, sdk_files):
     tool = getattr(ctx.executable, attr_name)
     if target == None or DartCompileInfo not in target or target[DartCompileInfo].compile_mode != "aot-snapshot":
         return struct(executable = dart_sdk_info.dart, prefix = [tool.path], inputs = [tool, dart_sdk_info.dart])
+    built_by = getattr(target[DartCompileInfo], "sdk_version", "")
+    if built_by and built_by != dart_sdk_info.version:
+        # A snapshot runs only on the runtime of the SDK that built it. A
+        # release's prebuilt snapshot is picked for its version alone (see
+        # `prebuilt_tools.bzl`), so this is a tool named by hand.
+        fail(("%s: `%s` (%s) is an AOT snapshot built by Dart SDK %s, but Dart SDK %s would run it. " +
+              "Build the tool with the SDK that runs it, or as `compile_mode = \"exe\"`.") % (
+            ctx.label,
+            attr_name,
+            target.label,
+            built_by,
+            dart_sdk_info.version,
+        ))
     runtime = _find_runtime(sdk_files)
     if runtime == None:
         fail(("%s: `%s` is an AOT snapshot and needs `dartaotruntime`, which the Dart SDK %s at %s " +

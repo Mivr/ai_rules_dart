@@ -55,6 +55,7 @@ load(
     "integration_test_native_assets",
     "integration_test_native_libs",
     "integration_test_providers",
+    "integration_test_recorded_uses",
     "integration_test_runner_executable",
 )
 load(
@@ -169,15 +170,16 @@ def _flutter_android_integration_app_impl(ctx):
     setup = _android_integration_app_setup(ctx)
     native_assets = integration_test_native_assets(ctx)
     sources = _android_integration_app_sources(ctx, setup)
-    kernel_dill = android_integration_app_kernel(ctx, setup, sources, native_assets)
+    recorded_uses = integration_test_recorded_uses(ctx, setup.is_debug)
+    kernel_dill = android_integration_app_kernel(ctx, setup, sources, native_assets, recorded_uses)
     aot_output = integration_test_aot(ctx, setup.sdk, kernel_dill, setup.is_debug, setup.strip)
     assets = integration_test_assets(
         ctx,
         setup.sdk,
         "android",
-        kernel_dill,
+        recorded_uses,
         setup.is_debug,
-        native_assets.data_assets,
+        native_assets,
     )
     return _android_integration_app_providers(ctx, setup, sources, native_assets, kernel_dill, aot_output, assets)
 

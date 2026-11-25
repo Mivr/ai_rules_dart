@@ -66,7 +66,7 @@
 # to run twice (matrix plus standalone job); now each runs once.
 #
 # CACHES: one repository cache per OS from setup-bazel (shared by every Bazel
-# job; downloads are content-addressed), plus one Bazel disk cache per OS per
+# job; downloads are content-addressed; the key includes the Android pins), plus one Bazel disk cache per OS per
 # shard managed below with actions/cache. setup-bazel's own disk cache never
 # re-saves an unchanged key, so a run that rebuilds actions would lose them;
 # instead each shard restores the newest entry under its prefix and, on main
@@ -118,6 +118,14 @@ on:
         required: false
         default: false
         type: boolean
+      # The rehearsal `prebuilt-tools` below: the jobs of the release that build
+      # the prebuilt tools, on every host platform, and release_prep.sh on what
+      # they upload.
+      prebuilt_tools:
+        description: Also rehearse the release's prebuilt-tools jobs on all five host platforms and release_prep.sh on a scratch tag (never gates, publishes nothing)
+        required: false
+        default: false
+        type: boolean
 concurrency:
   # Runs on main never share a group: each gets its own run-id suffix, so a
   # push cannot cancel the nightly uncached run (or the reverse) and manual
@@ -134,7 +142,26 @@ env:
     - rules_flutter/MODULE.bazel.lock
     - rules_flutter/e2e/*/MODULE.bazel
     - rules_flutter/flutter/private/versions.bzl
+    # The Android pins: a new pin starts a new entry, which a main push saves.
+    - rules_flutter/e2e/**/android_model.json
 jobs:
+  # A rehearsal, not a gate: the release's `tools` jobs (prebuilt-tools.yaml, the
+  # same workflow the release calls) on the five host platforms, then
+  # release_prep.sh on what they upload, on a scratch tag in that job's own clone.
+  # A dispatch with `prebuilt_tools` set runs it. It pushes no tag and creates no
+  # release or attestation; none of its jobs fails the run, and it is not in
+  # `conclusion.needs`. The answer is in the step summaries: per platform whether
+  # the two builds were byte-equal, and the sizes.
+  prebuilt-tools:
+    name: prebuilt tools (rehearsal)
+    if: github.event_name == 'workflow_dispatch' && inputs.prebuilt_tools
+    permissions:
+      contents: read
+    uses: ./.github/workflows/prebuilt-tools.yaml
+    with:
+      module: rules_flutter
+      ref: ${{ github.sha }}
+      rehearse: true
   # An experiment, not a gate: do build hooks run on a Mac? The Apple refusal of
   # a hook, the replacements of sqlite3 and webcrypto and the objective_c
   # overlay are switched off (`.github/patches/apple-hooks-on.patch`), and the
@@ -887,6 +914,8 @@ jobs:
         run: bazel run //tools/e2e_runner -- --workspace=e2e/build_runner --bazel=bazel
       - name: Run e2e/pub_sources
         run: bazel run //tools/e2e_runner -- --workspace=e2e/pub_sources --bazel=bazel
+      - name: Run e2e/pubspec_assets
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/pubspec_assets --bazel=bazel
       # The runner builds in a temp copy, so build in the tree here for the
       # check below to see writes through the dirlinks.
       - name: Build e2e/dual_hub in tree
@@ -1066,7 +1095,7 @@ jobs:
             workspaces: aar_host
           - leg: gradle models
             shard: android-models
-            workspaces: android_model_red android_modules android_plugins android_sharedprefs stock_dev_loop
+            workspaces: android_model_red android_modules android_plugins android_sharedprefs android_template stock_dev_loop
     env:
       DISK_CACHE_DIR: ~/.cache/bazel-disk
       DISK_CACHE_SHARD: linux-${{ matrix.shard }}

@@ -26,7 +26,7 @@ flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
 
 # Named, not inherited: the host's Gradle file (android/app/build.gradle.kts) names the engine
 # revision of this Flutter release, and the module's AOT library must be built by the same one.
-flutter.toolchain(flutter_version = "3.47.7")
+flutter.toolchain(flutter_version = "3.50.1")
 flutter.pub(
     name = "deps",
     lock = "//:pubspec.lock",

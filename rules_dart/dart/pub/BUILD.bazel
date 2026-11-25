@@ -19,6 +19,7 @@ bzl_library(
         ":pub_lock_package",
         "//dart/pub/private:build_content",
         "//dart/pub/private:pin_checks",
+        "//dart/pub/private:project",
         "//dart/pub/private:pub_emit",
         "//dart/pub/private:pub_plan",
         "//dart/pub/private:pub_root_pin",
@@ -30,6 +31,13 @@ bzl_library(
         "//dart/pub/private:scc",
         "//dart/pub/private:yaml2json",
     ],
+)
+
+bzl_library(
+    name = "project",
+    srcs = ["project.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["//dart/pub/private:project"],
 )
 
 bzl_library(

@@ -19,7 +19,7 @@
       "kinds": ["web"],
       "item": "compiled:main.dart.js",
       "cause": "differs",
-      "reason": "Same size, some functions emitted in another order. dart2js orders them by the paths of their source files, and stock compiles each package from its absolute path on the machine, so its output depends on whether the pub cache's path sorts before the Flutter SDK's (here /work/rdf/cache/pub sorts before /work/rdf/sdk/flutter-3.47.7; a machine with the SDK under /opt and the pub cache under /work gets the other order). The rules compile every package from its repository's path in the execution root, the same on every machine. Stock compiled with the pub cache reached through a path that sorts after the SDK's gives the rules' file byte for byte."
+      "reason": "Same size, some functions emitted in another order. dart2js orders them by the paths of their source files, and stock compiles each package from its absolute path on the machine, so its output depends on whether the pub cache's path sorts before the Flutter SDK's (here /work/rdf/cache/pub sorts before /work/rdf/sdk/flutter-3.50.1; a machine with the SDK under /opt and the pub cache under /work gets the other order). The rules compile every package from its repository's path in the execution root, the same on every machine. Stock compiled with the pub cache reached through a path that sorts after the SDK's gives the rules' file byte for byte."
     }
   ]
 }

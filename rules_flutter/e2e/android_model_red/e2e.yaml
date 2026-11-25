@@ -37,3 +37,24 @@ commands:
     expect:
       non_zero: true
       output_contains: 'has no variant `release` of the app (it has debug)'
+  - name: an artifact whose first address refuses comes from the next one
+    run: bazel build --repository_cache= --http_connector_attempts=1 @second_address_answers//:jar
+    expect:
+      exit_code: 0
+      output_contains: 'Download from http://127.0.0.1:1/maven2/fixture/ok/1.0/ok-1.0.jar failed'
+  - name: an artifact that no address gives is named with the addresses tried and what to do
+    run: bazel build --repository_cache= --http_connector_attempts=1 @every_address_refuses//:jar
+    expect:
+      non_zero: true
+      output_contains:
+        - 'cannot fetch the Maven artifact fixture:never:1.0 (never-1.0.jar, sha256 1111111111111111111111111111111111111111111111111111111111111111)'
+        - 'http://127.0.0.1:1/maven2/fixture/ok/1.0/ok-1.0.jar'
+        - 'http://127.0.0.1:2/maven2/fixture/ok/1.0/ok-1.0.jar'
+        - '--downloader_config'
+  - name: other bytes than the pin has are refused whatever the address
+    run: bazel build --repository_cache= --http_connector_attempts=1 @other_bytes//:jar
+    expect:
+      non_zero: true
+      output_contains:
+        - 'cannot fetch the Maven artifact fixture:other:1.0 (other-1.0.jar'
+        - 'but wanted 0000000000000000000000000000000000000000000000000000000000000000'

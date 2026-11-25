@@ -507,11 +507,7 @@ String _toAppSchemeUri(String path, String cwdPrefix) {
 ///
 /// Directory-wide scrubbing is only safe when no other action writes compiler
 /// outputs into [outDir] concurrently: every scrub below is a read-modify-write
-/// computed with only this action's temp paths, so scrubbing a sibling
-/// action's file can overwrite its normalized result with a sorted-but-raw
-/// copy. A compile that shares its output directory — the base and canvaskit
-/// icon kernels both emit `<dill>.deps` into the same `bin` dir — must scrub
-/// only its own files with [scrubDart2JsFile].
+/// computed with only this action's temp paths.
 void scrubDart2JsOutputs(
   Directory outDir, {
   required String cwdPath,
@@ -542,15 +538,7 @@ void scrubDart2JsOutputs(
 
 /// Scrubs one compiler output file in place.
 ///
-/// This is the per-file core of [scrubDart2JsOutputs], split out so an action
-/// whose outputs share a directory with a concurrent action's outputs can
-/// normalize exactly the files it owns and never read-modify-write a file
-/// another action is still producing. The base and canvaskit icon kernels
-/// (see the `--cfe-only` branch of [_runDart2Js]) compile concurrently into
-/// the same `bin` dir: with a directory-wide scrub, a scrub that read the
-/// sibling's `<dill>.deps` while raw and wrote it back after the sibling's
-/// own scrub overwrote the normalized file with a sorted-but-still-raw copy —
-/// a declared output differing per strategy (P-web-icon-dill-paths).
+/// This is the per-file core of [scrubDart2JsOutputs].
 void scrubDart2JsFile(
   File file, {
   required String cwdPath,
@@ -753,20 +741,9 @@ void _runDart2Js(List<String> args) {
   })
   parsed = _parseDart2JsArgs(args);
 
-  // `dart compile js --cfe-only` produces a kernel dill for const_finder
-  // (the `app.dill` upstream runs icon tree-shaking on) rather than
-  // JavaScript. Its `-o` names a file, not a directory, so the scratch
-  // directory is a uniquely-named sibling of the output (the compiler already
-  // writes `<dill>.deps` there, so the parent is the action's own output
-  // tree); two icon kernels compile concurrently into one `bin` dir, hence
-  // the timestamp/pid suffix. JS scrubbing is skipped: there is no JS to
-  // scrub, and the `.deps` sibling is normalized below.
-  final bool cfeOnly = parsed.forwardArgs.contains('--cfe-only');
-
   final String cwdPath = Directory.current.absolute.path;
   final ({String tmpAbsPath, Directory tmpDir}) scratch = _dart2JsScratchDir(
     outJs: parsed.outJs,
-    cfeOnly: cfeOnly,
     cwdPath: cwdPath,
   );
   final Directory tmpDir = scratch.tmpDir;
@@ -795,7 +772,6 @@ void _runDart2Js(List<String> args) {
   _scrubDart2JsResults(
     _Dart2JsScrubRequest(
       outJs: parsed.outJs,
-      cfeOnly: cfeOnly,
       cwdPath: cwdPath,
       tmpAbsPath: tmpAbsPath,
       packagesPath: parsed.packagesPath,
@@ -851,27 +827,17 @@ _parseDart2JsArgs(List<String> args) {
   );
 }
 
-/// The compile's scratch directory and its absolute path.
-///
-/// The icon-kernel scratch sits under the action's output directory when the
-/// output is known (never the shared system temp): for a tree-artifact
-/// output that is `outJs`'s own directory, for a dill output its parent dir.
+/// The compile's scratch directory and its absolute path: under the action's
+/// own output directory when the output is known (never the shared system
+/// temp), else the working directory.
 ({Directory tmpDir, String tmpAbsPath}) _dart2JsScratchDir({
   required String? outJs,
-  required bool cfeOnly,
   required String cwdPath,
 }) {
-  final String baseTmpParent = (cfeOnly || outJs == null)
+  final String parent = outJs == null
       ? cwdPath
       : (File(outJs).parent..createSync(recursive: true)).path;
-  final String cfeScratchParent = cfeOnly && outJs != null
-      ? (File(outJs).parent..createSync(recursive: true)).path
-      : baseTmpParent;
-  final tmpDir = Directory(
-    cfeOnly
-        ? '$cfeScratchParent/rules_flutter_dart2js_cfe_${DateTime.now().microsecondsSinceEpoch}_${pid}'
-        : '$baseTmpParent/_dart2js_tmp',
-  )..createSync(recursive: true);
+  final tmpDir = Directory('$parent/_dart2js_tmp')..createSync(recursive: true);
   return (tmpDir: tmpDir, tmpAbsPath: tmpDir.absolute.path);
 }
 
@@ -950,7 +916,6 @@ String? _compileDart2Js(_WebCompileRequest req, {required String? outJs}) {
 /// plus the host-specific paths the scrub rewrites to stable spellings.
 class _Dart2JsScrubRequest {
   final String? outJs;
-  final bool cfeOnly;
   final String cwdPath;
   final String tmpAbsPath;
   final String? packagesPath;
@@ -958,7 +923,6 @@ class _Dart2JsScrubRequest {
 
   const new({
     required this.outJs,
-    required this.cfeOnly,
     required this.cwdPath,
     required this.tmpAbsPath,
     required this.packagesPath,
@@ -966,38 +930,15 @@ class _Dart2JsScrubRequest {
   });
 }
 
-/// Normalizes this action's own compiler outputs.
-///
-/// A directory-wide scrub for a regular JS output; only the `<dill>.deps`
-/// sibling for a `--cfe-only` kernel, never the whole output directory: the
-/// base and canvaskit icon kernels compile concurrently into the same `bin`
-/// dir, and a directory-wide scrub is a read-modify-write of the sibling's
-/// depfile with only this action's temp paths known. A scrub that read the
-/// sibling's file while raw and writes it back after the sibling's own scrub
-/// overwrites the normalized file with a sorted-but-still-raw copy — a
-/// declared output that then differs per strategy (P-web-icon-dill-paths).
-/// The `.dill` itself needs no scrubbing: the kernel records
-/// workspace-relative library URIs.
+/// Normalizes this action's own compiler outputs: a directory-wide scrub of the
+/// directory the JS output sits in.
 void _scrubDart2JsResults(_Dart2JsScrubRequest scrub) {
-  if (scrub.outJs != null && !scrub.cfeOnly) {
-    scrubDart2JsOutputs(
-      File(scrub.outJs!).parent,
-      cwdPath: scrub.cwdPath,
-      tmpDirPath: scrub.tmpAbsPath,
-      packagesPath: scrub.packagesPath,
-      rewrittenPkgPath: scrub.rewrittenPkgPath,
-    );
-  }
-  if (scrub.outJs != null && scrub.cfeOnly) {
-    final depsFile = File('${scrub.outJs!}.deps');
-    if (depsFile.existsSync()) {
-      scrubDart2JsFile(
-        depsFile,
-        cwdPath: scrub.cwdPath,
-        tmpDirPath: scrub.tmpAbsPath,
-        packagesPath: scrub.packagesPath,
-        rewrittenPkgPath: scrub.rewrittenPkgPath,
-      );
-    }
-  }
+  if (scrub.outJs == null) return;
+  scrubDart2JsOutputs(
+    File(scrub.outJs!).parent,
+    cwdPath: scrub.cwdPath,
+    tmpDirPath: scrub.tmpAbsPath,
+    packagesPath: scrub.packagesPath,
+    rewrittenPkgPath: scrub.rewrittenPkgPath,
+  );
 }

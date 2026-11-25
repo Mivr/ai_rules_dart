@@ -46,7 +46,7 @@ If `flutter build` works for you, here is what Bazel adds:
 
 | Platform | What you need |
 |---|---|
-| All | Bazel 9 or newer. The rules download Flutter 3.47.7 themselves. |
+| All | Bazel 9 or newer. The rules download Flutter 3.50.1 themselves. |
 | macOS | Xcode, for `rules_apple` and `rules_swift`. |
 | iOS | Xcode. The simulator needs no signing identity. A physical device does; see [Running on an iOS device](#running-on-an-ios-device). |
 | Android | The Android SDK and NDK, with `ANDROID_HOME` and `ANDROID_NDK_HOME` set. See [Android](#android). |
@@ -77,7 +77,7 @@ archive_override(
 )
 
 flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
-flutter.toolchain(flutter_version = "3.47.7")
+flutter.toolchain(flutter_version = "3.50.1")
 flutter.pub(
     name = "deps",
     lock = "//:pubspec.lock",
@@ -88,6 +88,8 @@ register_toolchains("@flutter_toolchains//:all")
 ```
 
 Keep the `ai_rules_dart` override in your root `MODULE.bazel` at or above the floor that rules_flutter's `MODULE.bazel` names in its `bazel_dep` on `ai_rules_dart`: an older one fails to load, on the first `@rules_dart` file it lacks. The release notes name the `rules_dart` release that is the floor. A Bazel Central Registry entry, when there is one, makes the `archive_override` blocks unnecessary.
+
+Keep the root's `register_toolchains("@flutter_toolchains//:all")`: it makes the Dart SDK your Flutter release bundles the one that runs the rules' own tools, whatever order the `bazel_dep` lines are in, while a workspace without it that names `ai_rules_dart` before `ai_rules_flutter` runs them on rules_dart's standalone Dart SDK, which it downloads besides (a slower first build, still correct).
 
 `flutter.toolchain` downloads the Flutter SDK and engine. `flutter.pub` reads your `pubspec.lock` and creates a repository, here named `deps`, with one target per package: `@deps//:flutter`, `@deps//:flutter_test`, `@deps//:collection`, and so on. See [Pub packages](#pub-packages).
 
@@ -1614,6 +1616,17 @@ The `flutter_test_config.dart` that `flutter test` wraps a test in, the one in t
 
 Assets load as under `flutter test`: the runner gives `flutter_tester` the `UNIT_TEST_ASSETS` and `APP_NAME` that `flutter test` gives it, so `package:flutter_test` answers an asset load from the test's bundle at once, and an SVG or image a widget loads is there by the next frame.
 
+Tests are declared in the project's own package, the BUILD file beside its `pubspec.yaml`: a test in a BUILD file below it, such as `test/BUILD.bazel`, gets none of these defaults.
+
+A pure-Dart package of the workspace (no Flutter SDK dependency), tested with rules_dart's `dart_test`, gets the same defaults from rules_dart, whose macros read rules_dart's own index of projects rather than the `flutter` extension's. Name the `flutter.pub` lock to it in `MODULE.bazel`; the tag declares no hub and fetches nothing:
+
+```starlark
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.project(lock = "//:pubspec.lock")
+```
+
+Without it, such a test would run outside its package's directory, without its fixtures and at the default language version, so the `flutter` extension fails instead when a pure-Dart project of a root `flutter.pub` lock has a `test/` directory and rules_dart's index lacks it, printing those two lines for that lock.
+
 #### Golden files
 
 Goldens under the project's `test/` are `data` by default (above). A golden elsewhere, or in a package the extension does not know, must be listed in `data`, or the test cannot see it:
@@ -2038,7 +2051,7 @@ A few things to know:
 
 ### Providers
 
-**`FlutterSdkInfo`** comes from the toolchain and carries the engine binaries and SDK files a custom rule needs. Core host fields live directly on `@rules_flutter//flutter:toolchain_type`; lazy-fetched fields (`gen_snapshot`, `platform_kernel_dill_product`, `const_finder`, `font_subset`, `engine_library`, `linux_sysroot`, `material_icons_font`) live on optional sub-toolchains so builds only download the repositories they use. Use `resolve_flutter_sdk_info(ctx)` with `FLUTTER_OPTIONAL_TOOLCHAINS` (from `@rules_flutter//flutter:providers.bzl` or `@rules_flutter//flutter:toolchain.bzl`) to merge them:
+**`FlutterSdkInfo`** comes from the toolchain and carries the engine binaries and SDK files a custom rule needs. Core host fields live directly on `@rules_flutter//flutter:toolchain_type`; lazy-fetched fields (`gen_snapshot`, `platform_kernel_dill_product`, `font_subset`, `engine_library`, `linux_sysroot`, `material_icons_font`) live on optional sub-toolchains so builds only download the repositories they use. Use `resolve_flutter_sdk_info(ctx)` with `FLUTTER_OPTIONAL_TOOLCHAINS` (from `@rules_flutter//flutter:providers.bzl` or `@rules_flutter//flutter:toolchain.bzl`) to merge them:
 
 ```starlark
 load("@rules_flutter//flutter:providers.bzl", "FLUTTER_OPTIONAL_TOOLCHAINS", "resolve_flutter_sdk_info")
@@ -2049,7 +2062,7 @@ sdk = resolve_flutter_sdk_info(ctx)
 
 | Field | Type | Description |
 |---|---|---|
-| `version` | `str` | The Flutter SDK version, for example `"3.47.7"`. |
+| `version` | `str` | The Flutter SDK version, for example `"3.50.1"`. |
 | `engine_revision` | `str` | The engine commit hash. |
 | `dart` | `File` | Deprecated. The `dart` executable from the bundled Dart SDK; prefer `@rules_dart//dart:exec_tools_toolchain_type`. |
 | `dartaotruntime` | `File` | The runtime for AOT snapshots. |
@@ -2066,7 +2079,6 @@ sdk = resolve_flutter_sdk_info(ctx)
 | `dart2js_files` | `depset[File]` | Minimal Dart SDK files needed for `dart compile js` (`bin/dart`, `bin/dartvm`, `bin/snapshots/dart2js.dart.snapshot`). |
 | `engine_library` | `Target` or `None` | The platform engine runtime library. `None` for mobile and web (resolved via `@rules_flutter//flutter:desktop_engine_toolchain_type`). |
 | `linux_sysroot` | `Target` or `None` | The Chromium sysroot filegroup for Linux GTK3 builds (resolved via `@rules_flutter//flutter:desktop_engine_toolchain_type`). |
-| `const_finder` | `File` or `None` | `const_finder.dart.snapshot`, for icon tree shaking (resolved via `@rules_flutter//flutter:product_tools_toolchain_type`). |
 | `font_subset` | `File` or `None` | The `font-subset` binary (resolved via `@rules_flutter//flutter:product_tools_toolchain_type`). |
 | `material_icons_font` | `File` or `None` | `MaterialIcons-Regular.otf` (resolved via `@rules_flutter//flutter:material_icons_toolchain_type`). |
 | `assets_tool` | `FlutterAssetsToolInfo` or `None` | The asset tool of this release, compiled against its `package:flutter_tools`, which writes every asset bundle. See [Assets](docs/assets.md). |

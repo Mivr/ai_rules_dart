@@ -1,0 +1,13 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+exports_files(["pubspec.yaml"])
+
+# Nothing project-specific is stated here: the test runs in this directory,
+# has the files under test/ as data and compiles at the pubspec's language
+# version, as `dart test` runs it.
+dart_test(
+    name = "project_files_test",
+    size = "small",
+    main = "test/project_files_test.dart",
+    deps = ["@pub_deps//:test"],
+)

@@ -46,11 +46,11 @@ older stable, a rebuild, an enterprise engine. Budget for it up front: every
 release needs its `engine_revision`, `source_sha256`, `material_fonts_url`,
 and one `artifact_sha256` entry per artifact the repositories fetch — 58 for
 a current release, the same set `ARTIFACT_CHECKSUMS` lists per stock version
-(`e2e/smoke`'s `3.47.70` tag copies 3.47.7's set verbatim):
+(`e2e/smoke`'s `3.50.10` tag copies 3.50.1's set verbatim):
 
 ```starlark
 flutter.version(
-    version = "3.47.70",
+    version = "3.50.10",
     engine_revision = "<engine commit the artifacts are published under>",
     source_sha256 = "<sha256 of the framework source tarball>",
     material_fonts_url = "flutter_infra_release/flutter/fonts/<...>/fonts.zip",
@@ -61,7 +61,7 @@ flutter.version(
 )
 flutter.toolchain(
     name = "custom",
-    flutter_version = "3.47.70",
+    flutter_version = "3.50.10",
 )
 ```
 
@@ -84,8 +84,8 @@ origin serving the same layout (an enterprise mirror of the engine revision
 directory, a vendored source tarball). They are per-release origins, not
 general mirrors: plain host mirroring stays Bazel's job — see below.
 
-`e2e/smoke` registers release `3.47.70`, an enterprise-style rebuild label
-over 3.47.7's bytes, and resolves a toolchain from it. `material_fonts_url`
+`e2e/smoke` registers release `3.50.10`, an enterprise-style rebuild label
+over 3.50.1's bytes, and resolves a toolchain from it. `material_fonts_url`
 takes a GCS path as above; a full `https://` URL is used as-is.
 
 ## Offline SDKs (`local_path`)
@@ -190,7 +190,7 @@ for mirroring stock releases.
 ## Adding a stock release
 
 ```sh
-bazel run //tools/update_flutter_version -- 3.47.8
+bazel run //tools/update_flutter_version -- 3.50.2
 ```
 
 The tool reads the engine revision from the Flutter tag, downloads each

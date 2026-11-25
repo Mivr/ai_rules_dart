@@ -46,7 +46,9 @@ Change them only when the version they name leaves the table.
    first) with the checksums the Dart bucket publishes, hashes the 22 cross
    binaries and the tag archive as it downloads them, reads the commit from the
    release's `VERSION` file, and drops the pins of a version that is no longer
-   listed. A new `MODULE_COMPILER_SOURCES` row starts from the newest row's package
+   listed. Drop an old version only after `rules_flutter`'s own bump has run
+   (its tool is built with the default Flutter's Dart, which that version may
+   be). A new `MODULE_COMPILER_SOURCES` row starts from the newest row's package
    language versions; check them against the `sdk:` lower bounds in
    `pkg/{_fe_analyzer_shared,build_integration,front_end,kernel,vm}/pubspec.yaml`
    of the tag (a value below what the sources use fails the tool's build)
@@ -60,11 +62,15 @@ Change them only when the version they name leaves the table.
 4. If the version becomes the default: set `dart_version` in `MODULE.bazel` and
    the `README.md` snippet; check that `e2e/root_sdk_pin` still pins a version
    other than the default
-5. `FORMATTER_SDK_SERIES` in `dart/private/format_mode.bzl` does not follow the
-   SDK: it names the series the vendored `package:dart_style` formats like.
-   `DartFormat` runs the SDK's own `dart format` for any other series, so a new
-   default works without a change, and moves to the in-process formatter when
-   `dart/ext` is re-vendored for it
+5. `FORMATTER_SDK_SERIES` in `dart/private/format_mode.bzl` (and its mirror
+   `formatterSdkSeries` in `dart/private/tools/format_runner.dart`) names the
+   series the vendored `package:dart_style` formats like. For a new default
+   minor, compare `dart_style_rev` in the new SDK tag's `DEPS` with the vendored
+   version (`dart/ext/pubspec.lock`): when the changelog between them has no
+   style change and the vendored `DartVersionHistory` knows the new minor,
+   move the series (and the tests' SDK strings) to it; otherwise `DartFormat`
+   runs the SDK's own `dart format` for the new series until `dart/ext` is
+   re-vendored
 6. Regenerate lock files: `cd tools && bazel run //refresh_locks`
 
 **Verification**: the suites of step 3 pass for every listed version, and
