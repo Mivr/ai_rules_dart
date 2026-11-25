@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:runfiles/runfiles.dart';
 
+import 'test_runner_workspace.dart' show parseManifestLine;
+
 /// One package a `dart_test` reaches: its name and `lib_root` (the
 /// `short_path`-based directory above its `lib/`), as `dart_test` lists them.
 typedef PackageRoot = ({String name, String root});
@@ -63,10 +65,10 @@ String? _lookupLibDir(String rpath, RunfilesView runfiles) {
   }
   final below = '$rpath/';
   for (final String line in runfiles.manifest) {
-    final int space = line.indexOf(' ');
-    if (space < 0) continue;
-    final String key = line.substring(0, space);
-    final String real = line.substring(space + 1);
+    final ({String path, String real})? entry = parseManifestLine(line);
+    if (entry == null) continue;
+    final String key = entry.path;
+    final String real = entry.real;
     if (key == rpath && Directory(real).existsSync()) return real;
     if (key.startsWith(below) && key.length > below.length) {
       // The real path ends in the same suffix as the key below `lib/`.
