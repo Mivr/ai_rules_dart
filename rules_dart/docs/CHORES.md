@@ -7,9 +7,12 @@ file at runtime — keep file lists current as the repo evolves.
 
 ## Dart SDK Version Bump
 
-**Trigger**: New stable Dart SDK release. The rules list only the current stable
-SDKs: the new release, plus the default while it stays the default. Keep the
-latest patch of each minor, so a new patch replaces the minor's earlier rows.
+**Trigger**: New stable Dart SDK release. The rules list the current stable
+line and the previous one (today 3.14 and 3.13: customers that have not
+migrated stay on the previous line). Keep the latest patch of each minor, so a
+new patch replaces the minor's earlier rows. A new minor does not drop the
+oldest listed line by itself: a line is dropped only on the owner's word, with
+`--drop=` for each of its versions.
 
 **What a bump touches**: two generated files, and two more only when the new
 version becomes the default.

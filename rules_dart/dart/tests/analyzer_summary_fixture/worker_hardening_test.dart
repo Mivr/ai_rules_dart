@@ -118,6 +118,13 @@ Stream<Uint8List> _frameStream(Stream<List<int>> source) {
   return (exitCode: exitCode, output: output);
 }
 
+/// Why a case that needs in-process formatting is skipped on this SDK, or
+/// false on the vendored formatter's series (`FORMATTER_SDK_SERIES`, 3.14).
+final Object _offFormatterSeries = Platform.version.startsWith('3.14.')
+    ? false
+    : 'formats in process on the 3.14 series only; this SDK is '
+          '${Platform.version.split(' ').first}';
+
 void main(List<String> args) {
   final r = Runfiles.create();
   final String formatRunnerDill = r.rlocation(args[0]);
@@ -332,6 +339,10 @@ void main(List<String> args) {
     await proc.exitCode;
   });
 
+  // Holds only where `format_runner` formats in process, on the series of the
+  // vendored `package:dart_style` (`FORMATTER_SDK_SERIES` in format_mode.bzl):
+  // on another SDK line it starts the SDK's own `dart format`, whose search
+  // for options walks up from each file and out of the project.
   test('format_runner does not escape <project>/src into execroot analysis_options.yaml', () async {
     final execroot = Directory('${tmp.path}/execroot')
       ..createSync(recursive: true);
@@ -404,7 +415,7 @@ void main(List<String> args) {
     await responses.cancel();
     await proc.stdin.close();
     await proc.exitCode;
-  });
+  }, skip: _offFormatterSeries);
 
   test('never prunes symlinks without a manifest and fails on empty manifest or unanalyzed source', () {
     final projDir = Directory('${tmp.path}/no_manifest_proj');
@@ -834,6 +845,8 @@ void main(List<String> args) {
       ..writeAsStringSync('src/lib/keep.dart\n');
     res = Process.runSync(Platform.resolvedExecutable, [
       formatRunnerDill,
+      '--dart',
+      Platform.resolvedExecutable,
       '--project',
       projDir.path,
       '--manifest',
