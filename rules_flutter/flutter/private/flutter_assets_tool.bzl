@@ -129,6 +129,19 @@ def _flutter_assets_tool_impl(ctx):
             unsupported_version = sources.unsupported_version,
         )]
     sdk = _sdk_files(ctx.file.dart, ctx.files.compile_files)
+    if ctx.file.prebuilt != None and "dartaotruntime" in sdk:
+        # A release's snapshot of this very tool (`prebuilt_tools.bzl`): the
+        # sources are still read at run time, the compile is skipped.
+        return [
+            DefaultInfo(files = depset([ctx.file.prebuilt])),
+            FlutterAssetsToolInfo(
+                snapshot = ctx.file.prebuilt,
+                runtime = sdk["dartaotruntime"],
+                framework_shaders = sources.framework_shaders,
+                service_worker = sources.service_worker,
+                unsupported_version = "",
+            ),
+        ]
     if len(sdk) != 4:
         fail("%s: the Dart SDK at %s lacks %s, which the asset tool is built with." % (
             ctx.label,
@@ -221,6 +234,10 @@ flutter_assets_tool = rule(
         "version": attr.string(
             doc = "The Flutter version, for messages.",
             mandatory = True,
+        ),
+        "prebuilt": attr.label(
+            doc = "A release's prebuilt snapshot of this tool for this version and host (see `prebuilt_tools.bzl`); None builds it.",
+            allow_single_file = True,
         ),
         "_main": attr.label(
             doc = "The tool's own source.",

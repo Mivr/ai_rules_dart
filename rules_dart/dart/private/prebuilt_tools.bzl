@@ -290,11 +290,13 @@ dart_tools_hub_repo = repository_rule(
 # ---------------------------------------------------------------------------
 # What the module extensions call.
 
-def prebuilt_tools_table(module_ctx):
-    """Reads rules_dart's prebuilt-tools table, as the switch leaves it.
+def prebuilt_tools_table(module_ctx, table = _TABLE):
+    """Reads a prebuilt-tools table, as the switch leaves it.
 
     Args:
       module_ctx: A module extension context.
+      table: The table's label: rules_dart's by default; rules_flutter
+        passes its own, which the same switch turns off.
 
     Returns:
       `{version: {platform: {"url", "sha256"}}}`: empty in the repository,
@@ -304,7 +306,7 @@ def prebuilt_tools_table(module_ctx):
     switch = module_ctx.getenv(PREBUILT_TOOLS_ENV, "")
     if switch not in ("", "prebuilt", "source"):
         fail("--repo_env=%s=%s: the value is `prebuilt` (the default) or `source`" % (PREBUILT_TOOLS_ENV, switch))
-    table = json.decode(module_ctx.read(_TABLE)).get("tools", {})
+    table = json.decode(module_ctx.read(table)).get("tools", {})
     if switch == "source":
         return {}
     return {

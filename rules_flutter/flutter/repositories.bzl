@@ -595,6 +595,8 @@ def _write_engine_artifacts_build(
         exe_suffix,
     )
 
+    # A release's prebuilt module compiler and asset tool, for this version and host.
+    prebuilt_repo = getattr(repository_ctx.attr, "prebuilt_tools_repo", "")
     build_content = _BUILD_TEMPLATE.format(
         user_repo_name = user_repo_name,
         flutter_version = flutter_version,
@@ -612,6 +614,8 @@ def _write_engine_artifacts_build(
         lazy_file_aliases = lazy_file_aliases,
         exe_suffix = exe_suffix,
         linux_sysroot_attr = linux_sysroot_attr,
+        prebuilt_module_compiler = repr("@%s//:module_compiler" % prebuilt_repo if prebuilt_repo else None),
+        prebuilt_assets_tool = repr("@%s//:assets_tool" % prebuilt_repo if prebuilt_repo else None),
     )
     repository_ctx.file("BUILD.bazel", build_content)
 
@@ -638,6 +642,7 @@ declare_dart_sdk_toolchains(
     dart = "dart-sdk/bin/{dart_bin}",
     prefix = "dart-sdk/",
     sdk_root_name = "dart_sdk_files",
+    prebuilt_module_compiler = {prebuilt_module_compiler},
 )
 
 filegroup(
@@ -754,6 +759,7 @@ flutter_assets_tool(
     name = "assets_tool",
     compile_files = ":compile_files",
     dart = "dart-sdk/bin/{dart_bin}",
+    prebuilt = {prebuilt_assets_tool},
     sources = "@{user_repo_name}_assets_tool//:sources",
     version = "{flutter_version}",
     visibility = ["//visibility:public"],
@@ -875,6 +881,10 @@ flutter_engine_artifacts = repository_rule(
         ),
         "sysroot_repo_name": attr.string(
             doc = "Name of the Linux sysroot repo for hermetic GTK3 builds. Required for Linux platforms.",
+        ),
+        "prebuilt_tools_repo": attr.string(
+            doc = "Apparent name of the repository holding a release's prebuilt module compiler and asset tool for this version and host (see `//flutter/private:prebuilt_tools.bzl`); empty builds them from source.",
+            default = "",
         ),
         "user_repository_name": attr.string(
             default = "flutter",
@@ -1071,7 +1081,7 @@ def _register_download_shared_repos(name, config):
         sha256 = flutter_artifact_sha256(config.flutter_version, "material_fonts.zip", config.checksums),
     )
 
-def _register_download_host_repos(name, flutter_version, engine_revision, engine_base_url, checksums):
+def _register_download_host_repos(name, flutter_version, engine_revision, engine_base_url, checksums, prebuilt_tools = {}):
     """Host platform repos and lazy per-host repos."""
     for platform, host_meta in HOST_PLATFORMS.items():
         sysroot_repo_name = ""
@@ -1090,6 +1100,7 @@ def _register_download_host_repos(name, flutter_version, engine_revision, engine
             user_repository_name = name,
             profile_repo_name = name + "_" + platform + "_profile",
             patch_vm_files = _dartdev_patch_vm_files(name),
+            prebuilt_tools_repo = prebuilt_tools.get(platform, ""),
         )
         _host_profile_repo(
             name = name + "_" + platform + "_profile",
@@ -1240,7 +1251,8 @@ def flutter_register_toolchains(
         darwin_sdk_url = "",
         darwin_sdk_sha256 = "",
         darwin_sdk_swift_toolchain_path = "",
-        darwin_sdk_llvm_tool_repos = None):
+        darwin_sdk_llvm_tool_repos = None,
+        prebuilt_tools = {}):
     """Convenience macro for setting up Flutter SDK repositories.
 
     Creates a repository for each host platform, lazy artifact repos,
@@ -1290,6 +1302,10 @@ def flutter_register_toolchains(
         darwin_sdk_llvm_tool_repos: apparent names of llvm's per-host
             prebuilt-toolchain repos (see the extension); the xtool repo
             symlinks the entry matching the exec host, or nothing when empty
+        prebuilt_tools: host platform → the repository of a release's
+            prebuilt tools for `flutter_version` (see
+            `//flutter/private:prebuilt_tools.bzl`); a host without one
+            builds its module compiler and asset tool from source
     """
     validate_darwin_sdk_config(
         path = darwin_sdk_path,
@@ -1341,7 +1357,7 @@ def flutter_register_toolchains(
         engine_base_url = engine_base_url,
         checksums = checksums,
     ))
-    _register_download_host_repos(name, flutter_version, engine_revision, engine_base_url, checksums)
+    _register_download_host_repos(name, flutter_version, engine_revision, engine_base_url, checksums, prebuilt_tools)
     _register_download_cross_repos(name, flutter_version, engine_revision, engine_base_url, checksums)
 
     # Linux sysroot repos (one per architecture, shared across hosts).

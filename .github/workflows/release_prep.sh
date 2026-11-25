@@ -41,7 +41,9 @@ REPO="${GITHUB_REPOSITORY:-Mivr/ai_rules_dart}"
 PREFIX="${MODULE}-${VERSION}"
 ARCHIVE="${MODULE}-v${VERSION}.tar.gz"
 DOCS_ARCHIVE="${MODULE}-v${VERSION}.docs.tar.gz"
-DOWNLOAD="https://github.com/${REPO}/releases/download"
+# Where the release's files are downloaded from. RELEASE_DOWNLOAD replaces it
+# in a rehearsal (a `file://` directory holding the files of an earlier run).
+DOWNLOAD="${RELEASE_DOWNLOAD:-https://github.com/${REPO}/releases/download}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

@@ -27,3 +27,8 @@
 /e2e/* export-ignore
 /e2e/smoke -export-ignore
 /e2e/smoke/.bazelrc.checkout export-ignore
+
+# The prebuilt-tools table of a release is written into the archive by
+# release_prep.sh, after `git archive`; the checkout's empty one
+# stays out, so the archive holds one.
+/flutter/private/prebuilt_tools.json export-ignore

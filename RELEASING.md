@@ -93,6 +93,38 @@ the unpacked archive; a consumer workspace on `archive_override` blocks pasted f
    `.bcr/rules_dart/`). Mark it ready for review, wait for the registry's presubmit, and for the registry to serve
    the version (a merged pull request is not a served module: resolve it from a clean consumer).
 
+## Prebuilt tools
+
+A release ships each module's own tools prebuilt, so a consumer's first build compiles none of them
+(`rules_dart/dart/private/prebuilt_tools.bzl` says how the rules use them; `rules_flutter/flutter/private/prebuilt_tools.bzl`
+for Flutter's):
+
+| Module | Set (`prebuilt_set`) | Keyed by |
+|---|---|---|
+| `rules_dart` | the module compiler of the default Dart SDK, `compile_wrapper`, `import_check`, `kernel_link` (AOT snapshots), `test_runner`, `kernel_launcher` (`exe`) | Dart version |
+| `rules_flutter` | the module compiler of the bundled Dart SDK and the asset tool (AOT snapshots), `android_bundle` (`exe`) | Flutter version |
+
+- The `tools` job of `dart-release.yaml` (and `flutter-release.yaml`) runs on each host platform the SDK tables list
+  (`linux-x64`, `linux-arm64`, `macos-arm64`, `macos-x64`, `windows-x64`), on that platform's runner:
+  `bazel run //release:release -- tools build --module=<module> --platform=<p> --out=<dir>` builds the set twice
+  from the tag, in two consumer workspaces of the checkout with separate output bases and no cache, and writes
+  `tools-<p>.tar.gz` only when the two builds agree byte for byte, with a sidecar `tools-<p>.json`. When they
+  differ it writes only the sidecar, listing the files that differed, and that platform ships nothing: it builds
+  its tools from source. A build that fails fails the job, and `release` needs every `tools` job.
+- `release_prep.sh` runs `release tools table`: it checks each archive against its sidecar, copies it to the release
+  files as `<tag>-tools-<version>-<p>.tar.gz` (attested like the archive), writes the table
+  (`dart/private/prebuilt_tools.json`, `flutter/private/prebuilt_tools.json`: version → platform → url, sha256) into
+  the module's archive in place of the checkout's empty one, and adds a line to the notes saying which platforms
+  ship tools and which build from source.
+- The table in the repository is empty: the repository, and a consumer on a path override, builds every tool from
+  source. `--repo_env=RULES_DART_TOOLS=source` does the same for a consumer of a release, in both modules.
+- An SDK bump needs nothing here: the release builds the tools of whatever SDK the tag pins.
+
+To rehearse it, run `tools build` in the scratch clone before `release_prep.sh`, with `--out` naming
+`<dir>/prebuilt-tools-<module>-<p>/`, and pass `RELEASE_TOOLS=<dir>`; a consumer then fetches the archive from the
+URL in the table: `RELEASE_DOWNLOAD=file://<out>` makes the table and the notes name the files in `<out>`, which
+must then hold `<tag>/<file>`.
+
 ## The floor of `rules_flutter`
 
 7. On `main`, in `rules_dart/tools`: `bazel run //release:release -- floor set 0.29.0`. It writes the version in
@@ -128,4 +160,7 @@ the unpacked archive; a consumer workspace on `archive_override` blocks pasted f
 Nothing here has run in GitHub Actions: the tag job, the gate with the new names, the reusable workflow at this
 layout, the attestations, the upload, the `publish-to-bcr` action with `module_roots`, the registry's presubmit on
 Windows and macOS and with Bazel 9.0.0 and `rolling`, and whether the actions' token may create a tag of this
-shape under the repository's rules. The first real tag is the first proof of those; watch it.
+shape under the repository's rules. The first real tag is the first proof of those; watch it. For the prebuilt
+tools, only a real release shows: the `tools` job on the macOS, Windows and Linux arm64 runners (and whether each
+platform's builds are reproducible there), the upload of the job artifacts into the reusable workflow's build job,
+and a consumer on each of those platforms that builds no tool.
