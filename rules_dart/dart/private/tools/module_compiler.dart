@@ -1404,8 +1404,10 @@ Uint8List _nativeAssetsKernel(String path) {
       Library(dartCore, fileUri: dummy, classes: [pragma]),
     ],
   );
+  // The type arguments are a `List<DartType>` in the 3.13 kernel and a
+  // `DartTypeList` (an extension type over that list) in the 3.14 one.
   Expression annotation(String name, Constant options) => ConstantExpression(
-    InstanceConstant(pragma.reference, [], {
+    InstanceConstant(pragma.reference, <DartType>[] as dynamic, {
       pragma.fields[0].fieldReference: StringConstant(name),
       pragma.fields[1].fieldReference: options,
     }),

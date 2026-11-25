@@ -29,7 +29,7 @@ archive_override(
 )
 
 dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
-dart.toolchain(dart_version = "3.13.5")
+dart.toolchain(dart_version = "3.14.1")
 use_repo(dart, "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")

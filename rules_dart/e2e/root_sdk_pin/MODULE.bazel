@@ -7,11 +7,11 @@ local_path_override(
 )
 
 # This workspace exists to show that a root module's SDK pin resolves and wins
-# over the version rules_dart itself requests, so it names a version. It shows
-# the second part only while the pinned version is not rules_dart's default:
-# with one version listed it can pin only the default.
+# over the version rules_dart itself requests, so it names a version that is not
+# rules_dart's default. When a bump makes the default this version, pin another
+# listed one here and in `test/version_test.dart`.
 dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
-dart.toolchain(dart_version = "3.13.5")
+dart.toolchain(dart_version = "3.14.0")
 use_repo(dart, "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")
