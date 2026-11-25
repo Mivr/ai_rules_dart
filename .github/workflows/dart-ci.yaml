@@ -2388,6 +2388,13 @@ jobs:
         run: bazel build --nobuild --lockfile_mode=error //...
       - name: Fail on drift
         run: git diff --exit-code MODULE.bazel MODULE.bazel.lock
+      # `bazel query` loads every branch of every select, on any host. A select
+      # that names a target only one host has (`@dart_pub_scanner//:scanner.exe`,
+      # which only a Windows fetch declares) passes every build and test here
+      # and fails this query; `test-macos` of Dart Full starts with the same
+      # query and was the only job that saw it, on `main`, after the merge.
+      - name: Every branch of every select loads
+        run: bazel query 'deps(//...)' --output=label > /dev/null
   # For branch protection settings, this job provides a "stable" name that can be used to gate PR merges
   # on "all matrix jobs were successful".
   conclusion:
