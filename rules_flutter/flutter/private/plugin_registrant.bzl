@@ -32,15 +32,15 @@ def make_registrant_content(plugins, target_platform = None):
 
     Two output shapes depending on `target_platform`:
 
-    - **`web`**: imports `package:flutter_web_plugins/flutter_web_plugins.dart`
-      to get `webPluginRegistrar`, then for each plugin whose web entry has
-      a `pluginClass` (the convention Flutter uses for web plugins —
-      web plugins are pure Dart and `pluginClass` is the Dart class), emits
-      a plain `registerPlugins()` function calling
-      `<PluginClass>.registerWith(webPluginRegistrar);`. Called by the web
-      bootstrap wrapper's main (there is no engine pre-main hook on web).
-      The `fileName` override (from `flutter.plugin.platforms.web.fileName`)
-      is honored.
+    - **`web`**: the Flutter tool's web registrant: for each plugin whose web
+      entry has a `pluginClass` (web plugins are pure Dart, and `pluginClass`
+      is the Dart class), sorted by package name, an import and
+      `<PluginClass>.registerWith(registrar);` inside
+      `registerPlugins([final Registrar? pluginRegistrar])`, the registrar
+      defaulting to `webPluginRegistrar` and installed as the platform message
+      handler last. Called by the web bootstrap wrapper's main (there is no
+      engine pre-main hook on web). The `fileName` override (from
+      `flutter.plugin.platforms.web.fileName`) is honored.
     - **Other platforms (or `None`)**: the upstream engine-invocable shape —
       `@pragma('vm:entry-point') class _PluginRegistrant` with a static
       `register()` that calls each `dartPluginClass`'s `registerWith()`. The engine
@@ -114,22 +114,50 @@ def _make_web_registrant_content(plugins):
     if not web_plugins_with_registrar and not web_plugins_no_registrar:
         return ""
 
-    lines = ["// GENERATED — do not edit.", "// ignore_for_file: depend_on_referenced_packages"]
-    if web_plugins_with_registrar:
-        lines.append("import 'package:flutter_web_plugins/flutter_web_plugins.dart';")
-    for p in web_plugins_with_registrar + web_plugins_no_registrar:
+    # The Flutter tool's `_dartPluginRegistryTemplate` (flutter_plugins.dart),
+    # line for line: the plugins sorted by package name, as `findPlugins`
+    # lists them, and the registrar installed as the platform message handler
+    # last, without which no method channel reaches a web plugin.
+    with_registrar = sorted(web_plugins_with_registrar, key = lambda p: p.package)
+    no_registrar = sorted(web_plugins_no_registrar, key = lambda p: p.package)
+    lines = [
+        "// Flutter web plugin registrant file.",
+        "//",
+        "// Generated file. Do not edit.",
+        "//",
+        "",
+        "// @dart = 2.13",
+        "// ignore_for_file: type=lint",
+        "",
+    ]
+    for p in with_registrar + no_registrar:
         lines.append("import 'package:%s/%s';" % (p.package, p.file_name))
+    lines.append("import 'package:flutter_web_plugins/flutter_web_plugins.dart';")
     lines.append("")
-    lines.append("void registerPlugins() {")
-    for p in web_plugins_with_registrar:
-        lines.append("  %s.registerWith(webPluginRegistrar);" % p.plugin_class)
-    for p in web_plugins_no_registrar:
+    lines.append("void registerPlugins([final Registrar? pluginRegistrar]) {")
+    lines.append("  final Registrar registrar = pluginRegistrar ?? webPluginRegistrar;")
+    for p in with_registrar:
+        lines.append("  %s.registerWith(registrar);" % p.plugin_class)
+    for p in no_registrar:
         # `dartPluginClass`-only plugins use the no-arg signature on web
         # too — same as Flutter's non-web Dart-side registrant convention.
         lines.append("  %s.registerWith();" % p.plugin_class)
+    lines.append("  registrar.registerMessageHandler();")
     lines.append("}")
     lines.append("")
     return "\n".join(lines)
+
+# The Flutter tool's `_noopDartPluginRegistryTemplate`: what an app without a
+# web plugin imports, so its program is the one `flutter build web` compiles.
+WEB_NOOP_REGISTRANT = """// Flutter web plugin registrant file.
+//
+// Generated file. Do not edit.
+//
+
+// ignore_for_file: type=lint
+
+void registerPlugins() {}
+"""
 
 def _collect_native_plugins(plugins, target_platform):
     """Collect plugins with a native pluginClass for the given platform.

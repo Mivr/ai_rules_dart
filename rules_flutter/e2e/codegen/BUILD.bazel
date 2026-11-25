@@ -472,13 +472,13 @@ flutter_test(
 )
 
 # Exercises: the golden-file comparator the rule installs. Goldens reach a test
-# only through `data` — the comparator reads them out of runfiles — so this is
-# the spelling every golden suite needs.
+# only through `data` — the comparator reads them out of runfiles — and the
+# files under the project's `test/` are `data` by default, so this target
+# names none.
 flutter_test(
     name = "golden_test",
     package_name = "codegen_e2e",
     size = "medium",
-    data = glob(["test/goldens/**"]),
     main = "test/golden_test.dart",
     target_compatible_with = _HOST_COMPATIBLE,
     deps = [
@@ -487,13 +487,13 @@ flutter_test(
     ],
 )
 
-# The paired negative: same test directory, same PNG on disk, no `data`. Do
-# not "fix" it by adding one.
+# The paired negative: the same PNG on disk next to the test, outside `test/`
+# so it is not `data` by default, and no `data`. Do not "fix" it by adding one.
 flutter_test(
     name = "golden_undeclared_test",
     package_name = "codegen_e2e",
     size = "medium",
-    main = "test/golden_undeclared_test.dart",
+    main = "golden_undeclared/golden_undeclared_test.dart",
     target_compatible_with = _HOST_COMPATIBLE,
     deps = [
         "@deps//:flutter",

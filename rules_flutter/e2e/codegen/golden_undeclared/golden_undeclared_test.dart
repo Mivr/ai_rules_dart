@@ -1,17 +1,19 @@
 // Exercises: a golden that exists in the source tree but is not a declared
 // input of the test.
 //
-// `goldens/stand_in.png` sits right there next to this file, and
-// `golden_test.dart` reads it happily — because that target lists it in
-// `data`. This one does not, so under the sandbox the PNG is simply not in
-// runfiles and the comparison fails as "non-existent file".
+// `goldens/stand_in.png` sits right there next to this file. It is outside
+// the project's `test/`, so it is not `data` by default, and this target
+// does not list it. Under the sandbox the PNG is simply not in runfiles and
+// the comparison fails as "non-existent file". (`golden_test.dart`, under
+// `test/`, reads its copy happily: files under `test/` are `data` by
+// default.)
 //
 // That is the property worth a test of its own. It is what stops a golden from
 // being read behind Bazel's back: a comparison whose inputs are all declared
 // is one whose cached "pass" still means something, and one that reached
 // outside the action graph would go stale silently on a disk-cache hit. It
 // also means the fix for this failure is a BUILD edit — `data =
-// glob(["test/goldens/**"])` — not a change to the test.
+// glob(["golden_undeclared/goldens/**"])` — not a change to the test.
 import 'dart:io';
 
 import 'package:flutter/material.dart';

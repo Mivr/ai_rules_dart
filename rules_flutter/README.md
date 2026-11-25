@@ -60,7 +60,7 @@ If `flutter build` works for you, here is what Bazel adds:
 
 ```starlark
 bazel_dep(name = "ai_rules_flutter", version = "<version>", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
 
 archive_override(
     module_name = "ai_rules_flutter",
@@ -109,12 +109,12 @@ Two extensions cover the rest. A root-registered custom release (an older stable
 
 #### Overriding `rules_dart`
 
-`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl` and `@rules_dart//dart:utils.bzl`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.28.3, released on GitHub under that module name with `repo_name = "rules_dart"`. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
+`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl` and `@rules_dart//dart:utils.bzl`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.29.0, released on GitHub under that module name with `repo_name = "rules_dart"`. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
 
 To live at the heads instead of these releases (local development against a checkout of this repository), replace the two `archive_override` blocks with overrides onto your clone, which holds both modules. Because Bzlmod ignores module overrides in non-root modules, the overrides go in your root `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "ai_rules_dart", version = "0.28.3", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
 
 git_override(
     module_name = "ai_rules_dart",
@@ -190,6 +190,7 @@ Three attributes deserve a note:
 
 - `package_name` must match the `name:` field in `pubspec.yaml`. Hot reload and code generation both rely on it.
 - `pubspec_srcs` lists the files `pubspec.yaml` names: its assets, fonts and shaders. The pubspec says what the bundle holds, as it does for `flutter build`, including the Material icon font when it sets `uses-material-design: true`. See [Assets](#assets).
+- `NOTICES` holds the project's own licence as stock's does: for an app, web app or test in a project's package whose `pubspec` is that package's `pubspec.yaml`, the project's `NOTICES` or `LICENSE` file (the tool's `LicenseCollector` looks for them in that order) is staged with the files the pubspec names.
 - The package config the bundle reads is the one `pub get` writes: every package of the project's lock: the `flutter.pub` hub whose lock is in the target's package or the nearest enclosing one, or else the hub the first of `deps` from one comes from, so `NOTICES` holds the dev dependencies' licences too, as stock's does. `pub_packages` (`@<hub>//packages`) overrides it. An app with no package from a hub gets the packages of `deps`; then a regular dependency the pubspec names that `deps` do not reach fails the build, naming the target and the package to add to `deps`.
 
 Build it, or run it with hot reload:
@@ -465,7 +466,7 @@ What a plain consumer's module graph pulls in, by feature. Floors are what `rule
 
 | Feature | Modules | Notes |
 |---|---|---|
-| Every app | `ai_rules_dart` 0.28.3 (repo_name `rules_dart`; the `Mivr` fork release, taken via `archive_override` above), `bazel_skylib`, `platforms`, `package_metadata` | Dart compilation, hooks, codegen. |
+| Every app | `ai_rules_dart` 0.29.0 (repo_name `rules_dart`; the `Mivr` fork release, taken via `archive_override` above), `bazel_skylib`, `platforms`, `package_metadata` | Dart compilation, hooks, codegen. |
 | iOS / macOS bundles | `rules_apple` ≥ 4.5.3, `rules_swift`, `apple_support`, `rules_cc` | 4.5.3 is the proven floor: `e2e/min_versions` pins it exactly and builds both Apple legs. `rules_swift`/`apple_support` float to the graph's maxima (4.5.3 accepts Swift at compatibility level 3). |
 | Android (APK, bundle, AAR) | `rules_kotlin` ≥ 2.3.0, `rules_java` | The app's Android side is built from its pinned Gradle model with AGP's own tools, fetched by the hashes in the pin: no `rules_android`, no `rules_jvm_external`, no Maven lock file and no Go toolchain. `rules_kotlin` compiles the Kotlin of the app and its plugins on the standard library Gradle resolved; 2.3.0 is the oldest release whose compiler reads the Kotlin 2.4.0 of a Flutter 3.47 app, and each workspace declares the release it wants (`e2e/min_versions` builds on the floor). |
 | xtool Darwin backend (opt-in) | `llvm` 0.8.19, exec-host toolchain archive only | Needs only `flutter.darwin_sdk(url = ..., sha256 = ...)` or `flutter.darwin_sdk(path = ...)` in the root module — no other `MODULE.bazel` lines. Plain consumers fetch no LLVM archive and register no LLVM toolchain (see `docs/dependencies.md`). |
@@ -1311,6 +1312,8 @@ A `<meta http-equiv="Content-Security-Policy">` in `web/index.html` applies both
 
 The dev loop needs `'unsafe-inline'`. Adding `'unsafe-eval'` instead changes nothing. The failure is silent: DWDS connects, the VM service answers, every module loads, no CSP violation reaches the console, and the app never paints. `connect-src 'self' ws: wss:` is enough for the dev loop's WebSocket.
 
+As `flutter build web` does, every web compile carries `FLUTTER_WEB_CANVASKIT_URL=https://www.gstatic.com/flutter-canvaskit/<engine revision>/`, the engine's default CanvasKit location, unless `defines` set the key or `use_local_canvaskit = True` (`--no-web-resources-cdn`). The plugin registrant the web program imports is the tool's: the web plugins of `deps`, sorted by package name, registered with the registrar, which is then installed as the platform message handler; an app without a web plugin imports the tool's empty one. `flutter build web` registers the web plugins of dev dependencies too; under the rules a plugin is registered when it is in `deps`, so a dev dependency's web plugin (`flutter_native_splash`, say) is registered only if `deps` name it.
+
 A bundle served under `default-src 'self'` must also serve its own renderer, with `use_local_canvaskit = True`. Otherwise the engine's fetch of `skwasm.js` from `www.gstatic.com` is blocked and the page stays blank. Flutter's font fallback from `fonts.gstatic.com` is blocked too, which is harmless unless the app needs those glyphs.
 
 So a policy strict enough to be useful cannot live in the dev loop's `web/index.html` today, because the dev loop reads the same file. If you need one, build the production bundle with `flutter_web_bundle` from a project directory of its own, whose `pubspec.yaml` and `web/index.html` carry the policy. `e2e/web_example/custom_boot`'s `inline_boot` is built that way.
@@ -1586,15 +1589,40 @@ Bazel's test protocol applies, as it does to `dart_test`:
 - **Tags.** `include_tags` runs only tests matching every one of these `package:test` tag selectors (library, group or test level), as `flutter test --tags` intersects them; each entry is a boolean selector (`a && b`, `a || b`, `!a`, parentheses), and several entries — or comma-separated values in one entry — all have to match. `exclude_tags` skips tests matching any of them, as `flutter test --exclude-tags` unions them, and wins over `include_tags`. An attribute selection that matches no test fails the target, so a misspelled tag is a failure rather than an empty pass; a `--test_env=FLUTTER_TEST_TAGS=...` (or `FLUTTER_TEST_EXCLUDE_TAGS`) selection that matches nothing still passes with a note. A `--test_env=...` value at run time overrides the attribute. A `@Tags` on the test entrypoint itself is extracted at build time and always honoured, reaching every test through the suite's root group; a `@Tags` on a file the entrypoint imports stays invisible, as under `flutter test`.
 - **Results.** Each case is reported in the `test.xml` Bazel collects, so CI shows cases rather than one pass or fail per target.
 
+#### Files a test reads
+
+`flutter test` runs a test in the project's directory with the whole project readable, so a test opens `File('test/fixtures/user.json')` or compares against `goldens/x.png` by a path relative to it. Under Bazel a test sees only its inputs, which is what makes a cached pass mean something, so:
+
+- **Files under `test/` are `data` by default.** For a `flutter_test` in the Bazel package of a project the `flutter` extension knows (the directory of a `flutter.pub` lock, a member of its pub workspace, or one of its `path:` packages), every file under the project's `test/` that is not Dart source and not hidden, and is in that package, is `data` of the test with nothing in the BUILD file: JSON fixtures, goldens, text files. A directory of `test/` holding a BUILD file is a package of its own and is left out, and so are `failures/` directories (where stock writes golden diffs). The cost: every test of the package depends on every fixture, so editing one fixture reruns all of the package's tests; adding or removing a file under `test/` refetches the project's index repository, and a BUILD file is loaded again only when the list of fixtures changes.
+- **Other project files go in `data`.** A test that reads the Android manifest, an `.arb` file or anything else outside `test/` names it:
+
+  ```starlark
+  flutter_test(
+      name = "manifest_test",
+      main = "test/manifest_test.dart",
+      data = ["android/app/src/main/AndroidManifest.xml"],
+      deps = ["@deps//:flutter_test"],
+  )
+  ```
+
+  Forget it and the test fails as the Dart VM reports a missing file, `PathNotFoundException: Cannot open file, path = 'android/app/src/main/AndroidManifest.xml'`; the runner does not add a hint, since it would have to read the test's output to know.
+- **A file whose name cannot be a label is not.** A name may hold a space or any non-ASCII letter (`test/fixtures/über sicht.json` is `data` like any other), but a Bazel label cannot hold `:`, `\` or a control character. `glob` returns such a file anyway and the whole package then fails to load (`invalid label`), so the default leaves it out instead and the package's tests fail at analysis with one error naming every such file. Rename them, or move them into a directory with a BUILD file of its own.
+
+The test runs in its project's directory, as under `flutter test`: the directory of its `pubspec` (its Bazel package's without one), in runfiles. So these paths, and `File('pubspec.yaml')`, resolve as under `flutter test` for a project in a subdirectory of the workspace too. The runner hands `flutter_tester` absolute paths, goldens are read relative to the test file, and coverage reports name sources by their URIs, so none of them depends on that directory.
+
+The `flutter_test_config.dart` that `flutter test` wraps a test in, the one in the test's directory or the nearest above it up to the project's directory, wraps it here too: for a test in a project's package the macro adds it to `srcs` when `srcs` names none, and its `testExecutable` runs around the test's `main`. What it imports goes in `srcs`; a file it imports that is not there fails the compile, naming that file.
+
+Assets load as under `flutter test`: the runner gives `flutter_tester` the `UNIT_TEST_ASSETS` and `APP_NAME` that `flutter test` gives it, so `package:flutter_test` answers an asset load from the test's bundle at once, and an SVG or image a widget loads is there by the next frame.
+
 #### Golden files
 
-Goldens must be listed in `data`, or the test cannot see them:
+Goldens under the project's `test/` are `data` by default (above). A golden elsewhere, or in a package the extension does not know, must be listed in `data`, or the test cannot see it:
 
 ```starlark
 flutter_test(
     name = "widget_test",
     main = "test/widget_test.dart",
-    data = glob(["test/goldens/**"]),
+    data = glob(["goldens/**"]),
     deps = ["@deps//:flutter", "@deps//:flutter_test"],
 )
 ```

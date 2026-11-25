@@ -11,6 +11,7 @@ load(
     "make_dart2js_request",
     "resolve_web_minify",
     "resolve_web_optimization_level",
+    "web_canvaskit_url_defines",
     "web_mode_defines",
 )
 load(
@@ -1340,7 +1341,20 @@ def _web_stubs_api_surface_test_impl(ctx):
 
     return unittest.end(env)
 
+def _web_canvaskit_url_define_test_impl(ctx):
+    """A web compile names the engine's CanvasKit on the CDN, as `flutter build web` does, unless a define does or the bundle serves its own."""
+    env = unittest.begin(ctx)
+    asserts.equals(
+        env,
+        ["FLUTTER_WEB_CANVASKIT_URL=https://www.gstatic.com/flutter-canvaskit/abc123/"],
+        web_canvaskit_url_defines(["A=1"], "abc123"),
+    )
+    asserts.equals(env, [], web_canvaskit_url_defines(["FLUTTER_WEB_CANVASKIT_URL=canvaskit/"], "abc123"))
+    asserts.equals(env, [], web_canvaskit_url_defines(["A=1"], "abc123", use_local_canvaskit = True))
+    return unittest.end(env)
+
 _t6_test = unittest.make(_web_optimization_level_defaults_test_impl)
+_t9_test = unittest.make(_web_canvaskit_url_define_test_impl)
 _t7_test = unittest.make(_web_sdk_repo_rewrite_and_build_test_impl)
 _t8_test = unittest.make(_web_stubs_api_surface_test_impl)
 
@@ -1708,4 +1722,4 @@ def web_test_suite(name):
         targets = [":_web_guard_clean"],
     )
 
-    small_unittest_suite(name, _t0_test, _t1_test, _t5_test, _t6_test, _t7_test, _t8_test)
+    small_unittest_suite(name, _t0_test, _t1_test, _t5_test, _t6_test, _t7_test, _t8_test, _t9_test)

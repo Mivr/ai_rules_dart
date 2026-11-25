@@ -226,9 +226,10 @@ jobs:
             scope: all
             shard: none
             cache-save: false
-          # The real-plugin fetch matrix (POD-2). The Linux fetch half runs
-          # in e2e-linux-nightly; this leg builds the plugins expected.json
-          # records as "ok", one at a time, and reports every result.
+          # The real-plugin matrix (POD-2). The Linux half (the workspace's
+          # spec) runs in e2e-linux-nightly; this leg builds the plugins
+          # expected.json records as "ok", one at a time, and reports every
+          # result.
           # build_expected.json gates image_picker_ios as "ok" (exit 0, since
           # POD-1 builds its image_picker_ios_objc target); the other
           # expected-ok plugins are printed and recorded without gating yet.
@@ -364,11 +365,11 @@ jobs:
       - name: iOS plugin build matrix (e2e/ios_plugin_matrix)
         if: matrix.workspace == 'ios_plugin_matrix'
         working-directory: rules_flutter/e2e/ios_plugin_matrix
-        run: python3 run_matrix.py --mode build
+        run: python3 run_matrix.py
       - name: iOS plugin CocoaPods build matrix (e2e/ios_plugin_matrix)
         if: matrix.workspace == 'ios_plugin_matrix'
         working-directory: rules_flutter/e2e/ios_plugin_matrix
-        run: python3 run_pods_matrix.py --mode build
+        run: python3 run_pods_matrix.py
       # The simulator runtime behind `manual`: `//...` never picks up
       # `:verify_ios_simulator_test`, so the ffi_example leg runs it by name.
       # No `continue-on-error`: a failing simulator run fails the job.
@@ -462,6 +463,22 @@ jobs:
           module-root: rules_flutter
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
           cache-save: ${{ (github.event_name == 'push' || github.event_name == 'schedule') && github.ref_type != 'tag' && !inputs.uncached }}
+          # The runner was lost ("lost communication with the server") in step
+          # `bazel test //...` of a cold run of this job (Full dispatch
+          # 45504522390), and the sampler of the passing run on main
+          # (45487105020) shows how close that is: used memory 13.6 GB of
+          # 16, swap climbing to 7.8 GB in the 9 minutes the step took, still
+          # rising when it ended. Bazel sizes its heap at a quarter of the
+          # host and schedules actions as if it owned the machine, while the
+          # example's four APK builds (debug, profile, release, release plain)
+          # run dex and R8 workers of about 1.3 GB each. The same bounds
+          # fixed `integration_android` in flutter-ci.yaml's e2e-linux-android;
+          # there is no emulator here, so no `--local_test_jobs=1`.
+          # Scheduling limits only: action keys are unchanged.
+          bazelrc: |
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=2
+            build --local_resources=memory=HOST_RAM*.3
       - name: Restore disk cache
         if: github.event_name != 'schedule' && !inputs.uncached
         continue-on-error: true
@@ -514,7 +531,9 @@ jobs:
           failed=""
           for ws in $WORKSPACES; do
             echo "::group::e2e/$ws"
-            if (cd "e2e/$ws" && bazel test //... --test_output=errors); then
+            # At most two persistent worker JVMs at a time (the default is four
+            # of each mnemonic): see the bazelrc input of setup-bazel above.
+            if (cd "e2e/$ws" && bazel test //... --test_output=errors --worker_max_instances=2); then
               echo "PASS e2e/$ws"
             else
               echo "FAIL e2e/$ws"
@@ -541,19 +560,15 @@ jobs:
           bazel cquery @deps_cycle//:cycle_b
           bazel cquery @deps_cycle//:cycle_app
           bazel cquery @deps_cycle__scc__cycle_a__cycle_b//:all
-      # The Linux half of POD-2: one `bazel query` per pinned real plugin in
-      # e2e/ios_plugin_matrix, compared with expected.json. No
-      # continue-on-error: a change that fixes or breaks a plugin fails the
-      # job, and a later item flips the expectation.
-      - name: iOS plugin fetch matrix (e2e/ios_plugin_matrix)
-        working-directory: rules_flutter/e2e/ios_plugin_matrix
-        run: python3 run_matrix.py
-      - name: iOS plugin CocoaPods fetch matrix (e2e/ios_plugin_matrix)
-        working-directory: rules_flutter/e2e/ios_plugin_matrix
-        run: python3 run_pods_matrix.py
-      - name: iOS plugin Android refusal (e2e/ios_plugin_matrix)
-        working-directory: rules_flutter/e2e/ios_plugin_matrix
-        run: bash check_android_refusal.sh
+      # The Linux half of POD-2 and POD-11: the workspace's own spec, through
+      # the e2e runner like every other workspace. It runs the matrix self-tests,
+      # queries each pinned real plugin's spoke that resolves, and asserts that
+      # each refused one is refused, with its message, where an Apple build
+      # reaches it. No continue-on-error: a change that fixes or breaks a
+      # plugin fails the job, and a later item flips the expectation in
+      # e2e/ios_plugin_matrix/e2e.yaml.
+      - name: Run e2e/ios_plugin_matrix
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/ios_plugin_matrix --bazel=bazel
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true

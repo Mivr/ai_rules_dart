@@ -6,6 +6,20 @@
       "item": "bootstrap:flutter_bootstrap.js:wasmHashes order",
       "cause": "differs",
       "reason": "The rules' asset tool lists directories sorted by path, so the keys of wasmHashes (the renderer's .wasm files) come in the same order on every machine; stock takes its file system's listing order, which differs between machines and file systems. The hashes themselves are compared with the file."
+    },
+    {
+      "projects": ["large"],
+      "kinds": ["tests"],
+      "item": "test:test/features/health/providers/health_importer_test.dart :: run keeps a night across a time change as one aggregate",
+      "cause": "differs",
+      "reason": "Bazel runs every test with TZ=UTC (its test encyclopedia requires it), so a result does not depend on the machine's time zone; `flutter test` inherits the host's. This test skips itself unless the zone changes its UTC offset between midnight of 2026-03-29 and of 2026-03-30 (Europe), as the host's does, so it runs under stock on a host in such a zone and skips under Bazel. `--test_env=TZ` passes the host's zone and it runs and passes."
+    },
+    {
+      "projects": ["large"],
+      "kinds": ["web"],
+      "item": "compiled:main.dart.js",
+      "cause": "differs",
+      "reason": "Same size, some functions emitted in another order. dart2js orders them by the paths of their source files, and stock compiles each package from its absolute path on the machine, so its output depends on whether the pub cache's path sorts before the Flutter SDK's (here /work/rdf/cache/pub sorts before /work/rdf/sdk/flutter-3.47.7; a machine with the SDK under /opt and the pub cache under /work gets the other order). The rules compile every package from its repository's path in the execution root, the same on every machine. Stock compiled with the pub cache reached through a path that sorts after the SDK's gives the rules' file byte for byte."
     }
   ]
 }

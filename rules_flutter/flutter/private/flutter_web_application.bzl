@@ -51,11 +51,12 @@ load(
     "make_dart2js_request",
     "make_dart2wasm_request",
     "web_build_mode",
+    "web_canvaskit_url_defines",
     "web_compile_tool_inputs",
     "web_sdk_files_for_dart2js",
 )
 load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "layering_output_groups", "layering_toolchains")
-load("//flutter/private:plugin_registrant.bzl", "generate_dart_plugin_registrant")
+load("//flutter/private:plugin_registrant.bzl", "WEB_NOOP_REGISTRANT", "generate_dart_plugin_registrant")
 load(
     "//flutter/private:validation.bzl",
     "validate_base_href",
@@ -198,6 +199,12 @@ def _web_write_wrapper(ctx, packages, all_srcs, lib_root, registrant):
     ui_web_stub = ctx.actions.declare_file(ctx.label.name + "_ui_web_stub.dart")
     ctx.actions.write(ui_web_stub, make_web_ui_web_stub_content())
 
+    # An app without a web plugin imports the tool's no-op registrant, as
+    # `flutter build web` always imports one.
+    if registrant == None:
+        registrant = ctx.actions.declare_file(ctx.label.name + "_plugin_registrant.dart")
+        ctx.actions.write(registrant, WEB_NOOP_REGISTRANT)
+
     wrapper = ctx.actions.declare_file(ctx.label.name + "_wrapper_main.dart")
     wrapper_rel = app_scheme_rel_path(wrapper)
     wrapper_depth = len(wrapper_rel.split("/")) - 1
@@ -212,14 +219,12 @@ def _web_write_wrapper(ctx, packages, all_srcs, lib_root, registrant):
             app_scheme_rel_path(ctx.file.main),
             wrapper_depth,
         ),
-        registrant.basename if registrant else None,
+        registrant.basename,
         ui_web_stub_import = ui_web_stub.basename,
     )
     ctx.actions.write(wrapper, wrapper_content)
     entrypoint = wrapper
-    all_srcs = all_srcs + [ctx.file.main, wrapper, ui_web_stub]
-    if registrant:
-        all_srcs = all_srcs + [registrant]
+    all_srcs = all_srcs + [ctx.file.main, wrapper, ui_web_stub, registrant]
     return struct(
         config_file = config_file,
         all_srcs = all_srcs,
@@ -575,6 +580,7 @@ def _flutter_web_bundle_impl(ctx):
     # Merged once for all compile actions below (dart2wasm, dart2js, icon
     # tree-shake kernel).
     user_defines = merge_dart_defines(ctx)
+    user_defines = user_defines + web_canvaskit_url_defines(user_defines, flutter_sdk_info.engine_revision, ctx.attr.use_local_canvaskit)
 
     # The build mode drives the mode defines of every compile action below,
     # the same way the native kernel path switches on COMPILATION_MODE.

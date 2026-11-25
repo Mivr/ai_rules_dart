@@ -8,3 +8,9 @@ commands:
   - name: the widget test passes
     run: bazel test //:widget_test --test_output=errors
     min_tests_executed: 1
+  - name: a test reads its fixtures (names with a space, a non-ASCII letter), its flutter_test_config.dart and the licence
+    run: bazel test //:project_files_test --test_output=errors
+    min_tests_executed: 1
+  - name: a test of a project in a subdirectory runs in that project's directory
+    run: bazel test //packages/counter_lib:counter_lib_test --test_output=errors
+    min_tests_executed: 1

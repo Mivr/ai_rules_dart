@@ -4,7 +4,8 @@ This workspace pins fourteen real Flutter plugins and records what the pinned
 rules_flutter checkout does with each one today in both SwiftPM mode (POD-2)
 and CocoaPods mode (POD-11). It turns the design's "today" column into a
 measurement, so a change that fixes or breaks a real plugin fails a gate
-instead of going unnoticed.
+instead of going unnoticed: on Linux the workspace's spec asserts what each
+spoke does, on macOS two runners build the spokes that resolve.
 
 `pubspec.yaml` pins the versions; `pubspec.lock` is resolved with the pinned
 Flutter toolchain, and every hosted entry carries its sha256. The SwiftPM-mode
@@ -12,74 +13,45 @@ Flutter toolchain, and every hosted entry carries its sha256. The SwiftPM-mode
 The CocoaPods-mode hub is named `deps_pods` (`ios_podfile_lock = "//:Podfile.lock"`),
 so its spoke is `@deps_pods__<plugin>`.
 
-## Fetch mode (Linux)
+## Linux: the workspace's spec
 
-### SwiftPM mode (`run_matrix.py`)
+`e2e.yaml` is the Linux half. Run it through the e2e runner, like every other
+workspace (`bazel run //tools/e2e_runner -- --workspace=e2e/ios_plugin_matrix
+--bazel=bazel` from the `rules_flutter` root; `e2e-linux-nightly` in
+`flutter-full.yaml` does this). It runs `bazel test //...` (the lock build test
+and the two runners' self-tests), then one command per pinned plugin and hub:
 
-```sh
-bazel --max_idle_secs=60 query @deps__url_launcher_ios//:all
-python3 run_matrix.py            # --mode fetch is the default
-python3 run_matrix.py --self-test
-```
+- A spoke whose Apple side resolves is queried (`bazel query
+  @deps__<plugin>//:all`) and the query must succeed.
+- A spoke the rules refuse is refused where an Apple build reaches it, not at
+  fetch: `bazel build @deps__<plugin>//:<plugin>_apple_ios_unbuildable` must
+  fail with the refusal's message. In SwiftPM mode seven plugins
+  (`firebase_core`, `firebase_auth`, `cloud_firestore`, `firebase_messaging`,
+  `google_sign_in_ios`, `sentry_flutter`, and `stripe_ios`) are refused because
+  the hub sets no `swift_package_resolved`. In CocoaPods mode eight plugins are
+  refused with the unresolved pod and its locked version in the message,
+  `sentry_flutter` (which ships no podspec) with the SwiftPM reason, and
+  `flutter_inappwebview_ios`, in both modes, because its podspec declares
+  resources. Four plugins resolve in CocoaPods mode.
+- A spoke has no Android targets (a plugin's Android side is built from the
+  app's pinned Gradle model, see `docs/android-model.md`), so none of this
+  evaluates an Android side.
 
-Fetch mode reads `expected.json` and runs `bazel query @deps__<plugin>//:all`
-once per pinned plugin. An `ok` entry needs exit 0. A refusal entry needs a
-non-zero exit and its substring in the combined output. It prints one
-`PASS`/`FAIL` line per plugin and a summary, and exits 1 on any mismatch.
-`--self-test` exercises the comparator with fake outcomes and needs no Bazel,
-network or workspace.
-
-`expected.json` is the contract's data: when a later item fixes a refusal, edit
-its entry there; do not add plugin names to the runner.
-
-A spoke has no Android targets (a plugin's Android side is built from the app's
-pinned Gradle model, see `docs/android-model.md`), so the spoke query evaluates
-only the Apple layer. Seven plugins (`firebase_core`, `firebase_auth`,
-`cloud_firestore`, `firebase_messaging`, `google_sign_in_ios`,
-`sentry_flutter`, and `stripe_ios`) refuse because the hub sets no
-`swift_package_resolved`. The other seven resolve cleanly (`ok`).
-
-### CocoaPods mode (`run_pods_matrix.py`)
-
-```sh
-bazel query @deps_pods__url_launcher_ios//:all
-python3 run_pods_matrix.py               # --mode fetch is the default
-python3 run_pods_matrix.py --mode fetch
-python3 run_pods_matrix.py --self-test
-```
-
-Fetch mode reads `expected_pods.json` and runs
-`bazel query @deps_pods__<plugin>//:all` once per pinned plugin. An `ok` entry
-needs exit 0. A refusal entry needs a non-zero exit and its case-sensitive
-substring in the combined output.
-
-`Podfile.lock` covers the thirteen podspec-shipping plugins in `pubspec.lock`
-(excluding `sentry_flutter`, which ships no podspec and falls back to
-`darwin/sentry_flutter/Package.swift`). Four engine-only plugins
-(`image_picker_ios`, `webview_flutter_wkwebview`, `url_launcher_ios`, and
-`permission_handler_apple`) resolve cleanly (`ok`), nine plugins refuse with
-Message 11 naming the unresolved pod and locked version (`firebase_auth` fails
-on `Firebase/Auth` after resolving sibling `firebase_core`), and
-`sentry_flutter` falls back to its SwiftPM manifest and refuses because
-`deps_pods` sets no `swift_package_resolved`.
-
-`expected_pods.json` records these measured results. When a later item resolves
-a pod dependency, edit its entry in `expected_pods.json`.
-
-`--self-test` exercises fetch and build comparison logic offline (including
-refusal matching, case sensitivity, `RECORD` handling for ungated builds, and
-passing `--platforms=@rules_flutter//flutter/platforms:ios_arm64`), and runs as
-`:run_pods_matrix_test` under `bazel test //...`.
+When a later item fixes a refusal, edit its command in `e2e.yaml`: that file
+holds the expected messages, and nothing else repeats them.
 
 ## Build mode (macOS)
 
 ### SwiftPM mode (`run_matrix.py`)
 
 ```sh
-python3 run_matrix.py --mode build
+python3 run_matrix.py
+python3 run_matrix.py --self-test    # offline; runs as :run_matrix_test
 ```
 
-Build mode reads the plugins `expected.json` records as `ok` and builds each
+`expected.json` maps each pinned plugin to `ok` (its spoke resolves; the
+macOS leg builds it) or `refused` (the spec above asserts why; nothing builds
+it). The runner reads the plugins recorded as `ok` and builds each
 spoke's iOS device library, one at a time, for an explicit iOS platform:
 
 ```sh
@@ -103,28 +75,29 @@ known.
 ### CocoaPods mode (`run_pods_matrix.py`)
 
 ```sh
-python3 run_pods_matrix.py --mode build
+python3 run_pods_matrix.py
+python3 run_pods_matrix.py --self-test    # offline; runs as :run_pods_matrix_test
 ```
 
-Build mode reads `expected_pods.json` and `build_expected_pods.json`, building
-each fetch-`ok` spoke's iOS device library for the `ios_arm64` target platform:
+The runner reads `expected_pods.json` (`ok` or `refused`, as above) and
+`build_expected_pods.json`, building each `ok` spoke's iOS device library for
+the `ios_arm64` target platform:
 
 ```sh
 bazel build --platforms=@rules_flutter//flutter/platforms:ios_arm64 @deps_pods__<plugin>//:<plugin>_apple_ios
 ```
 
-`build_expected_pods.json` gates all four fetch-`ok` builds and must not be
+`build_expected_pods.json` gates all four `ok` builds and must not be
 empty (the runner exits at once when it is). `image_picker_ios`,
 `webview_flutter_wkwebview`, `url_launcher_ios` and `permission_handler_apple`
-all map to `ok`, which requires exit 0: all four fetch-`ok` plugins build
-cleanly.
+all map to `ok`, which requires exit 0: all four `ok` plugins build cleanly.
 
 A plugin not listed in the file still prints `RECORD` without failing. Any
 build that exits non-zero prints its `bazel build ...` command and the last 30
 lines of its output; passing builds print neither.
 
-Both modes first read `pubspec.yaml` and require `expected_pods.json` to have a
-row for every non-SDK package under `dependencies:`. An unreadable
+The runner first reads `pubspec.yaml` and requires `expected_pods.json` to have
+a row for every non-SDK package under `dependencies:`. An unreadable
 `pubspec.yaml`, one without plugins, or a missing row fails with a message
 naming each missing plugin. `--self-test` covers the summary exit codes, the
 failing-build output, the coverage check and the `file not found` gate offline.

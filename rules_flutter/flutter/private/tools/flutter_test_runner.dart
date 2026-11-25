@@ -174,9 +174,10 @@ void main(List<String> args) async {
 
   final TestRunfiles files;
   try {
+    // Absolute, because the tester runs in the project's directory, not here.
     files = resolveTestRunfiles(
       Platform.environment,
-      r.rlocation,
+      (key) => File(r.rlocation(key)).absolute.path,
       _runfileExists,
     );
   } on FormatException catch (e) {
@@ -184,6 +185,16 @@ void main(List<String> args) async {
     exit(64);
   }
   final String path = Platform.environment['FLUTTER_TEST_PATH'] ?? 'test.dart';
+  // This process runs in the main repository's runfiles directory, which
+  // `FLUTTER_TEST_PATH` (a `short_path`) is relative to.
+  final String testFile = Directory.current.absolute.uri
+      .resolve(path)
+      .toFilePath();
+  final String workingDirectory = testerWorkingDirectory(
+    Platform.environment,
+    Directory.current.path,
+    (directory) => Directory(directory).existsSync(),
+  );
   final String? coverageOutput = Platform.environment['COVERAGE_OUTPUT_FILE'];
   final List<String> coverageLibraries = _coverageLibraries(
     Platform.environment,
@@ -219,6 +230,8 @@ void main(List<String> args) async {
       baseDill: files.baseDill,
       assetsDir: files.assetsDir,
       testPath: path,
+      testFile: testFile,
+      workingDirectory: workingDirectory,
       coverageOutput: coverageOutput,
       coverageLibraries: coverageLibraries,
       updateGoldens: updateGoldens,
@@ -253,6 +266,8 @@ class FlutterTestRun {
     required this.dill,
     required this.seed,
     required this.coverageLibraries,
+    required this.testFile,
+    required this.workingDirectory,
     this.baseDill,
     required this.assetsDir,
     required this.testPath,
@@ -280,8 +295,17 @@ class FlutterTestRun {
   /// ships none.
   final String? assetsDir;
 
-  /// Test file this run executes.
+  /// Test file this run executes, as `FLUTTER_TEST_PATH` names it: its
+  /// `short_path`, which reports display and goldens update under.
   final String testPath;
+
+  /// The same file's absolute path in runfiles, which goldens are read
+  /// relative to (`flutter test` hands its comparator the absolute URI).
+  final String testFile;
+
+  /// Where `flutter_tester` runs: the project's directory, from
+  /// [testerWorkingDirectory].
+  final String workingDirectory;
 
   /// LCOV output file; null disables coverage (and the VM service).
   final String? coverageOutput;
@@ -329,7 +353,7 @@ Future<int> _runOnce(FlutterTestRun run) async {
       Platform.environment['TEST_TMPDIR'] ?? Directory.systemTemp.path,
     );
     combinedDill = File(
-      '${tmpDir.path}/flutter_test_${pid}_${DateTime.now().microsecondsSinceEpoch}.dill',
+      '${tmpDir.absolute.path}/flutter_test_${pid}_${DateTime.now().microsecondsSinceEpoch}.dill',
     );
     final builder = BytesBuilder(copy: false)
       ..add(File(run.dill).readAsBytesSync())
@@ -468,6 +492,9 @@ class _Harness {
         impeller: run.impeller,
       ),
       run.updateGoldens,
+      assetsDir: run.assetsDir,
+      testFile: run.testFile,
+      workingDirectory: run.workingDirectory,
     );
 
     // Capture flutter_tester output so engine errors are visible. In coverage
@@ -597,7 +624,23 @@ class _Harness {
   /// Private HOME policy (RT37-flutter:02): only the home-locating keys are
   /// overridden, at a fresh dir [dispose] removes; everything else is
   /// inherited unchanged.
-  Future<Process> _spawnTester(List<String> command, bool updateGoldens) {
+  ///
+  /// `UNIT_TEST_ASSETS` and `APP_NAME` are what `flutter test` sets for the
+  /// tester: with them `package:flutter_test` answers asset loads from
+  /// [assetsDir] synchronously, as under stock, so an asset a widget loads
+  /// (an SVG, say) is there by the next frame.
+  ///
+  /// The tester runs in [workingDirectory], the project's directory, as under
+  /// `flutter test`: a test reads `File('test/fixtures/x.json')` from there.
+  /// Every path the runner hands it is absolute, and `FLUTTER_TEST_FILE`
+  /// carries the test file's, which the golden comparator roots goldens at.
+  Future<Process> _spawnTester(
+    List<String> command,
+    bool updateGoldens, {
+    required String testFile,
+    required String workingDirectory,
+    String? assetsDir,
+  }) {
     final Directory testerHome = run_home.createPrivateHome(
       Platform.environment['TEST_TMPDIR'] ?? Directory.systemTemp.path,
     );
@@ -605,11 +648,16 @@ class _Harness {
     return Process.start(
       command.first,
       command.sublist(1),
+      workingDirectory: workingDirectory,
       environment: {
+        'FLUTTER_TEST_FILE': testFile,
         'FLUTTER_TEST': 'true',
         'FLUTTER_TEST_HARNESS_PORT': '${_server.port}',
         if (updateGoldens) 'FLUTTER_TEST_UPDATE_GOLDENS': '1',
-        ...run_home.privateHomeEnv(testerHome.path),
+        if (assetsDir != null)
+          'UNIT_TEST_ASSETS': File(assetsDir).absolute.path,
+        'APP_NAME': Platform.environment['FLUTTER_TEST_APP_NAME'] ?? '',
+        ...run_home.privateHomeEnv(testerHome.absolute.path),
       },
     );
   }

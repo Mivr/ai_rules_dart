@@ -1,0 +1,4 @@
+The licence of the stock_dev_loop example project.
+
+It is here so that the app's NOTICES holds the project's own licence, as
+`flutter build` writes it.
