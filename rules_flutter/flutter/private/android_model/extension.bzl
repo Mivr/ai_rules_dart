@@ -13,6 +13,7 @@ holds the plugin sources (the pub archives, by the hash pub recorded) and the ge
 
 load("@rules_dart//dart/pub:yaml.bzl", "yaml_to_json")
 load("//flutter/private:download.bzl", "pinned_download", "pinned_download_and_extract")
+load(":maven.bzl", "maven_urls", "unavailable")
 load(":names.bzl", "SCHEMA", "artifact_repo")
 
 # Without a usable pin the hub still loads, so that `bazel run //:android_pin` can run in the package
@@ -40,7 +41,9 @@ def _shown(label):
 def _maven_artifact_impl(ctx):
     f = ctx.attr.file
     if f.endswith(".aar"):
-        pinned_download_and_extract(ctx, url = ctx.attr.urls, sha256 = ctx.attr.sha256, output = "aar", type = "zip")
+        got = pinned_download_and_extract(ctx, url = ctx.attr.urls, sha256 = ctx.attr.sha256, output = "aar", type = "zip", allow_fail = True)
+        if not got.success:
+            fail(unavailable(ctx.attr.coordinate, f, ctx.attr.sha256, ctx.attr.urls))
         jars = (["aar/classes.jar"] if ctx.attr.aar_classes else []) + ["aar/" + j for j in ctx.attr.aar_libs]
 
         # The symbol list is optional in an AAR; the rules read it by label, so it always exists here.
@@ -54,7 +57,9 @@ filegroup(name = "native_libs", srcs = glob(["aar/jni/**/*.so"], allow_empty = T
 exports_files(glob(["aar/*"], exclude_directories = 1))
 """.format(jars = repr(jars)))
     else:
-        pinned_download(ctx, url = ctx.attr.urls, sha256 = ctx.attr.sha256, output = "file/" + f, executable = False)
+        got = pinned_download(ctx, url = ctx.attr.urls, sha256 = ctx.attr.sha256, output = "file/" + f, executable = False, allow_fail = True)
+        if not got.success:
+            fail(unavailable(ctx.attr.coordinate, f, ctx.attr.sha256, ctx.attr.urls))
         extra = ""
         if ctx.attr.extract:
             ctx.extract("file/" + f, output = "x", type = "zip")
@@ -69,11 +74,12 @@ filegroup(name = "jar", srcs = ["file/{f}"])
 {extra}""".format(f = f, extra = extra))
 
 maven_artifact = repository_rule(
-    doc = "One Maven artifact of the pin, by its sha256.",
+    doc = "One Maven artifact of the pin, by its sha256, from the first of `urls` that has it.",
     implementation = _maven_artifact_impl,
     attrs = {
         "aar_classes": attr.bool(),
         "aar_libs": attr.string_list(),
+        "coordinate": attr.string(doc = "The artifact as Gradle names it, for the error of a fetch that fails."),
         "executables": attr.string_list(),
         "exports": attr.string_list(),
         "extract": attr.bool(),
@@ -322,8 +328,9 @@ def _android_model_impl(mctx):
         is_desugar_config = a["coordinate"].startswith("com.android.tools:desugar_jdk_libs_configuration:")
         maven_artifact(
             name = artifact_repo(key),
-            urls = a["urls"],
+            urls = maven_urls(a["urls"]),
             sha256 = a["sha256"],
+            coordinate = a["coordinate"],
             file = key.rsplit("/", 1)[1],
             aar_classes = bool(aar and aar["classes"]),
             aar_libs = aar["libs"] if aar else [],
