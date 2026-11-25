@@ -130,8 +130,65 @@ EOF
 # floor, so the consumer gets that archive too. Its integrity is computed from
 # the bytes downloaded, after they match the digest GitHub recorded for the
 # release asset.
+#
+# One download, with the patience a shared runner's network needs. A refusal
+# that may pass (a transport error, 403, 408, 429, a 5xx) is tried again after
+# 5, 15 and 45 seconds; anything else (404) stops at once. Each try is bounded
+# (20 s to connect, 120 s in all), so four tries take well under ten minutes.
+# RELEASE_PREP_FETCH_ATTEMPTS and RELEASE_PREP_FETCH_DELAY change the count and
+# the first delay (the tests set it to 0).
+#
+# The token of GH_TOKEN or GITHUB_TOKEN is sent as `Authorization: Bearer`
+# only to api.github.com/repos/<this repository>/ and to this repository's
+# release assets (curl drops the header when a redirect leaves the host), in a
+# curl config read from standard input: it is on no command line, and `set -x`
+# is switched off around it. The release job of bazel-contrib's reusable
+# workflow sets neither variable, so there the calls are anonymous (60 an hour
+# per address): when GitHub refuses with its rate limit, a retry within
+# minutes cannot help and the message says so.
 fetch() {
-  curl --fail --show-error --location --silent --output "$2" "$1"
+  # Before the token is read: a trace shows every assignment.
+  local traced=0
+  case $- in *x*)
+    traced=1
+    set +x
+    ;;
+  esac
+  local url="$1" out="$2" token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+  local attempts="${RELEASE_PREP_FETCH_ATTEMPTS:-4}" delay="${RELEASE_PREP_FETCH_DELAY:-5}"
+  local hdr="$TMP/fetch.headers" n=1 code rc use_token=0
+  case "$url" in
+    "https://api.github.com/repos/${REPO}/"* | "https://github.com/${REPO}/releases/download/"*)
+      [[ -n "$token" ]] && use_token=1 ;;
+  esac
+  while :; do
+    rc=0
+    : >"$hdr"
+    if [[ "$use_token" == 1 ]]; then
+      code="$(curl --silent --show-error --location --connect-timeout 20 --max-time 120 \
+        --dump-header "$hdr" --output "$out" --write-out '%{http_code}' --config - "$url" \
+        <<<"header = \"Authorization: Bearer ${token}\"")" || rc=$?
+    else
+      code="$(curl --silent --show-error --location --connect-timeout 20 --max-time 120 \
+        --dump-header "$hdr" --output "$out" --write-out '%{http_code}' "$url")" || rc=$?
+    fi
+    if [[ "$rc" == 0 && ("$code" == 2?? || "$url" == file://*) ]]; then
+      [[ "$traced" == 1 ]] && set -x
+      return 0
+    fi
+    rm -f "$out"
+    if [[ "$rc" == 0 && "$code" =~ ^(400|401|404|405|410|422)$ ]]; then break; fi
+    if [[ "$n" -ge "$attempts" ]]; then break; fi
+    echo "release_prep: ${url} answered ${code} (curl exit ${rc}); attempt ${n} of ${attempts}, trying again" >&2
+    sleep $((delay * 3 ** (n - 1)))
+    n=$((n + 1))
+  done
+  echo "release_prep: ${url} answered ${code} (curl exit ${rc}) after ${n} attempt(s)" >&2
+  if grep -qi '^x-ratelimit-remaining: *0' "$hdr" 2>/dev/null; then
+    echo "release_prep: GitHub's API rate limit for this address is used up (resets at epoch $(sed -n 's/^[Xx]-[Rr]ate[Ll]imit-[Rr]eset: *//p' "$hdr" | tr -d '\r'))" >&2
+  fi
+  [[ "$traced" == 1 ]] && set -x
+  return 1
 }
 
 snippet_flutter() {

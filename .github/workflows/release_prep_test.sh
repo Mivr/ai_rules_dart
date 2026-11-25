@@ -101,23 +101,42 @@ FAKE
 chmod +x "$work/bin/bazel"
 
 # A fake curl: the GitHub releases API pages, one release's metadata, and the
-# release asset of rules_dart.
+# release asset of rules_dart. Like the real one with --write-out it prints the
+# HTTP status. $FAKE_TEST_DIR/curl.fail makes every call answer 500;
+# curl.refuse holds "<count> <status>": the first <count> calls answer <status>
+# (with a rate-limit header when it is 403), then the files are served. What it
+# reads on standard input (`--config -`) is kept in curl.stdin, with the URL.
 cat >"$work/bin/curl" <<'FAKE'
 #!/usr/bin/env bash
 set -o errexit -o nounset -o pipefail
 dir="$FAKE_TEST_DIR"
 out=""
 url=""
+hdr=""
 prev=""
 for a in "$@"; do
   if [ "$prev" = "--output" ]; then out="$a"; fi
-  case "$a" in http*) url="$a" ;; esac
+  if [ "$prev" = "--dump-header" ]; then hdr="$a"; fi
+  case "$a" in http*|file://*) url="$a" ;; esac
   prev="$a"
 done
 echo "$*" >>"$dir/curl.calls"
-if [ -f "$dir/curl.fail" ]; then
-  echo "curl: (22) The requested URL returned error: 500" >&2
-  exit 22
+case " $* " in
+  *" --config - "*) { echo "URL $url"; cat; } >>"$dir/curl.stdin" ;;
+esac
+answer() {
+  [ -n "$hdr" ] && [ "$1" = 403 ] && printf 'HTTP/2 403\r\nx-ratelimit-remaining: 0\r\nx-ratelimit-reset: 1790000000\r\n\r\n' >"$hdr"
+  [ -n "$out" ] && echo "refused" >"$out"
+  printf '%s' "$1"
+  exit 0
+}
+if [ -f "$dir/curl.fail" ]; then answer 500; fi
+if [ -f "$dir/curl.refuse" ]; then
+  read -r count status <"$dir/curl.refuse"
+  if [ "$count" -gt 0 ]; then
+    echo "$((count - 1)) $status" >"$dir/curl.refuse"
+    answer "$status"
+  fi
 fi
 src=""
 case "$url" in
@@ -125,14 +144,15 @@ case "$url" in
     page="${url##*page=}"
     if [ -f "$dir/releases.page$page.json" ]; then src="$dir/releases.page$page.json"
     elif [ -f "$dir/releases.json" ]; then src="$dir/releases.json"
-    else echo "[]" >"$out"; exit 0; fi
+    else echo "[]" >"$out"; printf 200; exit 0; fi
     ;;
   */releases/tags/*) src="$dir/dart_release.json" ;;
   */releases/download/*) src="$dir/dart_asset" ;;
   *) echo "fake curl: unexpected URL $url" >&2; exit 2 ;;
 esac
-[ -f "$src" ] || { echo "curl: (22) The requested URL returned error: 404" >&2; exit 22; }
+[ -f "$src" ] || answer 404
 cat "$src" >"$out"
+printf 200
 FAKE
 chmod +x "$work/bin/curl"
 
@@ -226,7 +246,7 @@ run_prep() {
   (
     cd "$D/repo"
     env PATH="$work/bin:$PATH" FAKE_TEST_DIR="$D" RELEASE_OUT="$D/out" \
-      "$@" bash "$prep" ${tag:+"$tag"} >"$D/stdout" 2>"$D/stderr"
+      RELEASE_PREP_FETCH_DELAY=0 "$@" bash "$prep" ${tag:+"$tag"} >"$D/stdout" 2>"$D/stderr"
   ) || RC=$?
 }
 
@@ -395,7 +415,40 @@ touch "$D/curl.fail"
 run_prep rules_dart-v0.29.0
 want_exit 1
 want_stderr "release_prep: request to GitHub releases API failed"
+want_stderr "release_prep: https://api.github.com/repos/Mivr/ai_rules_dart/releases?per_page=100&page=1 answered 500"
 want_no_cliff
+finish_case
+
+# A refusal that may pass is tried again: two 403s, then the page.
+start_case releases_refused_twice_then_served
+echo '[]' >"$D/releases.json"
+echo "2 403" >"$D/curl.refuse"
+run_prep rules_dart-v0.29.0
+want_exit 0
+[ "$(grep -c 'per_page=100&page=1' "$D/curl.calls")" = 3 ] || fail "page 1 was not asked for three times"
+want_stderr "attempt 1 of 4, trying again"
+want_stderr "attempt 2 of 4, trying again"
+finish_case
+
+# One that never passes stops the release after the attempts, and says which
+# URL answered what, with the rate limit named.
+start_case releases_always_refused
+echo "99 403" >"$D/curl.refuse"
+run_prep rules_dart-v0.29.0
+want_exit 1
+want_stderr "release_prep: https://api.github.com/repos/Mivr/ai_rules_dart/releases?per_page=100&page=1 answered 403 (curl exit 0) after 4 attempt(s)"
+want_stderr "rate limit for this address is used up (resets at epoch 1790000000)"
+want_stderr "release_prep: request to GitHub releases API failed"
+[ "$(grep -c 'per_page=100&page=1' "$D/curl.calls")" = 4 ] || fail "page 1 was not asked for four times"
+want_no_cliff
+finish_case
+
+# A 404 is not tried again.
+start_case floor_asset_missing_is_not_retried
+echo '[]' >"$D/releases.json"
+run_prep rules_flutter-v0.30.3
+want_exit 1
+want_stderr "answered 404 (curl exit 0) after 1 attempt(s)"
 finish_case
 
 start_case releases_response_unparsable
@@ -463,7 +516,7 @@ secret_hub="ghs_SUPER_SECRET_GITHUB_TOKEN_DO_NOT_LEAK"
 RC=0
 (
   cd "$D/repo"
-  env PATH="$work/bin:$PATH" FAKE_TEST_DIR="$D" RELEASE_OUT="$D/out" \
+  env PATH="$work/bin:$PATH" FAKE_TEST_DIR="$D" RELEASE_OUT="$D/out" RELEASE_PREP_FETCH_DELAY=0 \
     GH_TOKEN="$secret_gh" GITHUB_TOKEN="$secret_hub" \
     bash -x "$prep" rules_dart-v0.29.0 >"$D/stdout" 2>"$D/stderr"
 ) || RC=$?
@@ -472,6 +525,35 @@ for tok in "$secret_gh" "$secret_hub"; do
   grep -qF -- "$tok" "$D/curl.calls" 2>/dev/null && fail "token appeared in a curl command line"
   grep -qF -- "$tok" "$D/stdout" "$D/stderr" && fail "token appeared in the output"
 done
+finish_case
+
+# Case 14: a token in the environment goes to the GitHub API of this
+# repository and to its release assets, as a header on standard input, and to
+# no other host (here, a download address of someone else's).
+start_case token_only_to_github
+echo '[]' >"$D/releases.json"
+echo "rules_flutter-v0.30.2" >"$D/base.ref"
+printf 'the rules_dart 0.28.9 archive\n' >"$D/dart_asset"
+printf '{"assets": [{"name": "rules_dart-v0.28.9.tar.gz", "digest": "sha256:%s"}]}\n' "$(sha256_of "$D/dart_asset")" >"$D/dart_release.json"
+secret="ghs_TOKEN_FOR_THE_HOST_TEST_DO_NOT_LEAK"
+run_prep rules_flutter-v0.30.3 GH_TOKEN="$secret" RELEASE_DOWNLOAD=https://downloads.example.org/releases/download
+want_exit 0
+grep -qF -- "Authorization: Bearer $secret" "$D/curl.stdin" || fail "the token was not sent to the GitHub API"
+grep -qF -- "URL https://api.github.com/repos/Mivr/ai_rules_dart/releases/tags/rules_dart-v0.28.9" "$D/curl.stdin" || fail "no token for the release's metadata"
+grep -qF -- "URL https://api.github.com/repos/Mivr/ai_rules_dart/releases?per_page=100&page=1" "$D/curl.stdin" || fail "no token for the list of releases"
+grep -qF -- "downloads.example.org" "$D/curl.stdin" && fail "the token went to another host"
+grep -qF -- "$secret" "$D/curl.calls" "$D/stdout" "$D/stderr" && fail "the token is in a command line or the output"
+finish_case
+
+# The same asset on this repository's own download address gets it too.
+start_case token_to_this_repositorys_assets
+echo '[]' >"$D/releases.json"
+echo "rules_flutter-v0.30.2" >"$D/base.ref"
+printf 'the rules_dart 0.28.9 archive\n' >"$D/dart_asset"
+printf '{"assets": [{"name": "rules_dart-v0.28.9.tar.gz", "digest": "sha256:%s"}]}\n' "$(sha256_of "$D/dart_asset")" >"$D/dart_release.json"
+run_prep rules_flutter-v0.30.3 GITHUB_TOKEN="$secret"
+want_exit 0
+grep -qF -- "URL https://github.com/Mivr/ai_rules_dart/releases/download/rules_dart-v0.28.9/rules_dart-v0.28.9.tar.gz" "$D/curl.stdin" || fail "no token for this repository's asset"
 finish_case
 
 echo "release_prep_test: $PASS passed, $FAILS failed"
