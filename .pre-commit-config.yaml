@@ -7,7 +7,8 @@ default_stages: [pre-commit]
 default_install_hook_types: [pre-commit, commit-msg]
 repos:
   # Lint the rules_dart GitHub workflows (the ones rules_dart linted before
-  # the merge) with pinned actionlint and ShellCheck releases.
+  # the merge) and the shared prebuilt-tools.yaml, with pinned actionlint and
+  # ShellCheck releases.
   # The hook downloads each platform's archive from its release only when the
   # cache is empty, verifies its sha256 against the pinned checksum below (an
   # unknown platform or a missing checksum fails closed), then lints every
@@ -62,10 +63,10 @@ repos:
           }
           al_bin="$(fetch "${al_base}" "${al_asset}" "${al_want}" "" "actionlint${exe}")"
           sc_bin="$(fetch "${sc_base}" "${sc_asset}" "${sc_want}" "${sc_subdir}" "shellcheck${exe}")"
-          "${al_bin}" -shellcheck="${sc_bin}" -pyflakes= .github/workflows/dart-*.yaml
+          "${al_bin}" -shellcheck="${sc_bin}" -pyflakes= .github/workflows/dart-*.yaml .github/workflows/prebuilt-tools.yaml
           ' _
         language: system
-        files: ^\.github/workflows/dart-[^/]+\.ya?ml$
+        files: ^\.github/workflows/(dart-[^/]+|prebuilt-tools)\.ya?ml$
         pass_filenames: false
   # The release script's test: fakes for bazel and curl on PATH and a real git
   # repository of two modules, no network, seconds.

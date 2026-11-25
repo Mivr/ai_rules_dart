@@ -118,6 +118,14 @@ on:
         required: false
         default: false
         type: boolean
+      # The rehearsal `prebuilt-tools` below: the jobs of the release that build
+      # the prebuilt tools, on every host platform, and release_prep.sh on what
+      # they upload.
+      prebuilt_tools:
+        description: Also rehearse the release's prebuilt-tools jobs on all five host platforms and release_prep.sh on a scratch tag (never gates, publishes nothing)
+        required: false
+        default: false
+        type: boolean
 concurrency:
   # Runs on main never share a group: each gets its own run-id suffix, so a
   # push cannot cancel the nightly uncached run (or the reverse) and manual
@@ -137,6 +145,23 @@ env:
     # The Android pins: a new pin starts a new entry, which a main push saves.
     - rules_flutter/e2e/**/android_model.json
 jobs:
+  # A rehearsal, not a gate: the release's `tools` jobs (prebuilt-tools.yaml, the
+  # same workflow the release calls) on the five host platforms, then
+  # release_prep.sh on what they upload, on a scratch tag in that job's own clone.
+  # A dispatch with `prebuilt_tools` set runs it. It pushes no tag and creates no
+  # release or attestation; none of its jobs fails the run, and it is not in
+  # `conclusion.needs`. The answer is in the step summaries: per platform whether
+  # the two builds were byte-equal, and the sizes.
+  prebuilt-tools:
+    name: prebuilt tools (rehearsal)
+    if: github.event_name == 'workflow_dispatch' && inputs.prebuilt_tools
+    permissions:
+      contents: read
+    uses: ./.github/workflows/prebuilt-tools.yaml
+    with:
+      module: rules_flutter
+      ref: ${{ github.sha }}
+      rehearse: true
   # An experiment, not a gate: do build hooks run on a Mac? The Apple refusal of
   # a hook, the replacements of sqlite3 and webcrypto and the objective_c
   # overlay are switched off (`.github/patches/apple-hooks-on.patch`), and the

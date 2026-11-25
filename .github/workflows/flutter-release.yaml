@@ -60,66 +60,21 @@ jobs:
         # this through flutter-tag.yaml, github.sha is main's head, not the tagged
         # commit.
         run: bash .github/workflows/release_gate.sh "$TAG" "$(gh api "repos/$REPO/commits/$TAG" --jq .sha)"
-  # The prebuilt tools (rules_flutter/flutter/private/prebuilt_tools.bzl): on each
-  # host platform the SDK tables list, its own runner builds the tool set
-  # twice from the tag, in two consumer workspaces with no cache, and uploads
-  # it only when the two builds agree byte for byte (`release tools build`).
-  # A platform whose builds differ uploads only the sidecar saying so, and the
-  # release builds its tools from source there. A job that fails fails the
-  # release, which needs every one of them: a platform may be absent, never
-  # wrong. The reusable workflow's build job downloads the artifacts, and
-  # release_prep.sh writes the table into the module's archive.
+  # The prebuilt tools of rules_flutter (see prebuilt-tools.yaml, which the CI
+  # rehearsal calls too): on each host platform the SDK tables list, its own
+  # runner builds the tool set twice from the tag and uploads it only when the
+  # two builds agree byte for byte. A job that fails fails the release, which
+  # needs this call: a platform may be absent, never wrong. The reusable
+  # release workflow's build job downloads the artifacts, and release_prep.sh
+  # writes the table into the module's archive.
   tools:
     if: vars.RELEASES_ENABLED == 'true'
     needs: gate
-    strategy:
-      # Every platform runs to its end, so one attempt shows every platform's
-      # problem instead of the first one's. The release still needs all of
-      # them: a platform whose two builds differ ships no tools and is simply
-      # absent from the table (its job passes), but a job that fails (a build
-      # error, a runner that cannot build) fails `tools`, and `release`, which
-      # needs it, is skipped: no archive, no attestation, no GitHub release.
-      # The tag stays pushed; "Re-run failed jobs" of the run builds the failed
-      # platforms again and keeps the gate's result.
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux-x64
-            runner: ubuntu-latest
-          - platform: linux-arm64
-            runner: ubuntu-24.04-arm
-          - platform: macos-arm64
-            runner: macos-latest
-          - platform: macos-x64
-            runner: macos-15-intel
-          - platform: windows-x64
-            runner: windows-latest
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag_name || github.ref_name }}
-          persist-credentials: false
-      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
-        with:
-          bazelisk-cache: true
-      - name: Build the tool set twice and compare
-        # The release tool lives in rules_dart/tools; the set it builds is
-        # rules_flutter's, from this checkout.
-        working-directory: rules_dart/tools
-        run: >-
-          bazel run //release:release -- tools build --module=rules_flutter
-          --platform=${{ matrix.platform }} --out="$RUNNER_TEMP/prebuilt-tools"
-          --work="$RUNNER_TEMP/prebuilt-tools-work"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: prebuilt-tools-rules_flutter-${{ matrix.platform }}
-          path: ${{ runner.temp }}/prebuilt-tools/
-          if-no-files-found: error
+    uses: ./.github/workflows/prebuilt-tools.yaml
+    with:
+      module: rules_flutter
+      ref: ${{ inputs.tag_name || github.ref_name }}
+      rehearse: false
   release:
     if: vars.RELEASES_ENABLED == 'true'
     needs: [gate, tools]
