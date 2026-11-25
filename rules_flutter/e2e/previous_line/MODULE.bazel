@@ -1,0 +1,72 @@
+"""E2e test: the previous stable line, Flutter 3.47.7 (Dart 3.13.5), beside the default 3.50.1.
+
+The project is what stock 3.47.7 made: `flutter create --platforms=android,web,linux` and
+`flutter pub add shared_preferences`, with that release's `pubspec.lock`; `android_model.json` is
+the pin `bazel run //:android_pin` wrote with it. The builds here take the 3.47 line's behaviour from
+`//flutter/private:sdk_lines.bzl` (the icon font shaken from the app's kernel by `const_finder`).
+
+The Android build takes `android.jar` and the NDK from the Android SDK: `ANDROID_HOME` and
+`ANDROID_NDK_HOME` (the *versioned* NDK directory), passed with `--repo_env`.
+"""
+
+module(name = "rules_flutter_previous_line")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
+bazel_dep(name = "rules_android_ndk", version = "0.1.5")
+bazel_dep(name = "rules_kotlin", version = "2.4.20")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+bazel_dep(name = "platforms", version = "1.1.0")
+
+bazel_dep(name = "llvm", version = "0.8.19", dev_dependency = True)
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+register_toolchains(
+    "@llvm//toolchain:linux_aarch64_to_linux_aarch64",
+    "@llvm//toolchain:linux_aarch64_to_linux_x86_64",
+    "@llvm//toolchain:linux_x86_64_to_linux_aarch64",
+    "@llvm//toolchain:linux_x86_64_to_linux_x86_64",
+    dev_dependency = True,
+)
+
+archive_override(
+    module_name = "rules_android_ndk",
+    sha256 = "0f566314be1257379d42630e068618169e410e4ecf964b28e0c72559e2196658",
+    strip_prefix = "rules_android_ndk-987213e7f982de48696f3b9cd031ff4e3e065c7c",
+    urls = ["https://github.com/bazelbuild/rules_android_ndk/archive/987213e7f982de48696f3b9cd031ff4e3e065c7c.tar.gz"],
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.toolchain(flutter_version = "3.47.7")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_toolchains", "flutter_web_sdk")
+
+register_toolchains("@flutter_toolchains//:all")
+
+# package:jni (a dependency of shared_preferences_android) has a C library, built for the app's ABIs
+# with the NDK's toolchain.
+android_ndk_repository_extension = use_extension(
+    "@rules_android_ndk//:extension.bzl",
+    "android_ndk_repository_extension",
+)
+use_repo(android_ndk_repository_extension, "androidndk")
+
+register_toolchains("@androidndk//:all")
+
+android_model = use_extension("@rules_flutter//flutter:android.bzl", "android_model")
+android_model.pin(model = "//:android_model.json")
+use_repo(android_model, "android_model")
+
+register_toolchains("@android_model//:kotlin_toolchain")

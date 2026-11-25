@@ -1,0 +1,7 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test all targets on Flutter 3.47.7
+    run: bazel test //... --test_output=errors
+    min_tests_executed: 4
+  - name: the Linux app builds on Flutter 3.47.7
+    run: bazel build //:linux
