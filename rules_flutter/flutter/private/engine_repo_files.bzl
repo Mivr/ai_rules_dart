@@ -15,6 +15,11 @@ FONT_SUBSET_BASE_FILES = [
     "font-subset-tools/LICENSE.font_subset.md",
 ]
 
+# The icon tree shaker of a release whose line shakes from the kernel
+# (`icon_tree_shaker = "const_finder"` in `sdk_lines.bzl`), shipped in its
+# `font-subset.zip`.
+CONST_FINDER_FILE = "font-subset-tools/const_finder.dart.snapshot"
+
 MATERIAL_FONTS_FILES = [
     "material-fonts/MaterialIcons-Regular.otf",
     "material-fonts/MaterialIcons_LICENSE.txt",

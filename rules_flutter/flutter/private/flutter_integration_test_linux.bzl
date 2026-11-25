@@ -303,7 +303,7 @@ def _flutter_linux_integration_test_impl(ctx):
     setup = _linux_integration_test_setup(ctx)
     native_assets = integration_test_native_assets(ctx)
     sources = _linux_integration_test_sources(ctx, setup)
-    recorded_uses = integration_test_recorded_uses(ctx, setup.is_debug)
+    recorded_uses = integration_test_recorded_uses(ctx, setup.sdk, setup.is_debug)
     kernel_dill = integration_test_kernel(ctx, setup.sdk, sources, native_assets, setup.aot, setup.mode, recorded_uses)
     aot_output = integration_test_aot(ctx, setup.sdk, kernel_dill, setup.is_debug, setup.strip)
     assets = integration_test_assets(
@@ -313,6 +313,7 @@ def _flutter_linux_integration_test_impl(ctx):
         recorded_uses,
         setup.is_debug,
         native_assets,
+        kernel_dill,
     )
     runner = _linux_integration_test_runner(ctx, setup, sources)
     bundle = _linux_integration_test_bundle(ctx, setup, kernel_dill, aot_output, assets, runner, native_assets)

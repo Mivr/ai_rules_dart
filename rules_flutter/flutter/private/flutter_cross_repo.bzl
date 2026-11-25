@@ -11,7 +11,7 @@ engine repo's gen_snapshot_arm64 instead of downloading a separate one.
 load("//flutter/private:repo_metadata.bzl", "download_mode_metadata")
 load(":artifact_urls.bzl", "engine_artifact_url", "gen_snapshot_cross_artifact_path", "require_sha256")
 load(":download.bzl", "pinned_download_and_extract")
-load(":engine_helpers.bzl", "dart_binary_name", "dartaotruntime_binary_name", "gen_snapshot_host_platform", "platform_to_arch", "platform_to_os")
+load(":engine_helpers.bzl", "const_finder_attr", "dart_binary_name", "dartaotruntime_binary_name", "gen_snapshot_host_platform", "platform_to_arch", "platform_to_os")
 load(":local_sdk.bzl", "link_local_file", "read_local_sdk_version", "resolve_local_sdk_root")
 
 visibility(["//flutter/..."])
@@ -80,6 +80,7 @@ flutter_aot_toolchain(
         aot_toolchain_block = ""
 
     build_content = _BUILD_TEMPLATE.format(
+        const_finder_attr = const_finder_attr(flutter_version, host_repo_name),
         load_block = load_block,
         flutter_version = flutter_version,
         engine_revision = engine_revision,
@@ -162,7 +163,7 @@ _BUILD_TEMPLATE = """{load_block}
 
 flutter_toolchain(
     name = "flutter_toolchain",
-    dart = "@{host_repo_name}//:dart-sdk/bin/{dart_bin}",
+{const_finder_attr}    dart = "@{host_repo_name}//:dart-sdk/bin/{dart_bin}",
     dart_sdk = "@{host_repo_name}//:dart_sdk_files",
     dart_vm_files = "@{host_repo_name}//:dart_vm_files",
     dart_pub_files = "@{host_repo_name}//:dart_pub_files",

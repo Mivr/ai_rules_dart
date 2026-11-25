@@ -3,7 +3,7 @@
 module(name = "rules_flutter_integration_web")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.31.0", repo_name = "rules_dart")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 
 local_path_override(

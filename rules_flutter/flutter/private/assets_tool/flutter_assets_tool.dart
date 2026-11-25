@@ -21,6 +21,7 @@ import 'package:data_assets/data_assets.dart';
 import 'package:file/file.dart'
     show ForwardingDirectory, ForwardingFileSystem, ForwardingFileSystemEntity;
 import 'package:file/local.dart';
+import 'package:flutter_assets_tool_api/assets_tool_api.dart';
 import 'package:flutter_tools/src/artifacts.dart';
 import 'package:flutter_tools/src/asset.dart';
 import 'package:flutter_tools/src/base/common.dart';
@@ -38,11 +39,9 @@ import 'package:flutter_tools/src/build_system/targets/assets.dart';
 import 'package:flutter_tools/src/build_system/targets/linux.dart';
 import 'package:flutter_tools/src/build_system/targets/localizations.dart';
 import 'package:flutter_tools/src/build_system/targets/web.dart';
-import 'package:flutter_tools/src/bundle_builder.dart';
 import 'package:flutter_tools/src/cache.dart';
 import 'package:flutter_tools/src/dart/package_map.dart';
 import 'package:flutter_tools/src/devfs.dart';
-import 'package:flutter_tools/src/device.dart' show ImpellerStatus;
 import 'package:flutter_tools/src/git.dart';
 import 'package:flutter_tools/src/isolated/native_assets/dart_hook_result.dart';
 import 'package:flutter_tools/src/isolated/native_assets/native_assets.dart'
@@ -65,7 +64,7 @@ ArgParser get _parser => ArgParser()
   // `<path under the Flutter root>=<file>`: SDK files at fixed places
   // (the Dart SDK, the material fonts, the framework's shaders, the web SDK).
   ..addMultiOption('sdk', splitCommas: false)
-  // `<impellerc|font_subset>=<file>`: engine tools, placed where
+  // `<impellerc|font_subset|const_finder>=<file>`: engine tools, placed where
   // the tool's own `Artifacts` looks for them on this host.
   ..addMultiOption('engine', splitCommas: false)
   // `<path under shader_lib/>=<file>`: impellerc's include files.
@@ -105,8 +104,10 @@ ArgParser get _parser => ArgParser()
   ..addOption('platform', defaultsTo: 'android')
   ..addOption('mode', defaultsTo: 'debug')
   ..addOption('flavor')
-  // What the AOT compile recorded of the app's uses, for the icon tree shaker.
+  // What the icon tree shaker reads, by the release's line: the uses the AOT
+  // compile recorded, or the app's kernel (`const_finder`).
   ..addOption('recorded-uses')
+  ..addOption('app-dill')
   ..addOption('native-assets-manifest')
   ..addFlag('tree-shake-icons')
   ..addFlag('deferred-components')
@@ -359,6 +360,7 @@ void _stageFlutterRoot(
   final engine = <String, String>{
     'impellerc': artifacts.getHostArtifact(HostArtifact.impellerc).path,
     'font_subset': artifacts.getArtifactPath(Artifact.fontSubset),
+    ...lineEngineTools(artifacts),
   };
   _pairs(args.multiOption('engine')).forEach((String name, String file) {
     final String? at = engine[name];
@@ -642,12 +644,23 @@ void _placeRecordedUses(Environment environment, ArgResults args) {
   }
 }
 
+/// The app's kernel, where the icon tree shaker of a line that reads the
+/// kernel (`const_finder`) finds it.
+void _placeAppDill(Environment environment, ArgResults args) {
+  final String? appDill = args.option('app-dill');
+  if (appDill != null) {
+    environment.fileSystem
+        .file(_abs(appDill))
+        .copySync(environment.buildDir.childFile('app.dill').path);
+  }
+}
+
 /// What a platform's bundle target writes into `flutter_assets/`:
 /// `CopyAssets.build` without the kernel and hooks targets it depends on,
 /// plus the files each platform target passes as additional content.
 Future<void> _assets(Environment environment, ArgResults args) async {
   final FileSystem fs = environment.fileSystem;
-  final TargetPlatform targetPlatform = TargetPlatform.fromName(
+  final TargetPlatform targetPlatform = targetPlatformNamed(
     args.option('platform')!,
   );
   final buildMode = BuildMode.fromCliName(args.option('mode')!);
@@ -655,6 +668,7 @@ Future<void> _assets(Environment environment, ArgResults args) async {
     return _testerAssets(environment, args, buildMode);
   }
   _placeRecordedUses(environment, args);
+  _placeAppDill(environment, args);
   final String? nativeAssets = args.option('native-assets-manifest');
   await copyAssets(
     environment,
@@ -708,18 +722,11 @@ Future<void> _testerAssets(
   if (result != 0) {
     throwToolExit('Error: Failed to build asset bundle');
   }
-  await writeBundle(
+  await writeTesterBundle(
     environment.outputDir,
     bundle.entries,
-    targetPlatform: TargetPlatform.tester,
-    impellerStatus: ImpellerStatus.platformDefault,
-    processManager: environment.processManager,
-    fileSystem: environment.fileSystem,
-    artifacts: environment.artifacts,
-    logger: environment.logger,
-    projectDir: environment.projectDir,
-    buildMode: buildMode,
-    platform: environment.platform,
+    environment,
+    buildMode,
   );
   // As `flutter test` copies it beside the bundle: flutter_tester resolves
   // `@Native` assets through the manifest in its assets directory.
@@ -774,6 +781,7 @@ Future<void> _web(Environment environment, ArgResults args) async {
       'one; list its files in pubspec_srcs.',
     );
   }
+  _placeAppDill(environment, args);
   for (final String path in args.multiOption('web-build').map(_abs)) {
     final FileSystemEntity entity = fs.isDirectorySync(path)
         ? fs.directory(path)
@@ -1006,7 +1014,9 @@ void _describePath(FileSystem fs, String path, Logger logger) {
       b.write(', its target unreadable: $e');
     }
   }
-  b.write(', exists following links: ${fs.typeSync(path) != FileSystemEntityType.notFound}');
+  b.write(
+    ', exists following links: ${fs.typeSync(path) != FileSystemEntityType.notFound}',
+  );
   try {
     b.write(', reads ${fs.file(path).readAsBytesSync().length} bytes');
   } on FileSystemException catch (e) {

@@ -121,6 +121,10 @@ for Flutter's):
 - The table in the repository is empty: the repository, and a consumer on a path override, builds every tool from
   source. `--repo_env=RULES_DART_TOOLS=source` does the same for a consumer of a release, in both modules.
 - An SDK bump needs nothing here: the release builds the tools of whatever SDK the tag pins.
+- The set is one per module, for the default line (Dart 3.14.1, Flutter 3.50.1). A workspace that selects the previous
+  line (Dart 3.13.5, Flutter 3.47.7) builds its module compiler, snapshot tools and asset tool from source, about 16 s
+  on a first build, and takes only the version-independent tools (the pub scanner, `android_bundle`) prebuilt. CI runs
+  `e2e/previous_sdk` and `e2e/previous_line` on every change, so the release gate's proof runs include that line.
 - Nothing about the table is done by hand: the jobs build the archives and `release_prep.sh` writes the table; a
   release only has to keep `release` needing every `tools` job.
 

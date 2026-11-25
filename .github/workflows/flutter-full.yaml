@@ -256,6 +256,16 @@ jobs:
             scope: apple
             shard: none
             cache-save: false
+          # The previous stable line (Flutter 3.47.7, Dart 3.13.5): the darwin
+          # archives of that line are fetched only here. It runs its widget
+          # test and release web build by name, in the step below the
+          # generic one: its Android targets build on Linux (ci.yaml's
+          # e2e-linux-android), and the query the generic step excludes them
+          # with does not name this workspace's dex and R8 rules.
+          - workspace: previous_line
+            scope: all
+            shard: none
+            cache-save: false
     env:
       DISK_CACHE_DIR: ~/.cache/bazel-disk
     steps:
@@ -302,7 +312,7 @@ jobs:
       # more is built. An `apple` scope leg tests only the macOS-gated tests,
       # and fails when the query finds none.
       - name: bazel test (e2e/${{ matrix.workspace }}, ${{ matrix.scope }})
-        if: matrix.workspace != 'integration_ios' && matrix.workspace != 'smoke'
+        if: matrix.workspace != 'integration_ios' && matrix.workspace != 'smoke' && matrix.workspace != 'previous_line'
         working-directory: rules_flutter/e2e/${{ matrix.workspace }}
         env:
           SCOPE: ${{ matrix.scope }}
@@ -336,6 +346,10 @@ jobs:
             echo "Skipping ${#excludes[@]} Android targets on this macOS leg (Linux CI builds them)"
             bazel test --test_output=errors -- //... "${excludes[@]}"
           fi
+      - name: bazel test //:widget_test //:web (e2e/previous_line)
+        if: matrix.workspace == 'previous_line'
+        working-directory: rules_flutter/e2e/previous_line
+        run: bazel test --test_output=errors //:widget_test //:web
       # An Android build on a Mac host runs the darwin NDK, build-tools (aapt2,
       # d8, zipalign) and JDK, which no Linux job exercises. hello_world's
       # Android targets (the same query the legs exclude) build and test here.

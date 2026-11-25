@@ -1,0 +1,14 @@
+schema: mivr-e2e-spec/1
+commands:
+  # Builds, tests, analyzes and format-checks (.bazelrc) every target on Dart
+  # 3.13.5, whose `dart format` checks the formatting.
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 1
+  - name: the binary runs on the selected SDK
+    run: bazel run //:app
+    expect:
+      exit_code: 0
+      output_contains:
+        - Dart 3.13.5
+        - usr/local/bin

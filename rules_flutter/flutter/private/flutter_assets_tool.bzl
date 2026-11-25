@@ -11,6 +11,8 @@ compiled against `packages/flutter_tools` of the release's tag
 (`FlutterSdkInfo.assets_tool`), as rules_dart builds its module compiler.
 """
 
+load("//flutter/private:sdk_lines.bzl", "flutter_sdk_line")
+
 visibility(["//flutter/..."])
 
 FlutterAssetsToolSourcesInfo = provider(
@@ -149,6 +151,13 @@ def _flutter_assets_tool_impl(ctx):
             ", ".join([k for k in ("dartaotruntime", "gen_kernel", "gen_snapshot", "platform") if k not in sdk]),
         ))
     main = ctx.file._main
+
+    # The tool's calls whose `flutter_tools` API differs by line, as the
+    # package `flutter_assets_tool_api`: the file the line names.
+    api_dir = flutter_sdk_line(ctx.attr.version).assets_tool_api
+    api = [f for f in ctx.files._apis if f.dirname.endswith("/" + api_dir)]
+    if len(api) != 1:
+        fail("%s: no asset tool API file `%s/assets_tool_api.dart` for Flutter %s" % (ctx.label, api_dir, ctx.attr.version))
     packages = [
         {
             "name": p.name,
@@ -157,7 +166,12 @@ def _flutter_assets_tool_impl(ctx):
             "languageVersion": p.language_version,
         }
         for p in sources.packages
-    ]
+    ] + [{
+        "name": "flutter_assets_tool_api",
+        "rootUri": "%s:///%s/" % (_SCHEME, api[0].dirname),
+        "packageUri": "",
+        "languageVersion": "3.11",
+    }]
     package_config = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
     ctx.actions.write(package_config, json.encode_indent({"configVersion": 2, "packages": packages}))
 
@@ -179,7 +193,7 @@ def _flutter_assets_tool_impl(ctx):
             "%s:///%s" % (_SCHEME, main.path),
         ],
         inputs = depset(
-            direct = [package_config, sdk["gen_kernel"], sdk["platform"], main],
+            direct = [package_config, sdk["gen_kernel"], sdk["platform"], main, api[0]],
             transitive = [sources.files],
         ),
         outputs = [kernel],
@@ -243,6 +257,14 @@ flutter_assets_tool = rule(
             doc = "The tool's own source.",
             default = Label("//flutter/private/assets_tool:flutter_assets_tool.dart"),
             allow_single_file = True,
+        ),
+        "_apis": attr.label_list(
+            doc = "The tool's calls into `flutter_tools` whose API differs by line, one file per line; the line's `assets_tool_api` picks one.",
+            default = [
+                Label("//flutter/private/assets_tool:api_3_47/assets_tool_api.dart"),
+                Label("//flutter/private/assets_tool:api_3_50/assets_tool_api.dart"),
+            ],
+            allow_files = [".dart"],
         ),
     },
 )

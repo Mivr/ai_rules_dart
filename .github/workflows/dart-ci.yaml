@@ -195,6 +195,9 @@ jobs:
   # e2e/hermetic_canary is Linux-only and red by design, so it runs in
   # `expected-failure` only and never in a positive sweep; e2e/hello_world
   # and e2e/codegen also run in `hermetic-strict` under the H1 flag set.
+  # e2e/previous_sdk selects the previous stable line (Dart 3.13.5) and runs in
+  # Linux shard 3 and Windows shard 3, and in `full.yaml`'s macOS leg: those are
+  # the three hosts whose 3.13.5 archives only a run there fetches.
   # No e2e workspace is left without a job.
   # A tag run (release dispatch) runs every job, matrix entry and step below
   # (with caches): no job skips work on a tag run that the nightly run does.
@@ -263,6 +266,7 @@ jobs:
               e2e/guard_reuse
               e2e/root_sdk_pin
               e2e/sdk_coupling
+              e2e/previous_sdk
               e2e/build_hooks
           - os: windows-latest
             shard: 1
@@ -297,6 +301,7 @@ jobs:
               e2e/guard_reuse
               e2e/root_sdk_pin
               e2e/sdk_coupling
+              e2e/previous_sdk
           - os: windows-latest
             shard: 4
             parallelism: 3

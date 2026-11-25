@@ -3,7 +3,7 @@
 module(name = "rules_flutter_pub_scc")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.31.0", repo_name = "rules_dart")
 
 bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
 

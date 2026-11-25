@@ -142,7 +142,7 @@ DartAnalysisModeInfo = provider(
     doc = "How the `dart_analyze` aspect checked one target: against its dependencies' summaries, or from their source.",
     fields = {
         "summaries": "bool: True when the analysis read dependency summaries. False when it analyzed the staged closure from source, or did not analyze the target.",
-        "format_checks": "list[struct]: Each `DartFormat` check's resolved `mode`, `sdk_inputs`, and `env`.",
+        "format_checks": "list[struct]: Each `DartFormat` check's resolved `mode`, `sdk_inputs`, `env`, and the `sdk_version` it was resolved for.",
     },
 )
 
@@ -581,7 +581,7 @@ def _format(ctx, name, layout, own_paths, language_version):
         },
         toolchain = _TOOLCHAIN,
     )
-    return struct(stamp = stamp, mode = mode, sdk_inputs = sdk_inputs, env = env)
+    return struct(stamp = stamp, mode = mode, sdk_inputs = sdk_inputs, env = env, sdk_version = dart_sdk_info.version)
 
 def _analyze_summary_or_source(ctx, info, srcs, opts):
     """Runs the summary-mode or source-mode analyze action.

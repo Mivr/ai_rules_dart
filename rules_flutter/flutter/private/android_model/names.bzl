@@ -1,21 +1,27 @@
 """Names derived from keys of the Android model."""
 
+load("//flutter/private:sdk_lines.bzl", "FLUTTER_SDK_LINES")
+
 # The schema of the pin file these rules read (written by tools/model.init.gradle).
 SCHEMA = 4
-
-# The Android Gradle plugin versions the build tools are built and tested with (e2e workspaces): the
-# floor the pinned Flutter release accepts, and the version its `flutter create` template names. The
-# tools are compiled against the libraries of the AGP the pin names: R8, D8, L8 and trace references
-# through the API R8 publishes, which holds from one version to the next; the resource compiler, the
-# manifest merger, the R class writer and the baseline profile compiler through AGP's own classes,
-# which need not.
-AGP_TESTED = ("9.1.1", "9.3.1")
 
 def _numbers(version):
     out = []
     for part in version.split("-")[0].split("."):
         out.append(int(part) if part.isdigit() else 0)
     return out
+
+# The Android Gradle plugin versions the build tools are built and tested with (e2e workspaces): from
+# the oldest to the newest of the supported Flutter lines' (`android_gradle_plugin` in
+# `sdk_lines.bzl`: the oldest an e2e app of the line uses, and the version its `flutter create`
+# template names). The tools are compiled against the libraries of the AGP the pin names: R8, D8, L8
+# and trace references through the API R8 publishes, which holds from one version to the next; the
+# resource compiler, the manifest merger, the R class writer and the baseline profile compiler through
+# AGP's own classes, which need not.
+AGP_TESTED = (
+    sorted([line.android_gradle_plugin[0] for line in FLUTTER_SDK_LINES.values()], key = _numbers)[0],
+    sorted([line.android_gradle_plugin[1] for line in FLUTTER_SDK_LINES.values()], key = _numbers)[-1],
+)
 
 def agp_tested(version):
     """Whether an Android Gradle plugin version is within the range the tools are tested with.

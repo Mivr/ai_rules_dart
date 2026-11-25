@@ -14,6 +14,7 @@ load(
     _flutter_assets_tool_sources = "flutter_assets_tool_sources",
 )
 load("//flutter/private:flutter_sdk_binary.bzl", _flutter_sdk_binary = "flutter_sdk_binary")
+load("//flutter/private:sdk_lines.bzl", "flutter_sdk_line")
 load(
     "//flutter/private:xtool_darwin_sdk_repo.bzl",
     _xtool_darwin_cc_toolchain_config = "xtool_darwin_cc_toolchain_config",
@@ -51,6 +52,7 @@ def _flutter_toolchain_impl(ctx):
 
     flutter_sdk_info = FlutterSdkInfo(
         version = ctx.attr.version,
+        line = flutter_sdk_line(ctx.attr.version),
         engine_revision = ctx.attr.engine_revision,
         dart = ctx.file.dart,
         dartaotruntime = ctx.file.dartaotruntime,
@@ -64,6 +66,7 @@ def _flutter_toolchain_impl(ctx):
         platform_kernel_dill_product = ctx.file.platform_kernel_dill_product,
         patched_sdk = ctx.attr.patched_sdk,
         icu_data = ctx.file.icu_data,
+        const_finder = ctx.file.const_finder,
         font_subset = ctx.file.font_subset,
         impellerc = ctx.file.impellerc,
         shader_lib = ctx.files.shader_lib,
@@ -183,6 +186,11 @@ flutter_toolchain = rule(
             mandatory = True,
             allow_single_file = True,
         ),
+        "const_finder": attr.label(
+            doc = "The `const_finder.dart.snapshot` for icon tree shaking.",
+            allow_single_file = True,
+            cfg = "exec",
+        ),
         "font_subset": attr.label(
             doc = "The `font-subset` binary for font subsetting.",
             allow_single_file = True,
@@ -227,6 +235,7 @@ flutter_toolchain = rule(
 def _flutter_product_tools_toolchain_impl(ctx):
     return [platform_common.ToolchainInfo(
         platform_kernel_dill_product = ctx.file.platform_kernel_dill_product,
+        const_finder = ctx.file.const_finder,
         font_subset = ctx.file.font_subset,
     )]
 
@@ -236,6 +245,11 @@ flutter_product_tools_toolchain = rule(
         "platform_kernel_dill_product": attr.label(
             doc = "The release/product `platform_strong.dill`.",
             allow_single_file = True,
+        ),
+        "const_finder": attr.label(
+            doc = "The `const_finder.dart.snapshot` for icon tree shaking.",
+            allow_single_file = True,
+            cfg = "exec",
         ),
         "font_subset": attr.label(
             doc = "The `font-subset` binary for font subsetting.",
@@ -309,6 +323,7 @@ def _flutter_font_subset_toolchain_impl(ctx):
         ctx.label.name == "font_subset_toolchain"
     )
     return [platform_common.ToolchainInfo(
+        const_finder = ctx.file.const_finder,
         font_subset = ctx.file.font_subset,
         _is_builtin_default = is_builtin_default,
     )]
@@ -316,11 +331,16 @@ def _flutter_font_subset_toolchain_impl(ctx):
 flutter_font_subset_toolchain = rule(
     implementation = _flutter_font_subset_toolchain_impl,
     attrs = {
+        "const_finder": attr.label(
+            doc = "The `const_finder.dart.snapshot` for icon tree shaking.",
+            allow_single_file = True,
+            cfg = "exec",
+        ),
         "font_subset": attr.label(
             doc = "The `font-subset` binary for font subsetting.",
             allow_single_file = True,
             cfg = "exec",
         ),
     },
-    doc = "Lazy sub-toolchain providing the `font-subset` icon tree-shaking tool.",
+    doc = "Lazy sub-toolchain providing the `const_finder` and `font-subset` icon tree-shaking tools.",
 )

@@ -11,6 +11,7 @@ load("//flutter/private:download.bzl", "pinned_download_and_extract")
 load("//flutter/private:engine_helpers.bzl", "PLATFORM_PREFIX_TO_OS", "WINDOWS_CPP_CLIENT_WRAPPER_FILES", "cpp_client_wrapper_artifact_path", "dart_binary_name", "dartaotruntime_binary_name", "engine_arch_for_os", "engine_filegroup_for_os", "gen_snapshot_host_platform")
 load(
     "//flutter/private:engine_repo_files.bzl",
+    "CONST_FINDER_FILE",
     "FONT_SUBSET_BASE_FILES",
     "HOST_TOOLS_RELEASE_FILES",
     "LINUX_ENGINE_REL_FILES",
@@ -36,6 +37,7 @@ load("//flutter/private:linux_headless_runtime_repo.bzl", "linux_headless_runtim
 load("//flutter/private:local_sdk.bzl", "host_engine_cache_dir", "link_local_dir", "read_local_sdk_version", "resolve_local_sdk_root", "stage_local_dart_sdk")
 load("//flutter/private:pub_lock_sdks.bzl", "version_below_lower_bound")
 load("//flutter/private:repo_metadata.bzl", "download_mode_metadata")
+load("//flutter/private:sdk_lines.bzl", "flutter_sdk_line")
 load("//flutter/private:toolchains_repo.bzl", "CROSS_COMPILATION_PAIRS", "DESKTOP_CROSS_PAIRS", "HOST_PLATFORMS", "flutter_toolchains_repo")
 load("//flutter/private:versions.bzl", "FLUTTER_VERSIONS", "LINUX_SYSROOT_CHECKSUMS", "flutter_artifact_sha256", "flutter_source_sha256", "unknown_version_message")
 load("//flutter/private:xtool_darwin_sdk_repo.bzl", "validate_darwin_sdk_config", "xtool_darwin_sdk_repo")
@@ -75,7 +77,7 @@ def _format_alias(name, actual):
     visibility = ["//visibility:public"],
 )""".format(name = name, actual = actual)
 
-def _lazy_repo_file_aliases(os_name, exe_suffix, user_repo_name, platform, repos):
+def _lazy_repo_file_aliases(os_name, exe_suffix, user_repo_name, platform, repos, const_finder = False):
     """Generates alias() targets for all files moved into lazy SDK repositories.
 
     Args:
@@ -87,13 +89,19 @@ def _lazy_repo_file_aliases(os_name, exe_suffix, user_repo_name, platform, repos
             `patched_sdk_product_repo`, `font_subset_repo`,
             `material_fonts_repo`, `engine_release_repo`, and
             `engine_debug_repo`.
+        const_finder: Whether the release's `font-subset.zip` ships the
+            `const_finder.dart.snapshot` its icon tree shaker runs (the line's
+            `icon_tree_shaker`).
     """
     blocks = []
 
     for path in PATCHED_SDK_PRODUCT_FILES:
         blocks.append(_format_alias(path, "@{}//:{}".format(repos.patched_sdk_product_repo, path)))
 
-    for path in FONT_SUBSET_BASE_FILES + ["font-subset-tools/font-subset" + exe_suffix]:
+    font_subset_files = FONT_SUBSET_BASE_FILES + ["font-subset-tools/font-subset" + exe_suffix]
+    if const_finder:
+        font_subset_files = font_subset_files + [CONST_FINDER_FILE]
+    for path in font_subset_files:
         blocks.append(_format_alias(path, "@{}//:{}".format(repos.font_subset_repo, path)))
 
     for path in MATERIAL_FONTS_FILES:
@@ -549,6 +557,7 @@ def _write_engine_artifacts_build(
     exe_suffix = ".exe" if os_part == "windows" else ""
 
     _patch_dartdev_snapshot(repository_ctx, platform, flutter_version)
+    const_finder = flutter_sdk_line(flutter_version).icon_tree_shaker == "const_finder"
 
     (
         engine_release_repo,
@@ -574,6 +583,7 @@ def _write_engine_artifacts_build(
             engine_release_repo = engine_release_repo,
             engine_debug_repo = engine_debug_repo,
         ),
+        const_finder = const_finder,
     )
 
     # :engine_library (release) and :engine_debug_library (debug) alias the lazy
@@ -618,6 +628,7 @@ def _write_engine_artifacts_build(
         linux_sysroot_attr = linux_sysroot_attr,
         prebuilt_tools = repr("@" + prebuilt_repo if prebuilt_repo else None),
         prebuilt_assets_tool = repr("@%s//:assets_tool" % prebuilt_repo if prebuilt_repo else None),
+        const_finder_attr = '    const_finder = ":%s",\n' % CONST_FINDER_FILE if const_finder else "",
     )
     repository_ctx.file("BUILD.bazel", build_content)
 
@@ -769,7 +780,7 @@ flutter_assets_tool(
 
 flutter_toolchain(
     name = "flutter_toolchain",
-    dart = "dart-sdk/bin/{dart_bin}",
+{const_finder_attr}    dart = "dart-sdk/bin/{dart_bin}",
     dart_sdk = ":dart_sdk_files",
     dart_vm_files = ":dart_vm_files",
     dart_pub_files = ":dart_pub_files",
@@ -812,7 +823,7 @@ flutter_product_tools_toolchain(
 
 flutter_font_subset_toolchain(
     name = "font_subset_toolchain",
-    font_subset = ":font-subset-tools/font-subset{exe_suffix}",
+{const_finder_attr}    font_subset = ":font-subset-tools/font-subset{exe_suffix}",
     visibility = ["//visibility:public"],
 )
 
@@ -1476,6 +1487,7 @@ def _register_download_web_sky_repos(name, flutter_version, engine_revision, eng
     flutter_web_sdk_repo(
         name = name + "_web_sdk",
         engine_revision = engine_revision,
+        flutter_version = flutter_version,
         sha256 = flutter_artifact_sha256(flutter_version, "flutter-web-sdk.zip", checksums),
         engine_base_url = engine_base_url,
         user_repository_name = name,

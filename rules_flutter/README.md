@@ -46,7 +46,7 @@ If `flutter build` works for you, here is what Bazel adds:
 
 | Platform | What you need |
 |---|---|
-| All | Bazel 9 or newer. The rules download Flutter 3.50.1 themselves. |
+| All | Bazel 9 or newer. The rules download Flutter 3.50.1 themselves, or 3.47.7, the previous stable line, with `flutter.toolchain(flutter_version = "3.47.7")` (see [Flutter SDK versions](docs/flutter-sdk-versions.md#release-lines)). |
 | macOS | Xcode, for `rules_apple` and `rules_swift`. |
 | iOS | Xcode. The simulator needs no signing identity. A physical device does; see [Running on an iOS device](#running-on-an-ios-device). |
 | Android | The Android SDK and NDK, with `ANDROID_HOME` and `ANDROID_NDK_HOME` set. See [Android](#android). |
@@ -60,7 +60,7 @@ If `flutter build` works for you, here is what Bazel adds:
 
 ```starlark
 bazel_dep(name = "ai_rules_flutter", version = "<version>", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.31.0", repo_name = "rules_dart")
 
 archive_override(
     module_name = "ai_rules_flutter",
@@ -111,12 +111,12 @@ Two extensions cover the rest. A root-registered custom release (an older stable
 
 #### Overriding `rules_dart`
 
-`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl` and `@rules_dart//dart:utils.bzl`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.30.0, released on GitHub under that module name with `repo_name = "rules_dart"`. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
+`rules_flutter` uses APIs from [`ai_rules_dart`](https://github.com/Mivr/ai_rules_dart) (`@rules_dart//dart:defs.bzl` and `@rules_dart//dart:utils.bzl`) that are not in upstream's `rules_dart` releases on the Bazel Central Registry. Its floor is `ai_rules_dart` 0.31.0, released on GitHub under that module name with `repo_name = "rules_dart"`. The `archive_override` pair in [MODULE.bazel](#modulebazel) above is the supported setup; every downloaded byte is verified against its `integrity` hash.
 
 To live at the heads instead of these releases (local development against a checkout of this repository), replace the two `archive_override` blocks with overrides onto your clone, which holds both modules. Because Bzlmod ignores module overrides in non-root modules, the overrides go in your root `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.31.0", repo_name = "rules_dart")
 
 git_override(
     module_name = "ai_rules_dart",
@@ -468,7 +468,7 @@ What a plain consumer's module graph pulls in, by feature. Floors are what `rule
 
 | Feature | Modules | Notes |
 |---|---|---|
-| Every app | `ai_rules_dart` 0.30.0 (repo_name `rules_dart`; the `Mivr` fork release, taken via `archive_override` above), `bazel_skylib`, `platforms`, `package_metadata` | Dart compilation, hooks, codegen. |
+| Every app | `ai_rules_dart` 0.31.0 (repo_name `rules_dart`; the `Mivr` fork release, taken via `archive_override` above), `bazel_skylib`, `platforms`, `package_metadata` | Dart compilation, hooks, codegen. |
 | iOS / macOS bundles | `rules_apple` ≥ 4.5.3, `rules_swift`, `apple_support`, `rules_cc` | 4.5.3 is the proven floor: `e2e/min_versions` pins it exactly and builds both Apple legs. `rules_swift`/`apple_support` float to the graph's maxima (4.5.3 accepts Swift at compatibility level 3). |
 | Android (APK, bundle, AAR) | `rules_kotlin` ≥ 2.3.0, `rules_java` | The app's Android side is built from its pinned Gradle model with AGP's own tools, fetched by the hashes in the pin: no `rules_android`, no `rules_jvm_external`, no Maven lock file and no Go toolchain. `rules_kotlin` compiles the Kotlin of the app and its plugins on the standard library Gradle resolved; 2.3.0 is the oldest release whose compiler reads the Kotlin 2.4.0 of a Flutter 3.47 app, and each workspace declares the release it wants (`e2e/min_versions` builds on the floor). |
 | xtool Darwin backend (opt-in) | `llvm` 0.8.19, exec-host toolchain archive only | Needs only `flutter.darwin_sdk(url = ..., sha256 = ...)` or `flutter.darwin_sdk(path = ...)` in the root module — no other `MODULE.bazel` lines. Plain consumers fetch no LLVM archive and register no LLVM toolchain (see `docs/dependencies.md`). |

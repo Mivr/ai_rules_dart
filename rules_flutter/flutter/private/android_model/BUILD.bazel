@@ -21,6 +21,7 @@ bzl_library(
     name = "names",
     srcs = ["names.bzl"],
     visibility = ["//flutter:__subpackages__"],
+    deps = ["//flutter/private:sdk_lines"],
 )
 
 bzl_library(

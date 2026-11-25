@@ -56,6 +56,17 @@ MODULE_COMPILER_SOURCES = {
             "vm": "3.12",
         },
     ),
+    "3.13.5": struct(
+        sha256 = "2da077bf89f3a14ae5a741728549371d87013265df49b8cace6475bd9ffc59e3",
+        revision = "04bcd1036cdc799ac6564988f159ee454d42c822",
+        language_versions = {
+            "_fe_analyzer_shared": "3.11",
+            "build_integration": "3.13",
+            "front_end": "3.13",
+            "kernel": "3.13",
+            "vm": "3.12",
+        },
+    ),
 }
 
 # The hosted packages those SDK packages import. The SDK takes them from its

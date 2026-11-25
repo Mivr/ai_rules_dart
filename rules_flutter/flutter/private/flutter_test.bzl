@@ -228,7 +228,8 @@ def _flutter_test_assets(ctx, flutter_sdk_info, native_assets):
     # The test's `flutter_assets/`, as `flutter test` builds it: what the
     # pubspec names, for flutter_tester (its shaders compiled for it, SkSL for
     # Skia and Vulkan for Impeller). A debug bundle never reads the kernel. The
-    # code assets' manifest goes beside it, where flutter_tester looks for it.
+    # code assets' manifest goes beside it, where flutter_tester looks for it,
+    # on a line whose tester does (`test_bundle_native_assets_manifest`).
     flutter_assets = declare_flutter_assets_dir(ctx)
     flutter_bundle(
         ctx,
@@ -236,7 +237,7 @@ def _flutter_test_assets(ctx, flutter_sdk_info, native_assets):
         flutter_assets,
         target_platform = "tester",
         mode = "debug",
-        native_assets_manifest = native_assets.manifest if native_assets.any else None,
+        native_assets_manifest = native_assets.manifest if native_assets.any and flutter_sdk_info.line.test_bundle_native_assets_manifest else None,
     )
     return flutter_assets
 

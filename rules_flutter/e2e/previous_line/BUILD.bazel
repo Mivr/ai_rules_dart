@@ -1,0 +1,156 @@
+"""E2e: the project stock Flutter 3.47.7 made, built, tested and shipped on that line."""
+
+load("@android_model//:defs.bzl", "flutter_android_apk_test", "flutter_android_app")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_test")
+load("@rules_flutter//flutter:android.bzl", "flutter_android_pin")
+load("@rules_flutter//flutter:defs.bzl", "flutter_application", "flutter_library", "flutter_test")
+load(
+    "@rules_flutter//flutter:linux.bzl",
+    "flutter_linux_bundle",
+    "flutter_linux_engine",
+    "flutter_linux_registrant_gen",
+    "flutter_linux_runner_lib_gen",
+)
+load("@rules_flutter//flutter:web.bzl", "flutter_web_app")
+
+exports_files(["pubspec.lock"])
+
+# All of `lib/` in one library; the programs and the test name only their `main`.
+flutter_library(
+    name = "lib",
+    package_name = "previous_line",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "@deps//:cupertino_icons",
+        "@deps//:flutter",
+        "@deps//:shared_preferences",
+    ],
+)
+
+flutter_application(
+    name = "app",
+    package_name = "previous_line",
+    main = "lib/main.dart",
+    deps = [":lib"],
+)
+
+flutter_test(
+    name = "widget_test",
+    package_name = "previous_line",
+    main = "test/widget_test.dart",
+    pubspec = "pubspec.yaml",
+    deps = [
+        ":lib",
+        "@deps//:flutter",
+        "@deps//:flutter_test",
+    ],
+)
+
+# The release web build (`bazel test` builds it in release mode): dart2js, the icon font shaken.
+flutter_web_app(
+    name = "web",
+    package_name = "previous_line",
+    compiler = "dart2js",
+    deps = [":lib"],
+)
+
+# `bazel run //:android_pin` writes android_model.json from the app's Android project.
+flutter_android_pin(name = "android_pin")
+
+# The debug app: `//:android` as split APKs, `//:android_apk` as one APK.
+flutter_android_app(
+    name = "android",
+    application = ":app",
+    # package:jni builds libdartjni.so with CMake in Gradle; here the Dart side builds it.
+    native_built_elsewhere = [":jni"],
+)
+
+# The release app, as `flutter build apk --release`: AOT code, the icon font shaken.
+flutter_android_app(
+    name = "android_release",
+    abis = ["arm64-v8a"],
+    application = ":app",
+    native_built_elsewhere = [":jni"],
+    variant = "release",
+)
+
+# The Android registrant and the plugin it registers are in both APKs.
+flutter_android_apk_test(
+    name = "android_apk_test",
+    app = "android",
+    classes = [
+        "Lio/flutter/plugins/GeneratedPluginRegistrant;",
+        "Lio/flutter/plugins/sharedpreferences/SharedPreferencesPlugin;",
+    ],
+    entries = [
+        "assets/flutter_assets/kernel_blob.bin",
+        "lib/arm64-v8a/libdartjni.so",
+    ],
+)
+
+flutter_android_apk_test(
+    name = "android_release_apk_test",
+    app = "android_release",
+    # R8 keeps the plugin class but may rename it (`allowobfuscation` in Flutter's rules).
+    classes = ["Lio/flutter/plugins/GeneratedPluginRegistrant;"],
+    entries = [
+        "lib/arm64-v8a/libapp.so",
+        "lib/arm64-v8a/libdartjni.so",
+    ],
+)
+
+# The Linux bundle with the rules' own runner: the runner `flutter create` wrote in `linux/` includes
+# <gdk/gdkx.h>, which needs X11 headers the rules' sysroot does not ship (on every line).
+flutter_linux_engine(
+    name = "linux_engine",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+flutter_linux_registrant_gen(
+    name = "linux_registrant",
+    application = ":app",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+flutter_linux_runner_lib_gen(
+    name = "linux_runner",
+    engine = ":linux_engine",
+    gtk_app_id = "dev.rdf.previous_line",
+    registrant = ":linux_registrant",
+    target_compatible_with = ["@platforms//os:linux"],
+    window_title = "previous_line",
+)
+
+flutter_linux_bundle(
+    name = "linux",
+    application = ":app",
+    runner = ":linux_runner",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# Opens the release web build and the release APK: each MaterialIcons font holds the few glyphs the
+# program names, as stock 3.47.7 shakes it (67 and 8 glyphs here), not the 8661 of the full font.
+dart_test(
+    name = "icon_font_test",
+    size = "small",
+    data = [
+        ":android_release_apk",
+        ":web",
+    ],
+    env = {
+        "RELEASE_APK": "$(rootpath :android_release_apk)",
+        "WEB_DIR": "$(rootpath :web)",
+    },
+    main = "test/icon_font_test.dart",
+)
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@deps//:flutter_lints"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)

@@ -6,6 +6,9 @@ flutter_desktop_engine_repo.bzl, flutter_cross_repo.bzl, and
 flutter_desktop_cross_repo.bzl.
 """
 
+load(":engine_repo_files.bzl", "CONST_FINDER_FILE")
+load(":sdk_lines.bzl", "flutter_sdk_line")
+
 visibility(["//flutter/..."])
 
 # -- Engine filegroup templates ------------------------------------------------
@@ -321,3 +324,21 @@ def cpp_client_wrapper_missing_error(target_arch, present):
         if path not in present:
             return "flutter_desktop_engine_repo: {archive} is missing expected file {missing}: the wrapper archive layout changed, update WINDOWS_CPP_CLIENT_WRAPPER_FILES in flutter/private/engine_helpers.bzl".format(archive = cpp_client_wrapper_artifact_path(target_arch), missing = path)
     return None
+
+def const_finder_attr(flutter_version, host_repo_name):
+    """The `const_finder` attribute line of a cross `flutter_toolchain`, or "".
+
+    Only a release whose line shakes icons from the kernel ships
+    `const_finder.dart.snapshot` (`icon_tree_shaker` in `sdk_lines.bzl`); the
+    host repository aliases it then.
+
+    Args:
+      flutter_version: The release's version.
+      host_repo_name: The host Flutter SDK repository.
+
+    Returns:
+      The attribute line with its newline, or "".
+    """
+    if flutter_sdk_line(flutter_version).icon_tree_shaker != "const_finder":
+        return ""
+    return '    const_finder = "@%s//:%s",\n' % (host_repo_name, CONST_FINDER_FILE)

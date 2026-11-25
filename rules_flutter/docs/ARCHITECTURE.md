@@ -57,7 +57,7 @@ load a private file.
 
 ### rules_dart boundary
 
-The Dart side comes from `ai_rules_dart` 0.30.0, which this module names
+The Dart side comes from `ai_rules_dart` 0.31.0, which this module names
 `rules_dart` (`MODULE.bazel:129`). `flutter/private/flutter_library.bzl:3-4`
 loads `DartInfo`, `DartCodeAssetInfo` and the constructors `dart_info`,
 `dart_package_identity`, `dart_analyzable_info_with_package` and friends from

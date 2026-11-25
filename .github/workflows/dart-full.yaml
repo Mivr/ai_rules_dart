@@ -275,6 +275,8 @@ jobs:
             # - e2e/sdk_coupling: the darwin exec-tools toolchains registered
             #   by name beside a different target SDK.
             # - e2e/root_sdk_pin: a pinned older SDK's darwin archive.
+            # - e2e/previous_sdk: the previous stable line's (Dart 3.13.5) darwin
+            #   archive, tests, analysis and format check.
             folders: |
               e2e/link_hook
               e2e/gazelle
@@ -282,6 +284,7 @@ jobs:
               e2e/hello_world
               e2e/sdk_coupling
               e2e/root_sdk_pin
+              e2e/previous_sdk
             # - .: cc fixtures, the webcrypto and sqlite3 code assets, link
             #   modules and cross fixtures, plus the action tools' and
             #   runfiles' own tests (darwin paths and sandbox).

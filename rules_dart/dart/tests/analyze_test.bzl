@@ -297,6 +297,13 @@ def _assert_no_shared_home_env(env, action_env, output_file):
         )
 
 def _format_action_test_impl(ctx):
+    """The `DartFormat` check's mode and SDK inputs.
+
+    The expectations hold on the series of the vendored formatter
+    (`FORMATTER_SDK_SERIES`). With a default SDK of another line no target
+    formats in process: there the test asserts the fallback to the SDK's own
+    `dart format` instead, which declares the compile files.
+    """
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
     checks = target[DartAnalysisModeInfo].format_checks
@@ -304,15 +311,18 @@ def _format_action_test_impl(ctx):
     if checks:
         check = checks[0]
         _assert_no_shared_home_env(env, check.env, check.stamp)
-        asserts.equals(env, ctx.attr.expected_language_version, check.mode.language_version)
-        asserts.equals(env, not ctx.attr.expect_compile_files, check.mode.in_process)
+        on_series = resolve_format_mode(check.sdk_version, "latest").in_process
+        expect_compile_files = ctx.attr.expect_compile_files or not on_series
+        if on_series:
+            asserts.equals(env, ctx.attr.expected_language_version, check.mode.language_version)
+        asserts.equals(env, not expect_compile_files, check.mode.in_process)
         input_basenames = [f.basename for f in check.sdk_inputs.to_list()]
         has_compile = "gen_kernel_aot.dart.snapshot" in input_basenames
         asserts.equals(
             env,
-            ctx.attr.expect_compile_files,
+            expect_compile_files,
             has_compile,
-            "DartFormat compile_files presence mismatch: %s" % input_basenames,
+            "DartFormat compile_files presence mismatch on SDK %s: %s" % (check.sdk_version, input_basenames),
         )
     return analysistest.end(env)
 

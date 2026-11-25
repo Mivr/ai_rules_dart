@@ -232,7 +232,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "Q4g26yTc84wS0lfgsbQkt7ZOu+eAwlsXGH0AROpxRao=",
+        "bzlTransitiveDigest": "TCImuOPYfpDz486LETr9gb9unxxWKMO9sVGCcKdHR8k=",
         "usagesDigest": "CJ0iXTLajKkcHH5Q5A60XDG4XP/gRQU2O0QHVwJvegQ=",
         "recordedInputs": [
           "REPO_MAPPING:,sqlite3 sqlite3+",

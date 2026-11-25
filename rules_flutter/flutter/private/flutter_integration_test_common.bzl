@@ -354,17 +354,21 @@ def _integration_test_kernel_flags(ctx, mode, aot):
         frontend_flags = frontend_flags,
     )
 
-def integration_test_recorded_uses(ctx, is_debug):
-    """Declares the file the AOT compile records its uses to, when icons are shaken.
+def integration_test_recorded_uses(ctx, flutter_sdk_info, is_debug):
+    """Declares the file the AOT compile records its uses to, when icons are shaken from them.
 
     Args:
         ctx: The rule context of the rule implementation that calls this helper.
+        flutter_sdk_info: The resolved Flutter SDK info.
         is_debug: Whether the build is debug.
 
     Returns:
-        The declared File, or None when no icon font is shaken.
+        The declared File, or None when no icon font is shaken or the line's
+        shaker reads the kernel instead (`icon_tree_shaker`).
     """
     if is_debug or not getattr(ctx.attr, "tree_shake_icons", False):
+        return None
+    if flutter_sdk_info.line.icon_tree_shaker == "const_finder":
         return None
     return ctx.actions.declare_file(ctx.label.name + ".recorded_uses.json")
 
@@ -440,7 +444,7 @@ def integration_test_aot(ctx, flutter_sdk_info, kernel_dill, is_debug, strip):
     )
     return aot_output
 
-def integration_test_assets(ctx, flutter_sdk_info, target_platform, recorded_uses, is_debug, native_assets):
+def integration_test_assets(ctx, flutter_sdk_info, target_platform, recorded_uses, is_debug, native_assets, kernel_dill = None):
     """Builds the `flutter_assets/` tree from the app's pubspec.
 
     Args:
@@ -451,8 +455,11 @@ def integration_test_assets(ctx, flutter_sdk_info, target_platform, recorded_use
             read only to shake icons in a release or profile build.
         is_debug: Whether the build is debug.
         native_assets: The `integration_test_native_assets` struct: its data
-            assets are bundled, and its manifest is what the engine resolves
-            `@Native` assets through.
+            assets are bundled, and, on a line whose engine resolves `@Native`
+            assets through it (`test_bundle_native_assets_manifest`), its
+            manifest.
+        kernel_dill: The app's kernel, which the icon tree shaker reads on a
+            line whose shaker reads the kernel (`icon_tree_shaker`).
 
     Returns:
         The declared `flutter_assets` directory.
@@ -466,11 +473,17 @@ def integration_test_assets(ctx, flutter_sdk_info, target_platform, recorded_use
         target_platform = target_platform,
         mode = "debug" if is_debug else ("profile" if getattr(ctx.attr, "profile", False) else "release"),
         flavor = flavor,
-        recorded_uses = recorded_uses,
+        recorded_uses = _icon_uses(flutter_sdk_info, recorded_uses, is_debug, kernel_dill),
         data_assets = native_assets.data_assets,
-        native_assets_manifest = native_assets.manifest if native_assets.any else None,
+        native_assets_manifest = native_assets.manifest if native_assets.any and flutter_sdk_info.line.test_bundle_native_assets_manifest else None,
     )
     return flutter_assets
+
+def _icon_uses(flutter_sdk_info, recorded_uses, is_debug, kernel_dill):
+    """What the icon tree shaker reads: the recorded uses, or the kernel on a `const_finder` line."""
+    if flutter_sdk_info.line.icon_tree_shaker == "const_finder":
+        return None if is_debug else kernel_dill
+    return recorded_uses
 
 def integration_test_native_libs(ctx):
     """The loose `native_deps` libraries a desktop or Android bundle carries.

@@ -41,6 +41,12 @@ A `dart.toolchain(...)` request from the root module takes precedence over
 requests from dependencies (rules_dart's included), even when the root's version
 is older; with no root request, the highest requested version is selected.
 
+The SDKs this release lists are the current stable line, Dart 3.14.1 (the
+default) and 3.14.0 (the Dart of Flutter 3.50.1), and the previous one, Dart
+3.13.5 (the Dart of Flutter 3.47.7). Every rule works on each of them. On 3.13
+`dart_format` runs the SDK's own `dart format`, since the formatter built into
+the rules is 3.14's; on 3.14 it formats in process, as 3.14's `dart format` does.
+
 ## Usage
 
 ### Running the Dart SDK
