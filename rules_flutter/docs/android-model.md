@@ -184,7 +184,7 @@ file that retraces a stack trace of that build.
 | Step | As the stock build | Actions |
 |---|---|---|
 | The Dart program | one AOT library per ABI, `lib/<abi>/libapp.so`; `flutter_assets` without the kernel | the Dart side's AOT compile |
-| Code | R8 over the whole program when the build type says `minifyEnabled` (Flutter's default for release): AGP's own driver and R8 by hash, full mode, with the rules of the app (AGP's default file and the Flutter tool's rules, carried in the pin; the app's own files), of the plugin projects (`consumerProguardFiles`) and of the Maven artifacts (`proguard.txt` of an AAR, `META-INF/com.android.tools/r8*` or `META-INF/proguard` of a jar) | `RdfR8` |
+| Code | R8 over the whole program when the build type says `minifyEnabled` (Flutter's default for release): R8 by hash, with the command AGP's own driver builds (through the API R8 publishes), full mode, with the rules of the app (AGP's default file and the Flutter tool's rules, carried in the pin; the app's own files), of the plugin projects (`consumerProguardFiles`) and of the Maven artifacts (`proguard.txt` of an AAR, `META-INF/com.android.tools/r8*` or `META-INF/proguard` of a jar) | `RdfR8` |
 | Resources | linked to the proto format, shrunk by R8 in the same run when the build type says `shrinkResources`, converted and optimized (`aapt2 optimize --shorten-resource-paths`) | `RdfAapt2Link`, `RdfAapt2Convert`, `RdfAapt2Optimize` |
 | Core library desugaring | the desugared library shrunk to what the app's final dex uses | `RdfL8` |
 | Baseline profiles | those of the app (`src/main/baseline-prof.txt`) and of the AARs merged, rewritten by R8 and L8, compiled into `assets/dexopt/` | `RdfArtProfile` |
@@ -312,6 +312,26 @@ an app built with `split_per_abi`. `flutter_android_bundle_test` does the same f
 a key store in the test, runs `<app>_sign` and `<app>_bundle_sign` with that key in their
 environment, and checks that the APK has a v2 signature with the key's certificate and that the
 bundle verifies as a jar signed with it. No key is checked in.
+
+## Android Gradle plugin versions
+
+The build's tools are compiled, in the pin's repository, against the libraries of the Android Gradle
+plugin the pin names, so an app is built with its own plugin's R8, aapt2, manifest merger and
+bundletool. Two versions are built and tested in this repository: 9.1.1, the oldest that Flutter
+3.50 accepts, and 9.3.1, the one its `flutter create` template names (`e2e/android_template` is that
+app, untouched). R8, D8, L8 and trace references are driven through the API R8 publishes
+(`R8Command`, `D8Command`, `L8Command`, `TraceReferencesCommand`), which holds from one version to
+the next. The resource compiler, the manifest merger, the R class writer, the baseline profile
+compiler and the dependency report are classes of the plugin itself, which a later version can change.
+
+A pin with a plugin outside 9.1.1 to 9.3.1 is built all the same, and Bazel prints, when it reads the
+pin:
+
+```
+android_model: //:android_model.json was pinned with Android Gradle plugin 9.4.0. The build tools of
+these rules are compiled against the libraries of the plugin the pin names, and are tested with 9.1.1
+to 9.3.1. It may just work; if `tool_lib` does not compile or a tool fails, this is the reason: ...
+```
 
 ## Hosts
 

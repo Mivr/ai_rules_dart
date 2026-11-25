@@ -14,7 +14,7 @@ holds the plugin sources (the pub archives, by the hash pub recorded) and the ge
 load("@rules_dart//dart/pub:yaml.bzl", "yaml_to_json")
 load("//flutter/private:download.bzl", "pinned_download", "pinned_download_and_extract")
 load(":maven.bzl", "maven_urls", "unavailable")
-load(":names.bzl", "SCHEMA", "artifact_repo")
+load(":names.bzl", "AGP_TESTED", "SCHEMA", "agp_tested", "artifact_repo")
 
 # Without a usable pin the hub still loads, so that `bazel run //:android_pin` can run in the package
 # that calls `flutter_android_app`; the app's targets fail when they are built, with the reason.
@@ -182,6 +182,16 @@ def _hub_impl(ctx):
     if model.get("schema") != SCHEMA:
         _stub(ctx, "old pin", "%s has schema %s and these rules read schema %s. Pin again: `%s`." % (_shown(ctx.attr.model), model.get("schema"), SCHEMA, pin))
         return
+
+    # An Android Gradle plugin outside the tested range is built all the same; if a tool then fails
+    # to compile against that version's libraries, the user has read why.
+    agp = (model.get("tools") or {}).get("agp") or ""
+    if agp and not agp_tested(agp):
+        # buildifier: disable=print
+        print(("android_model: %s was pinned with Android Gradle plugin %s. The build tools of these rules are compiled against " +
+               "the libraries of the plugin the pin names, and are tested with %s to %s. It may just work; if `tool_lib` does not " +
+               "compile or a tool fails, this is the reason: use a version in that range, or a release of these rules that names yours.") %
+              (_shown(ctx.attr.model), agp, AGP_TESTED[0], AGP_TESTED[1]))
 
     sdk = ctx.getenv("ANDROID_HOME") or ctx.getenv("ANDROID_SDK_ROOT")
     if not sdk:

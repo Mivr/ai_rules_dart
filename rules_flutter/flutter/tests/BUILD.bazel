@@ -5,6 +5,7 @@ load("//flutter/private:flutter_aot_target.bzl", "flutter_aot_target")
 load(":action_inputs_test.bzl", "action_inputs_test_suite")
 load(":agent_uris_test.bzl", "agent_uris_test_suite")
 load(":android_aar_test.bzl", "android_aar_test_suite")
+load(":android_model_names_test.bzl", "android_model_names_test_suite")
 load(":aot_flags_test.bzl", "aot_flags_test_suite")
 load(":app_entrypoint_test.bzl", "app_entrypoint_test_suite")
 load(":apple_objc_deps_test.bzl", "apple_objc_deps_test_suite")
@@ -150,6 +151,8 @@ dart_test(
 action_inputs_test_suite(name = "action_inputs_test")
 
 android_aar_test_suite(name = "android_aar_test")
+
+android_model_names_test_suite(name = "android_model_names_test")
 
 versions_test_suite(name = "versions_test")
 

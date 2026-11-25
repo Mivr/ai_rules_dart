@@ -3,6 +3,32 @@
 # The schema of the pin file these rules read (written by tools/model.init.gradle).
 SCHEMA = 4
 
+# The Android Gradle plugin versions the build tools are built and tested with (e2e workspaces): the
+# floor the pinned Flutter release accepts, and the version its `flutter create` template names. The
+# tools are compiled against the libraries of the AGP the pin names: R8, D8, L8 and trace references
+# through the API R8 publishes, which holds from one version to the next; the resource compiler, the
+# manifest merger, the R class writer and the baseline profile compiler through AGP's own classes,
+# which need not.
+AGP_TESTED = ("9.1.1", "9.3.1")
+
+def _numbers(version):
+    out = []
+    for part in version.split("-")[0].split("."):
+        out.append(int(part) if part.isdigit() else 0)
+    return out
+
+def agp_tested(version):
+    """Whether an Android Gradle plugin version is within the range the tools are tested with.
+
+    Args:
+      version: the version a pin records (`tools.agp`), for example `9.3.1` or `9.4.0-alpha02`.
+
+    Returns:
+      True when it is at or above the first and at or below the last of `AGP_TESTED`.
+    """
+    v = _numbers(version)
+    return _numbers(AGP_TESTED[0]) <= v and v <= _numbers(AGP_TESTED[1])
+
 def _san(s):
     out = []
     for c in s.elems():
