@@ -1,5 +1,6 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+load("@rules_dart//dart:prebuilt_tools.bzl", "SNAPSHOT_TOOLS")
 load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
 load("//flutter/private:prebuilt_tools.bzl", "flutter_prebuilt_tool_set")
 load(":flutter_sdk_kernel_binary.bzl", "flutter_sdk_kernel_binary")
@@ -637,6 +638,10 @@ bzl_library(
 # consumer builds them in.
 flutter_prebuilt_tool_set(
     name = "prebuilt_set",
+    dart_tools = {
+        name: "@rules_dart//dart/private/tools:%s_source" % name
+        for name in SNAPSHOT_TOOLS
+    },
     tools = [":android_bundle"],
     visibility = ["//visibility:public"],
 )

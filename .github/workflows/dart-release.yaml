@@ -121,7 +121,8 @@ jobs:
     # .github/workflows/release_prep.sh with the tag, which reads the module
     # from the tag's prefix and builds the archive of rules_dart/ only, with
     # the prebuilt-tools table, beside the archives of the `tools` jobs
-    # (`rules_dart-v<version>-tools-<dart>-<platform>.tar.gz`, matched by
+    # (`rules_dart-v<version>-tools-<dart>-<platform>.tar.gz` and
+    # `rules_dart-v<version>-pub_scanner-<platform>.tar.gz`, matched by
     # `release_files`). It uploads the files, attests them and creates the
     # GitHub release.
     uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@1d798ff015ed0696433e01e2c3ccbb2abefadad7 # v7.7.0

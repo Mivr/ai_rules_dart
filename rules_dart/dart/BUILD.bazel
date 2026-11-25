@@ -286,8 +286,10 @@ bzl_library(
     srcs = ["toolchain.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":providers",
         "//dart/private:module_compiler",
         "//dart/private:module_compiler_versions",
+        "//dart/private:prebuilt_tools",
     ],
 )
 

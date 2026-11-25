@@ -3,9 +3,11 @@
 The rules_flutter side of `@rules_dart//dart/private:prebuilt_tools.bzl`,
 which says how a release builds, checks and ships them. A Flutter release's
 set, per host platform, is the module compiler of the Dart SDK the release
-bundles, the asset tool (`flutter_assets_tool.bzl`) and the Android bundle
-tool. The released module's `//flutter/private:prebuilt_tools.json` is keyed
-by the Flutter version:
+bundles, rules_dart's AOT snapshot tools (`SNAPSHOT_TOOLS`: the compile
+wrapper, the layering check and the kernel linker) built by that SDK, the
+asset tool (`flutter_assets_tool.bzl`) and the Android bundle tool. The
+released module's `//flutter/private:prebuilt_tools.json` is keyed by the
+Flutter version:
 
     {"tools": {"<flutter version>": {"<platform>": {"url": ..., "sha256": ...}}}}
 
@@ -15,13 +17,15 @@ turns it off as it does rules_dart's.
 
 An engine repository of a listed version and host takes the archive's module
 compiler and asset tool instead of building them (the asset tool still reads
-the framework's shaders and service worker from the release's sources). The
+the framework's shaders and service worker from the release's sources), and
+its Dart toolchain carries the archive's snapshot tools, so a Flutter
+workspace builds none of them whatever Dart its Flutter bundles. The
 Android bundle tool, a self-contained `exe`, is
 `@rules_flutter_tools//:android_bundle`, an alias that selects the archive of
 the exec platform.
 """
 
-load("@rules_dart//dart:prebuilt_tools.bzl", "prebuilt_tools_table")
+load("@rules_dart//dart:prebuilt_tools.bzl", "SNAPSHOT_TOOLS", "prebuilt_tools_table")
 load("@rules_dart//dart:providers.bzl", "DartCompileInfo")
 load("//flutter/private:download.bzl", "pinned_download_and_extract")
 load("//flutter/private:toolchains_repo.bzl", "HOST_PLATFORMS")
@@ -90,7 +94,18 @@ def _flutter_prebuilt_tool_set_impl(ctx):
             "sdk_version": compiled.sdk_version,
             "file": _stage(ctx, target[DefaultInfo].files_to_run.executable, outputs),
         }
-    missing = [n for n in FLUTTER_PREBUILT_TOOLS if n not in manifest["tools"]]
+    for name, target in ctx.attr.dart_tools.items():
+        compiled = target[DartCompileInfo]
+        if name not in SNAPSHOT_TOOLS or compiled.compile_mode != "aot-snapshot":
+            fail("%s: %s is not one of rules_dart's AOT snapshot tools %s" % (ctx.label, name, SNAPSHOT_TOOLS))
+        if compiled.sdk_version != info.dart_sdk_version:
+            fail("%s: %s was built by Dart %s, Flutter %s bundles Dart %s" % (ctx.label, name, compiled.sdk_version, info.version, info.dart_sdk_version))
+        manifest["tools"][name] = {
+            "compile_mode": compiled.compile_mode,
+            "sdk_version": compiled.sdk_version,
+            "file": _stage(ctx, target[DefaultInfo].files_to_run.executable, outputs),
+        }
+    missing = [n for n in FLUTTER_PREBUILT_TOOLS.keys() + SNAPSHOT_TOOLS if n not in manifest["tools"]]
     if missing:
         fail("%s: the set lacks %s" % (ctx.label, ", ".join(missing)))
     tools_json = ctx.actions.declare_file(ctx.label.name + "/tools.json")
@@ -99,10 +114,15 @@ def _flutter_prebuilt_tool_set_impl(ctx):
 
 flutter_prebuilt_tool_set = rule(
     implementation = _flutter_prebuilt_tool_set_impl,
-    doc = "What a release of rules_flutter prebuilds for one Flutter version on one platform: the bundled Dart SDK's module compiler, the asset tool and `FLUTTER_PREBUILT_TOOLS`, in the exec configuration a consumer builds them in, with the archive's `tools.json`.",
+    doc = "What a release of rules_flutter prebuilds for one Flutter version on one platform: the bundled Dart SDK's module compiler, rules_dart's snapshot tools built by that SDK, the asset tool and `FLUTTER_PREBUILT_TOOLS`, in the exec configuration a consumer builds them in, with the archive's `tools.json`.",
     attrs = {
         "tools": attr.label_list(
             doc = "The source targets of `FLUTTER_PREBUILT_TOOLS`.",
+            cfg = "exec",
+            providers = [DartCompileInfo],
+        ),
+        "dart_tools": attr.string_keyed_label_dict(
+            doc = "rules_dart's `SNAPSHOT_TOOLS` by name, to their source targets: a Flutter workspace's exec Dart toolchain is the bundled SDK, which builds them.",
             cfg = "exec",
             providers = [DartCompileInfo],
         ),
@@ -127,7 +147,9 @@ def _archive_repo_impl(rctx):
         "alias(name = \"module_compiler\", actual = %r, visibility = [\"//visibility:public\"])" % (":" + manifest["module_compiler"]),
         "alias(name = \"assets_tool\", actual = %r, visibility = [\"//visibility:public\"])" % (":" + manifest["assets_tool"]),
     ]
-    for name, mode in sorted(FLUTTER_PREBUILT_TOOLS.items()):
+    modes = dict(FLUTTER_PREBUILT_TOOLS)
+    modes.update({name: "aot-snapshot" for name in SNAPSHOT_TOOLS})
+    for name, mode in sorted(modes.items()):
         tool = manifest["tools"].get(name)
         if tool == None or tool["compile_mode"] != mode:
             fail("%s: the archive %s has no %s %s" % (rctx.attr.name, rctx.attr.url, mode, name))

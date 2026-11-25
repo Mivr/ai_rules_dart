@@ -93,8 +93,14 @@ def run_pub_archive_scans(ctx, archives):
     """
     if not archives:
         return
-    runtime = str(ctx.path(scanner_runtime_label(ctx.os)))
-    snapshot = str(ctx.path(_scanner_label(ctx)))
+    snapshot = ctx.path(_scanner_label(ctx))
+
+    # A release's prebuilt scanner comes with the runtime of the SDK that
+    # compiled it (`//dart/private:prebuilt_tools.bzl`); a scanner compiled
+    # here runs on the host SDK it was compiled with.
+    bundled = snapshot.dirname.get_child("dartaotruntime.exe" if ctx.os.name.lower().startswith("windows") else "dartaotruntime")
+    runtime = str(bundled if bundled.exists else ctx.path(scanner_runtime_label(ctx.os)))
+    snapshot = str(snapshot)
     paths = [str(ctx.path(a.archive)) for a in archives]
     result = ctx.execute([runtime, snapshot] + paths, quiet = True, timeout = 600)
     if result.return_code != 0:

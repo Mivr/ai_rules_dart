@@ -13,7 +13,7 @@ effectively overriding the default named toolchain due to toolchain resolution p
 """
 
 load("//dart/private:module_compiler_repo.bzl", "module_compiler_repositories")
-load("//dart/private:prebuilt_tools.bzl", "prebuilt_module_compiler", "prebuilt_tools_repositories", "prebuilt_tools_table")
+load("//dart/private:prebuilt_tools.bzl", "prebuilt_pub_scanner", "prebuilt_tools_repo", "prebuilt_tools_repositories", "prebuilt_tools_table")
 load("//dart/private:toolchain_selection.bzl", "select_toolchain_version", "toolchain_name_override_error")
 load("//dart/pub:pub_scanner.bzl", "pub_scanner_repo")
 load("//dart/pub/private:yaml2json.bzl", "yaml2json_repository")
@@ -49,7 +49,9 @@ def _create_pub_scanner(module_ctx, registrations, selections):
     consumer graph nor version overrides can break the address. The scanner
     source travels as text, so editing it or changing the toolchain
     recompiles the repository. The source label is relative to this file, so
-    it reads this module's file under any local name.
+    it reads this module's file under any local name. Where the release's
+    table has a scanner archive for the fetch host, the repository downloads
+    it instead (`//dart/private:prebuilt_tools.bzl`), and no SDK is fetched.
 
     Args:
       module_ctx: The `dart` module extension context.
@@ -62,6 +64,7 @@ def _create_pub_scanner(module_ctx, registrations, selections):
         name = "dart_pub_scanner",
         scanner_src = module_ctx.read(Label("//dart/pub/private:pub_scan.dart")),
         dart_version = selections[_DEFAULT_NAME],
+        prebuilt = prebuilt_pub_scanner(module_ctx),
     )
 
 def _toolchain_extension(module_ctx):
@@ -92,9 +95,9 @@ def _toolchain_extension(module_ctx):
         dart_register_toolchains(
             name = name,
             dart_version = selection.version,
-            prebuilt_module_compilers = {
+            prebuilt_tools_repos = {
                 version: {
-                    platform: prebuilt_module_compiler(prebuilt, version, platform)
+                    platform: prebuilt_tools_repo(prebuilt, version, platform)
                     for platform in platforms
                 }
                 for version, platforms in prebuilt.items()

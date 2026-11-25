@@ -66,7 +66,10 @@ const Map<String, ToolSet> toolSets = {
     target: '@rules_flutter//flutter/private/tools:prebuilt_set',
     table: 'flutter/private/prebuilt_tools.json',
     versionKey: 'flutter_version',
-    overrides: [_dart, _flutter],
+    // rules_flutter first, as in the release notes' snippet: the root's
+    // `bazel_dep` order is the order of the toolchains, so the exec Dart
+    // toolchain is then the one Flutter bundles, which builds the set.
+    overrides: [_flutter, _dart],
   ),
 };
 
@@ -106,6 +109,27 @@ String consumerModule(ToolSet set, String root) {
 /// The files of one built set: the published path inside the archive to its
 /// bytes. `tools.json` is among them.
 typedef SetFiles = Map<String, List<int>>;
+
+/// The directory of a set that holds the pub archive scanner, which ships as
+/// an archive of its own: a Flutter workspace needs it, and nothing else of
+/// rules_dart's set.
+const String pubScannerDir = 'pub_scanner/';
+
+/// [files] split into the tools archive and the scanner's (`pub_scanner/`,
+/// with that directory taken off the paths); the second is empty for a set
+/// without a scanner.
+({SetFiles tools, SetFiles scanner}) splitSet(SetFiles files) {
+  final tools = <String, List<int>>{};
+  final scanner = <String, List<int>>{};
+  for (final MapEntry<String, List<int>> e in files.entries) {
+    if (e.key.startsWith(pubScannerDir)) {
+      scanner[e.key.substring(pubScannerDir.length)] = e.value;
+    } else {
+      tools[e.key] = e.value;
+    }
+  }
+  return (tools: tools, scanner: scanner);
+}
 
 /// The paths whose bytes differ between two builds of a set, or that only
 /// one of them has. Empty when the builds are reproducible.
@@ -169,7 +193,8 @@ List<int> _ustarHeader(String name, int size, int mode) {
 }
 
 /// What a platform's job leaves for the release script: `tools-<platform>.json`
-/// beside `tools-<platform>.tar.gz` (absent when not reproducible).
+/// beside `tools-<platform>.tar.gz` and, for rules_dart,
+/// `pub_scanner-<platform>.tar.gz` (both absent when not reproducible).
 final class Sidecar {
   /// Creates a sidecar record.
   const Sidecar({
@@ -178,6 +203,7 @@ final class Sidecar {
     required this.version,
     required this.sha256,
     required this.problems,
+    this.pubScannerSha256,
   });
 
   /// Reads a sidecar file's text.
@@ -191,10 +217,12 @@ final class Sidecar {
     final Object? version = doc['version'];
     final Object? digest = doc['sha256'];
     final Object? problems = doc['problems'];
+    final Object? scanner = doc['pub_scanner_sha256'];
     if (module is! String ||
         platform is! String ||
         version is! String ||
         (digest != null && digest is! String) ||
+        (scanner != null && scanner is! String) ||
         problems is! List<Object?>) {
       throw const FormatException(
         'a tools sidecar needs module, platform, version, sha256 and problems',
@@ -206,6 +234,7 @@ final class Sidecar {
       version: version,
       sha256: digest as String?,
       problems: problems.cast<String>(),
+      pubScannerSha256: scanner as String?,
     );
   }
 
@@ -224,31 +253,45 @@ final class Sidecar {
   /// Why nothing ships (the bytes that differed between the two builds).
   final List<String> problems;
 
+  /// The scanner archive's checksum; null when the set has no scanner or
+  /// nothing ships.
+  final String? pubScannerSha256;
+
   /// The base name of the job's files.
   static String baseName(String platform) => 'tools-$platform';
 
+  /// The file name of the job's scanner archive.
+  static String scannerName(String platform) => 'pub_scanner-$platform.tar.gz';
+
   /// The sidecar's text.
   String encode() =>
-      '${const JsonEncoder.withIndent('  ').convert({'module': module, 'platform': platform, 'version': version, 'sha256': sha256, 'problems': problems})}\n';
+      '${const JsonEncoder.withIndent('  ').convert({'module': module, 'platform': platform, 'version': version, 'sha256': sha256, if (pubScannerSha256 != null) 'pub_scanner_sha256': pubScannerSha256, 'problems': problems})}\n';
 }
 
 /// The release asset name of a platform's archive.
 String assetName(String tag, String version, String platform) =>
     '$tag-tools-$version-$platform.tar.gz';
 
+/// The release asset name of a platform's scanner archive.
+String scannerAssetName(String tag, String platform) =>
+    '$tag-pub_scanner-$platform.tar.gz';
+
 /// The table a released module reads, from the sidecars the jobs left.
 ///
 /// [archives] maps a sidecar to its archive's bytes (null when it ships
-/// none). Throws a [FormatException] for a sidecar of another module, an
-/// unknown platform, a platform listed twice, or an archive whose checksum
-/// is not the sidecar's.
+/// none), and [scanners] to its scanner archive's. Throws a
+/// [FormatException] for a sidecar of another module, an unknown platform,
+/// a platform listed twice, or an archive whose checksum is not the
+/// sidecar's.
 ({Map<String, Object?> table, List<String> absent}) toolsTable({
   required ToolSet set,
   required String tag,
   required String download,
   required Map<Sidecar, List<int>?> archives,
+  Map<Sidecar, List<int>?> scanners = const {},
 }) {
   final byVersion = <String, Map<String, Object?>>{};
+  final scannerTable = <String, Object?>{};
   final seen = <String>{};
   final absent = <String>[];
   final sorted = archives.keys.toList()
@@ -279,6 +322,26 @@ String assetName(String tag, String version, String platform) =>
       'url': '$download/$tag/${assetName(tag, s.version, s.platform)}',
       'sha256': s.sha256,
     };
+    final String? scanner = s.pubScannerSha256;
+    if (scanner == null) continue;
+    final List<int>? scannerBytes = scanners[s];
+    if (scannerBytes == null ||
+        sha256.convert(scannerBytes).toString() != scanner) {
+      throw FormatException(
+        'the scanner archive of ${s.platform} is missing or is not $scanner',
+      );
+    }
+    scannerTable[s.platform] = {
+      'url': '$download/$tag/${scannerAssetName(tag, s.platform)}',
+      'sha256': scanner,
+    };
   }
-  return (table: {'release': tag, 'tools': byVersion}, absent: absent);
+  return (
+    table: {
+      'release': tag,
+      'tools': byVersion,
+      if (scannerTable.isNotEmpty) 'pub_scanner': scannerTable,
+    },
+    absent: absent,
+  );
 }

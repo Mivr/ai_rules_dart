@@ -595,7 +595,9 @@ def _write_engine_artifacts_build(
         exe_suffix,
     )
 
-    # A release's prebuilt module compiler and asset tool, for this version and host.
+    # A release's prebuilt tools, for this version and host: the asset tool,
+    # and the module compiler and rules_dart's snapshot tools, which the
+    # bundled Dart SDK's toolchain carries.
     prebuilt_repo = getattr(repository_ctx.attr, "prebuilt_tools_repo", "")
     build_content = _BUILD_TEMPLATE.format(
         user_repo_name = user_repo_name,
@@ -614,7 +616,7 @@ def _write_engine_artifacts_build(
         lazy_file_aliases = lazy_file_aliases,
         exe_suffix = exe_suffix,
         linux_sysroot_attr = linux_sysroot_attr,
-        prebuilt_module_compiler = repr("@%s//:module_compiler" % prebuilt_repo if prebuilt_repo else None),
+        prebuilt_tools = repr("@" + prebuilt_repo if prebuilt_repo else None),
         prebuilt_assets_tool = repr("@%s//:assets_tool" % prebuilt_repo if prebuilt_repo else None),
     )
     repository_ctx.file("BUILD.bazel", build_content)
@@ -642,7 +644,7 @@ declare_dart_sdk_toolchains(
     dart = "dart-sdk/bin/{dart_bin}",
     prefix = "dart-sdk/",
     sdk_root_name = "dart_sdk_files",
-    prebuilt_module_compiler = {prebuilt_module_compiler},
+    prebuilt_tools = {prebuilt_tools},
 )
 
 filegroup(
@@ -883,7 +885,7 @@ flutter_engine_artifacts = repository_rule(
             doc = "Name of the Linux sysroot repo for hermetic GTK3 builds. Required for Linux platforms.",
         ),
         "prebuilt_tools_repo": attr.string(
-            doc = "Apparent name of the repository holding a release's prebuilt module compiler and asset tool for this version and host (see `//flutter/private:prebuilt_tools.bzl`); empty builds them from source.",
+            doc = "Apparent name of the repository holding a release's prebuilt tools for this version and host (see `//flutter/private:prebuilt_tools.bzl`); empty builds them from source.",
             default = "",
         ),
         "user_repository_name": attr.string(
@@ -1305,7 +1307,7 @@ def flutter_register_toolchains(
         prebuilt_tools: host platform → the repository of a release's
             prebuilt tools for `flutter_version` (see
             `//flutter/private:prebuilt_tools.bzl`); a host without one
-            builds its module compiler and asset tool from source
+            builds its tools from source
     """
     validate_darwin_sdk_config(
         path = darwin_sdk_path,

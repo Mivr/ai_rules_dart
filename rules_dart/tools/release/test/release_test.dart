@@ -491,6 +491,73 @@ void main() {
         throwsFormatException,
       );
     });
+
+    test('the pub scanner ships as its own archive and table entry', () {
+      final split = splitSet({
+        ...files,
+        'pub_scanner/scanner': [7],
+        'pub_scanner/dartaotruntime': [8],
+      });
+      expect(split.tools.keys, unorderedEquals(files.keys));
+      expect(split.scanner, {
+        'scanner': [7],
+        'dartaotruntime': [8],
+      });
+      expect(splitSet(files).scanner, isEmpty);
+      final List<int> archive = tarGz(split.tools);
+      final List<int> scanner = tarGz(split.scanner);
+      final String digest = sha256.convert(archive).toString();
+      final String scannerDigest = sha256.convert(scanner).toString();
+      final s = Sidecar(
+        module: 'rules_dart',
+        platform: 'linux-x64',
+        version: '3.13.5',
+        sha256: digest,
+        problems: const [],
+        pubScannerSha256: scannerDigest,
+      );
+      expect(Sidecar.parse(s.encode()).pubScannerSha256, scannerDigest);
+      expect(
+        Sidecar.parse(sidecar('linux-x64', digest).encode()).pubScannerSha256,
+        isNull,
+      );
+      final result = toolsTable(
+        set: set,
+        tag: 'rules_dart-v0.30.0',
+        download: 'https://example.test/d',
+        archives: {s: archive},
+        scanners: {s: scanner},
+      );
+      expect(result.table['pub_scanner'], {
+        'linux-x64': {
+          'url':
+              'https://example.test/d/rules_dart-v0.30.0/'
+              'rules_dart-v0.30.0-pub_scanner-linux-x64.tar.gz',
+          'sha256': scannerDigest,
+        },
+      });
+      expect(
+        () => toolsTable(
+          set: set,
+          tag: 't',
+          download: 'd',
+          archives: {s: archive},
+          scanners: {
+            s: [0],
+          },
+        ),
+        throwsFormatException,
+      );
+      expect(
+        toolsTable(
+          set: set,
+          tag: 't',
+          download: 'd',
+          archives: {sidecar('linux-x64', digest): archive},
+        ).table.containsKey('pub_scanner'),
+        isFalse,
+      );
+    });
   });
 }
 

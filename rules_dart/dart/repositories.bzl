@@ -34,8 +34,8 @@ _ATTRS = {
         mandatory = True,
         values = TOOL_VERSIONS.keys(),
     ),
-    "prebuilt_module_compiler": attr.string(
-        doc = "The label of a release's prebuilt module compiler for this version and platform (see `//dart/private:prebuilt_tools.bzl`); empty to build it from source.",
+    "prebuilt_tools_repo": attr.string(
+        doc = "The name of the repository holding a release's prebuilt tools for this version and platform (see `//dart/private:prebuilt_tools.bzl`), made by the same extension; empty to build them from source.",
         default = "",
     ),
     "platform": attr.string(
@@ -98,13 +98,13 @@ declare_dart_sdk_toolchains(
     version = {version},
     dart = {dart_bin},
     cross_targets = {cross_targets},
-    prebuilt_module_compiler = {prebuilt},
+    prebuilt_tools = {prebuilt},
 )
 """.format(
         version = repr(version),
         dart_bin = repr(dart_bin),
         cross_targets = repr(cross_targets),
-        prebuilt = repr(repository_ctx.attr.prebuilt_module_compiler or None),
+        prebuilt = repr("@" + repository_ctx.attr.prebuilt_tools_repo if repository_ctx.attr.prebuilt_tools_repo else None),
     )
 
     repository_ctx.file("BUILD.bazel", build_content)
@@ -176,7 +176,7 @@ dart_cross_repositories = repository_rule(
     attrs = _CROSS_ATTRS,
 )
 
-def dart_register_toolchains(name, prebuilt_module_compilers = {}, **kwargs):
+def dart_register_toolchains(name, prebuilt_tools_repos = {}, **kwargs):
     """Convenience macro for setting up Dart SDK repositories.
 
     - create a repository for each built-in platform like "dart_linux_x64"
@@ -186,9 +186,9 @@ def dart_register_toolchains(name, prebuilt_module_compilers = {}, **kwargs):
 
     Args:
         name: base name for all created repos, like "dart"
-        prebuilt_module_compilers: `{version: {platform: label}}` of a
-            release's prebuilt module compilers; an SDK repository without
-            an entry builds its own.
+        prebuilt_tools_repos: `{version: {platform: repository name}}` of a
+            release's prebuilt tools; an SDK repository without an entry
+            builds its module compiler and tools from source.
         **kwargs: passed to each dart_repositories call
     """
     for platform in PLATFORMS.keys():
@@ -197,7 +197,7 @@ def dart_register_toolchains(name, prebuilt_module_compilers = {}, **kwargs):
             name = host_repo_name,
             platform = platform,
             cross_repo_prefix = host_repo_name,
-            prebuilt_module_compiler = prebuilt_module_compilers.get(kwargs.get("dart_version", ""), {}).get(platform, ""),
+            prebuilt_tools_repo = prebuilt_tools_repos.get(kwargs.get("dart_version", ""), {}).get(platform, ""),
             **kwargs
         )
         for target_platform in CROSS_TARGETS.get(platform, []):
@@ -214,7 +214,7 @@ def dart_register_toolchains(name, prebuilt_module_compilers = {}, **kwargs):
                 platform = platform,
                 dart_version = version,
                 cross_repo_prefix = ver_repo_name,
-                prebuilt_module_compiler = prebuilt_module_compilers.get(version, {}).get(platform, ""),
+                prebuilt_tools_repo = prebuilt_tools_repos.get(version, {}).get(platform, ""),
             )
             for target_platform in CROSS_TARGETS.get(platform, []):
                 dart_cross_repositories(

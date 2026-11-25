@@ -3,13 +3,15 @@
 A first build used to compile rules_dart's tools from source before it
 compiled any of the user's code: the module compiler of the SDK (its kernel,
 then its AOT snapshot, about 15 s on the critical path), the compile wrapper,
-the layering check, the kernel linker, the test runner and the build_runner
-launcher. A release builds them once per Dart SDK version and host platform,
-on that platform, and ships each set as one archive beside the module's
-source archive (see `RELEASING.md`). The released module carries the table
+the layering check, the kernel linker, the test runner, the build_runner
+launcher, and, while fetching, the pub archive scanner. A release builds them
+once per Dart SDK version and host platform, on that platform, and ships each
+set as one archive beside the module's source archive, and the scanner as one
+more (see `RELEASING.md`). The released module carries the table
 `//dart/private:prebuilt_tools.json`:
 
-    {"tools": {"<dart version>": {"<platform>": {"url": ..., "sha256": ...}}}}
+    {"tools": {"<dart version>": {"<platform>": {"url": ..., "sha256": ...}}},
+     "pub_scanner": {"<platform>": {"url": ..., "sha256": ...}}}
 
 with `<platform>` a key of `PLATFORMS` (`linux-x64`, `macos-arm64`, ...).
 The table in the repository is empty, so a build of the repository itself,
@@ -21,15 +23,22 @@ The extension turns the table into repositories, all fetched lazily:
 
 - `rules_dart_tools_<version>_<platform>` holds one archive: the snapshots and
   executables of the set, and a `tools.json` that says what each file is. Its
-  version must be the version the table lists it under.
+  version must be the version the table lists it under. The SDK repository
+  of that version and platform names it (`declare_dart_sdk_toolchains(
+  prebuilt_tools = ...)`): its toolchain then carries the archive's module
+  compiler and AOT snapshot tools (`SNAPSHOT_TOOLS`) in `DartSdkInfo`, so they
+  always match the SDK that runs them. rules_flutter's archives carry the
+  same tools built by the Dart SDK each Flutter release bundles, for its
+  engine repositories' toolchains.
 - `rules_dart_tools`, the hub, which the rules name instead of the source
   targets. Each AOT snapshot tool is a `dart_prebuilt_or_source` that takes
-  the prebuilt one when the exec platform has an archive and the Dart SDK that
-  runs the tool is the version the snapshots were built by, and the source
-  target otherwise. A self-contained `exe` tool is an alias that selects on
-  the exec platform alone. `module_compiler_<version>_<platform>` aliases the
-  module compiler file of an archive; an SDK repository whose version and
-  platform have one uses it instead of building its own.
+  the exec Dart toolchain's prebuilt one, and the source target when that
+  toolchain carries none. A self-contained `exe` tool is an alias that selects
+  the default version's archive on the exec platform alone.
+- `dart_pub_scanner` (see `//dart/pub:pub_scanner.bzl`) downloads the
+  scanner's archive for the fetch host: the snapshot the source build makes
+  and the `dartaotruntime` of the SDK that made it, so no SDK is downloaded
+  to scan pub archives.
 
 `--repo_env=RULES_DART_TOOLS=source` turns every prebuilt tool off, in both
 modules: the table is then read as empty.
@@ -53,6 +62,9 @@ PREBUILT_TOOLS = {
     "kernel_link": "aot-snapshot",
     "test_runner": "exe",
 }
+
+# The AOT snapshot tools: a Dart toolchain carries its SDK's prebuilt ones.
+SNAPSHOT_TOOLS = sorted([name for name, mode in PREBUILT_TOOLS.items() if mode == "aot-snapshot"])
 
 # The environment variable that turns the prebuilt tools off.
 PREBUILT_TOOLS_ENV = "RULES_DART_TOOLS"
@@ -106,23 +118,21 @@ def _forward(ctx, chosen):
 
 def _dart_prebuilt_or_source_impl(ctx):
     chosen = ctx.attr.source
-    if ctx.attr.prebuilt != None:
-        toolchain = ctx.toolchains[_EXEC_TOOLS_TOOLCHAIN]
-        sdk = getattr(toolchain, "dart_sdk_info", None) if toolchain != None else None
-        if sdk != None and sdk.version == ctx.attr.prebuilt_version:
-            chosen = ctx.attr.prebuilt
+    toolchain = ctx.toolchains[_EXEC_TOOLS_TOOLCHAIN]
+    sdk = getattr(toolchain, "dart_sdk_info", None) if toolchain != None else None
+    prebuilt = (getattr(sdk, "prebuilt_tools", None) or {}).get(ctx.attr.tool) if sdk != None else None
+    if prebuilt != None:
+        built_by = prebuilt[DartCompileInfo].sdk_version
+        if built_by != sdk.version:
+            fail("%s: the Dart SDK %s toolchain carries a prebuilt %s built by Dart %s" % (ctx.label, sdk.version, ctx.attr.tool, built_by))
+        chosen = prebuilt
     return _forward(ctx, chosen)
 
 dart_prebuilt_or_source = rule(
     implementation = _dart_prebuilt_or_source_impl,
-    doc = "An AOT snapshot tool: the release's prebuilt snapshot when the Dart SDK that runs it is the version that built it, the source target otherwise. Both are analyzed; only the chosen one is built.",
+    doc = "An AOT snapshot tool: the prebuilt snapshot the exec Dart toolchain carries for its own SDK (`DartSdkInfo.prebuilt_tools`), the source target when it carries none. Both are analyzed; only the chosen one is built.",
     attrs = {
-        "prebuilt": attr.label(
-            doc = "The prebuilt tool for the exec platform (a `select`), or None where there is none.",
-            executable = True,
-            cfg = "target",
-        ),
-        "prebuilt_version": attr.string(doc = "The Dart SDK version the prebuilt snapshot was built by."),
+        "tool": attr.string(doc = "The tool's name in `PREBUILT_TOOLS`.", mandatory = True, values = SNAPSHOT_TOOLS),
         "source": attr.label(
             doc = "The tool's source target.",
             mandatory = True,
@@ -164,16 +174,33 @@ def _dart_prebuilt_tool_set_impl(ctx):
         fail("%s: the set lacks %s" % (ctx.label, ", ".join(missing)))
     tools_json = ctx.actions.declare_file(ctx.label.name + "/tools.json")
     ctx.actions.write(tools_json, json.encode_indent(manifest) + "\n")
+
+    # The scanner's own archive, which `release tools` packs apart: the
+    # snapshot the scanner repository compiled with the default SDK, and the
+    # `dartaotruntime` of that SDK, which is this exec SDK in a release.
+    if ctx.file.pub_scanner != None:
+        runtime = getattr(sdk, "kernel_module_files", None)
+        runtime = runtime.dartaotruntime if runtime != None else None
+        if runtime == None:
+            fail("%s: the Dart SDK %s has no dartaotruntime to run the pub scanner with" % (ctx.label, sdk.version))
+        for src in [ctx.file.pub_scanner, runtime]:
+            out = ctx.actions.declare_file("%s/pub_scanner/%s" % (ctx.label.name, src.basename))
+            ctx.actions.symlink(output = out, target_file = src)
+            outputs.append(out)
     return [DefaultInfo(files = depset([tools_json] + outputs))]
 
 dart_prebuilt_tool_set = rule(
     implementation = _dart_prebuilt_tool_set_impl,
-    doc = "What a release prebuilds for one Dart SDK version on one platform: every tool of `PREBUILT_TOOLS` and the SDK's module compiler, in the exec configuration a consumer builds them in, with the `tools.json` the archive repository reads. `release tools` packs it.",
+    doc = "What a release prebuilds for one Dart SDK version on one platform: every tool of `PREBUILT_TOOLS` and the SDK's module compiler, in the exec configuration a consumer builds them in, with the `tools.json` the archive repository reads, and the pub archive scanner under `pub_scanner/`. `release tools` packs it.",
     attrs = {
         "tools": attr.label_list(
             doc = "The source targets of `PREBUILT_TOOLS`.",
             cfg = "exec",
             providers = [DartCompileInfo],
+        ),
+        "pub_scanner": attr.label(
+            doc = "The source-built pub archive scanner snapshot (`@dart_pub_scanner//:scanner`).",
+            allow_single_file = True,
         ),
     },
     toolchains = [_EXEC_TOOLS_TOOLCHAIN],
@@ -239,40 +266,26 @@ config_setting(
 )""".format(platform = platform, constraints = repr([str(Label(c)) for c in PLATFORMS[platform].compatible_with])))
     for name, mode in sorted(PREBUILT_TOOLS.items()):
         source = rctx.attr.sources[name]
-        if not platforms:
-            lines.append("""
-alias(
-    name = {name},
-    actual = {source},
-    visibility = ["//visibility:public"],
-)""".format(name = repr(name), source = repr(source)))
-            continue
-        arms = {":exec_" + p: "@%s//:%s" % (_archive_repo_name(version, p), name) for p in platforms}
-        if mode == "exe":
-            arms["//conditions:default"] = source
-            lines.append("""
-alias(
-    name = {name},
-    actual = select({arms}),
-    visibility = ["//visibility:public"],
-)""".format(name = repr(name), arms = repr(arms)))
-        else:
-            arms["//conditions:default"] = None
+        if mode == "aot-snapshot":
             lines.append("""
 dart_prebuilt_or_source(
     name = {name},
-    prebuilt = select({arms}),
-    prebuilt_version = {version},
+    tool = {name},
     source = {source},
     visibility = ["//visibility:public"],
-)""".format(name = repr(name), arms = repr(arms), version = repr(version), source = repr(source)))
-    for key, repo in sorted(rctx.attr.module_compilers.items()):
+)""".format(name = repr(name), source = repr(source)))
+            continue
+        actual = repr(source)
+        if platforms:
+            arms = {":exec_" + p: "@%s//:%s" % (_archive_repo_name(version, p), name) for p in platforms}
+            arms["//conditions:default"] = source
+            actual = "select(%r)" % arms
         lines.append("""
 alias(
-    name = "module_compiler_{key}",
-    actual = "@{repo}//:module_compiler",
+    name = {name},
+    actual = {actual},
     visibility = ["//visibility:public"],
-)""".format(key = key, repo = repo))
+)""".format(name = repr(name), actual = actual))
     rctx.file("BUILD.bazel", "\n".join(lines) + "\n")
     return rctx.repo_metadata(reproducible = True)
 
@@ -280,15 +293,23 @@ dart_tools_hub_repo = repository_rule(
     implementation = _hub_repo_impl,
     doc = "The hub the rules name their tools through (`@rules_dart_tools//:<tool>`).",
     attrs = {
-        "dart_version": attr.string(doc = "The Dart SDK version whose prebuilt tools the hub offers; empty for none."),
+        "dart_version": attr.string(doc = "The Dart SDK version whose archives the `exe` tools come from; empty for none."),
         "platforms": attr.string_list(doc = "The platforms with an archive of that version."),
         "sources": attr.string_dict(mandatory = True, doc = "Tool name to the canonical label of its source target."),
-        "module_compilers": attr.string_dict(doc = "`<version>_<platform>` to the archive repository holding that module compiler."),
     },
 )
 
 # ---------------------------------------------------------------------------
-# What the module extensions call.
+# What the module extensions and the SDK repositories call.
+
+def _read_table(module_ctx, table):
+    switch = module_ctx.getenv(PREBUILT_TOOLS_ENV, "")
+    if switch not in ("", "prebuilt", "source"):
+        fail("--repo_env=%s=%s: the value is `prebuilt` (the default) or `source`" % (PREBUILT_TOOLS_ENV, switch))
+    doc = json.decode(module_ctx.read(table))
+    if switch == "source":
+        return {}
+    return doc
 
 def prebuilt_tools_table(module_ctx, table = _TABLE):
     """Reads a prebuilt-tools table, as the switch leaves it.
@@ -303,19 +324,29 @@ def prebuilt_tools_table(module_ctx, table = _TABLE):
       when `RULES_DART_TOOLS=source`, and for platforms rules_dart has no
       SDK repository for.
     """
-    switch = module_ctx.getenv(PREBUILT_TOOLS_ENV, "")
-    if switch not in ("", "prebuilt", "source"):
-        fail("--repo_env=%s=%s: the value is `prebuilt` (the default) or `source`" % (PREBUILT_TOOLS_ENV, switch))
-    table = json.decode(module_ctx.read(table)).get("tools", {})
-    if switch == "source":
-        return {}
     return {
         version: {p: entry for p, entry in by_platform.items() if p in PLATFORMS}
-        for version, by_platform in table.items()
+        for version, by_platform in _read_table(module_ctx, table).get("tools", {}).items()
     }
 
-def prebuilt_module_compiler(table, version, platform):
-    """The hub label of a prebuilt module compiler, for an SDK repository's BUILD file.
+def prebuilt_pub_scanner(module_ctx):
+    """The scanner archives of rules_dart's table, for `pub_scanner_repo(prebuilt = ...)`.
+
+    Args:
+      module_ctx: The `dart` module extension context.
+
+    Returns:
+      `{platform: [url, sha256]}`: empty in the repository and when
+      `RULES_DART_TOOLS=source`.
+    """
+    return {
+        p: [entry["url"], entry["sha256"]]
+        for p, entry in _read_table(module_ctx, _TABLE).get("pub_scanner", {}).items()
+        if p in PLATFORMS
+    }
+
+def prebuilt_tools_repo(table, version, platform):
+    """The archive repository of one SDK repository, for its `prebuilt_tools_repo`.
 
     Args:
       table: What `prebuilt_tools_table` returned.
@@ -323,11 +354,28 @@ def prebuilt_module_compiler(table, version, platform):
       platform: The SDK repository's host platform key.
 
     Returns:
-      A canonical label string, or `""` when the table has no such archive.
+      The repository's name, which the SDK repository, made by the same
+      extension, sees under that name; `""` when the table has no archive.
     """
     if platform not in table.get(version, {}):
         return ""
-    return str(Label("@%s//:module_compiler_%s_%s" % (_HUB, version, platform)))
+    return _archive_repo_name(version, platform)
+
+def prebuilt_tool_labels(repo):
+    """What `declare_dart_sdk_toolchains(prebuilt_tools = repo)` takes from an archive.
+
+    Args:
+      repo: The archive repository's label (`@<name>`): rules_dart's, or
+        rules_flutter's, whose archives carry the same targets.
+
+    Returns:
+      `struct(module_compiler, tools)`: the module compiler's label and
+      `{name: label}` of `SNAPSHOT_TOOLS`.
+    """
+    return struct(
+        module_compiler = repo + "//:module_compiler",
+        tools = {name: "%s//:%s" % (repo, name) for name in SNAPSHOT_TOOLS},
+    )
 
 def prebuilt_tools_repositories(table, generic_version):
     """Declares the archive repositories and the hub.
@@ -335,23 +383,19 @@ def prebuilt_tools_repositories(table, generic_version):
     Args:
       table: What `prebuilt_tools_table` returned.
       generic_version: The Dart SDK version of the default toolchain: the
-        hub offers that version's prebuilt tools.
+        hub's `exe` tools come from that version's archives.
     """
-    module_compilers = {}
     for version, by_platform in table.items():
         for platform, entry in by_platform.items():
-            repo = _archive_repo_name(version, platform)
             dart_tools_archive_repo(
-                name = repo,
+                name = _archive_repo_name(version, platform),
                 url = entry["url"],
                 sha256 = entry["sha256"],
                 dart_version = version,
             )
-            module_compilers["%s_%s" % (version, platform)] = repo
     dart_tools_hub_repo(
         name = _HUB,
         dart_version = generic_version if generic_version in table else "",
         platforms = sorted(table.get(generic_version, {}).keys()),
         sources = {name: str(Label("//dart/private/tools:" + name)) for name in PREBUILT_TOOLS},
-        module_compilers = module_compilers,
     )

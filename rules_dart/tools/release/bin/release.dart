@@ -42,9 +42,10 @@ Commands (each takes --module=rules_dart|rules_flutter)
   tools build --platform=P --out=DIR [--work=DIR] [--bazel=CMD]
                          Build the module's prebuilt tool set twice, in two
                          consumer workspaces of the checkout with no cache,
-                         and write tools-P.tar.gz and tools-P.json to DIR. When
-                         the two builds differ, write only the sidecar, which
-                         says what differed: that platform ships no tools.
+                         and write tools-P.tar.gz and tools-P.json to DIR, and
+                         rules_dart's pub archive scanner as pub_scanner-P.tar.gz.
+                         When the two builds differ, write only the sidecar,
+                         which says what differed: that platform ships no tools.
                          A failed build exits non-zero.
   tools table --tag=TAG --artifacts=DIR --out=DIR --table=FILE [--download=URL]
                          Gather the tools-*.json sidecars under --artifacts,
@@ -355,14 +356,26 @@ Future<void> _toolsBuild(
   final List<String> problems = differences(builds[0], builds[1]);
   final String base = Sidecar.baseName(platform);
   String? digest;
+  String? scannerDigest;
   if (problems.isEmpty) {
-    final List<int> archive = tarGz(builds.first);
+    final split = splitSet(builds.first);
+    final List<int> archive = tarGz(split.tools);
     File(p.join(out.path, '$base.tar.gz')).writeAsBytesSync(archive);
     digest = sha256.convert(archive).toString();
     stdout.writeln(
-      'tools: ${set.module} $version $platform: ${builds.first.length} files, '
+      'tools: ${set.module} $version $platform: ${split.tools.length} files, '
       'reproducible, $digest',
     );
+    if (split.scanner.isNotEmpty) {
+      final List<int> scanner = tarGz(split.scanner);
+      File(p.join(out.path, Sidecar.scannerName(platform)))
+          .writeAsBytesSync(scanner);
+      scannerDigest = sha256.convert(scanner).toString();
+      stdout.writeln(
+        'tools: ${set.module} pub scanner $platform: '
+        '${split.scanner.length} files, reproducible, $scannerDigest',
+      );
+    }
   } else {
     stderr.writeln(
       'tools: ${set.module} $version $platform is not reproducible; it ships '
@@ -377,6 +390,7 @@ Future<void> _toolsBuild(
       version: version,
       sha256: digest,
       problems: problems,
+      pubScannerSha256: scannerDigest,
     ).encode(),
   );
 }
@@ -389,7 +403,9 @@ void _toolsTable(ToolSet set, Map<String, String> options) {
       options['download'] ??
       'https://github.com/${Platform.environment['GITHUB_REPOSITORY'] ?? 'Mivr/ai_rules_dart'}/releases/download';
   final archives = <Sidecar, List<int>?>{};
+  final scanners = <Sidecar, List<int>?>{};
   final Map<Sidecar, File> files = {};
+  final Map<Sidecar, File> scannerFiles = {};
   if (artifacts.existsSync()) {
     for (final e in artifacts.listSync(recursive: true)) {
       final String name = p.basename(e.path);
@@ -401,6 +417,11 @@ void _toolsTable(ToolSet set, Map<String, String> options) {
       final archive = File(e.path.replaceFirst(RegExp(r'\.json$'), '.tar.gz'));
       archives[s] = archive.existsSync() ? archive.readAsBytesSync() : null;
       files[s] = archive;
+      final scanner = File(
+        p.join(p.dirname(e.path), Sidecar.scannerName(s.platform)),
+      );
+      scanners[s] = scanner.existsSync() ? scanner.readAsBytesSync() : null;
+      scannerFiles[s] = scanner;
     }
   }
   final result = toolsTable(
@@ -408,11 +429,16 @@ void _toolsTable(ToolSet set, Map<String, String> options) {
     tag: tag,
     download: download,
     archives: archives,
+    scanners: scanners,
   );
   for (final MapEntry<Sidecar, List<int>?> e in archives.entries) {
     if (e.key.sha256 == null) continue;
     files[e.key]!.copySync(
       p.join(out.path, assetName(tag, e.key.version, e.key.platform)),
+    );
+    if (e.key.pubScannerSha256 == null) continue;
+    scannerFiles[e.key]!.copySync(
+      p.join(out.path, scannerAssetName(tag, e.key.platform)),
     );
   }
   File(_option(options, 'table')).writeAsStringSync(

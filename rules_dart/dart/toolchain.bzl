@@ -1,11 +1,13 @@
 """This module implements the Dart SDK toolchain rule."""
 
+load("//dart:providers.bzl", "DartCompileInfo")
 load(
     "//dart/private:module_compiler.bzl",
     _dart_module_compiler = "dart_module_compiler",
     _module_compiler_sources = "module_compiler_sources",
 )
 load("//dart/private:module_compiler_versions.bzl", "module_compiler_sources_label")
+load("//dart/private:prebuilt_tools.bzl", "prebuilt_tool_labels")
 
 visibility("public")
 
@@ -30,6 +32,7 @@ DartSdkInfo = provider(
         "patched_gen_kernel": "File or None: The `gen_kernel` AOT snapshot with comma-splitting disabled, or `None` when the SDK names no `gen_kernel` snapshot. One action per SDK, like `patched_kernel_worker`.",
         "kernel_module_files": "struct or None: The `compile_files` a modular kernel compile and link run from, found once per toolchain: `dartvm`, `dartaotruntime` and `platform_dill` (`vm_platform_strong.dill`). The last two are `None` when the SDK lacks either. Optional: a `DartSdkInfo` without it has the files searched for in `compile_files` instead.",
         "module_compiler": "File or None: the module compiler of this SDK (`//dart/private/tools:module_compiler.dart`), an AOT snapshot built from the SDK tag's own front end and run by this SDK's `dartaotruntime`. `None` when the toolchain names no `module_compiler`: the SDK version has no pinned source closure, and no kernel module can be compiled with it.",
+        "prebuilt_tools": "dict[str, Target]: A release's prebuilt AOT snapshots of rules_dart's tools, built by this SDK, by tool name (see `//dart/private:prebuilt_tools.bzl`). Empty when the release has none for this SDK's version and host. Optional: a `DartSdkInfo` without it builds every tool from source.",
     },
 )
 
@@ -253,6 +256,7 @@ def _dart_toolchain_impl(ctx):
         ),
         kernel_module_files = kernel_module_files,
         module_compiler = ctx.file.module_compiler,
+        prebuilt_tools = dict(ctx.attr.prebuilt_tools),
     )
 
     template_variables = platform_common.TemplateVariableInfo({
@@ -321,6 +325,11 @@ dart_toolchain = rule(
             doc = "The module compiler of this SDK (a `dart_module_compiler` target, built from the pinned sources of the SDK's version). Leave unset for an SDK version without pinned sources: no kernel module can then be compiled with this SDK.",
             allow_single_file = True,
             # One per SDK, whatever configuration the modules are compiled in.
+            cfg = "exec",
+        ),
+        "prebuilt_tools": attr.string_keyed_label_dict(
+            doc = "A release's prebuilt AOT snapshots of rules_dart's tools, built by this SDK, by tool name (see `//dart/private:prebuilt_tools.bzl`).",
+            providers = [DartCompileInfo],
             cfg = "exec",
         ),
         "_comma_patch": attr.label(
@@ -499,7 +508,7 @@ def declare_dart_sdk_toolchains(
         prefix = "",
         sdk_root_name = "sdk_root",
         cross_targets = (),
-        prebuilt_module_compiler = None):
+        prebuilt_tools = None):
     """Declares SDK filegroups and `dart_toolchain` targets over an extracted Dart SDK.
 
     Args:
@@ -515,11 +524,12 @@ def declare_dart_sdk_toolchains(
         cross_targets: Cross-compilation targets to declare `dart_toolchain_cross_<platform>`
             rules for. Accepts either a sequence of `(target_platform, target_os, target_arch[, cross_gen_snapshot, cross_dartaotruntime])`
             tuples or a dict mapping `target_platform` to `(target_os, target_arch[, cross_gen_snapshot, cross_dartaotruntime])`.
-        prebuilt_module_compiler: Label of a release's prebuilt module
-            compiler for this SDK's version and host platform (see
-            `//dart/private:prebuilt_tools.bzl`). The toolchain then uses it
-            instead of building `:module_compiler`, whose sources are not
-            fetched. None builds it from source.
+        prebuilt_tools: Label (`@<repo>`) of the repository holding a
+            release's prebuilt tools for this SDK's version and host platform
+            (see `//dart/private:prebuilt_tools.bzl`). The toolchain then
+            uses its module compiler instead of building `:module_compiler`,
+            whose sources are not fetched, and carries its AOT snapshot
+            tools. None builds them from source.
     """
     if prefix and not prefix.endswith("/"):
         prefix = prefix + "/"
@@ -531,10 +541,11 @@ def declare_dart_sdk_toolchains(
     # The module compiler of this SDK, when its version has a pinned source
     # closure. Without one the SDK compiles no kernel module, and a rule that
     # needs one says so.
+    prebuilt = prebuilt_tool_labels(prebuilt_tools) if prebuilt_tools else None
     module_compiler = None
     sources = module_compiler_sources_label(version)
     if sources != None:
-        module_compiler = prebuilt_module_compiler or ":module_compiler"
+        module_compiler = prebuilt.module_compiler if prebuilt else ":module_compiler"
         _dart_module_compiler(
             name = "module_compiler",
             compile_files = ":compile_files",
@@ -549,6 +560,7 @@ def declare_dart_sdk_toolchains(
         compile_files = ":compile_files",
         dart = dart,
         module_compiler = module_compiler,
+        prebuilt_tools = prebuilt.tools if prebuilt else {},
         runtime_files = ":runtime_files",
         sdk_root = sdk_root_label,
         version = version,

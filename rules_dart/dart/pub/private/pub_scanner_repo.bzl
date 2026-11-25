@@ -33,6 +33,7 @@ name by hand. Nothing is written outside this repository's directory, and no
 host tool beyond the SDK itself is consulted.
 """
 
+load("//dart/private:download.bzl", "pinned_download_and_extract")
 load("//dart/pub/private:pub_scanner_sdk.bzl", _platform_key = "scanner_platform_key", _sdk_file = "scanner_sdk_file")
 
 visibility(["//dart/..."])
@@ -55,6 +56,25 @@ def _home_env(dart_exe):
         return {"USERPROFILE": "", "LOCALAPPDATA": ""}
     return {"HOME": ""}
 
+def _prebuilt_scanner(ctx, prebuilt, exe_name, runtime_name):
+    """Takes a release's scanner archive for the fetch host.
+
+    The archive holds the snapshot this rule's source path compiles, from the
+    same source and SDK, and that SDK's `dartaotruntime`, which
+    `run_pub_archive_scans` runs it with when this repository has one: no
+    SDK is downloaded to scan pub archives.
+    """
+    url, sha256 = prebuilt
+    pinned_download_and_extract(ctx, url = url, sha256 = sha256)
+    for name in (exe_name, runtime_name):
+        if not ctx.path(name).exists:
+            fail("pub scanner repository \"%s\": the archive %s has no %s" % (ctx.name, url, name))
+    ctx.file(
+        "BUILD.bazel",
+        "exports_files([\"%s\", \"%s\"])\n" % (exe_name, runtime_name),
+    )
+    return ctx.repo_metadata(reproducible = True)
+
 def pub_scanner_repo_impl(ctx):
     """Compiles the scanner source to the native AOT snapshot.
 
@@ -68,10 +88,13 @@ def pub_scanner_repo_impl(ctx):
     Returns:
       Reproducible repository metadata for the repository contents cache.
     """
-    ctx.file("pub_scan.dart", ctx.attr.scanner_src)
     exe_suffix = ".exe" if ctx.os.name.lower().startswith("windows") else ""
     exe_name = "scanner" + exe_suffix
     platform = _platform_key(ctx.os)
+    prebuilt = ctx.attr.prebuilt.get(platform)
+    if prebuilt:
+        return _prebuilt_scanner(ctx, prebuilt, exe_name, "dartaotruntime" + exe_suffix)
+    ctx.file("pub_scan.dart", ctx.attr.scanner_src)
     sdk_dart = str(ctx.path(_sdk_file(platform, "bin/dart" + exe_suffix)))
     repo_dir = str(ctx.path("pub_scan.dart").dirname)
     dill_path = repo_dir + "/scan.dill"

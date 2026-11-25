@@ -27,5 +27,8 @@ pub_scanner_repo = repository_rule(
             doc = "The SDK version the scanner compiles from. A toolchain change recompiles it.",
             mandatory = True,
         ),
+        "prebuilt": attr.string_list_dict(
+            doc = "A release's scanner archives, `{platform: [url, sha256]}` (see `//dart/private:prebuilt_tools.bzl`): the fetch host's is downloaded instead of compiling, and holds the `dartaotruntime` that runs the snapshot. Empty compiles from source.",
+        ),
     },
 )

@@ -14,6 +14,9 @@
 #   rules_<module>-v<version>-tools-<sdk>-<platform>.tar.gz
 #                                          the prebuilt tools of one platform,
 #                                          built by the release's `tools` job
+#   rules_dart-v<version>-pub_scanner-<platform>.tar.gz
+#                                          the pub archive scanner of one
+#                                          platform, built by the same job
 #
 # Both are written to $RELEASE_OUT (default: the current directory). What
 # `export-ignore` in the module's .gitattributes removes is not in the

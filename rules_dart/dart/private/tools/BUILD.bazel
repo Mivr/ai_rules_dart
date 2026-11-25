@@ -3,7 +3,7 @@ load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
 load("//dart/private:module_compiler_tools.bzl", "module_compiler_tools")
-load("//dart/private:prebuilt_tools.bzl", "dart_prebuilt_tool_set")
+load("//dart/private:prebuilt_tools.bzl", "SNAPSHOT_TOOLS", "dart_prebuilt_tool_set")
 load("//dart/private:versions.bzl", "TOOL_VERSIONS")
 
 dart_binary(
@@ -1086,6 +1086,10 @@ dart_test(
 # consumer builds them in, and the exec SDK's module compiler.
 dart_prebuilt_tool_set(
     name = "prebuilt_set",
+    pub_scanner = select({
+        "@platforms//os:windows": "@dart_pub_scanner//:scanner.exe",
+        "//conditions:default": "@dart_pub_scanner//:scanner",
+    }),
     tools = [
         ":compile_wrapper",
         ":import_check",
@@ -1095,6 +1099,17 @@ dart_prebuilt_tool_set(
     ],
     visibility = ["//visibility:public"],
 )
+
+# The sources of the AOT snapshot tools (`SNAPSHOT_TOOLS`), for rules_flutter's
+# prebuilt set, which builds them with the Dart SDK a Flutter release bundles.
+[
+    alias(
+        name = name + "_source",
+        actual = ":" + name,
+        visibility = ["//visibility:public"],
+    )
+    for name in SNAPSHOT_TOOLS
+]
 
 exports_files(
     ["BUILD.bazel"],
