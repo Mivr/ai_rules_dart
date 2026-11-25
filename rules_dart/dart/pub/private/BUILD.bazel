@@ -203,7 +203,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":pub_scanner_sdk",
-        "//dart/private:download",
+        "//dart/private:prebuilt_tools",
     ],
 )
 

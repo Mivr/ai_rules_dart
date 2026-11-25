@@ -14,9 +14,10 @@ more (see `RELEASING.md`). The released module carries the table
      "pub_scanner": {"<platform>": {"url": ..., "sha256": ...}}}
 
 with `<platform>` a key of `PLATFORMS` (`linux-x64`, `macos-arm64`, ...).
-The table in the repository is empty, so a build of the repository itself,
-and of any workspace that uses it through a path override, builds every tool
-from source. A platform missing from a released table builds from source too:
+The table in the repository is empty, and a source archive of the module has
+none, so a build of the repository itself, and of any workspace that uses it
+through a path or git override or a source archive, builds every tool from
+source. A platform missing from a released table builds from source too:
 a platform may be absent, never wrong.
 
 The extension turns the table into repositories, all fetched lazily:
@@ -209,8 +210,23 @@ dart_prebuilt_tool_set = rule(
 # ---------------------------------------------------------------------------
 # Repositories.
 
+def download_prebuilt_archive(rctx, url, sha256):
+    """Fetches and extracts one archive a release's table lists.
+
+    The one download of every prebuilt archive: a tool set's
+    (`dart_tools_archive_repo`) and the pub scanner's (`dart_pub_scanner`).
+    The checksum is the table's, and the fetch fails before any byte is
+    downloaded unless it is a pinned SHA-256 (`//dart/private:download.bzl`).
+
+    Args:
+      rctx: The repository context.
+      url: Where the release published the archive.
+      sha256: The archive's checksum, from the table.
+    """
+    pinned_download_and_extract(rctx, url = url, sha256 = sha256)
+
 def _archive_repo_impl(rctx):
-    pinned_download_and_extract(rctx, url = rctx.attr.url, sha256 = rctx.attr.sha256)
+    download_prebuilt_archive(rctx, rctx.attr.url, rctx.attr.sha256)
     manifest = json.decode(rctx.read("tools.json"))
     version = rctx.attr.dart_version
     if manifest.get("dart_version") != version:
@@ -306,10 +322,20 @@ def _read_table(module_ctx, table):
     switch = module_ctx.getenv(PREBUILT_TOOLS_ENV, "")
     if switch not in ("", "prebuilt", "source"):
         fail("--repo_env=%s=%s: the value is `prebuilt` (the default) or `source`" % (PREBUILT_TOOLS_ENV, switch))
-    doc = json.decode(module_ctx.read(table))
     if switch == "source":
         return {}
-    return doc
+
+    # A source archive of the module (`git archive`, a forge's tarball) has no
+    # table: `.gitattributes` keeps the checkout's empty one out, so that
+    # `release_prep.sh` can add the release's. No table is an empty one,
+    # which builds every tool from source. The sibling `BUILD.bazel` always
+    # exists, and `path()` of a missing file fails, so the table's path comes
+    # from it; `watch` re-runs the extension when the table appears.
+    path = module_ctx.path(table.same_package_label("BUILD.bazel")).dirname.get_child(table.name)
+    module_ctx.watch(path)
+    if not path.exists:
+        return {}
+    return json.decode(module_ctx.read(path))
 
 def prebuilt_tools_table(module_ctx, table = _TABLE):
     """Reads a prebuilt-tools table, as the switch leaves it.
@@ -320,8 +346,8 @@ def prebuilt_tools_table(module_ctx, table = _TABLE):
         passes its own, which the same switch turns off.
 
     Returns:
-      `{version: {platform: {"url", "sha256"}}}`: empty in the repository,
-      when `RULES_DART_TOOLS=source`, and for platforms rules_dart has no
+      `{version: {platform: {"url", "sha256"}}}`: empty in the repository
+      and a source archive of it, when `RULES_DART_TOOLS=source`, and for platforms rules_dart has no
       SDK repository for.
     """
     return {
@@ -336,8 +362,8 @@ def prebuilt_pub_scanner(module_ctx):
       module_ctx: The `dart` module extension context.
 
     Returns:
-      `{platform: [url, sha256]}`: empty in the repository and when
-      `RULES_DART_TOOLS=source`.
+      `{platform: [url, sha256]}`: empty in the repository, a source archive
+      of it, and when `RULES_DART_TOOLS=source`.
     """
     return {
         p: [entry["url"], entry["sha256"]]

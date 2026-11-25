@@ -33,7 +33,7 @@ name by hand. Nothing is written outside this repository's directory, and no
 host tool beyond the SDK itself is consulted.
 """
 
-load("//dart/private:download.bzl", "pinned_download_and_extract")
+load("//dart/private:prebuilt_tools.bzl", "download_prebuilt_archive")
 load("//dart/pub/private:pub_scanner_sdk.bzl", _platform_key = "scanner_platform_key", _sdk_file = "scanner_sdk_file")
 
 visibility(["//dart/..."])
@@ -65,7 +65,7 @@ def _prebuilt_scanner(ctx, prebuilt, exe_name, runtime_name):
     SDK is downloaded to scan pub archives.
     """
     url, sha256 = prebuilt
-    pinned_download_and_extract(ctx, url = url, sha256 = sha256)
+    download_prebuilt_archive(ctx, url, sha256)
     for name in (exe_name, runtime_name):
         if not ctx.path(name).exists:
             fail("pub scanner repository \"%s\": the archive %s has no %s" % (ctx.name, url, name))
