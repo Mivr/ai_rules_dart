@@ -229,7 +229,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "OmOJbQaXVk9q9BQ4lJq6+PUwmkGGFHzwYAnniaQ+KBE=",
+        "bzlTransitiveDigest": "sRjKGfk9IxEBvlaaBqmdmpgjxfDYqPFofBk7I50bLsA=",
         "usagesDigest": "A9XftCC1b19nWtO1jVOhi+fdZnc1slxETZY0LkTW8nw=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
