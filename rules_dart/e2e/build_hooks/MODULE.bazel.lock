@@ -232,7 +232,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "KrY5dyiGK0mSCtycUhBmmLOUtyuf1HyRPB4SfUbAB5w=",
+        "bzlTransitiveDigest": "OmOJbQaXVk9q9BQ4lJq6+PUwmkGGFHzwYAnniaQ+KBE=",
         "usagesDigest": "CJ0iXTLajKkcHH5Q5A60XDG4XP/gRQU2O0QHVwJvegQ=",
         "recordedInputs": [
           "REPO_MAPPING:,sqlite3 sqlite3+",
@@ -240,7 +240,7 @@
           "FILE:@@//pubspec.lock 3d35b945684f5802ddfc04a00d4b3d98bb667ef426e0bf6387313dee536c074f",
           "FILE:@@//download/pubspec.lock c88a3bff8d419baae4d1a37d9ea31a0078652c50863e9740e7a81f9051dc7f55",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock 1452d104de06eacf15905878d31e7b7c84bf72114637fee0c87da2c75dcf58da",
-          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 131b54a6760682dea8f631e6a52e48a43555cfb0479ebe5aca1cc647dc36cd7c",
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 49944eadf70335ddae7a92ae02da09a2aef79e5823c87c67a002c565b9918592",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
           "FILE:@@ai_rules_dart+//dart/ext/pub_plan.json 9a8318baca7377e3c4307c68140729577b22c816a17f7810980cdb35ca906598",
@@ -248,7 +248,7 @@
           "FILE:@@//pubspec.yaml f3835dab953bc92d4f112690cd649e4e30fec0ef630bf0cf6d5922e2dd847b43",
           "FILE:@@//download/pubspec.yaml 912f3c3a9bd8631c229feda0f500bd8dd8ac23ac9e05d0127b3c3386c4df280f",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.yaml 169951c2e1973cc403daba2bbd1179e4a73e1f5be390d0572f69531211e5bdee",
-          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 1d4a082706d3df1ae1f7694f5563f22af91dcbcf6be6d5dc8e16487ae54e55b7"
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 523cb61075895694e4dbfbe023728a430db65a9a58fc37ee3fbde83a4349c4a4"
         ],
         "generatedRepoSpecs": {
           "dart_pub___fe_analyzer_shared": {
@@ -4601,6 +4601,27 @@
                 "pubspec.yaml",
                 "LICENSE*"
               ]
+            }
+          },
+          "dart_project_root": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": ""
+            }
+          },
+          "dart_project_download": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "download"
+            }
+          },
+          "dart_projects": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%project_index",
+            "attributes": {
+              "projects": {
+                "": "dart_project_root",
+                "download": "dart_project_download"
+              }
             }
           }
         },

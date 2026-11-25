@@ -229,7 +229,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "KrY5dyiGK0mSCtycUhBmmLOUtyuf1HyRPB4SfUbAB5w=",
+        "bzlTransitiveDigest": "OmOJbQaXVk9q9BQ4lJq6+PUwmkGGFHzwYAnniaQ+KBE=",
         "usagesDigest": "NUXPUpqSCZQLe68mrrSTciZasoZy9AISrnuVsod8WtA=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -237,7 +237,7 @@
           "FILE:@@//errors/old/pubspec.lock 5b5a8ff5f3217389f8fdbee6a94868e7baf7f2c95e7f098626edcdf729fdd70a",
           "FILE:@@//errors/none/pubspec.lock c3dd6ee61cf6d0b7063c4cab9cb84572b9f7f187c5595ce01b5605be20dfee1b",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock 1452d104de06eacf15905878d31e7b7c84bf72114637fee0c87da2c75dcf58da",
-          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 131b54a6760682dea8f631e6a52e48a43555cfb0479ebe5aca1cc647dc36cd7c",
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 49944eadf70335ddae7a92ae02da09a2aef79e5823c87c67a002c565b9918592",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
           "FILE:@@ai_rules_dart+//dart/ext/pub_plan.json 9a8318baca7377e3c4307c68140729577b22c816a17f7810980cdb35ca906598",
@@ -246,7 +246,19 @@
           "FILE:@@//errors/old/pubspec.yaml 4ebc7416b074e398b279fe3853ca54b47a8eaf531b324f74a4fadc166bb5a894",
           "FILE:@@//errors/none/pubspec.yaml baf2c65ec8f6bc273a6d9b4dd09674d4f1ebfe840d2d4d773feb20bca9965625",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.yaml 169951c2e1973cc403daba2bbd1179e4a73e1f5be390d0572f69531211e5bdee",
-          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 1d4a082706d3df1ae1f7694f5563f22af91dcbcf6be6d5dc8e16487ae54e55b7"
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 523cb61075895694e4dbfbe023728a430db65a9a58fc37ee3fbde83a4349c4a4",
+          "FILE:@@//pkgs/built_value_pkg/pubspec.yaml 0693be20a09358cef3c5757d2c66e8fc3e4a4685cdba5ead8218a48aa353aa57",
+          "FILE:@@//pkgs/combined/pubspec.yaml 3e5e55456b26ccabfddab66f282f4304329367da48f3662cfec3ac8264772bcb",
+          "FILE:@@//pkgs/drift_pkg/pubspec.yaml 5534f8cfe1e0e245f3f532ac70e6e1711b8a657ed871cf2d0fc583215424f58a",
+          "FILE:@@//pkgs/freezed_json/pubspec.yaml f81a22cd48ad8172d35b3b8188f7ecb639fbf4713199954455bda2e28d74decd",
+          "FILE:@@//pkgs/injectable_micro/pubspec.yaml 782c1175257a7c3fa9282276d2f1e3d5a65b3058f446b184488dacfa51a640f7",
+          "FILE:@@//pkgs/injectable_pkg/pubspec.yaml 809ca23167d5ef6b1a87d290a0ab8d815c57204c54d2b863982b94e4f8247ffa",
+          "FILE:@@//pkgs/json_define/pubspec.yaml 9fb9a524c9892b99bda4ee92f4cacce293b7b9edf13d4978c7de250676169617",
+          "FILE:@@//pkgs/json_release/pubspec.yaml ecfe3c995fb22d01f2fc31f70161fa50cfe024104ff8992d37f619429769b6ac",
+          "FILE:@@//pkgs/json_ser/pubspec.yaml 392f00d34a80968d32dc362b1cbe96ceda54fb2a3f8743e28d049ccff66c850b",
+          "FILE:@@//pkgs/mockito_pkg/pubspec.yaml 296b772c47a2d6b88d23f883e01f10d30353e329b1422fc55eaac972ab5d05e5",
+          "FILE:@@//pkgs/retrofit_pkg/pubspec.yaml ee024d1fa57584c09e8a9bd9b06c901f89f0ef000d10309d6de7433dd124c765",
+          "FILE:@@//pkgs/riverpod_pkg/pubspec.yaml 779f91c57f57ada9cff12f28c62b88f6bb84f652de211451e5a92680840a92b3"
         ],
         "generatedRepoSpecs": {
           "dart_pub___fe_analyzer_shared": {
@@ -4999,6 +5011,118 @@
                 "pubspec.yaml",
                 "LICENSE*"
               ]
+            }
+          },
+          "dart_project_root": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": ""
+            }
+          },
+          "dart_project_errors_none": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "errors/none"
+            }
+          },
+          "dart_project_errors_old": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "errors/old"
+            }
+          },
+          "dart_project_pkgs_built_value_pkg": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/built_value_pkg"
+            }
+          },
+          "dart_project_pkgs_combined": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/combined"
+            }
+          },
+          "dart_project_pkgs_drift_pkg": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/drift_pkg"
+            }
+          },
+          "dart_project_pkgs_freezed_json": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/freezed_json"
+            }
+          },
+          "dart_project_pkgs_injectable_micro": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/injectable_micro"
+            }
+          },
+          "dart_project_pkgs_injectable_pkg": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/injectable_pkg"
+            }
+          },
+          "dart_project_pkgs_json_define": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/json_define"
+            }
+          },
+          "dart_project_pkgs_json_release": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/json_release"
+            }
+          },
+          "dart_project_pkgs_json_ser": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/json_ser"
+            }
+          },
+          "dart_project_pkgs_mockito_pkg": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/mockito_pkg"
+            }
+          },
+          "dart_project_pkgs_retrofit_pkg": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/retrofit_pkg"
+            }
+          },
+          "dart_project_pkgs_riverpod_pkg": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%dart_project_repo",
+            "attributes": {
+              "project": "pkgs/riverpod_pkg"
+            }
+          },
+          "dart_projects": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%project_index",
+            "attributes": {
+              "projects": {
+                "": "dart_project_root",
+                "errors/none": "dart_project_errors_none",
+                "errors/old": "dart_project_errors_old",
+                "pkgs/built_value_pkg": "dart_project_pkgs_built_value_pkg",
+                "pkgs/combined": "dart_project_pkgs_combined",
+                "pkgs/drift_pkg": "dart_project_pkgs_drift_pkg",
+                "pkgs/freezed_json": "dart_project_pkgs_freezed_json",
+                "pkgs/injectable_micro": "dart_project_pkgs_injectable_micro",
+                "pkgs/injectable_pkg": "dart_project_pkgs_injectable_pkg",
+                "pkgs/json_define": "dart_project_pkgs_json_define",
+                "pkgs/json_release": "dart_project_pkgs_json_release",
+                "pkgs/json_ser": "dart_project_pkgs_json_ser",
+                "pkgs/mockito_pkg": "dart_project_pkgs_mockito_pkg",
+                "pkgs/retrofit_pkg": "dart_project_pkgs_retrofit_pkg",
+                "pkgs/riverpod_pkg": "dart_project_pkgs_riverpod_pkg"
+              }
             }
           }
         },

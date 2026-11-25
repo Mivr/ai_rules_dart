@@ -337,13 +337,13 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "KrY5dyiGK0mSCtycUhBmmLOUtyuf1HyRPB4SfUbAB5w=",
+        "bzlTransitiveDigest": "OmOJbQaXVk9q9BQ4lJq6+PUwmkGGFHzwYAnniaQ+KBE=",
         "usagesDigest": "Yl5u5qaKBhAcy6mOfXVF/WOzpXxbmobzoGNfhMQw62o=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
           "FILE:@@ai_rules_flutter+//tools/tool_deps/pubspec.lock 1af5c724131a36c5ebcedf7762ae4b94aa46c5add81cfd16f1d729bc8c5d5bb6",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock 1452d104de06eacf15905878d31e7b7c84bf72114637fee0c87da2c75dcf58da",
-          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 131b54a6760682dea8f631e6a52e48a43555cfb0479ebe5aca1cc647dc36cd7c",
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.lock 49944eadf70335ddae7a92ae02da09a2aef79e5823c87c67a002c565b9918592",
           "REPO_MAPPING:ai_rules_dart+,dart_yaml2json ai_rules_dart++dart+dart_yaml2json",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64",
           "FILE:@@ai_rules_flutter+//tools/tool_deps/pub_plan.json 5d0f63da220be205815fe41bb5fa48d054019eb52f07d09ecdd0f38fe4c63f84",
@@ -351,7 +351,7 @@
           "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pub_plan.json f6a39248934c419f51f8672259b7de3991c860fa4ba9c1422608f981cf8868d1",
           "FILE:@@ai_rules_flutter+//tools/tool_deps/pubspec.yaml 72c7d1a27afa6595996bb9e567d77cf00e80136ab864d09c11de1e104def203e",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.yaml 169951c2e1973cc403daba2bbd1179e4a73e1f5be390d0572f69531211e5bdee",
-          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 1d4a082706d3df1ae1f7694f5563f22af91dcbcf6be6d5dc8e16487ae54e55b7"
+          "FILE:@@ai_rules_dart+//dart/private/tools/hook_runner/pubspec.yaml 523cb61075895694e4dbfbe023728a430db65a9a58fc37ee3fbde83a4349c4a4"
         ],
         "generatedRepoSpecs": {
           "ext_pub_deps": {
@@ -3405,6 +3405,12 @@
                 "LICENSE*"
               ]
             }
+          },
+          "dart_projects": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%project_index",
+            "attributes": {
+              "projects": {}
+            }
           }
         },
         "moduleExtensionMetadata": {
@@ -3417,9 +3423,10 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "RAtHLS5ecvRepnfXAr3h8L7++A5hM+JfIjKeTMWslEg=",
+        "bzlTransitiveDigest": "6nu9vhMgQJLkr2hCpoAnCZ69OzV5z7Xr3QHCFvZvHIE=",
         "usagesDigest": "ljldJnegCh7ImslLw/6RkDNsug8vG4zdv+M9BAtuO4w=",
         "recordedInputs": [
+          "REPO_MAPPING:ai_rules_dart+,dart_projects ai_rules_dart++pub+dart_projects",
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
           "REPO_MAPPING:ai_rules_flutter+,rules_cc rules_cc+",
           "REPO_MAPPING:ai_rules_flutter+,rules_dart ai_rules_dart+",
@@ -3441,7 +3448,12 @@
           "FILE:@@//path_probe/pubspec.yaml 60bc0984d8a9f5218f38fc8bde30e9c559c7d02d57eaea75ef394d12fae05006",
           "FILE:@@//path_probe_no_build/pubspec.yaml ed56bcf7ce16256f3a773e40c267ecf2f54f8f0ca068b1e6c7850cf6a83e64e6",
           "FILE:@@//platform_assets/pubspec.yaml 8ba63100f1bc62d3e4c70e99dd0bcff6d9fb77fae4030913b8f29574d8cbb5a1",
-          "FILE:@@//unversioned_path/pubspec.yaml 458a8cb617658a2047cc50bfcb0b2d6a0f99c96db03200520362305eadb07bce"
+          "FILE:@@//unversioned_path/pubspec.yaml 458a8cb617658a2047cc50bfcb0b2d6a0f99c96db03200520362305eadb07bce",
+          "FILE:@@//test DIR",
+          "FILE:@@//path_probe/test ENOENT",
+          "FILE:@@//path_probe_no_build/test ENOENT",
+          "FILE:@@//platform_assets/test ENOENT",
+          "FILE:@@//unversioned_path/test ENOENT"
         ],
         "generatedRepoSpecs": {
           "flutter_dev_root": {
@@ -6460,7 +6472,7 @@
               }
             }
           },
-          "flutter_l10n_root": {
+          "flutter_project_root": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
             "attributes": {
               "project": "",
@@ -6474,7 +6486,7 @@
               ]
             }
           },
-          "flutter_l10n_path_probe": {
+          "flutter_project_path_probe": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
             "attributes": {
               "project": "path_probe",
@@ -6488,7 +6500,7 @@
               ]
             }
           },
-          "flutter_l10n_path_probe_no_build": {
+          "flutter_project_path_probe_no_build": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
             "attributes": {
               "project": "path_probe_no_build",
@@ -6502,7 +6514,7 @@
               ]
             }
           },
-          "flutter_l10n_platform_assets": {
+          "flutter_project_platform_assets": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
             "attributes": {
               "project": "platform_assets",
@@ -6516,7 +6528,7 @@
               ]
             }
           },
-          "flutter_l10n_unversioned_path": {
+          "flutter_project_unversioned_path": {
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_repo",
             "attributes": {
               "project": "unversioned_path",
@@ -6530,15 +6542,15 @@
               ]
             }
           },
-          "flutter_l10n": {
-            "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_l10n_repo.bzl%flutter_l10n_index",
+          "flutter_projects": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:project.bzl%project_index",
             "attributes": {
               "projects": {
-                "": "flutter_l10n_root",
-                "path_probe": "flutter_l10n_path_probe",
-                "path_probe_no_build": "flutter_l10n_path_probe_no_build",
-                "platform_assets": "flutter_l10n_platform_assets",
-                "unversioned_path": "flutter_l10n_unversioned_path"
+                "": "flutter_project_root",
+                "path_probe": "flutter_project_path_probe",
+                "path_probe_no_build": "flutter_project_path_probe_no_build",
+                "platform_assets": "flutter_project_platform_assets",
+                "unversioned_path": "flutter_project_unversioned_path"
               }
             }
           }
