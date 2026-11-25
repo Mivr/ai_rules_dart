@@ -118,6 +118,41 @@ app's Gradle file takes them from Flutter (`flutter.versionCode`, `flutter.versi
 a marker and the build reads `pubspec.yaml`, so a version bump needs no new pin. Where the Gradle file
 sets its own values, those are used. A flavor's `versionNameSuffix` is kept.
 
+## Where the Maven artifacts come from
+
+The pin records, for each artifact, its sha256 and the address of the repository Gradle took it from.
+The sha256 decides what is accepted; the addresses are where Bazel asks, in order. For an artifact of
+Maven Central (`repo.maven.apache.org` or `repo1.maven.org`) the rules add Google's mirror of Central
+(`maven-central.storage-download.googleapis.com/maven2`) after the address in the pin, so a Central
+that refuses a download (`429 Too Many Requests` when many jobs behind one address fetch at once, or
+an outage) does not fail the build: Bazel retries the address (eight attempts, about 13 seconds of
+backoff in all, and it does not read `Retry-After`) and then asks the mirror. Gradle gives up on a
+repository after three attempts and does not ask another. The mirror serves the same files: every
+Maven Central artifact of the e2e pins has its pinned sha256 there. Nothing is added to the pin or the
+lockfile; the second address is derived when the build loads. Artifacts of Google's Maven and of the
+Flutter engine's repository are fetched from their one address.
+
+An artifact that no address gives fails with its coordinate and sha256, the addresses tried and the
+answer of each (as `WARNING` lines above the error).
+
+To add, replace or remove an address, use what Bazel already has. A downloader config rewrites the
+address a rule asks for, whichever rule asks, and several `rewrite` lines for one address give several
+addresses, in the order written:
+
+```
+# downloader.cfg: ask the company's mirror first, then Maven Central and Google's mirror as before.
+rewrite repo.maven.apache.org/maven2/(.*) maven.example.com/central/$1
+rewrite repo.maven.apache.org/maven2/(.*) repo.maven.apache.org/maven2/$1
+```
+
+with `common --downloader_config=downloader.cfg` in `.bazelrc`. A line that matches replaces the
+address it matches, so keep the second line to keep the original as a fallback. `block
+maven-central.storage-download.googleapis.com` in the same file keeps the build from asking Google's
+mirror (a build that may reach no other host than the company's). `--distdir=<dir>` names a directory
+of files named as in the addresses (`kotlin-stdlib-2.4.0.jar`); a file there with the pinned sha256 is
+used without any request. Bazel's repository cache (`--repository_cache`) serves a download by its
+sha256, so a CI that keeps it between jobs asks no server for an artifact it has had before.
+
 ## Variants and flavors
 
 The pin records every variant of the app (`debug`, `profile`, `release`, and with flavors `devDebug`,
