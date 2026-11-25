@@ -315,7 +315,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "Q4g26yTc84wS0lfgsbQkt7ZOu+eAwlsXGH0AROpxRao=",
+        "bzlTransitiveDigest": "TCImuOPYfpDz486LETr9gb9unxxWKMO9sVGCcKdHR8k=",
         "usagesDigest": "fvrBsIE0DMH2kbKDrg0OwQ5CuH42hlcVdfcp91mG0tk=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -4797,7 +4797,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "8C2WczfIULWky48hzNCnv31KedUa39bpVKOvxAZnTeI=",
+        "bzlTransitiveDigest": "8qdUxv9RxVq/OEupTZDU8KzcrH2q/WuO+Xibc26LnS0=",
         "usagesDigest": "o2ySKCpvp6KiOP/yD3+Eqmn091uq4v30o1OeWqm8RnQ=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_projects ai_rules_dart++pub+dart_projects",
@@ -5918,6 +5918,7 @@
             "repoRuleId": "@@ai_rules_flutter+//flutter/private:flutter_web_sdk_repo.bzl%flutter_web_sdk_repo",
             "attributes": {
               "engine_revision": "4d35714800b9266b6693a58e1225ecd7e9e45ed7",
+              "flutter_version": "3.50.1",
               "sha256": "7bfc93650dbd9fa8bda7cd5acd021db41fa19039921ab269dcf5e3885e2e53cc",
               "engine_base_url": "",
               "user_repository_name": "flutter",
