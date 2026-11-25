@@ -63,9 +63,9 @@
     "symbol": "`@rules_java//java:defs.bzl` (`java_binary`, `java_import`, `java_library`, `java_plugin`, `java_test`), `@rules_java//java/common:java_info.bzl` (`JavaInfo`) and the Java toolchain rules"
   },
   "ai_rules_dart": {
-    "floor": "0.29.0",
-    "current": "0.29.0",
-    "resolved": "0.29.0",
+    "floor": "0.30.0",
+    "current": "0.30.0",
+    "resolved": "0.30.0",
     "lifted_by": [],
     "symbol": "`@rules_dart//dart:defs.bzl`, `@rules_dart//dart:utils.bzl`, `@rules_dart//dart/pub:pub_scc.bzl`, `@rules_dart//dart/pub:yaml.bzl` and `dart_analysis_config(baseline = ...)`"
   },

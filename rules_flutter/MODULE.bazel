@@ -124,7 +124,7 @@ bazel_dep(name = "rules_java", version = "9.0.0")
 # (0.2.26), bazel_skylib (1.9.2), package_metadata (0.0.13) and rules_go
 # (0.64.2); docs/dependencies.md attributes every one of those lifts, and
 # `e2e/min_versions` checks them against the sibling's `MODULE.bazel`.
-bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
 
 bazel_dep(name = "rules_multitool", version = "1.11.1", dev_dependency = True)
 bazel_dep(name = "buildifier_prebuilt", version = "10.1.0", dev_dependency = True)

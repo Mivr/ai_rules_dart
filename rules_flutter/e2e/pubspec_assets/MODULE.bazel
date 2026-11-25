@@ -10,7 +10,7 @@ package: the tool refuses it, as Flutter 3.50 does.
 module(name = "pubspec_assets_e2e")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
 bazel_dep(name = "platforms", version = "1.1.0")
 
 local_path_override(

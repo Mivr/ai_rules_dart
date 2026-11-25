@@ -4,7 +4,7 @@ subdirectory at a branch the lock pins to a commit, and a path plugin."""
 module(name = "rules_flutter_pub_sources")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
 
 local_path_override(
     module_name = "ai_rules_flutter",
