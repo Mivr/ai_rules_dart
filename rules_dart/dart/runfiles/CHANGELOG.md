@@ -2,6 +2,9 @@
 
 ## 0.0.0-dev
 
+- Fix: `rlocation` finds a runfile whose path has a space, a newline or a backslash when
+  only a manifest exists (Windows, or `--noenable_runfiles`): the manifest's escaped
+  lines (a leading space, `\s`, `\n`, `\b`) were skipped.
 - Add bzlmod `_repo_mapping` support: `rlocation` translates apparent
   repo names to canonical names using the `_repo_mapping` file Bazel
   stages at the runfiles root. New `Runfiles.create({String

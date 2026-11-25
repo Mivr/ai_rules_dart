@@ -295,17 +295,45 @@ class Runfiles {
 
   /// Parses a Bazel runfiles manifest file.
   ///
-  /// Each line is `<runfiles-path> <real-path>`, separated by a single space.
+  /// Each line is `<runfiles-path> <real-path>`, split at its first space, so
+  /// the real path may hold spaces. A line whose runfiles path holds a space, a
+  /// newline or a backslash starts with a space instead and writes those as
+  /// `\s`, `\n` and `\b`, in the runfiles path and the real path alike, as
+  /// Bazel's own runfiles libraries read it. (`rules_dart`'s test launcher reads
+  /// manifest lines the same way: `parseManifestLine` in
+  /// `dart/private/tools/test_runner_workspace.dart`; keep the two alike.)
   static Map<String, String> _parseManifest(String path) {
     final result = <String, String>{};
     for (final String line in File(path).readAsLinesSync()) {
-      final int idx = line.indexOf(' ');
-      if (idx > 0) {
-        result[line.substring(0, idx)] = line.substring(idx + 1);
+      final int idx;
+      final String key;
+      final String value;
+      if (line.startsWith(' ')) {
+        idx = line.indexOf(' ', 1);
+        if (idx < 0) continue;
+        key = _unescapeManifest(line.substring(1, idx));
+        value = _unescapeManifest(line.substring(idx + 1));
+      } else {
+        idx = line.indexOf(' ');
+        if (idx <= 0) continue;
+        key = line.substring(0, idx);
+        value = line.substring(idx + 1);
       }
+      result[key] = value;
     }
     return result;
   }
+
+  /// Reads a manifest line's `\s`, `\n` and `\b` as a space, a newline and a
+  /// backslash.
+  static String _unescapeManifest(String text) => text.replaceAllMapped(
+    RegExp(r'\\([snb])'),
+    (Match m) => switch (m[1]) {
+      's' => ' ',
+      'n' => '\n',
+      _ => r'\',
+    },
+  );
 
   /// Parses bzlmod `_repo_mapping` file *content* into a
   /// `(sourceCanonical, apparent) → targetCanonical` table. Each line is
