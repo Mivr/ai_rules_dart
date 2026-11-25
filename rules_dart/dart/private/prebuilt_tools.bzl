@@ -200,7 +200,7 @@ dart_prebuilt_tool_set = rule(
             providers = [DartCompileInfo],
         ),
         "pub_scanner": attr.label(
-            doc = "The source-built pub archive scanner snapshot (`@dart_pub_scanner//:scanner`).",
+            doc = "The source-built pub archive scanner snapshot (`@dart_pub_scanner//:snapshot`, the scanner under the name it has on every host).",
             allow_single_file = True,
         ),
     },

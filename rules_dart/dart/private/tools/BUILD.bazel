@@ -1086,10 +1086,9 @@ dart_test(
 # consumer builds them in, and the exec SDK's module compiler.
 dart_prebuilt_tool_set(
     name = "prebuilt_set",
-    pub_scanner = select({
-        "@platforms//os:windows": "@dart_pub_scanner//:scanner.exe",
-        "//conditions:default": "@dart_pub_scanner//:scanner",
-    }),
+    # One name on every host, not a select with `scanner.exe`: see `_build_file`
+    # in //dart/pub/private:pub_scanner_repo.bzl.
+    pub_scanner = "@dart_pub_scanner//:snapshot",
     tools = [
         ":compile_wrapper",
         ":import_check",

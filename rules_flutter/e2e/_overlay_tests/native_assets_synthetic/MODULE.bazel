@@ -3,7 +3,7 @@
 module(name = "rules_flutter_native_assets_synthetic")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "apple_support", version = "2.9.1")
 bazel_dep(name = "rules_apple", version = "5.2.0")

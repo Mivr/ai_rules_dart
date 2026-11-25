@@ -56,6 +56,17 @@ def _home_env(dart_exe):
         return {"USERPROFILE": "", "LOCALAPPDATA": ""}
     return {"HOME": ""}
 
+def _build_file(files):
+    """The repository's BUILD file: `files` (the scanner first), and `snapshot`.
+
+    `snapshot` names the scanner on every host. A target that has to name it
+    (`//dart/private/tools:prebuilt_set`) would otherwise need a `select` with
+    `scanner.exe` in one branch, a file this repository has only on Windows,
+    and `bazel query 'deps(//...)'` loads every branch of a select: on Linux
+    and macOS it failed with "target 'scanner.exe' not declared".
+    """
+    return "exports_files(%r)\nalias(name = \"snapshot\", actual = \":%s\", visibility = [\"//visibility:public\"])\n" % (files, files[0])
+
 def _prebuilt_scanner(ctx, prebuilt, exe_name, runtime_name):
     """Takes a release's scanner archive for the fetch host.
 
@@ -69,10 +80,7 @@ def _prebuilt_scanner(ctx, prebuilt, exe_name, runtime_name):
     for name in (exe_name, runtime_name):
         if not ctx.path(name).exists:
             fail("pub scanner repository \"%s\": the archive %s has no %s" % (ctx.name, url, name))
-    ctx.file(
-        "BUILD.bazel",
-        "exports_files([\"%s\", \"%s\"])\n" % (exe_name, runtime_name),
-    )
+    ctx.file("BUILD.bazel", _build_file([exe_name, runtime_name]))
     return ctx.repo_metadata(reproducible = True)
 
 def pub_scanner_repo_impl(ctx):
@@ -155,8 +163,5 @@ def pub_scanner_repo_impl(ctx):
     if link.return_code != 0:
         _fail_result(ctx, "the scanner snapshot link", link)
     ctx.delete(dill_path)
-    ctx.file(
-        "BUILD.bazel",
-        "exports_files([\"%s\"])\n" % exe_name,
-    )
+    ctx.file("BUILD.bazel", _build_file([exe_name]))
     return ctx.repo_metadata(reproducible = True)
