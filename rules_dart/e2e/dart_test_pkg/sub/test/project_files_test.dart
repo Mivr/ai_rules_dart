@@ -20,6 +20,11 @@ void main() {
     expect(text.trim(), 'a name with a space');
   });
 
+  test('reads a fixture whose name has a space and a non-ASCII letter', () {
+    final text = File('test/fixtures/über sicht.json').readAsStringSync();
+    expect(text, contains('a name with a space and a non-ASCII letter'));
+  });
+
   test(
     'is skipped by dart_test.yaml',
     () => fail('dart_test.yaml was not read'),
