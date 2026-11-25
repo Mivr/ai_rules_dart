@@ -322,10 +322,19 @@ Future<void> _toolsBuild(
     File(p.join(ws.path, '.bazelversion')).writeAsStringSync(bazelVersion);
     // No cache: the second build must make every byte again.
     const noCache = ['--disk_cache=', '--remote_cache='];
-    await _run(bazel, ['build', ...noCache, set.target], ws.path);
+    await _run(
+      bazel,
+      consumerBazelArgs(work.path, n, ['build', ...noCache, set.target]),
+      ws.path,
+    );
     final String files = await _run(
       bazel,
-      ['cquery', ...noCache, '--output=files', set.target],
+      consumerBazelArgs(work.path, n, [
+        'cquery',
+        ...noCache,
+        '--output=files',
+        set.target,
+      ]),
       ws.path,
       capture: true,
     );
@@ -343,7 +352,7 @@ Future<void> _toolsBuild(
       exit(1);
     }
     builds.add(set_);
-    await _run(bazel, ['shutdown'], ws.path);
+    await _run(bazel, consumerBazelArgs(work.path, n, ['shutdown']), ws.path);
   }
   final Object? manifest = jsonDecode(utf8.decode(builds.first['tools.json']!));
   final Object? version = manifest is Map<String, Object?>

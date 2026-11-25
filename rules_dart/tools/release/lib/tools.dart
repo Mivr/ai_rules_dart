@@ -106,6 +106,22 @@ String consumerModule(ToolSet set, String root) {
   return buffer.toString();
 }
 
+/// The Bazel arguments for [command] in consumer workspace number [n] under
+/// [work]: a startup `--output_base` of its own comes first.
+///
+/// A user rc may fix the output base for every Bazel run in the job (the
+/// setup-bazel action writes `startup --output_base=...` to `~/.bazelrc`,
+/// `$HOME/.cache/bazel` on Linux and macOS and `D:/_bazel` on Windows), and
+/// two workspaces that share one output base share its action cache: the
+/// second build then finds the first one's outputs (28 of 29 actions were
+/// cache hits in the first rehearsal) and the byte-for-byte comparison
+/// compares a build with itself. A startup option on the command line wins over
+/// the rc, so each workspace gets its own base beside it.
+List<String> consumerBazelArgs(String work, int n, List<String> command) => [
+  '--output_base=${'$work/output_base-$n'.replaceAll(r'\', '/')}',
+  ...command,
+];
+
 /// The files of one built set: the published path inside the archive to its
 /// bytes. `tools.json` is among them.
 typedef SetFiles = Map<String, List<int>>;

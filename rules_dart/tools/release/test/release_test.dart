@@ -386,6 +386,18 @@ void main() {
       );
     });
 
+    test('each consumer workspace has an output base of its own', () {
+      final List<String> one = consumerBazelArgs('/w', 1, ['build', '//x']);
+      final List<String> two = consumerBazelArgs('/w', 2, ['build', '//x']);
+      expect(one, ['--output_base=/w/output_base-1', 'build', '//x']);
+      expect(two, ['--output_base=/w/output_base-2', 'build', '//x']);
+      // A Windows work directory is written with forward slashes.
+      expect(consumerBazelArgs(r'D:\a\_temp/work', 1, ['shutdown']), [
+        r'--output_base=D:/a/_temp/work/output_base-1',
+        'shutdown',
+      ]);
+    });
+
     test('two builds that agree have no differences', () {
       expect(differences(files, Map.of(files)), isEmpty);
       final other = Map.of(files)..['files/module_compiler.aot'] = [1, 2, 4];
