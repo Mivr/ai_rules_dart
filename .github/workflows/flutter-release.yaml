@@ -73,7 +73,15 @@ jobs:
     if: vars.RELEASES_ENABLED == 'true'
     needs: gate
     strategy:
-      fail-fast: true
+      # Every platform runs to its end, so one attempt shows every platform's
+      # problem instead of the first one's. The release still needs all of
+      # them: a platform whose two builds differ ships no tools and is simply
+      # absent from the table (its job passes), but a job that fails (a build
+      # error, a runner that cannot build) fails `tools`, and `release`, which
+      # needs it, is skipped: no archive, no attestation, no GitHub release.
+      # The tag stays pushed; "Re-run failed jobs" of the run builds the failed
+      # platforms again and keeps the gate's result.
+      fail-fast: false
       matrix:
         include:
           - platform: linux-x64
