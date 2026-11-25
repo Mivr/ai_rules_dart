@@ -10,7 +10,7 @@ The same directory is a stock Flutter project (`pubspec.yaml`, `android/`,
 module(name = "rules_flutter_stock_dev_loop")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.31.0", repo_name = "rules_dart")
 bazel_dep(name = "rules_android_ndk", version = "0.1.5")
 bazel_dep(name = "rules_cc", version = "0.2.26")
 bazel_dep(name = "rules_kotlin", version = "2.4.20")

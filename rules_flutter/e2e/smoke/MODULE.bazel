@@ -7,7 +7,7 @@ bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutt
 # rules_dart is the registry's: this file is the BCR test module of the release
 # archive, which holds rules_flutter alone. In a checkout of the repository
 # `.bazelrc.checkout` takes the sibling `rules_dart/` instead.
-bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.31.0", repo_name = "rules_dart")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 
 local_path_override(

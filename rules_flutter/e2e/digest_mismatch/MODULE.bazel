@@ -18,7 +18,7 @@ greps the exact message.
 module(name = "rules_flutter_digest_mismatch")
 
 bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
-bazel_dep(name = "ai_rules_dart", version = "0.30.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.31.0", repo_name = "rules_dart")
 
 local_path_override(
     module_name = "ai_rules_flutter",
