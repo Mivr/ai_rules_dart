@@ -1,0 +1,2 @@
+# Spike T17a (S9): Apple targets from a pinned CocoaPods model. Not for merge. See extension.bzl.
+exports_files(["framework-Info.plist"])

@@ -1,0 +1,37 @@
+"Spike T17a (S9): an app whose pods are Bazel targets generated from a pinned CocoaPods model. Not for merge."
+
+module(name = "rules_flutter_s9_pods")
+
+bazel_dep(name = "ai_rules_flutter", version = "0.0.0", repo_name = "rules_flutter")
+bazel_dep(name = "ai_rules_dart", version = "0.29.0", repo_name = "rules_dart")
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+bazel_dep(name = "apple_support", version = "2.9.1")
+bazel_dep(name = "rules_apple", version = "5.2.0")
+bazel_dep(name = "rules_cc", version = "0.2.26")
+bazel_dep(name = "rules_swift", version = "4.1.2")
+bazel_dep(name = "platforms", version = "1.1.0")
+
+local_path_override(
+    module_name = "ai_rules_flutter",
+    path = "../..",
+)
+
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../../../rules_dart",
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.pub(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(flutter, "deps", "flutter_ios_engine", "flutter_toolchains")
+
+register_toolchains("@flutter_toolchains//:all")
+
+# The pods: one repository per source of the pin, one hub. `apple_model.json` is written by
+# CocoaPods in a Ruby container on Linux (flutter/private/apple_model/tools/pin.rb).
+apple_model = use_extension("@rules_flutter//flutter/private/apple_model:extension.bzl", "apple_model")
+apple_model.pin(model = "//:apple_model.json")
+use_repo(apple_model, "apple_model")

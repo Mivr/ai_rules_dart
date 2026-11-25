@@ -21,6 +21,7 @@ require 'digest'
 require 'fileutils'
 require 'json'
 require 'open3'
+require 'shellwords'
 require 'yaml'
 
 SCHEMA = 1
@@ -203,7 +204,9 @@ pods = installer.pod_targets.sort_by(&:name).to_h do |pt|
       value = build_file.settings && build_file.settings['COMPILER_FLAGS']
       next if value.nil? || value.empty? || build_file.file_ref.nil?
       path = build_file.file_ref.real_path
-      (flags[value] ||= []) << rel.call(path) if path.to_s.start_with?(root.to_s + '/')
+      # ARC is carried by `non_arc_sources`; what is left is the pod's own flags, as words.
+      key = (Shellwords.split(value).uniq - ['-fno-objc-arc', '$(inherited)']).join(' ')
+      (flags[key] ||= []) << rel.call(path) if !key.empty? && path.to_s.start_with?(root.to_s + '/')
     end
   end
 
@@ -218,15 +221,17 @@ pods = installer.pod_targets.sort_by(&:name).to_h do |pt|
   end
 
   bundles = accessors.flat_map { |fa| fa.resource_bundles.to_a }.group_by(&:first).sort.to_h do |name, pairs|
-    files = pairs.flat_map(&:last).uniq.map(&rel).sort
+    files = pairs.flat_map(&:last).uniq.map { |path| rel.call(path) + (path.directory? ? '/' : '') }.sort
     [name, { 'files' => files, 'settings' => target_settings(project_targets["#{pt.label}-#{name}"]) }.compact]
   end
-  resources = union.call(&:resources)
+  resources = accessors.flat_map(&:resources).uniq.map { |path| rel.call(path) + (path.directory? ? '/' : '') }.sort
   privacy = (resources + bundles.values.flat_map { |b| b['files'] }).select { |f| f.end_with?('.xcprivacy') }.uniq
 
   spec = pt.root_spec
   attribute = ->(name) { consumers.flat_map { |c| Array(c.send(name)) }.uniq }
   merged = ->(name) { consumers.map { |c| c.send(name) }.reduce({}) { |a, b| a.merge(b) { |_, x, y| x == y ? x : "#{x} #{y}" } } }
+
+  words = ->(settings) { sorted(settings.transform_values { |v| Shellwords.split(v.to_s) - ['$(inherited)'] }) }
 
   source = if local
              { 'path' => rooted(root) }
@@ -260,6 +265,7 @@ pods = installer.pod_targets.sort_by(&:name).to_h do |pt|
     'generated_module_map' => (pt.module_map_path.exist? && !pt.module_map_path.to_s.start_with?(root.to_s) ? pt.module_map_path.read : nil),
     'generated_umbrella_header' => (pt.umbrella_header_path.exist? ? pt.umbrella_header_path.read : nil),
     'prefix_header_contents' => attribute.call(:prefix_header_contents).join("\n").then { |s| s.empty? ? nil : s },
+    'generated_prefix_header' => (pt.prefix_header_path.exist? ? pt.prefix_header_path.read : nil),
     'prefix_header_file' => union.call { |fa| Array(fa.prefix_header) }.first,
     'resources' => resources,
     'resource_bundles' => bundles,
@@ -272,10 +278,12 @@ pods = installer.pod_targets.sort_by(&:name).to_h do |pt|
     'frameworks' => attribute.call(:frameworks).sort,
     'weak_frameworks' => attribute.call(:weak_frameworks).sort,
     'libraries' => attribute.call(:libraries).sort,
-    'compiler_flags' => attribute.call(:compiler_flags),
+    'compiler_flags' => attribute.call(:compiler_flags).flat_map { |flag| Shellwords.split(flag) },
     'requires_arc' => attribute.call(:requires_arc).map { |v| v.is_a?(Array) ? 'patterns' : v }.uniq,
     'pod_target_xcconfig' => sorted(merged.call(:pod_target_xcconfig)),
     'user_target_xcconfig' => sorted(merged.call(:user_target_xcconfig)),
+    # The pod author's own settings, split into words by Ruby's shell rules; `${PODS_ROOT}` and the like stay.
+    'flags' => { 'pod' => words.call(merged.call(:pod_target_xcconfig)), 'user' => words.call(merged.call(:user_target_xcconfig)) },
     'xcconfig' => settings_by_name(pt.build_settings.to_h { |name, settings| [name.to_s, sorted(settings.xcconfig.to_hash)] }),
     'build_settings' => target_settings(native),
     'dependencies' => pt.dependent_targets.map(&:name).sort,
