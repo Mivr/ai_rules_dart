@@ -5,7 +5,9 @@ description: >-
   workspace's `android_model.json` pins is not installed. The runner images ship
   other versions (the macOS image has fewer platforms than the Linux one), so
   install the pinned ones next to them. Nothing is done for a package that is
-  already there.
+  already there. Each attempt of `sdkmanager` is bounded, and a package counts
+  as installed only when its `source.properties` is there, so a killed download
+  neither hangs the job nor passes for a package.
 inputs:
   version:
     description: The NDK version every checked-in `android_model.json` pins.
@@ -17,6 +19,14 @@ inputs:
       space separated, as `sdkmanager` spells them.
     required: false
     default: platforms;android-34 platforms;android-35 platforms;android-36 build-tools;36.0.0
+  attempt_seconds:
+    description: How long one `sdkmanager` attempt may run before it is killed.
+    required: false
+    default: "600"
+  attempts:
+    description: How many attempts the install gets.
+    required: false
+    default: "3"
 runs:
   using: composite
   steps:
@@ -24,12 +34,17 @@ runs:
       env:
         NDK_VERSION: ${{ inputs.version }}
         PACKAGES: ${{ inputs.packages }}
+        ATTEMPT_SECONDS: ${{ inputs.attempt_seconds }}
+        ATTEMPTS: ${{ inputs.attempts }}
       run: |
         sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
         test -n "$sdk" || { echo "ANDROID_HOME is not set"; exit 1; }
+        # A package is installed when the file only a complete one has is there:
+        # a download that was killed leaves a directory without it.
+        installed() { [ -f "$sdk/${1//;//}/source.properties" ]; }
         missing=""
         for package in "ndk;$NDK_VERSION" $PACKAGES; do
-          if [ ! -d "$sdk/${package//;//}" ]; then missing="$missing $package"; fi
+          installed "$package" || missing="$missing $package"
         done
         if [ -z "$missing" ]; then
           echo "every package is already installed in $sdk"
@@ -37,9 +52,60 @@ runs:
         fi
         manager="$sdk/cmdline-tools/latest/bin/sdkmanager"
         if [ "$RUNNER_OS" = Windows ]; then manager="$manager.bat"; fi
-        echo "installing:$missing"
-        # shellcheck disable=SC2086
-        "$manager" --sdk_root="$sdk" --install $missing
-        for package in $missing; do
-          test -d "$sdk/${package//;//}" || { echo "$package is not under $sdk"; exit 1; }
+        # Ends sdkmanager (the process, and on Windows the .bat's whole tree).
+        # Not verified on Windows: that `/proc/<pid>/winpid` names the cmd.exe
+        # of the .bat and that `taskkill //T` ends the JVM below it. That is why
+        # every attempt is judged by the files it left, not by its exit code, and
+        # why a JVM that outlives its attempt is not waited for.
+        stop() {
+          if [ "$RUNNER_OS" = Windows ]; then
+            winpid="$(cat "/proc/$1/winpid" 2>/dev/null || true)"
+            if [ -n "$winpid" ]; then taskkill //F //T //PID "$winpid" >/dev/null 2>&1 || true; fi
+          fi
+          kill "$1" 2>/dev/null || true
+          sleep 2
+          kill -9 "$1" 2>/dev/null || true
+        }
+        attempt=1
+        while :; do
+          echo "attempt $attempt of $ATTEMPTS, at most ${ATTEMPT_SECONDS}s: sdkmanager --install$missing"
+          # shellcheck disable=SC2086
+          "$manager" --sdk_root="$sdk" --install $missing &
+          pid=$!
+          waited=0
+          timed_out=""
+          # No `timeout` binary on macOS: poll instead.
+          while kill -0 "$pid" 2>/dev/null; do
+            if [ "$waited" -ge "$ATTEMPT_SECONDS" ]; then
+              timed_out=1
+              echo "::warning::sdkmanager did not finish in ${ATTEMPT_SECONDS}s (attempt $attempt of $ATTEMPTS); killing it"
+              stop "$pid"
+              break
+            fi
+            sleep 5
+            waited=$((waited + 5))
+          done
+          code=0
+          wait "$pid" 2>/dev/null || code=$?
+          # Trust the packages, not the exit code: a killed .bat may leave its
+          # JVM running or report success.
+          still=""
+          for package in $missing; do
+            installed "$package" || still="$still $package"
+          done
+          if [ -z "$still" ]; then
+            echo "installed:$missing"
+            exit 0
+          fi
+          # A killed attempt leaves partial directories; sdkmanager starts clean.
+          for package in $still; do rm -rf "${sdk:?}/${package//;//}"; done
+          reason="exited $code"
+          if [ -n "$timed_out" ]; then reason="timed out after ${ATTEMPT_SECONDS}s"; fi
+          if [ "$attempt" -ge "$ATTEMPTS" ]; then
+            echo "::error::sdkmanager did not install$still under $sdk (attempt $attempt of $ATTEMPTS $reason)"
+            exit 1
+          fi
+          echo "attempt $attempt $reason; not installed:$still"
+          missing="$still"
+          attempt=$((attempt + 1))
         done
