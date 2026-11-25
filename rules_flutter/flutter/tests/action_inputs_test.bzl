@@ -17,6 +17,7 @@ load("//flutter/private:flutter_aot_target.bzl", "flutter_aot_target")
 load("//flutter/private:flutter_application.bzl", "flutter_application")
 load("//flutter/private:flutter_kernel_target.bzl", "flutter_kernel_target")
 load("//flutter/private:flutter_web_application.bzl", "flutter_web_bundle")
+load(":flutter_line_probe.bzl", "FLUTTER_LINE_ATTR", "flutter_line")
 load(":kernel_target_modular_test.bzl", "assert_kernel_target_dbg_modular")
 
 visibility(["//flutter/tests/..."])
@@ -172,12 +173,21 @@ def _application_opt_inputs_test_impl(ctx):
     return analysistest.end(env)
 
 def _application_opt_bundle_inputs_test_impl(ctx):
-    """In `-c opt` the bundle shakes icons, so it reads what the AOT compile recorded of the app's uses and the font tool."""
+    """In `-c opt` the bundle shakes icons, so it reads what its line's shaker reads and the font tool.
+
+    On a line whose shaker reads the compilers' recorded uses, what the AOT
+    compile recorded of the app's uses; on one whose shaker runs
+    `const_finder`, the app's kernel and `const_finder`.
+    """
     env = analysistest.begin(ctx)
+    if flutter_line(ctx).icon_tree_shaker == "const_finder":
+        expected = [".dill", "const_finder", "font-subset"]
+    else:
+        expected = ["recorded_uses.json", "font-subset"]
     _assert_some_path_contains(
         env,
         _input_paths(_find_action(env, ["FlutterAssets"])),
-        ["recorded_uses.json", "font-subset"],
+        expected,
         "release FlutterAssets",
     )
     return analysistest.end(env)
@@ -188,7 +198,7 @@ def _application_dbg_bundle_inputs_test_impl(ctx):
     _assert_no_path_contains(
         env,
         _input_paths(_find_action(env, ["FlutterAssets"])),
-        [".dill", "recorded_uses.json", "font-subset"],
+        [".dill", "recorded_uses.json", "const_finder", "font-subset"],
         "debug FlutterAssets",
     )
     return analysistest.end(env)
@@ -199,7 +209,7 @@ def _application_no_tree_shake_icons_test_impl(ctx):
     _assert_no_path_contains(
         env,
         _input_paths(_find_action(env, ["FlutterAssets"])),
-        [".dill", "recorded_uses.json", "font-subset"],
+        [".dill", "recorded_uses.json", "const_finder", "font-subset"],
         "tree_shake_icons=False FlutterAssets",
     )
     return analysistest.end(env)
@@ -807,6 +817,10 @@ def _exec_font_subset_toolchain_test_impl(ctx):
     )
     for p in [p for p in asset_paths if p.endswith("exec_font_subset")]:
         asserts.true(env, "-exec-" in p, "expected font-subset tool %r in exec cfg" % p)
+    if flutter_line(ctx).icon_tree_shaker == "const_finder":
+        _assert_some_path_contains(env, asset_paths, ["exec_const_finder.dart.snapshot"], "exec-configured const_finder")
+        for p in [p for p in asset_paths if p.endswith("exec_const_finder.dart.snapshot")]:
+            asserts.true(env, "-exec-" in p, "expected const_finder tool %r in exec cfg" % p)
     return analysistest.end(env)
 
 def _missing_font_subset_toolchain_test_impl(ctx):
@@ -859,7 +873,7 @@ _DBG = {"//command_line_option:compilation_mode": "dbg", str(Label("//flutter:pr
 _FASTBUILD = {"//command_line_option:compilation_mode": "fastbuild", str(Label("//flutter:profile")): False}
 
 _application_opt_inputs_test = analysistest.make(_application_opt_inputs_test_impl, config_settings = _OPT)
-_application_opt_bundle_inputs_test = analysistest.make(_application_opt_bundle_inputs_test_impl, config_settings = _OPT)
+_application_opt_bundle_inputs_test = analysistest.make(_application_opt_bundle_inputs_test_impl, attrs = FLUTTER_LINE_ATTR, config_settings = _OPT)
 _application_dbg_bundle_inputs_test = analysistest.make(_application_dbg_bundle_inputs_test_impl, config_settings = _DBG)
 _application_no_tree_shake_icons_test = analysistest.make(
     _application_no_tree_shake_icons_test_impl,
@@ -902,6 +916,7 @@ _reverse_toolchain_web_test = analysistest.make(
 )
 _exec_font_subset_toolchain_test = analysistest.make(
     _exec_font_subset_toolchain_test_impl,
+    attrs = FLUTTER_LINE_ATTR,
     config_settings = {
         "//command_line_option:compilation_mode": "opt",
         "//command_line_option:extra_toolchains": _EXEC_FONT_SUBSET_EXTRA_TOOLCHAINS,
@@ -934,12 +949,18 @@ def _setup_fixtures():
         toolchain_type = "@rules_dart//dart:toolchain_type",
     )
     _generated_tool_file(
+        name = "_generated_exec_const_finder",
+        filename = "exec_const_finder.dart.snapshot",
+        tags = ["manual"],
+    )
+    _generated_tool_file(
         name = "_generated_exec_font_subset",
         filename = "exec_font_subset",
         tags = ["manual"],
     )
     flutter_font_subset_toolchain(
         name = "_exec_font_subset_tc",
+        const_finder = ":_generated_exec_const_finder",
         font_subset = ":_generated_exec_font_subset",
         tags = ["manual"],
     )

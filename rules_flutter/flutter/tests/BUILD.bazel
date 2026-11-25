@@ -30,6 +30,7 @@ load(":flutter_drive_test_test.bzl", "flutter_drive_test_test_suite")
 load(":flutter_info_test.bzl", "flutter_info_test_suite")
 load(":flutter_integration_test_test.bzl", "flutter_integration_test_test_suite")
 load(":flutter_library_test.bzl", "flutter_library_test_suite")
+load(":flutter_line_probe.bzl", "flutter_line_probe")
 load(":flutter_plugin_test.bzl", "flutter_plugin_test_suite")
 load(":flutter_prebuilt_test.bzl", "flutter_prebuilt_test_suite")
 load(":flutter_pub_apple_deps_test.bzl", "flutter_pub_apple_deps_test_suite")
@@ -156,6 +157,10 @@ android_aar_test_suite(name = "android_aar_test")
 android_model_names_test_suite(name = "android_model_names_test")
 
 sdk_lines_test_suite(name = "sdk_lines_test")
+
+# The resolved Flutter toolchain's line, for the analysis tests whose
+# expectation is the line's.
+flutter_line_probe(name = "flutter_line")
 
 versions_test_suite(name = "versions_test")
 
