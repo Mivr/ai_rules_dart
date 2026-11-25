@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import 'test_runner.dart' show deleteScratchQuietly, materializeWorkspace;
-import 'test_runner_workspace.dart' show workspaceInPlace;
+import 'test_runner_workspace.dart' show parseManifestLine, workspaceInPlace;
 
 void main() {
   group('deleteScratchQuietly', () {
@@ -28,6 +28,33 @@ void main() {
       expect(file.existsSync(), isFalse, reason: 'the file stays absent');
       expect(sibling.existsSync(), isTrue, reason: 'a sibling is untouched');
       expect(sibling.readAsBytesSync(), [3, 4]);
+    });
+  });
+
+  group('parseManifestLine', () {
+    test('splits a plain line at its first space', () {
+      const line = 'ws/a.txt /real/dir with space/a.txt';
+      expect(parseManifestLine(line)?.path, 'ws/a.txt');
+      expect(parseManifestLine(line)?.real, '/real/dir with space/a.txt');
+    });
+
+    test('reads the escaped form of a runfiles path with a space', () {
+      // As Bazel writes `test/fixtures/two words.txt` in a manifest.
+      const line = r' ws/test/two\swords.txt /real/test/two words.txt';
+      expect(parseManifestLine(line)?.path, 'ws/test/two words.txt');
+      expect(parseManifestLine(line)?.real, '/real/test/two words.txt');
+    });
+
+    test('unescapes a newline and a backslash as well', () {
+      const line = r' ws/a\nb\bc.txt C:\bx\sy';
+      expect(parseManifestLine(line)?.path, 'ws/a\nb${r'\'}c.txt');
+      expect(parseManifestLine(line)?.real, r'C:\x y');
+    });
+
+    test('gives null for a line with no separator', () {
+      expect(parseManifestLine(''), isNull);
+      expect(parseManifestLine('ws-malformed-line'), isNull);
+      expect(parseManifestLine(' ws-escaped-without-target'), isNull);
     });
   });
 
@@ -56,6 +83,22 @@ void main() {
         'nested',
       );
       expect(File('${into.path}/ignored.txt').existsSync(), isFalse);
+    });
+
+    test('lays out a file whose runfiles path has a space', () {
+      final Directory real = Directory.systemTemp.createTempSync('tr_real');
+      addTearDown(() => real.deleteSync(recursive: true));
+      final Directory into = Directory.systemTemp.createTempSync('tr_into');
+      addTearDown(() => into.deleteSync(recursive: true));
+      File('${real.path}/two words.txt').writeAsStringSync('spaced');
+      final line =
+          r' ws/test/fixtures/two\swords.txt '
+          '${real.path}/two words.txt';
+      materializeWorkspace(manifest: [line], workspace: 'ws', into: into.path);
+      expect(
+        File('${into.path}/test/fixtures/two words.txt').readAsStringSync(),
+        'spaced',
+      );
     });
 
     test('replaces a stale file already at the destination', () {
@@ -108,6 +151,21 @@ void main() {
       expect(
         workspaceInPlace(manifest: manifest.path, workspace: 'other'),
         isTrue,
+      );
+    });
+
+    test('spots a file with a space in its runfiles path missing', () {
+      final Directory dir = Directory.systemTemp.createTempSync('tr_inplace');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final real = File('${dir.path}/two words.txt')..writeAsStringSync('data');
+      final manifest = File('${dir.path}/MANIFEST')
+        ..writeAsStringSync(
+          r' ws/two\swords.txt '
+          '${real.path}\n',
+        );
+      expect(
+        workspaceInPlace(manifest: manifest.path, workspace: 'ws'),
+        isFalse,
       );
     });
   });

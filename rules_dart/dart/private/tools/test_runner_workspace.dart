@@ -16,6 +16,37 @@ void deleteScratchQuietly(FileSystemEntity entity) {
   }
 }
 
+/// One line of a runfiles manifest, `<runfiles path> <real path>`, as the pair.
+///
+/// A line whose runfiles path holds a space, a newline or a backslash starts
+/// with a space and writes those as `\s`, `\n` and `\b` (as Bazel's own
+/// runfiles libraries read it); the real path after the next space is read the
+/// same way. Any other line is split at its first space, so the real path may
+/// hold spaces. A line with no separator gives null.
+({String path, String real})? parseManifestLine(String line) {
+  if (line.isEmpty) return null;
+  if (line.startsWith(' ')) {
+    final int space = line.indexOf(' ', 1);
+    if (space < 0) return null;
+    return (
+      path: _unescapeManifest(line.substring(1, space)),
+      real: _unescapeManifest(line.substring(space + 1)),
+    );
+  }
+  final int space = line.indexOf(' ');
+  if (space < 0) return null;
+  return (path: line.substring(0, space), real: line.substring(space + 1));
+}
+
+String _unescapeManifest(String text) => text.replaceAllMapped(
+  RegExp(r'\\([snb])'),
+  (Match m) => switch (m[1]) {
+    's' => ' ',
+    'n' => '\n',
+    _ => r'\',
+  },
+);
+
 /// Whether the runfiles [workspace] is usable from the current directory.
 ///
 /// A [testPath] that names a file which is not there means the suite cannot
@@ -31,10 +62,10 @@ bool workspaceInPlace({String? testPath, String? manifest, String? workspace}) {
   }
   final prefix = '$workspace/';
   for (final String line in File(manifest).readAsLinesSync()) {
-    final int space = line.indexOf(' ');
-    if (space < 0 || !line.startsWith(prefix)) continue;
-    final String relative = line.substring(prefix.length, space);
-    final String real = line.substring(space + 1);
+    final ({String path, String real})? entry = parseManifestLine(line);
+    if (entry == null || !entry.path.startsWith(prefix)) continue;
+    final String relative = entry.path.substring(prefix.length);
+    final String real = entry.real;
     if (Directory(real).existsSync()) {
       if (!Directory(relative).existsSync()) return false;
     } else if (File(real).existsSync()) {
@@ -45,7 +76,7 @@ bool workspaceInPlace({String? testPath, String? manifest, String? workspace}) {
 }
 
 /// Lays out `workspace`'s runfiles under [into] from the lines of a runfiles
-/// manifest, each `<runfiles path> <real path>`.
+/// manifest, each `<runfiles path> <real path>` (see [parseManifestLine]).
 ///
 /// Where Bazel builds no runfiles tree (Windows by default, or
 /// `--noenable_runfiles`) the manifest is all there is, and a test's working
@@ -58,10 +89,10 @@ void materializeWorkspace({
 }) {
   final prefix = '$workspace/';
   for (final line in manifest) {
-    final int space = line.indexOf(' ');
-    if (space < 0 || !line.startsWith(prefix)) continue;
-    final String relative = line.substring(prefix.length, space);
-    final String real = line.substring(space + 1);
+    final ({String path, String real})? entry = parseManifestLine(line);
+    if (entry == null || !entry.path.startsWith(prefix)) continue;
+    final String relative = entry.path.substring(prefix.length);
+    final String real = entry.real;
     final String destination = joinPaths(into, relative);
     if (Directory(real).existsSync()) {
       copyDirectory(Directory(real), Directory(destination));
