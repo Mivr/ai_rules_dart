@@ -3408,7 +3408,7 @@
     },
     "@@ai_rules_flutter+//flutter:extensions.bzl%flutter": {
       "general": {
-        "bzlTransitiveDigest": "MhXWEv27L4Ozy2VW5KafowzLMPQ8r/rUO5dYyv6nMFo=",
+        "bzlTransitiveDigest": "8C2WczfIULWky48hzNCnv31KedUa39bpVKOvxAZnTeI=",
         "usagesDigest": "I3yYjNOQUr9nExyiGgR0ZrYFLIcPG9BwL7pysPBTYnw=",
         "recordedInputs": [
           "REPO_MAPPING:,sqlite3 sqlite3+",
