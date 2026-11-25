@@ -71,8 +71,14 @@ flutter_application(
   `flutter build --flavor` does.
 
 A package's own files reach the bundle through its `data`: a pub spoke lists
-its `pubspec.yaml`, its licence and the files its pubspec names; a
-hand-written `flutter_library` lists them itself.
+its `pubspec.yaml`, its licence, and the directories its pubspec names files in
+(assets, fonts, shaders, licences, deferred components' assets: the whole
+package when a path needs reading as a URI to know where it leads), and its
+`lib/` is its `srcs` and `resources`; a hand-written `flutter_library` lists
+them itself. A spoke does not read or check the `flutter:` section: the tool
+does, as `flutter build` does. An app's bad manifest fails the bundle action
+with the tool's message; a dependency's is reported and the package's assets
+left out, or the bundle fails, exactly where stock's does.
 
 ## What the bundle action reads, per mode
 

@@ -14,72 +14,47 @@ load("//flutter/private:starlark_literal.bzl", "starlark_string_literal")
 visibility(["//flutter/..."])
 
 # The package's own files an app's asset bundle reads, besides what its
-# pubspec names: the pubspec, and the licence `NOTICES` collects (the tool
-# reads `NOTICES`, else `LICENSE`, at the package root).
+# pubspec names and `lib/` (the spoke's `srcs` and `resources`, which an
+# app's `packages/<name>/...` entry reaches through the package config): the
+# pubspec, and the licence `NOTICES` collects (the tool reads `NOTICES`, else
+# `LICENSE`, at the package root).
 _SPOKE_PACKAGE_FILES = ["pubspec.yaml", "LICENSE*", "NOTICES"]
 
-def _parent_and_base(path):
-    parent, _, base = path.rpartition("/")
-    return parent, base
+# What a spoke's `data` leaves out: its own BUILD files, `lib/` (its `srcs`
+# and `resources`), and names no label can hold (`glob` would return them and
+# the spoke would fail to load).
+_SPOKE_DATA_EXCLUDE = [
+    "BUILD.bazel",
+    "REPO.bazel",
+    "lib/**",
+    "**/*:*",
+    "**/*:*/**",
+    "**/*\\*",
+    "**/*\\*/**",
+]
 
-def _own_package_path(path, package_name):
-    """`path` relative to the package root, or None for another package's file.
+def spoke_data_patterns(roots):
+    """The glob patterns of the files a spoke offers an app's asset bundle, for its `data`.
 
-    The Flutter tool reads an entry spelled `packages/<name>/<rest>` from the
-    package root when that file exists, and otherwise from `lib/<rest>` of
-    package `<name>`. So `packages/<own name>/<rest>` may be either here.
-    """
-    prefix = "packages/" + package_name + "/"
-    if package_name and path.startswith(prefix):
-        return "lib/" + path[len(prefix):]
-    return None
-
-def spoke_data_patterns(asset_block, package_name = ""):
-    """The glob patterns of the files a spoke's pubspec names, for its `data`.
-
-    The Flutter tool reads these from the package root when an app bundles
-    the package's assets: an asset file and its resolution variants (same
-    name in a sibling `<N>x` directory), every file of an asset directory and
-    their variants, each font file, and each shader with the files beside it
-    that it may `#include`. An entry spelled `packages/<name>/<rest>` is read
-    from `lib/<rest>` of package `<name>` when the package root has no such
-    file: for this package's own name both places are listed; another
-    package's file is that package's to list.
+    The Flutter tool finds a named file, its variants, a directory's files and
+    a shader's includes itself, as `flutter build` does; the spoke lists the
+    directories they live in (`pubspec_file_roots`), a top-level file with its
+    variants (`*/<name>`), or the whole package.
 
     Args:
-        asset_block: The normalized `flutter` block (`normalize_spoke_asset_block`).
-        package_name: This package's name.
+        roots: The package's `pubspec_file_roots`.
 
     Returns:
         The sorted, deduplicated patterns.
     """
+    if roots.whole:
+        return ["**"]
     patterns = {p: True for p in _SPOKE_PACKAGE_FILES}
-
-    def paths(path):
-        if not path.startswith("packages/"):
-            return [path]
-        own = _own_package_path(path, package_name)
-        return [path, own] if own else []
-
-    for asset in asset_block.assets:
-        for path in paths(asset.path):
-            if path.endswith("/"):
-                patterns[path + "*"] = True
-                patterns[path + "*/*"] = True
-            else:
-                parent, base = _parent_and_base(path)
-                patterns[path] = True
-                patterns[(parent + "/" if parent else "") + "*/" + base] = True
-    for family in asset_block.fonts:
-        for font in family.fonts:
-            for path in paths(font.asset):
-                patterns[path] = True
-    for shader in asset_block.shaders:
-        for path in paths(shader.path):
-            patterns[path] = True
-            parent, _ = _parent_and_base(path)
-            for ext in ("glsl", "frag", "vert"):
-                patterns[(parent + "/**/*." if parent else "*.") + ext] = True
+    for directory in roots.dirs:
+        patterns[directory + "/**"] = True
+    for name in roots.files:
+        patterns[name] = True
+        patterns["*/" + name] = True
     return sorted(patterns.keys())
 
 def format_spoke_data_attr(patterns):
@@ -92,7 +67,8 @@ def format_spoke_data_attr(patterns):
         The attribute's BUILD lines.
     """
     lines = ["        " + starlark_string_literal(p) + "," for p in patterns]
-    return "    data = glob(\n        [\n{}\n        ],\n        allow_empty = True,\n    ),\n".format("\n".join(lines))
+    exclude = ["        " + starlark_string_literal(p) + "," for p in _SPOKE_DATA_EXCLUDE]
+    return "    data = glob(\n        [\n{}\n        ],\n        allow_empty = True,\n        exclude = [\n{}\n        ],\n    ),\n".format("\n".join(lines), "\n".join(exclude))
 
 def parse_pubspec_identity(pubspec):
     """The `(name, version)` identity a path spoke verifies against its lock entry.

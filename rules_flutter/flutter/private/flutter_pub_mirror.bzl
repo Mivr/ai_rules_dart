@@ -33,7 +33,6 @@ differ only by case are never merged; on a case-insensitive host a
 case-only difference can neither hide an escape nor loop the walk.
 """
 
-load(":asset_variant.bzl", "is_asset_variant_dir")
 load(":flutter_pub_walk.bzl", "PUB_WALK_BOUND", "scoped_tree_bound_error")
 
 visibility(["//flutter/..."])
@@ -611,30 +610,6 @@ def _mirror_single_link(ctx, node, repo_rel, node_real, scope, seen, apply_skip 
     if drained.leftover:
         fail(scoped_tree_bound_error(scope.package_name, PUB_WALK_BOUND))
 
-def _link_top_level_shader_includes(ctx, src, scope):
-    """Link top-level include siblings for a top-level declared shader.
-
-    A declared `ripple.frag` at the package root resolves `#include`s
-    against the root, so the spoke links the root's `.glsl`/`.frag`/`.vert`
-    files beside it — flat, never descending, skipping build output, tool
-    state, and user BUILD files like every other link.
-    """
-    for child in src.readdir():
-        name = child.basename
-        if is_path_spoke_skipped_dir(name, scope.case_insensitive):
-            continue
-        if child.is_dir:
-            continue
-        if name in _PATH_SPOKE_SKIP_FILES:
-            ctx.watch(child)
-            continue
-        if name.rpartition(".")[2] not in ("glsl", "frag", "vert"):
-            continue
-        if not paths_match(str(child.realpath), scope.package_realpath + "/" + name, scope.case_insensitive):
-            _mirror_single_link(ctx, child, name, str(child.realpath), scope, ())
-            continue
-        _link_new_symlink(ctx, child, name, scope.linked, _scope_dest_prefix(scope))
-
 def _watch_scoped_entry(ctx, src, entry_path, scope):
     """Watch a declared entry and resolve it to its link triple.
 
@@ -737,70 +712,47 @@ def link_scoped_file_entry(ctx, src, entry_path, scope, apply_skip = True):
         return
     _link_new_symlink(ctx, node, repo_rel, scope.linked, _scope_dest_prefix(scope))
 
-def _link_asset_variant_files(ctx, src, entry_path, scope, variant_cache):
-    """Link the resolution variants of one declared file entry.
+def _link_top_level_file(ctx, src, name, scope, children):
+    """Link a top-level file the pubspec names, and `<dir>/<name>` in each top-level directory.
 
-    A file entry bundles its main file plus same-named files in sibling
-    `<N>x` directories; path spokes link selectively, so each variant is
-    linked here or the spoke would reference an unlinked file. Missing
-    variants stay unlinked — a main file without variants is the common
-    case, and a missing main is reported later by the spoke generator.
-    The variant directory is watched before testing whether it exists, so
-    adding variants later refetches the spoke. `variant_cache` maps each
-    parent directory to its already-read variant subdirectory names, so K
-    file entries under one directory read it once.
+    The second is what the spoke's `data` globs for it (`*/<name>`): the
+    tool's resolution variants (`2.0x/<name>`) are among them, and the tool
+    picks them out. Each candidate is watched, so adding one refetches.
 
     Args:
         ctx: The path-package spoke's repository context.
         src: The workspace-side package directory node.
-        entry_path: The package-relative declared file path.
+        name: The file's name.
         scope: The fetch's link scope.
-        variant_cache: Dict from parent directory path to its variant
-            subdirectory names, updated in place.
+        children: The package root's directory names, read once.
     """
-    parts = _spoke_entry_parts(scope.package_name, entry_path)
-    base = parts[-1]
-    parent_key = "/".join(parts[:-1])
-    if parent_key not in variant_cache:
-        dir_node = src.get_child(*parts[:-1]) if parts[:-1] else src
-        ctx.watch(dir_node)
-        variants = []
-        if dir_node.exists:
-            for child in dir_node.readdir():
-                if child.is_dir and is_asset_variant_dir(child.basename):
-                    variants.append(child.basename)
-        variant_cache[parent_key] = variants
-    for vdir in variant_cache[parent_key]:
-        if parent_key == "":
-            variant = vdir + "/" + base
-        else:
-            variant = parent_key + "/" + vdir + "/" + base
-        link_scoped_file_entry(ctx, src, variant, scope)
+    link_scoped_file_entry(ctx, src, name, scope)
+    for directory in children:
+        link_scoped_file_entry(ctx, src, directory + "/" + name, scope)
 
-def link_spoke_contents(ctx, src, asset_block, platform_dirs, scope):
+def link_spoke_contents(ctx, src, roots, platform_dirs, scope):
     """Link everything the spoke generator reads or exposes — nothing else.
 
     The pubspec leads: `lib/`, hook scripts (and, for a package with a
-    hook, the rest of its top level, which the hook may read), declared
-    assets, fonts, and
-    shaders (plus each shader's own directory, or the root's include
-    siblings for a top-level shader), and the plugin's platform
-    directories. (`link_path_package` links the pubspec itself first, so it
-    can parse it for this plan.) Everything else in the package —
-    `example/`, `build/`, `.dart_tool/`, dot-directories, undeclared files
-    — stays out of the spoke and unwatched, so machine-local state cannot
-    affect the fetch. `lib/` and each declared asset directory mirror
-    whole instead — `build/`, `example/`, or dot names directly under
-    them link normally, the way `flutter_tools` reads them — while
-    platform and shader directory trees still skip those names at their
-    own top level. Overlapping declarations (a shader inside a declared
-    asset dir, a file inside its own declared dir) link each spoke path
-    once: `linked` records every created symlink.
+    hook, the rest of its top level, which the hook may read), the
+    directories and top-level files its `flutter:` section names files in
+    (`pubspec_file_roots`, each top-level file with the same name in each
+    top-level directory, its resolution variants among them), or the whole
+    top level when the section needs it, and the
+    plugin's platform directories. (`link_path_package` links the pubspec
+    itself first, so it can parse it for this plan.) Everything else in the
+    package — `example/`, `build/`, `.dart_tool/`, dot-directories — stays
+    out of the spoke and unwatched, so machine-local state cannot affect the
+    fetch. `lib/` and each named directory mirror whole — `build/`,
+    `example/`, or dot names directly under them link normally, the way
+    `flutter_tools` reads them — while platform directory trees still skip
+    those names at their own top level. Overlapping entries link each spoke
+    path once: `linked` records every created symlink.
 
     Args:
         ctx: The path-package spoke's repository context.
         src: The workspace-side package directory node.
-        asset_block: The parsed `flutter:` assets/fonts/shaders block.
+        roots: The package's `pubspec_file_roots`.
         platform_dirs: The plugin platform directories to mirror.
         scope: The fetch's link scope.
     """
@@ -809,10 +761,12 @@ def link_spoke_contents(ctx, src, asset_block, platform_dirs, scope):
     for entry in ["hook/build.dart", "hook/link.dart", "LICENSE", "NOTICES"]:
         link_scoped_file_entry(ctx, src, entry, scope)
     link_scoped_file_entry(ctx, src, "lib", scope, False)
-    if src.get_child("hook", "build.dart").exists or src.get_child("hook", "link.dart").exists:
+    has_hook = src.get_child("hook", "build.dart").exists or src.get_child("hook", "link.dart").exists
+    if has_hook or roots.whole:
         # A build hook reads the package's other files (C sources, headers,
-        # prebuilt files), so a package with one links its whole top level,
-        # less the usual skipped names.
+        # prebuilt files), and a section that names files by paths only the
+        # tool can read needs them all: the whole top level links, less the
+        # usual skipped names.
         for child in src.readdir():
             if child.basename in ("lib", "pubspec.yaml"):
                 continue
@@ -820,22 +774,15 @@ def link_spoke_contents(ctx, src, asset_block, platform_dirs, scope):
                 _link_scoped_dir_entry(ctx, src, child.basename, scope)
             else:
                 link_scoped_file_entry(ctx, src, child.basename, scope)
-    variant_cache = {}
-    for asset in asset_block.assets:
-        if asset.path.endswith("/"):
-            _link_scoped_dir_entry(ctx, src, asset.path[:-1], scope, False)
-        else:
-            link_scoped_file_entry(ctx, src, asset.path, scope)
-            _link_asset_variant_files(ctx, src, asset.path, scope, variant_cache)
-    for family in asset_block.fonts:
-        for font in family.fonts:
-            link_scoped_file_entry(ctx, src, font.asset, scope)
-    for shader in asset_block.shaders:
-        link_scoped_file_entry(ctx, src, shader.path, scope)
-        shader_dir = shader.path.rpartition("/")[0]
-        if shader_dir:
-            _link_scoped_dir_entry(ctx, src, shader_dir, scope)
-        else:
-            _link_top_level_shader_includes(ctx, src, scope)
+    for directory in roots.dirs:
+        _link_scoped_dir_entry(ctx, src, directory, scope, False)
+    if roots.files:
+        children = [
+            child.basename
+            for child in src.readdir()
+            if child.is_dir and not is_path_spoke_skipped_dir(child.basename, scope.case_insensitive)
+        ]
+        for name in roots.files:
+            _link_top_level_file(ctx, src, name, scope, children)
     for platform_dir in platform_dirs:
         _link_scoped_dir_entry(ctx, src, platform_dir, scope)

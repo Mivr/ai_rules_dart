@@ -11,7 +11,8 @@ unenforceable: "No registered metric counts bundle call sites for tests and apps
 > `package:flutter_tools` code from the app's `pubspec.yaml`
 > (`flutter/private/flutter_bundle.bzl`). The goal below, one contract for tests
 > and apps, still holds; the mechanism it describes is gone, and the code it
-> cites (`asset_keys.bzl`, `flutter_build_assets`, `flutter_compile_shaders`)
+> cites (`asset_keys.bzl`, `asset_uri.bzl`, `flutter_build_assets`,
+> `flutter_compile_shaders`)
 > no longer exists. See [`docs/assets.md`](../assets.md).
 
 ## Decision

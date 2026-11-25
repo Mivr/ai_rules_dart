@@ -60,9 +60,9 @@ def _spoke_dep_labels_routing_test_impl(ctx):
     asserts.equals(
         env,
         ["@hub//:cycle_a", "@hub//:other"],
-        spoke_dep_labels(["@hub//:cycle_a", "@hub//:other"], struct(uses_material_design = True)),
+        spoke_dep_labels(["@hub//:cycle_a", "@hub//:other"]),
     )
-    asserts.equals(env, ["@hub//:cycle_a"], spoke_dep_labels(["@hub//:cycle_a"], None))
+    asserts.equals(env, ["@hub//:cycle_a"], spoke_dep_labels(["@hub//:cycle_a"]))
 
     pins = apple_swiftpm_pins(
         '{"pins": [], "version": 2}',
