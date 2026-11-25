@@ -3,8 +3,8 @@ plugins {
 }
 
 // The engine of the Flutter release the module is built with (bin/internal/engine.version of
-// Flutter 3.47.7). A stock `flutter build aar` names these two artifacts in the pom of the module's AAR.
-val flutterEngine = "1.0.0-deb287481e3ce9468f3434937ced4240a70539ca"
+// Flutter 3.50.1). A stock `flutter build aar` names these two artifacts in the pom of the module's AAR.
+val flutterEngine = "1.0.0-4d35714800b9266b6693a58e1225ecd7e9e45ed7"
 
 android {
     namespace = "com.example.aarhost"

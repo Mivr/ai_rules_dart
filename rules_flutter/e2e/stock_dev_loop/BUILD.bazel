@@ -92,7 +92,7 @@ alias(
 )
 
 # Linux desktop bundle with the rules' own runner and sysroot. The flutter-create
-# runner in `linux/` (3.47.7) includes <gdk/gdkx.h>, which needs X11 headers the
+# runner in `linux/` (3.50.1) includes <gdk/gdkx.h>, which needs X11 headers the
 # rules' sysroot does not ship, so `flutter_linux_app` cannot build it here.
 flutter_linux_engine(
     name = "linux_engine",

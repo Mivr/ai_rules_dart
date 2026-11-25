@@ -24,11 +24,11 @@ bazel_dep(name = "bazel_skylib", version = "1.9.2")
 dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
 dart.toolchain(
     name = "exec_dart",
-    dart_version = "3.13.5",
+    dart_version = "3.14.1",
 )
 dart.toolchain(
     name = "target_dart",
-    dart_version = "3.13.5",
+    dart_version = "3.14.1",
 )
 use_repo(dart, "exec_dart_toolchains", "target_dart_toolchains")
 
