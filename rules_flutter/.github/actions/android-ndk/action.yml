@@ -67,7 +67,8 @@ runs:
           if [ -f "$rc" ]; then cp "$rc" "$tmp"; fi
           add_line "$tmp" "common --announce_rc"
           add_line "$tmp" "common --downloader_config=$cfg"
-          sudo cp "$tmp" "$rc"
+          # mktemp makes the file 0600; Bazel runs as the runner user and must read it.
+          sudo install -m 0644 "$tmp" "$rc"
           rm -f "$tmp"
         fi
         echo "Bazel will try Google's mirror of Maven Central too; $rc holds:"
