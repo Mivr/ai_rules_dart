@@ -112,7 +112,7 @@ DartKernelInfo = _DartKernelInfo
 
 def _kernel_link_for_mode(compile_mode, modular_kernel):
     if compile_mode in ("kernel", "exe", "aot-snapshot") and modular_kernel:
-        return Label("//dart/private/tools:kernel_link")
+        return Label("@rules_dart_tools//:kernel_link")
     return None
 
 # The link tool. `dart_library` takes these (its module), `dart_test` takes
@@ -126,7 +126,7 @@ def _kernel_link_for_mode(compile_mode, modular_kernel):
 KERNEL_MODULE_ATTRS = {
     "_kernel_link": attr.label(
         doc = "The tool that links an executable's kernel from the kernels its entry reaches. See `kernel_link.dart`.",
-        default = Label("//dart/private/tools:kernel_link"),
+        default = Label("@rules_dart_tools//:kernel_link"),
         executable = True,
         cfg = "exec",
     ),

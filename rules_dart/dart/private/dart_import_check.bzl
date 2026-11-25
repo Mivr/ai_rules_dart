@@ -40,7 +40,7 @@ load(
 _direct_packages = direct_packages
 _own_packages = own_packages
 
-IMPORT_CHECK_TOOL = Label("//dart/private/tools:import_check")
+IMPORT_CHECK_TOOL = Label("@rules_dart_tools//:import_check")
 
 def import_check_for_binary(name, deps):
     """The computed default of `dart_binary`'s `_import_check` attribute.

@@ -653,6 +653,17 @@ bzl_library(
 )
 
 bzl_library(
+    name = "prebuilt_tools",
+    srcs = ["prebuilt_tools.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":download",
+        ":toolchains_repo",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
     name = "module_compiler_versions",
     srcs = ["module_compiler_versions.bzl"],
     visibility = ["//visibility:public"],

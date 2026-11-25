@@ -46,7 +46,7 @@ visibility(["//dart/...", "//docs"])
 
 def _kernel_launcher_for_mode(compile_mode, launcher):
     if compile_mode == "kernel" and launcher:
-        return Label("//dart/private/tools:kernel_launcher")
+        return Label("@rules_dart_tools//:kernel_launcher")
     return None
 
 def binary_output_basename(name, compile_mode, is_windows):

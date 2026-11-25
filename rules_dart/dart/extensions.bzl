@@ -13,6 +13,7 @@ effectively overriding the default named toolchain due to toolchain resolution p
 """
 
 load("//dart/private:module_compiler_repo.bzl", "module_compiler_repositories")
+load("//dart/private:prebuilt_tools.bzl", "prebuilt_module_compiler", "prebuilt_tools_repositories", "prebuilt_tools_table")
 load("//dart/private:toolchain_selection.bzl", "select_toolchain_version", "toolchain_name_override_error")
 load("//dart/pub:pub_scanner.bzl", "pub_scanner_repo")
 load("//dart/pub/private:yaml2json.bzl", "yaml2json_repository")
@@ -76,6 +77,10 @@ def _toolchain_extension(module_ctx):
                 version = toolchain.dart_version,
                 is_root = mod.is_root,
             ))
+
+    # The release's prebuilt tools (`//dart/private:prebuilt_tools.bzl`):
+    # empty in the repository and under `--repo_env=RULES_DART_TOOLS=source`.
+    prebuilt = prebuilt_tools_table(module_ctx)
     selections = {}
     for name, requests in registrations.items():
         selection = select_toolchain_version(name, requests)
@@ -87,8 +92,16 @@ def _toolchain_extension(module_ctx):
         dart_register_toolchains(
             name = name,
             dart_version = selection.version,
+            prebuilt_module_compilers = {
+                version: {
+                    platform: prebuilt_module_compiler(prebuilt, version, platform)
+                    for platform in platforms
+                }
+                for version, platforms in prebuilt.items()
+            },
         )
     _create_pub_scanner(module_ctx, registrations, selections)
+    prebuilt_tools_repositories(prebuilt, selections.get(_DEFAULT_NAME, ""))
 
     # The source closure the module compiler of each pinned SDK version is
     # built from, behind the `dart_module_compiler` hub. A closure is fetched

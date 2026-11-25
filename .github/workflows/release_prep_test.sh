@@ -65,6 +65,19 @@ case "$cmd" in
       //release:release)
         echo "$PWD" >"$dir/tool.dir"
         echo "$*" >>"$dir/tool.calls"
+        case " $* " in
+          *" tools table "*)
+            # The table of the prebuilt tools, and the line for the notes.
+            for a in "$@"; do
+              case "$a" in
+                --table=*) echo '{"release": "fake", "tools": {}}' >"${a#--table=}" ;;
+                --artifacts=*) ls "${a#--artifacts=}" >"$dir/tools.artifacts" ;;
+              esac
+            done
+            echo "Prebuilt tools: none."
+            exit 0
+            ;;
+        esac
         for a in "$@"; do
           case "$a" in --published=*) cp "${a#--published=}" "$dir/published.seen" ;; esac
         done
@@ -168,7 +181,9 @@ init_repo() {
     echo 'other' >rules_dart/e2e/other/MODULE.bazel
     echo 'dev' >rules_dart/dev/f.dart
     echo 'tools' >rules_dart/tools/MODULE.bazel
-    printf '/e2e/* export-ignore\n/e2e/smoke -export-ignore\n/dev/ export-ignore\n/BUILD.bazel export-subst\n' >rules_dart/.gitattributes
+    mkdir -p rules_dart/dart/private
+    echo '{"tools": {}}' >rules_dart/dart/private/prebuilt_tools.json
+    printf '/e2e/* export-ignore\n/e2e/smoke -export-ignore\n/dev/ export-ignore\n/BUILD.bazel export-subst\n/dart/private/prebuilt_tools.json export-ignore\n' >rules_dart/.gitattributes
     : >rules_dart/cliff.toml
     printf 'module(name = "ai_rules_flutter")\nbazel_dep(name = "bazel_skylib", version = "1.9.2")\nbazel_dep(name = "ai_rules_dart", version = "0.28.9", repo_name = "rules_dart")\n' >rules_flutter/MODULE.bazel
     echo 'y = 1' >rules_flutter/flutter/defs.bzl
@@ -247,6 +262,10 @@ if [ -f "$archive" ]; then
   grep -qx 'rules_dart-0.29.0/e2e/smoke/MODULE.bazel' "$D/list" || fail "e2e/smoke is not in the archive"
   grep -q 'e2e/other\|/dev/\|rules_flutter' "$D/list" && fail "the archive holds what export-ignore removes, or the other module"
   grep -qv '^rules_dart-0.29.0/' "$D/list" && fail "an entry is outside the prefix"
+  [ "$(tar xzOf "$archive" rules_dart-0.29.0/dart/private/prebuilt_tools.json)" = '{"release": "fake", "tools": {}}' ] ||
+    fail "the archive does not hold the table the release tool wrote"
+  [ "$(grep -c 'prebuilt_tools.json' "$D/list")" = 1 ] || fail "the archive holds the table more than once"
+  want_stdout "Prebuilt tools: none."
   tar xzOf "$archive" rules_dart-0.29.0/BUILD.bazel | grep -qx "_STAMP = \"$(git -C "$D/repo" rev-parse "rules_dart-v0.29.0^{commit}")\"" ||
     fail "export-subst did not stamp BUILD.bazel with the commit"
   want_stdout "urls = [\"https://github.com/Mivr/ai_rules_dart/releases/download/rules_dart-v0.29.0/rules_dart-v0.29.0.tar.gz\"]"

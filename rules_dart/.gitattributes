@@ -46,3 +46,8 @@ examples export-ignore
 # Occasionally there's a need to "stamp" the release version into a file
 # See https://blog.aspect.build/releasing-bazel-rulesets-rust for details if you need this.
 # dart/version.bzl export-subst
+
+# The prebuilt-tools table of a release is written into the archive by
+# release_prep.sh, after `git archive`; the checkout's empty one
+# stays out, so the archive holds one.
+/dart/private/prebuilt_tools.json export-ignore

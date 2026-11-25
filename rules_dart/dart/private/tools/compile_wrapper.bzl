@@ -15,7 +15,7 @@ load("//dart/private:dart_import_check.bzl", "import_check_for_binary")
 
 visibility(["//dart/..."])
 
-_WRAPPER_LABEL = Label("//dart/private/tools:compile_wrapper")
+_WRAPPER_LABEL = Label("@rules_dart_tools//:compile_wrapper")
 
 _JIT_TOOL_ATTRS = {
     "_jit_tool": attr.label(

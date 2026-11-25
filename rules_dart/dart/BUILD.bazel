@@ -249,6 +249,7 @@ bzl_library(
     deps = [
         ":repositories",
         "//dart/private:module_compiler_repo",
+        "//dart/private:prebuilt_tools",
         "//dart/private:toolchain_selection",
         "//dart/pub:pub_scanner",
         "//dart/pub/private:yaml2json",
@@ -311,13 +312,13 @@ bzl_library(
 # `executable_import_check` (see `import_check.bzl`).
 alias(
     name = "import_check",
-    actual = "//dart/private/tools:import_check",
+    actual = "@rules_dart_tools//:import_check",
     visibility = ["//visibility:public"],
 )
 
 alias(
     name = "kernel_link",
-    actual = "//dart/private/tools:kernel_link",
+    actual = "@rules_dart_tools//:kernel_link",
     visibility = ["//visibility:public"],
 )
 

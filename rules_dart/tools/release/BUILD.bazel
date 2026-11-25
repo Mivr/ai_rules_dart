@@ -8,7 +8,10 @@ dart_library(
     name = "release_lib",
     package_name = "release",
     srcs = glob(["lib/**/*.dart"]),
-    deps = ["@pub_deps//:path"],
+    deps = [
+        "@pub_deps//:crypto",
+        "@pub_deps//:path",
+    ],
 )
 
 dart_binary(
@@ -16,6 +19,7 @@ dart_binary(
     main = "bin/release.dart",
     deps = [
         ":release_lib",
+        "@pub_deps//:crypto",
         "@pub_deps//:path",
     ],
 )
@@ -26,6 +30,7 @@ dart_test(
     main = "test/release_test.dart",
     deps = [
         ":release_lib",
+        "@pub_deps//:crypto",
         "@pub_deps//:path",
         "@pub_deps//:test",
     ],

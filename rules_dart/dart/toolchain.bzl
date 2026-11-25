@@ -498,7 +498,8 @@ def declare_dart_sdk_toolchains(
         dart,
         prefix = "",
         sdk_root_name = "sdk_root",
-        cross_targets = ()):
+        cross_targets = (),
+        prebuilt_module_compiler = None):
     """Declares SDK filegroups and `dart_toolchain` targets over an extracted Dart SDK.
 
     Args:
@@ -514,6 +515,11 @@ def declare_dart_sdk_toolchains(
         cross_targets: Cross-compilation targets to declare `dart_toolchain_cross_<platform>`
             rules for. Accepts either a sequence of `(target_platform, target_os, target_arch[, cross_gen_snapshot, cross_dartaotruntime])`
             tuples or a dict mapping `target_platform` to `(target_os, target_arch[, cross_gen_snapshot, cross_dartaotruntime])`.
+        prebuilt_module_compiler: Label of a release's prebuilt module
+            compiler for this SDK's version and host platform (see
+            `//dart/private:prebuilt_tools.bzl`). The toolchain then uses it
+            instead of building `:module_compiler`, whose sources are not
+            fetched. None builds it from source.
     """
     if prefix and not prefix.endswith("/"):
         prefix = prefix + "/"
@@ -528,7 +534,7 @@ def declare_dart_sdk_toolchains(
     module_compiler = None
     sources = module_compiler_sources_label(version)
     if sources != None:
-        module_compiler = ":module_compiler"
+        module_compiler = prebuilt_module_compiler or ":module_compiler"
         _dart_module_compiler(
             name = "module_compiler",
             compile_files = ":compile_files",
