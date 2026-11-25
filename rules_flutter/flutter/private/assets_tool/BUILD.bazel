@@ -2,8 +2,15 @@
 # gen-l10n code, run as one action. It is compiled against the flutter_tools
 # of the Flutter release in use, by `flutter_assets_tool` in that release's
 # engine repository (see //flutter/private:flutter_assets_tool.bzl), so it is
-# not a `dart_binary`.
+# not a `dart_binary`. Its calls into flutter_tools whose API differs between
+# release lines are in `api_<line>/assets_tool_api.dart`; the line's
+# `assets_tool_api` (//flutter/private:sdk_lines.bzl) picks the one it is
+# compiled with.
 exports_files(
-    ["flutter_assets_tool.dart"],
+    [
+        "api_3_47/assets_tool_api.dart",
+        "api_3_50/assets_tool_api.dart",
+        "flutter_assets_tool.dart",
+    ],
     visibility = ["//visibility:public"],
 )

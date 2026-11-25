@@ -170,6 +170,10 @@ bzl_library(
     name = "engine_helpers",
     srcs = ["engine_helpers.bzl"],
     visibility = ["//visibility:public"],
+    deps = [
+        ":engine_repo_files",
+        ":sdk_lines",
+    ],
 )
 
 bzl_library(
@@ -178,6 +182,16 @@ bzl_library(
     visibility = [
         "//docs:__subpackages__",
         "//flutter:__subpackages__",
+    ],
+)
+
+bzl_library(
+    name = "sdk_lines",
+    srcs = ["sdk_lines.bzl"],
+    visibility = [
+        "//docs:__subpackages__",
+        "//flutter:__subpackages__",
+        "//tools:__subpackages__",
     ],
 )
 
@@ -435,6 +449,7 @@ bzl_library(
     name = "flutter_assets_tool",
     srcs = ["flutter_assets_tool.bzl"],
     visibility = ["//visibility:public"],
+    deps = [":sdk_lines"],
 )
 
 bzl_library(
@@ -1369,6 +1384,7 @@ bzl_library(
         ":download",
         ":local_sdk",
         ":repo_metadata",
+        ":sdk_lines",
         ":toolchains_repo",
     ],
 )

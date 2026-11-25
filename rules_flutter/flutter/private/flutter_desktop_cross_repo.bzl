@@ -9,7 +9,7 @@ cross-compile between desktop OSes for AOT.
 """
 
 load("//flutter/private:repo_metadata.bzl", "download_mode_metadata")
-load(":engine_helpers.bzl", "dart_binary_name", "dartaotruntime_binary_name", "platform_to_arch", "platform_to_os")
+load(":engine_helpers.bzl", "const_finder_attr", "dart_binary_name", "dartaotruntime_binary_name", "platform_to_arch", "platform_to_os")
 load(":local_sdk.bzl", "read_local_sdk_version", "resolve_local_sdk_root")
 
 visibility(["//flutter/..."])
@@ -55,6 +55,7 @@ def _flutter_desktop_cross_repo_impl(repository_ctx):
         engine_library_attr = '    engine_library = "@{}//:engine_library",'.format(engine_repo_name)
 
     repository_ctx.file("BUILD.bazel", _BUILD_TEMPLATE.format(
+        const_finder_attr = const_finder_attr(flutter_version, host_repo_name),
         flutter_version = flutter_version,
         engine_revision = engine_revision,
         host_repo_name = host_repo_name,
@@ -77,7 +78,7 @@ load(
 
 flutter_toolchain(
     name = "flutter_toolchain",
-    dart = "@{host_repo_name}//:dart-sdk/bin/{dart_bin}",
+{const_finder_attr}    dart = "@{host_repo_name}//:dart-sdk/bin/{dart_bin}",
     dart_sdk = "@{host_repo_name}//:dart_sdk_files",
     dart_vm_files = "@{host_repo_name}//:dart_vm_files",
     dart_pub_files = "@{host_repo_name}//:dart_pub_files",

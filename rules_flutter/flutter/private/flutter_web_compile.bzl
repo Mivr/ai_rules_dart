@@ -219,7 +219,8 @@ def web_experiment_flags(enable_experiments):
 # `optimization_level`, `minify` and `strip_wasm`; `js_options` holds
 # `optimization_level`, `minify`, `native_null_assertions`,
 # `frequency_based_minification`, `dump_info` and `source_maps`). `req` is the
-# union the `flutter_dart2js_action` and `flutter_dart2wasm_action` entry points take: every `compile` field plus
+# union the `flutter_dart2js_action`, `flutter_dart2js_cfe_action` and
+# `flutter_dart2wasm_action` entry points take: every `compile` field plus
 # `flutter_sdk_files`, the option fields and the outputs. Each action reads
 # only its own subset; the fields it ignores are always present but never
 # read, so every request has the same total shape whatever compiles it.
@@ -381,6 +382,54 @@ def make_dart2js_request(compile, options, renderer, output_dir):
         output_source_map = None,
         output_recorded_uses = None,
         write_resources = compile.record_uses,
+        output_dir = output_dir,
+        web_compile_tool = compile.web_compile_tool,
+        web_compile_inputs = compile.web_compile_inputs,
+        web_guard_tool = compile.web_guard_tool,
+    )
+
+def make_dart2js_cfe_request(compile, renderer, output_dir):
+    """Builds the icon tree-shake kernel request, for a line whose shaker reads the kernel.
+
+    Runs with the frontend defaults (`-O` and minification on "auto", null
+    assertions and frequency_based_minification on), matching what the shipped
+    dart2js program resolves the platform-conditional imports against.
+
+    Args:
+        compile: The `compile` struct the rule implementation gathered.
+        renderer: Web renderer for this kernel's defines ("canvaskit" or
+            "skwasm").
+        output_dir: Output tree artifact: the kernel is its `app.dill`, and
+            dart2js writes `app.dill.deps` beside it.
+
+    Returns:
+        The `req` struct `flutter_dart2js_cfe_action` takes.
+    """
+    return struct(
+        dart = compile.dart,
+        flutter_sdk_files = compile.flutter_sdk_info.dart2js_files,
+        dart2wasm_platform_dill = None,
+        dart2js_platform_dill = compile.dart2js_platform_dill,
+        web_sdk_files = compile.web_sdk_files,
+        main_dart = compile.main_dart,
+        srcs = compile.srcs,
+        package_config = compile.package_config,
+        mode = compile.mode,
+        optimization_level = "auto",
+        minify = "auto",
+        strip_wasm = True,
+        native_null_assertions = True,
+        frequency_based_minification = True,
+        enable_experiments = compile.enable_experiments,
+        dump_info = False,
+        source_maps = False,
+        defines = compile.defines,
+        renderer = renderer,
+        output_wasm = None,
+        output_mjs = None,
+        output_source_map = None,
+        output_recorded_uses = None,
+        write_resources = False,
         output_dir = output_dir,
         web_compile_tool = compile.web_compile_tool,
         web_compile_inputs = compile.web_compile_inputs,
@@ -705,6 +754,68 @@ def flutter_dart2js_action(ctx, req):
             outputs = [req.output_dir],
             mnemonic = "FlutterDart2JS",
             progress_message = "Compiling Flutter to JavaScript %s" % ctx.label,
+            env_dir = req.output_dir.path,
+        ),
+    )
+
+def flutter_dart2js_cfe_action(ctx, req):
+    """Compiles the program to a kernel with dart2js's front end, for icon tree shaking.
+
+    On a line whose shaker runs `const_finder` over the app's kernel
+    (`icon_tree_shaker` in `sdk_lines.bzl`), this is the compile stock runs for
+    a web build: `dart compile js --cfe-only`, whose kernel resolves
+    platform-conditional imports (`if (dart.library.js_interop)`) to the web
+    branch, as the shipped program does, and type-checks `dart:js_interop` and
+    `dart:ui_web` against the real web libraries. The kernel is `app.dill` in
+    the action's own output directory, so the compile's scratch and its scrub
+    of `app.dill.deps` stay inside what the action owns.
+
+    Args:
+        ctx: The rule context of the rule implementation that calls this helper.
+        req: The `req` struct `make_dart2js_cfe_request` built.
+    """
+    transitive_inputs = [req.flutter_sdk_files, depset(req.web_sdk_files)]
+    read_set = _web_read_set(
+        ctx,
+        req,
+        req.output_dir.dirname.split("/")[-1] + "." + req.output_dir.basename,
+        req.dart2js_platform_dill,
+        transitive_inputs,
+    )
+
+    args = _web_base_args(ctx, req, read_set, "js")
+
+    _dart2js_common_args(args, req)
+
+    _dart2js_mode_args(args, req.mode)
+    if req.renderer == "canvaskit":
+        args.add("-DFLUTTER_WEB_USE_SKIA=true")
+        args.add("-DFLUTTER_WEB_USE_SKWASM=false")
+    elif req.renderer == "skwasm":
+        args.add("-DFLUTTER_WEB_USE_SKIA=false")
+        args.add("-DFLUTTER_WEB_USE_SKWASM=true")
+    for d in req.defines:
+        args.add("-D" + d)
+
+    # Frontend-only: emit the kernel const_finder reads, not JavaScript.
+    args.add("--cfe-only")
+    args.add("-o", req.output_dir.path + "/app.dill")
+    args.add(req.main_dart)
+
+    direct_inputs = _web_compile_direct_inputs(req, req.dart2js_platform_dill)
+    if req.web_compile_tool != None:
+        direct_inputs.append(req.web_compile_tool)
+    _web_guarded_run(
+        ctx,
+        args,
+        req,
+        struct(
+            read_set = read_set,
+            direct_inputs = direct_inputs,
+            transitive_inputs = transitive_inputs,
+            outputs = [req.output_dir],
+            mnemonic = "FlutterDart2JSCFE",
+            progress_message = "Compiling Flutter web icon kernel %s" % ctx.label,
             env_dir = req.output_dir.path,
         ),
     )

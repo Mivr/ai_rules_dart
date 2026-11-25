@@ -172,6 +172,17 @@ def flutter_font_subset_repo_impl(repository_ctx):
             "font-subset-tools/" + binary,
             "font-subset binary",
         )
+
+        # Shipped by the releases whose icon tree shaker runs it (before 3.50);
+        # whether one runs is the line's `icon_tree_shaker`, not this file.
+        if sdk.get_child(host_dir + "/const_finder.dart.snapshot").exists:
+            link_local_file(
+                repository_ctx,
+                sdk,
+                host_dir + "/const_finder.dart.snapshot",
+                "font-subset-tools/const_finder.dart.snapshot",
+                "font-subset const_finder",
+            )
         _write_font_subset_build(repository_ctx)
         return download_mode_metadata(repository_ctx)
     font_subset_path = "{platform}/font-subset.zip".format(platform = repository_ctx.attr.platform)

@@ -44,6 +44,7 @@ def _unpinned_flutter_toolchain_impl(ctx):
         dart2wasm_files = files,
         dart2js_files = files,
         engine_library = None,
+        const_finder = None,
         font_subset = None,
         impellerc = None,
         shader_lib = None,

@@ -45,6 +45,7 @@ def _resolve_flutter_sdk_info_test_impl(ctx):
         dart2wasm_files = depset(["wasm"]),
         dart2js_files = depset(["js"]),
         engine_library = None,
+        const_finder = None,
         font_subset = None,
         impellerc = "impellerc_bin",
         shader_lib = ["shader_lib"],
@@ -60,6 +61,7 @@ def _resolve_flutter_sdk_info_test_impl(ctx):
             "@rules_flutter//flutter:toolchain_type": struct(flutter_sdk_info = raw),
             "@rules_flutter//flutter/private:product_tools_toolchain_type": struct(
                 platform_kernel_dill_product = "product.dill",
+                const_finder = "const_finder.snap",
                 font_subset = "font-subset",
             ),
             "@rules_flutter//flutter/private:aot_toolchain_type": struct(
@@ -82,6 +84,7 @@ def _resolve_flutter_sdk_info_test_impl(ctx):
     asserts.equals(env, ["js"], merged.dart2js_files.to_list())
     asserts.equals(env, "gen_snapshot_bin", merged.gen_snapshot)
     asserts.equals(env, "product.dill", merged.platform_kernel_dill_product)
+    asserts.equals(env, "const_finder.snap", merged.const_finder)
     asserts.equals(env, "font-subset", merged.font_subset)
     asserts.equals(env, "libflutter_linux_gtk.so", merged.engine_library)
     asserts.equals(env, "sysroot_files", merged.linux_sysroot)
@@ -92,15 +95,18 @@ def _resolve_flutter_sdk_info_test_impl(ctx):
             "@rules_flutter//flutter:toolchain_type": struct(flutter_sdk_info = raw),
             "@rules_flutter//flutter/private:product_tools_toolchain_type": struct(
                 platform_kernel_dill_product = "product.dill",
+                const_finder = None,
                 font_subset = None,
             ),
             "@rules_flutter//flutter/private:font_subset_toolchain_type": struct(
+                const_finder = "lazy_const_finder.snap",
                 font_subset = "lazy_font_subset",
             ),
         },
     )
     merged_lazy = resolve_flutter_sdk_info(mock_ctx_font_subset_tc)
     asserts.equals(env, "product.dill", merged_lazy.platform_kernel_dill_product)
+    asserts.equals(env, "lazy_const_finder.snap", merged_lazy.const_finder)
     asserts.equals(env, "lazy_font_subset", merged_lazy.font_subset)
     return unittest.end(env)
 
@@ -124,6 +130,7 @@ def _resolve_exec_dart_test_impl(ctx):
         dart2wasm_files = depset([]),
         dart2js_files = depset([]),
         engine_library = None,
+        const_finder = None,
         font_subset = None,
         impellerc = None,
         shader_lib = [],
@@ -185,6 +192,7 @@ def _is_same_sdk_and_find_tools_test_impl(ctx):
         dart2wasm_files = depset([]),
         dart2js_files = depset([]),
         engine_library = None,
+        const_finder = None,
         font_subset = None,
         impellerc = None,
         shader_lib = [],
@@ -268,6 +276,7 @@ def _is_same_sdk_and_find_tools_test_impl(ctx):
         dart2wasm_files = depset([]),
         dart2js_files = depset([]),
         engine_library = None,
+        const_finder = None,
         font_subset = None,
         impellerc = None,
         shader_lib = [],
@@ -329,6 +338,7 @@ def _missing_product_dill_rule_impl(ctx):
         dart2wasm_files = info.dart2wasm_files,
         dart2js_files = info.dart2js_files,
         engine_library = info.engine_library,
+        const_finder = info.const_finder,
         font_subset = info.font_subset,
         impellerc = info.impellerc,
         shader_lib = info.shader_lib,
@@ -435,6 +445,12 @@ def _primary_toolchain_host_test_impl(ctx):
     sdk_info = probe.sdk_info
 
     asserts.true(env, sdk_info.gen_snapshot != None, "Expected primary toolchain gen_snapshot to be populated")
+    asserts.equals(
+        env,
+        sdk_info.line.icon_tree_shaker == "const_finder",
+        sdk_info.const_finder != None,
+        "Expected primary toolchain const_finder to be populated exactly on a line whose icon tree shaker runs it",
+    )
     asserts.true(env, sdk_info.font_subset != None, "Expected primary toolchain font_subset to be populated")
     asserts.true(env, sdk_info.platform_kernel_dill_product != None, "Expected primary toolchain platform_kernel_dill_product to be populated")
     asserts.true(env, sdk_info.material_icons_font != None, "Expected primary toolchain material_icons_font to be populated")
@@ -454,6 +470,12 @@ def _primary_toolchain_android_test_impl(ctx):
     sdk_info = probe.sdk_info
 
     asserts.true(env, sdk_info.gen_snapshot != None, "Expected Android cross toolchain gen_snapshot to be populated")
+    asserts.equals(
+        env,
+        sdk_info.line.icon_tree_shaker == "const_finder",
+        sdk_info.const_finder != None,
+        "Expected Android cross toolchain const_finder to be populated exactly on a line whose icon tree shaker runs it",
+    )
     asserts.true(env, sdk_info.font_subset != None, "Expected Android cross toolchain font_subset to be populated")
     asserts.true(env, sdk_info.platform_kernel_dill_product != None, "Expected Android cross toolchain platform_kernel_dill_product to be populated")
     asserts.true(env, sdk_info.material_icons_font != None, "Expected Android cross toolchain material_icons_font to be populated")

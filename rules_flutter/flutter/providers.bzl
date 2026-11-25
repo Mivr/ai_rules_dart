@@ -13,7 +13,7 @@ Core host fields (`version`, `engine_revision`, `dart`, `dartaotruntime`, \
 directly on `ctx.toolchains["@rules_flutter//flutter:toolchain_type"].flutter_sdk_info`.
 
 Lazy-fetched fields (`gen_snapshot`, `platform_kernel_dill_product`, \
-`font_subset`, `engine_library`, `linux_sysroot`, \
+`const_finder`, `font_subset`, `engine_library`, `linux_sysroot`, \
 `material_icons_font`) live on optional sub-toolchains so builds only fetch \
 the repositories they need. Custom rules that read those fields should \
 declare `toolchains = ["@rules_flutter//flutter:toolchain_type"] + FLUTTER_OPTIONAL_TOOLCHAINS` \
@@ -21,6 +21,7 @@ declare `toolchains = ["@rules_flutter//flutter:toolchain_type"] + FLUTTER_OPTIO
 `resolve_flutter_sdk_info(ctx)`.""",
     fields = {
         "version": "str: The Flutter SDK version string (e.g. `3.47.7`).",
+        "line": "struct: What this SDK's release line does differently, the entry of `FLUTTER_SDK_LINES` in `//flutter/private:sdk_lines.bzl` its version selects (`icon_tree_shaker`, `ddc_dart_sdk_js`, `assets_tool_api`, `test_bundle_native_assets_manifest`, `android_gradle_plugin`).",
         "engine_revision": "str: The engine commit hash.",
         "dart": "File: The `dart` executable from the Flutter-bundled Dart SDK. " +
                 "Use for actions paired with `dart_vm_files`, `dart_pub_files`, " +
@@ -48,6 +49,7 @@ declare `toolchains = ["@rules_flutter//flutter:toolchain_type"] + FLUTTER_OPTIO
         "engine_library": "Target or None: The platform-specific Flutter engine runtime library " +
                           "(FlutterMacOS.framework, libflutter_linux_gtk.so, flutter_windows.dll). " +
                           "None for mobile/web or when engine runtime is not downloaded (resolved via `@rules_flutter//flutter:desktop_engine_toolchain_type` and `resolve_flutter_sdk_info`).",
+        "const_finder": "File or None: The `const_finder.dart.snapshot` for icon tree shaking (resolved via `@rules_flutter//flutter:product_tools_toolchain_type` and `resolve_flutter_sdk_info`).",
         "font_subset": "File or None: The `font-subset` binary for font subsetting (resolved via `@rules_flutter//flutter:product_tools_toolchain_type` and `resolve_flutter_sdk_info`).",
         "impellerc": "File or None: The `impellerc` shader compiler binary.",
         "shader_lib": "list[File]: Shader include files for impellerc (shader_lib/ directory contents).",
@@ -138,7 +140,7 @@ def _snapshot_info_fields(info):
 def _overlay_product_fields(fields, product_tc):
     """Fills release-tool fields from the product-tools sub-toolchain."""
     if product_tc:
-        for k in ("platform_kernel_dill_product", "font_subset"):
+        for k in ("platform_kernel_dill_product", "const_finder", "font_subset"):
             if not fields.get(k):
                 fields[k] = getattr(product_tc, k, None)
 
@@ -148,7 +150,7 @@ def _overlay_font_subset_fields(
         has_font_subset_type,
         primary_is_builtin,
         font_subset_is_builtin):
-    """Overlays `font_subset`, honouring the builtin default.
+    """Overlays `const_finder`/`font_subset`, honouring the builtin default.
 
     An explicitly declared font-subset toolchain wins over the product
     tools; when the primary toolchain is the builtin default, a declared
@@ -156,13 +158,13 @@ def _overlay_font_subset_fields(
     values so the default graph stays consistent.
     """
     if font_subset_tc and not font_subset_is_builtin:
-        for k in ("font_subset",):
+        for k in ("const_finder", "font_subset"):
             fields[k] = getattr(font_subset_tc, k, None)
     elif primary_is_builtin and has_font_subset_type:
-        for k in ("font_subset",):
+        for k in ("const_finder", "font_subset"):
             fields[k] = getattr(font_subset_tc, k, None) if font_subset_tc else None
     elif font_subset_tc:
-        for k in ("font_subset",):
+        for k in ("const_finder", "font_subset"):
             if not fields.get(k):
                 fields[k] = getattr(font_subset_tc, k, None)
 
@@ -181,7 +183,7 @@ def resolve_flutter_sdk_info(ctx):
     """Resolves `FlutterSdkInfo` from the primary toolchain and any optional sub-toolchains.
 
     Preserves every field on the primary `FlutterSdkInfo` generically and overlays
-    `platform_kernel_dill_product`, `font_subset`, `gen_snapshot`,
+    `platform_kernel_dill_product`, `const_finder`, `font_subset`, `gen_snapshot`,
     `engine_library`, `linux_sysroot`, and `material_icons_font` from any optional
     sub-toolchains declared on the rule.
 
