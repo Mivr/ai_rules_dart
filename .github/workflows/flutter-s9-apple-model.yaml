@@ -15,6 +15,10 @@
 #   F  edit loops: a Swift edit in the app and in one plugin, in both shapes, with the actions
 #      that ran, against Xcode on the same edits
 #
+# No stage stops the next. Each writes one line into `stages.txt`, and a build that fails leaves
+# `errors-<stage>.txt` (the first error lines of every action that failed), `.commands.txt` (their
+# command lines) and `.kinds.txt` (the error messages by how often they occur) in the artifact.
+#
 # Run it by hand (`workflow_dispatch`) or by pushing the spike branch.
 name: Flutter S9 Apple model spike
 
@@ -38,8 +42,11 @@ jobs:
     timeout-minutes: 120
     env:
       FLUTTER_VERSION: 3.47.7
+      # What `apple_model/tools/Gemfile.lock` holds; stage A says when another CocoaPods ran.
       COCOAPODS_VERSION: 1.16.2
       SIM: --ios_multi_cpus=sim_arm64 -c dbg
+      # Every error of a build in one run, and a progress line a minute instead of one a second.
+      REPORT: --keep_going --show_progress_rate_limit=60
     defaults:
       run:
         shell: bash
@@ -57,192 +64,494 @@ jobs:
             sw_vers
             xcodebuild -version
             ruby --version
+            bundle --version || true
             bazel --version
-          } | tee "$RUNNER_TEMP/out/tools.txt"
+            echo "cpus: $(sysctl -n hw.ncpu || true)"
+          } 2>&1 | tee "$RUNNER_TEMP/out/tools.txt"
+          # What the stages share. A function body in parentheses runs in a subshell without `-e`:
+          # a report never stops a stage.
+          cat > "$RUNNER_TEMP/report.sh" <<'EOF'
+          out="$RUNNER_TEMP/out"
+
+          # stage <id> <ok|FAILED|skipped> <words>: one line of the stage table.
+          stage() { echo "$*" | tee -a "$out/stages.txt"; }
+
+          # target_results <bep.json> <result.txt>: one line per top-level target, `ok` or `FAILED`,
+          # and behind `<-` the targets whose actions failed under it.
+          target_results() (
+            set +e
+            jq -r 'select(.id.targetCompleted)
+              | ([.children[]? | .actionCompleted.label // empty | sub("^.*//:"; "")] | unique | join(" ")) as $causes
+              | (if .completed.success then "ok    " else "FAILED" end) + " " + (.id.targetCompleted.label | sub("^.*//:"; ""))
+                + (if $causes != "" then " <- " + $causes else "" end)' "$1" | LC_ALL=C sort -u > "$2"
+            cat "$2"
+          )
+
+          # first_errors <name> <bep.json> <build log>: for every action that failed, its kind, its
+          # target and the first error lines of what it printed (errors-<name>.txt), its command
+          # line (errors-<name>.commands.txt), and the error messages of the whole log by how often
+          # they occur (errors-<name>.kinds.txt).
+          first_errors() (
+            set +e
+            name=$1 bep=$2 log=$3
+            pattern='error[: ]|Undefined symbols|duplicate symbol|^ld: |not found|No such file'
+            : > "$out/errors-$name.txt"
+            jq -r 'select(.id.actionCompleted and .action.success != true)
+              | [.action.type, .action.label, ((.action.stderr.uri // "-") | sub("^file://"; "")), ((.action.stdout.uri // "-") | sub("^file://"; ""))]
+              | @tsv' "$bep" |
+              while IFS=$'\t' read -r type label err std; do
+                {
+                  echo "== $type $label"
+                  text=$(for file in "$err" "$std"; do [ -f "$file" ] && cat "$file"; done)
+                  if [ -z "$text" ]; then
+                    # Bazel kept no file: what it printed under this action's ERROR line in the log.
+                    text=$(awk -v label="$label" 'index($0, "ERROR: ") == 1 { n = index($0, label) ? 60 : 0 }
+                      index($0, "INFO: ") == 1 { n = 0 }
+                      n > 0 && !/^\[[0-9,]+ \/ [0-9,]+\]/ { print; n-- }' "$log")
+                  fi
+                  if echo "$text" | grep -a -q -E "$pattern"; then
+                    echo "$text" | grep -a -m 10 -B 2 -A 6 -E "$pattern" | cut -c1-500 | head -100
+                  else
+                    echo "$text" | head -40 | cut -c1-500
+                  fi
+                  echo
+                } >> "$out/errors-$name.txt"
+              done
+            jq -r 'select(.id.actionCompleted and .action.success != true)
+              | "== \(.action.type) \(.action.label)\n\((.action.commandLine // []) | join(" "))\n"' "$bep" > "$out/errors-$name.commands.txt"
+            grep -a -o -E '(fatal error|error): .*' "$log" | cut -c1-300 | LC_ALL=C sort | uniq -c | LC_ALL=C sort -rn | head -60 > "$out/errors-$name.kinds.txt"
+            echo "$name: $(grep -c '^== ' "$out/errors-$name.txt") actions failed"
+            head -200 "$out/errors-$name.txt"
+          )
+          EOF
 
       # ---------------------------------------------------------------- A: stock, and the pin on macOS
-      - name: A1 stock Flutter and CocoaPods
+      - name: A1 stock Flutter, and CocoaPods by the pin's Gemfile.lock
         run: |
+          out="$RUNNER_TEMP/out"
           git clone --quiet --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
-          gem install cocoapods -v "$COCOAPODS_VERSION" --no-document --install-dir "$RUNNER_TEMP/gems"
-          echo "GEM_HOME=$RUNNER_TEMP/gems" >> "$GITHUB_ENV"
-          echo "$RUNNER_TEMP/gems/bin" >> "$GITHUB_PATH"
+          # The gems the pin container runs, not the runner's: `pod` and `pinruby` in front of PATH
+          # start CocoaPods and Ruby under the lock. A runner's own CocoaPods (1.17.0 in the first
+          # run) and its json gem write another Podfile.lock.
+          gemfile="$GITHUB_WORKSPACE/rules_flutter/flutter/private/apple_model/tools/Gemfile"
+          mkdir -p "$RUNNER_TEMP/podbin"
+          for tool in pod ruby; do
+            name=$tool
+            [ "$tool" = ruby ] && name=pinruby
+            printf '%s\n' '#!/bin/bash' \
+              "export BUNDLE_GEMFILE='$gemfile' BUNDLE_PATH='$RUNNER_TEMP/gems' BUNDLE_FROZEN=true" \
+              "exec bundle exec $tool \"\$@\"" > "$RUNNER_TEMP/podbin/$name"
+            chmod +x "$RUNNER_TEMP/podbin/$name"
+          done
+          {
+            echo "the runner's own CocoaPods: $(pod --version 2>&1 | tail -1) ($(command -v pod || true))"
+            locked=""
+            if BUNDLE_GEMFILE="$gemfile" BUNDLE_PATH="$RUNNER_TEMP/gems" BUNDLE_FROZEN=true bundle install > "$out/a1-gems.log" 2>&1; then
+              locked=$("$RUNNER_TEMP/podbin/pod" --version 2>> "$out/a1-gems.log" | tail -1 || true)
+            fi
+            if [ "$locked" = "$COCOAPODS_VERSION" ]; then
+              echo "$RUNNER_TEMP/podbin" >> "$GITHUB_PATH"
+              echo "CocoaPods of Gemfile.lock: $locked, json $("$RUNNER_TEMP/podbin/pinruby" -rjson -e 'puts JSON::VERSION' 2>&1 | tail -1)"
+            else
+              # The stock build and the pin still run, with the runner's CocoaPods; A3 and A4 then
+              # differ at least in the version.
+              rm -f "$RUNNER_TEMP/podbin/pod" "$RUNNER_TEMP/podbin/pinruby"
+              echo "CocoaPods of Gemfile.lock did NOT start (got '$locked'): the runner's own is used, see a1-gems.log"
+              tail -30 "$out/a1-gems.log"
+            fi
+          } 2>&1 | tee -a "$out/tools.txt"
       - name: A2 stock build for the simulator
+        continue-on-error: true
         run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
           cp -R . "$RUNNER_TEMP/stock"
           cd "$RUNNER_TEMP/stock"
           rm -rf bazel-* MODULE.bazel* BUILD.bazel linux_analysis
-          flutter precache --ios
-          flutter pub get
-          /usr/bin/time -p flutter build ios --simulator --debug 2>&1 | tee "$RUNNER_TEMP/out/stock-build.log"
-          pod --version
+          if ! { flutter precache --ios && flutter pub get; }; then
+            stage "A2 FAILED flutter precache or pub get"
+            exit 1
+          fi
+          set +e
+          /usr/bin/time -p flutter build ios --simulator --debug 2>&1 | tee "$out/stock-build.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "CocoaPods the stock build ran: $(pod --version 2>&1 | tail -1) ($(command -v pod || true))" | tee -a "$out/tools.txt"
+          # Xcode's own record of the build: every command line it ran, to set beside Bazel's when
+          # a pod does not compile or link. And from it, the language mode Xcode gave each Swift
+          # module (targets.bzl maps a pod's SWIFT_VERSION the way Xcode's build system does).
+          (
+            set +e
+            n=0
+            find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Logs/Build/*.xcactivitylog' 2>/dev/null | while read -r log; do
+              n=$((n + 1))
+              cp "$log" "$out/stock-xcodebuild-$n.xcactivitylog.gz"
+              gunzip -c "$log" | LC_ALL=C tr '\r' '\n' |
+                LC_ALL=C perl -ne 'if (/-module-name (\S+)/) { $m = $1; print "$m $1\n" if /-swift-version (\S+)/ }'
+            done | LC_ALL=C sort | uniq -c > "$out/stock-swift-versions.txt"
+            echo "-swift-version per module in Xcode's build (count, module, version):"
+            cat "$out/stock-swift-versions.txt"
+          )
+          if [ "$status" = 0 ]; then stage "A2 ok stock build"; else stage "A2 FAILED stock build, exit $status"; fi
+          exit "$status"
       - name: A3 Podfile.lock of macOS against the one the Linux container wrote
         continue-on-error: true
-        run: diff -u ios/Podfile.lock "$RUNNER_TEMP/stock/ios/Podfile.lock" | tee "$RUNNER_TEMP/out/podfile-lock.diff"
+        run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          if [ ! -f "$RUNNER_TEMP/stock/ios/Podfile.lock" ]; then
+            stage "A3 skipped: the stock build left no Podfile.lock"
+            exit 1
+          fi
+          if diff -u ios/Podfile.lock "$RUNNER_TEMP/stock/ios/Podfile.lock" > "$out/podfile-lock.diff"; then
+            stage "A3 ok Podfile.lock of macOS equals the Linux container's"
+          else
+            cat "$out/podfile-lock.diff"
+            stage "A3 FAILED Podfile.lock differs in $(grep -c '^[-+][^-+]' "$out/podfile-lock.diff") lines"
+            exit 1
+          fi
       - name: A4 the pin step on macOS gives the committed model
         continue-on-error: true
         run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
           export PUB_CACHE="${PUB_CACHE:-$HOME/.pub-cache}" FLUTTER_ROOT="$RUNNER_TEMP/flutter" RDF_PIN_CACHE="$RUNNER_TEMP/pin-cache"
           pin="$GITHUB_WORKSPACE/rules_flutter/flutter/private/apple_model/tools/pin.rb"
-          /usr/bin/time -p ruby "$pin" "$RUNNER_TEMP/stock/ios" "$RUNNER_TEMP/out/apple_model.macos.json"
-          /usr/bin/time -p ruby "$pin" "$RUNNER_TEMP/stock/ios" "$RUNNER_TEMP/out/apple_model.macos.2.json"
-          cmp "$RUNNER_TEMP/out/apple_model.macos.json" "$RUNNER_TEMP/out/apple_model.macos.2.json"
-          diff <(jq -S . apple_model.json) <(jq -S . "$RUNNER_TEMP/out/apple_model.macos.json") > "$RUNNER_TEMP/out/model-linux-macos.diff" || true
-          wc -l "$RUNNER_TEMP/out/model-linux-macos.diff"
-          head -100 "$RUNNER_TEMP/out/model-linux-macos.diff"
-          cmp apple_model.json "$RUNNER_TEMP/out/apple_model.macos.json"
+          ruby=ruby
+          if [ -x "$RUNNER_TEMP/podbin/pinruby" ]; then ruby="$RUNNER_TEMP/podbin/pinruby"; fi
+          status=0
+          /usr/bin/time -p "$ruby" "$pin" "$RUNNER_TEMP/stock/ios" "$out/apple_model.macos.json" || status=1
+          /usr/bin/time -p "$ruby" "$pin" "$RUNNER_TEMP/stock/ios" "$out/apple_model.macos.2.json" || status=1
+          twice="two runs on macOS give the same bytes"
+          cmp "$out/apple_model.macos.json" "$out/apple_model.macos.2.json" || twice="two runs on macOS DIFFER"
+          diff <(jq -S . apple_model.json) <(jq -S . "$out/apple_model.macos.json") > "$out/model-linux-macos.diff" || true
+          wc -l "$out/model-linux-macos.diff"
+          head -100 "$out/model-linux-macos.diff"
+          if [ "$status" = 0 ] && cmp apple_model.json "$out/apple_model.macos.json"; then
+            stage "A4 ok the model of macOS is the committed one byte for byte; $twice"
+          else
+            stage "A4 FAILED the model of macOS is not the committed one ($(grep -c '^[<>]' "$out/model-linux-macos.diff") lines differ after sorting keys); $twice"
+            status=1
+          fi
+          [ "$twice" = "two runs on macOS give the same bytes" ] || status=1
+          exit "$status"
 
       # ---------------------------------------------------------------- B: every pod compiles
       - name: B every pod library of the model, for the simulator
         continue-on-error: true
         run: |
-          pods=$(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model//:all) except filter("\.framework$", @apple_model//:all)' 2>/dev/null)
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          pods=$(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model//:all) except filter("\.framework$", @apple_model//:all)' 2> "$out/pods-query.log" || true)
+          # The deployment target the app's pods get inside the app; a library built by itself
+          # would take the SDK's version.
+          min_os=$(jq -r '.aggregate_targets["Pods-Runner"].platform.deployment_target' apple_model.json)
+          set +e
           # shellcheck disable=SC2086
-          /usr/bin/time -p bazel build -c dbg --platforms=@apple_support//platforms:ios_sim_arm64 --keep_going \
-            --build_event_json_file="$RUNNER_TEMP/out/pods.bep.json" $pods 2>&1 | tee "$RUNNER_TEMP/out/pods-build.log" | tail -150
-          jq -r 'select(.id.targetCompleted) | [(if .completed.success then "ok    " else "FAILED" end), .id.targetCompleted.label] | join(" ")' \
-            "$RUNNER_TEMP/out/pods.bep.json" | sort -u | tee "$RUNNER_TEMP/out/pods-result.txt"
-          ! grep -q '^FAILED' "$RUNNER_TEMP/out/pods-result.txt"
+          /usr/bin/time -p bazel build -c dbg --platforms=@apple_support//platforms:ios_sim_arm64 --ios_minimum_os="$min_os" $REPORT \
+            --build_event_json_file="$out/pods.bep.json" $pods 2>&1 | tee "$out/pods-build.log" | tail -40
+          status=${PIPESTATUS[0]}
+          set -e
+          target_results "$out/pods.bep.json" "$out/pods-result.txt"
+          first_errors pods "$out/pods.bep.json" "$out/pods-build.log"
+          failed=$(grep -c '^FAILED' "$out/pods-result.txt" || true)
+          total=$(grep -c . "$out/pods-result.txt" || true)
+          if [ "$status" = 0 ] && [ "$failed" = 0 ] && [ "$total" != 0 ]; then
+            stage "B ok $total targets"
+          else
+            stage "B FAILED $failed of $total targets, bazel exit $status"
+            exit 1
+          fi
 
       # ---------------------------------------------------------------- C: the app links
       - name: C1 the app, every pod static in the app binary
         continue-on-error: true
         run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          set +e
           # shellcheck disable=SC2086
-          /usr/bin/time -p bazel build $SIM //:app 2>&1 | tee "$RUNNER_TEMP/out/app-build.log" | tail -80
-          test -f bazel-bin/app.ipa
+          /usr/bin/time -p bazel build $SIM $REPORT --build_event_json_file="$out/app.bep.json" //:app 2>&1 | tee "$out/app-build.log" | tail -40
+          status=${PIPESTATUS[0]}
+          set -e
+          first_errors app "$out/app.bep.json" "$out/app-build.log"
+          if [ "$status" = 0 ] && [ -f bazel-bin/app.ipa ]; then
+            mkdir -p "$RUNNER_TEMP/ipa" && cp bazel-bin/app.ipa "$RUNNER_TEMP/ipa/app.ipa"
+            stage "C1 ok //:app"
+          else
+            stage "C1 FAILED //:app, bazel exit $status, $(grep -c '^== ' "$out/errors-app.txt" || true) actions failed"
+            exit 1
+          fi
       - name: C2 the app, one dynamic framework per pod
         continue-on-error: true
         run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          set +e
           # shellcheck disable=SC2086
-          /usr/bin/time -p bazel build $SIM //:app_frameworks 2>&1 | tee "$RUNNER_TEMP/out/app-frameworks-build.log" | tail -80
-          test -f bazel-bin/app_frameworks.ipa
+          /usr/bin/time -p bazel build $SIM $REPORT --build_event_json_file="$out/app_frameworks.bep.json" //:app_frameworks 2>&1 | tee "$out/app-frameworks-build.log" | tail -40
+          status=${PIPESTATUS[0]}
+          set -e
+          first_errors app_frameworks "$out/app_frameworks.bep.json" "$out/app-frameworks-build.log"
+          if [ "$status" = 0 ] && [ -f bazel-bin/app_frameworks.ipa ]; then
+            mkdir -p "$RUNNER_TEMP/ipa" && cp bazel-bin/app_frameworks.ipa "$RUNNER_TEMP/ipa/app_frameworks.ipa"
+            stage "C2 ok //:app_frameworks"
+          else
+            stage "C2 FAILED //:app_frameworks, bazel exit $status, $(grep -c '^== ' "$out/errors-app_frameworks.txt" || true) actions failed"
+            exit 1
+          fi
 
       # ---------------------------------------------------------------- D: launch
       - name: D launch stock and both Bazel apps on a simulator
         continue-on-error: true
         run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
           udid=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | test("^iPhone"))][0].udid')
-          xcrun simctl boot "$udid"
-          xcrun simctl bootstatus "$udid" -b
-          launch() { # launch <name> <.app directory>: the plugin lines the app prints
-            xcrun simctl uninstall "$udid" dev.rdf.s9app || true
-            xcrun simctl install "$udid" "$2"
-            xcrun simctl launch --console-pty "$udid" dev.rdf.s9app > "$RUNNER_TEMP/out/launch-$1.log" 2>&1 &
-            for _ in $(seq 1 90); do
-              grep -q 'rdf-s9 done' "$RUNNER_TEMP/out/launch-$1.log" && break
+          if ! xcrun simctl bootstatus "$udid" -b > "$out/simulator-boot.log" 2>&1; then
+            tail -5 "$out/simulator-boot.log"
+            stage "D FAILED the simulator '$udid' did not boot"
+            exit 1
+          fi
+          tail -2 "$out/simulator-boot.log"
+          # launch <name> <.app directory>: the plugin lines the app prints, in plugins-<name>.txt.
+          # On iOS Dart's `print` goes to the system log and not to the app's stdout (the first
+          # run's console had the crash and none of the three lines printed before it), so the
+          # lines are read where the Flutter tool reads them, from `log stream`; the console keeps
+          # what the process itself writes (a crash, dyld).
+          launch() (
+            set +e
+            name=$1 app=$2
+            console="$out/launch-$name.log" stream="$out/launch-$name.oslog.txt"
+            predicate="processImagePath CONTAINS \"/$(basename "$app")/\""
+            if [ ! -d "$app" ]; then
+              echo "$name: no app at $app"
+              exit 1
+            fi
+            xcrun simctl terminate "$udid" dev.rdf.s9app > /dev/null 2>&1
+            xcrun simctl uninstall "$udid" dev.rdf.s9app > /dev/null 2>&1
+            touch "$RUNNER_TEMP/launch-$name.start"
+            if ! xcrun simctl install "$udid" "$app" > "$console" 2>&1; then
+              echo "$name: simctl install failed"
+              cat "$console"
+              exit 1
+            fi
+            xcrun simctl spawn "$udid" log stream --level debug --style compact --predicate "$predicate" > "$stream" 2>&1 &
+            stream_pid=$!
+            sleep 3
+            xcrun simctl launch --console-pty "$udid" dev.rdf.s9app >> "$console" 2>&1 &
+            console_pid=$!
+            for n in $(seq 1 90); do
               sleep 2
+              grep -a -q 'rdf-s9 done' "$console" "$stream" && break
+              # Stop waiting once the app is gone: its console has closed and launchd lists it no more.
+              if [ "$n" -gt 15 ] && ! kill -0 "$console_pid" 2> /dev/null &&
+                ! xcrun simctl spawn "$udid" launchctl list 2> /dev/null | grep -q 'dev\.rdf\.s9app'; then
+                echo "$name: the app exited after about $((n * 2)) s"
+                break
+              fi
             done
-            xcrun simctl terminate "$udid" dev.rdf.s9app || true
-            grep -o 'rdf-s9 .*' "$RUNNER_TEMP/out/launch-$1.log" | tee "$RUNNER_TEMP/out/plugins-$1.txt"
-            grep -q 'rdf-s9 done' "$RUNNER_TEMP/out/plugins-$1.txt"
-          }
+            sleep 2
+            xcrun simctl terminate "$udid" dev.rdf.s9app > /dev/null 2>&1
+            kill "$stream_pid" "$console_pid" 2> /dev/null
+            wait 2> /dev/null
+            # The same lines again from the log store, should the stream have started late.
+            xcrun simctl spawn "$udid" log show --last 6m --style compact --predicate "$predicate" > "$out/launch-$name.logshow.txt" 2>&1
+            cat "$console" "$stream" "$out/launch-$name.logshow.txt" | LC_ALL=C tr -d '\r' | LC_ALL=C grep -a -o 'rdf-s9 .*' | awk '!seen[$0]++' > "$out/plugins-$name.txt"
+            echo "== $name: $(grep -c . "$out/plugins-$name.txt") plugin lines"
+            cat "$out/plugins-$name.txt"
+            # A crash leaves a report on the host a few seconds later.
+            sleep 5
+            find "$HOME/Library/Logs/DiagnosticReports" -type f -newer "$RUNNER_TEMP/launch-$name.start" 2> /dev/null | head -3 | while read -r report; do
+              echo "$name: crash report $report"
+              head -c 30000 "$report" > "$out/crash-$name-$(basename "$report").txt"
+            done
+            if ! grep -q '^rdf-s9 done' "$out/plugins-$name.txt"; then
+              echo "$name: no 'rdf-s9 done'. The end of its console:"
+              tail -15 "$console" | cut -c1-400
+              exit 1
+            fi
+          )
           status=0
-          launch stock "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" || status=1
+          verdict=""
+          if launch stock "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app"; then
+            verdict="stock printed $(grep -c . "$out/plugins-stock.txt") lines"
+          else
+            verdict="stock FAILED"
+            status=1
+          fi
           for shape in app app_frameworks; do
-            if [ -f "bazel-bin/$shape.ipa" ]; then
-              rm -rf "${RUNNER_TEMP:?}/$shape" && unzip -q "bazel-bin/$shape.ipa" -d "$RUNNER_TEMP/$shape"
-              launch "$shape" "$RUNNER_TEMP/$shape/Payload/$shape.app" || status=1
-              diff "$RUNNER_TEMP/out/plugins-stock.txt" "$RUNNER_TEMP/out/plugins-$shape.txt" || status=1
+            if [ -f "$RUNNER_TEMP/ipa/$shape.ipa" ]; then
+              rm -rf "${RUNNER_TEMP:?}/$shape" && unzip -q "$RUNNER_TEMP/ipa/$shape.ipa" -d "$RUNNER_TEMP/$shape"
+              if ! launch "$shape" "$RUNNER_TEMP/$shape/Payload/$shape.app"; then
+                verdict="$verdict; $shape FAILED to print every line"
+                status=1
+              elif diff "$out/plugins-stock.txt" "$out/plugins-$shape.txt" > "$out/plugins-$shape.diff"; then
+                verdict="$verdict; $shape prints what stock prints"
+              else
+                cat "$out/plugins-$shape.diff"
+                verdict="$verdict; $shape DIFFERS from stock"
+                status=1
+              fi
             else
-              echo "no bazel-bin/$shape.ipa"
+              verdict="$verdict; $shape was not built"
               status=1
             fi
           done
           xcrun simctl shutdown "$udid" || true
+          if [ "$status" = 0 ]; then stage "D ok $verdict"; else stage "D FAILED $verdict"; fi
           exit "$status"
 
       # ---------------------------------------------------------------- E: bundles against stock
       - name: E the bundles against the stock bundle
         continue-on-error: true
         run: |
-          listing() { # listing <.app directory>: one line per file, Mach-O files by what they link
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          listing() { # listing <.app directory>: a line per file, `path<TAB>contents`; a Mach-O file by what it links
             (cd "$1" && find . -type f | LC_ALL=C sort | while read -r f; do
               if file -b "$f" | grep -q 'Mach-O'; then
-                echo "$f macho $(otool -L "$f" | tail -n +2 | awk '{print $1}' | LC_ALL=C sort | tr '\n' ' ')"
+                printf '%s\tmacho %s\n' "$f" "$(otool -L "$f" | tail -n +2 | awk '{print $1}' | LC_ALL=C sort | tr '\n' ' ')"
               else
-                echo "$f $(shasum -a 256 "$f" | cut -d' ' -f1)"
+                printf '%s\t%s\n' "$f" "$(shasum -a 256 "$f" | cut -d' ' -f1)"
               fi
             done)
           }
-          listing "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" > "$RUNNER_TEMP/out/bundle-stock.txt"
+          if [ ! -d "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" ]; then
+            stage "E skipped: no stock bundle"
+            exit 1
+          fi
+          listing "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" > "$out/bundle-stock.txt"
+          verdict=""
           for shape in app app_frameworks; do
-            [ -d "$RUNNER_TEMP/$shape/Payload/$shape.app" ] || continue
-            listing "$RUNNER_TEMP/$shape/Payload/$shape.app" > "$RUNNER_TEMP/out/bundle-$shape.txt"
+            if [ ! -d "$RUNNER_TEMP/$shape/Payload/$shape.app" ]; then
+              verdict="$verdict $shape: not built;"
+              continue
+            fi
+            listing "$RUNNER_TEMP/$shape/Payload/$shape.app" > "$out/bundle-$shape.txt"
             echo "== $shape: files only in stock (<) or only in the Bazel bundle (>)"
-            diff <(cut -d' ' -f1 "$RUNNER_TEMP/out/bundle-stock.txt") <(cut -d' ' -f1 "$RUNNER_TEMP/out/bundle-$shape.txt") | grep '^[<>]' | tee "$RUNNER_TEMP/out/bundle-$shape.names.diff" | head -200
+            diff <(cut -f1 "$out/bundle-stock.txt") <(cut -f1 "$out/bundle-$shape.txt") | grep '^[<>]' > "$out/bundle-$shape.names.diff" || true
+            head -200 "$out/bundle-$shape.names.diff"
             echo "== $shape: files in both with other contents"
-            join <(LC_ALL=C sort "$RUNNER_TEMP/out/bundle-stock.txt" | sed 's/ /\t/') <(LC_ALL=C sort "$RUNNER_TEMP/out/bundle-$shape.txt" | sed 's/ /\t/') -t "$(printf '\t')" \
-              | awk -F'\t' '$2 != $3 {print $1}' | tee "$RUNNER_TEMP/out/bundle-$shape.contents.diff" | head -200
+            awk -F'\t' 'NR == FNR { stock[$1] = $2; next } ($1 in stock) && stock[$1] != $2 { print $1 }' \
+              "$out/bundle-stock.txt" "$out/bundle-$shape.txt" > "$out/bundle-$shape.contents.diff" || true
+            head -200 "$out/bundle-$shape.contents.diff"
             echo "== $shape: privacy manifests"
-            grep -c 'PrivacyInfo.xcprivacy' "$RUNNER_TEMP/out/bundle-stock.txt" "$RUNNER_TEMP/out/bundle-$shape.txt" || true
+            grep -c 'PrivacyInfo.xcprivacy' "$out/bundle-stock.txt" "$out/bundle-$shape.txt" || true
+            verdict="$verdict $shape: $(grep -c '^<' "$out/bundle-$shape.names.diff" || true) files only in stock, $(grep -c '^>' "$out/bundle-$shape.names.diff" || true) only in Bazel's, $(grep -c . "$out/bundle-$shape.contents.diff" || true) with other contents;"
           done
+          stage "E compared:$verdict"
 
       # ---------------------------------------------------------------- F: edit loops
       - name: F edit loops, Bazel
         continue-on-error: true
         run: |
-          plugin=$(find "$(bazel info output_base)/external" -maxdepth 1 -name '*apple_model__pub_url_launcher_ios' | head -1)
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          plugin=$(find "$(bazel info output_base)/external" -maxdepth 1 -name '*apple_model__pub_url_launcher_ios' | head -1 || true)
+          plugin_file=$(find "$plugin/r/" -name 'URLLauncherPlugin.swift' 2> /dev/null | head -1 || true)
           now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
-          round() { # round <label> <target>: wall seconds and the native actions that ran
-            local log="$RUNNER_TEMP/out/exec-$1.json" start end
+          round() { # round <label> <target>: wall seconds and the native actions that ran; fails when the build does
+            local log="$out/exec-$1.json" start end result=ok
             start=$(now)
             # shellcheck disable=SC2086
-            bazel build $SIM --execution_log_json_file="$log" "$2" > "$RUNNER_TEMP/out/edit-$1.log" 2>&1 || echo "$1: build failed"
+            bazel build $SIM --execution_log_json_file="$log" "$2" > "$out/edit-$1.log" 2>&1 || result=FAILED
             end=$(now)
-            echo "$1 seconds=$(echo "$end - $start" | bc) actions=$(jq -r '.mnemonic' "$log" | LC_ALL=C sort | uniq -c | tr -s ' \n' ' ')" | tee -a "$RUNNER_TEMP/out/edit-loops.txt"
+            echo "$1 $result seconds=$(echo "$end - $start" | bc) actions=$(jq -r '.mnemonic' "$log" | LC_ALL=C sort | uniq -c | tr -s ' \n' ' ')" | tee -a "$out/edit-loops.txt"
+            [ "$result" = ok ]
           }
+          measured=""
           for shape in app app_frameworks; do
-            round "$shape-warm" "//:$shape"
-            round "$shape-nothing" "//:$shape"
+            # A time is a measurement only after a build that passed: without one, no edit rounds.
+            if ! round "$shape-warm" "//:$shape"; then
+              echo "$shape: the build fails, no edit rounds" | tee -a "$out/edit-loops.txt"
+              continue
+            fi
+            measured="$measured $shape"
+            round "$shape-nothing" "//:$shape" || true
             for n in 1 2 3; do
               echo "func rdfEdit${shape}${n}() {}" >> ios/Runner/AppDelegate.swift
-              round "$shape-app-swift-$n" "//:$shape"
+              round "$shape-app-swift-$n" "//:$shape" || true
             done
+            if [ -z "$plugin_file" ]; then
+              echo "$shape: URLLauncherPlugin.swift not found under '$plugin', no plugin rounds" | tee -a "$out/edit-loops.txt"
+              continue
+            fi
             for n in 1 2 3; do
-              echo "func rdfEdit${shape}${n}() {}" >> "$(find "$plugin/r/" -name 'URLLauncherPlugin.swift' | head -1)"
-              round "$shape-plugin-swift-$n" "//:$shape"
+              echo "func rdfEdit${shape}${n}() {}" >> "$plugin_file"
+              round "$shape-plugin-swift-$n" "//:$shape" || true
             done
           done
           git checkout -- ios/Runner/AppDelegate.swift
+          if [ -n "$measured" ] && ! grep -q ' FAILED ' "$out/edit-loops.txt"; then
+            stage "F ok Bazel edit loops measured for:$measured"
+          else
+            stage "F FAILED Bazel edit loops: measured for '${measured# }', $(grep -c ' FAILED ' "$out/edit-loops.txt" || true) rounds failed"
+            exit 1
+          fi
       - name: F edit loops, Xcode on the same edits
         continue-on-error: true
         run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
           cd "$RUNNER_TEMP/stock"
           now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
           round() {
-            local start end
+            local start end result=ok
             start=$(now)
-            flutter build ios --simulator --debug > "$RUNNER_TEMP/out/stock-edit-$1.log" 2>&1 || echo "$1: build failed"
+            flutter build ios --simulator --debug > "$out/stock-edit-$1.log" 2>&1 || result=FAILED
             end=$(now)
-            echo "stock-$1 seconds=$(echo "$end - $start" | bc)" | tee -a "$RUNNER_TEMP/out/edit-loops.txt"
+            echo "stock-$1 $result seconds=$(echo "$end - $start" | bc)" | tee -a "$out/edit-loops.txt"
+            [ "$result" = ok ]
           }
-          round nothing
+          # The pin step ran CocoaPods' installer in this directory after the first build, so the
+          # next build is not a build with nothing changed; the one after it is.
+          if ! round warm; then
+            stage "F FAILED stock edit loops: the stock build fails"
+            exit 1
+          fi
+          round nothing || true
           for n in 1 2 3; do
             echo "func rdfEditStock${n}() {}" >> ios/Runner/AppDelegate.swift
-            round "app-swift-$n"
+            round "app-swift-$n" || true
           done
           for n in 1 2 3; do
             echo "func rdfEditStock${n}() {}" >> "$(find -L ios/.symlinks/plugins/url_launcher_ios/ios -name 'URLLauncherPlugin.swift' | head -1)"
-            round "plugin-swift-$n"
+            round "plugin-swift-$n" || true
           done
+          if grep -q '^stock-.* FAILED ' "$out/edit-loops.txt"; then
+            stage "F FAILED stock edit loops: $(grep -c '^stock-.* FAILED ' "$out/edit-loops.txt") rounds failed"
+            exit 1
+          fi
+          stage "F ok stock edit loops measured"
 
       - name: Summary
         if: always()
         run: |
+          out="$RUNNER_TEMP/out"
+          show() { # show <title> <file> [lines]: a part of the summary; a file that is not there is said, not fatal
+            echo "--- $1"
+            if [ -s "$out/$2" ]; then head -n "${3:-400}" "$out/$2" | cut -c1-400; else echo "(no $2)"; fi
+          }
           {
             echo '### S9 on macOS'
             echo '```'
-            cat "$RUNNER_TEMP/out/tools.txt" 2>/dev/null
-            echo "--- pods"
-            cat "$RUNNER_TEMP/out/pods-result.txt" 2>/dev/null
-            echo "--- plugins (stock | app | app_frameworks)"
-            paste "$RUNNER_TEMP"/out/plugins-*.txt 2>/dev/null
-            echo "--- edit loops"
-            cat "$RUNNER_TEMP/out/edit-loops.txt" 2>/dev/null
+            show "tools" tools.txt
+            show "stages" stages.txt
+            show "pods" pods-result.txt
+            show "plugin lines, stock" plugins-stock.txt
+            show "plugin lines, app" plugins-app.txt
+            show "plugin lines, app_frameworks" plugins-app_frameworks.txt
+            show "edit loops" edit-loops.txt
+            show "Swift language mode per module in Xcode's build" stock-swift-versions.txt
+            show "first errors, pods" errors-pods.txt 120
+            show "error kinds, pods" errors-pods.kinds.txt 40
+            show "first errors, app" errors-app.txt 120
+            show "first errors, app_frameworks" errors-app_frameworks.txt 120
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY" || true
+          ls -la "$out" || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
