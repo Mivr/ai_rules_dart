@@ -15,8 +15,11 @@
 #   F  edit loops: a Swift edit in the app and in one plugin, in both shapes, with the actions
 #      that ran, against Xcode on the same edits
 #
-# B2 and C3 are not stages: where B or C1 fails they build again with the flags of `EXPERIMENT`,
-# so that one run also says what the next change to the rules would do.
+# Experiments are not stages: they try what no log justifies yet, so that one run also says what
+# the next change to the rules would do. B2 and C3 build again with the flags of `EXPERIMENT` where
+# B or C1 fails (none this round: the rules_swift feature they tried is in the rules now). C4
+# builds `//:app_frameworks_as_pods`, the debug shape with CocoaPods' own choice of which pods are
+# dynamic frameworks; D launches it and E lists it beside the two shapes, marked as the experiment.
 #
 # No stage stops the next. Each writes one line into `stages.txt`, and a build that fails leaves
 # `errors-<stage>.txt` (the first error lines of every action that failed), `.commands.txt` (their
@@ -50,12 +53,10 @@ jobs:
       SIM: --ios_multi_cpus=sim_arm64 -c dbg
       # Every error of a build in one run, and a progress line a minute instead of one a second.
       REPORT: --keep_going --show_progress_rate_limit=60
-      # What the next round may change in targets.bzl, tried here on the command line where stage B or
-      # C1 fails (steps B2 and C3; their files carry `experiment` in the name and no other stage uses
-      # them). Objective-C pods import Swift pods as modules (`@import FirebaseCoreInternal;` in
-      # FirebaseCore, `@import GTMAppAuth;` in GoogleSignIn), and rules_swift shows an objc_library a
-      # Swift target's module map only with this feature.
-      EXPERIMENT: --features=swift.propagate_generated_module_map
+      # Flags the next round may put into the rules, tried on the command line where stage B or C1
+      # fails (steps B2 and C3; their files carry `experiment` in the name). Empty: no such flag
+      # is waiting, and the two steps say so and do nothing.
+      EXPERIMENT: ""
     defaults:
       run:
         shell: bash
@@ -254,7 +255,7 @@ jobs:
         run: |
           # shellcheck source=/dev/null
           . "$RUNNER_TEMP/report.sh"
-          pods=$(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model//:all) except filter("\.framework$", @apple_model//:all)' 2> "$out/pods-query.log" || true)
+          pods=$(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model//:all) except filter("\.(framework|xcframework|modules)$", @apple_model//:all)' 2> "$out/pods-query.log" || true)
           # The deployment target the app's pods get inside the app; a library built by itself
           # would take the SDK's version.
           min_os=$(jq -r '.aggregate_targets["Pods-Runner"].platform.deployment_target' apple_model.json)
@@ -279,11 +280,11 @@ jobs:
         run: |
           # shellcheck source=/dev/null
           . "$RUNNER_TEMP/report.sh"
-          if ! grep -q '^FAILED' "$out/pods-result.txt"; then
-            echo "stage B has no failed target (or no result): nothing to try"
+          if [ -z "$EXPERIMENT" ] || ! grep -q '^FAILED' "$out/pods-result.txt"; then
+            echo "no flag to try, or stage B has no failed target (or no result)"
             exit 0
           fi
-          pods=$(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model//:all) except filter("\.framework$", @apple_model//:all)' 2> /dev/null || true)
+          pods=$(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model//:all) except filter("\.(framework|xcframework|modules)$", @apple_model//:all)' 2> /dev/null || true)
           min_os=$(jq -r '.aggregate_targets["Pods-Runner"].platform.deployment_target' apple_model.json)
           set +e
           # shellcheck disable=SC2086
@@ -337,8 +338,8 @@ jobs:
         run: |
           # shellcheck source=/dev/null
           . "$RUNNER_TEMP/report.sh"
-          if [ -f "$RUNNER_TEMP/ipa/app.ipa" ]; then
-            echo "C1 built the app: nothing to try"
+          if [ -z "$EXPERIMENT" ] || [ -f "$RUNNER_TEMP/ipa/app.ipa" ]; then
+            echo "no flag to try, or C1 built the app"
             exit 0
           fi
           set +e
@@ -348,6 +349,23 @@ jobs:
           set -e
           first_errors app-experiment "$out/app-experiment.bep.json" "$out/app-experiment-build.log"
           stage "C3 experiment: //:app with $EXPERIMENT: bazel exit $status, $(grep -c '^== ' "$out/errors-app-experiment.txt" || true) actions failed"
+      - name: C4 experiment, the frameworks shape with CocoaPods' own linkage
+        continue-on-error: true
+        run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          set +e
+          # shellcheck disable=SC2086
+          /usr/bin/time -p bazel build $SIM $REPORT --build_event_json_file="$out/app_frameworks_as_pods.bep.json" //:app_frameworks_as_pods 2>&1 | tee "$out/app-frameworks-as-pods-build.log" | tail -40
+          status=${PIPESTATUS[0]}
+          set -e
+          first_errors app_frameworks_as_pods "$out/app_frameworks_as_pods.bep.json" "$out/app-frameworks-as-pods-build.log"
+          if [ "$status" = 0 ] && [ -f bazel-bin/app_frameworks_as_pods.ipa ]; then
+            mkdir -p "$RUNNER_TEMP/ipa" && cp bazel-bin/app_frameworks_as_pods.ipa "$RUNNER_TEMP/ipa/app_frameworks_as_pods.ipa"
+            stage "C4 experiment: //:app_frameworks_as_pods built"
+          else
+            stage "C4 experiment: //:app_frameworks_as_pods FAILED, bazel exit $status, $(grep -c '^== ' "$out/errors-app_frameworks_as_pods.txt" || true) actions failed"
+          fi
 
       # ---------------------------------------------------------------- D: launch
       - name: D launch stock and both Bazel apps on a simulator
@@ -430,22 +448,26 @@ jobs:
             verdict="stock FAILED"
             status=1
           fi
-          for shape in app app_frameworks; do
+          # The third is the experiment of step C4: it is launched and reported, and does not decide
+          # whether the stage passed.
+          for shape in app app_frameworks app_frameworks_as_pods; do
+            failed=1
+            if [ "$shape" = app_frameworks_as_pods ]; then failed=$status; fi
             if [ -f "$RUNNER_TEMP/ipa/$shape.ipa" ]; then
               rm -rf "${RUNNER_TEMP:?}/$shape" && unzip -q "$RUNNER_TEMP/ipa/$shape.ipa" -d "$RUNNER_TEMP/$shape"
               if ! launch "$shape" "$RUNNER_TEMP/$shape/Payload/$shape.app"; then
                 verdict="$verdict; $shape FAILED to print every line"
-                status=1
+                status=$failed
               elif diff "$out/plugins-stock.txt" "$out/plugins-$shape.txt" > "$out/plugins-$shape.diff"; then
                 verdict="$verdict; $shape prints what stock prints"
               else
                 cat "$out/plugins-$shape.diff"
                 verdict="$verdict; $shape DIFFERS from stock"
-                status=1
+                status=$failed
               fi
             else
               verdict="$verdict; $shape was not built"
-              status=1
+              status=$failed
             fi
           done
           xcrun simctl shutdown "$udid" || true
@@ -473,7 +495,7 @@ jobs:
           fi
           listing "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" > "$out/bundle-stock.txt"
           verdict=""
-          for shape in app app_frameworks; do
+          for shape in app app_frameworks app_frameworks_as_pods; do
             if [ ! -d "$RUNNER_TEMP/$shape/Payload/$shape.app" ]; then
               verdict="$verdict $shape: not built;"
               continue
@@ -592,6 +614,7 @@ jobs:
             show "plugin lines, stock" plugins-stock.txt
             show "plugin lines, app" plugins-app.txt
             show "plugin lines, app_frameworks" plugins-app_frameworks.txt
+            show "experiment: plugin lines, app_frameworks_as_pods" plugins-app_frameworks_as_pods.txt
             show "edit loops" edit-loops.txt
             show "Swift language mode per module in Xcode's build" stock-swift-versions.txt
             show "first errors, pods" errors-pods.txt 120
@@ -601,6 +624,7 @@ jobs:
             show "experiment: pods" pods-result.experiment.txt
             show "experiment: first errors, pods" errors-pods-experiment.txt 120
             show "experiment: first errors, app" errors-app-experiment.txt 120
+            show "experiment: first errors, app_frameworks_as_pods" errors-app_frameworks_as_pods.txt 120
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY" || true
           ls -la "$out" || true
