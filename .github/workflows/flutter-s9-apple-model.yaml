@@ -157,7 +157,9 @@ jobs:
             echo "the runner's own CocoaPods: $(pod --version 2>&1 | tail -1) ($(command -v pod || true))"
             locked=""
             if BUNDLE_GEMFILE="$gemfile" BUNDLE_PATH="$RUNNER_TEMP/gems" BUNDLE_FROZEN=true bundle install > "$out/a1-gems.log" 2>&1; then
-              locked=$("$RUNNER_TEMP/podbin/pod" --version 2>> "$out/a1-gems.log" | tail -1 || true)
+              # The whole of stdout: Flutter takes `pod --version` for a version only when it prints
+              # nothing else, and skips `pod install` otherwise.
+              locked=$("$RUNNER_TEMP/podbin/pod" --version 2>> "$out/a1-gems.log" || true)
             fi
             if [ "$locked" = "$COCOAPODS_VERSION" ]; then
               echo "$RUNNER_TEMP/podbin" >> "$GITHUB_PATH"
@@ -166,7 +168,7 @@ jobs:
               # The stock build and the pin still run, with the runner's CocoaPods; A3 and A4 then
               # differ at least in the version.
               rm -f "$RUNNER_TEMP/podbin/pod" "$RUNNER_TEMP/podbin/pinruby"
-              echo "CocoaPods of Gemfile.lock did NOT start (got '$locked'): the runner's own is used, see a1-gems.log"
+              echo "CocoaPods of Gemfile.lock did NOT start (pod --version printed '$locked'): the runner's own is used, see a1-gems.log"
               tail -30 "$out/a1-gems.log"
             fi
           } 2>&1 | tee -a "$out/tools.txt"
