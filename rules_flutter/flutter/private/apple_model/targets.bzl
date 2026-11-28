@@ -105,8 +105,10 @@ def _pod(name, pod, model):
         unsupported.append("sources " + " ".join(sorted({_ext(s): True for s in other})))
     headers = [root + "/" + h for h in pod["headers"]["all"]]
 
-    # Compiler flags: CocoaPods' own (COCOAPODS=1, its header stores), then the pod author's.
-    clang_copts = ["-DCOCOAPODS=1", "-I%s/hdr/%s/private" % (here, name), "-I%s/hdr/%s/private/%s" % (here, name, name)]
+    # Compiler flags: Xcode's own, CocoaPods' (COCOAPODS=1, its header stores), then the pod author's.
+    # Xcode's, from its log of the stock build: `-fmodule-name=<Module>` for every file of a pod, so
+    # that the pod's own headers are read as text and not as the module others import.
+    clang_copts = ["-fmodule-name=" + module, "-DCOCOAPODS=1", "-I%s/hdr/%s/private" % (here, name), "-I%s/hdr/%s/private/%s" % (here, name, name)]
     swift_copts = ["-DCOCOAPODS"]
     cxxopts = []
     conlyopts = []
@@ -192,7 +194,11 @@ def _pod(name, pod, model):
 
     # Binary frameworks and libraries, by the linkage CocoaPods read from the binaries.
     deps = [model["labels"][d] for d in pod["dependencies"]]
+    if "Flutter" in pod["dependencies"]:
+        # The engine's module map, which its import does not hand to Objective-C (see the hub).
+        deps.append(model["labels"]["Flutter"] + ".modules")
     vendored = pod["vendored"]
+    framework_modules = []
     for xc in vendored["xcframeworks"]:
         target = "%s.xcframework.%s" % (name, xc["path"].rsplit("/", 1)[-1].removesuffix(".xcframework"))
         linkages = {s["linkage"]: True for s in xc["slices"]}
@@ -201,11 +207,20 @@ def _pod(name, pod, model):
             unsupported.append("xcframework with static and dynamic slices")
         rule(name = target, xcframework_imports = _files(root, [xc["path"] + "/"]))
         deps.append(":" + target)
+        framework_modules.extend(native.glob([root + "/" + xc["path"] + "/*/*.framework/Modules/*.modulemap"], allow_empty = True))
     for kind, rule in (("static_frameworks", apple_static_framework_import), ("dynamic_frameworks", apple_dynamic_framework_import)):
         for path in vendored[kind]:
             target = "%s.framework.%s" % (name, path.rsplit("/", 1)[-1].removesuffix(".framework"))
             rule(name = target, framework_imports = _files(root, [path + "/"]))
             deps.append(":" + target)
+            framework_modules.extend(native.glob([root + "/" + path + "/Modules/*.modulemap"], allow_empty = True))
+    if framework_modules:
+        # rules_apple's imports hand an Objective-C dependent the framework's headers and its search
+        # path, and the module map only to Swift. Without the file among its inputs `@import GoogleMaps;`
+        # finds no module. It travels as a header of a library that is no module itself.
+        swift_interop_hint(name = name + ".modules.hint", suppressed = True)
+        objc_library(name = name + ".modules", hdrs = framework_modules, aspect_hints = [":" + name + ".modules.hint"])
+        deps.append(":" + name + ".modules")
     if vendored["static_libraries"]:
         objc_import(name = name + ".archives", archives = [root + "/" + a for a in vendored["static_libraries"]])
         deps.append(":" + name + ".archives")
@@ -227,8 +242,20 @@ def _pod(name, pod, model):
     if pod.get("generated_prefix_header"):
         private.append("gen/%s-prefix.h" % name)
         clang_copts.extend(["-include", "%s/gen/%s-prefix.h" % (here, name)])
+
+    # The module of a pod without Swift is defined once: by the pod's own module map, or by the one
+    # CocoaPods generated, which the repository rule put beside the public headers. Swift dependents
+    # get that file by name, Objective-C dependents find it on the include path.
     module_map = root + "/" + pod["module_map"] if pod.get("module_map") else None
+    if not module_map:
+        generated = native.glob(["hdr/%s/public/%s/module.modulemap" % (name, module)], allow_empty = True)
+        module_map = generated[0] if generated else None
     swift_interop_hint(name = name + ".hint", module_name = module, module_map = module_map)
+
+    # A pod with Swift: rules_swift writes the module map that names the generated header, and shows it
+    # to Objective-C dependents only with this feature. Xcode puts the same into the pod's framework,
+    # and other pods import it (`@import GTMAppAuth;` in GoogleSignIn).
+    swift_features = ["swift.propagate_generated_module_map"]
     tags = ["rdf-unsupported=" + u for u in unsupported]
     link = dict(
         sdk_frameworks = pod["frameworks"],
@@ -260,6 +287,7 @@ def _pod(name, pod, model):
             alwayslink = True,
             data = resources,
             deps = deps,
+            features = swift_features,
             tags = tags + ["rdf-unsupported=" + u for u in unsupported if u.startswith("C and C++")],
             **link
         )
@@ -275,6 +303,7 @@ def _pod(name, pod, model):
             linkopts = system,
             data = resources,
             deps = deps,
+            features = swift_features,
             tags = tags,
         )
     else:
@@ -316,6 +345,15 @@ def _pod(name, pod, model):
 
 def _bundle_id(module):
     return "".join([c if c.isalnum() else "-" for c in module.elems()])
+
+def _framework_module_maps_impl(ctx):
+    return [DefaultInfo(files = depset([f for f in ctx.files.frameworks if f.dirname.endswith(".framework/Modules") and f.extension == "modulemap"]))]
+
+framework_module_maps = rule(
+    doc = "The module maps among the files of frameworks or XCFrameworks that another repository holds.",
+    implementation = _framework_module_maps_impl,
+    attrs = {"frameworks": attr.label_list(allow_files = True, mandatory = True)},
+)
 
 def pod_targets(name, model):
     """Declares the targets of every pod of one source repository.
