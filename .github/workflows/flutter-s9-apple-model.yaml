@@ -15,6 +15,9 @@
 #   F  edit loops: a Swift edit in the app and in one plugin, in both shapes, with the actions
 #      that ran, against Xcode on the same edits
 #
+# B2 and C3 are not stages: where B or C1 fails they build again with the flags of `EXPERIMENT`,
+# so that one run also says what the next change to the rules would do.
+#
 # No stage stops the next. Each writes one line into `stages.txt`, and a build that fails leaves
 # `errors-<stage>.txt` (the first error lines of every action that failed), `.commands.txt` (their
 # command lines) and `.kinds.txt` (the error messages by how often they occur) in the artifact.
@@ -47,6 +50,12 @@ jobs:
       SIM: --ios_multi_cpus=sim_arm64 -c dbg
       # Every error of a build in one run, and a progress line a minute instead of one a second.
       REPORT: --keep_going --show_progress_rate_limit=60
+      # What the next round may change in targets.bzl, tried here on the command line where stage B or
+      # C1 fails (steps B2 and C3; their files carry `experiment` in the name and no other stage uses
+      # them). Objective-C pods import Swift pods as modules (`@import FirebaseCoreInternal;` in
+      # FirebaseCore, `@import GTMAppAuth;` in GoogleSignIn), and rules_swift shows an objc_library a
+      # Swift target's module map only with this feature.
+      EXPERIMENT: --features=swift.propagate_generated_module_map
     defaults:
       run:
         shell: bash
@@ -263,6 +272,26 @@ jobs:
             stage "B FAILED $failed of $total targets, bazel exit $status"
             exit 1
           fi
+      - name: B2 experiment, the pods again with EXPERIMENT when B has failures
+        continue-on-error: true
+        run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          if ! grep -q '^FAILED' "$out/pods-result.txt"; then
+            echo "stage B has no failed target (or no result): nothing to try"
+            exit 0
+          fi
+          pods=$(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model//:all) except filter("\.framework$", @apple_model//:all)' 2> /dev/null || true)
+          min_os=$(jq -r '.aggregate_targets["Pods-Runner"].platform.deployment_target' apple_model.json)
+          set +e
+          # shellcheck disable=SC2086
+          /usr/bin/time -p bazel build -c dbg --platforms=@apple_support//platforms:ios_sim_arm64 --ios_minimum_os="$min_os" $REPORT $EXPERIMENT \
+            --build_event_json_file="$out/pods-experiment.bep.json" $pods 2>&1 | tee "$out/pods-experiment-build.log" | tail -40
+          status=${PIPESTATUS[0]}
+          set -e
+          target_results "$out/pods-experiment.bep.json" "$out/pods-result.experiment.txt"
+          first_errors pods-experiment "$out/pods-experiment.bep.json" "$out/pods-experiment-build.log"
+          stage "B2 experiment: with $EXPERIMENT $(grep -c '^FAILED' "$out/pods-result.experiment.txt" || true) of $(grep -c . "$out/pods-result.experiment.txt" || true) targets fail (B: $(grep -c '^FAILED' "$out/pods-result.txt" || true)), bazel exit $status"
 
       # ---------------------------------------------------------------- C: the app links
       - name: C1 the app, every pod static in the app binary
@@ -301,6 +330,22 @@ jobs:
             stage "C2 FAILED //:app_frameworks, bazel exit $status, $(grep -c '^== ' "$out/errors-app_frameworks.txt" || true) actions failed"
             exit 1
           fi
+      - name: C3 experiment, the static app again with EXPERIMENT when C1 failed
+        continue-on-error: true
+        run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          if [ -f "$RUNNER_TEMP/ipa/app.ipa" ]; then
+            echo "C1 built the app: nothing to try"
+            exit 0
+          fi
+          set +e
+          # shellcheck disable=SC2086
+          /usr/bin/time -p bazel build $SIM $REPORT $EXPERIMENT --build_event_json_file="$out/app-experiment.bep.json" //:app 2>&1 | tee "$out/app-experiment-build.log" | tail -40
+          status=${PIPESTATUS[0]}
+          set -e
+          first_errors app-experiment "$out/app-experiment.bep.json" "$out/app-experiment-build.log"
+          stage "C3 experiment: //:app with $EXPERIMENT: bazel exit $status, $(grep -c '^== ' "$out/errors-app-experiment.txt" || true) actions failed"
 
       # ---------------------------------------------------------------- D: launch
       - name: D launch stock and both Bazel apps on a simulator
@@ -549,6 +594,9 @@ jobs:
             show "error kinds, pods" errors-pods.kinds.txt 40
             show "first errors, app" errors-app.txt 120
             show "first errors, app_frameworks" errors-app_frameworks.txt 120
+            show "experiment: pods" pods-result.experiment.txt
+            show "experiment: first errors, pods" errors-pods-experiment.txt 120
+            show "experiment: first errors, app" errors-app-experiment.txt 120
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY" || true
           ls -la "$out" || true
