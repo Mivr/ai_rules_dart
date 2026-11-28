@@ -57,6 +57,32 @@ def _swift_language_mode(version):
         return parts[0]
     return None
 
+_PLAIN = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-"
+
+def _make_word(word):
+    """A word for an attribute Bazel expands Make variables in (every `copts`): `$` stands for itself."""
+    return word.replace("$", "$$")
+
+def _cc_word(word):
+    """A word for an attribute of the C-family rules, which Bazel also splits as a shell would.
+
+    The model's words are final: CocoaPods' `LIBRARY_VERSION=\\"17.1.0\\"` is in it as
+    `LIBRARY_VERSION="17.1.0"`, and Xcode passes `-DLIBRARY_VERSION="17.1.0"` as one argument. Bazel
+    tokenizes `copts`, `defines` and `linkopts` of `objc_library` once more and would take the quotes
+    for its own (the definition then is the number 17.1.0), so a word with anything but plain
+    characters is quoted for that tokenizer.
+    """
+    plain = True
+    for c in word.elems():
+        if c not in _PLAIN:
+            plain = False
+    if not plain or not word:
+        word = "'" + word.replace("'", "'\\''") + "'"
+    return _make_word(word)
+
+def _cc_words(words):
+    return [_cc_word(w) for w in words]
+
 def _ext(path):
     base = path.rsplit("/", 1)[-1]
     return base.rsplit(".", 1)[-1] if "." in base else ""
@@ -280,10 +306,10 @@ def _pod(name, pod, model):
             non_arc_srcs = [root + "/" + s for s in non_arc],
             hdrs = public,
             includes = includes,
-            clang_copts = clang_copts + cxxopts + conlyopts,
-            clang_defines = defines,
+            clang_copts = _cc_words(clang_copts + cxxopts + conlyopts),
+            clang_defines = _cc_words(defines),
             umbrella_header = umbrella[0] if umbrella else None,
-            swift_copts = swift_copts,
+            swift_copts = [_make_word(w) for w in swift_copts],
             module_name = module,
             module_map = module_map,
             enable_modules = True,
@@ -299,7 +325,7 @@ def _pod(name, pod, model):
             name = name,
             srcs = swift_srcs,
             module_name = module,
-            copts = swift_copts,
+            copts = [_make_word(w) for w in swift_copts],
             generates_header = True,
             generated_header_name = module + "-Swift.h",
             alwayslink = True,
@@ -316,10 +342,10 @@ def _pod(name, pod, model):
             non_arc_srcs = [root + "/" + s for s in non_arc],
             hdrs = public,
             includes = includes,
-            copts = clang_copts,
-            cxxopts = cxxopts,
-            conlyopts = conlyopts,
-            defines = defines,
+            copts = _cc_words(clang_copts),
+            cxxopts = _cc_words(cxxopts),
+            conlyopts = _cc_words(conlyopts),
+            defines = _cc_words(defines),
             # No `module_map` here: with one rules_cc leaves `-fmodules` out of every compile of
             # the library (objc_compilation_support.bzl, `enable_modules and module_map == None`),
             # and a pod's files then cannot `@import` anything, nor carry linker directives. Xcode
