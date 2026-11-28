@@ -32,6 +32,31 @@ _NO_EFFECT = [
     "USE_HEADERMAP",
 ]
 
+# The language modes of the Swift compiler, as Xcode's Swift specification lists them
+# (`SupportedLanguageVersions` of Swift.xcspec: 4.0, 4.2, 5.0, 6.0).
+_SWIFT_LANGUAGE_MODES = ["4", "4.2", "5", "6"]
+
+def _swift_language_mode(version):
+    """The `-swift-version` Xcode passes for a pod's `SWIFT_VERSION`; None when Xcode would refuse it.
+
+    CocoaPods writes the version the podspec names (5.9, 5.2), and the model keeps it. Xcode's build
+    system passes it on only when it is a language mode of the compiler, without trailing zeros
+    (5.0 is 5); any other version is cut to its major (5.9 is 5), and refused when that is no mode.
+    """
+    parts = version.split(".")
+    for part in parts:
+        if not part.isdigit():
+            return None
+    for _ in range(len(parts)):
+        if len(parts) > 1 and int(parts[-1]) == 0:
+            parts = parts[:-1]
+    trimmed = ".".join(parts)
+    if trimmed in _SWIFT_LANGUAGE_MODES:
+        return trimmed
+    if parts[0] in _SWIFT_LANGUAGE_MODES:
+        return parts[0]
+    return None
+
 def _ext(path):
     base = path.rsplit("/", 1)[-1]
     return base.rsplit(".", 1)[-1] if "." in base else ""
@@ -119,7 +144,11 @@ def _pod(name, pod, model):
     elif groups:
         unsupported.append("compiler flags that differ per file")
     if swift_srcs and build.get("swift_version"):
-        swift_copts.extend(["-swift-version", build["swift_version"].removesuffix(".0")])
+        mode = _swift_language_mode(build["swift_version"])
+        if mode:
+            swift_copts.extend(["-swift-version", mode])
+        else:
+            unsupported.append("swift version " + build["swift_version"])
 
     # What dependents see: the public header store, and the author's settings for whoever uses the pod.
     includes = ["hdr/%s/public" % name, "hdr/%s/public/%s" % (name, name)]
