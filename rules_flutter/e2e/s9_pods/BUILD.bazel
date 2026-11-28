@@ -97,8 +97,18 @@ swift_library(
     tags = ["manual"],
     deps = [
         ":app_engine",
-        ":registrant",
+        ":registrant_header",
     ],
+)
+
+# What the runner sees of the registrant. Which plugins a registrant registers is the app's choice:
+# every app below names its own beside the runner.
+objc_library(
+    name = "registrant_header",
+    hdrs = ["ios/Runner/GeneratedPluginRegistrant.h"],
+    includes = ["ios/Runner"],
+    tags = ["manual"],
+    deps = [":app_engine"],
 )
 
 # Release shape: every pod is linked statically into the app binary.
@@ -113,6 +123,7 @@ ios_application(
     version = ":app_version",
     deps = [
         ":app_framework",
+        ":registrant",
         ":runner",
     ],
 )
@@ -131,6 +142,7 @@ ios_application(
     version = ":app_version",
     deps = [
         ":app_framework",
+        ":registrant",
         ":runner",
     ],
 )
@@ -152,9 +164,77 @@ ios_application(
     version = ":app_version",
     deps = [
         ":app_framework",
+        ":registrant",
         ":runner",
     ],
 )
+
+# Smaller apps, experiments of the macOS job: the same Dart program and the same runner with fewer
+# plugins on the native side, so that a pod that does not build yet cannot keep every app from
+# linking, launching and being measured. `app_seven` leaves out the Google Maps plugin (and with it
+# Google-Maps-iOS-Utils and the binary GoogleMaps). `app_four` has the four plugins whose only pod
+# dependency is the engine, and `app_four_frameworks` is its debug shape. The Dart side still calls
+# every plugin: a probe of a plugin that is not there prints an `ERR` line.
+_SUBSETS = {
+    "four": [
+        "image_picker_ios",
+        "permission_handler_apple",
+        "url_launcher_ios",
+        "webview_flutter_wkwebview",
+    ],
+    "seven": [
+        "firebase_core",
+        "firebase_messaging",
+        "google_sign_in_ios",
+        "image_picker_ios",
+        "permission_handler_apple",
+        "url_launcher_ios",
+        "webview_flutter_wkwebview",
+    ],
+}
+
+[
+    objc_library(
+        name = "registrant_" + subset,
+        # GeneratedPluginRegistrant.m of ios/Runner, cut down by hand to the subset's plugins.
+        srcs = ["ios/experiments/%s/GeneratedPluginRegistrant.m" % subset],
+        hdrs = ["ios/Runner/GeneratedPluginRegistrant.h"],
+        enable_modules = True,
+        includes = ["ios/Runner"],
+        module_name = "RunnerRegistrant_" + subset,
+        tags = ["manual"],
+        deps = [":app_engine"] + ["@apple_model//:" + pod for pod in pods],
+    )
+    for subset, pods in _SUBSETS.items()
+]
+
+[
+    ios_application(
+        name = name,
+        bundle_id = "dev.rdf.s9app",
+        families = ["iphone"],
+        frameworks = frameworks,
+        infoplists = [":info_plist"],
+        launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+        minimum_os_version = IOS_MINIMUM_OS_VERSION,
+        tags = ["manual"],
+        version = ":app_version",
+        deps = [
+            ":app_framework",
+            ":registrant_" + subset,
+            ":runner",
+        ],
+    )
+    for name, subset, frameworks in [
+        ("app_seven", "seven", []),
+        ("app_four", "four", []),
+        (
+            "app_four_frameworks",
+            "four",
+            ["@apple_model//:%s.framework" % pod for pod in _SUBSETS["four"]],
+        ),
+    ]
+]
 
 # Every library the model describes, one target per pod: what `build --nobuild` analyses on Linux
 # and what the macOS job compiles.
