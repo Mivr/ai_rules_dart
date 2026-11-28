@@ -338,8 +338,8 @@ def _pod(name, pod, model):
     if swift_srcs and (clang_srcs or non_arc or public):
         # The macro hands its extra arguments to the Swift half too, so language standards go to
         # the C-family half as plain options; a module with C and C++ standards both cannot.
-        if has_cxx and cxxopts and conlyopts:
-            unsupported.append("C and C++ standards in a module with Swift")
+        if has_cxx and (cxxopts or conlyopts):
+            unsupported.append("C and C++ standards in a module with Swift and C++")
         umbrella = native.glob(["hdr/%s/umbrella/*.h" % name], allow_empty = True)
         mixed_language_library(
             name = name,
@@ -348,7 +348,9 @@ def _pod(name, pod, model):
             non_arc_srcs = [root + "/" + s for s in non_arc],
             hdrs = public,
             includes = includes,
-            clang_copts = _cc_words(clang_copts + objc_std + (cxxopts + conlyopts if has_cxx else [])) + configuration_copts,
+            # One `copts` for C, Objective-C and C++ alike: a mixed pod with C++ gets no standard
+            # from here (either would be refused by the other language), and is tagged above.
+            clang_copts = _cc_words(clang_copts + objc_std) + configuration_copts,
             clang_defines = _cc_words(defines),
             umbrella_header = umbrella[0] if umbrella else None,
             swift_copts = [_make_word(w) for w in swift_copts] + configuration_swift_copts,
