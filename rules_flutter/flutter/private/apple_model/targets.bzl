@@ -320,9 +320,12 @@ def _pod(name, pod, model):
             cxxopts = cxxopts,
             conlyopts = conlyopts,
             defines = defines,
-            # The pod's own module map names the module; rules_cc takes one or the other.
-            module_name = None if module_map else module,
-            module_map = module_map,
+            # No `module_map` here: with one rules_cc leaves `-fmodules` out of every compile of
+            # the library (objc_compilation_support.bzl, `enable_modules and module_map == None`),
+            # and a pod's files then cannot `@import` anything, nor carry linker directives. Xcode
+            # compiles C and Objective-C of every pod with `-fmodules` (its log of the stock build).
+            # The module map is the hint's business, for Swift, and the include path's, for clang.
+            module_name = module,
             enable_modules = True,
             alwayslink = True,
             aspect_hints = [":" + name + ".hint"],
