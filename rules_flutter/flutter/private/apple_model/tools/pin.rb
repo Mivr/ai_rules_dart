@@ -369,6 +369,13 @@ model = {
   'pub_packages' => sorted(pub_packages),
   'pods' => pods,
   'aggregate_targets' => aggregates,
+  # What the Pods project sets for every target of it, per configuration: CocoaPods'
+  # POD_CONFIGURATION_<NAME>=1, its default C standard. Xcode adds these to each pod's own settings.
+  'pods_project' => {
+    'build_settings' => settings_by_name(
+      installer.pods_project.build_configurations.to_h { |c| [c.name, sorted(c.build_settings)] }
+    )
+  },
 }
 
 text = JSON.pretty_generate(sorted(model)) + "\n"
