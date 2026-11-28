@@ -27,6 +27,15 @@ exports_files([
     "pubspec.lock",
 ])
 
+# As the stock project has them: its icon set (Xcode compiles it into Assets.car and the icon
+# files of the bundle) and both device families.
+_APP_ICONS = glob(["ios/Runner/Assets.xcassets/AppIcon.appiconset/**"])
+
+_FAMILIES = [
+    "iphone",
+    "ipad",
+]
+
 flutter_application(
     name = "app_flutter",
     package_name = "s9app",
@@ -91,7 +100,11 @@ swift_library(
         "-import-objc-header",
         "$(execpath ios/Runner/Runner-Bridging-Header.h)",
     ],
-    data = [IOS_DEFAULT_MAIN_STORYBOARD],
+    # AppFrameworkInfo.plist is a resource of the stock Runner target and is in its bundle.
+    data = [
+        IOS_DEFAULT_MAIN_STORYBOARD,
+        "ios/Flutter/AppFrameworkInfo.plist",
+    ],
     module_name = "Runner",
     swiftc_inputs = ["ios/Runner/Runner-Bridging-Header.h"],
     tags = ["manual"],
@@ -114,8 +127,9 @@ objc_library(
 # Release shape: every pod is linked statically into the app binary.
 ios_application(
     name = "app",
+    app_icons = _APP_ICONS,
     bundle_id = "dev.rdf.s9app",
-    families = ["iphone"],
+    families = _FAMILIES,
     infoplists = [":info_plist"],
     launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
     minimum_os_version = IOS_MINIMUM_OS_VERSION,
@@ -132,8 +146,9 @@ ios_application(
 # holds the runner only. An edit in one pod relinks that framework, an edit in the app the binary.
 ios_application(
     name = "app_frameworks",
+    app_icons = _APP_ICONS,
     bundle_id = "dev.rdf.s9app",
-    families = ["iphone"],
+    families = _FAMILIES,
     frameworks = ["@apple_model//:%s.framework" % pod for pod in PODS if pod in FRAMEWORK_PODS],
     infoplists = [":info_plist"],
     launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
@@ -154,8 +169,9 @@ ios_application(
 # linked once.
 ios_application(
     name = "app_frameworks_as_pods",
+    app_icons = _APP_ICONS,
     bundle_id = "dev.rdf.s9app",
-    families = ["iphone"],
+    families = _FAMILIES,
     frameworks = ["@apple_model//:%s.framework" % pod for pod in PODS if pod in DYNAMIC_FRAMEWORK_PODS],
     infoplists = [":info_plist"],
     launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
@@ -211,8 +227,9 @@ _SUBSETS = {
 [
     ios_application(
         name = name,
+        app_icons = _APP_ICONS,
         bundle_id = "dev.rdf.s9app",
-        families = ["iphone"],
+        families = _FAMILIES,
         frameworks = frameworks,
         infoplists = [":info_plist"],
         launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,

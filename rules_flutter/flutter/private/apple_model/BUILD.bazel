@@ -1,2 +1,7 @@
 # Spike T17a (S9): Apple targets from a pinned CocoaPods model. Not for merge. See extension.bzl.
-exports_files(["framework-Info.plist"])
+# Bazel's opt is CocoaPods' Release configuration; dbg and fastbuild are its Debug.
+config_setting(
+    name = "release",
+    values = {"compilation_mode": "opt"},
+    visibility = ["//visibility:public"],
+)

@@ -169,6 +169,36 @@ def _pod(name, pod, model):
             swift_copts.extend(words)
         elif key == "SWIFT_ACTIVE_COMPILATION_CONDITIONS":
             swift_copts.extend(["-D" + w for w in words])
+
+    # What the Pods project sets for every target: the C and C++ standards a pod does not choose
+    # itself, and per configuration CocoaPods' POD_CONFIGURATION_<NAME>=1 (Debug for Bazel's dbg and
+    # fastbuild, Release for opt).
+    project = model.get("project", {})
+    shared = project.get("*", {})
+    if not conlyopts and shared.get("GCC_C_LANGUAGE_STANDARD"):
+        conlyopts.append("-std=" + shared["GCC_C_LANGUAGE_STANDARD"])
+    if not cxxopts and shared.get("CLANG_CXX_LANGUAGE_STANDARD"):
+        cxxopts.append("-std=" + shared["CLANG_CXX_LANGUAGE_STANDARD"])
+    by_configuration = {}
+    for configuration in ("Debug", "Release"):
+        words = project.get(configuration, {}).get("GCC_PREPROCESSOR_DEFINITIONS", shared.get("GCC_PREPROCESSOR_DEFINITIONS", []))
+        by_configuration[configuration] = [w for w in ([words] if type(words) == "string" else words) if w != "$(inherited)"]
+
+    # Xcode gives the C standard to Objective-C files as well as to C files. objc_library has an
+    # attribute for C alone, and `copts` reaches C++ too, which refuses a C standard: so `copts`
+    # carries it where the pod has no C++ or Objective-C++ file, and elsewhere it is said.
+    has_cxx = len([s for s in pod["sources"] if _ext(s) in ("mm", "cc", "cpp", "cxx")]) > 0
+    objc_std = []
+    if conlyopts:
+        if has_cxx:
+            unsupported.append("C standard on the Objective-C files of a pod with C++")
+        else:
+            objc_std = conlyopts
+            conlyopts = []
+
+    # Swift's view of C (its Clang importer) gets the definitions the C family gets, as under Xcode.
+    for word in [w.removeprefix("-D") for w in clang_copts if w.startswith("-D")]:
+        swift_copts.extend(["-Xcc", "-D" + word])
     groups = pod["compiler_flags_by_file"]
     if len(groups) == 1 and len(groups.values()[0]) == len(clang_srcs) + len(non_arc):
         clang_copts.extend(groups.keys()[0].split(" "))
@@ -186,7 +216,8 @@ def _pod(name, pod, model):
     defines = []
     for key, words in pod["flags"]["user"].items():
         if key == "GCC_PREPROCESSOR_DEFINITIONS":
-            defines.extend(words)
+            # For the user of the pods, the app target: the hub puts them on the aggregate target.
+            pass
         elif key == "HEADER_SEARCH_PATHS":
             for word in words:
                 prefix = "${PODS_ROOT}/%s/" % name
@@ -208,7 +239,9 @@ def _pod(name, pod, model):
             nested.append(":" + target)
         apple_resource_bundle(
             name = "%s.bundle.%s" % (name, bundle),
+            bundle_id = "org.cocoapods." + _bundle_id(bundle),
             bundle_name = bundle,
+            infoplists = ["gen/%s.%s-Info.plist" % (name, bundle)],
             resources = _files(root, [f for f in info["files"] if not f.endswith(".bundle/")]) + nested,
         )
         resources.append(":%s.bundle.%s" % (name, bundle))
@@ -281,6 +314,15 @@ def _pod(name, pod, model):
         module_map = generated[0] if generated else None
     swift_interop_hint(name = name + ".hint", module_name = module, module_map = module_map)
 
+    configuration_copts = select({
+        Label("//flutter/private/apple_model:release"): _cc_words(["-D" + w for w in by_configuration["Release"]]),
+        "//conditions:default": _cc_words(["-D" + w for w in by_configuration["Debug"]]),
+    })
+    configuration_swift_copts = select({
+        Label("//flutter/private/apple_model:release"): [_make_word(w) for d in by_configuration["Release"] for w in ("-Xcc", "-D" + d)],
+        "//conditions:default": [_make_word(w) for d in by_configuration["Debug"] for w in ("-Xcc", "-D" + d)],
+    })
+
     # A pod with Swift: rules_swift writes the module map that names the generated header, and shows it
     # to Objective-C dependents only with this feature. Xcode puts the same into the pod's framework,
     # and other pods import it (`@import GTMAppAuth;` in GoogleSignIn).
@@ -296,7 +338,7 @@ def _pod(name, pod, model):
     if swift_srcs and (clang_srcs or non_arc or public):
         # The macro hands its extra arguments to the Swift half too, so language standards go to
         # the C-family half as plain options; a module with C and C++ standards both cannot.
-        if cxxopts and conlyopts:
+        if has_cxx and cxxopts and conlyopts:
             unsupported.append("C and C++ standards in a module with Swift")
         umbrella = native.glob(["hdr/%s/umbrella/*.h" % name], allow_empty = True)
         mixed_language_library(
@@ -306,10 +348,10 @@ def _pod(name, pod, model):
             non_arc_srcs = [root + "/" + s for s in non_arc],
             hdrs = public,
             includes = includes,
-            clang_copts = _cc_words(clang_copts + cxxopts + conlyopts),
+            clang_copts = _cc_words(clang_copts + objc_std + (cxxopts + conlyopts if has_cxx else [])) + configuration_copts,
             clang_defines = _cc_words(defines),
             umbrella_header = umbrella[0] if umbrella else None,
-            swift_copts = [_make_word(w) for w in swift_copts],
+            swift_copts = [_make_word(w) for w in swift_copts] + configuration_swift_copts,
             module_name = module,
             module_map = module_map,
             enable_modules = True,
@@ -325,7 +367,7 @@ def _pod(name, pod, model):
             name = name,
             srcs = swift_srcs,
             module_name = module,
-            copts = [_make_word(w) for w in swift_copts],
+            copts = [_make_word(w) for w in swift_copts] + configuration_swift_copts,
             generates_header = True,
             generated_header_name = module + "-Swift.h",
             alwayslink = True,
@@ -342,7 +384,7 @@ def _pod(name, pod, model):
             non_arc_srcs = [root + "/" + s for s in non_arc],
             hdrs = public,
             includes = includes,
-            copts = _cc_words(clang_copts),
+            copts = _cc_words(clang_copts + objc_std) + configuration_copts,
             cxxopts = _cc_words(cxxopts),
             conlyopts = _cc_words(conlyopts),
             defines = _cc_words(defines),
@@ -368,7 +410,7 @@ def _pod(name, pod, model):
             bundle_name = module,
             bundle_id = "org.cocoapods." + _bundle_id(module),
             families = ["iphone", "ipad"],
-            infoplists = ["@rules_flutter//flutter/private/apple_model:framework-Info.plist"],
+            infoplists = ["gen/%s-Info.plist" % name],
             minimum_os_version = model["min_os"],
             deps = [":" + name],
             frameworks = [model["labels"][d] + ".framework" for d in pod["dependencies"] if model["built"].get(d)],
@@ -377,6 +419,10 @@ def _pod(name, pod, model):
 
 def _bundle_id(module):
     return "".join([c if c.isalnum() else "-" for c in module.elems()])
+
+def aggregate_library(name, defines, deps):
+    """An aggregate target of the Podfile (`Pods-Runner`): its pods, and what they tell their user to define."""
+    objc_library(name = name, defines = _cc_words(defines), deps = deps)
 
 def _framework_module_maps_impl(ctx):
     return [DefaultInfo(files = depset([f for f in ctx.files.frameworks if f.dirname.endswith(".framework/Modules") and f.extension == "modulemap"]))]
