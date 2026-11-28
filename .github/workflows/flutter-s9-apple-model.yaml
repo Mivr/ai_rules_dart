@@ -60,6 +60,10 @@ jobs:
       # fails (steps B2 and C3; their files carry `experiment` in the name). Empty: no such flag
       # is waiting, and the two steps say so and do nothing.
       EXPERIMENT: ""
+      # The cheapest thing rules_apple offers against the largest action of every edit round
+      # (ProcessAndSign): no ad hoc signature on simulator bundles. Xcode does sign there, so this
+      # is measured as an experiment (C4 builds it, D launches it, F times it), not adopted.
+      NOSIGN: --features=apple.skip_codesign_simulator_bundles
     defaults:
       run:
         shell: bash
@@ -358,6 +362,9 @@ jobs:
             build_app "$shape" "$shape" || true
             stage "C4 experiment: $(cat "$out/$shape.verdict")"
           done
+          # shellcheck disable=SC2086
+          build_app app_frameworks_as_pods-nosign app_frameworks_as_pods $NOSIGN || true
+          stage "C4 experiment: with $NOSIGN $(cat "$out/app_frameworks_as_pods-nosign.verdict")"
       - name: C5 experiment, the frameworks shape with the app's system frameworks on every link, when C2 failed
         continue-on-error: true
         run: |
@@ -469,7 +476,7 @@ jobs:
           # The first two are the stage. The others are the experiments of C4 and C5: launched and
           # reported, they do not decide whether the stage passed. A four-plugin app is compared in
           # the lines of the plugins it has.
-          for shape in app app_frameworks app_frameworks_as_pods app_seven app_four app_four_frameworks app_frameworks-syslibs; do
+          for shape in app app_frameworks app_frameworks_as_pods app_seven app_four app_four_frameworks app_frameworks-syslibs app_frameworks_as_pods-nosign; do
             failed=$status
             keep='^rdf-s9 '
             case "$shape" in
@@ -548,6 +555,19 @@ jobs:
               grep 'PrivacyInfo.xcprivacy' "$out/bundle-stock.txt" | cut -f1 || true
               echo "--"
               grep 'PrivacyInfo.xcprivacy' "$out/bundle-$shape.txt" | cut -f1 || true
+              echo "== $shape: Info.plist files in both, keys and values that differ (< stock, > the Bazel bundle)"
+              stock_app="$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app"
+              grep 'Info\.plist' "$out/bundle-$shape.contents.diff" | while read -r plist; do
+                echo "-- $plist"
+                diff <(plutil -p "$stock_app/$plist" 2>&1 | LC_ALL=C sort) <(plutil -p "$bundle/$plist" 2>&1 | LC_ALL=C sort) | grep '^[<>]' | cut -c1-200 || true
+              done || true
+              echo "== $shape: signatures (stock, then the Bazel bundle): the app, then one framework"
+              for app in "$stock_app" "$bundle"; do
+                codesign -dvv "$app" 2>&1 | grep -E 'Signature|flags|Identifier|Sealed|Info.plist' | cut -c1-160 || true
+                framework=$(find "$app/Frameworks" -maxdepth 1 -name 'AppAuth.framework' 2> /dev/null | head -1 || true)
+                if [ -n "$framework" ]; then codesign -dvv "$framework" 2>&1 | grep -E 'Signature|flags|Identifier' | cut -c1-160 || true; fi
+                echo "--"
+              done
             } > "$out/bundle-$shape.report.txt"
             head -60 "$out/bundle-$shape.report.txt" | cut -c1-300
             verdict="$verdict $shape: $(grep -c '^<' "$out/bundle-$shape.names.diff" || true) files only in stock, $(grep -c '^>' "$out/bundle-$shape.names.diff" || true) only in Bazel's, $(grep -c . "$out/bundle-$shape.contents.diff" || true) with other contents, Mach-O files $(grep -c "$(printf '\tmacho ')" "$out/bundle-stock.txt" || true) against $(grep -c "$(printf '\tmacho ')" "$out/bundle-$shape.txt" || true), privacy manifests $(grep -c 'PrivacyInfo.xcprivacy' "$out/bundle-stock.txt" || true) against $(grep -c 'PrivacyInfo.xcprivacy' "$out/bundle-$shape.txt" || true);"
@@ -583,7 +603,7 @@ jobs:
             local log="$out/exec-$1.json" start end result=ok actions
             start=$(now)
             # shellcheck disable=SC2086
-            bazel build $SIM $override --execution_log_json_file="$log" "$2" > "$out/edit-$1.log" 2>&1 || result=FAILED
+            bazel build $SIM $override $extra --execution_log_json_file="$log" "$2" > "$out/edit-$1.log" 2>&1 || result=FAILED
             end=$(now)
             actions=$(jq -s -r 'group_by(.mnemonic) | map("\(length) \(.[0].mnemonic) \((map(.metrics.totalTime // "0s" | rtrimstr("s") | tonumber) | add * 100 | round / 100))s") | join(", ")' "$log" 2> /dev/null || true)
             if [ "$result" = ok ] && [ "${3:-}" = edit ] && ! echo "$actions" | grep -q 'SwiftCompile'; then result=VOID; fi
@@ -591,6 +611,7 @@ jobs:
             [ "$result" = ok ]
           }
           measured=""
+          extra=""
           shapes=""
           for shape in app app_frameworks app_frameworks_as_pods; do
             if [ -f "$RUNNER_TEMP/ipa/$shape.ipa" ]; then shapes="$shapes $shape"; fi
@@ -601,27 +622,39 @@ jobs:
             shapes="app_four app_four_frameworks"
             echo "no full shape was built: measuring $shapes" | tee -a "$out/edit-loops.txt"
           fi
-          for shape in $shapes; do
+          measure() { # measure <label> <target>: the rounds of one shape, with the flags of $extra
+            local shape=$1 target=$2 name
+            name=$(echo "$shape" | tr -c 'A-Za-z0-9\n' '_')
             # A time is a measurement only after a build that passed: without one, no edit rounds.
-            if ! round "$shape-warm" "//:$shape"; then
+            if ! round "$shape-warm" "//:$target"; then
               echo "$shape: the build fails, no edit rounds" | tee -a "$out/edit-loops.txt"
-              continue
+              return
             fi
             measured="$measured $shape"
-            round "$shape-nothing" "//:$shape" || true
+            round "$shape-nothing" "//:$target" || true
             for n in 1 2 3; do
-              echo "func rdfEdit${shape}${n}() {}" >> ios/Runner/AppDelegate.swift
-              round "$shape-app-swift-$n" "//:$shape" edit || true
+              echo "func rdfEdit${name}${n}() {}" >> ios/Runner/AppDelegate.swift
+              round "$shape-app-swift-$n" "//:$target" edit || true
             done
             if [ -z "$plugin_file" ]; then
               echo "$shape-plugin-swift FAILED URLLauncherPlugin.swift not found, no plugin rounds" | tee -a "$out/edit-loops.txt"
-              continue
+              return
             fi
             for n in 1 2 3; do
-              echo "func rdfEdit${shape}${n}() {}" >> "$plugin_file"
-              round "$shape-plugin-swift-$n" "//:$shape" edit || true
+              echo "func rdfEdit${name}${n}() {}" >> "$plugin_file"
+              round "$shape-plugin-swift-$n" "//:$target" edit || true
             done
+          }
+          extra=""
+          for shape in $shapes; do
+            measure "$shape" "$shape"
           done
+          if [ -f "$RUNNER_TEMP/ipa/app_frameworks_as_pods-nosign.ipa" ]; then
+            # The experiment: the chosen shape again without signatures on the simulator bundles.
+            extra="$NOSIGN"
+            measure app_frameworks_as_pods-nosign app_frameworks_as_pods
+            extra=""
+          fi
           git checkout -- ios/Runner/AppDelegate.swift
           bad=$(grep -c -E ' (FAILED|VOID) ' "$out/edit-loops.txt" || true)
           if [ -n "$measured" ] && [ "$bad" = 0 ]; then
@@ -740,5 +773,171 @@ jobs:
         if: always()
         with:
           name: s9-apple-model
+          path: ${{ runner.temp }}/out
+          retention-days: 14
+
+  # One cold build of the shape the spike carries forward, on a runner that has built nothing: what
+  # a developer waits for after a clone. Beside it stands the stock build of job `s9` (stage A2),
+  # cold on its own runner too. Not required for the first job.
+  cold:
+    name: S9 one cold build of the chosen shape (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      SIM: --ios_multi_cpus=sim_arm64 -c dbg
+    defaults:
+      run:
+        shell: bash
+        working-directory: rules_flutter/e2e/s9_pods
+    steps:
+      - uses: actions/checkout@v7
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          module-root: rules_flutter/e2e/s9_pods
+          repository-cache: true
+      - name: Cold build of //:app_frameworks_as_pods
+        run: |
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          now() { perl -MTime::HiRes=time -e 'printf "%.1f\n", time'; }
+          {
+            echo "cpus: $(sysctl -n hw.ncpu || true)"
+            # The one cache that may be warm: archives the action restored for Bazel's repository
+            # cache. Empty means every pod source, rule set and SDK was downloaded in the first step.
+            echo "repository cache before the build: $(du -sh "$(bazel info repository_cache 2> /dev/null)" 2> /dev/null | cut -f1 || echo none)"
+          } | tee "$out/cold.txt"
+          start=$(now)
+          # shellcheck disable=SC2086
+          bazel build --nobuild $SIM //:app_frameworks_as_pods > "$out/cold-fetch.log" 2>&1 || echo "fetch and analysis FAILED" | tee -a "$out/cold.txt"
+          fetched=$(now)
+          # shellcheck disable=SC2086
+          bazel build $SIM --execution_log_json_file="$out/cold-exec.json" //:app_frameworks_as_pods > "$out/cold-build.log" 2>&1 || echo "build FAILED" | tee -a "$out/cold.txt"
+          built=$(now)
+          {
+            echo "fetch and analysis (repositories, toolchains, the action graph): $(echo "$fetched - $start" | bc) s"
+            echo "build (every tool, pod, the Dart program, links, bundle): $(echo "$built - $fetched" | bc) s"
+            echo "total: $(echo "$built - $start" | bc) s"
+            grep -E 'Elapsed time|processes:' "$out/cold-build.log" || true
+            echo "actions by kind, with their seconds (not wall time: three run at once):"
+            jq -s -r 'group_by(.mnemonic) | map({m: .[0].mnemonic, n: length, s: (map(.metrics.totalTime // "0s" | rtrimstr("s") | tonumber) | add)}) | sort_by(-.s) | .[0:15][] | "  \(.n) \(.m) \(.s * 10 | round / 10) s"' "$out/cold-exec.json" || true
+          } | tee -a "$out/cold.txt"
+          rm -f "$out/cold-exec.json"
+          cat "$out/cold.txt" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: s9-apple-model-cold
+          path: ${{ runner.temp }}/out
+          retention-days: 14
+
+  # The fourteen-plugin closure: 55 pods with Firestore's C++, gRPC, BoringSSL, abseil and Stripe.
+  # Phase 1 only analysed it. Here every pod is compiled, the pods are linked into one app and the
+  # app is started (`//:app_m14_pods`: the pods and a main; the workspace has no Flutter app of this
+  # closure). On its own runner, not required for the first job; the report says how far it gets.
+  m14:
+    name: S9 the 55-pod closure (macos-latest)
+    runs-on: macos-latest
+    timeout-minutes: 170
+    env:
+      SIM: --ios_multi_cpus=sim_arm64 -c dbg
+      REPORT: --keep_going --show_progress_rate_limit=60
+    defaults:
+      run:
+        shell: bash
+        working-directory: rules_flutter/e2e/s9_pods
+    steps:
+      - uses: actions/checkout@v7
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          module-root: rules_flutter/e2e/s9_pods
+          repository-cache: true
+      - name: Every pod of the 55-pod closure, for the simulator
+        continue-on-error: true
+        timeout-minutes: 110
+        run: |
+          out="$RUNNER_TEMP/out"
+          mkdir -p "$out"
+          pods=$(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model_m14//:all) except filter("\.(framework|xcframework|modules)$", @apple_model_m14//:all)' 2> "$out/pods-query.log" || true)
+          min_os=$(jq -r '.aggregate_targets["Pods-Runner"].platform.deployment_target' apple_model_m14.json)
+          # shellcheck disable=SC2086
+          /usr/bin/time -p bazel build -c dbg --platforms=@apple_support//platforms:ios_sim_arm64 --ios_minimum_os="$min_os" $REPORT \
+            --build_event_json_file="$out/pods.bep.json" $pods > "$out/pods-build.log" 2>&1 || true
+          tail -15 "$out/pods-build.log"
+      - name: What the pods' build left (also after a time-out)
+        if: always()
+        continue-on-error: true
+        run: |
+          out="$RUNNER_TEMP/out"
+          # One line per target; a target the build never finished is not in the list.
+          jq -r 'select(.id.targetCompleted)
+            | ([.children[]? | .actionCompleted.label // empty | sub("^.*//:"; "")] | unique | join(" ")) as $causes
+            | (if .completed.success then "ok    " else "FAILED" end) + " " + (.id.targetCompleted.label | sub("^.*//:"; ""))
+              + (if $causes != "" then " <- " + $causes else "" end)' "$out/pods.bep.json" | LC_ALL=C sort -u > "$out/pods-result.txt" || true
+          grep -a -o -E '(fatal error|error): .*' "$out/pods-build.log" | cut -c1-300 | LC_ALL=C sort | uniq -c | LC_ALL=C sort -rn | head -60 > "$out/errors-pods.kinds.txt" || true
+          # The first error lines of every failed action, from the log under its ERROR line.
+          awk 'index($0, "ERROR: ") == 1 { n = 25; print "== " substr($0, 1, 300); next } index($0, "INFO: ") == 1 { n = 0 }
+            n > 0 && !/^\[[0-9,]+ \/ [0-9,]+\]/ { print substr($0, 1, 400); n-- }' "$out/pods-build.log" > "$out/errors-pods.txt" || true
+          {
+            echo "pods of the 55-pod closure: $(grep -c '^ok' "$out/pods-result.txt" || true) ok, $(grep -c '^FAILED' "$out/pods-result.txt" || true) failed, of $(bazel query 'kind("alias|objc_library|apple_dynamic_xcframework_import", @apple_model_m14//:all) except filter("\.(framework|xcframework|modules)$", @apple_model_m14//:all)' 2> /dev/null | grep -c . || true) targets"
+            grep -E 'Elapsed time|processes:|^real ' "$out/pods-build.log" || echo "the build did not end (time-out): the list above is what had finished"
+          } | tee "$out/stages.txt"
+          cat "$out/pods-result.txt"
+          head -80 "$out/errors-pods.txt"
+      - name: The 55 pods in one app, linked and started
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          out="$RUNNER_TEMP/out"
+          set +e
+          # shellcheck disable=SC2086
+          /usr/bin/time -p bazel build $SIM $REPORT //:app_m14_pods > "$out/app-build.log" 2>&1
+          status=$?
+          set -e
+          tail -40 "$out/app-build.log" | cut -c1-400
+          if [ "$status" != 0 ] || [ ! -f bazel-bin/app_m14_pods.ipa ]; then
+            echo "//:app_m14_pods FAILED, bazel exit $status" | tee -a "$out/stages.txt"
+            exit 1
+          fi
+          echo "//:app_m14_pods linked ($(grep -E '^real ' "$out/app-build.log" | tail -1))" | tee -a "$out/stages.txt"
+          rm -rf "${RUNNER_TEMP:?}/m14" && unzip -q bazel-bin/app_m14_pods.ipa -d "$RUNNER_TEMP/m14"
+          udid=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | test("^iPhone"))][0].udid')
+          xcrun simctl bootstatus "$udid" -b > "$out/simulator-boot.log" 2>&1
+          xcrun simctl install "$udid" "$RUNNER_TEMP/m14/Payload/app_m14_pods.app"
+          # The app writes with NSLog, which reaches the console of the launch.
+          xcrun simctl launch --console-pty "$udid" dev.rdf.s9app > "$out/launch-m14.log" 2>&1 &
+          for _ in $(seq 1 45); do
+            sleep 2
+            if grep -a -q 'rdf-s9 done' "$out/launch-m14.log"; then break; fi
+          done
+          xcrun simctl terminate "$udid" dev.rdf.s9app > /dev/null 2>&1 || true
+          grep -a -o 'rdf-s9 .*' "$out/launch-m14.log" | tr -d '\r' > "$out/plugins-m14.txt" || true
+          cat "$out/plugins-m14.txt"
+          if grep -q '^rdf-s9 done' "$out/plugins-m14.txt"; then
+            echo "//:app_m14_pods started: $(grep 'rdf-s9 classes' "$out/plugins-m14.txt" || true)" | tee -a "$out/stages.txt"
+          else
+            echo "//:app_m14_pods did not start" | tee -a "$out/stages.txt"
+            tail -20 "$out/launch-m14.log" | cut -c1-300
+            exit 1
+          fi
+      - name: Summary
+        if: always()
+        run: |
+          out="$RUNNER_TEMP/out"
+          {
+            echo '### S9, the 55-pod closure'
+            echo '```'
+            cat "$out/stages.txt" 2> /dev/null || echo "(no stages.txt)"
+            echo "--- pods"
+            cat "$out/pods-result.txt" 2> /dev/null || true
+            echo "--- error kinds"
+            head -40 "$out/errors-pods.kinds.txt" 2> /dev/null || true
+            echo "--- plugin classes in the app"
+            cat "$out/plugins-m14.txt" 2> /dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: s9-apple-model-m14
           path: ${{ runner.temp }}/out
           retention-days: 14
