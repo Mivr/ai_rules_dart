@@ -251,14 +251,10 @@
         }
       },
       "copy_resources": {
-        "*": [
-
-        ]
+        "*": []
       },
       "embed_frameworks": {
-        "*": [
-
-        ]
+        "*": []
       },
       "linkage": "static",
       "packaging": "framework",
@@ -267,9 +263,7 @@
         "name": "ios"
       },
       "pods": {
-        "*": [
-
-        ]
+        "*": []
       },
       "user_targets": [
         "RunnerTests"
@@ -312,7 +306,7 @@
       "warn_for_multiple_pod_sources": true,
       "warn_for_unused_master_specs_repo": true
     },
-    "lock_sha256": "4b067b80be6459e3304b5275b949fd013905da383ef098fff065278768cf005a",
+    "lock_sha256": "538147cd43608c64014d604939aa283bd535bbeffd3c579f6a4d6ded48d83ffd",
     "spec_repos": {
       "trunk": [
         "AppAuth",
@@ -346,9 +340,7 @@
         "product_name": "AppAuth.framework",
         "should_build": true,
         "static_framework": null,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -396,29 +388,18 @@
         }
       },
       "checksum": "b19b479e4e20f31869ce3fc2302312dc3fce98b8",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
-      "dependencies": [
-
-      ],
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
+      "dependencies": [],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": true,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 3,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
         "pod": {
@@ -426,10 +407,8 @@
             "YES"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "SafariServices"
@@ -516,12 +495,8 @@
           "AppAuth/OIDURLQueryComponent.h": "Sources/AppAuthCore/OIDURLQueryComponent.h",
           "AppAuth/OIDURLSessionProvider.h": "Sources/AppAuthCore/OIDURLSessionProvider.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "AppAuth/AppAuth.h": "Sources/AppAuth.h",
           "AppAuth/AppAuthCore.h": "Sources/AppAuthCore.h",
@@ -562,12 +537,8 @@
           "AppAuth/OIDURLSessionProvider.h": "Sources/AppAuthCore/OIDURLSessionProvider.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -609,14 +580,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/openid/AppAuth-iOS/archive/a972daac82d449d58ab119e91c68153e29ddac33.tar.gz",
         "commit": "a972daac82d449d58ab119e91c68153e29ddac33",
@@ -673,24 +641,13 @@
           "ExternalUserAgent"
         ]
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "3.0.0",
       "weak_frameworks": [
@@ -774,11 +731,8 @@
         }
       },
       "checksum": "be8fce5469f68d7f6a29aa94b25f097409ff7fdc",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "GoogleUtilities",
         "PromisesObjC",
@@ -786,16 +740,12 @@
         "RecaptchaInterop"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "AppCheckCore/integration",
@@ -812,14 +762,10 @@
             "${PODS_TARGET_SRCROOT}"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module AppCheckCore {\n  umbrella header \"AppCheckCore-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"AppCheckCore.h\"\n#import \"GACAppAttestProvider.h\"\n#import \"GACAppCheck.h\"\n#import \"GACAppCheckAvailability.h\"\n#import \"GACAppCheckDebugProvider.h\"\n#import \"GACAppCheckErrors.h\"\n#import \"GACAppCheckLogger.h\"\n#import \"GACAppCheckProvider.h\"\n#import \"GACAppCheckSettings.h\"\n#import \"GACAppCheckToken.h\"\n#import \"GACAppCheckTokenDelegate.h\"\n#import \"GACAppCheckTokenResult.h\"\n#import \"GACDeviceCheckProvider.h\"\n#import \"_GACAppCheckAPIService.h\"\n#import \"_GACAppCheckBackoffWrapper.h\"\n#import \"_GACAppCheckErrorUtil.h\"\n#import \"_GACURLSessionDataResponse.h\"\n\nFOUNDATION_EXPORT double AppCheckCoreVersionNumber;\nFOUNDATION_EXPORT const unsigned char AppCheckCoreVersionString[];\n\n",
       "headers": {
@@ -917,12 +863,8 @@
           "AppCheckCore/_GACAppCheckErrorUtil.h": "AppCheckCore/Sources/Public/AppCheckCore/_GACAppCheckErrorUtil.h",
           "AppCheckCore/_GACURLSessionDataResponse.h": "AppCheckCore/Sources/Public/AppCheckCore/_GACURLSessionDataResponse.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "AppCheckCore/AppCheckCore.h": "AppCheckCore/Sources/Public/AppCheckCore/AppCheckCore.h",
           "AppCheckCore/GACAppAttestProvider.h": "AppCheckCore/Sources/Public/AppCheckCore/GACAppAttestProvider.h",
@@ -943,12 +885,8 @@
           "AppCheckCore/_GACURLSessionDataResponse.h": "AppCheckCore/Sources/Public/AppCheckCore/_GACURLSessionDataResponse.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "12.0",
         "name": "ios"
@@ -957,17 +895,12 @@
         "GCC_C_LANGUAGE_STANDARD": "c99",
         "HEADER_SEARCH_PATHS": "\"${PODS_TARGET_SRCROOT}\""
       },
-      "privacy_manifests": [
-
-      ],
+      "privacy_manifests": [],
       "requires_arc": [
         true
       ],
-      "resource_bundles": {
-      },
-      "resources": [
-
-      ],
+      "resource_bundles": {},
+      "resources": [],
       "source": {
         "archive": "https://github.com/google/app-check/archive/97f7d74dd0e8f3d0fe5fc75cc8957aa73bdc948a.tar.gz",
         "commit": "97f7d74dd0e8f3d0fe5fc75cc8957aa73bdc948a",
@@ -1021,31 +954,16 @@
         "AppCheckCore"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "11.3.2",
       "weak_frameworks": [
@@ -1114,45 +1032,32 @@
         }
       },
       "checksum": "e3c5ab38229ae085490d02398d97b9f5374bbe6e",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "FirebaseCore",
         "FirebaseMessaging"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 18,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
-        "pod": {
-        },
-        "target": {
-        },
+        "pod": {},
+        "target": {},
         "user": {
           "HEADER_SEARCH_PATHS": [
             "${PODS_ROOT}/Firebase/CoreOnly/Sources"
           ]
         }
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "headers": {
         "all": [
           "CoreOnly/Sources/Firebase.h"
@@ -1160,39 +1065,25 @@
         "mapped": {
           "Firebase/Firebase.h": "CoreOnly/Sources/Firebase.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "Firebase/Firebase.h": "CoreOnly/Sources/Firebase.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
       },
-      "pod_target_xcconfig": {
-      },
-      "privacy_manifests": [
-
-      ],
+      "pod_target_xcconfig": {},
+      "privacy_manifests": [],
       "requires_arc": [
         true
       ],
-      "resource_bundles": {
-      },
-      "resources": [
-
-      ],
+      "resource_bundles": {},
+      "resources": [],
       "source": {
         "archive": "https://github.com/firebase/firebase-ios-sdk/archive/42cf1417c51c5e3bfbae5d3ab89b778f8fdc4bb8.tar.gz",
         "commit": "42cf1417c51c5e3bfbae5d3ab89b778f8fdc4bb8",
@@ -1202,9 +1093,7 @@
         "strip_prefix": "firebase-ios-sdk-42cf1417c51c5e3bfbae5d3ab89b778f8fdc4bb8",
         "tag": "CocoaPods-12.19.3"
       },
-      "sources": [
-
-      ],
+      "sources": [],
       "specs": [
         "Firebase/CoreOnly",
         "Firebase/Messaging"
@@ -1238,26 +1127,14 @@
         "HEADER_SEARCH_PATHS": "$(inherited) ${PODS_ROOT}/Firebase/CoreOnly/Sources"
       },
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "12.19.3",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -1338,26 +1215,19 @@
         }
       },
       "checksum": "ab948de5d99e69aeed3cd6f5ace263ce795b2559",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "FirebaseCoreInternal",
         "GoogleUtilities"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": true,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "FirebaseCore/swift-unit",
@@ -1379,10 +1249,8 @@
             "-fno-autolink"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "Foundation",
@@ -1439,12 +1307,8 @@
           "FirebaseCore/FirebaseCore.h": "FirebaseCore/Sources/Public/FirebaseCore/FirebaseCore.h",
           "FirebaseCore/FirebaseCoreInternal.h": "FirebaseCore/Extension/FirebaseCoreInternal.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "FirebaseCore/FIRApp.h": "FirebaseCore/Sources/Public/FirebaseCore/FIRApp.h",
           "FirebaseCore/FIRConfiguration.h": "FirebaseCore/Sources/Public/FirebaseCore/FIRConfiguration.h",
@@ -1455,12 +1319,8 @@
           "FirebaseCore/FirebaseCore.h": "FirebaseCore/Sources/Public/FirebaseCore/FirebaseCore.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -1505,14 +1365,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/firebase/firebase-ios-sdk/archive/42cf1417c51c5e3bfbae5d3ab89b778f8fdc4bb8.tar.gz",
         "commit": "42cf1417c51c5e3bfbae5d3ab89b778f8fdc4bb8",
@@ -1541,36 +1398,19 @@
         "FirebaseCore"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "12.19.3",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -1654,25 +1494,18 @@
         }
       },
       "checksum": "656b1c2fd5a1c5976183dc54b73deda78fb26ee3",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "GoogleUtilities"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "FirebaseCoreInternal/Integration",
@@ -1680,46 +1513,28 @@
         ]
       },
       "flags": {
-        "pod": {
-        },
-        "target": {
-        },
-        "user": {
-        }
+        "pod": {},
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module FirebaseCoreInternal {\n  umbrella header \"FirebaseCoreInternal-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n\nFOUNDATION_EXPORT double FirebaseCoreInternalVersionNumber;\nFOUNDATION_EXPORT const unsigned char FirebaseCoreInternalVersionString[];\n\n",
       "headers": {
-        "all": [
-
-        ],
-        "mapped": {
-        },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
-        "public": {
-        }
+        "all": [],
+        "mapped": {},
+        "private": [],
+        "project": [],
+        "public": {}
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
       },
-      "pod_target_xcconfig": {
-      },
+      "pod_target_xcconfig": {},
       "privacy_manifests": [
         "FirebaseCore/Internal/Sources/Resources/PrivacyInfo.xcprivacy"
       ],
@@ -1754,14 +1569,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/firebase/firebase-ios-sdk/archive/7874e644dbfa3e5efc3760f6a89d44508796bffd.tar.gz",
         "commit": "7874e644dbfa3e5efc3760f6a89d44508796bffd",
@@ -1790,36 +1602,19 @@
         "FirebaseCoreInternal"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "12.19.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -1899,27 +1694,20 @@
         }
       },
       "checksum": "f70a49eed611f5602f373e40974b3b01556ac217",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "FirebaseCore",
         "GoogleUtilities",
         "PromisesObjC"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "FirebaseInstallations/integration",
@@ -1931,17 +1719,13 @@
           "DEFINES_MODULE": [
             "YES"
           ],
-          "GCC_PREPROCESSOR_DEFINITIONS": [
-
-          ],
+          "GCC_PREPROCESSOR_DEFINITIONS": [],
           "HEADER_SEARCH_PATHS": [
             "${PODS_TARGET_SRCROOT}"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "Security"
@@ -2013,12 +1797,8 @@
           "FirebaseInstallations/FirebaseInstallations.h": "FirebaseInstallations/Source/Library/Public/FirebaseInstallations/FirebaseInstallations.h",
           "FirebaseInstallations/FirebaseInstallationsInternal.h": "FirebaseInstallations/Source/Library/Private/FirebaseInstallationsInternal.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "FirebaseInstallations/FIRInstallations.h": "FirebaseInstallations/Source/Library/Public/FirebaseInstallations/FIRInstallations.h",
           "FirebaseInstallations/FIRInstallationsAuthTokenResult.h": "FirebaseInstallations/Source/Library/Public/FirebaseInstallations/FIRInstallationsAuthTokenResult.h",
@@ -2026,12 +1806,8 @@
           "FirebaseInstallations/FirebaseInstallations.h": "FirebaseInstallations/Source/Library/Public/FirebaseInstallations/FirebaseInstallations.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -2075,14 +1851,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/firebase/firebase-ios-sdk/archive/7874e644dbfa3e5efc3760f6a89d44508796bffd.tar.gz",
         "commit": "7874e644dbfa3e5efc3760f6a89d44508796bffd",
@@ -2115,36 +1888,19 @@
         "FirebaseInstallations"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "12.19.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -2225,11 +1981,8 @@
         }
       },
       "checksum": "c15f48126adbe8b4d3238a5e1fa24bab3ad3e472",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "FirebaseCore",
         "FirebaseInstallations",
@@ -2238,16 +1991,12 @@
         "nanopb"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "FirebaseMessaging/integration",
@@ -2265,10 +2014,8 @@
             "${PODS_TARGET_SRCROOT}"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "SystemConfiguration"
@@ -2387,12 +2134,8 @@
           "FirebaseMessaging/NSError+FIRMessaging.h": "FirebaseMessaging/Sources/NSError+FIRMessaging.h",
           "FirebaseMessaging/me.nanopb.h": "FirebaseMessaging/Sources/Protogen/nanopb/me.nanopb.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "FirebaseMessaging/FIRMessaging+ExtensionHelper.h": "FirebaseMessaging/Sources/Public/FirebaseMessaging/FIRMessaging+ExtensionHelper.h",
           "FirebaseMessaging/FIRMessaging.h": "FirebaseMessaging/Sources/Public/FirebaseMessaging/FIRMessaging.h",
@@ -2403,9 +2146,7 @@
       "libraries": [
         "sqlite3"
       ],
-      "non_arc_sources": [
-
-      ],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -2448,14 +2189,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/firebase/firebase-ios-sdk/archive/7874e644dbfa3e5efc3760f6a89d44508796bffd.tar.gz",
         "commit": "7874e644dbfa3e5efc3760f6a89d44508796bffd",
@@ -2505,31 +2243,16 @@
         "FirebaseMessaging"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "12.19.0",
       "weak_frameworks": [
@@ -2564,9 +2287,7 @@
         "product_name": "Flutter.framework",
         "should_build": null,
         "static_framework": null,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -2594,119 +2315,66 @@
         }
       },
       "checksum": "71a624a5bc0c04062bf19101d501e466baf2fb47",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
-      "dependencies": [
-
-      ],
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
+      "dependencies": [],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
-        "pod": {
-        },
-        "target": {
-        },
-        "user": {
-        }
+        "pod": {},
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "headers": {
-        "all": [
-
-        ],
-        "mapped": {
-        },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
-        "public": {
-        }
+        "all": [],
+        "mapped": {},
+        "private": [],
+        "project": [],
+        "public": {}
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
       },
-      "pod_target_xcconfig": {
-      },
-      "privacy_manifests": [
-
-      ],
+      "pod_target_xcconfig": {},
+      "privacy_manifests": [],
       "requires_arc": [
         true
       ],
-      "resource_bundles": {
-      },
-      "resources": [
-
-      ],
+      "resource_bundles": {},
+      "resources": [],
       "source": {
         "path": "app:ios/Flutter"
       },
-      "sources": [
-
-      ],
+      "sources": [],
       "specs": [
         "Flutter"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "1.0.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -2784,26 +2452,19 @@
         }
       },
       "checksum": "d5a53b9611d30bb40d92293f72f12c3ac3a08321",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "AppAuth",
         "GTMSessionFetcher"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": true,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "GTMAppAuth/objc-api-integration",
@@ -2811,12 +2472,9 @@
         ]
       },
       "flags": {
-        "pod": {
-        },
-        "target": {
-        },
-        "user": {
-        }
+        "pod": {},
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "Security"
@@ -2824,32 +2482,19 @@
       "generated_module_map": "framework module GTMAppAuth {\n  umbrella header \"GTMAppAuth-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n\nFOUNDATION_EXPORT double GTMAppAuthVersionNumber;\nFOUNDATION_EXPORT const unsigned char GTMAppAuthVersionString[];\n\n",
       "headers": {
-        "all": [
-
-        ],
-        "mapped": {
-        },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
-        "public": {
-        }
+        "all": [],
+        "mapped": {},
+        "private": [],
+        "project": [],
+        "public": {}
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
       },
-      "pod_target_xcconfig": {
-      },
+      "pod_target_xcconfig": {},
       "privacy_manifests": [
         "GTMAppAuth/Sources/Resources/PrivacyInfo.xcprivacy"
       ],
@@ -2884,14 +2529,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/google/GTMAppAuth/archive/57094cd46bc8700d3a887e2a429f42b6e8ea3f0b.tar.gz",
         "commit": "57094cd46bc8700d3a887e2a429f42b6e8ea3f0b",
@@ -2914,36 +2556,19 @@
         "GTMAppAuth"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "6.0.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -2974,9 +2599,7 @@
         "product_name": "GTMSessionFetcher.framework",
         "should_build": true,
         "static_framework": null,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -3023,25 +2646,16 @@
         }
       },
       "checksum": "a6d2b2aa203485893d4511ff64642dc811f7c09f",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
-      "dependencies": [
-
-      ],
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
+      "dependencies": [],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 3,
         "test_specs": [
           "GTMSessionFetcher/Tests"
@@ -3053,10 +2667,8 @@
             "YES"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "Security"
@@ -3084,12 +2696,8 @@
           "GTMSessionFetcher/GTMSessionFetcherService.h": "Sources/Core/Public/GTMSessionFetcher/GTMSessionFetcherService.h",
           "GTMSessionFetcher/GTMSessionUploadFetcher.h": "Sources/Core/Public/GTMSessionFetcher/GTMSessionUploadFetcher.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "GTMSessionFetcher/GTMGatherInputStream.h": "Sources/Full/Public/GTMSessionFetcher/GTMGatherInputStream.h",
           "GTMSessionFetcher/GTMMIMEDocument.h": "Sources/Full/Public/GTMSessionFetcher/GTMMIMEDocument.h",
@@ -3100,12 +2708,8 @@
           "GTMSessionFetcher/GTMSessionUploadFetcher.h": "Sources/Core/Public/GTMSessionFetcher/GTMSessionUploadFetcher.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -3148,8 +2752,7 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         },
         "GTMSessionFetcher_Full_Privacy": {
@@ -3179,14 +2782,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/google/gtm-session-fetcher/archive/724a52eea6329b7e12d3ad8300d76ca9f3895fcc.tar.gz",
         "commit": "724a52eea6329b7e12d3ad8300d76ca9f3895fcc",
@@ -3220,29 +2820,16 @@
           "Full"
         ]
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "5.3.1",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -3324,41 +2911,29 @@
         }
       },
       "checksum": "0a484b05ed21d88c9f9ebbacb007956edd508a96",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "GoogleMaps"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "Google-Maps-iOS-Utils/Tests"
         ]
       },
       "flags": {
-        "pod": {
-        },
-        "target": {
-        },
-        "user": {
-        }
+        "pod": {},
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module GoogleMapsUtils {\n  umbrella header \"Google-Maps-iOS-Utils-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"GMSMarker+GMUClusteritem.h\"\n#import \"GMUCluster.h\"\n#import \"GMUClusterAlgorithm.h\"\n#import \"GMUClusterIconGenerator.h\"\n#import \"GMUClusterItem.h\"\n#import \"GMUClusterManager+Testing.h\"\n#import \"GMUClusterManager.h\"\n#import \"GMUClusterRenderer.h\"\n#import \"GMUDefaultClusterIconGenerator+Testing.h\"\n#import \"GMUDefaultClusterIconGenerator.h\"\n#import \"GMUDefaultClusterRenderer+Testing.h\"\n#import \"GMUDefaultClusterRenderer.h\"\n#import \"GMUFeature.h\"\n#import \"GMUGeoJSONParser.h\"\n#import \"GMUGeometry.h\"\n#import \"GMUGeometryCollection.h\"\n#import \"GMUGeometryContainer.h\"\n#import \"GMUGeometryRenderer+Testing.h\"\n#import \"GMUGeometryRenderer.h\"\n#import \"GMUGradient.h\"\n#import \"GMUGridBasedClusterAlgorithm.h\"\n#import \"GMUGroundOverlay.h\"\n#import \"GMUHeatmapTileLayer+Testing.h\"\n#import \"GMUHeatmapTileLayer.h\"\n#import \"GMUKMLParser.h\"\n#import \"GMULineString.h\"\n#import \"GMUMarkerClustering.h\"\n#import \"GMUNonHierarchicalDistanceBasedAlgorithm.h\"\n#import \"GMUPair.h\"\n#import \"GMUPlacemark.h\"\n#import \"GMUPoint.h\"\n#import \"GMUPolygon.h\"\n#import \"GMUSimpleClusterAlgorithm.h\"\n#import \"GMUStaticCluster.h\"\n#import \"GMUStyle.h\"\n#import \"GMUStyleMap.h\"\n#import \"GMUWeightedLatLng.h\"\n#import \"GMUWrappingDictionaryKey.h\"\n#import \"GoogleMapsUtils-Bridging-Header.h\"\n#import \"GQTBounds.h\"\n#import \"GQTPoint.h\"\n#import \"GQTPointQuadTree.h\"\n#import \"GQTPointQuadTreeChild.h\"\n#import \"GQTPointQuadTreeItem.h\"\n\nFOUNDATION_EXPORT double GoogleMapsUtilsVersionNumber;\nFOUNDATION_EXPORT const unsigned char GoogleMapsUtilsVersionString[];\n\n",
@@ -3455,12 +3030,8 @@
           "Google-Maps-iOS-Utils/GQTPointQuadTreeItem.h": "Sources/GoogleMapsUtilsObjC/include/GQTPointQuadTreeItem.h",
           "Google-Maps-iOS-Utils/GoogleMapsUtils-Bridging-Header.h": "Sources/GoogleMapsUtilsObjC/include/GoogleMapsUtils-Bridging-Header.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "Google-Maps-iOS-Utils/GMSMarker+GMUClusteritem.h": "Sources/GoogleMapsUtilsObjC/include/GMSMarker+GMUClusteritem.h",
           "Google-Maps-iOS-Utils/GMUCluster.h": "Sources/GoogleMapsUtilsObjC/include/GMUCluster.h",
@@ -3508,29 +3079,19 @@
           "Google-Maps-iOS-Utils/GoogleMapsUtils-Bridging-Header.h": "Sources/GoogleMapsUtilsObjC/include/GoogleMapsUtils-Bridging-Header.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
       },
-      "pod_target_xcconfig": {
-      },
-      "privacy_manifests": [
-
-      ],
+      "pod_target_xcconfig": {},
+      "privacy_manifests": [],
       "requires_arc": [
         true
       ],
-      "resource_bundles": {
-      },
-      "resources": [
-
-      ],
+      "resource_bundles": {},
+      "resources": [],
       "source": {
         "archive": "https://github.com/googlemaps/google-maps-ios-utils/archive/22c6e764d14daaf5de2aa4a3700bc2e9dccae5ac.tar.gz",
         "commit": "22c6e764d14daaf5de2aa4a3700bc2e9dccae5ac",
@@ -3583,36 +3144,19 @@
         "Google-Maps-iOS-Utils"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "6.1.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -3642,9 +3186,7 @@
         "product_name": "GoogleDataTransport.framework",
         "should_build": true,
         "static_framework": null,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -3691,26 +3233,19 @@
         }
       },
       "checksum": "a24e58982ab3ba2f64d79613e027fe7f57e88539",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "PromisesObjC",
         "nanopb"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "GoogleDataTransport/CCT-Tests-Integration",
@@ -3738,10 +3273,8 @@
             "${PODS_TARGET_SRCROOT}/"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "CoreTelephony",
@@ -3856,12 +3389,8 @@
           "GoogleDataTransport/external_prequest_context.nanopb.h": "GoogleDataTransport/GDTCCTLibrary/Protogen/nanopb/external_prequest_context.nanopb.h",
           "GoogleDataTransport/external_privacy_context.nanopb.h": "GoogleDataTransport/GDTCCTLibrary/Protogen/nanopb/external_privacy_context.nanopb.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "GoogleDataTransport/GDTCORClock.h": "GoogleDataTransport/GDTCORLibrary/Public/GoogleDataTransport/GDTCORClock.h",
           "GoogleDataTransport/GDTCORConsoleLogger.h": "GoogleDataTransport/GDTCORLibrary/Public/GoogleDataTransport/GDTCORConsoleLogger.h",
@@ -3878,9 +3407,7 @@
       "libraries": [
         "z"
       ],
-      "non_arc_sources": [
-
-      ],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "12.0",
         "name": "ios"
@@ -3924,14 +3451,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/google/GoogleDataTransport/archive/ba3358d3c3dbae8ef230b58a46b97ad65e84e974.tar.gz",
         "commit": "ba3358d3c3dbae8ef230b58a46b97ad65e84e974",
@@ -3983,36 +3507,19 @@
         "GoogleDataTransport"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "10.1.1",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY": "YES",
@@ -4044,9 +3551,7 @@
         "product_name": "GoogleMaps.framework",
         "should_build": null,
         "static_framework": null,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -4074,37 +3579,23 @@
         }
       },
       "checksum": "0608099d4870cac8754bdba9b6953db543432438",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
-      "dependencies": [
-
-      ],
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
+      "dependencies": [],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 2,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
-        "pod": {
-        },
-        "target": {
-        },
-        "user": {
-        }
+        "pod": {},
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "Accelerate",
@@ -4131,12 +3622,8 @@
         "mapped": {
           "GoogleMaps/GMSEmpty.h": "Maps/Sources/GMSEmpty.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "GoogleMaps/GMSEmpty.h": "Maps/Sources/GMSEmpty.h"
         }
@@ -4145,18 +3632,13 @@
         "c++",
         "z"
       ],
-      "non_arc_sources": [
-
-      ],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
       },
-      "pod_target_xcconfig": {
-      },
-      "privacy_manifests": [
-
-      ],
+      "pod_target_xcconfig": {},
+      "privacy_manifests": [],
       "requires_arc": [
         true
       ],
@@ -4188,14 +3670,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "flatten": true,
         "http": "https://dl.google.com/dl/cpdc/006c69f02623edc7/GoogleMaps-9.4.0.tar.gz",
@@ -4203,9 +3682,7 @@
         "size": 23470735,
         "type": "tgz"
       },
-      "sources": [
-
-      ],
+      "sources": [],
       "specs": [
         "GoogleMaps",
         "GoogleMaps/Maps"
@@ -4219,21 +3696,12 @@
           "Maps"
         ]
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
         "xcframeworks": [
           {
             "path": "Maps/Frameworks/GoogleMaps.xcframework",
@@ -4267,9 +3735,7 @@
         ]
       },
       "version": "9.4.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -4348,11 +3814,8 @@
         }
       },
       "checksum": "6c0681460b202440022a4029ac0cbd71ef72068f",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "AppAuth",
         "AppCheckCore",
@@ -4360,16 +3823,12 @@
         "GTMSessionFetcher"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": true,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "GoogleSignIn/unit"
@@ -4390,10 +3849,8 @@
             "${PODS_TARGET_SRCROOT}"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "CoreGraphics",
@@ -4492,12 +3949,8 @@
           "GoogleSignIn/NSBundle+GID3PAdditions.h": "GoogleSignIn/Sources/NSBundle+GID3PAdditions.h",
           "GoogleSignIn/NSBundle+GIDBundle.h": "GoogleSignIn/Sources/GIDBundle/Implementation/NSBundle+GIDBundle.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "GoogleSignIn/GIDAppCheckError.h": "GoogleSignIn/Sources/Public/GoogleSignIn/GIDAppCheckError.h",
           "GoogleSignIn/GIDClaim.h": "GoogleSignIn/Sources/Public/GoogleSignIn/GIDClaim.h",
@@ -4511,12 +3964,8 @@
           "GoogleSignIn/GoogleSignIn.h": "GoogleSignIn/Sources/Public/GoogleSignIn/GoogleSignIn.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -4603,14 +4052,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/google/GoogleSignIn-iOS/archive/bfaebbc04a4d13ed7a89b0fc1fb8ad66b362cc1c.tar.gz",
         "commit": "bfaebbc04a4d13ed7a89b0fc1fb8ad66b362cc1c",
@@ -4657,36 +4103,19 @@
         "GoogleSignIn"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "10.1.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -4718,9 +4147,7 @@
         "product_name": "GoogleUtilities.framework",
         "should_build": true,
         "static_framework": null,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -4767,25 +4194,16 @@
         }
       },
       "checksum": "7dc09b3fa9ecb5c2298b952313d14628b61b9da3",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
-      "dependencies": [
-
-      ],
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
+      "dependencies": [],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 10,
         "test_specs": [
           "GoogleUtilities/unit",
@@ -4801,10 +4219,8 @@
             "${PODS_TARGET_SRCROOT}"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
       "frameworks": [
         "Security",
@@ -4867,12 +4283,8 @@
           "GoogleUtilities/GULUserDefaults.h": "GoogleUtilities/UserDefaults/Public/GoogleUtilities/GULUserDefaults.h",
           "GoogleUtilities/IsAppEncrypted.h": "third_party/IsAppEncrypted/Public/IsAppEncrypted.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "GoogleUtilities/GULAppDelegateSwizzler.h": "GoogleUtilities/AppDelegateSwizzler/Public/GoogleUtilities/GULAppDelegateSwizzler.h",
           "GoogleUtilities/GULAppEnvironmentUtil.h": "GoogleUtilities/Environment/Public/GoogleUtilities/GULAppEnvironmentUtil.h",
@@ -4897,9 +4309,7 @@
       "libraries": [
         "z"
       ],
-      "non_arc_sources": [
-
-      ],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "12.0",
         "name": "ios"
@@ -4941,14 +4351,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/google/GoogleUtilities/archive/5459ee5603def3db0fe14ca522185f42c48d978e.tar.gz",
         "commit": "5459ee5603def3db0fe14ca522185f42c48d978e",
@@ -4998,33 +4405,18 @@
           "GoogleUtilities/SwizzlerTestHelpers",
           "GoogleUtilities/UserDefaults"
         ],
-        "default": [
-
-        ]
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "8.1.5",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -5054,9 +4446,7 @@
         "product_name": "FBLPromises.framework",
         "should_build": true,
         "static_framework": null,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -5101,25 +4491,16 @@
         }
       },
       "checksum": "752c3227f599e3467650e47ea36f433eeb10c273",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
-      "dependencies": [
-
-      ],
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
+      "dependencies": [],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
         "test_specs": [
           "PromisesObjC/PerformanceTests",
@@ -5132,14 +4513,10 @@
             "YES"
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module FBLPromises {\n  umbrella header \"PromisesObjC-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"FBLPromise+All.h\"\n#import \"FBLPromise+Always.h\"\n#import \"FBLPromise+Any.h\"\n#import \"FBLPromise+Async.h\"\n#import \"FBLPromise+Await.h\"\n#import \"FBLPromise+Catch.h\"\n#import \"FBLPromise+Delay.h\"\n#import \"FBLPromise+Do.h\"\n#import \"FBLPromise+Race.h\"\n#import \"FBLPromise+Recover.h\"\n#import \"FBLPromise+Reduce.h\"\n#import \"FBLPromise+Retry.h\"\n#import \"FBLPromise+Testing.h\"\n#import \"FBLPromise+Then.h\"\n#import \"FBLPromise+Timeout.h\"\n#import \"FBLPromise+Validate.h\"\n#import \"FBLPromise+Wrap.h\"\n#import \"FBLPromise.h\"\n#import \"FBLPromiseError.h\"\n#import \"FBLPromises.h\"\n\nFOUNDATION_EXPORT double FBLPromisesVersionNumber;\nFOUNDATION_EXPORT const unsigned char FBLPromisesVersionString[];\n\n",
       "header_dir": "./",
@@ -5193,9 +4570,7 @@
         "private": [
           "Sources/FBLPromises/include/FBLPromisePrivate.h"
         ],
-        "project": [
-
-        ],
+        "project": [],
         "public": {
           "PromisesObjC/FBLPromise+All.h": "Sources/FBLPromises/include/FBLPromise+All.h",
           "PromisesObjC/FBLPromise+Always.h": "Sources/FBLPromises/include/FBLPromise+Always.h",
@@ -5219,12 +4594,8 @@
           "PromisesObjC/FBLPromises.h": "Sources/FBLPromises/include/FBLPromises.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "9.0",
         "name": "ios"
@@ -5265,14 +4636,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/google/promises/archive/f4a19a3c313dc2616c70bb49d29a799fb16be837.tar.gz",
         "commit": "f4a19a3c313dc2616c70bb49d29a799fb16be837",
@@ -5307,36 +4675,19 @@
         "PromisesObjC"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "2.4.1",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -5415,71 +4766,44 @@
         }
       },
       "checksum": "217dea0fd5d2ad65222a109c48698add13cc1c5b",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "PromisesObjC"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
-        "pod": {
-        },
-        "target": {
-        },
-        "user": {
-        }
+        "pod": {},
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module Promises {\n  umbrella header \"PromisesSwift-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n\nFOUNDATION_EXPORT double PromisesVersionNumber;\nFOUNDATION_EXPORT const unsigned char PromisesVersionString[];\n\n",
       "headers": {
-        "all": [
-
-        ],
-        "mapped": {
-        },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
-        "public": {
-        }
+        "all": [],
+        "mapped": {},
+        "private": [],
+        "project": [],
+        "public": {}
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "9.0",
         "name": "ios"
       },
-      "pod_target_xcconfig": {
-      },
+      "pod_target_xcconfig": {},
       "privacy_manifests": [
         "Sources/Promises/Resources/PrivacyInfo.xcprivacy"
       ],
@@ -5513,14 +4837,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/google/promises/archive/f4a19a3c313dc2616c70bb49d29a799fb16be837.tar.gz",
         "commit": "f4a19a3c313dc2616c70bb49d29a799fb16be837",
@@ -5555,36 +4876,19 @@
         "PromisesSwift"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "2.4.1",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -5615,9 +4919,7 @@
         "product_name": "RecaptchaInterop.framework",
         "should_build": true,
         "static_framework": null,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -5665,41 +4967,25 @@
         }
       },
       "checksum": "11e0b637842dfb48308d242afc3f448062325aba",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
-      "dependencies": [
-
-      ],
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
+      "dependencies": [],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
-        "pod": {
-        },
-        "target": {
-        },
-        "user": {
-        }
+        "pod": {},
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module RecaptchaInterop {\n  umbrella header \"RecaptchaInterop-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"RCAActionProtocol.h\"\n#import \"RCARecaptchaClientProtocol.h\"\n#import \"RCARecaptchaProtocol.h\"\n#import \"RecaptchaInterop.h\"\n\nFOUNDATION_EXPORT double RecaptchaInteropVersionNumber;\nFOUNDATION_EXPORT const unsigned char RecaptchaInteropVersionString[];\n\n",
@@ -5716,12 +5002,8 @@
           "RecaptchaInterop/RCARecaptchaProtocol.h": "RecaptchaEnterprise/RecaptchaInterop/Public/RecaptchaInterop/RCARecaptchaProtocol.h",
           "RecaptchaInterop/RecaptchaInterop.h": "RecaptchaEnterprise/RecaptchaInterop/Public/RecaptchaInterop/RecaptchaInterop.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "RecaptchaInterop/RCAActionProtocol.h": "RecaptchaEnterprise/RecaptchaInterop/Public/RecaptchaInterop/RCAActionProtocol.h",
           "RecaptchaInterop/RCARecaptchaClientProtocol.h": "RecaptchaEnterprise/RecaptchaInterop/Public/RecaptchaInterop/RCARecaptchaClientProtocol.h",
@@ -5729,29 +5011,19 @@
           "RecaptchaInterop/RecaptchaInterop.h": "RecaptchaEnterprise/RecaptchaInterop/Public/RecaptchaInterop/RecaptchaInterop.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "11.0",
         "name": "ios"
       },
-      "pod_target_xcconfig": {
-      },
-      "privacy_manifests": [
-
-      ],
+      "pod_target_xcconfig": {},
+      "privacy_manifests": [],
       "requires_arc": [
         true
       ],
-      "resource_bundles": {
-      },
-      "resources": [
-
-      ],
+      "resource_bundles": {},
+      "resources": [],
       "source": {
         "archive": "https://github.com/google/interop-ios-for-google-sdks/archive/040d087ac2267d2ddd4cca36c757d1c6a05fdbfe.tar.gz",
         "commit": "040d087ac2267d2ddd4cca36c757d1c6a05fdbfe",
@@ -5768,36 +5040,19 @@
         "RecaptchaInterop"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "101.0.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -5909,31 +5164,22 @@
           "VALIDATE_PRODUCT": "YES"
         }
       },
-      "checksum": "9a15aaa17576c9745bd6570571fd70720aee4917",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "checksum": "3dfbdbe1869428da5f0f89dc721c4ab9998357ac",
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "Firebase",
         "Flutter"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
         "pod": {
@@ -5945,14 +5191,10 @@
             "LIBRARY_NAME=\"flutter-fire-core\""
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module firebase_core {\n  umbrella header \"firebase_core-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"dummy.h\"\n#import \"firebase_core.h\"\n#import \"FLTFirebasePlugin.h\"\n#import \"FLTFirebasePluginRegistry.h\"\n\nFOUNDATION_EXPORT double firebase_coreVersionNumber;\nFOUNDATION_EXPORT const unsigned char firebase_coreVersionString[];\n\n",
@@ -5969,12 +5211,8 @@
           "firebase_core/dummy.h": "firebase_core/Sources/firebase_core_objc/include/firebase_core/dummy.h",
           "firebase_core/firebase_core.h": "firebase_core/Sources/firebase_core_objc/include/firebase_core/firebase_core.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "firebase_core/FLTFirebasePlugin.h": "firebase_core/Sources/firebase_core_objc/include/firebase_core/FLTFirebasePlugin.h",
           "firebase_core/FLTFirebasePluginRegistry.h": "firebase_core/Sources/firebase_core_objc/include/firebase_core/FLTFirebasePluginRegistry.h",
@@ -5982,12 +5220,8 @@
           "firebase_core/firebase_core.h": "firebase_core/Sources/firebase_core_objc/include/firebase_core/firebase_core.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -5996,17 +5230,12 @@
         "DEFINES_MODULE": "YES",
         "GCC_PREPROCESSOR_DEFINITIONS": "LIBRARY_VERSION=\\\"5.2.0\\\" LIBRARY_NAME=\\\"flutter-fire-core\\\""
       },
-      "privacy_manifests": [
-
-      ],
+      "privacy_manifests": [],
       "requires_arc": [
         true
       ],
-      "resource_bundles": {
-      },
-      "resources": [
-
-      ],
+      "resource_bundles": {},
+      "resources": [],
       "source": {
         "path": "pub:hosted/pub.dev/firebase_core-5.2.0/ios"
       },
@@ -6022,36 +5251,19 @@
         "firebase_core"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "5.2.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -6082,9 +5294,7 @@
         "product_name": "firebase_messaging.framework",
         "should_build": true,
         "static_framework": true,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -6166,32 +5376,23 @@
           "VALIDATE_PRODUCT": "YES"
         }
       },
-      "checksum": "cc6bfe938e30d9e2c94f219b2d6728c8db5b59d1",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "checksum": "ce26daf5b0a5b59b3819f438a39daf858a361ed5",
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "Firebase",
         "Flutter",
         "firebase_core"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
         "pod": {
@@ -6203,14 +5404,10 @@
             "LIBRARY_NAME=\"flutter-fire-fcm\""
           ]
         },
-        "target": {
-        },
-        "user": {
-        }
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module firebase_messaging {\n  umbrella header \"firebase_messaging-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"FLTFirebaseMessagingPlugin.h\"\n\nFOUNDATION_EXPORT double firebase_messagingVersionNumber;\nFOUNDATION_EXPORT const unsigned char firebase_messagingVersionString[];\n\n",
@@ -6221,22 +5418,14 @@
         "mapped": {
           "firebase_messaging/FLTFirebaseMessagingPlugin.h": "firebase_messaging/Sources/firebase_messaging/include/FLTFirebaseMessagingPlugin.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "firebase_messaging/FLTFirebaseMessagingPlugin.h": "firebase_messaging/Sources/firebase_messaging/include/FLTFirebaseMessagingPlugin.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -6245,17 +5434,13 @@
         "DEFINES_MODULE": "YES",
         "GCC_PREPROCESSOR_DEFINITIONS": "LIBRARY_VERSION=\\\"17.1.0\\\" LIBRARY_NAME=\\\"flutter-fire-fcm\\\""
       },
-      "privacy_manifests": [
-
-      ],
+      "privacy_manifests": [],
       "requires_arc": [
         true
       ],
       "resource_bundles": {
         "firebase_messaging_Privacy": {
-          "files": [
-
-          ],
+          "files": [],
           "settings": {
             "*": {
               "CODE_SIGNING_ALLOWED": "NO",
@@ -6279,14 +5464,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "path": "pub:hosted/pub.dev/firebase_messaging-17.1.0/ios"
       },
@@ -6297,36 +5479,19 @@
         "firebase_messaging"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "17.1.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -6434,32 +5599,23 @@
           "VALIDATE_PRODUCT": "YES"
         }
       },
-      "checksum": "5f2ee3f5cc4fc2398574367f893e3f97bbbcea39",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "checksum": "17552876e72723da1d41accc22f03b5f7afbde69",
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "Flutter",
         "Google-Maps-iOS-Utils",
         "GoogleMaps"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
         "pod": {
@@ -6474,8 +5630,7 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
-        "target": {
-        },
+        "target": {},
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -6486,9 +5641,7 @@
           ]
         }
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module google_maps_flutter_ios {\n  umbrella header \"google_maps_flutter_ios-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"FGMAssetProvider.h\"\n#import \"FGMCATransactionWrapper.h\"\n#import \"FGMCircleController.h\"\n#import \"FGMCircleController_Test.h\"\n#import \"FGMClusterManagersController.h\"\n#import \"FGMConversionUtils.h\"\n#import \"FGMGoogleMapController.h\"\n#import \"FGMGoogleMapController_Test.h\"\n#import \"FGMGoogleMapsPlugin.h\"\n#import \"FGMGroundOverlayController.h\"\n#import \"FGMGroundOverlayController_Test.h\"\n#import \"FGMHeatmapController.h\"\n#import \"FGMHeatmapController_Test.h\"\n#import \"FGMImageUtils.h\"\n#import \"FGMMapEventDelegate.h\"\n#import \"FGMMarkerController.h\"\n#import \"FGMMarkerController_Test.h\"\n#import \"FGMMarkerUserData.h\"\n#import \"FGMPolygonController.h\"\n#import \"FGMPolygonController_Test.h\"\n#import \"FGMPolylineController.h\"\n#import \"FGMPolylineController_Test.h\"\n#import \"FGMTileOverlayController.h\"\n#import \"FGMTileOverlayController_Test.h\"\n#import \"GoogleMapsUtilsTrampoline.h\"\n#import \"google_maps_flutter_pigeon_messages.g.h\"\n\nFOUNDATION_EXPORT double google_maps_flutter_iosVersionNumber;\nFOUNDATION_EXPORT const unsigned char google_maps_flutter_iosVersionString[];\n\n",
@@ -6549,12 +5702,8 @@
           "google_maps_flutter_ios/GoogleMapsUtilsTrampoline.h": "google_maps_flutter_ios/Sources/google_maps_flutter_ios/include/google_maps_flutter_ios/GoogleMapsUtilsTrampoline.h",
           "google_maps_flutter_ios/google_maps_flutter_pigeon_messages.g.h": "google_maps_flutter_ios/Sources/google_maps_flutter_ios/include/google_maps_flutter_ios/google_maps_flutter_pigeon_messages.g.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "google_maps_flutter_ios/FGMAssetProvider.h": "google_maps_flutter_ios/Sources/google_maps_flutter_ios/include/google_maps_flutter_ios/FGMAssetProvider.h",
           "google_maps_flutter_ios/FGMCATransactionWrapper.h": "google_maps_flutter_ios/Sources/google_maps_flutter_ios/include/google_maps_flutter_ios/FGMCATransactionWrapper.h",
@@ -6584,12 +5733,8 @@
           "google_maps_flutter_ios/google_maps_flutter_pigeon_messages.g.h": "google_maps_flutter_ios/Sources/google_maps_flutter_ios/include/google_maps_flutter_ios/google_maps_flutter_pigeon_messages.g.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "14.0",
         "name": "ios"
@@ -6632,14 +5777,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "path": "pub:hosted/pub.dev/google_maps_flutter_ios-2.18.7/ios"
       },
@@ -6664,38 +5806,22 @@
         "google_maps_flutter_ios"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
       "user_target_xcconfig": {
         "LD_RUNPATH_SEARCH_PATHS": "$(inherited) /usr/lib/swift",
         "LIBRARY_SEARCH_PATHS": "$(inherited) $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)/ $(SDKROOT)/usr/lib/swift"
       },
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "0.0.1",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -6807,32 +5933,23 @@
           "VALIDATE_PRODUCT": "YES"
         }
       },
-      "checksum": "761b9030dc21bc8e89e8340c3ac56e7ecc358a5e",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "checksum": "806534db1c1dd465bbc8c1f495bdf7c69cf6f08f",
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "Flutter",
         "GTMSessionFetcher",
         "GoogleSignIn"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
         "pod": {
@@ -6847,8 +5964,7 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
-        "target": {
-        },
+        "target": {},
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -6859,33 +5975,19 @@
           ]
         }
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module google_sign_in_ios {\n  umbrella header \"google_sign_in_ios-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n\nFOUNDATION_EXPORT double google_sign_in_iosVersionNumber;\nFOUNDATION_EXPORT const unsigned char google_sign_in_iosVersionString[];\n\n",
       "headers": {
-        "all": [
-
-        ],
-        "mapped": {
-        },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
-        "public": {
-        }
+        "all": [],
+        "mapped": {},
+        "private": [],
+        "project": [],
+        "public": {}
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -6929,14 +6031,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "path": "pub:hosted/pub.dev/google_sign_in_ios-6.4.0/darwin"
       },
@@ -6951,38 +6050,22 @@
         "google_sign_in_ios"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
       "user_target_xcconfig": {
         "LD_RUNPATH_SEARCH_PATHS": "/usr/lib/swift",
         "LIBRARY_SEARCH_PATHS": "$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)/ $(SDKROOT)/usr/lib/swift"
       },
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "0.0.1",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -7093,30 +6176,21 @@
           "VALIDATE_PRODUCT": "YES"
         }
       },
-      "checksum": "3b5c3761ec7755e83b659fd65c7f03c9c7f25d6c",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "checksum": "872ad7b7cb44bf470e7324191b51ee0e26f45cb9",
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "Flutter"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
         "pod": {
@@ -7131,8 +6205,7 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
-        "target": {
-        },
+        "target": {},
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -7143,33 +6216,19 @@
           ]
         }
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module image_picker_ios {\n  umbrella header \"image_picker_ios-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n\nFOUNDATION_EXPORT double image_picker_iosVersionNumber;\nFOUNDATION_EXPORT const unsigned char image_picker_iosVersionString[];\n\n",
       "headers": {
-        "all": [
-
-        ],
-        "mapped": {
-        },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
-        "public": {
-        }
+        "all": [],
+        "mapped": {},
+        "private": [],
+        "project": [],
+        "public": {}
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "15.0",
         "name": "ios"
@@ -7213,14 +6272,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "path": "pub:hosted/pub.dev/image_picker_ios-0.8.13+16/ios"
       },
@@ -7242,38 +6298,22 @@
         "image_picker_ios"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
       "user_target_xcconfig": {
         "LD_RUNPATH_SEARCH_PATHS": "/usr/lib/swift",
         "LIBRARY_SEARCH_PATHS": "$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)/ $(SDKROOT)/usr/lib/swift"
       },
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "0.0.1",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -7304,9 +6344,7 @@
         "product_name": "nanopb.framework",
         "should_build": true,
         "static_framework": null,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -7354,29 +6392,18 @@
         }
       },
       "checksum": "fad817b59e0457d11a5dfbde799381cd727c1275",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
-      "dependencies": [
-
-      ],
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
+      "dependencies": [],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 2,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
         "pod": {
@@ -7386,8 +6413,7 @@
             "PB_ENABLE_MALLOC=1"
           ]
         },
-        "target": {
-        },
+        "target": {},
         "user": {
           "GCC_PREPROCESSOR_DEFINITIONS": [
             "PB_FIELD_32BIT=1",
@@ -7396,9 +6422,7 @@
           ]
         }
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module nanopb {\n  umbrella header \"nanopb-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"pb.h\"\n#import \"pb_common.h\"\n#import \"pb_decode.h\"\n#import \"pb_encode.h\"\n#import \"pb.h\"\n#import \"pb_decode.h\"\n#import \"pb_common.h\"\n#import \"pb.h\"\n#import \"pb_encode.h\"\n#import \"pb_common.h\"\n\nFOUNDATION_EXPORT double nanopbVersionNumber;\nFOUNDATION_EXPORT const unsigned char nanopbVersionString[];\n\n",
@@ -7415,12 +6439,8 @@
           "nanopb/pb_decode.h": "pb_decode.h",
           "nanopb/pb_encode.h": "pb_encode.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "nanopb/pb.h": "pb.h",
           "nanopb/pb_common.h": "pb_common.h",
@@ -7428,9 +6448,7 @@
           "nanopb/pb_encode.h": "pb_encode.h"
         }
       },
-      "libraries": [
-
-      ],
+      "libraries": [],
       "non_arc_sources": [
         "pb.h",
         "pb_common.c",
@@ -7480,14 +6498,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "archive": "https://github.com/nanopb/nanopb/archive/b7e1104502eca3a213b46303391ca4d3bc8ddec1.tar.gz",
         "commit": "b7e1104502eca3a213b46303391ca4d3bc8ddec1",
@@ -7512,34 +6527,20 @@
           "nanopb/decode",
           "nanopb/encode"
         ],
-        "default": [
-
-        ]
+        "default": []
       },
       "user_target_xcconfig": {
         "GCC_PREPROCESSOR_DEFINITIONS": "$(inherited) PB_FIELD_32BIT=1 PB_NO_PACKED_STRUCTS=1 PB_ENABLE_MALLOC=1"
       },
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "3.30910.0",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -7566,9 +6567,7 @@
         "product_name": "permission_handler_apple.framework",
         "should_build": true,
         "static_framework": true,
-        "swift_versions": [
-
-        ],
+        "swift_versions": [],
         "uses_swift": null
       },
       "build_settings": {
@@ -7650,42 +6649,28 @@
           "VALIDATE_PRODUCT": "YES"
         }
       },
-      "checksum": "ee2fe0fd04551b304eb002714ff067c371c822ed",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "checksum": "92d754bbaa7361d436db2d6c3c1c2a0fdcec462e",
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "Flutter"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
-        "pod": {
-        },
-        "target": {
-        },
-        "user": {
-        }
+        "pod": {},
+        "target": {},
+        "user": {}
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module permission_handler_apple {\n  umbrella header \"permission_handler_apple-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n#import \"PermissionHandlerPlugin.h\"\n\nFOUNDATION_EXPORT double permission_handler_appleVersionNumber;\nFOUNDATION_EXPORT const unsigned char permission_handler_appleVersionString[];\n\n",
@@ -7739,28 +6724,19 @@
           "permission_handler_apple/StoragePermissionStrategy.h": "permission_handler_apple/Sources/permission_handler_apple/strategies/StoragePermissionStrategy.h",
           "permission_handler_apple/UnknownPermissionStrategy.h": "permission_handler_apple/Sources/permission_handler_apple/strategies/UnknownPermissionStrategy.h"
         },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
+        "private": [],
+        "project": [],
         "public": {
           "permission_handler_apple/PermissionHandlerPlugin.h": "permission_handler_apple/Sources/permission_handler_apple/include/permission_handler_apple/PermissionHandlerPlugin.h"
         }
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "12.0",
         "name": "ios"
       },
-      "pod_target_xcconfig": {
-      },
+      "pod_target_xcconfig": {},
       "privacy_manifests": [
         "permission_handler_apple/Sources/permission_handler_apple/PrivacyInfo.xcprivacy"
       ],
@@ -7794,14 +6770,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "path": "pub:hosted/pub.dev/permission_handler_apple-9.6.5/ios"
       },
@@ -7831,36 +6804,19 @@
         "permission_handler_apple"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
-      "user_target_xcconfig": {
-      },
+      "user_target_xcconfig": {},
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "9.4.8",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -7965,30 +6921,21 @@
           "VALIDATE_PRODUCT": "YES"
         }
       },
-      "checksum": "bb13df5870e8c4234ca12609d04010a21be43dfa",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "checksum": "7a95fa5b60cc718a708b8f2966718e93db0cef1b",
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "Flutter"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
         "pod": {
@@ -8003,8 +6950,7 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
-        "target": {
-        },
+        "target": {},
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -8015,33 +6961,19 @@
           ]
         }
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module url_launcher_ios {\n  umbrella header \"url_launcher_ios-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n\nFOUNDATION_EXPORT double url_launcher_iosVersionNumber;\nFOUNDATION_EXPORT const unsigned char url_launcher_iosVersionString[];\n\n",
       "headers": {
-        "all": [
-
-        ],
-        "mapped": {
-        },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
-        "public": {
-        }
+        "all": [],
+        "mapped": {},
+        "private": [],
+        "project": [],
+        "public": {}
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "13.0",
         "name": "ios"
@@ -8084,14 +7016,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "path": "pub:hosted/pub.dev/url_launcher_ios-6.4.2/ios"
       },
@@ -8106,38 +7035,22 @@
         "url_launcher_ios"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
       "user_target_xcconfig": {
         "LD_RUNPATH_SEARCH_PATHS": "/usr/lib/swift",
         "LIBRARY_SEARCH_PATHS": "$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)/ $(SDKROOT)/usr/lib/swift"
       },
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "0.0.1",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
@@ -8246,30 +7159,21 @@
           "VALIDATE_PRODUCT": "YES"
         }
       },
-      "checksum": "29eb20d43355b48fe7d07113835b9128f84e3af4",
-      "compiler_flags": [
-
-      ],
-      "compiler_flags_by_file": {
-      },
+      "checksum": "8ebf4fded22593026f7dbff1fbff31ea98573c8d",
+      "compiler_flags": [],
+      "compiler_flags_by_file": {},
       "dependencies": [
         "Flutter"
       ],
       "features": {
-        "app_specs": [
-
-        ],
+        "app_specs": [],
         "deprecated": null,
         "info_plist": null,
         "on_demand_resources": null,
         "prepare_command": null,
-        "script_phases": [
-
-        ],
+        "script_phases": [],
         "subspec_count": 0,
-        "test_specs": [
-
-        ]
+        "test_specs": []
       },
       "flags": {
         "pod": {
@@ -8284,8 +7188,7 @@
             "$(SDKROOT)/usr/lib/swift"
           ]
         },
-        "target": {
-        },
+        "target": {},
         "user": {
           "LD_RUNPATH_SEARCH_PATHS": [
             "/usr/lib/swift"
@@ -8296,33 +7199,19 @@
           ]
         }
       },
-      "frameworks": [
-
-      ],
+      "frameworks": [],
       "generated_module_map": "framework module webview_flutter_wkwebview {\n  umbrella header \"webview_flutter_wkwebview-umbrella.h\"\n\n  export *\n  module * { export * }\n}\n",
       "generated_prefix_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n",
       "generated_umbrella_header": "#ifdef __OBJC__\n#import <UIKit/UIKit.h>\n#else\n#ifndef FOUNDATION_EXPORT\n#if defined(__cplusplus)\n#define FOUNDATION_EXPORT extern \"C\"\n#else\n#define FOUNDATION_EXPORT extern\n#endif\n#endif\n#endif\n\n\nFOUNDATION_EXPORT double webview_flutter_wkwebviewVersionNumber;\nFOUNDATION_EXPORT const unsigned char webview_flutter_wkwebviewVersionString[];\n\n",
       "headers": {
-        "all": [
-
-        ],
-        "mapped": {
-        },
-        "private": [
-
-        ],
-        "project": [
-
-        ],
-        "public": {
-        }
+        "all": [],
+        "mapped": {},
+        "private": [],
+        "project": [],
+        "public": {}
       },
-      "libraries": [
-
-      ],
-      "non_arc_sources": [
-
-      ],
+      "libraries": [],
+      "non_arc_sources": [],
       "platform": {
         "deployment_target": "13.0",
         "name": "ios"
@@ -8365,14 +7254,11 @@
               "CLANG_ENABLE_OBJC_WEAK": "NO",
               "VALIDATE_PRODUCT": "YES"
             },
-            "Release": {
-            }
+            "Release": {}
           }
         }
       },
-      "resources": [
-
-      ],
+      "resources": [],
       "source": {
         "path": "pub:hosted/pub.dev/webview_flutter_wkwebview-3.27.2/darwin"
       },
@@ -8425,38 +7311,22 @@
         "webview_flutter_wkwebview"
       ],
       "subspecs": {
-        "all": [
-
-        ],
-        "default": [
-
-        ]
+        "all": [],
+        "default": []
       },
       "user_target_xcconfig": {
         "LD_RUNPATH_SEARCH_PATHS": "/usr/lib/swift",
         "LIBRARY_SEARCH_PATHS": "$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)/ $(SDKROOT)/usr/lib/swift"
       },
       "vendored": {
-        "dynamic_frameworks": [
-
-        ],
-        "dynamic_libraries": [
-
-        ],
-        "static_frameworks": [
-
-        ],
-        "static_libraries": [
-
-        ],
-        "xcframeworks": [
-
-        ]
+        "dynamic_frameworks": [],
+        "dynamic_libraries": [],
+        "static_frameworks": [],
+        "static_libraries": [],
+        "xcframeworks": []
       },
       "version": "0.0.1",
-      "weak_frameworks": [
-
-      ],
+      "weak_frameworks": [],
       "xcconfig": {
         "*": {
           "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",

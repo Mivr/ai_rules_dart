@@ -1,0 +1,11 @@
+# Spike T17a: the gems of the Apple pin step, held by Gemfile.lock. Not for merge.
+#
+# The pin container and the macOS job install exactly these. They must agree: for a pod that comes
+# from a path (every Flutter plugin) CocoaPods writes the podspec again as JSON and puts the SHA-1 of
+# that text into Podfile.lock, and the `json` gem changed how it writes an empty array (2.7.2, a default
+# gem of Ruby 3.3: on three lines; 3.2.0: `[]`). Two hosts with the same CocoaPods and another `json`
+# write another Podfile.lock.
+source 'https://rubygems.org'
+
+gem 'cocoapods', '1.16.2'
+gem 'json', '3.2.0'
