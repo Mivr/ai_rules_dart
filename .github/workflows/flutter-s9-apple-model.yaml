@@ -423,8 +423,12 @@ jobs:
             kill "$stream_pid" "$console_pid" 2> /dev/null
             sleep 1
             kill -9 "$stream_pid" "$console_pid" 2> /dev/null
-            # The same lines again from the log store, should the stream have started late.
-            xcrun simctl spawn "$udid" log show --last 6m --style compact --predicate "$predicate" > "$out/launch-$name.logshow.txt" 2>&1
+            # The log store has the same lines, should the stream have missed the end; reading it
+            # took about a minute in the second run, so only then.
+            : > "$out/launch-$name.logshow.txt"
+            if ! grep -a -q 'rdf-s9 done' "$console" "$stream"; then
+              xcrun simctl spawn "$udid" log show --last 6m --style compact --predicate "$predicate" > "$out/launch-$name.logshow.txt" 2>&1
+            fi
             cat "$console" "$stream" "$out/launch-$name.logshow.txt" | LC_ALL=C tr -d '\r' | LC_ALL=C grep -a -o 'rdf-s9 .*' | awk '!seen[$0]++' > "$out/plugins-$name.txt"
             echo "== $name: $(grep -c . "$out/plugins-$name.txt") plugin lines"
             cat "$out/plugins-$name.txt"
