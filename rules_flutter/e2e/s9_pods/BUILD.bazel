@@ -4,7 +4,7 @@
 # targets of `@apple_model`, generated from `apple_model.json`; no podspec is read by the rules.
 # The runner is the stock one: ios/Runner/AppDelegate.swift and the GeneratedPluginRegistrant
 # that `flutter pub get` writes.
-load("@apple_model//:defs.bzl", "FRAMEWORK_PODS", "PODS")
+load("@apple_model//:defs.bzl", "DYNAMIC_FRAMEWORK_PODS", "FRAMEWORK_PODS", "PODS")
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_apple//apple:ios.bzl", "ios_application")
 load("@rules_apple//apple:versioning.bzl", "apple_bundle_version")
@@ -124,6 +124,27 @@ ios_application(
     bundle_id = "dev.rdf.s9app",
     families = ["iphone"],
     frameworks = ["@apple_model//:%s.framework" % pod for pod in PODS if pod in FRAMEWORK_PODS],
+    infoplists = [":info_plist"],
+    launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+    minimum_os_version = IOS_MINIMUM_OS_VERSION,
+    tags = ["manual"],
+    version = ":app_version",
+    deps = [
+        ":app_framework",
+        ":runner",
+    ],
+)
+
+# The debug shape with CocoaPods' own choice of linkage, tried beside the one above (an experiment
+# of the macOS job, not a stage): only what CocoaPods links as a dynamic framework is one. A pod
+# that declares `static_framework` (five of the eight plugins, and Google-Maps-iOS-Utils) stays in
+# the app binary, as in the stock build, and the static GoogleMaps binary under two of them is
+# linked once.
+ios_application(
+    name = "app_frameworks_as_pods",
+    bundle_id = "dev.rdf.s9app",
+    families = ["iphone"],
+    frameworks = ["@apple_model//:%s.framework" % pod for pod in PODS if pod in DYNAMIC_FRAMEWORK_PODS],
     infoplists = [":info_plist"],
     launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
     minimum_os_version = IOS_MINIMUM_OS_VERSION,
