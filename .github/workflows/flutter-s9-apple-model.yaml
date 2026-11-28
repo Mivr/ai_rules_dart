@@ -15,11 +15,14 @@
 #   F  edit loops: a Swift edit in the app and in one plugin, in both shapes, with the actions
 #      that ran, against Xcode on the same edits
 #
-# Experiments are not stages: they try what no log justifies yet, so that one run also says what
-# the next change to the rules would do. B2 and C3 build again with the flags of `EXPERIMENT` where
-# B or C1 fails (none this round: the rules_swift feature they tried is in the rules now). C4
-# builds `//:app_frameworks_as_pods`, the debug shape with CocoaPods' own choice of which pods are
-# dynamic frameworks; D launches it and E lists it beside the two shapes, marked as the experiment.
+# Experiments are not stages: they try what no log justifies yet, or a smaller thing that can pass
+# where the whole cannot, so that one run says more than its first failure. B2 and C3 build again
+# with the flags of `EXPERIMENT` where B or C1 fails (none waits this round). C4 builds four other
+# shapes of the app: the debug shape with CocoaPods' own choice of dynamic frameworks, the app
+# without the Google Maps plugin, and the four plugins that depend on no pod but the engine,
+# static and as frameworks. C5 links the frameworks shape again with the app's system frameworks
+# on every link, when C2 failed. D launches and E lists whatever was built; F measures the
+# four-plugin pair when neither full shape exists.
 #
 # No stage stops the next. Each writes one line into `stages.txt`, and a build that fails leaves
 # `errors-<stage>.txt` (the first error lines of every action that failed), `.commands.txt` (their
@@ -132,6 +135,28 @@ jobs:
             grep -a -o -E '(fatal error|error): .*' "$log" | cut -c1-300 | LC_ALL=C sort | uniq -c | LC_ALL=C sort -rn | head -60 > "$out/errors-$name.kinds.txt"
             echo "$name: $(grep -c '^== ' "$out/errors-$name.txt") actions failed"
             head -200 "$out/errors-$name.txt"
+          )
+
+          # build_app <name> <target> [flag...]: builds //:<target> with every error kept and leaves
+          # errors-<name>.*; when it built, its .ipa is kept as <name>.ipa for the launch, the bundle
+          # listing and the edit loops. Prints the verdict for the stage table and fails when it did not build.
+          build_app() (
+            set +e
+            name=$1 target=$2
+            shift 2
+            # shellcheck disable=SC2086
+            /usr/bin/time -p bazel build $SIM $REPORT "$@" --build_event_json_file="$out/$name.bep.json" "//:$target" > "$out/$name-build.log" 2>&1
+            status=$?
+            tail -25 "$out/$name-build.log"
+            first_errors "$name" "$out/$name.bep.json" "$out/$name-build.log" > "$out/$name-first-errors.log"
+            head -120 "$out/$name-first-errors.log"
+            if [ "$status" = 0 ] && [ -f "bazel-bin/$target.ipa" ]; then
+              mkdir -p "$RUNNER_TEMP/ipa" && cp "bazel-bin/$target.ipa" "$RUNNER_TEMP/ipa/$name.ipa"
+              echo "//:$target built" > "$out/$name.verdict"
+              exit 0
+            fi
+            echo "//:$target FAILED, bazel exit $status, $(grep -c '^== ' "$out/errors-$name.txt") actions failed ($(grep -c '^== ObjcLink' "$out/errors-$name.txt") of them links)" > "$out/$name.verdict"
+            exit 1
           )
           EOF
 
@@ -302,37 +327,13 @@ jobs:
         run: |
           # shellcheck source=/dev/null
           . "$RUNNER_TEMP/report.sh"
-          set +e
-          # shellcheck disable=SC2086
-          /usr/bin/time -p bazel build $SIM $REPORT --build_event_json_file="$out/app.bep.json" //:app 2>&1 | tee "$out/app-build.log" | tail -40
-          status=${PIPESTATUS[0]}
-          set -e
-          first_errors app "$out/app.bep.json" "$out/app-build.log"
-          if [ "$status" = 0 ] && [ -f bazel-bin/app.ipa ]; then
-            mkdir -p "$RUNNER_TEMP/ipa" && cp bazel-bin/app.ipa "$RUNNER_TEMP/ipa/app.ipa"
-            stage "C1 ok //:app"
-          else
-            stage "C1 FAILED //:app, bazel exit $status, $(grep -c '^== ' "$out/errors-app.txt" || true) actions failed"
-            exit 1
-          fi
+          if build_app app app; then stage "C1 ok $(cat "$out/app.verdict")"; else stage "C1 FAILED $(cat "$out/app.verdict")"; exit 1; fi
       - name: C2 the app, one dynamic framework per pod
         continue-on-error: true
         run: |
           # shellcheck source=/dev/null
           . "$RUNNER_TEMP/report.sh"
-          set +e
-          # shellcheck disable=SC2086
-          /usr/bin/time -p bazel build $SIM $REPORT --build_event_json_file="$out/app_frameworks.bep.json" //:app_frameworks 2>&1 | tee "$out/app-frameworks-build.log" | tail -40
-          status=${PIPESTATUS[0]}
-          set -e
-          first_errors app_frameworks "$out/app_frameworks.bep.json" "$out/app-frameworks-build.log"
-          if [ "$status" = 0 ] && [ -f bazel-bin/app_frameworks.ipa ]; then
-            mkdir -p "$RUNNER_TEMP/ipa" && cp bazel-bin/app_frameworks.ipa "$RUNNER_TEMP/ipa/app_frameworks.ipa"
-            stage "C2 ok //:app_frameworks"
-          else
-            stage "C2 FAILED //:app_frameworks, bazel exit $status, $(grep -c '^== ' "$out/errors-app_frameworks.txt" || true) actions failed"
-            exit 1
-          fi
+          if build_app app_frameworks app_frameworks; then stage "C2 ok $(cat "$out/app_frameworks.verdict")"; else stage "C2 FAILED $(cat "$out/app_frameworks.verdict")"; exit 1; fi
       - name: C3 experiment, the static app again with EXPERIMENT when C1 failed
         continue-on-error: true
         run: |
@@ -342,30 +343,43 @@ jobs:
             echo "no flag to try, or C1 built the app"
             exit 0
           fi
-          set +e
           # shellcheck disable=SC2086
-          /usr/bin/time -p bazel build $SIM $REPORT $EXPERIMENT --build_event_json_file="$out/app-experiment.bep.json" //:app 2>&1 | tee "$out/app-experiment-build.log" | tail -40
-          status=${PIPESTATUS[0]}
-          set -e
-          first_errors app-experiment "$out/app-experiment.bep.json" "$out/app-experiment-build.log"
-          stage "C3 experiment: //:app with $EXPERIMENT: bazel exit $status, $(grep -c '^== ' "$out/errors-app-experiment.txt" || true) actions failed"
-      - name: C4 experiment, the frameworks shape with CocoaPods' own linkage
+          build_app app-experiment app $EXPERIMENT || true
+          stage "C3 experiment: with $EXPERIMENT $(cat "$out/app-experiment.verdict")"
+      - name: C4 experiments, other shapes of the app
         continue-on-error: true
         run: |
           # shellcheck source=/dev/null
           . "$RUNNER_TEMP/report.sh"
-          set +e
-          # shellcheck disable=SC2086
-          /usr/bin/time -p bazel build $SIM $REPORT --build_event_json_file="$out/app_frameworks_as_pods.bep.json" //:app_frameworks_as_pods 2>&1 | tee "$out/app-frameworks-as-pods-build.log" | tail -40
-          status=${PIPESTATUS[0]}
-          set -e
-          first_errors app_frameworks_as_pods "$out/app_frameworks_as_pods.bep.json" "$out/app-frameworks-as-pods-build.log"
-          if [ "$status" = 0 ] && [ -f bazel-bin/app_frameworks_as_pods.ipa ]; then
-            mkdir -p "$RUNNER_TEMP/ipa" && cp bazel-bin/app_frameworks_as_pods.ipa "$RUNNER_TEMP/ipa/app_frameworks_as_pods.ipa"
-            stage "C4 experiment: //:app_frameworks_as_pods built"
-          else
-            stage "C4 experiment: //:app_frameworks_as_pods FAILED, bazel exit $status, $(grep -c '^== ' "$out/errors-app_frameworks_as_pods.txt" || true) actions failed"
+          # The debug shape with CocoaPods' own linkage; the app without the Google Maps plugin; the
+          # four plugins whose only pod dependency is the engine, static and as frameworks. Each is
+          # launched, listed and (the four-plugin pair, when neither full shape builds) measured.
+          for shape in app_frameworks_as_pods app_seven app_four app_four_frameworks; do
+            build_app "$shape" "$shape" || true
+            stage "C4 experiment: $(cat "$out/$shape.verdict")"
+          done
+      - name: C5 experiment, the frameworks shape with the app's system frameworks on every link, when C2 failed
+        continue-on-error: true
+        run: |
+          # shellcheck source=/dev/null
+          . "$RUNNER_TEMP/report.sh"
+          if [ -f "$RUNNER_TEMP/ipa/app_frameworks.ipa" ]; then
+            echo "C2 built the app"
+            exit 0
           fi
+          # A pod's framework is linked with the system frameworks its podspec names, and with those
+          # its files' linker directives name (Xcode's autolinking). Should the directives not reach
+          # the link, this tells what lies behind: every link gets the system frameworks CocoaPods
+          # gives the app target (OTHER_LDFLAGS of Pods-Runner in the model).
+          sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          flags=""
+          for framework in $(jq -r '.aggregate_targets["Pods-Runner"].xcconfig["*"].OTHER_LDFLAGS' apple_model.json | grep -o -E ' -framework "[A-Za-z0-9_]+"' | cut -d'"' -f2 | sort -u); do
+            if [ -d "$sdk/System/Library/Frameworks/$framework.framework" ]; then flags="$flags --linkopt=-Wl,-framework,$framework"; fi
+          done
+          echo "flags:$flags"
+          # shellcheck disable=SC2086
+          build_app app_frameworks-syslibs app_frameworks $flags || true
+          stage "C5 experiment: with the app's $(echo "$flags" | wc -w | tr -d ' ') system frameworks on every link $(cat "$out/app_frameworks-syslibs.verdict")"
 
       # ---------------------------------------------------------------- D: launch
       - name: D launch stock and both Bazel apps on a simulator
@@ -452,17 +466,23 @@ jobs:
             verdict="stock FAILED"
             status=1
           fi
-          # The third is the experiment of step C4: it is launched and reported, and does not decide
-          # whether the stage passed.
-          for shape in app app_frameworks app_frameworks_as_pods; do
-            failed=1
-            if [ "$shape" = app_frameworks_as_pods ]; then failed=$status; fi
+          # The first two are the stage. The others are the experiments of C4 and C5: launched and
+          # reported, they do not decide whether the stage passed. A four-plugin app is compared in
+          # the lines of the plugins it has.
+          for shape in app app_frameworks app_frameworks_as_pods app_seven app_four app_four_frameworks app_frameworks-syslibs; do
+            failed=$status
+            keep='^rdf-s9 '
+            case "$shape" in
+              app | app_frameworks) failed=1 ;;
+              app_four*) keep='^rdf-s9 (url_launcher|permission_handler|webview_flutter|done)' ;;
+            esac
             if [ -f "$RUNNER_TEMP/ipa/$shape.ipa" ]; then
               rm -rf "${RUNNER_TEMP:?}/$shape" && unzip -q "$RUNNER_TEMP/ipa/$shape.ipa" -d "$RUNNER_TEMP/$shape"
-              if ! launch "$shape" "$RUNNER_TEMP/$shape/Payload/$shape.app"; then
+              bundle=$(find "$RUNNER_TEMP/$shape/Payload" -maxdepth 1 -name '*.app' | head -1)
+              if ! launch "$shape" "$bundle"; then
                 verdict="$verdict; $shape FAILED to print every line"
                 status=$failed
-              elif diff "$out/plugins-stock.txt" "$out/plugins-$shape.txt" > "$out/plugins-$shape.diff"; then
+              elif diff <(grep -E "$keep" "$out/plugins-stock.txt") <(grep -E "$keep" "$out/plugins-$shape.txt") > "$out/plugins-$shape.diff"; then
                 verdict="$verdict; $shape prints what stock prints"
               else
                 cat "$out/plugins-$shape.diff"
@@ -499,12 +519,13 @@ jobs:
           fi
           listing "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" > "$out/bundle-stock.txt"
           verdict=""
-          for shape in app app_frameworks app_frameworks_as_pods; do
-            if [ ! -d "$RUNNER_TEMP/$shape/Payload/$shape.app" ]; then
+          for shape in app app_frameworks app_frameworks_as_pods app_seven app_four app_four_frameworks; do
+            bundle=$(find "$RUNNER_TEMP/$shape/Payload" -maxdepth 1 -name '*.app' 2> /dev/null | head -1)
+            if [ -z "$bundle" ]; then
               verdict="$verdict $shape: not built;"
               continue
             fi
-            listing "$RUNNER_TEMP/$shape/Payload/$shape.app" > "$out/bundle-$shape.txt"
+            listing "$bundle" > "$out/bundle-$shape.txt"
             echo "== $shape: files only in stock (<) or only in the Bazel bundle (>)"
             diff <(cut -f1 "$out/bundle-stock.txt") <(cut -f1 "$out/bundle-$shape.txt") | grep '^[<>]' > "$out/bundle-$shape.names.diff" || true
             head -200 "$out/bundle-$shape.names.diff"
@@ -537,7 +558,14 @@ jobs:
             [ "$result" = ok ]
           }
           measured=""
-          for shape in app app_frameworks; do
+          shapes="app app_frameworks"
+          if [ ! -f "$RUNNER_TEMP/ipa/app.ipa" ] && [ ! -f "$RUNNER_TEMP/ipa/app_frameworks.ipa" ]; then
+            # Neither full shape was built: the edit loops of the four-plugin pair are worth more
+            # than none. url_launcher_ios, the plugin that is edited, is in it.
+            shapes="app_four app_four_frameworks"
+            echo "neither //:app nor //:app_frameworks was built: measuring $shapes" | tee -a "$out/edit-loops.txt"
+          fi
+          for shape in $shapes; do
             # A time is a measurement only after a build that passed: without one, no edit rounds.
             if ! round "$shape-warm" "//:$shape"; then
               echo "$shape: the build fails, no edit rounds" | tee -a "$out/edit-loops.txt"
@@ -619,6 +647,9 @@ jobs:
             show "plugin lines, app" plugins-app.txt
             show "plugin lines, app_frameworks" plugins-app_frameworks.txt
             show "experiment: plugin lines, app_frameworks_as_pods" plugins-app_frameworks_as_pods.txt
+            show "experiment: plugin lines, app_seven" plugins-app_seven.txt
+            show "experiment: plugin lines, app_four" plugins-app_four.txt
+            show "experiment: plugin lines, app_four_frameworks" plugins-app_four_frameworks.txt
             show "edit loops" edit-loops.txt
             show "Swift language mode per module in Xcode's build" stock-swift-versions.txt
             show "first errors, pods" errors-pods.txt 120
@@ -629,6 +660,10 @@ jobs:
             show "experiment: first errors, pods" errors-pods-experiment.txt 120
             show "experiment: first errors, app" errors-app-experiment.txt 120
             show "experiment: first errors, app_frameworks_as_pods" errors-app_frameworks_as_pods.txt 120
+            show "experiment: first errors, app_seven" errors-app_seven.txt 80
+            show "experiment: first errors, app_four" errors-app_four.txt 80
+            show "experiment: first errors, app_four_frameworks" errors-app_four_frameworks.txt 80
+            show "experiment: first errors, app_frameworks with system frameworks" errors-app_frameworks-syslibs.txt 80
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY" || true
           ls -la "$out" || true
