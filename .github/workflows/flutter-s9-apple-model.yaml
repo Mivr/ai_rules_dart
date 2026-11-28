@@ -363,8 +363,8 @@ jobs:
         run: |
           # shellcheck source=/dev/null
           . "$RUNNER_TEMP/report.sh"
-          if [ -f "$RUNNER_TEMP/ipa/app_frameworks.ipa" ]; then
-            echo "C2 built the app"
+          if [ -f "$RUNNER_TEMP/ipa/app_frameworks.ipa" ] || ! grep -q -E '\([1-9][0-9]* of them links\)' "$out/app_frameworks.verdict"; then
+            echo "C2 built the app, or no link of it failed"
             exit 0
           fi
           # A pod's framework is linked with the system frameworks its podspec names, and with those
@@ -483,10 +483,16 @@ jobs:
                 verdict="$verdict; $shape FAILED to print every line"
                 status=$failed
               elif diff <(grep -E "$keep" "$out/plugins-stock.txt") <(grep -E "$keep" "$out/plugins-$shape.txt") > "$out/plugins-$shape.diff"; then
-                verdict="$verdict; $shape prints what stock prints"
+                same=$(grep -c -E "$keep" "$out/plugins-$shape.txt" || true)
+                all=$(grep -c . "$out/plugins-$shape.txt" || true)
+                if [ "$same" = "$all" ]; then
+                  verdict="$verdict; $shape: all $all lines equal stock's"
+                else
+                  verdict="$verdict; $shape: $same of its $all lines compared (the plugins it has, and done) and equal to stock's; the other $((all - same)) are of plugins it does not have ($(grep -v -E "$keep" "$out/plugins-$shape.txt" | grep -c ' ERR ' || true) ERR)"
+                fi
               else
                 cat "$out/plugins-$shape.diff"
-                verdict="$verdict; $shape DIFFERS from stock"
+                verdict="$verdict; $shape DIFFERS from stock in the lines compared"
                 status=$failed
               fi
             else
@@ -520,22 +526,31 @@ jobs:
           listing "$RUNNER_TEMP/stock/build/ios/iphonesimulator/Runner.app" > "$out/bundle-stock.txt"
           verdict=""
           for shape in app app_frameworks app_frameworks_as_pods app_seven app_four app_four_frameworks; do
-            bundle=$(find "$RUNNER_TEMP/$shape/Payload" -maxdepth 1 -name '*.app' 2> /dev/null | head -1)
+            bundle=$(find "$RUNNER_TEMP/$shape/Payload" -maxdepth 1 -name '*.app' 2> /dev/null | head -1 || true)
             if [ -z "$bundle" ]; then
               verdict="$verdict $shape: not built;"
               continue
             fi
             listing "$bundle" > "$out/bundle-$shape.txt"
-            echo "== $shape: files only in stock (<) or only in the Bazel bundle (>)"
-            diff <(cut -f1 "$out/bundle-stock.txt") <(cut -f1 "$out/bundle-$shape.txt") | grep '^[<>]' > "$out/bundle-$shape.names.diff" || true
-            head -200 "$out/bundle-$shape.names.diff"
-            echo "== $shape: files in both with other contents"
-            awk -F'\t' 'NR == FNR { stock[$1] = $2; next } ($1 in stock) && stock[$1] != $2 { print $1 }' \
-              "$out/bundle-stock.txt" "$out/bundle-$shape.txt" > "$out/bundle-$shape.contents.diff" || true
-            head -200 "$out/bundle-$shape.contents.diff"
-            echo "== $shape: privacy manifests"
-            grep -c 'PrivacyInfo.xcprivacy' "$out/bundle-stock.txt" "$out/bundle-$shape.txt" || true
-            verdict="$verdict $shape: $(grep -c '^<' "$out/bundle-$shape.names.diff" || true) files only in stock, $(grep -c '^>' "$out/bundle-$shape.names.diff" || true) only in Bazel's, $(grep -c . "$out/bundle-$shape.contents.diff" || true) with other contents;"
+            {
+              echo "== $shape against stock: files only in stock (<) or only in the Bazel bundle (>)"
+              diff <(cut -f1 "$out/bundle-stock.txt") <(cut -f1 "$out/bundle-$shape.txt") | grep '^[<>]' > "$out/bundle-$shape.names.diff" || true
+              cat "$out/bundle-$shape.names.diff"
+              echo "== $shape: files in both with other contents"
+              awk -F'\t' 'NR == FNR { stock[$1] = $2; next } ($1 in stock) && stock[$1] != $2 { print $1 }' \
+                "$out/bundle-stock.txt" "$out/bundle-$shape.txt" > "$out/bundle-$shape.contents.diff" || true
+              cat "$out/bundle-$shape.contents.diff"
+              echo "== $shape: what each Mach-O links (stock first, then the Bazel bundle)"
+              grep "$(printf '\tmacho ')" "$out/bundle-stock.txt" || true
+              echo "--"
+              grep "$(printf '\tmacho ')" "$out/bundle-$shape.txt" || true
+              echo "== $shape: privacy manifests (stock first, then the Bazel bundle)"
+              grep 'PrivacyInfo.xcprivacy' "$out/bundle-stock.txt" | cut -f1 || true
+              echo "--"
+              grep 'PrivacyInfo.xcprivacy' "$out/bundle-$shape.txt" | cut -f1 || true
+            } > "$out/bundle-$shape.report.txt"
+            head -60 "$out/bundle-$shape.report.txt" | cut -c1-300
+            verdict="$verdict $shape: $(grep -c '^<' "$out/bundle-$shape.names.diff" || true) files only in stock, $(grep -c '^>' "$out/bundle-$shape.names.diff" || true) only in Bazel's, $(grep -c . "$out/bundle-$shape.contents.diff" || true) with other contents, Mach-O files $(grep -c "$(printf '\tmacho ')" "$out/bundle-stock.txt" || true) against $(grep -c "$(printf '\tmacho ')" "$out/bundle-$shape.txt" || true), privacy manifests $(grep -c 'PrivacyInfo.xcprivacy' "$out/bundle-stock.txt" || true) against $(grep -c 'PrivacyInfo.xcprivacy' "$out/bundle-$shape.txt" || true);"
           done
           stage "E compared:$verdict"
 
@@ -545,25 +560,46 @@ jobs:
         run: |
           # shellcheck source=/dev/null
           . "$RUNNER_TEMP/report.sh"
-          plugin=$(find "$(bazel info output_base)/external" -maxdepth 1 -name '*apple_model__pub_url_launcher_ios' | head -1 || true)
-          plugin_file=$(find "$plugin/r/" -name 'URLLauncherPlugin.swift' 2> /dev/null | head -1 || true)
+          # A plugin under edit is a local one. Bazel does not build from an edited file of a fetched
+          # repository: 9.3.0 does not notice the edit (the fourth run: no action ran), or fetches the
+          # repository again. So the plugin's repository is copied, and every round, the warm one too,
+          # builds with the copy in its place; the edit goes into the copy.
+          fetched=$(find "$(bazel info output_base)/external" -maxdepth 1 -name '*apple_model__pub_url_launcher_ios' | head -1 || true)
+          override=""
+          plugin_file=""
+          if [ -n "$fetched" ]; then
+            local_plugin="$RUNNER_TEMP/plugin-under-edit/$(basename "$fetched")"
+            rm -rf "${RUNNER_TEMP:?}/plugin-under-edit" && mkdir -p "$RUNNER_TEMP/plugin-under-edit"
+            cp -RL "$fetched" "$local_plugin"
+            override="--override_repository=$(basename "$fetched")=$local_plugin"
+            plugin_file=$(find "$local_plugin/r" -name 'URLLauncherPlugin.swift' | head -1 || true)
+          fi
+          echo "plugin under edit: ${plugin_file:-none found} ($override)" | tee -a "$out/edit-loops.txt"
           now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
-          round() { # round <label> <target>: wall seconds and the native actions that ran; fails when the build does
-            local log="$out/exec-$1.json" start end result=ok
+          # round <label> <target> [edit]: wall seconds, and per kind of action how many ran and their
+          # seconds (from Bazel's execution log). Fails when the build does. A round after an edit in
+          # which no Swift file was compiled is VOID and fails too: the edit did not reach the build.
+          round() {
+            local log="$out/exec-$1.json" start end result=ok actions
             start=$(now)
             # shellcheck disable=SC2086
-            bazel build $SIM --execution_log_json_file="$log" "$2" > "$out/edit-$1.log" 2>&1 || result=FAILED
+            bazel build $SIM $override --execution_log_json_file="$log" "$2" > "$out/edit-$1.log" 2>&1 || result=FAILED
             end=$(now)
-            echo "$1 $result seconds=$(echo "$end - $start" | bc) actions=$(jq -r '.mnemonic' "$log" | LC_ALL=C sort | uniq -c | tr -s ' \n' ' ')" | tee -a "$out/edit-loops.txt"
+            actions=$(jq -s -r 'group_by(.mnemonic) | map("\(length) \(.[0].mnemonic) \((map(.metrics.totalTime // "0s" | rtrimstr("s") | tonumber) | add * 100 | round / 100))s") | join(", ")' "$log" 2> /dev/null || true)
+            if [ "$result" = ok ] && [ "${3:-}" = edit ] && ! echo "$actions" | grep -q 'SwiftCompile'; then result=VOID; fi
+            echo "$1 $result seconds=$(echo "$end - $start" | bc) actions=${actions:-none}" | tee -a "$out/edit-loops.txt"
             [ "$result" = ok ]
           }
           measured=""
-          shapes="app app_frameworks"
-          if [ ! -f "$RUNNER_TEMP/ipa/app.ipa" ] && [ ! -f "$RUNNER_TEMP/ipa/app_frameworks.ipa" ]; then
-            # Neither full shape was built: the edit loops of the four-plugin pair are worth more
-            # than none. url_launcher_ios, the plugin that is edited, is in it.
+          shapes=""
+          for shape in app app_frameworks app_frameworks_as_pods; do
+            if [ -f "$RUNNER_TEMP/ipa/$shape.ipa" ]; then shapes="$shapes $shape"; fi
+          done
+          if [ -z "$shapes" ]; then
+            # No full shape was built: the edit loops of the four-plugin pair are worth more than
+            # none. url_launcher_ios, the plugin that is edited, is in it.
             shapes="app_four app_four_frameworks"
-            echo "neither //:app nor //:app_frameworks was built: measuring $shapes" | tee -a "$out/edit-loops.txt"
+            echo "no full shape was built: measuring $shapes" | tee -a "$out/edit-loops.txt"
           fi
           for shape in $shapes; do
             # A time is a measurement only after a build that passed: without one, no edit rounds.
@@ -575,22 +611,23 @@ jobs:
             round "$shape-nothing" "//:$shape" || true
             for n in 1 2 3; do
               echo "func rdfEdit${shape}${n}() {}" >> ios/Runner/AppDelegate.swift
-              round "$shape-app-swift-$n" "//:$shape" || true
+              round "$shape-app-swift-$n" "//:$shape" edit || true
             done
             if [ -z "$plugin_file" ]; then
-              echo "$shape: URLLauncherPlugin.swift not found under '$plugin', no plugin rounds" | tee -a "$out/edit-loops.txt"
+              echo "$shape-plugin-swift FAILED URLLauncherPlugin.swift not found, no plugin rounds" | tee -a "$out/edit-loops.txt"
               continue
             fi
             for n in 1 2 3; do
               echo "func rdfEdit${shape}${n}() {}" >> "$plugin_file"
-              round "$shape-plugin-swift-$n" "//:$shape" || true
+              round "$shape-plugin-swift-$n" "//:$shape" edit || true
             done
           done
           git checkout -- ios/Runner/AppDelegate.swift
-          if [ -n "$measured" ] && ! grep -q ' FAILED ' "$out/edit-loops.txt"; then
+          bad=$(grep -c -E ' (FAILED|VOID) ' "$out/edit-loops.txt" || true)
+          if [ -n "$measured" ] && [ "$bad" = 0 ]; then
             stage "F ok Bazel edit loops measured for:$measured"
           else
-            stage "F FAILED Bazel edit loops: measured for '${measured# }', $(grep -c ' FAILED ' "$out/edit-loops.txt" || true) rounds failed"
+            stage "F FAILED Bazel edit loops: measured for '${measured# }', $bad rounds failed or void ($(grep -c ' VOID ' "$out/edit-loops.txt" || true) void: an edit that no action followed)"
             exit 1
           fi
       - name: F edit loops, Xcode on the same edits
@@ -628,6 +665,33 @@ jobs:
             exit 1
           fi
           stage "F ok stock edit loops measured"
+      - name: F the edit loops side by side
+        if: always()
+        continue-on-error: true
+        run: |
+          out="$RUNNER_TEMP/out"
+          # Per shape and for stock: seconds with nothing changed, and the range of the three rounds
+          # after an edit in the app and after one in the plugin, with the actions of the second round.
+          awk '
+            / seconds=/ {
+              label = $1; result = $2; split($3, kv, "="); secs = kv[2] + 0
+              shape = label; kind = ""
+              if (match(label, /-(warm|nothing|app-swift-[0-9]|plugin-swift-[0-9])$/)) { kind = substr(label, RSTART + 1); shape = substr(label, 1, RSTART - 1) }
+              sub(/-[0-9]$/, "", kind)
+              key = shape SUBSEP kind
+              if (!(shape in seen)) { seen[shape] = 1; order[++n] = shape }
+              if (result != "ok") { bad[key] = bad[key] " " result }
+              if (!(key in lo) || secs < lo[key]) lo[key] = secs
+              if (!(key in hi) || secs > hi[key]) hi[key] = secs
+              if (label ~ /-2$/ && index($0, " actions=")) { a = $0; sub(/.* actions=/, "", a); acts[key] = a }
+            }
+            function range(k) { return (k in lo) ? sprintf("%.1f to %.1f s%s", lo[k], hi[k], bad[k]) : "-" }
+            END {
+              for (i = 1; i <= n; i++) {
+                s = order[i]
+                printf "%s\n  nothing changed: %s\n  edit in the app:    %s   %s\n  edit in the plugin: %s   %s\n", s, range(s SUBSEP "nothing"), range(s SUBSEP "app-swift"), acts[s SUBSEP "app-swift"], range(s SUBSEP "plugin-swift"), acts[s SUBSEP "plugin-swift"]
+              }
+            }' "$out/edit-loops.txt" | tee "$out/edit-loops.table.txt"
 
       - name: Summary
         if: always()
@@ -650,7 +714,12 @@ jobs:
             show "experiment: plugin lines, app_seven" plugins-app_seven.txt
             show "experiment: plugin lines, app_four" plugins-app_four.txt
             show "experiment: plugin lines, app_four_frameworks" plugins-app_four_frameworks.txt
-            show "edit loops" edit-loops.txt
+            show "edit loops, side by side" edit-loops.table.txt
+            show "edit loops, every round" edit-loops.txt
+            show "bundle of app against stock" bundle-app.report.txt 80
+            show "bundle of app_frameworks against stock" bundle-app_frameworks.report.txt 80
+            show "bundle of app_frameworks_as_pods against stock" bundle-app_frameworks_as_pods.report.txt 80
+            show "bundle of app_four against stock" bundle-app_four.report.txt 60
             show "Swift language mode per module in Xcode's build" stock-swift-versions.txt
             show "first errors, pods" errors-pods.txt 120
             show "error kinds, pods" errors-pods.kinds.txt 40
