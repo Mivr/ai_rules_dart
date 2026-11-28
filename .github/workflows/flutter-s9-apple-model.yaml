@@ -401,8 +401,10 @@ jobs:
             done
             sleep 2
             xcrun simctl terminate "$udid" dev.rdf.s9app > /dev/null 2>&1
+            # No `wait`: a process that ignored the signal would hold the stage until the job's timeout.
             kill "$stream_pid" "$console_pid" 2> /dev/null
-            wait 2> /dev/null
+            sleep 1
+            kill -9 "$stream_pid" "$console_pid" 2> /dev/null
             # The same lines again from the log store, should the stream have started late.
             xcrun simctl spawn "$udid" log show --last 6m --style compact --predicate "$predicate" > "$out/launch-$name.logshow.txt" 2>&1
             cat "$console" "$stream" "$out/launch-$name.logshow.txt" | LC_ALL=C tr -d '\r' | LC_ALL=C grep -a -o 'rdf-s9 .*' | awk '!seen[$0]++' > "$out/plugins-$name.txt"
