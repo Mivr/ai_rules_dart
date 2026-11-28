@@ -107,8 +107,11 @@ def _pod(name, pod, model):
 
     # Compiler flags: Xcode's own, CocoaPods' (COCOAPODS=1, its header stores), then the pod author's.
     # Xcode's, from its log of the stock build: `-fmodule-name=<Module>` for every file of a pod, so
-    # that the pod's own headers are read as text and not as the module others import.
-    clang_copts = ["-fmodule-name=" + module, "-DCOCOAPODS=1", "-I%s/hdr/%s/private" % (here, name), "-I%s/hdr/%s/private/%s" % (here, name, name)]
+    # that the pod's own headers are read as text and not as the module others import; and linker
+    # directives for the modules a file imports, which Bazel's toolchain turns off. Pods count on
+    # them: AppAuth uses the Security framework and names only SafariServices. A pod that does not
+    # want them says so itself (FirebaseCore: `-fno-autolink` in OTHER_CFLAGS), further down.
+    clang_copts = ["-fautolink", "-fmodule-name=" + module, "-DCOCOAPODS=1", "-I%s/hdr/%s/private" % (here, name), "-I%s/hdr/%s/private/%s" % (here, name, name)]
     swift_copts = ["-DCOCOAPODS"]
     cxxopts = []
     conlyopts = []
