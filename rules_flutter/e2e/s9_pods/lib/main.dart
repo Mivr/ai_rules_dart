@@ -26,8 +26,11 @@ Future<void> probePlugins() async {
   await _probe(
     'firebase_core',
     () async => (await Firebase.initializeApp(
+      // Not a key of any project. Firebase refuses to start unless the key has 39 characters of the
+      // base64 URL alphabet and begins with `A` (FIRInstallations validateAPIKey), so this has that
+      // shape and nothing else of a real key.
       options: const FirebaseOptions(
-        apiKey: 'AIzaSyD-rdf-s9-not-a-real-key-0000000000',
+        apiKey: 'A-rdf-s9-spike-dummy-not-a-real-key-000',
         appId: '1:1234567890:ios:0123456789abcdef',
         messagingSenderId: '1234567890',
         projectId: 'rdf-s9',
