@@ -253,6 +253,30 @@ _SUBSETS = {
     ]
 ]
 
+# The fourteen-plugin closure (55 pods: Firestore's C++, gRPC, BoringSSL, abseil, Stripe), for the
+# second job of the macOS workflow. No Flutter app of it is in this workspace, so this app is the
+# pods and a main: it proves that the 55 link into one binary and that the binary starts, and prints
+# which plugin classes it holds.
+objc_library(
+    name = "m14_main",
+    srcs = ["ios/experiments/m14/main.m"],
+    enable_modules = True,
+    tags = ["manual"],
+    deps = ["@apple_model_m14//:Pods-Runner"],
+)
+
+ios_application(
+    name = "app_m14_pods",
+    bundle_id = "dev.rdf.s9app",
+    families = _FAMILIES,
+    infoplists = ["ios/experiments/m14/Info.plist"],
+    launch_storyboard = IOS_DEFAULT_LAUNCH_STORYBOARD,
+    minimum_os_version = IOS_MINIMUM_OS_VERSION,
+    tags = ["manual"],
+    version = ":app_version",
+    deps = [":m14_main"],
+)
+
 # Every library the model describes, one target per pod: what `build --nobuild` analyses on Linux
 # and what the macOS job compiles.
 build_test(
